@@ -1226,3 +1226,27 @@ programs named; the shapes side by side in `emit/release/app/*` and `emit/releas
 no reproducible slowdown: `escape` is the one export on a hot path (every text hole of a render),
 and it keeps one pass of `replace`; the chat and HTTP servers that render are the programs to
 time if the pattern's form changes.
+
+**Sizes** (2026-11-03, master `2b7214fb35` against the branch, both compilers on the same sources,
+release brotli 11). `bench/size.mjs`'s 665 node lines, every one of which reaches `run`:
+1 364 855 → 1 351 910 B (−12 945, −0.95 %), raw −11 574; 621 smaller, 4 equal, 40 larger — each
+of the 40 at fewer raw bytes (the import line gone and the compressor's block choices; `bench/corpus`
++72 at raw −4, `run/WideTypeArityEq` +71 at raw −15, `run/LetHelperOverTheCap` +47 at raw −15),
+accepted under R47-3's reading of 2026-10-28. Every `run/Markup*` program is smaller:
+`MarkupBlocks` −93, `MarkupClassStyle` −75, `MarkupHoles` −32, `MarkupSvg` −32, `MarkupText` −28,
+`MarkupComponents` −22, `MarkupNestedRows` −21, `MarkupShow` −13, `MarkupFor` −9, `MarkupAttributes`
+−5 (raw +7). The 19 page lines and the `browser/` corpus's 441 pages are byte for byte. The `g`
+pattern as `new RegExp(…, "g")` and the `case` replacer cost about 37 raw bytes against the file's
+literal and table, and the import line's absence and the renamer's short names pay for them; no
+question for the owner. The first cut concatenated the rows with `++`, which is `Basics.append`
+for strings and lists both, and `MarkupFor` was +23, `MarkupHoles` +12, `MarkupNestedRows` +18,
+`MarkupComponents` +17 and `MarkupSvg` +5; interpolation, which is `+`, put them below the file.
+258 `emit/` goldens moved.
+
+**As built.** A `Js.object` key must be an identifier, so the replacer is a `case` over the four
+characters. `"markup".module` is read from the package that declares the chain's first `lowering`
+(`boundary.md` §9.2, amended): a platform over `node` with a markup file of its own saw `node`'s
+`Rt` and failed as a split pair. `node` owns the module name `Rt` now, and the three
+`build/bad/MarkupRuntime*` platforms declare their file as their program runtime too. The
+playground frame defines `globalThis.process`, which the runtime reads where the file imported
+`node:process` (`playground.md` §5).
