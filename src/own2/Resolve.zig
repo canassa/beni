@@ -39,6 +39,8 @@ const TagTree = @import("TagTree.zig");
 const Later = @import("Later.zig");
 const Descent = @import("Descent.zig");
 const Kept = @import("Kept.zig");
+const Parts = @import("Parts.zig");
+const Twins = @import("Twins.zig");
 
 pub const Error = Ids.ChargeError;
 const Cond = Contract.Cond;
@@ -568,7 +570,8 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
     // supplied parts, the passed-on labels' parts (§2.11.3).
     const Job = struct { kind: enum { demand, cb, pass }, point: u32, i: u32, k: u32 = 0, t: u32 = none, at: u32 = 0, aj: u32 = 0, skip: usize = std.math.maxInt(usize), pending: u32 = none };
     var jobs: std.ArrayList(Job) = .empty;
-    for (e.demands.items, 0..) |d, i| try jobs.append(arena, .{ .kind = .demand, .point = d.point, .i = @intCast(i) });
+    const twins = try Twins.of(f.gpa, f.account, arena, e.w, e.demands.items);
+    for (e.demands.items, twins, 0..) |d, tw, i| if (tw == none) try jobs.append(arena, .{ .kind = .demand, .point = d.point, .i = @intCast(i) });
     for (f.cbs.items, 0..) |cb, ci| {
         if (cb.inst == none) continue;
         for (cb.args, 0..) |a, k| {
@@ -594,7 +597,7 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
                 const v = try e.ev.valueAt(call.args[a.j], f.slots.relWords(a.slot));
                 var ls: std.ArrayList(Relation.Part) = .empty;
                 defer ls.deinit(f.gpa);
-                try e.ev.partsOf(v, es.wordsOf(rs), &ls);
+                try Parts.of(&e.ev, v, es.wordsOf(rs), &ls);
                 const pending = if (p[1] < e.w.sites.items.len) e.w.sites.items[p[1]].pending else none;
                 for (ls.items) |part| try jobs.append(arena, .{ .kind = .pass, .point = call.point, .i = @intCast(pi), .k = su.k, .t = part.leaf, .at = part.at, .aj = a.j, .skip = lab.j, .pending = pending });
             };
@@ -662,6 +665,8 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
             .accepted => try pconds[j.i].addBoth(arena, f.account, l.demand.relies, l.extra),
         },
     };
+    // A twin takes its first's verdict (§2.8, *Twin demands*).
+    Twins.copy(lines, twins, e.demands.items);
     const cs = try arena.alloc(Cond, conds.len);
     for (conds, cs) |*x, *c| c.* = try x.cond(e.ev.arena, f.account);
     const ps = try arena.alloc(Cond, pconds.len);

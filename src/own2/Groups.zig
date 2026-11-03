@@ -580,7 +580,7 @@ pub const Adapter = struct {
         const node = memo.get(p).?;
         if (node == none) return null;
         const q = try places.of(a.gpa, a.account, a.source(), node);
-        if (q != p and !try Place.Table.equals(places, p, places, q, a.gpa, .growth(a.account), &own.proven)) return null;
+        if (q != p and !try @import("PlaceIdentity.zig").equals(places, p, places, q, a.gpa, .growth(a.account), &own.proven)) return null;
         return q;
     }
 
@@ -1142,7 +1142,7 @@ pub const Module = struct {
         return c.contract;
     }
 
-    fn codeSig(ctx: *anyopaque, code: u32) Error!Walk.Sig {
+    fn codeSig(ctx: *anyopaque, code: u32) Error!Relation.Sig {
         const mod = self(ctx);
         const c = mod.codes.items[code];
         return .{ .params = mod.code_places.items[c.params.start..][0..c.params.len], .own = c.own, .result = c.result };
@@ -1470,7 +1470,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
         charging(mod, &r.account);
         mod.cur_locals = in.bir.decls[r.decl].locals_start;
         const w = try arena.create(Walk.Walk);
-        try Walk.walk(gpa, arena, &r.account, &mod.places, &mod.slots, &regions.items[owner.items[x]], &mod.prepass, in.bir, in.module, mod.context(), walkCode(mod, id), &atoms[owner.items[x]], w);
+        try Walk.walk(gpa, arena, &r.account, &mod.places, &mod.slots, &regions.items[owner.items[x]], &mod.prepass, in.bir, in.module, mod.context(), &mod.contracts, walkCode(mod, id), &atoms[owner.items[x]], w);
         mod.codes.items[id].walk = w;
         r.walks += 1;
     }

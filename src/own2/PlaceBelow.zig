@@ -44,5 +44,5 @@ pub fn familyBelow(gpa: Allocator, account: *Ids.Account, places: *const Place.T
     _ = gpa;
     if (places.isSummary(p)) return true;
     try account.reserve(.inspection, 1);
-    return places.places.col.family[places.pathPlace(p).int()];
+    return places.places.col.below[places.pathPlace(p).int()].family;
 }

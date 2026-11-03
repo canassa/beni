@@ -200,18 +200,21 @@ pub const Within = struct {
     fn lookup(x: *Within, f: *Frame, ents: []const Ent, earlier: []const u32, i: u32, routed: bool) Error!bool {
         const l = f.leafAt(ents[i].leaf);
         const sym = Subtree.symbolic(f.slots, l.slots);
-        for (if (sym) earlier else x.sym.items) |j| if (try pairMay(f, ents[i], ents[j], routed)) return true;
+        // An earlier member several of its slots meet is asked once.
+        var tested: Ids.FixedDict(1) = .{};
+        defer tested.deinit(f.gpa);
+        for (if (sym) earlier else x.sym.items) |j| if (try pairOnce(f, &tested, ents[i], ents[j], j, routed)) return true;
         const pos = f.pos.items;
         for (Subtree.explicit(f.slots, l.slots)) |s| {
             try f.charge(.inspection, 1);
             if (x.at.get(.{ l.pos, 5, s })) |here| for (x.lists.items[here].items) |j| {
-                if (try pairMay(f, ents[i], ents[j], routed)) return true;
+                if (try pairOnce(f, &tested, ents[i], ents[j], j, routed)) return true;
             };
             var p = l.pos;
             while (p != none) : (p = pos[p].parent) {
                 try f.charge(.inspection, 1);
                 if (x.at.get(.{ p, 4, s })) |here| for (x.lists.items[here].items) |j| {
-                    if (try pairMay(f, ents[i], ents[j], routed)) return true;
+                    if (try pairOnce(f, &tested, ents[i], ents[j], j, routed)) return true;
                 };
                 if (pos[p].parent == none) continue;
                 const kinds: []const u32 = switch (pos[p].kind) {
@@ -223,13 +226,18 @@ pub const Within = struct {
                 for (kinds) |k| {
                     try f.charge(.inspection, 1);
                     const here = x.at.get(.{ pos[p].parent, k, s }) orelse continue;
-                    for (x.lists.items[here].items) |j| if (try pairMay(f, ents[i], ents[j], routed)) return true;
+                    for (x.lists.items[here].items) |j| if (try pairOnce(f, &tested, ents[i], ents[j], j, routed)) return true;
                 }
             }
         }
         return false;
     }
 };
+
+fn pairOnce(f: *Frame, tested: *Ids.FixedDict(1), a: Ent, b: Ent, j: u32, routed: bool) Error!bool {
+    if ((try tested.getOrPut(f.gpa, .{j})).found_existing) return false;
+    return pairMay(f, a, b, routed);
+}
 
 /// A group: a root's entries (`root`) or an atom's (`none`).
 pub const Group = struct {
@@ -250,6 +258,11 @@ pub const Rounds = struct {
     /// Per entry, the expanded entry it came from (`none`: given), its
     /// place in that expansion, and its depth: the inline order.
     par: std.ArrayList([3]u32) = .empty,
+    /// Per entry, an ancestor on its chain of expansions (itself for a
+    /// given entry): the skew-binary jump pointer, whose depth is a function
+    /// of the entry's depth alone, so `before` meets the common ancestor in
+    /// a logarithmic number of steps, not the chain's depth.
+    jump: std.ArrayList(u32) = .empty,
     groups: std.ArrayList(Group) = .empty,
     of_root: std.ArrayList(u32) = .empty,
     atoms: Ids.FixedDict(3) = .{},
@@ -261,20 +274,35 @@ pub const Rounds = struct {
     /// root (max-heaps, stale entries skipped when read).
     expandable: std.ArrayList(u32) = .empty,
     musts: std.ArrayList(u32) = .empty,
+    /// The leaves some entry has (`Chains.onChain` walks a chain only for one).
+    has_leaf: Ids.FixedDict(1) = .{},
+    /// `AtomSets.settled` was asked (once a check).
+    settle_asked: bool = false,
 
     pub fn deinit(r: *Rounds, g: Allocator) void {
         for (r.groups.items) |*gr| {
             gr.members.deinit(g);
             gr.within.deinit(g);
         }
-        inline for (.{ &r.ents, &r.alive, &r.par, &r.groups, &r.of_root, &r.expandable, &r.musts, &r.dirty }) |l| l.deinit(g);
+        inline for (.{ &r.ents, &r.alive, &r.par, &r.jump, &r.groups, &r.of_root, &r.expandable, &r.musts, &r.dirty }) |l| l.deinit(g);
         r.atoms.deinit(g);
+        r.has_leaf.deinit(g);
     }
 
     pub fn add(r: *Rounds, g: Allocator, en: Ent, par: [3]u32) Error!void {
         try r.ents.append(g, en);
         try r.alive.append(g, true);
+        const i: u32 = @intCast(r.par.items.len);
         try r.par.append(g, par);
+        const u = par[0];
+        const j = if (u == none) i else blk: {
+            const p = r.par.items;
+            const ju = r.jump.items[u];
+            const jj = r.jump.items[ju];
+            break :blk if (p[u][2] - p[ju][2] == p[ju][2] - p[jj][2]) jj else u;
+        };
+        try r.jump.append(g, j);
+        try r.has_leaf.put(g, .{en.leaf}, 0);
     }
 
     /// Put entry `i` in its group (a root's, an atom's, or none), which is
@@ -363,20 +391,5 @@ pub const Rounds = struct {
         gr.occ_done = 0;
         gr.must = 0;
         r.nonempty -= 1;
-    }
-
-    /// Whether entry `a` comes before `b` in the inline order: by the
-    /// expansions they came from, a record a step.
-    pub fn before(r: *const Rounds, f: *Frame, a: u32, b: u32) Error!bool {
-        var x = a;
-        var y = b;
-        const p = r.par.items;
-        while (p[x][2] > p[y][2]) : (x = p[x][0]) try f.charge(.cond, 1);
-        while (p[y][2] > p[x][2]) : (y = p[y][0]) try f.charge(.cond, 1);
-        while (p[x][0] != p[y][0]) : ({
-            x = p[x][0];
-            y = p[y][0];
-        }) try f.charge(.cond, 1);
-        return p[x][1] < p[y][1];
     }
 };
