@@ -162,38 +162,46 @@ theorem resultCase_arm_preserved {declarations : List Decl} {vs : ValueSemantics
         subst vsEq
         subst valueEq
         have allocated := shaped2
-        have describedJoin : Describes gamma2 hs2.heap result actual := by
+        have describedJoin : Describes gamma2 hs2.heap (entryAbstract declarations type result) actual := by
           rcases shapeOther with rfl | shapeOther'
           · rcases joined with rfl | rfl
             · rw [join_bottom_right]; exact described2
             · rw [join_bottom_left]; exact described2
           · rcases joined with rfl | rfl
-            · exact describes_join allocated shapeArm shapeOther' (Or.inl described2)
-            · exact describes_join allocated shapeOther' shapeArm (Or.inr described2)
-        have tagsJoin : ResultTags type result actual := by
+            · rw [entryAbstract_join shapeArm shapeOther']
+              exact describes_join allocated (flatAbstract_entry shapeArm) (flatAbstract_entry shapeOther') (Or.inl described2)
+            · rw [entryAbstract_join shapeOther' shapeArm]
+              exact describes_join allocated (flatAbstract_entry shapeOther') (flatAbstract_entry shapeArm) (Or.inr described2)
+        have tagsJoin : ResultTags (entryType type) (entryAbstract declarations type result) actual := by
           rcases shapeOther with rfl | shapeOther'
           · rcases joined with rfl | rfl
             · rw [join_bottom_right]; exact tags2
             · rw [join_bottom_left]; exact tags2
           · rcases joined with rfl | rfl
-            · exact resultTags_join tags2 shapeArm shapeOther'
-            · exact resultTags_join_right tags2 shapeOther' shapeArm
-        have deepJoin : TagsDeep hs2.heap type result actual := by
+            · rw [entryAbstract_join shapeArm shapeOther']
+              exact resultTags_join tags2 (flatAbstract_entry shapeArm) (flatAbstract_entry shapeOther')
+            · rw [entryAbstract_join shapeOther' shapeArm]
+              exact resultTags_join_right tags2 (flatAbstract_entry shapeOther') (flatAbstract_entry shapeArm)
+        have deepJoin : TagsDeep hs2.heap (entryType type) (entryAbstract declarations type result) actual := by
           rcases shapeOther with rfl | shapeOther'
           · rcases joined with rfl | rfl
             · rw [join_bottom_right]; exact deep2
             · rw [join_bottom_left]; exact deep2
           · rcases joined with rfl | rfl
-            · exact tagsDeep_join deep2 shapeArm shapeOther'
-            · exact tagsDeep_join_right deep2 shapeOther' shapeArm
-        have chainsJoin : ChainTags type result value := by
+            · rw [entryAbstract_join shapeArm shapeOther']
+              exact tagsDeep_join deep2 (flatAbstract_entry shapeArm) (flatAbstract_entry shapeOther')
+            · rw [entryAbstract_join shapeOther' shapeArm]
+              exact tagsDeep_join_right deep2 (flatAbstract_entry shapeOther') (flatAbstract_entry shapeArm)
+        have chainsJoin : ChainTags (entryType type) (entryAbstract declarations type result) value := by
           rcases shapeOther with rfl | shapeOther'
           · rcases joined with rfl | rfl
             · rw [join_bottom_right]; exact chains2
             · rw [join_bottom_left]; exact chains2
           · rcases joined with rfl | rfl
-            · exact chainTags_join chains2 shapeArm shapeOther'
-            · exact chainTags_join_right chains2 shapeOther' shapeArm
+            · rw [entryAbstract_join shapeArm shapeOther']
+              exact chainTags_join chains2 (flatAbstract_entry shapeArm) (flatAbstract_entry shapeOther')
+            · rw [entryAbstract_join shapeOther' shapeArm]
+              exact chainTags_join_right chains2 (flatAbstract_entry shapeOther') (flatAbstract_entry shapeArm)
         refine ⟨actual, heapObserved hs2 s2.kept.toList, gamma2, ?_, inv3, ?_, ?_, ?_, observed2, ?_, ?_,
           tagsJoin, chainsJoin, by simpa only [heapObserved_heap] using deepJoin⟩
         · rw [heap_resultCase_eval_equation hs (heapEnv env) heapInput]
@@ -294,10 +302,21 @@ theorem resultCase_preserved {declarations : List Decl} {input : Atom} {err ok :
     fun use member => usesLive use (union_left _ _ use member)
   -- The input.
   obtain ⟨o, w, abstract, valueInput, heapInput, abstractRun, paired, described, observed, valueTyped,
-    flatInput, shape, allocated, tags, chains, deepTags⟩ := flat_atom_values inv inputTyped covered
+    flatInput, shape, allocated, tags, chains, deepTags⟩ := flat_atom_entry inv inputTyped covered
   cases shape with
-  | bottom _ => exact absurd rfl (resultTags_ne_bottom tags)
+  | bottom _ =>
+    rw [entryAbstract_bottom] at tags
+    exact absurd rfl (resultTags_ne_bottom tags)
   | result _ _ ae aa hE hS =>
+    change Describes gamma hs.heap
+      (.record [.scalar, entryAbstract declarations e ae, entryAbstract declarations a aa]) w at described
+    change AllocatedFlatValue hs.heap w (.result (entryType e) (entryType a)) at allocated
+    change ResultTags (.result (entryType e) (entryType a))
+      (.record [.scalar, entryAbstract declarations e ae, entryAbstract declarations a aa]) w at tags
+    change ChainTags (.result (entryType e) (entryType a))
+      (.record [.scalar, entryAbstract declarations e ae, entryAbstract declarations a aa]) o at chains
+    change TagsDeep hs.heap (.result (entryType e) (entryType a))
+      (.record [.scalar, entryAbstract declarations e ae, entryAbstract declarations a aa]) w at deepTags
     cases flatInput with
     | result _ _ flatE flatA =>
       obtain ⟨childFuel, left, middle, right, last, _, _, leftRun, rightRun, resultEq, nextEq⟩ :=
@@ -402,15 +421,16 @@ theorem resultCase_preserved {declarations : List Decl} {input : Atom} {err ok :
           subst o0Eq
           have o1Eq := corresponds_int_inv paired1
           subst o1Eq
-          have chainsS : ChainTags a aa o2 := by
+          have chainsS : ChainTags (entryType a) (entryAbstract declarations a aa) o2 := by
             cases chains with
             | ok _ _ _ _ _ _ chainsS => exact chainsS
           have observedS : obsTyped declarations o2 a = true := by simpa [obsTyped] using observed
-          have describedS : Describes gamma hs.heap aa wS := describes_field (i := 2) described rfl rfl
+          have describedS : Describes gamma hs.heap (entryAbstract declarations a aa) wS :=
+            describes_field (i := 2) described rfl rfl
           have bottomS : (aa == .bottom) = false := by
             cases h : (aa == .bottom)
             · rfl
-            · exact absurd (eq_bottom_of_beq h) neS
+            · exact absurd (by rw [eq_bottom_of_beq h, entryAbstract_bottom]) neS
           rcases rightRun with ⟨bottom, _, _⟩ | ⟨_, rightRun⟩
           · rw [bottomS] at bottom; cases bottom
           obtain ⟨flatB, rightShape⟩ := successStatic bottomS rightRun
@@ -449,15 +469,16 @@ theorem resultCase_preserved {declarations : List Decl} {input : Atom} {err ok :
           subst o0Eq
           have o2Eq := corresponds_int_inv paired2
           subst o2Eq
-          have chainsE : ChainTags e ae o1 := by
+          have chainsE : ChainTags (entryType e) (entryAbstract declarations e ae) o1 := by
             cases chains with
             | err _ _ _ _ _ _ chainsE => exact chainsE
           have observedE : obsTyped declarations o1 e = true := by simpa [obsTyped] using observed
-          have describedE : Describes gamma hs.heap ae wE := describes_field (i := 1) described rfl rfl
+          have describedE : Describes gamma hs.heap (entryAbstract declarations e ae) wE :=
+            describes_field (i := 1) described rfl rfl
           have bottomE : (ae == .bottom) = false := by
             cases h : (ae == .bottom)
             · rfl
-            · exact absurd (eq_bottom_of_beq h) neE
+            · exact absurd (by rw [eq_bottom_of_beq h, entryAbstract_bottom]) neE
           rcases leftRun with ⟨bottom, _, _⟩ | ⟨_, leftRun⟩
           · rw [bottomE] at bottom; cases bottom
           obtain ⟨flatType, leftShape⟩ := errorStatic bottomE leftRun

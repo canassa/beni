@@ -24,6 +24,9 @@ for any canonical input list, and the argument only matches the signature of
 
 namespace Ownership.CallDerivation
 
+open Ownership.FlatFragment.State (entryAbstract_bottom entryAbstract_scalar entryAbstract_symbolic
+  entryAbstract_function entryAbstract_list entryAbstract_record entryFields_getElem?)
+
 open Ownership.FlatFragment.Fields
 
 open InPlaceSemantics HeapProof Soundness Ownership.FlatFragment.Support
@@ -353,46 +356,6 @@ a summary reads a canonical path on the heap through `entryPath`. At a
 first-order abstract the two are one mapping: a name of the typed abstract at
 the concrete path of `q` is a name of the abstract at `q`. -/
 
-theorem entryAbstract_bottom (ds : List Decl) (t : Ty) : entryAbstract ds t .bottom = .bottom := by
-  cases t <;> rfl
-
-theorem entryAbstract_scalar (ds : List Decl) (t : Ty) : entryAbstract ds t .scalar = .scalar := by
-  cases t <;> rfl
-
-theorem entryAbstract_symbolic (ds : List Decl) (t : Ty) (slot : Nat) (ty : Ty) (cs es : List Origin) :
-    entryAbstract ds t (.symbolic slot ty cs es) = .symbolic slot ty cs es := by
-  cases t <;> rfl
-
-theorem entryAbstract_function (ds : List Decl) (t : Ty) (cs : List Origin)
-    (alts : List (Nat × List Abstract)) :
-    entryAbstract ds t (.function cs alts) = .function cs (entryAlternatives ds alts) := by
-  cases t <;> rfl
-
-theorem entryAbstract_list (ds : List Decl) (t : Ty) (cs : List Origin) (x : Abstract)
-    (ex : Certificate) : ∃ y, entryAbstract ds t (.list cs x ex) = .list cs y ex := by
-  cases t <;> exact ⟨_, rfl⟩
-
-theorem entryAbstract_record (ds : List Decl) (t : Ty) (xs : List Abstract) :
-    ∃ ys, entryAbstract ds t (.record xs) = .record ys := by
-  cases t <;> exact ⟨_, rfl⟩
-
-/-- Field `i` of fields read through their types is field `i` read through
-    type `i` (`Int` past the types). -/
-theorem entryFields_getElem? (ds : List Decl) :
-    ∀ (ts : List Ty) (xs : List Abstract) (i : Nat),
-      (entryFields ds ts xs)[i]? = xs[i]?.map (entryAbstract ds (ts[i]?.getD .int))
-  | ts, [], i => by cases ts <;> rfl
-  | [], x :: xs, 0 => rfl
-  | [], x :: xs, i + 1 => by
-    show (entryFields ds [] xs)[i]? = _
-    rw [entryFields_getElem? ds [] xs i]
-    rfl
-  | t :: ts, x :: xs, 0 => rfl
-  | t :: ts, x :: xs, i + 1 => by
-    show (entryFields ds ts xs)[i]? = _
-    rw [entryFields_getElem? ds ts xs i]
-    rfl
-
 theorem resultSlot_eq (error success : Ty) (i : Nat) :
     resultSlot error success i = ([.int, error, success] : List Ty)[i]?.getD .int := by
   match i with
@@ -417,31 +380,6 @@ theorem entryPath_eq_nil {t : Ty} {q : Path} (empty : entryPath t q = []) : q = 
     obtain ⟨rest', concrete⟩ := entryPath_cons t step rest
     rw [concrete] at empty
     cases empty
-
-/-- The typed abstract has the abstract's root cells and no other. -/
-theorem root_paths_entryAbstract {ds : List Decl} {t : Ty} {a : Abstract} {cs : List Origin}
-    (member : ([], cs) ∈ (entryAbstract ds t a).paths) : ([], cs) ∈ a.paths := by
-  cases a with
-  | bottom => rwa [entryAbstract_bottom] at member
-  | scalar => rwa [entryAbstract_scalar] at member
-  | symbolic slot ty roots es => rwa [entryAbstract_symbolic] at member
-  | list roots x ex =>
-    obtain ⟨y, typed⟩ := entryAbstract_list ds t roots x ex
-    rw [typed] at member
-    simp only [Abstract.paths, List.mem_cons, List.mem_map] at member ⊢
-    rcases member with root | ⟨_, _, element⟩
-    · exact Or.inl root
-    · simp at element
-  | record xs =>
-    obtain ⟨ys, typed⟩ := entryAbstract_record ds t xs
-    rw [typed] at member
-    simp [Abstract.paths] at member
-  | function roots alts =>
-    rw [entryAbstract_function] at member
-    simp only [Abstract.paths, List.mem_cons] at member ⊢
-    rcases member with root | captured
-    · exact Or.inl root
-    · simp at captured
 
 /-- The bridge (#1796): at a first-order abstract, a name of the typed
     abstract at the concrete path `entryPath t q` is a name of the abstract at

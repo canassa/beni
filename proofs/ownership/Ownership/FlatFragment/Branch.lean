@@ -117,22 +117,32 @@ theorem branch_arm_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
         subst vsEq
         subst valueEq
         have allocated := shaped2
-        have describedJoin : Describes gamma2 hs2.heap result actual := by
+        have entryArm := flatAbstract_entry (ds := declarations) shapeArm
+        have entryOther := flatAbstract_entry (ds := declarations) shapeOther
+        have describedJoin : Describes gamma2 hs2.heap (entryAbstract declarations type result) actual := by
           rcases joined with rfl | rfl
-          · exact describes_join allocated shapeArm shapeOther (Or.inl described2)
-          · exact describes_join allocated shapeOther shapeArm (Or.inr described2)
-        have tagsJoin : ResultTags type result actual := by
+          · rw [entryAbstract_join shapeArm shapeOther]
+            exact describes_join allocated entryArm entryOther (Or.inl described2)
+          · rw [entryAbstract_join shapeOther shapeArm]
+            exact describes_join allocated entryOther entryArm (Or.inr described2)
+        have tagsJoin : ResultTags (entryType type) (entryAbstract declarations type result) actual := by
           rcases joined with rfl | rfl
-          · exact resultTags_join tags2 shapeArm shapeOther
-          · exact resultTags_join_right tags2 shapeOther shapeArm
-        have deepJoin : TagsDeep hs2.heap type result actual := by
+          · rw [entryAbstract_join shapeArm shapeOther]
+            exact resultTags_join tags2 entryArm entryOther
+          · rw [entryAbstract_join shapeOther shapeArm]
+            exact resultTags_join_right tags2 entryOther entryArm
+        have deepJoin : TagsDeep hs2.heap (entryType type) (entryAbstract declarations type result) actual := by
           rcases joined with rfl | rfl
-          · exact tagsDeep_join deep2 shapeArm shapeOther
-          · exact tagsDeep_join_right deep2 shapeOther shapeArm
-        have chainsJoin : ChainTags type result value := by
+          · rw [entryAbstract_join shapeArm shapeOther]
+            exact tagsDeep_join deep2 entryArm entryOther
+          · rw [entryAbstract_join shapeOther shapeArm]
+            exact tagsDeep_join_right deep2 entryOther entryArm
+        have chainsJoin : ChainTags (entryType type) (entryAbstract declarations type result) value := by
           rcases joined with rfl | rfl
-          · exact chainTags_join chains2 shapeArm shapeOther
-          · exact chainTags_join_right chains2 shapeOther shapeArm
+          · rw [entryAbstract_join shapeArm shapeOther]
+            exact chainTags_join chains2 entryArm entryOther
+          · rw [entryAbstract_join shapeOther shapeArm]
+            exact chainTags_join_right chains2 entryOther entryArm
         refine ⟨actual, heapObserved hs2 s2.kept.toList, gamma2, ?_, inv3, ?_, ?_, ?_, observed2, ?_, ?_,
           tagsJoin, chainsJoin, by simpa only [heapObserved_heap] using deepJoin⟩
         · rw [heap_branch_eval_equation hs (heapEnv env) heapCond, taken]

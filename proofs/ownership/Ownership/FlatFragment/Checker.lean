@@ -56,32 +56,6 @@ theorem runtime_binding_of_abstract
   obtain ⟨pair, binding⟩ := lookup_exists_of_same_keys env aenv inv.abstractKeys found
   exact ⟨pair.1, pair.2, binding⟩
 
-theorem live_variable_result
-    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (use : (key, []) ∈ live)
-    (binding : env.lookup key = some (observation, actual))
-    (abstractBinding : aenv.lookup key = some abstract) :
-    Corresponds hs.heap observation actual ∧ Describes gamma hs.heap abstract actual ∧
-      ∃ type, tenv.lookup key = some type ∧ FlatType type ∧ FlatAbstract type abstract ∧
-        obsTyped declarations observation type = true ∧
-        Ownership.FlatFragment.HeapPreservation.AllocatedFlatValue hs.heap actual type := by
-  obtain ⟨observed, value, observationPath, valuePath, paired⟩ :=
-    inv.bindings key [] use observation actual binding
-  simp only [projectObs, projectVal, Option.some.injEq] at observationPath valuePath
-  cases observationPath
-  cases valuePath
-  have description := inv.described key [] use observation actual abstract actual binding abstractBinding rfl
-  obtain ⟨type, declared⟩ := lookup_exists_of_same_keys tenv env inv.typeKeys.symm binding
-  obtain ⟨t, observation', actual', at_nil, obsPath, valPath, observationTyped, allocated⟩ :=
-    inv.bindingsTyped key [] use observation actual type binding declared
-  simp only [Ownership.FlatFragment.Fields.tyAt, projectObs, projectVal, Option.some.injEq] at at_nil obsPath valPath
-  subst at_nil
-  subst obsPath
-  subst valPath
-  refine ⟨paired, ?_, type, declared, inv.types key type declared,
-    inv.abstractShapes key type abstract declared abstractBinding, observationTyped, allocated⟩
-  simpa only [Abstract.atPath] using description
-
 end Ownership.FlatFragment.VariableFacts
 
 /-! extraction lemmas for the flat ANF induction.
