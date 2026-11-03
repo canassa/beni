@@ -1,4 +1,5 @@
 import { Rt$template, Rt$insertText, Rt$attr } from "./_platform/Rt.mjs";
+import { Js$Any$pack } from "./_core/Js/Any.mjs";
 const DomTemplates$t3 = Rt$template("<div class=\"a b\"id=x><span>hi</span><br><p>there <b>you &amp; me");
 const DomTemplates$k3 = { m: ($v$1, $cx$2) => {
   const $r$3 = DomTemplates$t3();
@@ -7,7 +8,7 @@ const DomTemplates$k3 = { m: ($v$1, $cx$2) => {
 } };
 const DomTemplates$b3 = { t: DomTemplates$k3, v: null };
 const DomTemplates$p19 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   const $x$4 = $input$3.name;
   if ($x$4 !== $i$1.g0_0) {
     $i$1.g0_0 = $x$4;
@@ -38,7 +39,7 @@ const DomTemplates$k19 = { m: ($v$7, $cx$8) => {
   return $i$16;
 }, p: DomTemplates$p19 };
 const DomTemplates$p32 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   const $x$4 = $input$3.id;
   if ($x$4 !== $i$1.g0_0) {
     $i$1.g0_0 = $x$4;
@@ -63,7 +64,7 @@ const DomTemplates$k32 = { m: ($v$6, $cx$7) => {
   return $i$14;
 }, p: DomTemplates$p32 };
 const DomTemplates$p51 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   const $x$4 = $input$3.id;
   if ($x$4 !== $i$1.g0_0) {
     $i$1.g0_0 = $x$4;
@@ -100,9 +101,12 @@ const DomTemplates$k55 = { m: ($v$1, $cx$2) => {
 } };
 const DomTemplates$b55 = { t: DomTemplates$k55, v: null };
 const DomTemplates$static = DomTemplates$b3;
-const DomTemplates$text = (r$1) => ({ t: DomTemplates$k19, v: [r$1] });
-const DomTemplates$only = (row$1) => ({ t: DomTemplates$k32, v: [row$1] });
-const DomTemplates$attributes = (r$1) => ({ t: DomTemplates$k51, v: [r$1] });
+const DomTemplates$text$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "{count=core:Basics.Int,more=core:Basics.Float,name=core:String.String}" + ")", a: undefined };
+const DomTemplates$text = (r$1) => ({ t: DomTemplates$k19, v: { ...DomTemplates$text$$packet$1, a: r$1 } });
+const DomTemplates$only$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "{id=core:Basics.Int,label=core:String.String}" + ")", a: undefined };
+const DomTemplates$only = (row$1) => ({ t: DomTemplates$k32, v: { ...DomTemplates$only$$packet$1, a: row$1 } });
+const DomTemplates$attributes$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "{id=core:String.String,off=core:Basics.Bool,tab=core:Basics.Int,title=core:String.String}" + ")", a: undefined };
+const DomTemplates$attributes = (r$1) => ({ t: DomTemplates$k51, v: { ...DomTemplates$attributes$$packet$1, a: r$1 } });
 const DomTemplates$nothing = DomTemplates$b55;
 export { DomTemplates$static, DomTemplates$text, DomTemplates$only, DomTemplates$attributes, DomTemplates$nothing };
 //# sourceMappingURL=DomTemplates.mjs.map

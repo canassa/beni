@@ -1,7 +1,8 @@
 import { Rt$template, Rt$delegate, Rt$forKeyed, Rt$restate, Rt$slot } from "./_platform/Rt.mjs";
+import { Js$Any$pack } from "./_core/Js/Any.mjs";
 const DomRowItemOnly$t51 = Rt$template("<tr><td> </td><td><a> </a></td><td><a>x");
 const DomRowItemOnly$p53 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   {
     const $t$4 = $input$3.rows;
     const $t$6 = ($p$5) => $p$5.id;
@@ -84,6 +85,7 @@ const DomRowItemOnly$Msg$$eq = ($x, $y) => {
       return $x.a === $y.a;
   }
 };
-const DomRowItemOnly$table = (model$1) => ({ t: DomRowItemOnly$k53, v: [model$1] });
+const DomRowItemOnly$table$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "{rows=core:List.List({id=core:Basics.Int,label=core:String.String}),selected=core:Maybe.Maybe(core:Basics.Int)}" + ")", a: undefined };
+const DomRowItemOnly$table = (model$1) => ({ t: DomRowItemOnly$k53, v: { ...DomRowItemOnly$table$$packet$1, a: model$1 } });
 export { DomRowItemOnly$Msg$$compare, DomRowItemOnly$Msg$$eq, DomRowItemOnly$table };
 //# sourceMappingURL=DomRowItemOnly.mjs.map

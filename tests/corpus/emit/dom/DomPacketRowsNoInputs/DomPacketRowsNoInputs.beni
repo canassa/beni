@@ -1,0 +1,8 @@
+-- #1785: there are no source row captures. The checked key is a field
+-- of the existing descriptor; the runtime input argument remains null.
+import Card
+import Html exposing (Html)
+
+
+pub view : Html msg
+view = <For each={[ "one" ]} keyed={False}>{λ_ → <Card><b>static</b></Card>}</For>

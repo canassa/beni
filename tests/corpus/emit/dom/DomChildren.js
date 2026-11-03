@@ -1,4 +1,5 @@
 import { Rt$template, Rt$childHtml, Rt$restate, Rt$slot, Rt$childMaybe, Rt$childList, Rt$text, Rt$templateOf, Rt$insertText, Rt$map } from "./_platform/Rt.mjs";
+import { Js$Any$pack } from "./_core/Js/Any.mjs";
 import { String$fromInt } from "./_core/String.mjs";
 const DomChildren$t9 = Rt$template("<b>on");
 const DomChildren$k9 = { m: ($v$5, $cx$6) => {
@@ -15,7 +16,7 @@ const DomChildren$k13 = { m: ($v$10, $cx$11) => {
 } };
 const DomChildren$b13 = { t: DomChildren$k13, v: null };
 const DomChildren$p16 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   const $x$4 = $input$3;
   if ($x$4 !== $i$1.g0_0) {
     $i$1.g0_0 = $x$4;
@@ -35,7 +36,7 @@ const DomChildren$k16 = { m: ($v$16, $cx$17) => {
   return $i$20;
 }, p: DomChildren$p16, l: true };
 const DomChildren$p42 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   {
     const $t$4 = $input$3.one;
     Rt$childHtml($i$1.c0, $t$4);
@@ -63,7 +64,7 @@ const DomChildren$k42 = { m: ($v$7, $cx$8) => {
   return $i$15;
 }, p: DomChildren$p42, l: true };
 const DomChildren$p53 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   const $x$4 = $input$3;
   if ($x$4 !== $i$1.g0_0) {
     $i$1.g0_0 = $x$4;
@@ -88,7 +89,7 @@ const DomChildren$k53 = { m: ($v$6, $cx$7) => {
   return $i$14;
 }, p: DomChildren$p53, l: true };
 const DomChildren$p66 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   {
     const $t$4 = Rt$map($input$3, String$fromInt);
     Rt$childHtml($i$1.c0, $t$4);
@@ -103,9 +104,12 @@ const DomChildren$k66 = { m: ($v$5, $cx$6) => {
   DomChildren$p66($i$9, $v$5);
   return $i$9;
 }, p: DomChildren$p66, l: true };
-const DomChildren$branch = (on$1) => ({ t: DomChildren$k16, v: [on$1] });
-const DomChildren$holes = (r$1) => ({ t: DomChildren$k42, v: [r$1] });
-const DomChildren$fragment = (name$1) => ({ t: DomChildren$k53, v: [name$1] });
-const DomChildren$mapped = (inner$1) => ({ t: DomChildren$k66, v: [inner$1] });
+const DomChildren$branch$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "core:Basics.Bool" + ")", a: undefined };
+const DomChildren$branch = ($m$0, on$1) => ({ t: DomChildren$k16, v: { ...DomChildren$branch$$packet$1, a: on$1 } });
+const DomChildren$holes = ($m$0, r$1) => ({ t: DomChildren$k42, v: { a: r$1, [Js$Any$pack.$packet.key]: "(" + ("{many=core:List.List(platform:Html.Html(" + $m$0 + ")),maybe=core:Maybe.Maybe(platform:Html.Html(" + $m$0 + ")),one=platform:Html.Html(" + $m$0 + ")}") + ")" } });
+const DomChildren$fragment$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "core:String.String" + ")", a: undefined };
+const DomChildren$fragment = ($m$0, name$1) => ({ t: DomChildren$k53, v: { ...DomChildren$fragment$$packet$1, a: name$1 } });
+const DomChildren$mapped$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "platform:Html.Html(core:Basics.Int)" + ")", a: undefined };
+const DomChildren$mapped = (inner$1) => ({ t: DomChildren$k66, v: { ...DomChildren$mapped$$packet$1, a: inner$1 } });
 export { DomChildren$branch, DomChildren$holes, DomChildren$fragment, DomChildren$mapped };
 //# sourceMappingURL=DomChildren.mjs.map

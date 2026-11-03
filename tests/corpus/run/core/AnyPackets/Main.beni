@@ -3,6 +3,7 @@ import Js
 import Js.Any as Any
 import Js.Data as Data
 import Node
+import Record
 
 
 record : Any.Any → { answer : Int, label : String }
@@ -74,11 +75,27 @@ projectTail values =
             "missing rest view"
 
 
+projection : { answer : Int, label : String } → String
+projection value =
+    case Data.checked value of
+        Just host →
+            symbols = Js.call (Js.global "Object") "getOwnPropertySymbols" [ host ]
+            count : Int
+            count = Js.to (Js.get symbols "length")
+            Js.to (Js.call (Js.global "JSON") "stringify" [ host ])
+                ++ ":symbols="
+                ++ String.fromInt count
+        Nothing →
+            "projection refused"
+
+
 main : Node.Program
 main =
     direct = Any.pack { answer = 42, label = "packet" }
     boxed = shared { answer = 42, label = "packet" }
     value = record direct
+    copied = Record.copy value
+    repacked = record (shared copied)
     changed = { value | answer = 43 }
     tuple = pair (Any.pack ( 42, "packet" ))
     Node.printLines
@@ -131,4 +148,14 @@ main =
                 "nested Any leaked as data"
         , projectTail [ 1, 2, 3 ]
         , spoofed direct
+        , if repacked == value && copied == value then
+            "copy/repack matched"
+          else
+            "copy/repack changed"
+        , if copied < changed && not (changed < copied) then
+            "copy ordered"
+          else
+            "copy ordering changed"
+        , Debug.toString copied
+        , projection copied
         ]

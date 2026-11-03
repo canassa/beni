@@ -6018,9 +6018,14 @@ These demands enter the same identity fixpoint as ordinary Any and Data calls.
 Local function boundaries retain their quantified roots even when no written
 source call needs evidence: the generated runtime call is the seed. Each dispatch
 site has independent optional `operand_identity` and `operand_data` roots;
-structural checked terms retain function parameters and results for type paths.
+when that site is a saturated call's function reference, its enclosing call
+still owns all ordinary hidden arguments. The reference's operand roots do
+not require another copy of the callee evidence; the call's count remains
+checked independently. The invariant records call references in a dense column
+only for modules with operand sites.
+Structural checked terms retain function parameters and results for type paths.
 They are separate from the site's callee evidence and do not change its arity.
-Dispatch sidecar version 19 records and validates both roots. A lowering that
+Dispatch sidecar version 20 records and validates both roots. A lowering that
 requests no operand evidence adds no demands or hidden parameters.
 
 Schema members publish their own checked type's solved effect classes,

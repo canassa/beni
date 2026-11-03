@@ -1,7 +1,8 @@
 import { Rt$template, Rt$insertText, Rt$childHtml, Rt$restate, Rt$slot, Rt$forKeyed, Rt$text } from "./_platform/Rt.mjs";
+import { Js$Any$pack } from "./_core/Js/Any.mjs";
 const DomHelpers$p10 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
-  const $input$4 = $v$2[1];
+  const $input$3 = $v$2.a;
+  const $input$4 = $v$2.b;
   const $x$5 = $input$3;
   if ($x$5 !== $i$1.g0_0) {
     $i$1.g0_0 = $x$5;
@@ -25,8 +26,8 @@ const DomHelpers$k10 = { m: ($v$7, $cx$8) => {
   return $i$14;
 }, p: DomHelpers$p10 };
 const DomHelpers$p27 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
-  const $input$4 = $v$2[1];
+  const $input$3 = $v$2.a;
+  const $input$4 = $v$2.b;
   if ($input$3 !== $i$1.g0_0 || $input$4 !== $i$1.g0_1) {
     $i$1.g0_0 = $input$3;
     $i$1.g0_1 = $input$4;
@@ -66,7 +67,7 @@ const DomHelpers$k27 = { m: ($v$5, $cx$6) => {
 }, p: DomHelpers$p27, l: true };
 const DomHelpers$t42 = Rt$template("<li>");
 const DomHelpers$p44 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   {
     const $made$4 = { o: true, h: [], m: ($item$5, $position$6, $cx$7) => {
       const $r$8 = DomHelpers$t42();
@@ -109,7 +110,7 @@ const DomHelpers$k69 = { m: ($v$2, $cx$3) => {
   }
 } };
 const DomHelpers$p85 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   const $x$4 = $input$3;
   if ($x$4 !== $i$1.g0_0) {
     $i$1.g0_0 = $x$4;
@@ -129,12 +130,12 @@ const DomHelpers$k85 = { m: ($v$5, $cx$6) => {
   return $i$12;
 }, p: DomHelpers$p85 };
 const DomHelpers$p96 = ($i$13, $v$14) => {
-  const $input$15 = $v$14[0];
-  const $input$16 = $v$14[1];
+  const $input$15 = $v$14.a;
+  const $input$16 = $v$14.b;
   const $x$17 = $input$15;
   if ($x$17 !== $i$13.g0_0) {
     $i$13.g0_0 = $x$17;
-    const $t$18 = DomHelpers$same(DomHelpers$eq$prim, $input$15, 1);
+    const $t$18 = DomHelpers$same(DomHelpers$eq$prim, "core:Basics.Int", $input$15, 1);
     Rt$childHtml($i$13.c0, $t$18);
   } else {
     Rt$restate($i$13.c0);
@@ -170,18 +171,22 @@ const DomHelpers$k96 = { m: ($v$21, $cx$22) => {
   return $i$30;
 }, p: DomHelpers$p96, l: true };
 const DomHelpers$eq$prim = ($x, $y) => $x === $y;
-const DomHelpers$label = (name$1, n$2) => ({ t: DomHelpers$k10, v: [name$1, n$2] });
-const DomHelpers$page = (name$1, n$2) => ({ t: DomHelpers$k27, v: [name$1, n$2] });
-const DomHelpers$rows = (names$1) => ({ t: DomHelpers$k44, v: [names$1] });
-const DomHelpers$same = ($m$0, x$1, y$2) => {
+const DomHelpers$label$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "core:String.String" + "," + "core:Basics.Int" + ")", a: undefined, b: undefined };
+const DomHelpers$label = (name$1, n$2) => ({ t: DomHelpers$k10, v: { ...DomHelpers$label$$packet$1, a: name$1, b: n$2 } });
+const DomHelpers$page$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "core:String.String" + "," + "core:Basics.Int" + ")", a: undefined, b: undefined };
+const DomHelpers$page = ($m$0, name$1, n$2) => ({ t: DomHelpers$k27, v: { ...DomHelpers$page$$packet$1, a: name$1, b: n$2 } });
+const DomHelpers$rows$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "core:List.List(core:String.String)" + ")", a: undefined };
+const DomHelpers$rows = ($m$0, names$1) => ({ t: DomHelpers$k44, v: { ...DomHelpers$rows$$packet$1, a: names$1 } });
+const DomHelpers$same = ($m$0, $m$1, x$1, y$2) => {
   const $t$1 = $m$0(x$1, y$2) ? "same" : "different";
   return { t: DomHelpers$k69, v: [$t$1] };
 };
-const DomHelpers$others = (n$1) => {
+const DomHelpers$others$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "core:Basics.Int" + ")", a: undefined };
+const DomHelpers$others = ($m$0, n$1) => {
   function twice$2(m$3) {
-    return { t: DomHelpers$k85, v: [m$3] };
+    return { t: DomHelpers$k85, v: { ...DomHelpers$others$$packet$1, a: m$3 } };
   }
-  return { t: DomHelpers$k96, v: [n$1, twice$2] };
+  return { t: DomHelpers$k96, v: { a: n$1, b: twice$2, [Js$Any$pack.$packet.key]: "(" + "core:Basics.Int" + "," + ("(core:Basics.Int->platform:Html.Html(" + $m$0 + "))") + ")" } };
 };
 export { DomHelpers$page, DomHelpers$rows, DomHelpers$others };
 //# sourceMappingURL=DomHelpers.mjs.map

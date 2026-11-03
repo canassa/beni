@@ -1,9 +1,10 @@
 import { Rt$template, Rt$delegate, Rt$forKeyed, Rt$restate, Rt$slot } from "./_platform/Rt.mjs";
 import { Html$targetValue } from "./_platform/_html/Html.mjs";
 import { String$fromInt, String$compare } from "./_core/String.mjs";
+import { Js$Any$pack } from "./_core/Js/Any.mjs";
 const DomRowMount$t57 = Rt$template("<li><a> </a><input>");
 const DomRowMount$p59 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   {
     const $t$4 = $input$3.rows;
     const $t$6 = ($p$5) => $p$5.id;
@@ -62,7 +63,7 @@ const DomRowMount$k59 = { m: ($v$24, $cx$25) => {
 }, p: DomRowMount$p59, l: true };
 const DomRowMount$t89 = Rt$template("<li>");
 const DomRowMount$p91 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   {
     const $t$4 = $input$3.rows;
     const $t$6 = ($p$5) => $p$5.id;
@@ -95,7 +96,7 @@ const DomRowMount$k91 = { m: ($v$17, $cx$18) => {
 }, p: DomRowMount$p91, l: true };
 const DomRowMount$t115 = Rt$template("<li> ");
 const DomRowMount$p117 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   {
     const $t$4 = $input$3.rows;
     const $t$6 = ($p$5) => $p$5.id;
@@ -160,8 +161,11 @@ const DomRowMount$Msg$$eq = ($x, $y) => {
       return $x.a === $y.a && $x.b === $y.b;
   }
 };
-const DomRowMount$after = (model$1) => ({ t: DomRowMount$k59, v: [model$1] });
-const DomRowMount$before = (model$1) => ({ t: DomRowMount$k91, v: [model$1] });
-const DomRowMount$toggled = (model$1) => ({ t: DomRowMount$k117, v: [model$1] });
+const DomRowMount$after$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "{picked=core:Basics.Int,rows=core:List.List({id=core:Basics.Int,label=core:String.String})}" + ")", a: undefined };
+const DomRowMount$after = (model$1) => ({ t: DomRowMount$k59, v: { ...DomRowMount$after$$packet$1, a: model$1 } });
+const DomRowMount$before$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "{picked=core:Basics.Int,rows=core:List.List({id=core:Basics.Int,label=core:String.String})}" + ")", a: undefined };
+const DomRowMount$before = (model$1) => ({ t: DomRowMount$k91, v: { ...DomRowMount$before$$packet$1, a: model$1 } });
+const DomRowMount$toggled$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "{picked=core:Basics.Int,rows=core:List.List({id=core:Basics.Int,label=core:String.String})}" + ")", a: undefined };
+const DomRowMount$toggled = (model$1) => ({ t: DomRowMount$k117, v: { ...DomRowMount$toggled$$packet$1, a: model$1 } });
 export { DomRowMount$Msg$$compare, DomRowMount$Msg$$eq, DomRowMount$after, DomRowMount$before, DomRowMount$toggled };
 //# sourceMappingURL=DomRowMount.mjs.map

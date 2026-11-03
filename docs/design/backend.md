@@ -12189,6 +12189,28 @@ const Main$p3 = (i, v) => {
 const Main$k3 = { m: (v, cx) => { const r = Main$t3(); â¦walks, slotsâ¦; const i = { â¦, a0: undefined, g0_0: undefined }; Main$p3(i, v); return i; }, p: Main$p3 };
 ```
 
+*Amended 2026-11-03, typed capture packets* (manager decisions in
+boundary.md §9.4.6, versions 1.24–1.25). The dom lowering retains a grouped
+root's inputs in one fresh capture tuple object, tagged by Context.packet with
+the checked tuple identity. Its slots are a, b, …, a26, …, as for a Beni tuple;
+the kind reads those slots. This replaces the input array in the example
+above, with the same one capture allocation and the same outer node shape
+{ t: kind, v: captures }. It introduces no Box, node wrapper, or per-row key
+packet. The caller-side helper uses Any.pack's existing private Symbol in the
+literal. A closed identity's computed property may be moved to cold private
+metadata in the same declaration unit, spread first into the one capture
+object; dynamic checked identities stay in the literal. No property-definition
+helper runs per render. Development prepares the named slots in cold metadata
+too, so cloning overwrites existing fields; release retains the priced
+Symbol-only template. Final packet fields, values and field order are identical.
+The input values themselves retain their identities. A root without
+inputs remains the shared block with v: null. Non-grouped value arrays and a
+row's independent input-comparison array retain their existing contract until
+their typed storage migration. A hidden identity needed only to construct the
+capture packet does not disable grouping: it is read in the caller, not the
+hoisted kind. A declaration whose ordinary source-call evidence reads one of
+its identity parameters keeps the previous non-grouped path.
+
 The rules, exactly:
 
 - **Inputs.** `v` is `Root.inputs`, in order; `p` binds each to a name (`cx.bindInputs`) and reads
@@ -12302,6 +12324,17 @@ specified in [`write-sets.md`](write-sets.md) (Â§1 the contract, Â§2.5 confl
 and the write set only says which groups need not be tested.
 
 ### 15.5 `For` and `Show` in the `dom` lowering
+
+*Manager amendment, 2026-11-03 (#1785).* A row descriptor may carry `j`,
+the checked identity key of its captured generic environment. Keyed and
+positional lists compare it once per site against the existing slot's `j`.
+A change makes the site's `same` false, so every row re-evaluates; equality
+retains all existing item/input/selector skipping. A descriptor without `j`
+adds no cached slot field. A Show's identity key joins its existing individual
+body-input guards instead. These keys are compiler-supplied private identity
+Strings, not list keys; raw list keys and per-row allocation do not change.
+No input array is added for a site with no ordinary captures. Interface 1.26
+and `boundary.md` §9.4–§9.5 own the lowering contract.
 
 `For` is Solid 2's list (research 27 Â§7.1), with **dom-expressions' `reconcileArrays` without
 `$$SLOT`** as the one DOM patcher (`rt/reconcile.js`, udomdiff; research 27 Â§6.11): a whole-program

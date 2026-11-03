@@ -552,7 +552,7 @@ pub const Pass = struct {
             const d = p.data(x);
             switch (p.tag(x)) {
                 .ident => if (d.lhs < into.bit_length) into.set(d.lhs),
-                .const_decl, .assign_stmt, .index_get, .assign => {
+                .const_decl, .assign_stmt, .index_get, .assign, .computed_property => {
                     if (p.tag(x) != .const_decl) try stack.append(p.scratch, @fromBackingInt(@intCast(d.lhs)));
                     try stack.append(p.scratch, @fromBackingInt(@intCast(d.rhs)));
                 },
@@ -657,7 +657,7 @@ pub const Pass = struct {
             .property => return p.add(t, at, d.lhs, (try p.clone(@fromBackingInt(@intCast(d.rhs)))).int()),
             .let_decl => return p.add(t, at, d.lhs, try p.opt(d.rhs)),
             .return_stmt => return p.add(t, at, try p.opt(d.lhs), d.rhs),
-            .assign_stmt, .index_get, .assign => {
+            .assign_stmt, .index_get, .assign, .computed_property => {
                 const lhs = try p.clone(@fromBackingInt(@intCast(d.lhs)));
                 const rhs = try p.clone(@fromBackingInt(@intCast(d.rhs)));
                 return p.add(t, at, lhs.int(), rhs.int());

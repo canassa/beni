@@ -1,0 +1,27 @@
+-- load
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <section>
+      <p>"0"</p>
+    </section>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <section>
+      <p>"1"</p>
+    </section>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <section>
+      <p>"2"</p>
+    </section>
+  </main>
+</body>

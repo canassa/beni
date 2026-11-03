@@ -1,5 +1,5 @@
 //! The markup lowering interface (docs/design/boundary.md §9.4), version
-//! 1.8: what the compiler hands a platform's markup lowering, and everything
+//! 1.26: what the compiler hands a platform's markup lowering, and everything
 //! the lowering may do with it.
 //!
 //! A lowering imports this module as `beni_markup` and nothing of the
@@ -69,7 +69,18 @@ const std = @import("std");
 /// (`Placement.Places.prerender_data`), the program it makes
 /// (`Program.data`), and the two calls that read the value into the
 /// lambda's parameter (`programDataSchema`, `programDataBind`).
-pub const version: Version = .{ .major = 1, .minor = 24 };
+/// Version 1.24 adds checked operand identity/data evidence and typed runtime
+/// calls (`Evidence`, `TypeStep`, `operand_evidence`, `evidence`,
+/// `tupleEvidence`, `suppliedRuntime`).
+/// Version 1.25 adds `Context.packet` (manager, 2026-11-03): a provably fresh
+/// object and checked identity become a packet through the shared Any.pack
+/// producer's private Symbol and the shared caller-side literal helper.
+/// Invalid inputs are internal lowering errors, with no Box fallback.
+/// Version 1.26 adds checked implicit identity inputs to grouped roots
+/// (manager, 2026-11-03). They share the capture tuple, and identity_reads
+/// makes their changes visible to each dependency guard. Row.identity_key
+/// gives a row site the same checked environment key, compared once per site.
+pub const version: Version = .{ .major = 1, .minor = 26 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -874,7 +885,9 @@ pub const Root = struct {
     values: Value.Range,
     /// 1.5, `expression` only: values that each read one local of the
     /// enclosing declaration whole — every local a value reads, bound
-    /// outside the root, in first-use order.
+    /// outside the root, in first-use order. 1.26: followed by the checked
+    /// hidden identity Strings required by calls in the hoisted body.
+    /// They occupy fields in the same capture tuple, with no extra object.
     inputs: Value.Range = .{ .start = 0, .len = 0 },
     /// 1.5, `expression` only: values that each read one path through one
     /// of the inputs — every path a value reads, distinct, in first-use
@@ -884,6 +897,11 @@ pub const Root = struct {
     /// the enclosing declaration only this root's values read, which the
     /// root evaluates (`Context.bindLet`), in source order.
     lets: Value.Range = .{ .start = 0, .len = 0 },
+
+    /// 1.26: positions in `reads` for implicit identity inputs. A grouped
+    /// lowering includes these in every dependency guard, even a group
+    /// whose ordinary source inputs are constant. Empty for older trees.
+    identity_reads: Range = .{ .start = 0, .len = 0 },
 
     pub const Index = enum(u32) { _ };
     pub const Kind = enum(u8) { expression, row_markup, row_lambda, _ };
@@ -908,6 +926,11 @@ pub const Row = struct {
     /// Values of the enclosing root: what a skip compares besides the item
     /// and the position (language.md §11.9); for `function`, the function.
     inputs: Value.Range,
+    /// 1.26: checked identity of the site's captured generic environment.
+    /// Compare once per site per render, invalidating all its rows on change.
+    /// Keep the key on the existing descriptor/slot, without another input
+    /// array or any per-row allocation. Null: no implicit identities.
+    identity_key: ?Value.Index = null,
     /// 1.3: the input that is a selector (language.md §11.9), set only on
     /// the `markup` row of a `For` keyed by a key function or by reference.
     /// Null: none is.
@@ -1215,6 +1238,23 @@ pub const Context = struct {
     /// must be used directly as that call's callee; no closure is allocated.
     pub fn suppliedRuntime(cx: *Context, name: []const u8, evidence_: []const Evidence) Error!Expr {
         return cx.vtable.supplied_runtime(cx.impl, name, evidence_);
+    }
+
+    /// Manager decision, 2026-11-03 (boundary.md §9.4.6, version 1.25):
+    /// tag a fresh generated capture object through the existing Any packet
+    /// producer. Only an object literal with ordinary properties and a
+    /// compiler-issued identity Evidence token is accepted. Other expressions
+    /// and evidence kinds are internal lowering errors; there is no Box
+    /// fallback. Imports and reachability retain the shared Any.pack owner,
+    /// and the existing shared Any.unpack consumes the packet. The shared
+    /// caller-side helper writes pack.$packet.key as a computed Symbol
+    /// property in the SAME literal. Closed checked identities may use cold
+    /// module metadata spread first into it; dynamic evidence stays in scope.
+    /// No helper call or extra object/closure is made per capture. Record.copy
+    /// preserves this enumerable marker; checked-data projection omits it,
+    /// and Wire, Debug and derived equality/ordering ignore it.
+    pub fn packet(cx: *Context, fresh_expr: Expr, identity_evidence: Evidence) Error!Expr {
+        return cx.vtable.packet(cx.impl, fresh_expr, identity_evidence);
     }
 
     /// What value v is bound to: in `root`, a value of that root; inside
@@ -2034,6 +2074,7 @@ pub const VTable = struct {
     evidence: *const fn (impl: *anyopaque, v: Value.Index, path: []const TypeStep, kind: EvidenceKind) Error!Evidence,
     tuple_evidence: *const fn (impl: *anyopaque, fields: []const Evidence, kind: EvidenceKind) Error!Evidence,
     supplied_runtime: *const fn (impl: *anyopaque, name: []const u8, evidence_: []const Evidence) Error!Expr,
+    packet: *const fn (impl: *anyopaque, fresh_expr: Expr, identity_evidence: Evidence) Error!Expr,
     value: *const fn (impl: *anyopaque, v: Value.Index) Error!Expr,
     row_values: *const fn (impl: *anyopaque, block: Block, row: Row.Index, item: Name, index: ?Name, captures: []const Name) Error!?Expr,
     row_values_apart: *const fn (impl: *anyopaque, block: Block, apart_block: Block, row: Row.Index, item: Name, index: ?Name, captures: []const Name, apart: []const Value.Index) Error!?Expr,

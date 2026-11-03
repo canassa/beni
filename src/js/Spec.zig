@@ -10477,10 +10477,10 @@ const Spec = struct {
                     if (try c.projected(@fromBackingInt(@intCast(d.lhs)), key)) |v| return c.atom(v);
                     return c.node(from, .member, (try c.expr(@fromBackingInt(@intCast(d.lhs)), depth + 1)).int(), key.int());
                 },
-                .index_get => {
+                .index_get, .computed_property => {
                     const obj = try c.expr(@fromBackingInt(@intCast(d.lhs)), depth + 1);
                     const key = try c.expr(@fromBackingInt(@intCast(d.rhs)), depth + 1);
-                    return c.node(from, .index_get, obj.int(), key.int());
+                    return c.node(from, tag, obj.int(), key.int());
                 },
                 .arrow => {
                     const to = try c.node(from, .arrow, try c.func(@fromBackingInt(@intCast(d.lhs)), depth), d.rhs);
@@ -10662,7 +10662,7 @@ fn firstUse(ir: *const JsIr, node: Index, p: NameIndex, depth: u32) Use {
         .ident => return if (d.lhs == p.int()) .found else .clean,
         .number, .string, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this, .import_meta_url, .worker_path, .this_lit => return .clean,
         .member => return seq(&.{firstUse(ir, @fromBackingInt(@intCast(d.lhs)), p, depth + 1)}, true),
-        .index_get => return seq(&.{ firstUse(ir, @fromBackingInt(@intCast(d.lhs)), p, depth + 1), firstUse(ir, @fromBackingInt(@intCast(d.rhs)), p, depth + 1) }, true),
+        .index_get, .computed_property => return seq(&.{ firstUse(ir, @fromBackingInt(@intCast(d.lhs)), p, depth + 1), firstUse(ir, @fromBackingInt(@intCast(d.rhs)), p, depth + 1) }, true),
         .unary => {
             const op: JsIr.UnaryOp = @fromBackingInt(@intCast(d.rhs));
             return seq(&.{firstUse(ir, @fromBackingInt(@intCast(d.lhs)), p, depth + 1)}, op != .not and op != .type_of and op != .worker_definition_type);
@@ -10798,7 +10798,7 @@ fn countNodes(ir: *const JsIr, root: Index, pts: *Pts, mi: u32, fns: ?*FnsMet) u
                 children[0] = @fromBackingInt(@intCast(d.rhs));
                 n = 1;
             },
-            .index_get => {
+            .index_get, .computed_property => {
                 children[0] = @fromBackingInt(@intCast(d.lhs));
                 children[1] = @fromBackingInt(@intCast(d.rhs));
                 n = 2;
@@ -16593,7 +16593,7 @@ const Pts = struct {
                 if (vals[d.lhs].sites.len != 0) v.undef = true;
                 break :blk v;
             },
-            .property => vals[d.rhs],
+            .property, .computed_property => vals[d.rhs],
             .spread_property => vals[d.lhs],
             .object => blk: {
                 const site = try p.siteOf(mi, node, .object);
@@ -16619,6 +16619,11 @@ const Pts = struct {
                                 try p.escapeSite(site);
                                 try p.escape(vals[cd.rhs]);
                             }
+                        },
+                        .computed_property => {
+                            // The key is an expression, never a string field name
+                            // the points-to graph can identify statically.
+                            try p.writeAnyOne(site, vals[cd.rhs]);
                         },
                         // `{...x}` copies what `x` holds, reading all of it.
                         else => {
@@ -17060,7 +17065,7 @@ pub fn pushChildren(gpa: Allocator, ir: *const JsIr, node: Index, stack: *std.Ar
         // backend, and a second call checks it again.
         .ident, .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit => {},
         .member, .unary, .spread_property => try JsIr.pushOperand(gpa, stack, @fromBackingInt(@intCast(d.lhs))),
-        .index_get => try JsIr.pushOperandSlice(gpa, stack, &.{ @fromBackingInt(@intCast(d.rhs)), @fromBackingInt(@intCast(d.lhs)) }),
+        .index_get, .computed_property => try JsIr.pushOperandSlice(gpa, stack, &.{ @fromBackingInt(@intCast(d.rhs)), @fromBackingInt(@intCast(d.lhs)) }),
         .property => try JsIr.pushOperand(gpa, stack, @fromBackingInt(@intCast(d.rhs))),
         .call, .new_call => {
             try JsIr.pushReversed(gpa, stack, ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index));
@@ -17139,6 +17144,11 @@ fn inputsOf(ir: *const JsIr, node: Index, buf: *[3]Index) []const Index {
         .throw_stmt, .member, .index_get, .spread_property => {
             buf[0] = at(d.lhs);
             return buf[0..1];
+        },
+        .computed_property => {
+            buf[0] = at(d.lhs);
+            buf[1] = at(d.rhs);
+            return buf[0..2];
         },
         .property => {
             buf[0] = at(d.rhs);

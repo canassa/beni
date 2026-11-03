@@ -46,7 +46,8 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "dom",
-    .targets = .{ .major = 1, .minor = 5 },
+    .targets = .{ .major = 1, .minor = 26 },
+    .operand_evidence = .{ .identity = true },
     .runtime = &.{
         .{ .name = "start", .arity = 1 },
         .{ .name = "delegate", .arity = 1 },
@@ -584,12 +585,37 @@ pub const Gen = struct {
         }
         const values = try g.a().alloc(m.Expr, r.inputs.len);
         for (values, 0..) |*v, k| v.* = try g.cx.value(r.inputs.at(@intCast(k)));
-        const input_array = try js.array(values);
-        const supplied = if (g.direct) try g.rt("templateInputs", &.{ input_array, try g.cx.templateCapture(index) }) else input_array;
+        const supplied = if (g.direct)
+            try g.rt("templateInputs", &.{ try js.array(values), try g.cx.templateCapture(index) })
+        else capture: {
+            const fields = try g.a().alloc(m.Property, values.len);
+            const identities = try g.a().alloc(m.Evidence, values.len);
+            for (fields, values, identities, 0..) |*field, value_, *identity, k| {
+                field.* = .{ .key = try g.captureField(@intCast(k)), .value = value_ };
+                identity.* = try g.cx.evidence(r.inputs.at(@intCast(k)), &.{}, .identity);
+            }
+            break :capture try g.cx.packet(try js.object(fields), try g.cx.tupleEvidence(identities, .identity));
+        };
         return js.object(&.{
             .{ .key = "t", .value = try g.ident(kind) },
             .{ .key = "v", .value = supplied },
         });
+    }
+
+    /// Capture tuples use the ordinary positional Beni field names. Their
+    /// identity is made from checked source types, never these field names.
+    fn captureField(g: *Gen, index: u32) m.Error![]const u8 {
+        return if (index < 26)
+            g.print("{c}", .{@as(u8, 'a') + @as(u8, @intCast(index))})
+        else
+            g.print("a{d}", .{index});
+    }
+
+    fn captureRead(g: *Gen, value_: m.Expr, index: u32) m.Error!m.Expr {
+        return if (g.direct)
+            g.jsb().index(value_, try g.num(index))
+        else
+            g.jsb().member(value_, try g.captureField(index));
     }
 
     /// Whether a render that skips this markup must patch it again for its
@@ -728,6 +754,7 @@ pub const Gen = struct {
         const a_ = g.a();
         const row = g.tree.row(ri);
         if (row.function) |v| try out.append(a_, v);
+        if (row.identity_key) |key| try out.append(a_, key);
         for (0..row.inputs.len) |k| try out.append(a_, row.inputs.at(@intCast(k)));
         if (row.selector) |sel| try out.append(a_, sel.probe);
     }
@@ -755,6 +782,7 @@ pub const Gen = struct {
             var values: std.ArrayList(m.Value.Index) = .empty;
             try g.opValues(b, op, &values);
             var reads: std.ArrayList(u32) = .empty;
+            for (0..r.identity_reads.len) |k_| try reads.append(a_, r.identity_reads.start + @as(u32, @intCast(k_)));
             // A call that may have an effect is made on every render; any
             // other slot is restated when its group is skipped. A
             // `stateful` attribute is tested like any op (§15.3,
@@ -854,7 +882,7 @@ pub const Gen = struct {
         const inputs = try a_.alloc(m.Name, r.inputs.len);
         for (inputs, 0..) |*x, k| {
             x.* = try g.cx.fresh("input");
-            try js.constant(pblock, x.*, try js.index(try g.ident(pv), try g.num(@intCast(k))));
+            try js.constant(pblock, x.*, try g.captureRead(try g.ident(pv), @intCast(k)));
         }
         try g.cx.bindInputs(index, inputs);
         var environment_names: std.ArrayList(m.Name) = .empty;
@@ -875,7 +903,10 @@ pub const Gen = struct {
             const then = try js.block();
             const kept = try g.print("d{d}", .{k});
             var condition: ?m.Expr = null;
-            const reads = g.tree.readsOf(lv);
+            var let_reads: std.ArrayList(u32) = .empty;
+            try let_reads.appendSlice(a_, g.tree.readsOf(lv));
+            for (0..r.identity_reads.len) |j| try let_reads.append(a_, r.identity_reads.start + @as(u32, @intCast(j)));
+            const reads = let_reads.items;
             if (reads.len == 0) {
                 condition = try js.binary(.strict_eq, try g.member(try g.ident(i), kept), undef);
             } else for (reads, 0..) |rd, j| {
@@ -1119,6 +1150,7 @@ pub const Gen = struct {
         const f = g.tree.for_(n);
         const row = g.tree.row(f.row);
         var props: std.ArrayList(m.Property) = .empty;
+        if (row.identity_key) |key| try props.append(g.a(), .{ .key = "j", .value = try g.cx.value(key) });
         try props.append(g.a(), .{ .key = "o", .value = try js.literal(if (f.item_is_primitive) .true else .false) });
         const input_safe = try g.a().alloc(m.Expr, row.inputs.len);
         for (input_safe, 0..) |*flag, k| flag.* = try js.literal(if (g.tree.identitySafe(row.inputs.at(@intCast(k)))) .true else .false);
@@ -1817,8 +1849,9 @@ pub const Gen = struct {
                 const key: ?u32 = if (s.mode == .key) try b.operand(a_, .{ .value = s.key.? }) else null;
                 const fallback: ?u32 = if (s.fallback) |v| try b.operand(a_, .{ .value = v }) else null;
                 const body = try b.operand(a_, .{ .body = n });
-                const inputs = try a_.alloc(u32, row.inputs.len);
-                for (inputs, 0..) |*x, k| x.* = try b.operand(a_, .{ .value = row.inputs.at(@intCast(k)) });
+                const inputs = try a_.alloc(u32, row.inputs.len + @as(u32, @intFromBool(row.identity_key != null)));
+                for (inputs[0..row.inputs.len], 0..) |*x, k| x.* = try b.operand(a_, .{ .value = row.inputs.at(@intCast(k)) });
+                if (row.identity_key) |key_| inputs[row.inputs.len] = try b.operand(a_, .{ .value = key_ });
                 break :blk .{ .show = .{ .at = at, .when = when, .key = key, .fallback = fallback, .body = body, .inputs = inputs } };
             },
             else => unreachable,
@@ -1831,7 +1864,7 @@ pub const Gen = struct {
     /// An operand where the function reads it: `v[k]` in a kind, the value
     /// itself in a row, a function or block made once per function.
     fn read(g: *Gen, b: *const Body, f: *Fn, k: u32) m.Error!m.Expr {
-        if (f.v) |v| return g.jsb().index(try g.ident(v), try g.num(k));
+        if (f.v) |v| return if (f.grouped) g.captureRead(try g.ident(v), k) else g.jsb().index(try g.ident(v), try g.num(k));
         const o = b.operands.items[k];
         if (!o.made()) return g.make(o);
         if (f.made.len == 0) {

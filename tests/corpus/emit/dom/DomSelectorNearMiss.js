@@ -1,6 +1,7 @@
 import { deep as _derived$deep } from "./_core/_derived.mjs";
 import { Rt$template, Rt$forKeyed, Rt$forPosition, Rt$restate, Rt$slot } from "./_platform/Rt.mjs";
 import { Maybe$withDefault, Maybe$Maybe$$eq } from "./_core/Maybe.mjs";
+import { Js$Any$pack } from "./_core/Js/Any.mjs";
 const DomSelectorNearMiss$t68 = Rt$template("<p> ");
 const DomSelectorNearMiss$t98 = Rt$template("<p> ");
 const DomSelectorNearMiss$t127 = Rt$template("<p> ");
@@ -8,7 +9,7 @@ const DomSelectorNearMiss$t152 = Rt$template("<p> ");
 const DomSelectorNearMiss$t200 = Rt$template("<p> ");
 const DomSelectorNearMiss$t180 = Rt$template("<p> ");
 const DomSelectorNearMiss$p202 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   {
     const $t$4 = $input$3.rows;
     const $t$6 = ($p$5) => $p$5.id;
@@ -151,6 +152,7 @@ const DomSelectorNearMiss$k202 = { m: ($v$89, $cx$90) => {
 const DomSelectorNearMiss$eq$prim = ($x, $y) => $x === $y;
 const DomSelectorNearMiss$eq$r$at = ($m$0, $x, $y, $d = 0) => $d > 400 ? _derived$deep([$m$0, $x.at, $y.at], $d) : $m$0($x.at, $y.at, $d + 1);
 const DomSelectorNearMiss$isOn = (selected$1, id$2) => selected$1.$ === "Just" && selected$1.a === id$2 ? "on" : "";
-const DomSelectorNearMiss$table = (model$1) => ({ t: DomSelectorNearMiss$k202, v: [model$1] });
+const DomSelectorNearMiss$table$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "{pick={at=core:Maybe.Maybe(core:Basics.Int)},rows=core:List.List({id=core:Basics.Int,label=core:String.String,parent=core:Basics.Int}),selected=core:Maybe.Maybe(core:Basics.Int)}" + ")", a: undefined };
+const DomSelectorNearMiss$table = ($m$0, model$1) => ({ t: DomSelectorNearMiss$k202, v: { ...DomSelectorNearMiss$table$$packet$1, a: model$1 } });
 export { DomSelectorNearMiss$table };
 //# sourceMappingURL=DomSelectorNearMiss.mjs.map

@@ -1,0 +1,9 @@
+import Js.Any as Any
+
+
+pub packed : a → Maybe (a × ⊤)
+packed value = Any.unpack (Any.pack ( value, ⊤ ))
+
+
+pub pair : Int, String → Maybe (Int × String)
+pair number label = Any.unpack (Any.pack ( number, label ))

@@ -124,6 +124,8 @@ pub const Result = struct {
     /// The runtime exports the module took from the runtime module instead
     /// (`boundary.md` §9.2), by name, in the caller's scratch arena.
     markup_module_uses: []const []const u8 = &.{},
+    /// A generated capture packet imports the existing core Any producer.
+    markup_packets: bool = false,
     /// The program start data the markup lowering contributed, in the
     /// caller's scratch arena.
     start: []const StartPair = &.{},
@@ -1036,6 +1038,7 @@ pub fn lower(
         .uses_markup_runtime = l.markup_imports.items.len != 0,
         .markup_exports = l.markup_exports.items,
         .markup_module_uses = l.markup_module_uses.items,
+        .markup_packets = l.markup_packets,
         .start = if (l.mk) |st| st.start.items else &.{},
         .effect_keep = l.effect_keep.items,
         .pure_discards = l.pure_discards.items,
@@ -1608,6 +1611,15 @@ pub const Lowerer = struct {
     /// The runtime exports this module took from the runtime module
     /// (`markupRuntime`), by name, in first-use order.
     markup_module_uses: std.ArrayList([]const u8) = .empty,
+    markup_packets: bool = false,
+    /// Cold packet metadata belongs to its emitting declaration's cache unit.
+    /// No cross-unit dependency: a reused direct body or twin carries its own.
+    packet_constants: ?*StmtList = null,
+    packet_owner: JsIr.NameIndex = .none,
+    packet_ids: std.StringHashMapUnmanaged(JsIr.NameIndex) = .empty,
+    /// A saturated call owns its callee reference's hidden arguments.
+    direct_callee: Inst.OptionalIndex = .none,
+    identity_aliases: std.ArrayList(struct { parameter: Dispatch.Term.Param, name: JsIr.NameIndex }) = .empty,
 
     /// A constructor, this module's (`ext` false: a `Bir.ctors` index) or
     /// another's (an interface constructor row of `module`).
@@ -3654,6 +3666,17 @@ pub const Lowerer = struct {
             }),
             .twin => try l.twinName(l.module_name, l.bir.symbol(d.name)),
         };
+        const packet_constants = l.packet_constants;
+        const packet_owner = l.packet_owner;
+        const packet_ids = l.packet_ids;
+        l.packet_constants = out;
+        l.packet_owner = n;
+        l.packet_ids = .empty;
+        defer {
+            l.packet_constants = packet_constants;
+            l.packet_owner = packet_owner;
+            l.packet_ids = packet_ids;
+        }
         const p = l.pos(body);
         // The binding itself is where the definition's name is written,
         // which is what a source map names it by (§11); its value keeps the
@@ -6391,6 +6414,106 @@ pub const Lowerer = struct {
         return out;
     }
 
+    // ownership pin begin: freshPackets
+    /// Constructed only from a checked Dispatch identity root or an identity
+    /// token validated by Context.packet. Never source text or data evidence.
+    const PacketIdentity = struct { value: Node.Index };
+
+    fn freshPacketObject(l: *Lowerer, value: Node.Index) bool {
+        if (value.int() >= l.b.nodes.len or l.b.tagOf(value) != .object) return false;
+        const d = l.b.nodes.items(.data)[value.int()];
+        for (l.b.extra.items[d.lhs..d.rhs]) |property_| {
+            if (l.b.nodes.items(.tag)[property_] != .property) return false;
+        }
+        return true;
+    }
+
+    /// A closed identity can move to module initialisation. Inspect only
+    /// strings and their concatenation, never evaluate or guess a parameter.
+    /// Keep the original nodes: private identity atoms are numbered at link.
+    fn closedPacketIdentity(l: *Lowerer, value: Node.Index) !?[]const u8 {
+        var stack: std.ArrayList(Node.Index) = .empty;
+        var text_: std.ArrayList(u8) = .empty;
+        try stack.append(l.scratch, value);
+        while (stack.pop()) |at| {
+            const d = l.b.nodes.items(.data)[at.int()];
+            switch (l.b.tagOf(at)) {
+                .string => try text_.appendSlice(l.scratch, l.b.string_bytes.items[d.lhs..][0..d.rhs]),
+                .binary => {
+                    if (@as(JsIr.BinaryOp, @fromBackingInt(@intCast(d.rhs))) != .add) return null;
+                    const pair = l.b.record(d.lhs, JsIr.Binary);
+                    try stack.appendSlice(l.scratch, &.{ pair.right, pair.left });
+                },
+                else => return null,
+            }
+        }
+        return text_.items;
+    }
+
+    /// Cold templates may predefine payload slots. Key their complete name
+    /// list as well as the checked identity: Context.packet does not prescribe
+    /// one object's property order. Cache bytes are never emitted as an id.
+    fn packetShapeKey(l: *Lowerer, identity_text: []const u8, value: Node.Index) ![]const u8 {
+        var key: std.ArrayList(u8) = .empty;
+        var length: [8]u8 = undefined;
+        std.mem.writeInt(u64, &length, @intCast(identity_text.len), .little);
+        try key.appendSlice(l.scratch, &length);
+        try key.appendSlice(l.scratch, identity_text);
+        const d = l.b.nodes.items(.data)[value.int()];
+        for (l.b.extra.items[d.lhs..d.rhs]) |property_| {
+            var field_bytes: [4]u8 = undefined;
+            std.mem.writeInt(u32, &field_bytes, l.b.nodes.items(.data)[property_].lhs, .little);
+            try key.appendSlice(l.scratch, &field_bytes);
+        }
+        return key.items;
+    }
+
+    /// Caller-side fresh packets share Any's existing Symbol and unpack.
+    /// A closed identity's Symbol definition is cold metadata; spreading it
+    /// first lets the engine clone it into this ONE fresh payload. A dynamic
+    /// checked identity stays in the literal, after its ordinary properties.
+    /// No helper call, Box, closure or second object is made per packet.
+    fn freshPacket(l: *Lowerer, pack: Node.Index, identity: PacketIdentity, value: Node.Index, p: u32) !Node.Index {
+        std.debug.assert(l.freshPacketObject(value));
+        const producer = try l.member(pack, try l.interner.getOrPut(l.gpa, "$packet"), p);
+        const key = try l.member(producer, try l.interner.getOrPut(l.gpa, "key"), p);
+        const marker = try l.add(.computed_property, p, key.int(), identity.value.int());
+        var properties: StmtList = .empty;
+        if (l.packet_constants) |out| {
+            if (try l.closedPacketIdentity(identity.value)) |text_| {
+                // Pricing keeps release's Symbol-only template. Development
+                // predefines named slots so each clone need only overwrite them.
+                const cache_key = if (l.in.development) try l.packetShapeKey(text_, value) else text_;
+                const entry = try l.packet_ids.getOrPut(l.scratch, cache_key);
+                if (!entry.found_existing) {
+                    const owner = l.b.names.items[l.packet_owner.int()];
+                    const base = try std.fmt.allocPrint(l.scratch, "{s}$$packet${d}", .{ l.text(owner.base), l.packet_ids.count() });
+                    entry.value_ptr.* = try l.name(.{ .module = owner.module, .base = try l.interner.getOrPut(l.gpa, base), .tag = JsIr.Name.no_tag });
+                    var template: StmtList = .empty;
+                    try template.append(l.scratch, marker);
+                    if (l.in.development) {
+                        const empty = try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+                        const data = l.b.nodes.items(.data)[value.int()];
+                        for (l.b.extra.items[data.lhs..data.rhs]) |property_| {
+                            const field_name = l.b.nodes.items(.data)[property_].lhs;
+                            try template.append(l.scratch, try l.add(.property, p, field_name, empty.int()));
+                        }
+                    }
+                    try l.constDecl(out, entry.value_ptr.*, try l.object(template.items, p), p);
+                }
+                try properties.append(l.scratch, try l.add(.spread_property, p, (try l.ident(entry.value_ptr.*, p)).int(), Node.Data.unused));
+            }
+        }
+        const cold = properties.items.len != 0;
+        const d = l.b.nodes.items(.data)[value.int()];
+        // Copy the range before object() can grow the extra-data array.
+        for (l.b.extra.items[d.lhs..d.rhs]) |property_| try properties.append(l.scratch, @fromBackingInt(@intCast(property_)));
+        if (!cold) try properties.append(l.scratch, marker);
+        return l.object(properties.items, p);
+    }
+
+    // ownership pin end: freshPackets
+
     // ---- Lists ------------------------------------------------------------
     //
     // `List` is array-backed (`backend.md` §4, *Lists are arrays*): a
@@ -7790,6 +7913,11 @@ pub const Lowerer = struct {
         if (try l.debugTyped(inst, p)) |typed| return l.etaExpand(typed.callee, &.{typed.descriptor}, typed.arity, p);
         const value = try l.referenceName(inst);
         const site = l.in.dispatch.siteOf(inst) orelse return value;
+        // A synthetic operand site on a direct callee carries its checked
+        // type, while callExpr has already checked the call's ordinary
+        // evidence. It is a binding here, not a value eta-expansion.
+        if (l.direct_callee == inst.toOptional() and site.evidence.len == 0 and
+            (site.operand_identity != .none or site.operand_data != .none)) return value;
         const roots = l.in.dispatch.argsAt(site.evidence);
         const expected = l.in.dispatch.referenceCount(l.bir, l.in.interfaces, l.decl_index, inst);
         if (roots.len == 0 and expected == 0) return value;
@@ -7967,9 +8095,17 @@ pub const Lowerer = struct {
             // A declaration's `$m$k` and a derived function's are spelled
             // alike: each is the parameter list of the function the term
             // sits in (§8.1, §9).
-            .param => |param| switch (param.binder) {
-                .let => |at| try l.ident(try l.letEvidenceName(at, param.k), p),
-                else => try l.ownEvidence(param.k, p),
+            .param => |param| alias: {
+                var index = l.identity_aliases.items.len;
+                while (index != 0) {
+                    index -= 1;
+                    const bound = l.identity_aliases.items[index];
+                    if (std.meta.eql(bound.parameter, param)) break :alias try l.ident(bound.name, p);
+                }
+                break :alias switch (param.binder) {
+                    .let => |at| try l.ident(try l.letEvidenceName(at, param.k), p),
+                    else => try l.ownEvidence(param.k, p),
+                };
             },
             .primitive => |prim| try l.primitiveValue(prim, p),
             // Unreachable: `field` cannot be evidence (§8.2), `undetermined`
@@ -11218,13 +11354,14 @@ pub const Lowerer = struct {
                 }
                 const values = try l.orderedExprs(out, arg_insts, false);
                 const id = try l.identityValue(roots[roots.len - 1], p);
-                var target = try l.referenceName(callee_inst);
+                const target = try l.referenceName(callee_inst);
                 if (which == .any_pack and arg_insts.len == 1) {
-                    // Only these expressions allocate the packet at this call.
-                    // Aliases, updates and call results retain the ordinary Box,
-                    // including when later release inlining exposes a literal.
+                    // Source eligibility stays narrow even if later inlining
+                    // exposes a literal: aliases, updates and calls keep Box.
                     switch (l.bir.instTag(arg_insts[0])) {
-                        .record, .tuple => target = try l.member(target, try l.interner.getOrPut(l.gpa, "$packet"), p),
+                        .record, .tuple => if (l.freshPacketObject(values[0])) {
+                            return l.freshPacket(target, .{ .value = id }, values[0], p);
+                        },
                         else => {},
                     }
                 }
@@ -11334,7 +11471,12 @@ pub const Lowerer = struct {
         // They are names and closures with no statements of their own, so
         // building them after the sequence changes no evaluation order.
         try l.markSanitizeChain(inst, arg_insts);
-        const values = try l.exprListWithHead(out, callee_inst, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
+        const values = blk: {
+            const saved_callee = l.direct_callee;
+            l.direct_callee = callee_inst.toOptional();
+            defer l.direct_callee = saved_callee;
+            break :blk try l.exprListWithHead(out, callee_inst, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
+        };
         const callee = values[0];
         // A trailing `()` the callee does not take is not passed (§6, *A
         // parameter of type `()`*): `f ()` is `f()`.
@@ -20101,6 +20243,8 @@ pub const Lowerer = struct {
             .comparison = .{ .ctx = l, .classify = classifyComparison },
             .debug_module = if (l.in.graph.lookup(.core, InternPool.WellKnown.Debug.symbol())) |d| d.int() else null,
             .parameterised_templates = mk.lowering.parameterised_templates,
+            .capture_identities = mk.lowering.groups and mk.lowering.operand_evidence.identity and
+                mk.lowering.targets.minor >= 26 and !mk.lowering.parameterised_templates,
         }) orelse blk: {
             // A module with no markup of its own may still call a program
             // constructor: the hook runs with an empty tree (§9.4.6, 1.6).
@@ -20180,8 +20324,8 @@ pub const Lowerer = struct {
     /// Whether root `index`'s values are left to the lowering (`cx.grouped`,
     /// `boundary.md` §9.4.6, 1.5): the lowering groups, the tree found
     /// nothing that returns from the enclosing function, and the enclosing
-    /// declaration takes no evidence — its own or a `let` function's — has
-    /// no suspendable body, and is not being lowered in the suspendable
+    /// declaration has no method evidence or source calls that require a
+    /// scoped identity, has no suspendable body, and is not lowered in the suspendable
     /// form, so no value can suspend. Decided once per root.
     fn markupGrouped(l: *Lowerer, index: beni_markup.Root.Index) bool {
         const st = l.mk orelse return false;
@@ -20195,12 +20339,21 @@ pub const Lowerer = struct {
             if (l.suspendable) break :blk false;
             if (l.in.dispatch.effectDecl(decl).twin) break :blk false;
             if (l.in.dispatch.effectDecl(decl).own != .no) break :blk false;
-            if (Convention.ofDecl(l.in.dispatch, l.bir, decl).evidence != 0) break :blk false;
+            if (l.in.dispatch.declRequirements(decl).len != 0) break :blk false;
+            const capture_identities = st.lowering.operand_evidence.identity and
+                st.lowering.targets.minor >= 26 and !st.lowering.parameterised_templates;
+            if (!capture_identities and Convention.ofDecl(l.in.dispatch, l.bir, decl).evidence != 0) break :blk false;
+            for (l.in.dispatch.declIdentities(decl)) |identity| {
+                if (identity & Dispatch.checked_evidence != 0) break :blk false;
+            }
             const d = l.bir.decls[decl];
             for (l.bir.declLocals(d)) |local| {
                 if (local.kind != .let) continue;
                 const row = l.in.dispatch.letIndex(local.inst) orelse continue;
                 if (l.in.dispatch.letRequirements(row).len != 0) break :blk false;
+                for (l.in.dispatch.letIdentities(row)) |identity| {
+                    if (identity & Dispatch.checked_evidence != 0) break :blk false;
+                }
             }
             break :blk true;
         };
@@ -20235,12 +20388,19 @@ pub const Lowerer = struct {
         const st = l.mk.?;
         const root = st.built.tree.root(index);
         const saved = try l.scratch.alloc(JsIr.NameIndex, root.inputs.len);
-        for (0..root.inputs.len) |k| {
-            const local = st.built.values[root.inputs.start + k].capture;
-            saved[k] = if (local < l.local_names.len) l.local_names[local] else .none;
-            if (local < l.local_names.len and k < names.len) l.local_names[local] = @fromBackingInt(@intCast(@backingInt(names[k])));
-        }
-        try st.binds.append(l.scratch, .{ .root = index, .names = saved, .case_depth = l.case_depth });
+        @memset(saved, .none);
+        const identities_start = l.identity_aliases.items.len;
+        for (0..root.inputs.len) |k| switch (st.built.values[root.inputs.start + k]) {
+            .capture => |local| {
+                saved[k] = if (local < l.local_names.len) l.local_names[local] else .none;
+                if (local < l.local_names.len and k < names.len) l.local_names[local] = @fromBackingInt(@intCast(@backingInt(names[k])));
+            },
+            .identity => |parameter| if (k < names.len) {
+                try l.identity_aliases.append(l.scratch, .{ .parameter = parameter, .name = @fromBackingInt(@intCast(@backingInt(names[k]))) });
+            },
+            else => unreachable,
+        };
+        try st.binds.append(l.scratch, .{ .root = index, .names = saved, .case_depth = l.case_depth, .identities_start = identities_start });
         l.case_depth = 0;
         l.function_depth += 1;
     }
@@ -20256,10 +20416,14 @@ pub const Lowerer = struct {
             const saved = top.lets.items[j];
             l.local_names[saved[0]] = saved[1];
         }
-        for (0..root.inputs.len) |k| {
-            const local = st.built.values[root.inputs.start + k].capture;
-            if (local < l.local_names.len) l.local_names[local] = top.names[k];
-        }
+        for (0..root.inputs.len) |k| switch (st.built.values[root.inputs.start + k]) {
+            .capture => |local| if (local < l.local_names.len) {
+                l.local_names[local] = top.names[k];
+            },
+            .identity => {},
+            else => unreachable,
+        };
+        l.identity_aliases.shrinkRetainingCapacity(top.identities_start);
         l.case_depth = top.case_depth;
         l.function_depth -= 1;
     }
@@ -20404,6 +20568,17 @@ pub const Lowerer = struct {
                 },
             },
             .capture => |local| return l.ident(try l.localName(local), p),
+            .identity => |parameter| return l.termName(.{ .param = parameter }, p),
+            .identity_key => |parts| {
+                std.debug.assert(parts.len != 0);
+                if (parts.len == 1) return l.markupValue(parts.at(0));
+                var key = try l.stringNode("(", p);
+                for (0..parts.len) |k| {
+                    if (k != 0) key = try l.binary(.add, key, try l.stringNode(",", p), p);
+                    key = try l.binary(.add, key, try l.markupValue(parts.at(@intCast(k))), p);
+                }
+                return l.binary(.add, key, try l.stringNode(")", p), p);
+            },
             .input => |record| return l.markupInput(record, p),
             .read => |r| {
                 var n = try l.ident(try l.localName(r.local), p);
@@ -20870,6 +21045,7 @@ const InputBind = struct {
     root: beni_markup.Root.Index,
     names: []const JsIr.NameIndex,
     case_depth: u32,
+    identities_start: usize,
     /// The root's `let`s bound since (`cx.bindLet`), each with its local's
     /// name before.
     lets: std.ArrayList(struct { u32, JsIr.NameIndex }) = .empty,
@@ -21064,6 +21240,19 @@ const MarkupContext = struct {
     fn evidence(impl: *anyopaque, v: M.Value.Index, path: []const M.TypeStep, kind: M.EvidenceKind) E!M.Evidence {
         const l = lowerer(impl);
         const source = l.mk.?.built.values[@backingInt(v)];
+        if (source == .identity or source == .identity_key) {
+            if (path.len != 0 or kind != .identity) return evidenceError(l);
+            // This synthetic value is a String by construction. Resolve its
+            // identity through the checker's built-in type table, exactly
+            // as source String operands do; release links the same atoms.
+            const id = l.in.types.well_known.string;
+            if (id == .none) return evidenceError(l);
+            const entry = l.in.types.entry(id);
+            const text = try std.fmt.allocPrint(l.scratch, "core:{s}.{s}", .{
+                l.interner.slice(entry.module_name), l.interner.slice(entry.name),
+            });
+            return keepEvidence(l, try l.identityString(text, pos(l)), .identity);
+        }
         const root = switch (source) {
             .inst, .callee => |inst| evidenceRoot(l, inst, kind),
             .call => |call_| evidenceRoot(l, call_.inst, kind),
@@ -21098,7 +21287,7 @@ const MarkupContext = struct {
                 const term = l.in.dispatch.term(index_);
                 if (term == .param) {
                     if (text.items.len != 0) {
-                        try values.append(l.scratch, try l.stringNode(text.items, pos(l)));
+                        try values.append(l.scratch, try l.identityString(text.items, pos(l)));
                         text.clearRetainingCapacity();
                     }
                     try values.append(l.scratch, try l.termName(term, pos(l)));
@@ -21170,7 +21359,7 @@ const MarkupContext = struct {
                 }
             },
         };
-        if (text.items.len != 0) try values.append(l.scratch, try l.stringNode(text.items, pos(l)));
+        if (text.items.len != 0) try values.append(l.scratch, try l.identityString(text.items, pos(l)));
         var result = values.items[0];
         for (values.items[1..]) |value_| result = try l.binary(.add, result, value_, pos(l));
         return result;
@@ -21229,6 +21418,35 @@ const MarkupContext = struct {
             return expr(token);
         }
         return evidenceError(l);
+    }
+
+    fn packetError(l: *Lowerer, message: []const u8) E {
+        l.report(.internal, l.region, "{s}", .{message}) catch return error.OutOfMemory;
+        return error.Reported;
+    }
+
+    fn packet(impl: *anyopaque, fresh_expr: M.Expr, identity_evidence: M.Evidence) E!M.Expr {
+        const l = lowerer(impl);
+        const index_ = @backingInt(identity_evidence);
+        if (index_ >= l.mk.?.evidence.items.len)
+            return packetError(l, "Context.packet requires compiler-issued checked identity evidence.");
+        const identity = l.mk.?.evidence.items[index_];
+        if (identity.kind != .identity)
+            return packetError(l, "Context.packet requires compiler-issued checked identity evidence; checked-data evidence is not an identity.");
+        const value_ = node(fresh_expr);
+        if (value_.int() >= l.b.nodes.len or l.b.nodes.items(.tag)[value_.int()] != .object)
+            return packetError(l, "Context.packet requires a provably fresh object literal; names, calls and other expressions cannot become packets.");
+        if (!l.freshPacketObject(value_))
+            return packetError(l, "Context.packet requires a fresh object literal with ordinary properties; spreads are not accepted.");
+        const module_name = l.interner.global.find("Js.Any") orelse return packetError(l, "Context.packet cannot find the core Any packet producer.");
+        const owner = l.in.graph.lookup(.core, module_name) orelse return packetError(l, "Context.packet cannot find the core Any packet producer.");
+        const pack_name = l.interner.global.find("pack") orelse return packetError(l, "Context.packet cannot find the core Any packet producer.");
+        const pack_value = l.in.interfaces[owner.int()].findValue(l.interner.global, pack_name) orelse return packetError(l, "Context.packet cannot find the core Any packet producer.");
+        const p = pos(l);
+        l.markup_packets = true;
+        try l.need(owner, @backingInt(pack_value));
+        const pack_ref = try l.ident(try l.externalName(owner, @backingInt(pack_value)), p);
+        return expr(try l.freshPacket(pack_ref, .{ .value = identity.value }, value_, p));
     }
 
     fn rowValues(impl: *anyopaque, into: M.Block, row: M.Row.Index, item: M.Name, position: ?M.Name, captures: []const M.Name) E!?M.Expr {
@@ -21969,6 +22187,7 @@ const MarkupContext = struct {
         .evidence = evidence,
         .tuple_evidence = tupleEvidence,
         .supplied_runtime = suppliedRuntime,
+        .packet = packet,
         .value = value,
         .row_values = rowValues,
         .row_values_apart = rowValuesApart,

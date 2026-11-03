@@ -183,6 +183,8 @@ pub const Platforms = struct {
     /// Per chain index, the `"markup".lowering` that package's own manifest
     /// names, if any.
     lowerings: []const ?[]const u8 = &.{},
+    /// Selected lowering capabilities, known before lazy source discovery.
+    operand_evidence: u8 = 0,
 
     pub const Reexport = struct {
         /// The module name as the manifest spells it.
@@ -553,6 +555,17 @@ pub fn build(
                 g.modules.items(.markup_edge)[i] = true;
             }
         };
+        // Context.packet reaches the existing core producer without a
+        // written import. Retain that dependency through graph pruning,
+        // ordering and the interface/cache firewall too.
+        if (bir.uses_markup and g.markup.operand_evidence & 1 != 0) {
+            if (interner.find("Js.Any")) |name| if (g.lookup(.core, name)) |target| {
+                if (target != index and dep_stamp[target.int()] != stamp) {
+                    dep_stamp[target.int()] = stamp;
+                    try deps.append(gpa, target);
+                }
+            };
+        }
         // The types the checker MINTS for this module
         // (`static-dispatch-spike.md` §6.8). Resolved against `core` and
         // not against the module's own package, because that is where
@@ -655,6 +668,7 @@ fn resolveMarkup(g: *const Graph, gpa: Allocator, artifacts: *const Artifacts, i
         if (m.lowering == .none) m.lowering = l.*;
     }
     m.layer_lowerings = layers;
+    m.operand_evidence = platforms.operand_evidence;
     return m;
 }
 

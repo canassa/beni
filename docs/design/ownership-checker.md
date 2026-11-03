@@ -8306,10 +8306,13 @@ its SHA-256 is checked exactly like every other body pin. There is no dummy
 sibling and no exemption from pinning. `Pins` checks both the owner scope and
 foreign status before a scoped row can satisfy a package's body requirement.
 
-For `Js.Any.pack`, the pinned lowering calls the pinned sibling constructor.
-Each fresh box owns its typed payload and identity slots and shares one private
-prototype. Both the `pack` export and its `Box` helper have sibling body pins.
-The box retains that payload,
+For a generic `Js.Any.pack` payload, the pinned lowering calls the pinned
+sibling constructor. Each fresh box owns its typed payload and identity slots
+and shares one private prototype. Both the `pack` export and its `Box` helper
+have sibling body pins. Fresh record/tuple literals use the shared caller-side
+helper below: its `freshPackets` region pins the freshness proof and literal
+emitter together, as an ordinary helper pin with no source declaration authority.
+The result retains that payload,
 which justifies `escaped a → fresh Any`; the identity guard and payload remain
 typed. Reply discovery's corresponding region reads message containers into
 local scan state and returns a newly allocated list of immutable String ids.
@@ -8368,14 +8371,31 @@ argument has no later read for an unsafe unused flip to expose.
 
 **Allocation-neutral Any packets (2026-11-03; §24.8 implementation note).**
 A record or tuple literal allocated directly as Any.pack's argument has no
-pre-existing alias. Its hidden identity slot lets that same fresh object own
-the existential payload, so `escaped a → fresh Any` is unchanged. Other
-arguments retain the shared Box. The private packet helper mutates only that
-fresh packet and a shared descriptor whose identity value is copied by
-Object.defineProperty; it retains no payload. The slot is non-enumerable,
-non-writable and non-configurable. One sibling unpack checks the packet slot
-first, returns Nothing immediately for a mismatch, and otherwise returns that
-packet; only an ordinary Box uses the old type/value fields. Unpack retains no
-input and constructs its own Maybe result, with the same payload alias as
-before. These helper and lowering bodies are pinned with the existing body
-hash mechanism.
+pre-existing alias. The shared caller-side helper additionally proves the JsIr
+value is an object literal with ordinary properties. Aliases, updates and call
+results retain Box even if release inlining later exposes a literal. Only a
+checked Dispatch identity root, or Context.packet's checked identity token,
+reaches the helper; it never invents an identity.
+
+The helper rewrites the original allocation into ONE fresh literal carrying
+Any's existing private Symbol. It preserves each payload expression and its
+evaluation order, and retains those values in the result, so
+`escaped a → fresh Any` is unchanged. A closed identity may live in private cold
+metadata spread into this same payload; that metadata contains only immutable
+identity text and, in development, empty named slots, never an application
+payload. Every empty slot is overwritten by its original payload expression,
+in its original order. The template cache includes the property-name layout,
+so another layout cannot introduce extra fields. Release retains the priced
+Symbol-only template. Dynamic evidence stays in scope.
+The caller's marker is enumerable, writable and configurable, while the existing
+$packet sibling helper keeps its non-enumerable, read-only descriptor unchanged.
+Record.copy carries the enumerable Symbol; checked-data projection omits it,
+and Wire, Debug and derived equality/ordering ignore it. No native or callable
+payload crosses Js.Value.
+
+One sibling unpack checks the packet slot first, returns Nothing immediately
+for a mismatch, and otherwise returns that packet; only an ordinary Box uses
+the old type/value fields. Unpack retains no input and constructs its own Maybe
+result, with the same payload alias as before. The caller region and the shared
+freshPackets proof/emitter region are pinned; the unchanged sibling constructor,
+packet helper, Symbol, descriptor and unpack retain their existing pins.

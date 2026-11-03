@@ -1,0 +1,11 @@
+-- A local generic function's ordinary identity must stay in its scope.
+-- Packet-only identities in the neighboring fixture still permit grouping.
+import Html exposing (Html)
+import Keep
+
+
+pub local : Html Int
+local =
+    render : Html msg → Html msg
+    render value = <section>{Keep.keep value}</section>
+    render (<b>kept</b>)

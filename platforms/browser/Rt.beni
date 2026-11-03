@@ -1421,9 +1421,11 @@ forKeyed s items keyOf row inputs =
     startPass s row
     g = Js.get row "g"
     rendered = Js.to (Js.get s "v")
+    capturedIdentity = Js.get row "j"
 
     same =
         rendered
+            && (Js.isUndefined capturedIdentity || Js.same (Js.get s "j") capturedIdentity)
             && (if Js.isUndefined g then
                    sameInputs (Js.get s "y") inputs (Js.get row "h")
                 else
@@ -1449,6 +1451,7 @@ forKeyed s items keyOf row inputs =
     else
         Js.set s "z" (Js.get row "z")
 
+    if Js.isUndefined capturedIdentity then ⊤ else Js.set s "j" capturedIdentity
     Js.set s "v" (Js.from True)
     Js.set s "y" (rememberInputs inputs (Js.get row "h"))
     if Js.to (Js.get s "d") && trimmed s items keyOf row same was now then
@@ -1649,7 +1652,12 @@ keyedRows s a keyOf row same was now stamp old byKey next position distinct move
 pub forPosition : V, V, V, V → ⊤
 forPosition s items row inputs =
     startPass s row
-    same = Js.to (Js.get s "v") && sameInputs (Js.get s "y") inputs (Js.get row "h")
+    capturedIdentity = Js.get row "j"
+    same =
+        Js.to (Js.get s "v")
+            && (Js.isUndefined capturedIdentity || Js.same (Js.get s "j") capturedIdentity)
+            && sameInputs (Js.get s "y") inputs (Js.get row "h")
+    if Js.isUndefined capturedIdentity then ⊤ else Js.set s "j" capturedIdentity
     Js.set s "v" (Js.from True)
     Js.set s "y" (rememberInputs inputs (Js.get row "h"))
     if Js.isNull (Js.get s "u") then

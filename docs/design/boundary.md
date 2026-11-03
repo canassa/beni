@@ -2810,6 +2810,72 @@ cannot derive an identity from a host value or invent a checked-data witness.
 The existing Schema endpoint adapter remains valid for ordinary runtime calls;
 its identities and checkers come from the actual Schema carrier.
 
+**Version 1.25** (*manager decision, 2026-11-03*, additive, gated on nothing;
+#1612): Context.packet(freshExpr, identityEvidence) emits the existing
+allocation-neutral Any packet path for a compiler-generated capture object.
+The expression must be a provably fresh JsIr object literal with ordinary
+properties; names, call results, spreads and other expressions are refused.
+The identity must be a compiler-issued, identity-kind Evidence token. Invalid
+arguments produce a clear internal lowering error, with no copying or Box
+fallback. The compiler roots and imports the existing core Any.pack owner.
+The shared caller-side fresh-packet IR helper writes its private Symbol as a
+computed property in that same literal, reading `pack.$packet.key`; it shares
+this path with an ordinary `Any.pack` on an eligible fresh record or tuple.
+The existing `$packet` helper and the one shared `Any.unpack` remain unchanged.
+A closed checked identity may be held in a private metadata object at module
+initialisation and spread FIRST into the fresh payload. This moves the Symbol
+property definition out of render without another object or closure per capture.
+Development metadata also predefines the literal's named fields as undefined;
+the one fresh payload overwrites every such field with its original expression,
+in its original order. Release keeps the Symbol-only template. This measured
+choice changes neither final fields nor payload evaluation or allocation count.
+Development templates are keyed by the checked identity AND property-name
+layout; Symbol-only release templates need only the identity. Both belong to
+the declaration's independent emit-cache unit: never shared across units a
+build may eliminate separately. Dynamic identities
+stay in the literal and cannot be hoisted out of their evidence scope.
+The marker is enumerable: `Record.copy` preserves it, while checked-data
+projection strips it; Wire, Debug and derived equality/ordering ignore it.
+Ordinary aliases, updates and call results keep the generic Box fallback;
+Context.packet still refuses them. A coarse graph walk retains this
+possible producer only for a lowering that requested identity evidence; the
+precise walk retains it only when a lowering actually emitted a packet. The module loader and graph retain the matching core dependency for a
+markup file using such a lowering, even when no source import names Any.
+The one shared Any.unpack path accepts the result. This adds no source primitive and uses no fingerprint.
+
+**Version 1.26** (*manager decision, 2026-11-03*, additive, gated on nothing;
+#1612): a grouped root's `inputs` may end with the checked hidden identity
+Strings its hoisted body needs. They are extra fields in the **same** tuple
+packet as the source inputs. The compiler follows the actual scoped Dispatch
+dependencies, including local generic binders; it never guesses an identity,
+and a packet-only identity remains at its constructor when the body does not
+need it. `bindInputs` temporarily binds these parameters to the input names,
+then restores their original scope. Their String type is compiler-proven;
+`evidence` supplies its ordinary checked identity when composing the capture
+tuple. Release uses the same compact private linker identities as source Any
+calls; development may retain readable identity text.
+
+`Root.identity_reads` names their positions in `reads`. A grouped lowering
+includes those reads in each dependency guard, including a static component's
+otherwise empty read set: a changed identity re-runs the patch, and an unchanged
+one preserves the static component's single evaluation. No object, closure or
+row allocation is added. Method and checked-data witness parameters retain
+their existing grouping restrictions. DomComponents' original grouping and the
+changed/unchanged identity fixtures pin the contract in both build modes.
+
+The same amendment covers `Row.identity_key`: one compiler-supplied checked
+identity key for the site's captured generic environment. A homogeneous row
+site has one such environment per render, so the runtime compares the key
+**once per site**, with a cached field in its existing slot. A changed key
+invalidates all that site's rows; an unchanged key preserves the existing
+item, input and selector skips. The DOM lowering puts the key on its existing
+row descriptor. Show includes it in its existing body-input guard. Neither
+path adds an input array when there were no captures, an object, closure or
+Any per row, nor a key wrapper: keyed rows retain their raw keys. One identity
+uses the existing String directly; several use the canonical checked tuple
+identity grammar. Release uses the same compact ids as every other packet.
+
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source
@@ -2887,6 +2953,16 @@ be written against it; they are 1.0's contract:
 **No dynamic loading, ever**: a lowering is Zig linked into the binary, and a platform is trusted
 code by design (the owner's decision), so the security argument is §2's — a distribution fact — and
 not a sandbox.
+
+The manager's 2026-11-03 packet and grouped-identity decisions (§9.4.6, versions 1.25–1.26) apply to
+external lowerings too. The compiler-owned Symbol-property adapter and cold
+metadata optimisation are shared by external and built-in lowerings; they add
+no source operation. Context.packet is the checked bridge to the existing
+core Any packet producer; a lowering does not write a sibling helper, choose
+an identity string, or substitute a Box when freshness is unproved.
+Grouped external lowerings also preserve the implicit input and row-key
+checks of version 1.26: row keys describe the site's captured identity
+environment, and are compared once at the site rather than once per item.
 
 - **A platform's Zig is one Zig module**, whose root file the manifest's optional **`"zig"`** key
   names — `platforms/browser/zig/root.zig`, say. The module's `pub const lowerings` lists the

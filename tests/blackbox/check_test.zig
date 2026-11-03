@@ -2262,14 +2262,14 @@ test "ownership words: compiler intrinsic pins retain their defining package and
     try testing.expectError(error.InvalidIntrinsicPin, Pins.parse(arena.allocator(), "src/js/Lower.zig Js.Any.pack hash intrinsic:\n"));
 }
 
-fn expectScopedPinBodies(owner: []const u8, declaration: []const u8) !usize {
+fn expectPinBodies(owner: ?[]const u8, declaration: []const u8) !usize {
     var arena: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
     const list = try std.Io.Dir.cwd().readFileAlloc(testing.io, bodies_list, a, .limited(1 << 20));
     const pins = try Pins.parse(a, list);
-    try testing.expect(pins.hasForDecl(owner, declaration, true));
-    const wanted_scope = try std.fmt.allocPrint(a, "intrinsic:{s}", .{owner});
+    if (owner) |package| try testing.expect(pins.hasForDecl(package, declaration, true));
+    const wanted_scope = if (owner) |package| try std.fmt.allocPrint(a, "intrinsic:{s}", .{package}) else null;
     const name = declaration[(std.mem.lastIndexOfScalar(u8, declaration, '.') orelse return error.BodyRowName) + 1 ..];
     var count: usize = 0;
     var rows = std.mem.splitScalar(u8, list, '\n');
@@ -2279,8 +2279,11 @@ fn expectScopedPinBodies(owner: []const u8, declaration: []const u8) !usize {
         const file = fields.next() orelse continue;
         const decl = fields.next() orelse continue;
         const expected = fields.next() orelse continue;
-        const scope = fields.next() orelse continue;
-        if (!std.mem.eql(u8, decl, declaration) or !std.mem.eql(u8, scope, wanted_scope)) continue;
+        const scope = fields.next();
+        if (!std.mem.eql(u8, decl, declaration)) continue;
+        if (wanted_scope) |wanted| {
+            if (scope == null or !std.mem.eql(u8, scope.?, wanted)) continue;
+        } else if (scope != null) continue;
         const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, file, a, .limited(1 << 24));
         const body = (try bodyOf(a, source, file, name)) orelse return error.IntrinsicBodyMissing;
         var digest: [32]u8 = undefined;
@@ -2293,7 +2296,10 @@ fn expectScopedPinBodies(owner: []const u8, declaration: []const u8) !usize {
 }
 
 test "ownership words: compiler intrinsic pins hash the real Any lowering" {
-    _ = try expectScopedPinBodies("core", "Js.Any.pack");
+    _ = try expectPinBodies("core", "Js.Any.pack");
+    // Compiler helpers grant no source declaration authority; their ordinary
+    // pin still guards the actual freshness proof and literal emitter.
+    try testing.expectEqual(@as(usize, 1), try expectPinBodies(null, "Js.Any.freshPackets"));
 }
 
 test "ownership words: compiler intrinsic pins cover the reply scan fixture" {
@@ -2312,5 +2318,5 @@ test "ownership words: compiler intrinsic pins cover the reply scan fixture" {
     try testing.expect(found);
     // Lowering also owns the fresh empty-result path, while ReplyScan owns
     // the traversal. Both independently pinned regions must remain covered.
-    try testing.expectEqual(@as(usize, 2), try expectScopedPinBodies("tests/platforms/reply-scan", "Worker.Object.replyIds"));
+    try testing.expectEqual(@as(usize, 2), try expectPinBodies("tests/platforms/reply-scan", "Worker.Object.replyIds"));
 }

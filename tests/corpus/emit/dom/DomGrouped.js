@@ -1,7 +1,8 @@
 import { String$fromInt, String$toUpper } from "./_core/String.mjs";
 import { Rt$control, Rt$template } from "./_platform/Rt.mjs";
+import { Js$Any$pack } from "./_core/Js/Any.mjs";
 const DomGrouped$p21 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   const $x$4 = $input$3.name;
   if ($x$4 !== $i$1.g0_0) {
     $i$1.g0_0 = $x$4;
@@ -41,7 +42,7 @@ const DomGrouped$k21 = { m: ($v$9, $cx$10) => {
   return $i$17;
 }, p: DomGrouped$p21 };
 const DomGrouped$p36 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   if ($input$3.name !== $i$1.g0_0 || $input$3.count !== $i$1.g0_1) {
     $i$1.g0_0 = $input$3.name;
     $i$1.g0_1 = $input$3.count;
@@ -71,7 +72,7 @@ const DomGrouped$k36 = { m: ($v$7, $cx$8) => {
   return $i$11;
 }, p: DomGrouped$p36 };
 const DomGrouped$p50 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   if ($input$3.name !== $i$1.l0_0) {
     $i$1.l0_0 = $input$3.name;
     const $t$4 = String$toUpper($input$3.name);
@@ -99,8 +100,11 @@ const DomGrouped$k50 = { m: ($v$7, $cx$8) => {
   DomGrouped$p50($i$11, $v$7);
   return $i$11;
 }, p: DomGrouped$p50 };
-const DomGrouped$view = (model$1) => ({ t: DomGrouped$k21, v: [model$1] });
-const DomGrouped$ordered = (model$1) => ({ t: DomGrouped$k36, v: [model$1] });
-const DomGrouped$shouted = (model$1) => ({ t: DomGrouped$k50, v: [model$1] });
+const DomGrouped$view$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "{count=core:Basics.Int,name=core:String.String,text=core:String.String}" + ")", a: undefined };
+const DomGrouped$view = (model$1) => ({ t: DomGrouped$k21, v: { ...DomGrouped$view$$packet$1, a: model$1 } });
+const DomGrouped$ordered$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "{count=core:Basics.Int,name=core:String.String,text=core:String.String}" + ")", a: undefined };
+const DomGrouped$ordered = (model$1) => ({ t: DomGrouped$k36, v: { ...DomGrouped$ordered$$packet$1, a: model$1 } });
+const DomGrouped$shouted$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "{count=core:Basics.Int,name=core:String.String,text=core:String.String}" + ")", a: undefined };
+const DomGrouped$shouted = (model$1) => ({ t: DomGrouped$k50, v: { ...DomGrouped$shouted$$packet$1, a: model$1 } });
 export { DomGrouped$view, DomGrouped$ordered, DomGrouped$shouted };
 //# sourceMappingURL=DomGrouped.mjs.map

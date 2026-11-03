@@ -1,6 +1,7 @@
 import { Rt$template, Rt$classes, Rt$styles, Rt$safeUrl, Rt$control } from "./_platform/Rt.mjs";
+import { Js$Any$pack } from "./_core/Js/Any.mjs";
 const DomAttributes$p27 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   const $x$4 = $input$3.danger;
   if ($x$4 !== $i$1.g0_0) {
     $i$1.g0_0 = $x$4;
@@ -24,7 +25,7 @@ const DomAttributes$k27 = { m: ($v$7, $cx$8) => {
   return $i$10;
 }, p: DomAttributes$p27 };
 const DomAttributes$p48 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   {
     const $t$4 = $input$3.classes;
     $i$1.a0 = Rt$classes($i$1.w0, $t$4, $i$1.a0);
@@ -42,7 +43,7 @@ const DomAttributes$k48 = { m: ($v$6, $cx$7) => {
   return $i$9;
 }, p: DomAttributes$p48 };
 const DomAttributes$p68 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   const $x$4 = $input$3.url;
   if ($x$4 !== $i$1.g0_0) {
     $i$1.g0_0 = $x$4;
@@ -73,8 +74,11 @@ const DomAttributes$k68 = { m: ($v$9, $cx$10) => {
   DomAttributes$p68($i$15, $v$9);
   return $i$15;
 }, p: DomAttributes$p68 };
-const DomAttributes$inPlace = (r$1) => ({ t: DomAttributes$k27, v: [r$1] });
-const DomAttributes$lists = (r$1) => ({ t: DomAttributes$k48, v: [r$1] });
-const DomAttributes$fields = (r$1) => ({ t: DomAttributes$k68, v: [r$1] });
+const DomAttributes$inPlace$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "{color=core:String.String,danger=core:Basics.Bool}" + ")", a: undefined };
+const DomAttributes$inPlace = (r$1) => ({ t: DomAttributes$k27, v: { ...DomAttributes$inPlace$$packet$1, a: r$1 } });
+const DomAttributes$lists$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "{classes=core:List.List((core:String.String,core:Basics.Bool)),styles=core:List.List((core:String.String,core:String.String))}" + ")", a: undefined };
+const DomAttributes$lists = (r$1) => ({ t: DomAttributes$k48, v: { ...DomAttributes$lists$$packet$1, a: r$1 } });
+const DomAttributes$fields$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "{on=core:Basics.Bool,text=core:String.String,url=core:String.String}" + ")", a: undefined };
+const DomAttributes$fields = (r$1) => ({ t: DomAttributes$k68, v: { ...DomAttributes$fields$$packet$1, a: r$1 } });
 export { DomAttributes$inPlace, DomAttributes$lists, DomAttributes$fields };
 //# sourceMappingURL=DomAttributes.mjs.map

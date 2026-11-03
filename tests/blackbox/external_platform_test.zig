@@ -13,6 +13,7 @@
 const std = @import("std");
 const world = @import("world.zig");
 const World = world.World;
+const diagnostic = @import("diagnostic");
 const testing = std.testing;
 
 test "an external platform's markup lowering compiles a view the program then prints" {
@@ -131,18 +132,7 @@ test "typed lowering closes generic operand packets with checked source evidence
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try w.copyTreeInto("core", "mycore", "_");
-    try w.write("mycore/CaptureCheck.beni",
-        \\import Js.Data as Data
-        \\pub data value =
-        \\    case Data.checked value of
-        \\        Just _ → "data"
-        \\        Nothing → "hidden"
-    );
-    // #1782: typed-toy uses the same generated sample call both in a
-    // capture packet and in a checked-data call; first is shared too.
-    // The release specialiser must account for every structural use.
-    try w.copyTree("tests/corpus/external-platform/SharedGeneratedOperands", "_");
+    try writeTypedProject(&w);
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
@@ -160,7 +150,121 @@ test "typed lowering closes generic operand packets with checked source evidence
         if (built.exit_code != 0) std.debug.print("{s}\n", .{built.stderr});
         try testing.expectEqual(@as(u8, 0), built.exit_code);
         try testing.expectEqualStrings("", built.stderr);
-        try w.expectProgram("out/_main.mjs", .{ .stdout = "matched/matched/tuple matched/data\n" });
+        try w.expectProgram("out/_main.mjs", .{ .stdout = "matched/matched/tuple matched/data/generated tuple matched\n" });
+    }
+}
+
+fn writeTypedProject(w: *World) !void {
+    try w.copyTreeInto("core", "mycore", "_");
+    try w.write("mycore/CaptureCheck.beni",
+        \\import Js.Data as Data
+        \\pub data value =
+        \\    case Data.checked value of
+        \\        Just _ → "data"
+        \\        Nothing → "hidden"
+    );
+    // The shared-call fixture stays the optimizer's regression boundary;
+    // the typed lowering additionally makes and restores a generated packet.
+    try w.copyTree("tests/corpus/external-platform/SharedGeneratedOperands", "_");
+}
+
+test "packet lowering refuses aliases, calls and unchecked identity tokens" {
+    for ([_]struct { name: []const u8, message: []const u8 }{
+        .{ .name = "typed-packet-nonfresh", .message = "Context.packet requires a provably fresh object literal; names, calls and other expressions cannot become packets." },
+        .{ .name = "typed-packet-call", .message = "Context.packet requires a provably fresh object literal; names, calls and other expressions cannot become packets." },
+        .{ .name = "typed-packet-data", .message = "Context.packet requires compiler-issued checked identity evidence; checked-data evidence is not an identity." },
+        .{ .name = "typed-packet-forged", .message = "Context.packet requires compiler-issued checked identity evidence." },
+    }) |scenario| {
+        // ┌─────────────────────────────────────┐
+        // │ PREPARE                             │
+        // └─────────────────────────────────────┘
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try writeTypedProject(&w);
+        const manifest = try std.fmt.allocPrint(w.arena.allocator(),
+            \\{{"platform":true,"name":"evidence","platforms":["html"],"reexports":["Html"],"program":"Probe.Program","runtime":"runtime.js","markup":{{"lowering":"{s}","module":"Probe","runtime":"runtime.js"}}}}
+        , .{scenario.name});
+        try w.write("platform/beni.json", manifest);
+        // ┌─────────────────────────────────────┐
+        // │ EXECUTE                             │
+        // └─────────────────────────────────────┘
+        const built = try w.run(&.{ "build", "--platform=platform", "--core-root=mycore", "--out=out", "--root=src", "src" });
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY OUTPUT                       │
+        // └─────────────────────────────────────┘
+        try testing.expectEqual(@as(u8, 1), built.exit_code);
+        if (built.diagnostics.len != 1) std.debug.print("{s}\n", .{built.stderr});
+        try testing.expectEqual(@as(usize, 1), built.diagnostics.len);
+        const actual = built.diagnostics[0];
+        var normalized = actual;
+        normalized.message = try std.mem.replaceOwned(u8, w.arena.allocator(), actual.message, "\n", " ");
+        try testing.expectEqualDeep(diagnostic.Diagnostic{
+            .code = .internal,
+            .severity = .@"error",
+            .span = .{
+                .file = "src/View.beni",
+                .start = .{ .line = 12, .col = 31 },
+                .end = .{ .line = 12, .col = 36 },
+            },
+            .title = "INTERNAL ERROR",
+            .message = scenario.message,
+        }, normalized);
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY SIDE EFFECTS                 │
+        // └─────────────────────────────────────┘
+        try testing.expect(!w.exists("out"));
+    }
+}
+
+test "generated packet roots its producer without a written pack call" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("platform/beni.json",
+        \\{"platform":true,"name":"packet","platforms":["html"],"reexports":["Html"],"program":"Probe.Program","runtime":"runtime.js","markup":{"lowering":"typed-packet-only","module":"Probe","runtime":"runtime.js"}}
+    );
+    try w.write("platform/runtime.js",
+        \\export const run = program => console.log(program.t);
+        \\export const text = value => ({t: value});
+        \\export const map = (value, tagger) => value;
+    );
+    try w.write("platform/Probe.js", "export const show = value => value;\n");
+    try w.write("platform/Probe.beni",
+        \\import Html exposing (Html)
+        \\import Js.Any as Any
+        \\pub foreign type Program
+        \\pub foreign pure show : Html msg → Program
+        \\pub restore : Any.Any → String
+        \\restore saved =
+        \\    restored : Maybe (String × String)
+        \\    restored = Any.unpack saved
+        \\    case restored of
+        \\        Just ( a, b ) → a ++ "/" ++ b
+        \\        Nothing → "packet identity mismatch"
+    );
+    try w.write("Main.beni",
+        \\import Probe
+        \\main : Probe.Program
+        \\main = Probe.show (<For each={[ "seed" ]} keyed={False}>{λ_ → <></>}</For>)
+    );
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    for ([_][]const []const u8{
+        &.{ "build", "--platform=platform", "--out=out", "Main.beni" },
+        &.{ "build", "--platform=platform", "--out=out", "Main.beni" },
+        &.{ "build", "--platform=platform", "--out=out", "--release", "Main.beni" },
+    }) |args| {
+        const built = try w.runWith(args, .{ .raw_diagnostics = true });
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY OUTPUT                       │
+        // └─────────────────────────────────────┘
+        if (built.exit_code != 0) std.debug.print("{s}\n", .{built.stderr});
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqualStrings("", built.stderr);
+        try w.expectProgram("out/_main.mjs", .{ .stdout = "left/right\n" });
     }
 }
 

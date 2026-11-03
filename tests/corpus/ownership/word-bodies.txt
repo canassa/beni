@@ -132,8 +132,10 @@ src/js/Lower.zig Js.optWithDefault 616c4fab9dcb6fe746f4b4574efee84d68c0dcfb6561e
 src/bir/Bir.zig Js.cellRead ff2e6c1c664e26923e024f3b4cef61134f0aa488706c506f055f50549a635c0b intrinsic:core
 src/bir/Bir.zig Js.cellWrite a2aa0b9d55af613668718a7c12398432183eefc1af95aeee0070c41050193306 intrinsic:core
 
-src/js/Lower.zig Js.Any.pack 995288153a5adebbd64665889a6392424711a3b4c9e66bcd614b51e67e8ecf77 intrinsic:core
-src/js/Lower.zig Js.Any.unpack 9de83bc52bb0603e7bfd6d92c447ed89f170d6c83c2079122402fad1a930834f intrinsic:core
+src/js/Lower.zig Js.Any.pack 5f53ea1c23da5eef2a8b4a6f7ee3a6201daee201edc77fa1b0767e5a7cd49e85 intrinsic:core
+src/js/Lower.zig Js.Any.unpack cd57735708a6d51b09be7b301e66ddd231370c73b2700e3bd63723bcb96c0658 intrinsic:core
+# Ordinary helper pin: does not grant any declaration an intrinsic exemption.
+src/js/Lower.zig Js.Any.freshPackets e7f2654dcdba2388aff3439dd8a4d61cbf0763218f30297cf199b30b34de343a
 core/Js/Inspect.js Js.Inspect.view ecbb30eedfbdc1c9bb9890c4b2a237960d2fb457f52f91dae8d4bffcf8195c54
 core/Js/Inspect.js Js.Inspect.data 3db872bf1c782633919cf66aeb2601670381471ac3439344f96aa594a4bb1590
 core/Js/Inspect.js Js.Inspect.list ff9e3ba1daee002a9b4ca2984def77da3731807ed1ebc33ed772c11d984e54ca

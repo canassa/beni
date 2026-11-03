@@ -890,7 +890,20 @@ pub fn checkI7(
 ) Allocator.Error!void {
     const owners = try d.instOwners(bir, gpa);
     defer gpa.free(owners);
-    var cx: I7 = .{ .d = d, .interfaces = interfaces, .types = types, .interner = interner, .owners = owners };
+    // Operand-only sites may also stand on a saturated call's function
+    // reference. Its enclosing call owns the ordinary hidden arguments.
+    const has_operands = for (d.sites) |site| {
+        if (site.operand_identity != .none or site.operand_data != .none) break true;
+    } else false;
+    const operand_callees: []bool = if (has_operands) try gpa.alloc(bool, bir.insts.len) else &.{};
+    defer if (has_operands) gpa.free(operand_callees);
+    if (has_operands) {
+        @memset(operand_callees, false);
+        for (bir.insts.items(.tag), bir.insts.items(.data)) |tag, payload| {
+            if (tag == .call and payload.lhs < operand_callees.len) operand_callees[payload.lhs] = true;
+        }
+    }
+    var cx: I7 = .{ .d = d, .interfaces = interfaces, .types = types, .interner = interner, .owners = owners, .operand_callees = operand_callees };
     const below = try gpa.alloc(bool, d.terms.len);
     defer gpa.free(below);
     var at = d.terms.len;
@@ -1004,6 +1017,9 @@ const I7 = struct {
     owners: []const u32 = &.{},
     /// Per term: it and everything below it add up (`localOk`).
     below: []const bool = &.{},
+    /// References whose ordinary evidence belongs to their saturated call.
+    /// Populated only when checked markup operand sites exist.
+    operand_callees: []const bool = &.{},
 
     fn count(cx: I7, t: Term) u32 {
         return requirementCount(cx.d, t, cx.interfaces, cx.types, cx.interner);
@@ -1045,7 +1061,11 @@ const I7 = struct {
         const data = bir.instData(site.inst);
         const expected: u32 = switch (t) {
             .call => referenceCount(d, bir, cx.interfaces, ownerAt(cx.owners, site.inst.int()), @fromBackingInt(@intCast(data.lhs))),
-            .top, .ext_value, .local => referenceCount(d, bir, cx.interfaces, ownerAt(cx.owners, site.inst.int()), site.inst),
+            .top, .ext_value, .local => if ((site.operand_identity != .none or site.operand_data != .none) and
+                site.inst.int() < cx.operand_callees.len and cx.operand_callees[site.inst.int()])
+                0
+            else
+                referenceCount(d, bir, cx.interfaces, ownerAt(cx.owners, site.inst.int()), site.inst),
             // A site the backend never reads: nothing to measure it against.
             else => return true,
         };

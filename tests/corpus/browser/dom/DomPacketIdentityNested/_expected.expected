@@ -1,0 +1,39 @@
+-- load
+console.log: identity patch: "Int"
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <button id="noop">"noop"</button>
+    <p>
+      <span>"Int"</span>
+    </p>
+  </main>
+</body>
+-- click #noop
+(the DOM did not change)
+-- click #flip
+console.log: identity patch: "Float"
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <button id="noop">"noop"</button>
+    <p>
+      <span>"Float"</span>
+    </p>
+  </main>
+</body>
+-- click #noop
+(the DOM did not change)
+-- click #flip
+console.log: identity patch: "Int"
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <button id="noop">"noop"</button>
+    <p>
+      <span>"Int"</span>
+    </p>
+  </main>
+</body>
+-- click #noop
+(the DOM did not change)

@@ -1,8 +1,9 @@
 import { Rt$safeUrl, Rt$attrNS, Rt$template, Rt$templateOf, Rt$forKeyed, Rt$restate, Rt$slot } from "./_platform/Rt.mjs";
+import { Js$Any$pack } from "./_core/Js/Any.mjs";
 import { String$fromInt } from "./_core/String.mjs";
 const DomSvg$p10 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
-  const $input$4 = $v$2[1];
+  const $input$3 = $v$2.a;
+  const $input$4 = $v$2.b;
   const $x$5 = $input$3;
   if ($x$5 !== $i$1.g0_0) {
     $i$1.g0_0 = $x$5;
@@ -23,7 +24,7 @@ const DomSvg$k10 = { m: ($v$7, $cx$8) => {
   return $i$11;
 }, p: DomSvg$p10 };
 const DomSvg$p18 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   const $x$4 = $input$3;
   if ($x$4 !== $i$1.g0_0) {
     $i$1.g0_0 = $x$4;
@@ -48,7 +49,7 @@ const DomSvg$k22 = { m: ($v$1, $cx$2) => {
 const DomSvg$b22 = { t: DomSvg$k22, v: null };
 const DomSvg$t39 = Rt$templateOf("<svg><rect></svg>", 2);
 const DomSvg$p41 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   {
     const $t$4 = (n$2) => n$2;
     const $made$5 = { o: true, h: [], m: ($item$6, $position$7, $cx$8) => {
@@ -73,9 +74,12 @@ const DomSvg$k41 = { m: ($v$14, $cx$15) => {
   DomSvg$p41($i$18, $v$14);
   return $i$18;
 }, p: DomSvg$p41, l: true };
-const DomSvg$picture = (box$1, link$2) => ({ t: DomSvg$k10, v: [box$1, link$2] });
-const DomSvg$dot = (x$1) => ({ t: DomSvg$k18, v: [x$1] });
+const DomSvg$picture$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "core:String.String" + "," + "core:String.String" + ")", a: undefined, b: undefined };
+const DomSvg$picture = (box$1, link$2) => ({ t: DomSvg$k10, v: { ...DomSvg$picture$$packet$1, a: box$1, b: link$2 } });
+const DomSvg$dot$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "core:String.String" + ")", a: undefined };
+const DomSvg$dot = (x$1) => ({ t: DomSvg$k18, v: { ...DomSvg$dot$$packet$1, a: x$1 } });
 const DomSvg$pair = DomSvg$b22;
-const DomSvg$bars = (ns$1) => ({ t: DomSvg$k41, v: [ns$1] });
+const DomSvg$bars$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "core:List.List(core:Basics.Int)" + ")", a: undefined };
+const DomSvg$bars = ($m$0, ns$1) => ({ t: DomSvg$k41, v: { ...DomSvg$bars$$packet$1, a: ns$1 } });
 export { DomSvg$picture, DomSvg$dot, DomSvg$pair, DomSvg$bars };
 //# sourceMappingURL=DomSvg.mjs.map

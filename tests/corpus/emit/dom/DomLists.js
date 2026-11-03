@@ -1,7 +1,8 @@
 import { Rt$template, Rt$forKeyed, Rt$restate, Rt$slot, Rt$insertText, Rt$forPosition, Rt$show, Rt$hide, Rt$templateOf } from "./_platform/Rt.mjs";
+import { Js$Any$pack } from "./_core/Js/Any.mjs";
 import { List$head } from "./_core/List.mjs";
 const DomLists$p18 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   const $x$4 = $input$3;
   if ($x$4 !== $i$1.g0_0) {
     $i$1.g0_0 = $x$4;
@@ -18,7 +19,7 @@ const DomLists$k18 = { m: ($v$5, $cx$6) => {
 }, p: DomLists$p18 };
 const DomLists$t42 = Rt$template("<tr><td> ");
 const DomLists$p44 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   {
     const $t$4 = $input$3.rows;
     const $t$6 = ($p$5) => $p$5.id;
@@ -74,7 +75,7 @@ const DomLists$k72 = { m: ($v$30, $cx$31) => {
 } };
 const DomLists$b72 = { t: DomLists$k72, v: null };
 const DomLists$p77 = ($i$35, $v$36) => {
-  const $input$37 = $v$36[0];
+  const $input$37 = $v$36.a;
   const $x$38 = $input$37;
   if ($x$38 !== $i$35.g0_0) {
     $i$35.g0_0 = $x$38;
@@ -90,7 +91,7 @@ const DomLists$k77 = { m: ($v$39, $cx$40) => {
   return $i$43;
 }, p: DomLists$p77 };
 const DomLists$p81 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   {
     const $t$4 = $input$3.names;
     const $t$5 = $input$3.names;
@@ -118,7 +119,7 @@ const DomLists$p81 = ($i$1, $v$2) => {
     const $made$24 = { o: true, h: [true], b: ($item$25, $position$26) => DomLists$viewName($item$25), i: false, f: DomLists$b62 };
     Rt$forKeyed($i$1.c1, $t$5, null, $made$24, [DomLists$viewName]);
     const $made$27 = { o: true, h: [], b: ($item$28, $position$29) => {
-      const $t$44 = $item$28 === "" ? DomLists$b72 : { t: DomLists$k77, v: [$item$28] };
+      const $t$44 = $item$28 === "" ? DomLists$b72 : { t: DomLists$k77, v: { ...DomLists$lists$$packet$1, a: $item$28 } };
       return $t$44;
     }, i: false, f: null };
     Rt$forKeyed($i$1.c2, $t$11, null, $made$27, null);
@@ -164,7 +165,7 @@ const DomLists$k102 = { m: ($v$18, $cx$19) => {
   }
 } };
 const DomLists$p104 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   {
     const $t$4 = List$head($input$3.rows);
     const $t$6 = ($p$5) => $p$5.id;
@@ -199,9 +200,14 @@ const DomLists$k104 = { m: ($v$27, $cx$28) => {
   DomLists$p104($i$32, $v$27);
   return $i$32;
 }, p: DomLists$p104, l: true };
-const DomLists$viewName = (name$1) => ({ t: DomLists$k18, v: [name$1] });
-const DomLists$table = (model$1) => ({ t: DomLists$k44, v: [model$1] });
-const DomLists$lists = (model$1) => ({ t: DomLists$k81, v: [model$1] });
-const DomLists$first = (model$1) => ({ t: DomLists$k104, v: [model$1] });
+const DomLists$viewName$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "core:String.String" + ")", a: undefined };
+const DomLists$viewName = (name$1) => ({ t: DomLists$k18, v: { ...DomLists$viewName$$packet$1, a: name$1 } });
+const DomLists$table$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "{names=core:List.List(core:String.String),rows=core:List.List({id=core:Basics.Int,label=core:String.String}),selected=core:Basics.Int}" + ")", a: undefined };
+const DomLists$table = ($m$0, model$1) => ({ t: DomLists$k44, v: { ...DomLists$table$$packet$1, a: model$1 } });
+const DomLists$lists$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "core:String.String" + ")", a: undefined };
+const DomLists$lists$$packet$2 = { [Js$Any$pack.$packet.key]: "(" + "{names=core:List.List(core:String.String),rows=core:List.List({id=core:Basics.Int,label=core:String.String}),selected=core:Basics.Int}" + ")", a: undefined };
+const DomLists$lists = ($m$0, model$1) => ({ t: DomLists$k81, v: { ...DomLists$lists$$packet$2, a: model$1 } });
+const DomLists$first$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "{names=core:List.List(core:String.String),rows=core:List.List({id=core:Basics.Int,label=core:String.String}),selected=core:Basics.Int}" + ")", a: undefined };
+const DomLists$first = ($m$0, model$1) => ({ t: DomLists$k104, v: { ...DomLists$first$$packet$1, a: model$1 } });
 export { DomLists$table, DomLists$lists, DomLists$first };
 //# sourceMappingURL=DomLists.mjs.map

@@ -1411,6 +1411,7 @@ const Emitter = struct {
     program_uses: []const []const u8 = &.{},
     /// The supplied exports some module's lowering took, by name.
     module_uses: std.ArrayList([]const u8) = .empty,
+    uses_markup_packets: bool = false,
     /// Reachability's roots beside the build's own (`Reach.Input`).
     extra_roots: []const Reach.Node = &.{},
     /// The validators the build shares across its schemas, as roots
@@ -3611,11 +3612,27 @@ const Emitter = struct {
         }
     }
 
+    /// A generated packet has no written source call to Any.pack. Keep
+    /// that graph edge during the coarse walk, then only when a lowering
+    /// actually reports a packet producer.
+    fn packetRoots(e: *Emitter, out: *std.ArrayList(Reach.Node)) !void {
+        const name = e.session.interner.find("Js.Any") orelse return;
+        const module = e.graph().lookup(.core, name) orelse return;
+        const b = e.bir(module);
+        for (b.decls, 0..) |decl, index| {
+            if (decl.kind != .foreign_value or !decl.is_pub) continue;
+            if (!std.mem.eql(u8, e.session.interner.slice(b.symbol(decl.name)), "pack")) continue;
+            try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = @intCast(index) });
+            return;
+        }
+    }
+
     /// The runtime module's roots (`backend.md` §15.1, *The runtime
     /// module*), coarse: every export it supplies and every value the file
     /// imports from it.
     fn coarseRuntimeRoots(e: *Emitter) ![]const Reach.Node {
         var out: std.ArrayList(Reach.Node) = .empty;
+        if (e.graph().markup.operand_evidence & 1 != 0) try e.packetRoots(&out);
         try e.workerHostRoots(&out);
         if (e.selectedRuntime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = if (e.entry_runtime_twin) .twin else .decl, .index = runner.decl });
         const module = e.runtime_module orelse return out.items;
@@ -3634,6 +3651,7 @@ const Emitter = struct {
     /// them, and the values the kept part of the file imports.
     fn preciseRuntimeRoots(e: *Emitter, entry: ?Entry) ![]const Reach.Node {
         var out: std.ArrayList(Reach.Node) = .empty;
+        if (e.uses_markup_packets) try e.packetRoots(&out);
         try e.workerHostRoots(&out);
         if (e.selectedRuntime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = if (e.entry_runtime_twin) .twin else .decl, .index = runner.decl });
         const module = e.runtime_module orelse return out.items;
@@ -6934,6 +6952,7 @@ const Emitter = struct {
             uses_sanitizer = false;
             lowered_clean = true;
             e.uses_markup_runtime = false;
+            e.uses_markup_packets = false;
             e.markup_exports.clearRetainingCapacity();
             e.start.clearRetainingCapacity();
             e.module_uses.clearRetainingCapacity();
@@ -6946,6 +6965,7 @@ const Emitter = struct {
                 uses_runtime = uses_runtime or slot.uses_runtime;
                 uses_sanitizer = uses_sanitizer or slot.uses_sanitizer;
                 e.uses_markup_runtime = e.uses_markup_runtime or slot.uses_markup_runtime;
+                e.uses_markup_packets = e.uses_markup_packets or slot.markup_packets;
                 try e.markup_exports.appendSlice(e.scratch, slot.markup_exports);
                 for (slot.markup_module_uses) |name| {
                     var known = false;
@@ -7119,6 +7139,7 @@ const Emitter = struct {
         /// The runtime exports it took from the runtime module instead,
         /// likewise (`Lower.Result.markup_module_uses`).
         markup_module_uses: []const []const u8 = &.{},
+        markup_packets: bool = false,
         /// The program start data its markup lowering contributed, in the
         /// lowering worker's `kept` arena.
         start: []const Lower.StartPair = &.{},
@@ -7179,6 +7200,7 @@ const Emitter = struct {
             slot.uses_markup_runtime = from.uses_markup_runtime;
             slot.markup_exports = from.markup_exports;
             slot.markup_module_uses = from.markup_module_uses;
+            slot.markup_packets = from.markup_packets;
             slot.start = from.start;
             slot.unobserved = from.unobserved;
             slot.effect_keep = from.effect_keep;
@@ -7318,6 +7340,7 @@ const Emitter = struct {
             slot.uses_runtime = lowered.uses_runtime;
             slot.uses_sanitizer = lowered.uses_sanitizer;
             slot.uses_markup_runtime = lowered.uses_markup_runtime;
+            slot.markup_packets = lowered.markup_packets;
             const exports = try w.kept.allocator().alloc([]const u8, lowered.markup_exports.len);
             for (exports, lowered.markup_exports) |*to, name| to.* = try w.kept.allocator().dupe(u8, name);
             slot.markup_exports = exports;
@@ -7377,6 +7400,7 @@ const Emitter = struct {
                 again.uses_runtime == slot.uses_runtime and
                 again.uses_sanitizer == slot.uses_sanitizer and
                 again.uses_markup_runtime == slot.uses_markup_runtime and
+                again.markup_packets == slot.markup_packets and
                 sameStrings(again.markup_exports, slot.markup_exports) and
                 sameStrings(again.markup_module_uses, slot.markup_module_uses) and
                 sameStart(again.start, slot.start) and

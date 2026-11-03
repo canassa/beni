@@ -17,3 +17,7 @@ Any is not data
 nested Any is not data
 {"values":[2,3]}
 refused spoofed Box
+copy/repack matched
+copy ordered
+{ answer = 42, label = "packet" }
+{"answer":42,"label":"packet"}:symbols=0

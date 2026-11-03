@@ -1,0 +1,76 @@
+-- #1785: the site identity invalidates rows even when their item and
+-- captured callback compare equal. Noop retains ordinary row skipping.
+-- Noop still calls render with a fresh packet and the same identity; the
+-- log must not repeat. The browser corpus runs development and release.
+import Browser
+import Html exposing (Html)
+import Probe
+
+
+type Msg
+    = Flip
+    | Second
+    | Noop
+
+
+type alias Model =
+    float : Bool
+    second : Bool
+    ticks : Int
+
+
+render : (a → a), (b → b) → Html Msg
+render value other =
+    <main>
+        <button id="flip" onClick={Flip}>flip</button>
+        <button id="second" onClick={Second}>second</button>
+        <button id="noop" onClick={Noop}>noop</button>
+        <For each={[ "one" ]} keyed={False}>
+            {λ_ →
+                <p>
+                    {Debug.log
+                        "identity patch"
+                        (Probe.describe value ++ "/" ++ Probe.describe other)
+                    }
+                </p>
+            }
+        </For>
+    </main>
+
+
+view : Model → Html Msg
+view model =
+    if model.float then
+        if model.second then
+            render floatIdentity floatIdentity
+        else
+            render floatIdentity intIdentity
+    else if model.second then
+        render intIdentity floatIdentity
+    else
+        render intIdentity intIdentity
+
+
+intIdentity : Int → Int
+intIdentity = Probe.identity
+
+
+floatIdentity : Float → Float
+floatIdentity = Probe.identity
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Flip →
+            { model | float = not model.float }
+        Second →
+            { model | second = not model.second }
+        Noop →
+            { model | ticks = model.ticks + 1 }
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → { float = False, second = False, ticks = 0 }, update = update, view = view }

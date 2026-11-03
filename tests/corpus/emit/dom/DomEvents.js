@@ -1,9 +1,10 @@
 import { Rt$template, Rt$delegate, Rt$listen, Rt$identity } from "./_platform/Rt.mjs";
 import { Html$targetValue } from "./_platform/_html/Html.mjs";
+import { Js$Any$pack } from "./_core/Js/Any.mjs";
 const DomEvents$Focused = { $: "Focused", a: null };
 const DomEvents$Sent = { $: "Sent", a: null };
 const DomEvents$p16 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   if ($i$1.g0 === undefined) {
     $i$1.g0 = true;
     const $t$5 = ($x$4) => ({ $: "Typed", a: $x$4 });
@@ -55,6 +56,7 @@ const DomEvents$k16 = { m: ($v$10, $cx$11) => {
   DomEvents$p16($i$15, $v$10);
   return $i$15;
 }, p: DomEvents$p16 };
-const DomEvents$view = (n$1) => ({ t: DomEvents$k16, v: [n$1] });
+const DomEvents$view$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "core:Basics.Int" + ")", a: undefined };
+const DomEvents$view = (n$1) => ({ t: DomEvents$k16, v: { ...DomEvents$view$$packet$1, a: n$1 } });
 export { DomEvents$view };
 //# sourceMappingURL=DomEvents.mjs.map

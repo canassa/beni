@@ -1,0 +1,14 @@
+-- Grouped DOM captures keep the existing { t, v } node and one capture
+-- tuple object. Context.packet tags that object; it adds no Any Box.
+-- The record retains a real callback as well as a scalar.
+import Html exposing (Html)
+
+
+pub view : { count : Int, emit : Html.Event → Int }, Int → Html Int
+view model delta = <button onClick={model.emit}>{model.count + delta}</button>
+
+
+-- The hidden identity is used only by the packet constructor in generic.
+-- Its hoisted patch keeps grouping and reads no free identity parameter.
+pub generic : { inner : Html msg } → Html msg
+generic model = <section>{model.inner}</section>

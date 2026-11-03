@@ -1,11 +1,12 @@
 import { Rt$template, Rt$delegate, Rt$forKeyed, Rt$restate, Rt$slot } from "./_platform/Rt.mjs";
+import { Js$Any$pack } from "./_core/Js/Any.mjs";
 const DomSelector$t83 = Rt$template("<p> ");
 const DomSelector$t108 = Rt$template("<p> ");
 const DomSelector$t171 = Rt$template("<p> ");
 const DomSelector$t127 = Rt$template("<p> ");
 const DomSelector$t154 = Rt$template("<p><b> ");
 const DomSelector$p173 = ($i$1, $v$2) => {
-  const $input$3 = $v$2[0];
+  const $input$3 = $v$2.a;
   {
     const $t$4 = $input$3.rows;
     const $t$6 = ($p$5) => $p$5.id;
@@ -146,6 +147,7 @@ const DomSelector$Msg$$compare = ($x, $y) => $x.a < $y.a ? "LT" : $x.a > $y.a ? 
 const DomSelector$Msg$$eq = ($x, $y) => $x.a === $y.a;
 const DomSelector$rowClass = (model$1, row$2) => model$1.selected.$ === "Just" && model$1.selected.a === row$2.id ? "danger" : "";
 const DomSelector$isOn = (selected$1, id$2) => selected$1.$ === "Just" && selected$1.a === id$2 ? "on" : "";
-const DomSelector$table = (model$1) => ({ t: DomSelector$k173, v: [model$1] });
+const DomSelector$table$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "{cursor=core:Basics.Int,ids=core:List.List(core:Basics.Int),rows=core:List.List({id=core:Basics.Int,label=core:String.String}),selected=core:Maybe.Maybe(core:Basics.Int),theme=core:String.String}" + ")", a: undefined };
+const DomSelector$table = (model$1) => ({ t: DomSelector$k173, v: { ...DomSelector$table$$packet$1, a: model$1 } });
 export { DomSelector$Msg$$compare, DomSelector$Msg$$eq, DomSelector$table };
 //# sourceMappingURL=DomSelector.mjs.map

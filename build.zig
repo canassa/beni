@@ -1282,7 +1282,7 @@ pub fn build(b: *std.Build) void {
     const skill_api_step = b.step("skill-api", "Write skills/beni/references/api-*.md from `beni dump --stage=interface` on the gates' beni");
     // Exercise the actual pack maker against a Cloudflare library containing
     // replyIds, even before the platform family adds its production call.
-    const reply_pack_run = b.addRunArtifact(corePackMaker(b));
+    const reply_pack_run = b.addRunArtifact(corePackMaker(b, platform_sources));
     reply_pack_run.setName("rebuild a Cloudflare reply library for a compiler");
     reply_pack_run.addDirectoryArg(coreDirectory(b, shipped_core));
     reply_pack_run.addFileContentArg(default_id.hex);
@@ -1522,20 +1522,20 @@ const DebugInfo = enum {
 /// `core`'s files and the platforms of `sources` with that id, its output
 /// embedded.
 ///
-/// **One maker for every compiler, run once per compiler.** The maker is
+/// **One maker per lowering registry, run once per compiler.** The maker is
 /// built once, ReleaseSafe on the self-hosted backend — every safety check
 /// fires while it checks, lowers and prints core — and the pack it writes
 /// depends on the core, the platforms and the id, never on the maker's own
 /// mode: every key is computed with `id`, and a check's result does not
 /// depend on the code generator that compiled the checker (§10). The maker
-/// carries no platform: each one the compiler carries is staged in a
+/// carries the lowering registry; each platform’s source is staged in a
 /// directory of its own and handed to it on the command line
 /// (`platformDirectory`). Its runs lower, print and split every embedded
 /// module and check the split by joining it back
 /// (`src/core_pack_main.zig`), so the maker's compile and its runs are what
 /// an edit under `src/` adds to the path of every compiler.
 fn corePack(b: *std.Build, core: Core, sources: []const PlatformSource, id: BuildId) Stable {
-    const run = b.addRunArtifact(corePackMaker(b));
+    const run = b.addRunArtifact(corePackMaker(b, sources));
     run.setName(b.fmt("check {s} for a compiler", .{if (core.extra == null) core.dir else "variant core"}));
     run.addDirectoryArg(coreDirectory(b, core));
     run.addFileContentArg(id.hex);
@@ -1586,9 +1586,15 @@ fn emptyCorePack(b: *std.Build) *std.Build.Module {
     return b.createModule(.{ .root_source_file = root });
 }
 
-/// `src/core_pack_main.zig`, built once per `zig build` for the host.
-fn corePackMaker(b: *std.Build) *std.Build.Step.Compile {
-    if (core_pack_maker) |exe| return exe;
+/// `src/core_pack_main.zig`, built once per lowering registry for the host.
+fn corePackMaker(b: *std.Build, sources: []const PlatformSource) *std.Build.Step.Compile {
+    for (core_pack_makers.items) |maker| {
+        if (maker.sources.len != sources.len) continue;
+        const same = for (maker.sources, sources) |a, z| {
+            if (!std.mem.eql(u8, a.name, z.name) or !std.mem.eql(u8, a.dir, z.dir)) break false;
+        } else true;
+        if (same) return maker.exe;
+    }
     const host = b.graph.host;
     const mode: std.lang.Optimize = .safe;
     const diagnostic = b.createModule(.{
@@ -1606,7 +1612,10 @@ fn corePackMaker(b: *std.Build) *std.Build.Step.Compile {
     const maker_platforms = embedPlatforms(b, &.{}, true);
     beni.addImport("core_package", maker_core.module);
     beni.addImport("platform_packages", maker_platforms.module);
-    const markup = markupModules(b, &.{}, null);
+    // The checker key includes the selected lowering's operand capabilities.
+    // The pack must use the compiler's registry too, including an external
+    // platform, or vocabulary rows miss in ordinary builds without markup.
+    const markup = markupModules(b, sources, null);
     beni.addImport("beni_markup", markup.interface);
     beni.addImport("markup_lowerings", markup.registry);
     beni.addImport("markup_entity_table", entityTable(b));
@@ -1630,11 +1639,14 @@ fn corePackMaker(b: *std.Build) *std.Build.Step.Compile {
     for ([_]Stable{ maker_id.stable, maker_core, maker_platforms }) |made| {
         if (made.step) |s| exe.step.dependOn(s);
     }
-    core_pack_maker = exe;
+    core_pack_makers.append(b.allocator, .{ .sources = sources, .exe = exe }) catch @panic("OOM");
     return exe;
 }
 
-var core_pack_maker: ?*std.Build.Step.Compile = null;
+var core_pack_makers: std.ArrayList(struct {
+    sources: []const PlatformSource,
+    exe: *std.Build.Step.Compile,
+}) = .empty;
 
 /// `core`'s files in a directory of their own, for the maker's
 /// `--core-root`: the files `embedCore` embeds, under the same names.

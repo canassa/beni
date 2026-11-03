@@ -1,0 +1,23 @@
+-- Local generic source calls keep checked identities inside their scope.
+-- The click also proves callback-bearing generated captures still patch.
+import Browser
+import Html exposing (Html)
+import Keep
+
+
+type Msg
+    = Add
+
+
+view : Int → Html Msg
+view count =
+    render : Html msg → Html msg
+    render child = <section>{Keep.keep child}</section>
+    <main>
+        <button id="add" onClick={λ_ → Add}>add</button>
+        {render (<p>{count}</p>)}
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → 0, update = λ_ count → count + 1, view = view }
