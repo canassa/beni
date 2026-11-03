@@ -20,9 +20,13 @@ const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Entries = @import("Entries.zig");
 const Routed = @import("Routed.zig");
+const ApartParts = @import("ApartParts.zig");
 const CallGraft = @import("CallGraft.zig");
 const Graft = @import("Graft.zig");
 const Coexist = @import("Coexist.zig");
+const Chains = @import("Chains.zig");
+const Ends = @import("Ends.zig");
+const AtomSets = @import("AtomSets.zig");
 
 const Error = Relation.Error;
 const Cond = Contract.Cond;
@@ -159,42 +163,63 @@ fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32) Error
             try plain.append(g, e.f.slots.relWords(try e.f.slots.relOf(g, e.account(), e.places(), .from(x))));
         }
     }
+    // What arrives at the plain slots, read once for every occurrence:
+    // the callee's result tree is walked once per plain slot, not once
+    // per (occurrence, slot).
+    var reach: Reach = .empty;
+    defer reach.deinit(g);
+    var hits: std.ArrayList(Contract.Hit) = .empty;
+    defer hits.deinit(g);
+    for (plain.items) |words| {
+        try e.charge(.cond, e.contracts.trees.count(h.res_root));
+        hits.clearRetainingCapacity();
+        try e.hitsAt(h.res_root, words, &hits);
+        // A slot the result tree does not name may hold anything.
+        if (hits.items.len == 0) return instSel(e, full, call);
+        for (hits.items) |hit| for (hit.arrivals) |a| {
+            if (a.kind != .param) continue;
+            // The arrival's slot is its own steps, then what the plain
+            // slot takes on below an open one.
+            const aw = try std.mem.concat(e.arena, u32, &.{ &.{a.j}, e.f.slots.relWords(a.slot), words[hit.depth..] });
+            try e.charge(.cond, @intCast(aw.len));
+            try reachMark(&reach, g, aw, if (a.deep) reach_deep else reach_at);
+            for (1..aw.len) |n| try reachMark(&reach, g, aw[0..n], reach_below);
+        };
+    }
     const out = try e.arena.alloc(u64, full.sel.len);
     for (full.sel, 0..) |o, k| {
         out[k] = o;
         if (Contract.isApart(o)) continue;
-        if (!try arrivesAtPlain(e, h.res_root, o, plain.items)) out[k] = o | Contract.apart_bit;
+        if (!try arrivesAtPlain(e, &reach, o)) out[k] = o | Contract.apart_bit;
     }
     return instSel(e, try Cond.of(e.account(), out), call);
 }
 
-/// Whether occurrence `o` of a callee may arrive at one of the result
-/// slots `plain` (words from the result's root) by its result tree `res`.
-/// A slot `res` does not name may hold anything.
-fn arrivesAtPlain(e: *Eval, res: Contract.Node, o: u64, plain: []const []const u32) Error!bool {
-    // A deep occurrence also reaches every slot below its own.
-    const deep = Contract.isDeep(o);
-    const ow = e.f.slots.relWords(Contract.occRel(o));
-    var hits: std.ArrayList(Contract.Hit) = .empty;
-    defer hits.deinit(e.gpa());
-    for (plain) |words| {
-        try e.charge(.cond, e.contracts.trees.count(res));
-        hits.clearRetainingCapacity();
-        try e.hitsAt(res, words, &hits);
-        if (hits.items.len == 0) return true;
-        for (hits.items) |hit| {
-            const suffix = words[hit.depth..];
-            for (hit.arrivals) |a| {
-                if (a.kind != .param or a.j != Contract.occParam(o)) continue;
-                // The arrival's slot is its own steps, then what the
-                // plain slot takes on below an open one; a deep arrival
-                // reaches every slot below that.
-                const aw = try std.mem.concat(e.arena, u32, &.{ e.f.slots.relWords(a.slot), suffix });
-                if (aw.len <= ow.len and std.mem.eql(u32, aw, ow[0..aw.len]) and (a.deep or aw.len == ow.len)) return true;
-                if (deep and aw.len > ow.len and std.mem.eql(u32, ow, aw[0..ow.len])) return true;
-            }
-        }
-    }
+/// What arrives at a check's plain slots, by a callee's result tree: for
+/// each word sequence `j · slot`, an arrival of parameter `j` there
+/// (`reach_at`), a deep one (`reach_deep`), or an arrival below it
+/// (`reach_below`).
+const Reach = std.StringHashMapUnmanaged(u8);
+const reach_at: u8 = 1;
+const reach_deep: u8 = 2;
+const reach_below: u8 = 4;
+
+fn reachMark(r: *Reach, g: Allocator, key: []const u32, bit: u8) Error!void {
+    const got = try r.getOrPut(g, std.mem.sliceAsBytes(key));
+    got.value_ptr.* = if (got.found_existing) got.value_ptr.* | bit else bit;
+}
+
+/// Whether occurrence `o` of a callee may arrive at one of the check's
+/// plain slots: an arrival at its own slot, a deep arrival above it, or,
+/// for a deep occurrence (which reaches every slot below its own), an
+/// arrival below it.
+fn arrivesAtPlain(e: *Eval, reach: *const Reach, o: u64) Error!bool {
+    const key = try std.mem.concat(e.arena, u32, &.{ &.{Contract.occParam(o)}, e.f.slots.relWords(Contract.occRel(o)) });
+    try e.charge(.cond, @intCast(key.len));
+    const at = reach.get(std.mem.sliceAsBytes(key)) orelse 0;
+    if (at & (reach_at | reach_deep) != 0) return true;
+    if (Contract.isDeep(o) and at & reach_below != 0) return true;
+    for (1..key.len) |n| if ((reach.get(std.mem.sliceAsBytes(key[0..n])) orelse 0) & reach_deep != 0) return true;
     return false;
 }
 
@@ -217,147 +242,57 @@ pub fn instSel(e: *Eval, c: Cond, call: u32) Error!Cond {
     defer plains.deinit(g);
     defer e.parts = false;
     for (c.sel) |o| if (Contract.occParam(o) >= cl.args.len) return Cond.unprovable;
-    // A literal read part by part: its plain occurrences whole first (`Graft`).
-    if (try Graft.plainsOnLiteral(e, c, cl, &ps) and (try distinct(e, ps.items, true)).no) return Cond.unprovable;
-    ps.clearRetainingCapacity();
-    // Each parameter's occurrences are projected by one walk of its
-    // argument (§2.11.2 item 3): a step they share is read once, and a
-    // value several arms reach once under their routes.
     const got = try e.arena.alloc(std.ArrayList(Proj), c.sel.len);
     for (got) |*x| x.* = .empty;
     defer for (got) |*x| x.deinit(g);
-    const reqs = try e.arena.alloc(Routed.Req, c.sel.len);
-    var js: std.ArrayList(u32) = .empty;
-    defer js.deinit(g);
-    for (c.sel, 0..) |o, i| {
-        const j = Contract.occParam(o);
-        if (std.mem.indexOfScalar(u32, js.items, j) != null) continue;
-        try js.append(g, j);
-        var n: usize = 0;
-        for (c.sel[i..], i..) |x, k| if (Contract.occParam(x) == j) {
-            reqs[n] = .{ .words = e.f.slots.relWords(Contract.occRel(x)), .deep = Contract.isDeep(x), .out = &got[k] };
-            n += 1;
-        };
-        e.parts = mixed(c.sel, j);
-        // Routes are per parameter: two parameters handed one value are
-        // that value twice (the experiment's third requirement).
-        try Routed.project(e, cl.args[j], reqs[0..n], try e.routeStep(0, 0x8000_0000 | j), 0);
+    // A literal read part by part: its plain occurrences whole first (`Graft`).
+    if (Graft.plainsOnLiteral(e, c, cl)) {
+        try projectAll(e, c, cl, got, true);
+        for (c.sel, got) |o, *gp| {
+            for (gp.items) |p| try ps.append(g, .{ .leaf = p.leaf, .route = p.route, .occ = o, .routes = p.routes });
+            gp.clearRetainingCapacity();
+        }
+        if ((try distinct(e, ps.items, true)).no) return Cond.unprovable;
+        ps.clearRetainingCapacity();
     }
+    try projectAll(e, c, cl, got, false);
     for (c.sel, got) |o, *gp| {
-        e.parts = mixed(c.sel, Contract.occParam(o));
+        e.parts = ApartParts.mixed(c.sel, Contract.occParam(o));
         const to = if (!e.parts) &ps else if (Contract.isApart(o)) &aps else &plains;
         for (gp.items) |p| try to.append(g, .{ .leaf = p.leaf, .route = p.route, .occ = o, .routes = p.routes });
     }
     // An apart and a plain projection of one place by one route are taken
     // apart by their routes; two route sets there are written out.
-    if (aps.items.len != 0 and try routesDiffer(e, aps.items, plains.items)) {
-        try writeOut(e, &aps);
-        try writeOut(e, &plains);
+    if (aps.items.len != 0 and try ApartParts.routesDiffer(e, aps.items, plains.items)) {
+        try ApartParts.writeOut(e, &aps);
+        try ApartParts.writeOut(e, &plains);
     }
     try ps.appendSlice(g, plains.items);
-    try withoutPlain(e, aps.items, plains.items, &ps);
+    try ApartParts.withoutPlain(e, aps.items, plains.items, &ps);
     return distinct(e, ps.items, true);
 }
 
-/// Whether two of the projections name one leaf's place by one route
-/// under two route sets.
-fn routesDiffer(e: *Eval, aps: []const Proj, plains: []const Proj) Error!bool {
-    var at: Ids.FixedDict(4) = .{};
-    defer at.deinit(e.gpa());
-    for ([2][]const Proj{ aps, plains }) |ps| for (ps) |p| {
-        try e.charge(.cond, 1);
-        const l = e.f.leafAt(p.leaf);
-        const got = try at.getOrPut(e.gpa(), .{ l.root, l.pos, l.tags, p.route });
-        if (got.found_existing and got.value_ptr.* != p.routes) return true;
-        got.value_ptr.* = p.routes;
-    };
-    return false;
-}
-
-/// Each projection of `ps` once per route of its set, its tags those of
-/// the route (§2.11.2: what the walk by arms gives).
-fn writeOut(e: *Eval, ps: *std.ArrayList(Proj)) Error!void {
+/// Each parameter's occurrences of `c` (`plain`: its plain ones only) into
+/// `got`, by one walk of its argument (§2.11.2 item 3): a step they share is
+/// read once, and a value several arms reach once under their routes.
+fn projectAll(e: *Eval, c: Cond, cl: Value.Call, got: []std.ArrayList(Proj), plain: bool) Error!void {
     const g = e.gpa();
-    const f = e.f;
-    var out: std.ArrayList(Proj) = .empty;
-    for (ps.items) |p| {
-        if (p.routes == 0) {
-            try out.append(g, p);
-            continue;
-        }
-        var it = try f.sets.tags.routeIter(g, p.routes, f.leafAt(p.leaf).tags);
-        defer it.deinit(g);
-        while (try it.next(g, e.account())) |t| {
-            try e.charge(.cond, 1);
-            var l = f.leafAt(p.leaf);
-            l.tags = t;
-            try out.append(g, .{ .leaf = try f.leaf(l), .route = p.route, .occ = p.occ });
-        }
-    }
-    ps.deinit(g);
-    ps.* = out;
-}
-
-/// Whether occurrences `occs` ask parameter `j` deep apart somewhere and
-/// plain somewhere.
-fn mixed(occs: []const u64, j: u32) bool {
-    var deep_apart = false;
-    var plain = false;
-    for (occs) |o| if (Contract.occParam(o) == j) {
-        if (!Contract.isApart(o)) plain = true else if (Contract.isDeep(o)) deep_apart = true;
-    };
-    return deep_apart and plain;
-}
-
-/// §2.9.1: a deep apart occurrence asks apart only the objects the plain
-/// occurrences of its condition do not ask plain. Both are read part by
-/// part, so a route names one place in the argument: an object a plain
-/// occurrence reaches at a route is taken once from the apart ones at that
-/// route (as many times as the plain ones reach it, never by leaf alone:
-/// one object at two places is two entries); a reference's slots lose the
-/// plain ones' at its route (`Subtree.without`).
-fn withoutPlain(e: *Eval, aps: []const Proj, plains: []const Proj, out: *std.ArrayList(Proj)) Error!void {
-    if (aps.len == 0) return;
-    const g = e.gpa();
-    const f = e.f;
-    var taken: Ids.FixedDict(3) = .{};
-    defer taken.deinit(g);
-    var refs: Ids.FixedDict(5) = .{};
-    defer refs.deinit(g);
-    var minus: std.ArrayList(std.ArrayList(Slots.SetId)) = .empty;
-    defer {
-        for (minus.items) |*m| m.deinit(g);
-        minus.deinit(g);
-    }
-    for (plains) |p| {
-        try e.charge(.cond, 1);
-        const l = f.leafAt(p.leaf);
-        if (l.kind == .ref) {
-            const got = try refs.getOrPut(g, .{ l.root, l.pos, l.tags, p.route, p.routes });
-            if (!got.found_existing) {
-                got.value_ptr.* = @intCast(minus.items.len);
-                try minus.append(g, .empty);
-            }
-            try minus.items[got.value_ptr.*].append(g, l.slots);
-            continue;
-        }
-        const got = try taken.getOrPut(g, .{ p.leaf, p.route, p.routes });
-        got.value_ptr.* = if (got.found_existing) got.value_ptr.* + 1 else 1;
-    }
-    for (aps) |p| {
-        try e.charge(.cond, 1);
-        var l = f.leafAt(p.leaf);
-        if (l.kind == .ref) {
-            if (refs.get(.{ l.root, l.pos, l.tags, p.route, p.routes })) |mi| {
-                l.slots = (try Subtree.without(f.slots, g, e.account(), e.places(), l.slots, minus.items[mi].items)) orelse continue;
-                try out.append(g, .{ .leaf = try f.leaf(l), .route = p.route, .occ = p.occ, .routes = p.routes });
-                continue;
-            }
-        } else if (taken.get(.{ p.leaf, p.route, p.routes })) |n| if (n != 0) {
-            (try taken.getOrPut(g, .{ p.leaf, p.route, p.routes })).value_ptr.* = n - 1;
-            continue;
+    const reqs = try e.arena.alloc(Routed.Req, c.sel.len);
+    var js: std.ArrayList(u32) = .empty;
+    defer js.deinit(g);
+    for (c.sel, 0..) |o, i| {
+        const j = Contract.occParam(o);
+        if ((plain and Contract.isApart(o)) or std.mem.indexOfScalar(u32, js.items, j) != null) continue;
+        try js.append(g, j);
+        var n: usize = 0;
+        for (c.sel[i..], i..) |x, k| if (Contract.occParam(x) == j and !(plain and Contract.isApart(x))) {
+            reqs[n] = .{ .words = e.f.slots.relWords(Contract.occRel(x)), .deep = Contract.isDeep(x), .out = &got[k] };
+            n += 1;
         };
-        try out.append(g, p);
+        e.parts = !plain and ApartParts.mixed(c.sel, j);
+        // Routes are per parameter: two parameters handed one value are
+        // that value twice (the experiment's third requirement).
+        try Routed.project(e, cl.args[j], reqs[0..n], try e.routeStep(0, 0x8000_0000 | j), 0);
     }
 }
 
@@ -387,7 +322,6 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
     var st: Entries.Rounds = .{};
     defer st.deinit(g);
     for (ps, 0..) |p, k| try st.add(g, .{ .leaf = p.leaf, .route = p.route, .occ = p.occ, .block = none, .routes = p.routes }, .{ none, @intCast(k), 0 });
-    const acc: Cond = .{};
     // The conditions met, gathered and made one at the end: a merge per
     // entry or group would cost their product (§2.9.3's linear bound).
     var occs: Occs = .{};
@@ -399,7 +333,7 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
         switch (l.kind) {
             .ref => if (!l.at_pos and try isFamily(e, l) and !Contract.isApart(en.occ)) {
                 if (f.roots.items[l.root].kind == .cb and !e.expandable(l)) return Cond.unprovable;
-                if (try gather(e, &occs, try sepLeaf(e, en.leaf))) return Cond.unprovable;
+                if (try Chains.gather(e, &occs, try sepLeaf(e, en.leaf))) return Cond.unprovable;
             },
             .top, .shared => return Cond.unprovable,
             else => {},
@@ -476,7 +410,7 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
                             // there, so expansion cannot count it (#1710).
                             if (idx.len == 1 and Entries.wildEntry(f, ents[idx[0]])) return Cond.unprovable;
                             gr.must = 1;
-                        } else if (try gather(e, &occs, c)) return Cond.unprovable;
+                        } else if (try Chains.gather(e, &occs, c)) return Cond.unprovable;
                     }
                 },
                 .supply, .cb => {
@@ -503,13 +437,14 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
         if (must == null and st.nonempty < 2) break;
         if (rounds > 4096) return Cond.unprovable;
         const unvouched = must != null and st.groups.items[st.of_root.items[latest]].must == 1;
+        if (must == null and try AtomSets.settled(e, &st)) break; // its atoms meet nothing
         // The latest expandable root meets another: its entries become
         // what they come from (one level), a block it vouched for, in the
         // order the entries are read (a leaf met twice keeps its first).
         taken.clearRetainingCapacity();
         try st.take(g, latest, &taken);
         const blk = if (f.roots.items[latest].kind == .call and !unvouched) latest else none;
-        if (blk != none and taken.items.len >= 2) try sortInline(e, &st, taken.items);
+        if (blk != none and taken.items.len >= 2) try Chains.sortInline(e, &st, taken.items);
         // An expansion of a call is one block of alternatives: one entry
         // per leaf (pairs inside a block are never compared).
         var seen: Ids.FixedDict(2) = .{};
@@ -520,12 +455,21 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
             var list: std.ArrayList(u32) = .empty;
             defer list.deinit(g);
             try e.expand(en.leaf, &list);
+            // One entry of its root expanding to one leaf: a chain of calls
+            // that hand one object on is read to its end, each call's
+            // group one entry of one object (it asks nothing of its own).
+            if (taken.items.len == 1 and list.items.len == 1) list.items[0] = try Ends.endOf(e, list.items[0]);
             for (list.items, 0..) |x, nth| {
                 const xl = f.leafAt(x);
                 if (xl.kind == .top or xl.kind == .shared) return Cond.unprovable;
                 try e.charge(.edge, 1);
                 e.route_count += 1;
                 if (blk != none and (try seen.getOrPut(g, .{ x, en.routes })).found_existing) continue;
+                // A leaf the entry was expanded from, met again around a
+                // cycle of expansions (a fold's supply and its step's
+                // answer): its objects are that ancestor's, which this
+                // chain reads already (the least fixpoint, §2.9.3).
+                if (try Chains.onChain(e, &st, ti, x)) continue;
                 try st.add(g, .{ .leaf = x, .route = 0x4000_0000 | e.route_count, .occ = if (Contract.isApart(en.occ)) en.occ else 0, .block = blk, .routes = en.routes }, .{ ti, @intCast(nth), st.par.items[ti][2] + 1 });
             }
         }
@@ -535,35 +479,12 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
             const l = f.leafAt(en.leaf);
             if (l.kind == .ref and !l.at_pos and try isFamily(e, l) and !e.expandable(l) and !Contract.isApart(en.occ)) {
                 if (f.roots.items[l.root].kind == .cb) return Cond.unprovable;
-                if (try gather(e, &occs, try sepLeaf(e, en.leaf))) return Cond.unprovable;
+                if (try Chains.gather(e, &occs, try sepLeaf(e, en.leaf))) return Cond.unprovable;
             }
         }
     }
-    if (occs.run.items.len == 0) return acc;
-    return Cond.conj(e.arena, e.account(), acc, try Cond.of(e.account(), try e.arena.dupe(u64, occs.run.items)));
-}
-
-/// `xs` in the inline order of the check's entries (an insertion sort by
-/// `Entries.Rounds.before`, its comparisons charged).
-fn sortInline(e: *Eval, st: *const Entries.Rounds, xs: []u32) Error!void {
-    var i: usize = 1;
-    while (i < xs.len) : (i += 1) {
-        var k = i;
-        while (k > 0 and try st.before(e.f, xs[k], xs[k - 1])) : (k -= 1) std.mem.swap(u32, &xs[k], &xs[k - 1]);
-    }
-}
-
-/// Add condition `c`'s occurrences to `occs`; whether it is `no`.
-/// A condition gathered again (one interned run) is not read again.
-fn gather(e: *Eval, occs: *Occs, c: Cond) Error!bool {
-    if (c.no) return true;
-    if (c.sel.len == 0) return false;
-    try e.charge(.cond, 1);
-    const key: u64 = @intFromPtr(c.sel.ptr) ^ (@as(u64, c.sel.len) << 48);
-    if ((try occs.seen.getOrPut(e.gpa(), key | (1 << 63))).found_existing) return false;
-    try e.charge(.cond, @intCast(c.sel.len));
-    for (c.sel) |x| try occs.add(e.gpa(), x);
-    return false;
+    if (occs.run.items.len == 0) return Cond.yes;
+    return Cond.of(e.account(), try e.arena.dupe(u64, occs.run.items));
 }
 
 // ---- the one relation (§2.9.2) -------------------------------------------
@@ -610,7 +531,7 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
         // An object made after a call is none of the call's result (§2.9.2
         // step 4): no expansion, so a chain of calls is never walked again
         // per atom met at its end.
-        if (madeAfter(e, x, t) or madeAfter(e, t, x)) return .no;
+        if (Chains.madeAfter(e, x, t) or Chains.madeAfter(e, t, x)) return .no;
         const ex = xr and e.expandable(x);
         const et = tr and e.expandable(t);
         if (ex or et) {
@@ -638,18 +559,6 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
     // Two atoms.
     if (x.kind == t.kind and x.atom == t.atom and x.extra == t.extra) return .may;
     return .no;
-}
-
-/// Whether atom `a` (a literal's or a call's fresh objects) was made
-/// after the call whose result `l` is: then the result holds none of it.
-fn madeAfter(e: *Eval, a: Leaf, l: Leaf) bool {
-    if (l.kind != .ref or e.f.roots.items[l.root].kind != .call) return false;
-    const at = switch (a.kind) {
-        .site => a.atom,
-        .fresh => e.f.calls.items[a.atom].point,
-        else => return false,
-    };
-    return e.f.calls.items[e.f.roots.items[l.root].a].point < at;
 }
 
 /// What the answer `x` of a label's direct call may hold of `t` (§2.9.2

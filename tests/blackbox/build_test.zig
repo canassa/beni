@@ -10947,6 +10947,79 @@ test "the checker v2's call writing a K-wide type below a parameter makes one de
     }
 }
 
+test "the checker v2 returns a whole parameter of a wide mutually recursive type as one node" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.10, *Arrivals by structure* (#1715): five types,
+    // each a list and a `Maybe` of every other. `same t = t` returns its
+    // parameter at its own path, whose slots fold as the result's, so the
+    // result is one open arrival; written out, it passed the summary limit.
+    // A caller still reads each slot exactly: a write through the result
+    // refuses while the argument is read after it, and is accepted when it
+    // is not.
+    const a = testing.allocator;
+    var w = try World.init(a, testing.io);
+    defer w.deinit();
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    for (0..5) |i| {
+        try src.print(a, "type K{d}\n    = K{d} (List Int)", .{ i, i });
+        for (0..5) |j| if (j != i) try src.print(a, " (Maybe K{d})", .{j});
+        try src.print(a, "\n    | KEnd{d}\n\n\n", .{i});
+    }
+    try src.appendSlice(a,
+        \\same : K0 → K0
+        \\same t =
+        \\    t
+        \\
+        \\
+        \\count : K0 → Int
+        \\count t =
+        \\    case t of
+        \\        K0 xs _ _ _ _ →
+        \\            List.length xs
+        \\
+        \\        KEnd0 →
+        \\            0
+        \\
+        \\
+        \\pub bad : K0 → Int
+        \\bad t =
+        \\    case same t of
+        \\        K0 xs _ _ _ _ →
+        \\            List.length (List.push xs 1) + count t
+        \\
+        \\        KEnd0 →
+        \\            0
+        \\
+        \\
+        \\pub good : K0 → Int
+        \\good t =
+        \\    case same t of
+        \\        K0 xs _ _ _ _ →
+        \\            List.length (List.push xs 1)
+        \\
+        \\        KEnd0 →
+        \\            0
+        \\
+    );
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit ") == null);
+    try testing.expectEqualStrings("res ε… π1ε; nondup ⇐ sel π1{ε*}; reads π1ε*", try summaryLine(dump.stdout, "same"));
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, dump.stdout, "List.push xs: rejected alias"));
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, dump.stdout, "List.push xs: accepted param"));
+}
+
 test "the checker v2's call writing many fields of a fresh record literal is linear" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -11280,9 +11353,14 @@ test "the checker v2's widen keeps a non-recursive function's choice at a tree's
     // `π1#1.2 = π1#1.0`: the reads below `#1.2` are `#1.0`'s, each exact.
     // `Tree` is on a cycle, so a subtree read or selected whole is the
     // symbol (§2.3.1): `π2{ε*}` and `π1ε* π2ε*` name the object slots the
-    // written-out lists named, and `#1.0⟲*` is `#1.0⟲#1.1`. The result,
-    // the point of this test, is unchanged.
-    try testing.expect(std.mem.indexOf(u8, r.stdout, "  summary pick: res #1.0#1.1 π1#1.0#1.1 π2#1.1, #1.0⟲#1.1 π1#1.0⟲#1.1 π2#1.0#1.1 π2#1.0⟲#1.1 π2#1.1 π2#1.2#1.1 π2#1.2⟲#1.1, #1.1 π1#1.1; nondup ⇐ sel π1{#1.0#1.1,#1.0⟲*,#1.1} π2{ε*}; reads π1ε* π2ε*\n") != null);
+    // written-out lists named, and `#1.0⟲*` is `#1.0⟲#1.1`. A contract's
+    // selection spells a subtree of at most `below_min` slots written out
+    // (§2.9.1, *One spelling of a subtree*): `π2{ε*}` is `Tree`'s five
+    // lists and `#1.0⟲*` is `#1.0⟲#1.1`. The result, the point of this
+    // test, is unchanged. `a` returns at its own path, so since the identity
+    // control (§2.11.2) its subtree is one open arrival, `#1.0⟲… π1#1.0⟲`,
+    // whatever its size: `#1.0⟲#1.1`'s `π1#1.0⟲#1.1` is said by it.
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "  summary pick: res #1.0#1.1 π1#1.0#1.1 π2#1.1, #1.0⟲… π1#1.0⟲, #1.0⟲#1.1 π2#1.0#1.1 π2#1.0⟲#1.1 π2#1.1 π2#1.2#1.1 π2#1.2⟲#1.1, #1.1 π1#1.1; nondup ⇐ sel π1{#1.0#1.1,#1.0⟲#1.1,#1.1} π2{#1.0#1.1,#1.0⟲#1.1,#1.1,#1.2#1.1,#1.2⟲#1.1}; reads π1ε* π2ε*\n") != null);
 }
 
 test "the checker v2 checks a two-branch insert's moved knots as a bisimulation" {
