@@ -183,10 +183,9 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Err
                 // the position to the slot.
                 var at = q;
                 if (by_structure) {
-                    const rel = (try f.slots.relBelow(gpa, f.account, f.places, pslot, .from(sl))) orelse Slots.root;
                     var ps: std.ArrayList(u32) = .empty;
                     defer ps.deinit(gpa);
-                    try Slots.replay(gpa, f.account, f.places, q, f.slots.relWords(rel), &ps);
+                    try destsOf(s, pslot, .from(sl), q, &ps);
                     if (ps.items.len == 0) {
                         at = q;
                     } else {
@@ -207,10 +206,7 @@ fn describeSub(s: *Sink, l: Value.Leaf, pslot: PathId, x: PathId, q: PathId, by_
     const gpa = s.e.gpa();
     var dests: std.ArrayList(u32) = .empty;
     defer dests.deinit(gpa);
-    if (by_structure) {
-        const rel = (try f.slots.relBelow(gpa, f.account, f.places, pslot, x)) orelse Slots.root;
-        try Slots.replay(gpa, f.account, f.places, q, f.slots.relWords(rel), &dests);
-    }
+    if (by_structure) try destsOf(s, pslot, x, q, &dests);
     for (dests.items) |d| try describeCallWide(s, l, x, .from(d), out);
     if (dests.items.len != 0) return;
     const sub = try f.leaf(.{ .kind = .ref, .root = l.root, .pos = l.pos, .slots = try f.slots.internSorted(gpa, f.account, &.{x.int() | Slots.sub_bit}), .tags = l.tags });
@@ -401,10 +397,9 @@ fn callNodeAt(s: *Sink, call: u32, which: u32, c: Contract.Id, n: Contract.Node,
         }
         for (f.slots.items(try Subtree.belowAll(f.slots, gpa, f.account, f.places, cs))) |sl| {
             if (sl == cs.int()) continue;
-            const rel = (try f.slots.relBelow(gpa, f.account, f.places, cs, .from(sl))) orelse Slots.root;
             var ps: std.ArrayList(u32) = .empty;
             defer ps.deinit(gpa);
-            try Slots.replay(gpa, f.account, f.places, q, f.slots.relWords(rel), &ps);
+            try destsOf(s, cs, .from(sl), q, &ps);
             if (ps.items.len == 0) try ps.append(gpa, q.int());
             const run = try gpa.dupe(u32, try e.ev.instAt(call, .from(sl), which));
             defer gpa.free(run);
@@ -429,6 +424,25 @@ fn fail(s: *Sink, key: [6]u32, above: bool) Error!?Contract.Node {
     return null;
 }
 
+/// The result slots below `q` that the steps from `from` down to `slot`
+/// reach (`Slots.replay`; from `q` itself where `slot` is not below
+/// `from`), appended to `out`. A slot that is one result slot is
+/// replayed once per `(from, q, slot)`, as a key's caller slot is once
+/// per entry (`Relation.Eval.feedBelow`).
+fn destsOf(s: *Sink, from: PathId, slot: PathId, q: PathId, out: *std.ArrayList(u32)) Error!void {
+    const f = s.e.fr();
+    const gpa = s.e.gpa();
+    // A hit is one record; a miss is the replay's own.
+    if (s.dests.get(.{ from.int(), q.int(), slot.int() })) |d| {
+        try f.charge(.memo, 1);
+        return out.append(gpa, d);
+    }
+    const start = out.items.len;
+    const rel = (try f.slots.relBelow(gpa, f.account, f.places, from, slot)) orelse Slots.root;
+    try Slots.replay(gpa, f.account, f.places, q, f.slots.relWords(rel), out);
+    if (out.items.len == start + 1) try s.dests.put(gpa, .{ from.int(), q.int(), slot.int() }, out.items[start]);
+}
+
 /// An item of a key below `prefix` (leaf `li` at slot `at`), described at
 /// the result slot the steps from the prefix take `q` to.
 fn describeItem(s: *Sink, li: u32, at: u32, prefix: PathId, q: PathId, held: Held.Atoms, out: Put.ResList) Error!void {
@@ -441,8 +455,7 @@ fn describeItem(s: *Sink, li: u32, at: u32, prefix: PathId, q: PathId, held: Hel
     var ps: std.ArrayList(u32) = .empty;
     defer ps.deinit(gpa);
     if (slot == prefix) try ps.append(gpa, q.int()) else {
-        const rel = (try f.slots.relBelow(gpa, f.account, f.places, prefix, slot)) orelse Slots.root;
-        try Slots.replay(gpa, f.account, f.places, q, f.slots.relWords(rel), &ps);
+        try destsOf(s, prefix, slot, q, &ps);
         if (ps.items.len == 0) try ps.append(gpa, q.int());
     }
     for (ps.items) |dest| {

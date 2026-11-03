@@ -71,7 +71,7 @@ pub const Evaluation = struct {
         e.escapes.deinit(g);
         e.passes.deinit(g);
         if (e.facts_on) {
-            inline for (.{ &e.sink.label_at, &e.sink.described, &e.sink.effected, &e.sink.building, &e.sink.nodes, &e.sink.acyclic, &e.sink.host }) |l| l.deinit(g);
+            inline for (.{ &e.sink.label_at, &e.sink.described, &e.sink.effected, &e.sink.building, &e.sink.nodes, &e.sink.acyclic, &e.sink.host, &e.sink.dests }) |l| l.deinit(g);
         }
     }
 
@@ -581,20 +581,21 @@ pub const Sink = struct {
     /// there. Describing it again adds nothing, and a fold's answer that
     /// feeds itself would describe it without end.
     described: Ids.FixedDict(4) = .{},
-    /// `(leaf, deep, list)`: a leaf whose parameter effects are said
-    /// already. Effects only grow, so saying them again adds nothing.
+    /// `(leaf, deep, list)`: a leaf whose parameter effects are said already (effects only grow).
     effected: Ids.FixedDict(3) = .{},
-    /// The subtrees being described once per place (§2.10): arrivals go to the innermost, relative to its path.
+    /// The subtrees described once per place (§2.10): arrivals go to the innermost, relative to it.
     building: std.ArrayList(Builder) = .empty,
     /// `(kind, a, b, c, place, d)` → a subtree described already; `none` while it is, `none - 1` where it cannot be.
     nodes: Ids.FixedDict(6) = .{},
     /// Per place: 1 when no place below it is on a cycle, else 2.
     acyclic: Ids.FixedDict(1) = .{},
+    /// `(from, q, slot)` → the one result slot `ReadOff.destsOf` replays.
+    dests: Ids.FixedDict(3) = .{},
     /// 0 not known; 1 nothing the frame reads grows; 2 something does.
     frozen: u8 = 0,
     /// The subtrees begun so far.
     serial: u32 = 0,
-    /// The shallowest subtree in progress that a description met again: what is made below it is not kept.
+    /// The shallowest subtree in progress a description met again: nothing below it is kept.
     cut: usize = std.math.maxInt(usize),
     /// The sources the frame's escapes reach (§2.10, *host objects*).
     host: Host.State = .{},
@@ -603,8 +604,7 @@ pub const Sink = struct {
 /// A subtree being described at path `q` (`depth` steps from its root). `depth`: its serial number in the evaluation.
 pub const Builder = struct { q: PathId, depth: u32, res: Contract.Draft.Res = .{} };
 
-/// What `Resolve` tells the read-off: the accepted demands' reliance and
-/// each direct label's kept slots and condition.
+/// What `Resolve` tells the read-off: the accepted demands' reliance and each direct label's kept slots and condition.
 pub const Verdicts = struct {
     req: Cond = .{},
     /// Per frame label: the kept argument slots, as `(k, leaf)` pairs.
