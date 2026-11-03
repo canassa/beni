@@ -22,6 +22,7 @@ const Distinct = @import("Distinct.zig");
 const Eval = @import("Eval.zig");
 const Held = @import("Held.zig");
 const Routed = @import("Routed.zig");
+const CallGraft = @import("CallGraft.zig");
 
 const Error = Eval.Error;
 const PathId = Ids.PathId;
@@ -769,6 +770,13 @@ fn describeOne(s: *Sink, l: Value.Leaf, r: Value.Root, sl: u32, at: PathId, out:
             const one = try f.leaf(.{ .kind = .ref, .root = l.root, .pos = l.pos, .slots = try f.slots.internSorted(gpa, f.account, &.{sl}), .tags = l.tags });
             // Once a slot; a subtree described once per place has its memo.
             if ((try s.described.getOrPut(gpa, try describedKey(s, one, at, out))).found_existing) return;
+            // The callee's arrivals there, its parameters renamed, never
+            // replayed onto the arguments (`CallGraft`, §2.10).
+            if (r.kind == .call and l.tags == 0) {
+                var arrs: std.ArrayList(Contract.Arrival) = .empty;
+                defer arrs.deinit(gpa);
+                if (try CallGraft.slotArrivals(&e.ev, r.a, .from(sl), &arrs)) return for (arrs.items) |x| try arrive(s, at, x, out);
+            }
             var ls: std.ArrayList(u32) = .empty;
             defer ls.deinit(gpa);
             try expandFor(e, one, .{ .kind = .describe, .a = out.label, .b = at.int(), .c = out.k, .tags = l.tags }, &ls);

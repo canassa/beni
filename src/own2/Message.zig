@@ -14,6 +14,8 @@ const Facts = @import("Facts.zig");
 const Place = @import("Place.zig");
 const Walk = @import("Walk.zig");
 const Resolve = @import("Resolve.zig");
+const Groups = @import("Groups.zig");
+const CallGraft = @import("CallGraft.zig");
 const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 
@@ -126,13 +128,13 @@ fn baseText(f: Frame, a: Allocator, top: u32) Allocator.Error![]const u8 {
 /// The base as written, and below it the path a writer call writes.
 fn writtenText(f: Frame, a: Allocator, d: Walk.Demand) Allocator.Error![]const u8 {
     const base = if (d.base_local != none) localName(f, d.base_local) else try baseText(f, a, d.base_inst);
-    if (d.write_path == .none) return base;
+    const mod: *Groups.Module = @ptrCast(@alignCast(f.ctx));
     var buf: std.Io.Writer.Allocating = .init(a);
-    buf.writer.writeAll(base) catch return error.OutOfMemory;
-    pathText(f, a, &buf.writer, d.write_path) catch return error.OutOfMemory;
-    for (d.also) |p| {
-        buf.writer.print(", {s}", .{base}) catch return error.OutOfMemory;
-        pathText(f, a, &buf.writer, p) catch return error.OutOfMemory;
+    for (0..d.also.len + 1) |i| {
+        const at = try CallGraft.textPath(&mod.places, &mod.slots, mod.gpa, d.write_path, if (i == 0) d.write_rel else d.also[i - 1]);
+        if (i == 0 and at == .none) return base;
+        buf.writer.print("{s}{s}", .{ if (i == 0) "" else ", ", base }) catch return error.OutOfMemory;
+        pathText(f, a, &buf.writer, at) catch return error.OutOfMemory;
     }
     return buf.written();
 }
@@ -164,8 +166,7 @@ fn baseOne(f: Frame, a: Allocator, i: u32) Allocator.Error![]const u8 {
 /// A path under a local's root, in source terms: `.field`, `.0`, `[*]`,
 /// `#Ctor.i`, `⟨Type⟩` for the levels below a recursive value, `◆`.
 fn pathText(f: Frame, a: Allocator, w: *std.Io.Writer, root: Ids.PathId) (Allocator.Error || std.Io.Writer.Error)!void {
-    // The way up, then printed down: a path is as long as the source is
-    // deep, so an explicit list, never a native frame per step (#1138).
+    // The way up, then printed down: a path is as long as the source is deep, so an explicit list, never a native frame per step (#1138).
     const places = f.places;
     var way: std.ArrayList(Ids.PathId) = .empty;
     defer way.deinit(a);

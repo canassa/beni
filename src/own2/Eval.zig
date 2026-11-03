@@ -96,6 +96,7 @@ pub const Evaluation = struct {
 pub fn evaluate(w: *Walk, contracts: *Contract.Table, ctx: Context, arena: Allocator, solver: ?*const Group, x: u32, e: *Evaluation) Error!void {
     e.* = .{ .w = w, .ev = .{ .f = &w.f, .contracts = contracts, .arena = arena }, .contracts = contracts, .ctx = ctx, .solver = solver, .x = x };
     if (solver) |sv| e.ev.live = sv.live;
+    e.ev.code_sig = .{ .ctx = ctx.ctx, .of = ctx.codeSig };
     const f = &w.f;
     const gpa = f.gpa;
     try e.demands.appendSlice(gpa, w.demands.items);
@@ -364,10 +365,11 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
     // A write of nothing (a crossing value consumed) is no demand.
     if (e.w.leaf_runs.items.len == t_start) return;
     const base = Graft.argInst(call, x.j);
-    const write_path: PathId = if (base != call.inst and q < e.w.walk_calls) try pathAt(e, try e.ctx.placeOfInst(e.ctx.ctx, base), words) else .none;
-    // The other routes a grouped demand covers, named in its line (the walk's arena: lines outlive the evaluation).
-    const also = try f.arena.alloc(PathId, if (write_path == .none) 0 else also_at.len);
-    for (also, 0..) |*p, i| p.* = try pathAt(e, try e.ctx.placeOfInst(e.ctx.ctx, base), f.slots.relWords(also_at[i]));
+    // The path below the base, and the other routes a grouped demand covers,
+    // by their steps: replayed only when the line is printed (§2.10).
+    const named = base != call.inst and q < e.w.walk_calls and words.len != 0;
+    const write_path: PathId = if (named) try f.places.rootPath(gpa, try e.ctx.placeOfInst(e.ctx.ctx, base)) else .none;
+    const also = if (named) try f.arena.dupe(u32, also_at) else &.{};
     // A capture a known code writes is named by its local.
     const caps: []const u32 = if (!call.virtual and call.code != none and x.j >= call.arg_insts.len) e.ctx.capturesOf(e.ctx.ctx, call.code) else &.{};
     var d: Demand = .{
@@ -377,6 +379,7 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
         .token = e.w.code.decl.inst_start.int(),
         .base_inst = base,
         .write_path = write_path,
+        .write_rel = x.slot,
         .callee_inst = if (call.virtual) none else call.head,
         .targets = .{ .start = t_start, .len = @intCast(e.w.leaf_runs.items.len - t_start) },
         .deep = x.deep,
@@ -420,7 +423,7 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
             d.callee_inst = oc.head;
             const sa = (try supplyingArg(e, o[0], lab, x.j, words)) orelse Named{ .inst = oc.inst, .path = .none };
             d.base_inst = sa.inst;
-            d.write_path = sa.path;
+            d.write_path, d.write_rel = .{ sa.path, 0 };
         }
     }
     try addDemand(e, d);
