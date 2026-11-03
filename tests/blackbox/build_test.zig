@@ -10712,6 +10712,79 @@ test "the checker v2's call writing a K-wide type below a parameter makes one de
     }
 }
 
+test "the checker v2 returns a whole parameter of a wide mutually recursive type as one node" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.10, *Arrivals by structure* (#1715): five types,
+    // each a list and a `Maybe` of every other. `same t = t` returns its
+    // parameter at its own path, whose slots fold as the result's, so the
+    // result is one open arrival; written out, it passed the summary limit.
+    // A caller still reads each slot exactly: a write through the result
+    // refuses while the argument is read after it, and is accepted when it
+    // is not.
+    const a = testing.allocator;
+    var w = try World.init(a, testing.io);
+    defer w.deinit();
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    for (0..5) |i| {
+        try src.print(a, "type K{d}\n    = K{d} (List Int)", .{ i, i });
+        for (0..5) |j| if (j != i) try src.print(a, " (Maybe K{d})", .{j});
+        try src.print(a, "\n    | KEnd{d}\n\n\n", .{i});
+    }
+    try src.appendSlice(a,
+        \\same : K0 → K0
+        \\same t =
+        \\    t
+        \\
+        \\
+        \\count : K0 → Int
+        \\count t =
+        \\    case t of
+        \\        K0 xs _ _ _ _ →
+        \\            List.length xs
+        \\
+        \\        KEnd0 →
+        \\            0
+        \\
+        \\
+        \\pub bad : K0 → Int
+        \\bad t =
+        \\    case same t of
+        \\        K0 xs _ _ _ _ →
+        \\            List.length (List.push xs 1) + count t
+        \\
+        \\        KEnd0 →
+        \\            0
+        \\
+        \\
+        \\pub good : K0 → Int
+        \\good t =
+        \\    case same t of
+        \\        K0 xs _ _ _ _ →
+        \\            List.length (List.push xs 1)
+        \\
+        \\        KEnd0 →
+        \\            0
+        \\
+    );
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit ") == null);
+    try testing.expectEqualStrings("res ε… π1ε; nondup ⇐ sel π1{ε*}; reads π1ε*", try summaryLine(dump.stdout, "same"));
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, dump.stdout, "List.push xs: rejected alias"));
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, dump.stdout, "List.push xs: accepted param"));
+}
+
 test "the checker v2's call writing many fields of a fresh record literal is linear" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
