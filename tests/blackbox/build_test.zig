@@ -3476,8 +3476,9 @@ test "a release application is one file with no import or export; --library keep
     // only `twice` calls. In a development build both are exported. Under
     // `--release` an application's output tree is the whole program, and it
     // is ONE scope-hoisted file (`backend.md` §9): no module imports another,
-    // so nothing is exported at all, and the runtime's `node:process` is the
-    // only `import`. A `--library` build's exports are its public surface
+    // so nothing is exported at all. The typed Node entry runtime uses
+    // generated process operations and needs no host import. A `--library`
+    // build's exports are its public surface
     // (`backend.md` §9's *Roots*) and are all kept, one module to a file.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -3520,9 +3521,8 @@ test "a release application is one file with no import or export; --library keep
     try testing.expectEqualStrings("_main.mjs", tree[0]);
     try testing.expectEqualStrings("_manifest.txt", tree[1]);
     const one = try w.read("out/_main.mjs");
-    try testing.expect(std.mem.startsWith(u8, one, "import process from\"node:process\";"));
     try testing.expectEqual(@as(usize, 1), std.mem.count(u8, one, "\n"));
-    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, one, "import"));
+    try testing.expectEqual(@as(usize, 0), std.mem.count(u8, one, "import"));
     try testing.expect(std.mem.indexOf(u8, one, "export") == null);
     try testing.expect(std.mem.endsWith(u8, try w.read("lib/Twice.mjs"), ";export{e,c};\n"));
 
@@ -5017,8 +5017,8 @@ test "a release library build writes a map beside every module" {
     // └─────────────────────────────────────────┘
     // `backend.md` §11.2: a `--library` release build is one file per
     // module (§9), and each module lowered from beni gets its own map, as
-    // in development. The platform's runtime is hand-written, compacted
-    // and unmapped. In `Lib.mjs`: two exported functions carry their beni
+    // in development. The typed Node entry runtime gets a map too.
+    // In `Lib.mjs`: two exported functions carry their beni
     // names at their first byte, a renamed local its own, and two calls in
     // `label` map to their first tokens. The `export` is covered by the
     // last segment, which has no name: Node's own reader takes the name
@@ -5071,7 +5071,7 @@ test "a release library build writes a map beside every module" {
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
     // A map beside every module lowered from beni, core's included, and
-    // none beside the hand-written runtime.
+    // none beside a hand-written sibling.
     const files = try w.listFiles("lib");
     var maps: usize = 0;
     for (files) |path| {
@@ -5083,7 +5083,9 @@ test "a release library build writes a map beside every module" {
         maps += @intFromBool(has_map);
     }
     try testing.expect(maps >= 2);
-    try testing.expect(w.exists("lib/_platform/runtime.foreign.mjs"));
+    try testing.expect(!w.exists("lib/_platform/runtime.foreign.mjs"));
+    try testing.expect(w.exists("lib/_platform/NodeRuntime.mjs"));
+    try testing.expect(w.exists("lib/_platform/NodeRuntime.mjs.map"));
     const core_map = try w.read("lib/_core/List.mjs.map");
     try testing.expect(std.mem.startsWith(u8, core_map, "{\"version\":3,\"file\":\"List.mjs\",\"sources\":[\"beni:///core/List.beni\"],\"sourcesContent\":[\""));
 }
@@ -13690,4 +13692,28 @@ test "decoded records retain freshness with checked Schema evidence" {
             try w.expectProgram("out/_main.mjs", .{ .stdout = "2\n" });
         }
     }
+}
+
+test "release libraries keep sibling imports and exports consistent" {
+    // PREPARE: compiled schema calls make native dependency imports removable.
+    // Every output module must still load, including one whose callers folded.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTree("tests/corpus/build/library/NativeForeignExports", "_expected.");
+    // EXECUTE: ordinary compiled libraries, with no interpreter override.
+    for ([_]bool{ false, true }) |release| {
+        const built = try w.run(if (release)
+            &.{ "build", "--platform=node", "--library", "--release", "--out=out-release", "Lib.beni" }
+        else
+            &.{ "build", "--platform=node", "--library", "--out=out-development", "Lib.beni" });
+        try testing.expectEqualStrings("", built.stderr);
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), built.diagnostics);
+    }
+    // VERIFY: resolve every export and observe the exported program result.
+    try w.expectProgram("check.mjs", .{ .stdout =
+        \\development ["{\"x\":3,\"y\":4}"]
+        \\release ["{\"x\":3,\"y\":4}"]
+        \\
+    });
 }

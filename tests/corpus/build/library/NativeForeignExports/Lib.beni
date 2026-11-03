@@ -1,0 +1,19 @@
+import Schema
+
+
+pub schema Point =
+    x : Int
+    y : Int
+
+
+pub shown : Point.Type → String
+shown point =
+    case Point.print point of
+        Ok text →
+            text
+        Err _ →
+            "failed"
+
+
+pub exported : String
+exported = shown { x = 3, y = 4 }

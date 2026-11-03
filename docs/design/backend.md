@@ -7593,6 +7593,8 @@ a declaration stays whether or not it is read, as `Reach` keeps it â and `I
 declaration no root reaches is not written; an `import` specifier whose name nothing live reads
 goes, and so does an `export` of a declaration that went. The `import` statement itself stays,
 empty when every specifier went, because it is an edge of the evaluation order `planHoist` reads.
+An unused sibling import and its re-export go together even when the binding has no
+top-level declaration row. Root-package library exports remain reachability roots (#1798).
 Cutting the hand-written units needs nothing new: `planHoist` builds each file's `keep` from the
 specifiers that are left, and `Minify` cuts to it. The next round's facts then see fewer calls and
 assignments. Measured: the `bench/ui` app 6 269 â 6 237, `bench/size.mjs`'s release total 344 386 â 337 506; `EmptyPage` unchanged (nothing on it is

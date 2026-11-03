@@ -4159,7 +4159,9 @@ const Spec = struct {
                         const names = m.ir.extraSlice(JsIr.inlineRange(d), NameIndex);
                         var out: std.ArrayList(u32) = .empty;
                         for (names) |n| {
-                            if (m.globalOf(n)) |g| if (s.decl[g] != null and !live[g]) continue;
+                            // Sibling imports have no declaration row. Dropping
+                            // an unused import also drops its export (#1798).
+                            if (m.globalOf(n)) |g| if (!referenced[g] or (s.decl[g] != null and !live[g])) continue;
                             try out.append(s.arena, @backingInt(n));
                         }
                         if (out.items.len != names.len) {
