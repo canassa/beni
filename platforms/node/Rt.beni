@@ -111,12 +111,11 @@ list items row fallback =
 rows : Value, Value, Int, Int, String → Value
 rows a row position n out =
     if position < n then
-        rows
-            a
-            row
-            (position + 1)
-            n
-            (out ++ Js.to (Js.get (Js.apply row [ Js.at a position, Js.from position ]) "t"))
+        -- Interpolation, not `++`: `++` is `Basics.append`, string or
+        -- list, and a program that renders a list paid 70 bytes for the
+        -- list half; `${…}` is `+`.
+        block = str (Js.get (Js.apply row [ Js.at a position, Js.from position ]) "t")
+        rows a row (position + 1) n "${out}${block}"
     else
         Js.from out
 
