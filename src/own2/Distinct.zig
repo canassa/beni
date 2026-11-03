@@ -19,7 +19,8 @@ const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Entries = @import("Entries.zig");
-const Routed = @import("Routed.zig");
+const RouteWalk = @import("RouteWalk.zig");
+const ApartPlain = @import("ApartPlain.zig");
 const Graft = @import("Graft.zig");
 const Coexist = @import("Coexist.zig");
 const Chains = @import("Chains.zig");
@@ -253,18 +254,18 @@ pub fn instSel(e: *Eval, c: Cond, call: u32) Error!Cond {
     }
     try projectAll(e, c, cl, got, false);
     for (c.sel, got) |o, *gp| {
-        e.parts = mixed(c.sel, Contract.occParam(o));
+        e.parts = ApartPlain.mixed(c.sel, Contract.occParam(o));
         const to = if (!e.parts) &ps else if (Contract.isApart(o)) &aps else &plains;
         for (gp.items) |p| try to.append(g, .{ .leaf = p.leaf, .route = p.route, .occ = o, .routes = p.routes });
     }
     // An apart and a plain projection of one place by one route are taken
     // apart by their routes; two route sets there are written out.
-    if (aps.items.len != 0 and try routesDiffer(e, aps.items, plains.items)) {
-        try writeOut(e, &aps);
-        try writeOut(e, &plains);
+    if (aps.items.len != 0 and try ApartPlain.routesDiffer(e, aps.items, plains.items)) {
+        try ApartPlain.writeOut(e, &aps);
+        try ApartPlain.writeOut(e, &plains);
     }
     try ps.appendSlice(g, plains.items);
-    try withoutPlain(e, aps.items, plains.items, &ps);
+    try ApartPlain.withoutPlain(e, aps.items, plains.items, &ps);
     return distinct(e, ps.items, true);
 }
 
@@ -273,7 +274,7 @@ pub fn instSel(e: *Eval, c: Cond, call: u32) Error!Cond {
 /// read once, and a value several arms reach once under their routes.
 fn projectAll(e: *Eval, c: Cond, cl: Value.Call, got: []std.ArrayList(Proj), plain: bool) Error!void {
     const g = e.gpa();
-    const reqs = try e.arena.alloc(Routed.Req, c.sel.len);
+    const reqs = try e.arena.alloc(RouteWalk.Req, c.sel.len);
     var js: std.ArrayList(u32) = .empty;
     defer js.deinit(g);
     for (c.sel, 0..) |o, i| {
@@ -285,112 +286,10 @@ fn projectAll(e: *Eval, c: Cond, cl: Value.Call, got: []std.ArrayList(Proj), pla
             reqs[n] = .{ .words = e.f.slots.relWords(Contract.occRel(x)), .deep = Contract.isDeep(x), .out = &got[k] };
             n += 1;
         };
-        e.parts = !plain and mixed(c.sel, j);
+        e.parts = !plain and ApartPlain.mixed(c.sel, j);
         // Routes are per parameter: two parameters handed one value are
         // that value twice (the experiment's third requirement).
-        try Routed.project(e, cl.args[j], reqs[0..n], try e.routeStep(0, 0x8000_0000 | j), 0);
-    }
-}
-
-/// Whether two of the projections name one leaf's place by one route
-/// under two route sets.
-fn routesDiffer(e: *Eval, aps: []const Proj, plains: []const Proj) Error!bool {
-    var at: Ids.FixedDict(4) = .{};
-    defer at.deinit(e.gpa());
-    for ([2][]const Proj{ aps, plains }) |ps| for (ps) |p| {
-        try e.charge(.cond, 1);
-        const l = e.f.leafAt(p.leaf);
-        const got = try at.getOrPut(e.gpa(), .{ l.root, l.pos, l.tags, p.route });
-        if (got.found_existing and got.value_ptr.* != p.routes) return true;
-        got.value_ptr.* = p.routes;
-    };
-    return false;
-}
-
-/// Each projection of `ps` once per route of its set, its tags those of
-/// the route (§2.11.2: what the walk by arms gives).
-fn writeOut(e: *Eval, ps: *std.ArrayList(Proj)) Error!void {
-    const g = e.gpa();
-    const f = e.f;
-    var out: std.ArrayList(Proj) = .empty;
-    for (ps.items) |p| {
-        if (p.routes == 0) {
-            try out.append(g, p);
-            continue;
-        }
-        var it = try f.sets.tags.routeIter(g, p.routes, f.leafAt(p.leaf).tags);
-        defer it.deinit(g);
-        while (try it.next(g, e.account())) |t| {
-            try e.charge(.cond, 1);
-            var l = f.leafAt(p.leaf);
-            l.tags = t;
-            try out.append(g, .{ .leaf = try f.leaf(l), .route = p.route, .occ = p.occ });
-        }
-    }
-    ps.deinit(g);
-    ps.* = out;
-}
-
-/// Whether occurrences `occs` ask parameter `j` deep apart somewhere and
-/// plain somewhere.
-fn mixed(occs: []const u64, j: u32) bool {
-    var deep_apart = false;
-    var plain = false;
-    for (occs) |o| if (Contract.occParam(o) == j) {
-        if (!Contract.isApart(o)) plain = true else if (Contract.isDeep(o)) deep_apart = true;
-    };
-    return deep_apart and plain;
-}
-
-/// §2.9.1: a deep apart occurrence asks apart only the objects the plain
-/// occurrences of its condition do not ask plain. Both are read part by
-/// part, so a route names one place in the argument: an object a plain
-/// occurrence reaches at a route is taken once from the apart ones at that
-/// route (as many times as the plain ones reach it, never by leaf alone:
-/// one object at two places is two entries); a reference's slots lose the
-/// plain ones' at its route (`Subtree.without`).
-fn withoutPlain(e: *Eval, aps: []const Proj, plains: []const Proj, out: *std.ArrayList(Proj)) Error!void {
-    if (aps.len == 0) return;
-    const g = e.gpa();
-    const f = e.f;
-    var taken: Ids.FixedDict(3) = .{};
-    defer taken.deinit(g);
-    var refs: Ids.FixedDict(5) = .{};
-    defer refs.deinit(g);
-    var minus: std.ArrayList(std.ArrayList(Slots.SetId)) = .empty;
-    defer {
-        for (minus.items) |*m| m.deinit(g);
-        minus.deinit(g);
-    }
-    for (plains) |p| {
-        try e.charge(.cond, 1);
-        const l = f.leafAt(p.leaf);
-        if (l.kind == .ref) {
-            const got = try refs.getOrPut(g, .{ l.root, l.pos, l.tags, p.route, p.routes });
-            if (!got.found_existing) {
-                got.value_ptr.* = @intCast(minus.items.len);
-                try minus.append(g, .empty);
-            }
-            try minus.items[got.value_ptr.*].append(g, l.slots);
-            continue;
-        }
-        const got = try taken.getOrPut(g, .{ p.leaf, p.route, p.routes });
-        got.value_ptr.* = if (got.found_existing) got.value_ptr.* + 1 else 1;
-    }
-    for (aps) |p| {
-        try e.charge(.cond, 1);
-        var l = f.leafAt(p.leaf);
-        if (l.kind == .ref) {
-            if (refs.get(.{ l.root, l.pos, l.tags, p.route, p.routes })) |mi| {
-                l.slots = (try Subtree.without(f.slots, g, e.account(), e.places(), l.slots, minus.items[mi].items)) orelse continue;
-                try out.append(g, .{ .leaf = try f.leaf(l), .route = p.route, .occ = p.occ, .routes = p.routes });
-                continue;
-            }
-        } else if (taken.get(.{ p.leaf, p.route, p.routes })) |n| if (n != 0) {
-            (try taken.getOrPut(g, .{ p.leaf, p.route, p.routes })).value_ptr.* = n - 1;
-            continue;
-        };
-        try out.append(g, p);
+        try RouteWalk.project(e, cl.args[j], reqs[0..n], try e.routeStep(0, 0x8000_0000 | j), 0);
     }
 }
 
@@ -552,23 +451,25 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
             const en = st.ents.items[ti];
             var list: std.ArrayList(u32) = .empty;
             defer list.deinit(g);
-            try e.expand(en.leaf, &list);
+            var rs: std.ArrayList(u32) = .empty;
+            defer rs.deinit(g);
+            try expandEntry(e, en, &list, &rs);
             // One entry of its root expanding to one leaf: a chain of calls
             // that hand one object on is read to its end, each call's
             // group one entry of one object (it asks nothing of its own).
-            if (taken.items.len == 1 and list.items.len == 1) list.items[0] = try Ends.endOf(e, list.items[0]);
+            if (taken.items.len == 1 and list.items.len == 1 and rs.items[0] == 0) list.items[0] = try Ends.endOf(e, list.items[0]);
             for (list.items, 0..) |x, nth| {
                 const xl = f.leafAt(x);
                 if (xl.kind == .top or xl.kind == .shared) return Cond.unprovable;
                 try e.charge(.edge, 1);
                 e.route_count += 1;
-                if (blk != none and (try seen.getOrPut(g, .{ x, en.routes })).found_existing) continue;
+                if (blk != none and (try seen.getOrPut(g, .{ x, rs.items[nth] })).found_existing) continue;
                 // A leaf the entry was expanded from, met again around a
                 // cycle of expansions (a fold's supply and its step's
                 // answer): its objects are that ancestor's, which this
                 // chain reads already (the least fixpoint, §2.9.3).
                 if (try Chains.onChain(e, &st, ti, x)) continue;
-                try st.add(g, .{ .leaf = x, .route = 0x4000_0000 | e.route_count, .occ = if (Contract.isApart(en.occ)) en.occ else 0, .block = blk, .routes = en.routes }, .{ ti, @intCast(nth), st.par.items[ti][2] + 1 });
+                try st.add(g, .{ .leaf = x, .route = 0x4000_0000 | e.route_count, .occ = if (Contract.isApart(en.occ)) en.occ else 0, .block = blk, .routes = rs.items[nth] }, .{ ti, @intCast(nth), st.par.items[ti][2] + 1 });
             }
         }
         // Families of the expansion ask their own separation.
@@ -583,6 +484,26 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
     }
     if (occs.run.items.len == 0) return Cond.yes;
     return Cond.of(e.account(), try e.arena.dupe(u64, occs.run.items));
+}
+
+/// An entry's expansion (§2.3.5, *a key's leaf*): each leaf without its
+/// route set, the set its entry's routes (`rs`), where the entry has none;
+/// else each leaf written out, under the entry's routes.
+fn expandEntry(e: *Eval, en: Ent, list: *std.ArrayList(u32), rs: *std.ArrayList(u32)) Error!void {
+    const g = e.gpa();
+    if (en.routes != 0) {
+        try e.expand(en.leaf, list);
+        for (list.items) |_| try rs.append(g, en.routes);
+        return;
+    }
+    try e.expandRouted(en.leaf, list);
+    for (list.items) |*x| {
+        var l = e.f.leafAt(x.*);
+        try rs.append(g, l.routes);
+        if (l.routes == 0) continue;
+        l.routes = 0;
+        x.* = try e.f.leaf(l);
+    }
 }
 
 // ---- the one relation (§2.9.2) -------------------------------------------
