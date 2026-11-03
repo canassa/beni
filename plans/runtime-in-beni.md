@@ -30,6 +30,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 12 | **`node`'s `Http/Server.js`** (`startListen`, `nextRequest`, `requestOf`, `isUpgrade`, `refuseUpgrade`, `notOffered`, `write`, `awaitClosed`, `beginClose`, `boundAddress`) | **specified 2026-11-01**, below: eleven exports and thirteen helpers; `WebSocket.js` stays |
 | 13 | **`node`'s `WebSocket.js`** (`fromUpgrade`, `next`, `send`, `begin`, `finish`, `unsent`, `chosen`, `awaitDrain`) | **specified 2026-11-03**, below: eight exports and twenty helpers; the frames over the host buffer by `Js.setAt` and `Js.bitXor` |
 | 14 | **The three thin files**: `html`'s `Html.js` (`targetValue`, `targetChecked`, `pointer`), `node`'s `Prerender.js` (`writeRecords`) and `Io.js` (`startReadDir`) | **specified 2026-11-03**, below: five declarations, the three siblings deleted |
+| 15 | **`node`'s `markup.js` and `runtime.js`** (`escape`, `escapeAttr`, `safeUrl`, `list`, `classes`, `styles`, `rawText`, `text`, `map`; `run`) | **specified 2026-11-03**, below: the runtime module `Rt.beni`, as `browser`'s; both files deleted |
 
 ## Step 1 — slot and mount (2026-10-02)
 
@@ -1177,3 +1178,51 @@ smaller (the listener helper's one call passed the extractor as an argument; a t
 needs no parameter). The first cut of the listing used `List.sortBy` and `List.map` and made the
 four `ReadDir*` programs 264 to 444 bytes larger, then 22 to 78 with `List.map` alone; the host's
 loops put them below the sibling.
+
+
+## Step 15 — `node`'s `markup.js` and `runtime.js` (2026-11-03)
+
+**What moves.** The nine exports of `platforms/node/markup.js` (`backend.md` §15.6: the `ssr`
+lowering's seven and the two markup primitives) and the one of `platforms/node/runtime.js`
+(`run`), written in beni over `Js` in a runtime module `platforms/node/Rt.beni`, and both files
+deleted. The manifest says `"markup": { "lowering": "ssr", "module": "Rt" }` and no `"runtime"`:
+the module is the whole runtime (`boundary.md` §5.2 and §9.2, amended 2026-10-02 for `browser`),
+so no compiler feature is needed (#1810). Each `pub` value takes the declared count of parameters
+over `Js.Value`, as `browser`'s `Rt.beni` does:
+
+- `run program` writes `program.$o` to standard output when it is not empty and sets
+  `process.exitCode` to `program.$c`, the two keys `Node.beni` builds — the host calls `Io`'s
+  `finish` makes (step 10), through `Js.global "process"`.
+- `escape text` and `escapeAttr value` replace `&`, `<`, `\r` (and `"`) with their references in
+  one pass of `replace` over a `g` pattern and one replacer function reading one object, as the
+  file does. `Js.regExp` refuses `g` (§4.2: a shared `lastIndex`), and `String.prototype.replace`
+  resets `lastIndex` itself, so the pattern is `new RegExp("[&<\\r]", "g")`, a top-level value made
+  once (`Js.construct`), priced against the file's literal; a chain of three `replaceAll`s is the
+  second price. If both cost bytes, the owner is asked whether `Js.regExp` may take `g` for a
+  literal that only `replace` reads.
+- `safeUrl url` tests `Js.regExp`'s `i` pattern, `browser`'s `Rt.beni` text.
+- `list items row fallback`: an empty list is the fallback's `t` or `""`; otherwise the rows' `t`
+  concatenated, each `row(item, position)`, over the elements by `backend.md` §4's protocol
+  (`elements`, as `browser`'s), in a self-recursive tail function over `Js.at` (the tail-call loop,
+  §8).
+- `classes entries` is the names whose flag is `True`, each once, in first-occurrence order, a
+  name holding whitespace being several (`split` on `Js.regExp "[\\t\\n\\f\\r ]+"`), joined by
+  one space, through a `Set`; `styles entries` writes `name:value;` for each property's last
+  non-empty value in first-occurrence order, through a `Map`; a tuple is read as `{ a, b }`.
+- `rawText text tag` replaces `</` before the element's own name, in any case, with `<\/`: a
+  `RegExp` made per call with `gi`, as the file does.
+- `text s` is `{ t: escape s }` (a `Js.object`); `map html f` is `html`.
+
+**What changes shape.** Nothing a program sees: markup under `ssr` stays `{ t }`, a `Program`
+stays `{ $c, $o }`, and every `run/Markup*` fixture prints what it printed. The entry file imports
+`run` from `_platform/Rt.mjs` instead of the copied `runtime.foreign.mjs`, so every development
+build of a `node` program changes its tree, and every `emit/release/app/*` golden its hoisted
+runtime text; the markup goldens (`emit/MarkupSsr`, …) read `Rt$escape` where they read the
+file's `escape`.
+
+**The bar** (`core-in-beni.md` R47-3): every node line of `bench/size.mjs` reaches `run`, so
+release brotli no larger over all of them (both compilers, same sources), the `run/Markup*`
+programs named; the shapes side by side in `emit/release/app/*` and `emit/release/*Markup*`; and
+no reproducible slowdown: `escape` is the one export on a hot path (every text hole of a render),
+and it keeps one pass of `replace`; the chat and HTTP servers that render are the programs to
+time if the pattern's form changes.

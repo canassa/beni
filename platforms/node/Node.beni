@@ -13,9 +13,9 @@
 --! granted, never fabricated.
 --!
 --! A `Program` is plain data, `{ $c, $o }`: the exit code and the output
---! (`boundary.md` §4.1). That is what lets `runtime.js` be the only file
---! that touches the host: its `run`, and `Io.js`'s `finish`, read the two
---! keys by name. `Js.object` never renames a key, so a release build keeps
+--! (`boundary.md` §4.1). That is what lets the runtime be the only code
+--! that touches the host: `Rt.run` and `Io`'s `finish`, both beni over
+--! `Js`, read the two keys by name. `Js.object` never renames a key, so a release build keeps
 --! them. The keys hold a `$`, which no beni identifier can: a `Js.object`
 --! key is a plain property, and a beni record field of the same text would
 --! keep its source name in every release build of every `node` program

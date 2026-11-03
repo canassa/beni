@@ -12533,7 +12533,10 @@ DOM (research 36 Â§2.12, Â§5.5): the same tree, and the same template split,
 
 *As built, 2026-09-29* (`platforms/node/zig/ssr.zig`, `platforms/node/markup.js`,
 `platforms/html/zig/parser_table.zig`; `tests/corpus/run/Markup*`, `emit/MarkupSsr`). The list above
-holds, with these readings:
+holds, with these readings. *Amended 2026-11-03* (#1810): the runtime is `platforms/node/Rt.beni`,
+a runtime module (`boundary.md` §9.2) that also supplies the program runtime's `run`; `markup.js`
+and `runtime.js` are gone. Each export keeps its contract below; what moved and what it cost is
+`plans/runtime-in-beni.md` step 15.
 
 - **A kind is hoisted and named by its site**, `<Module>$k<inst>` (Â§15.2), after the imports: an
   array of the root's static strings, which the root's block concatenates with its values in
