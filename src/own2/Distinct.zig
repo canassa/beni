@@ -22,6 +22,7 @@ const Entries = @import("Entries.zig");
 const Routed = @import("Routed.zig");
 const Graft = @import("Graft.zig");
 const Coexist = @import("Coexist.zig");
+const Chains = @import("Chains.zig");
 
 const Error = Relation.Error;
 const Cond = Contract.Cond;
@@ -417,7 +418,7 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
         switch (l.kind) {
             .ref => if (!l.at_pos and try isFamily(e, l) and !Contract.isApart(en.occ)) {
                 if (f.roots.items[l.root].kind == .cb and !e.expandable(l)) return Cond.unprovable;
-                if (try gather(e, &occs, try sepLeaf(e, en.leaf))) return Cond.unprovable;
+                if (try Chains.gather(e, &occs, try sepLeaf(e, en.leaf))) return Cond.unprovable;
             },
             .top, .shared => return Cond.unprovable,
             else => {},
@@ -494,7 +495,7 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
                             // there, so expansion cannot count it (#1710).
                             if (idx.len == 1 and Entries.wildEntry(f, ents[idx[0]])) return Cond.unprovable;
                             gr.must = 1;
-                        } else if (try gather(e, &occs, c)) return Cond.unprovable;
+                        } else if (try Chains.gather(e, &occs, c)) return Cond.unprovable;
                     }
                 },
                 .supply, .cb => {
@@ -527,7 +528,7 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
         taken.clearRetainingCapacity();
         try st.take(g, latest, &taken);
         const blk = if (f.roots.items[latest].kind == .call and !unvouched) latest else none;
-        if (blk != none and taken.items.len >= 2) try sortInline(e, &st, taken.items);
+        if (blk != none and taken.items.len >= 2) try Chains.sortInline(e, &st, taken.items);
         // An expansion of a call is one block of alternatives: one entry
         // per leaf (pairs inside a block are never compared).
         var seen: Ids.FixedDict(2) = .{};
@@ -548,7 +549,7 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
                 // cycle of expansions (a fold's supply and its step's
                 // answer): its objects are that ancestor's, which this
                 // chain reads already (the least fixpoint, §2.9.3).
-                if (try onChain(e, &st, ti, x)) continue;
+                if (try Chains.onChain(e, &st, ti, x)) continue;
                 try st.add(g, .{ .leaf = x, .route = 0x4000_0000 | e.route_count, .occ = if (Contract.isApart(en.occ)) en.occ else 0, .block = blk, .routes = en.routes }, .{ ti, @intCast(nth), st.par.items[ti][2] + 1 });
             }
         }
@@ -558,47 +559,12 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
             const l = f.leafAt(en.leaf);
             if (l.kind == .ref and !l.at_pos and try isFamily(e, l) and !e.expandable(l) and !Contract.isApart(en.occ)) {
                 if (f.roots.items[l.root].kind == .cb) return Cond.unprovable;
-                if (try gather(e, &occs, try sepLeaf(e, en.leaf))) return Cond.unprovable;
+                if (try Chains.gather(e, &occs, try sepLeaf(e, en.leaf))) return Cond.unprovable;
             }
         }
     }
     if (occs.run.items.len == 0) return acc;
     return Cond.conj(e.arena, e.account(), acc, try Cond.of(e.account(), try e.arena.dupe(u64, occs.run.items)));
-}
-
-/// Whether entry `at` or one it was expanded from has leaf `x`; a step
-/// each, charged. The chain's leaves are distinct (a leaf met again is
-/// never added), so it is at most the leaves long.
-fn onChain(e: *Eval, st: *const Entries.Rounds, at: u32, x: u32) Error!bool {
-    var a = at;
-    while (a != none) : (a = st.par.items[a][0]) {
-        try e.charge(.cond, 1);
-        if (st.ents.items[a].leaf == x) return true;
-    }
-    return false;
-}
-
-/// `xs` in the inline order of the check's entries (an insertion sort by
-/// `Entries.Rounds.before`, its comparisons charged).
-fn sortInline(e: *Eval, st: *const Entries.Rounds, xs: []u32) Error!void {
-    var i: usize = 1;
-    while (i < xs.len) : (i += 1) {
-        var k = i;
-        while (k > 0 and try st.before(e.f, xs[k], xs[k - 1])) : (k -= 1) std.mem.swap(u32, &xs[k], &xs[k - 1]);
-    }
-}
-
-/// Add condition `c`'s occurrences to `occs`; whether it is `no`.
-/// A condition gathered again (one interned run) is not read again.
-fn gather(e: *Eval, occs: *Occs, c: Cond) Error!bool {
-    if (c.no) return true;
-    if (c.sel.len == 0) return false;
-    try e.charge(.cond, 1);
-    const key: u64 = @intFromPtr(c.sel.ptr) ^ (@as(u64, c.sel.len) << 48);
-    if ((try occs.seen.getOrPut(e.gpa(), key | (1 << 63))).found_existing) return false;
-    try e.charge(.cond, @intCast(c.sel.len));
-    for (c.sel) |x| try occs.add(e.gpa(), x);
-    return false;
 }
 
 // ---- the one relation (§2.9.2) -------------------------------------------
@@ -645,7 +611,7 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
         // An object made after a call is none of the call's result (§2.9.2
         // step 4): no expansion, so a chain of calls is never walked again
         // per atom met at its end.
-        if (madeAfter(e, x, t) or madeAfter(e, t, x)) return .no;
+        if (Chains.madeAfter(e, x, t) or Chains.madeAfter(e, t, x)) return .no;
         const ex = xr and e.expandable(x);
         const et = tr and e.expandable(t);
         if (ex or et) {
@@ -673,18 +639,6 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
     // Two atoms.
     if (x.kind == t.kind and x.atom == t.atom and x.extra == t.extra) return .may;
     return .no;
-}
-
-/// Whether atom `a` (a literal's or a call's fresh objects) was made
-/// after the call whose result `l` is: then the result holds none of it.
-fn madeAfter(e: *Eval, a: Leaf, l: Leaf) bool {
-    if (l.kind != .ref or e.f.roots.items[l.root].kind != .call) return false;
-    const at = switch (a.kind) {
-        .site => a.atom,
-        .fresh => e.f.calls.items[a.atom].point,
-        else => return false,
-    };
-    return e.f.calls.items[e.f.roots.items[l.root].a].point < at;
 }
 
 /// What the answer `x` of a label's direct call may hold of `t` (§2.9.2

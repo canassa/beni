@@ -15,6 +15,7 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Subtree = @import("Subtree.zig");
+const BelowSize = @import("BelowSize.zig");
 const Conds = @import("Conds.zig");
 
 const Cond = Conds.Cond;
@@ -56,7 +57,7 @@ pub fn canonical(x: Ctx, c: Cond) Error!Cond {
         try Slots.replay(g, x.account, x.places, x.roots[j], w, &paths);
         if (paths.items.len != 1 or wild(x, .from(paths.items[0])) or
             try manyPlaces(x, x.places.pathPlace(.from(paths.items[0]))) or
-            try Subtree.moreBelow(x.slots, g, x.account, x.places, .from(paths.items[0]), Slots.below_min))
+            try BelowSize.moreBelow(x.slots, g, x.account, x.places, .from(paths.items[0]), Slots.below_min))
         {
             try run.append(x.arena, o);
             continue;
