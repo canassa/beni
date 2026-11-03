@@ -54,10 +54,26 @@ const refs_bit: u8 = 1;
 const many_bit: u8 = 2;
 /// Every element below the node is unconditional (no route, no wrap).
 const plain_bit: u8 = 4;
+/// A leaf whose reading depends on the reader's tags: a call's or a
+/// supply's (its expansion merges them in) or a deferred storage.
+const open_bit: u8 = 8;
+
+/// The earliest and latest choice that filters a node's elements (its
+/// wraps' tags, its route wraps' and its leaves' routes): `empty_span` for
+/// none, `full_span` above an `open_bit` leaf (§2.3.4 *Reading*).
+const Span = [2]u32;
+const empty_span: Span = .{ none, 0 };
+const full_span: Span = .{ 0, none - 1 };
+
+fn unite(a: Span, b: Span) Span {
+    return .{ @min(a[0], b[0]), @max(a[1], b[1]) };
+}
 
 pub const Table = struct {
     nodes: std.ArrayList(Node) = .empty,
     bits: std.ArrayList(u8) = .empty,
+    /// Each node's `Span`, made with the node.
+    span: std.ArrayList(Span) = .empty,
     /// The pass that last visited each node (`enter`).
     stamp: std.ArrayList(u32) = .empty,
     intern: Ids.FixedDict(4) = .{},
@@ -68,6 +84,7 @@ pub const Table = struct {
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.nodes.deinit(gpa);
         t.bits.deinit(gpa);
+        t.span.deinit(gpa);
         t.stamp.deinit(gpa);
         t.intern.deinit(gpa);
         t.tags.deinit(gpa);
@@ -84,11 +101,35 @@ pub const Table = struct {
         return s != none and t.bits.items[s] & refs_bit != 0;
     }
 
+    fn tagSpan(t: *const Table, x: u32) Span {
+        return if (x == 0) empty_span else .{ t.tags.tag(x).choice, t.tags.tag(x).last };
+    }
+
+    fn routeSpan(t: *const Table, rs: u32) Span {
+        return if (rs == 0) empty_span else .{ t.tags.firstOf(rs), t.tags.lastOf(rs) };
+    }
+
+    /// Whether node `id`, reached under wrap tags `tags` and route wrap
+    /// `rs`, gives the keys it gives with no outer tags: they name no
+    /// choice that filters its elements, so they drop none of them.
+    fn unfiltered(t: *const Table, id: u32, tags: u32, rs: u32) bool {
+        if (tags == 0 and rs == 0) return true;
+        const sp = t.span.items[id];
+        const by = unite(t.tagSpan(tags), t.routeSpan(rs));
+        return sp[0] == none or sp[1] < by[0] or sp[0] > by[1];
+    }
+
     fn make(t: *Table, gpa: Allocator, account: *Ids.Account, n: Node, bits: u8) Error!u32 {
         try account.reserve(.set, 1);
         const got = try t.intern.getOrPut(gpa, .{ n.prefix, n.mask, n.left, n.right });
         if (got.found_existing) return got.value_ptr.*;
         const id: u32 = @intCast(t.nodes.items.len);
+        try t.span.append(gpa, switch (n.mask) {
+            0 => if (bits & open_bit != 0) full_span else t.routeSpan(n.left),
+            wrap => unite(t.tagSpan(n.left), t.span.items[n.right]),
+            rwrap => unite(t.routeSpan(n.left), t.span.items[n.right]),
+            else => unite(t.span.items[n.left], t.span.items[n.right]),
+        });
         try t.nodes.append(gpa, n);
         try t.bits.append(gpa, bits);
         try t.stamp.append(gpa, 0);
@@ -96,14 +137,15 @@ pub const Table = struct {
         return id;
     }
 
-    fn leafNode(t: *Table, gpa: Allocator, account: *Ids.Account, key: u32, routes: u32, many: bool, refs: bool) Error!u32 {
+    fn leafNode(t: *Table, gpa: Allocator, account: *Ids.Account, key: u32, routes: u32, many: bool, refs: u8) Error!u32 {
         if (routes == none) return none;
-        const bits: u8 = (if (refs) refs_bit else 0) | (if (many) many_bit else 0) | (if (routes == 0) plain_bit else 0);
+        const bits: u8 = refs | (if (many) many_bit else 0) | (if (routes == 0) plain_bit else 0);
         return t.make(gpa, account, .{ .prefix = key, .mask = 0, .left = routes, .right = @intFromBool(many) }, bits);
     }
 
-    fn isRefs(t: *const Table, s: u32) bool {
-        return t.bits.items[s] & refs_bit != 0;
+    /// A leaf node's `refs_bit` and `open_bit`, which a leaf made over it keeps.
+    fn isRefs(t: *const Table, s: u32) u8 {
+        return t.bits.items[s] & (refs_bit | open_bit);
     }
 
     /// A branch over two sets, either of which may be empty.
@@ -132,10 +174,12 @@ pub const Table = struct {
         return if (zeroBit(p0, mask)) t.branch(gpa, account, prefix, mask, s0, s1) else t.branch(gpa, account, prefix, mask, s1, s0);
     }
 
-    /// The one-element set.
-    pub fn one(t: *Table, gpa: Allocator, account: *Ids.Account, key: u32, tags: u32, refs: bool) Error!u32 {
+    /// The one-element set. `open_`: reading the key depends on the
+    /// reader's tags (`open_bit`).
+    pub fn one(t: *Table, gpa: Allocator, account: *Ids.Account, key: u32, tags: u32, refs: bool, open_: bool) Error!u32 {
         var r = [1]u32{tags};
-        return t.leafNode(gpa, account, key, try t.tags.internRoutes(gpa, account, &r, 0, 0), false, refs);
+        const b: u8 = (if (refs) refs_bit else 0) | (if (open_) open_bit else 0);
+        return t.leafNode(gpa, account, key, try t.tags.internRoutes(gpa, account, &r, 0, 0), false, b);
     }
 
     /// Set `s` with tags `x` merged into every element; an element they
@@ -378,7 +422,10 @@ pub const Table = struct {
 
     /// The elements of set `s` in key order, one per `next`, on an
     /// explicit stack of at most 34 nodes. With a `pass`, a node met before
-    /// in the pass and a node with no key a pass reads are skipped.
+    /// in the pass and a node with no key a pass reads are skipped. A node
+    /// is met only where the wraps above it filter none of its elements
+    /// (`unfiltered`): there it gives the keys it gives with no outer tags,
+    /// and a pass's reader keeps the keys, not their tags.
     pub const Iterator = struct {
         t: *Table,
         pass: u32 = 0,
@@ -390,8 +437,8 @@ pub const Table = struct {
             while (it.depth > 0) {
                 it.depth -= 1;
                 const id, const tags, const rs = it.stack[it.depth];
-                // A node is met once a pass only where no wrap tags it.
-                if (it.pass != 0 and (!it.t.hasRefs(id) or (tags == 0 and rs == 0 and !it.t.enter(id, it.pass)))) continue;
+                // A node is met once a pass only where no wrap filters it.
+                if (it.pass != 0 and (!it.t.hasRefs(id) or (it.t.unfiltered(id, tags, rs) and !it.t.enter(id, it.pass)))) continue;
                 const n = it.t.node(id);
                 if (n.mask == wrap) {
                     it.stack[it.depth] = .{ n.right, (try it.t.tags.merge(gpa, account, tags, n.left)) orelse continue, rs };
@@ -431,9 +478,9 @@ test "a set built over another shares its nodes, and a key reached twice is many
     defer t.deinit(testing.allocator);
     const g = testing.allocator;
     var s: u32 = empty;
-    for (0..64) |k| s = try t.coexist(g, &account, s, try t.one(g, &account, @intCast(k), 0, k % 2 == 0));
+    for (0..64) |k| s = try t.coexist(g, &account, s, try t.one(g, &account, @intCast(k), 0, k % 2 == 0, false));
     const made = t.nodes.items.len;
-    const s2 = try t.coexist(g, &account, s, try t.one(g, &account, 64, 0, false));
+    const s2 = try t.coexist(g, &account, s, try t.one(g, &account, 64, 0, false, false));
     try testing.expect(t.nodes.items.len - made <= 34);
     // Coexisting with itself: every element twice.
     const twice = try t.coexist(g, &account, s2, s2);
@@ -457,8 +504,8 @@ test "two arms keep the tags common to them, and an arm's own key gains its arm"
     var t: Table = .{};
     defer t.deinit(testing.allocator);
     const g = testing.allocator;
-    const shared = try t.one(g, &account, 1, 0, true);
-    const own = try t.coexist(g, &account, shared, try t.one(g, &account, 2, 0, false));
+    const shared = try t.one(g, &account, 1, 0, true, false);
+    const own = try t.coexist(g, &account, shared, try t.one(g, &account, 2, 0, false, false));
     const a0 = try t.tags.armOf(g, &account, 0);
     const a1 = try t.tags.armOf(g, &account, 1);
     const t0 = try t.tags.internTags(g, &account, &.{.{ 9, a0 }});
@@ -476,8 +523,8 @@ test "two arms keep the tags common to them, and an arm's own key gains its arm"
     try testing.expectEqual(@as(?u32, null), try rs.next(g, &account));
     try testing.expect(!e2.many);
     // One choice's two arms coexisting: once, not twice.
-    const x0 = try t.one(g, &account, 5, t0, false);
-    const x1 = try t.one(g, &account, 5, t1, false);
+    const x0 = try t.one(g, &account, 5, t0, false, false);
+    const x1 = try t.one(g, &account, 5, t1, false, false);
     var c = t.iterate(try t.coexist(g, &account, x0, x1), 0);
     try testing.expect(!(try c.next(g, &account)).?.many);
 }
@@ -489,7 +536,7 @@ test "two arms over one plain subtree join in one route wrap" {
     defer t.deinit(testing.allocator);
     const g = testing.allocator;
     var tower: u32 = empty;
-    for (0..32) |k| tower = try t.coexist(g, &account, tower, try t.one(g, &account, @intCast(k), 0, false));
+    for (0..32) |k| tower = try t.coexist(g, &account, tower, try t.one(g, &account, @intCast(k), 0, false, false));
     const a0 = try t.tags.armOf(g, &account, 0);
     const a1 = try t.tags.armOf(g, &account, 1);
     const t0 = try t.tags.internTags(g, &account, &.{.{ 9, a0 }});
