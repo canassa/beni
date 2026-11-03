@@ -23,4 +23,9 @@ main =
     v0 = [ 3 ]
     vs = List.map [ ( 1, v0 ) ] λ( _, v ) → v
     ws = List.push v0 4
-    Node.printLines [ show ys, show (Maybe.withDefault (Dict.get d 1) []), show ws, String.join (List.map vs show) ";" ]
+    Node.printLines
+        [ show ys
+        , show (Maybe.withDefault (Dict.get d 1) [])
+        , show ws
+        , String.join (List.map vs show) ";"
+        ]
