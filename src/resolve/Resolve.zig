@@ -792,26 +792,17 @@ const Pass = struct {
     }
 
     fn resolveImported(p: *Pass, m: Graph.Index, target: Graph.Index, name: Symbol, namespace: Namespace, token: u32, module_symbol: Symbol) Allocator.Error!Resolved {
-        // These adapters belong to core's typed fiber protocol. Platforms
-        // enter it through Task.callback/resume, never through raw invocation.
-        if (p.graph.modulePackage(target) == .core or p.graph.modulePackage(target) == .platform) {
-            const owner = p.interner.slice(p.graph.moduleName(target));
-            const text = p.interner.slice(name);
-            const caller_core = p.graph.modulePackage(m) == .core or
-                (p.graph.modulePackage(m) == .app and p.core_app);
-            const caller_task = caller_core and
-                std.mem.eql(u8, p.interner.slice(p.graph.moduleName(m)), "Task");
-            const caller_worker = @import("CorePrivate.zig").workerCaller(p.graph.modulePackage(m) == .platform, p.interner.slice(p.graph.moduleName(m)));
-            const access = @import("CorePrivate.zig").access(owner, text, namespace == .value);
-            if (if (access) |required| switch (required) {
-                .runtime => p.graph.modulePackage(target) == .core and !caller_core and p.graph.modulePackage(m) != .platform,
-                .core => p.graph.modulePackage(target) == .core and !caller_core,
-                .task => p.graph.modulePackage(target) == .core and !caller_task,
-                .worker => p.graph.modulePackage(target) == .platform and !caller_worker,
-            } else false) {
-                try p.report(.{ .code = .private_name, .module = m, .token = token, .name = name.toOptional(), .module_name = module_symbol.toOptional() });
-                return .poison(.private_name);
-            }
+        const privacy = @import("CorePrivate.zig");
+        if (privacy.denied(
+            privacy.authority(p.graph.modulePackage(target), false),
+            p.interner.slice(p.graph.moduleName(target)),
+            p.interner.slice(name),
+            namespace == .value,
+            privacy.authority(p.graph.modulePackage(m), p.core_app),
+            p.interner.slice(p.graph.moduleName(m)),
+        )) {
+            try p.report(.{ .code = .private_name, .module = m, .token = token, .name = name.toOptional(), .module_name = module_symbol.toOptional() });
+            return .poison(.private_name);
         }
         const iface = &p.interfaces[target.int()];
         switch (namespace) {

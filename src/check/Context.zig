@@ -36,6 +36,8 @@ artifacts: *const Artifacts,
 interner: *const InternPool.Global,
 interfaces: []const Interface,
 module: Graph.Index,
+/// The same effective authority name resolution uses, including --core roots.
+authority: @import("../resolve/CorePrivate.zig").Authority = .app,
 bir: *const Bir,
 schemas: *Schema.State,
 /// Written types the reader could not finish, by the instruction a message

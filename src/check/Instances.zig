@@ -188,13 +188,9 @@ fn onApp(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App) Error!v
         try s.report.internal(w.origin, "a method's declaring module has no interface");
         return Resolve.reject(s, id, true);
     } else {
-        const privacy = @import("../resolve/CorePrivate.zig");
-        if (entry.package == .platform and privacy.access(cx.interner.slice(entry.module_name), cx.interner.slice(w.method), true) == .worker and
-            !privacy.workerCaller(cx.graph.modulePackage(cx.module) == .platform, cx.interner.slice(cx.graph.moduleName(cx.module))))
-            return refusePrivate(s, id, a.type, w.method);
         const iface = cx.iface(entry.module);
         if (iface.findValue(cx.interner, w.method)) |value| {
-            const caller = cx.graph.modulePackage(cx.module);
+            const caller = cx.authority;
             if (entry.package == .core and std.mem.eql(u8, cx.interner.slice(entry.module_name), "Js") and caller != .core and caller != .platform)
                 return refusePrivate(s, id, a.type, w.method);
             return importedMethod(s, id, root, a.type, entry, value);
@@ -314,6 +310,25 @@ fn ownMethod(s: *Solve, id: WantedId, root: Var, decl: u32, entry: Types.Entry) 
 }
 
 fn importedMethod(s: *Solve, id: WantedId, root: Var, type_id: Types.TypeId, entry: Types.Entry, value: Interface.ValueIndex) Error!void {
+    const privacy = @import("../resolve/CorePrivate.zig");
+    if (privacy.denied(
+        privacy.authority(entry.package, false),
+        s.cx.interner.slice(entry.module_name),
+        s.cx.interner.slice(s.evidence.get(id).method),
+        true,
+        s.cx.authority,
+        s.cx.interner.slice(s.cx.graph.moduleName(s.cx.module)),
+    )) {
+        const wanted = s.evidence.get(id);
+        try refusePrivate(s, id, type_id, wanted.method);
+        // A chained call cannot determine its receiver after this refusal.
+        // Poison only an unresolved result, never a shared nominal type.
+        if (Walk.function(s.store(), wanted.method_type)) |function| {
+            const result = s.store().find(function.result);
+            if (s.store().content(result) == .flex) try s.poison(result);
+        }
+        return;
+    }
     if (try plainImported(s, id, root, type_id, entry, value)) return;
     const w = s.evidence.get(id);
     s.instantiate.made.clearRetainingCapacity();

@@ -2729,6 +2729,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                     .entry_constructors = r.entry_constructors,
                     .entry_kinds = r.entry_kinds,
                     .keep_stores = r.session.options.keep_type_stores,
+                    .core_app = r.session.options.core,
                     .host_free = r.session.options.host_free,
                     .informational = r.session.options.informational,
                     .explain = r.session.options.explain,

@@ -111,6 +111,7 @@ pub const Input = struct {
     /// Compute the crossing bits (checker-v2.md §36).
     crossing: bool = true,
     /// Internal rollout option; enable after typed Task storage lands.
+    core_app: bool = false,
     host_free: bool = false,
     /// `ambiguous_method_receiver` is emitted (static-dispatch-spike.md §10.9).
     informational: bool = false,
@@ -192,6 +193,7 @@ pub fn check(in: Input) Error!Check.Counters {
         .interner = in.interner,
         .interfaces = in.interfaces,
         .module = in.module,
+        .authority = @import("../resolve/CorePrivate.zig").authority(in.graph.modulePackage(in.module), in.core_app),
         .bir = bir,
         .schemas = &schemas,
         .too_deep = &too_deep,

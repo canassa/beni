@@ -319,8 +319,8 @@ pub fn privateMethod(r: *Reporter, region: Bir.Inst.Index, module: Graph.Index, 
         w.print("Js primitives cannot be called with dot syntax. Call `Js.{s}` by its qualified name in core or platform code. Applications cannot reach Js operations through values returned by a platform.", .{method_text}) catch return error.OutOfMemory;
         return r.emit(.private_method, region, &out);
     }
-    if (@import("../resolve/CorePrivate.zig").access(module_text, method_text, true) == .worker) {
-        w.writeAll("This name is private to the platform’s worker entry machinery.") catch return error.OutOfMemory;
+    if (@import("../resolve/CorePrivate.zig").explanation(module_text, method_text)) |message| {
+        w.writeAll(message) catch return error.OutOfMemory;
         return r.emit(.private_method, region, &out);
     }
     w.print(
