@@ -63,16 +63,16 @@ fn hash(w: *const W, d: Demand) u64 {
     return h.final();
 }
 
-/// Every field a judgement reads equal: all but the text's path (the
-/// targets and operands by their contents, the relied condition by the
-/// call and argument it is made from).
+/// Every field a judgement reads equal: all but the text's path (its root
+/// and its steps; the targets and operands by their contents, the relied
+/// condition by the call and argument it is made from).
 fn same(w: *const W, a: Demand, b: Demand) bool {
     if (!std.mem.eql(u32, w.leavesOfRun(a.targets), w.leavesOfRun(b.targets))) return false;
     if (!std.mem.eql(u32, w.valuesOfRun(a.operands), w.valuesOfRun(b.operands))) return false;
     var x = a;
     var y = b;
     inline for (.{ &x, &y }) |p| {
-        p.write_path = .none;
+        p.write_path, p.write_rel = .{ .none, 0 };
         p.targets = .{};
         p.operands = .{};
         p.relies = .{};
