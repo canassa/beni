@@ -1,0 +1,3 @@
+A closure that calls a captured closure which edits its parameter in place, on lists nothing else holds
+(ownership-v2.md §2.11.3, §2.11.4): built again under --ownership=v2 and the list stale-read sanitiser. v2 accepts
+each edit; the sanitised run prints the same.

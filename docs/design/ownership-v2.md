@@ -2050,6 +2050,26 @@ its parameter writes are `callsite` demands on `⊤` there, refused `unknown`, a
 `once`, as at any escape. Before this, the hand-back was not an escape, and the write the code accepted as
 `param` ran on a list the caller still read (`same λl → List.push l 1` applied to `xs`, then `xs` read).
 
+*Amended 2026-11-03 (#1758): a captured closure called by a closure.* `g = λv → List.push v 5`, `h = λv → g v`,
+`h k`: `h`'s call of its capture `g` is a label of `h`, and at `h k` the label is applied to `g`'s code (§2.11.3).
+Two rules were missing. (1) **The site's type.** A label's supplies are read at the call site's function type,
+never the code's own (a let-bound `g` is `List number → List number`, a type variable's place). A capture has no
+argument instruction at the call, so the site's type is the type the label's origin call has its callee at (the
+head of `g v` in `h`, `List Int → List Int`). Where neither is to hand, the code is read as unknown, and then it
+**escapes at that call**: it still runs, so its parameter writes are `callsite` demands on `⊤`, refused
+`unknown`, and a capture write is `once`, as at any escape. Before, the unknown read dropped the code's writes,
+and `h k` made no demand. (2) **Every label outward.** Where the call a label is applied at is itself a virtual
+call (`apply2 k k λv → g v`: the lambda's label of `g`, applied inside `apply2`'s label), the written supply is
+the outer virtual call's parameter, so it is that outer label's supply in turn: an arrival of it at the supply's
+entry carries the write's slot outward. The write relies on each such label's supply condition and, for a
+`taken` row, its container occurrences, at that label's call, and a slot any of them keeps refuses. Before, only
+the innermost label's condition was asked, and `apply2 k k`, `List.map [ m, m ]` and `List.update [ k, k ] 0`
+through `λv → g v` were accepted. Sound because the chain follows the supply through every label it is handed
+by, each step an arrival (§2.10), so each object the write reaches is judged by every callee that handed it;
+the chain ends, as a virtual call always follows the call it applies a label of. Fixtures
+`run/SanitiserCapturedWriter` (refused; the sanitised runs trapped) and `run/SanitiserCapturedWriterApart` (the
+same shapes on apart or fresh lists, accepted in place).
+
 #### 2.11.5 Other constructs
 
 - **Record update** `{ r | F = … }` builds a record: a `built` record with a fresh site, whose untouched fields
