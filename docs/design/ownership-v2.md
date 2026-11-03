@@ -1571,7 +1571,9 @@ doubling literal over one list projected 2ᵏ paths onto the same list.
   or a record, a tree of plain steps) is walked once per `(node, value)`, a demand a written slot there,
   named by the first route: two routes to one value are one demand. Read part by part (a parameter asked
   deep apart and plain), a literal's selection asks its plain occurrences on the whole values first, and a
-  value they name twice makes it `no` before the walk by routes (`Graft.plainsOnLiteral`). The fold is
+  value they name twice makes it `no` before the walk by routes (`Graft.plainsOnLiteral`); those plain
+  occurrences are projected as the walk by routes projects them, one walk a parameter (#1714: `f` over the
+  doubling literal 365 / 826 records at depth 4 / 8, was 365 / 1 229 with a projection an occurrence). The fold is
   made on `req` at the read-off (`Graft.fold`); a full slot with nothing asked below it is kept as it is
   (it names the same objects). Measured (Debug): `caller w = tₖ w` 1 609 / 26 226 at k = 4 / 8 and past
   the limit at 10 is 240 / 298 / 364 at k = 8 / 10 / 12, one demand; the K-wide caller 850 / 2 078 / 5 878
