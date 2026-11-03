@@ -8191,3 +8191,28 @@ use the same mapping; the ownership words above remain justified.
 *2026-11-03, #1738:* the pinned lowering now reports an invalid selector
 instead of asserting. That path performs no field access; accepted selector
 allocations, payload aliases, stores and callbacks are unchanged.
+
+### Compiler-intrinsic body pins (owner, 2026-11-03)
+
+A compiler-implemented `foreign` has no sibling body. Its word-body row names
+its actual compiler source region and adds a fourth column:
+`intrinsic:<defining-package-directory>`. For example, a `Js.Any.pack` row
+uses `src/js/Lower.zig`, the `pack` ownership markers, and `intrinsic:core`.
+The key is the defining package plus the full module/declaration name, so a
+namesake in another package cannot reuse the pin. A test platform exercising
+the same intrinsic has its own explicitly scoped row.
+
+Such a row is admitted only for a foreign declaration, a compiler `.zig` file
+under `src/`, and the existing hashed ownership markers. The ordinary source
+body rule remains in force for beni definitions and sibling implementations.
+The pinned region must be the code that runs in place of that declaration;
+its SHA-256 is checked exactly like every other body pin. There is no dummy
+sibling and no exemption from pinning. `Pins` checks both the owner scope and
+foreign status before a scoped row can satisfy a package's body requirement.
+
+For `Js.Any.pack`, the pinned lowering allocates a fresh wrapper whose private
+prototype carries the typed payload and its identity. It retains that payload,
+which justifies `escaped a → fresh Any`; the identity guard and payload remain
+typed. Reply discovery's corresponding region reads message containers into
+local scan state and returns a newly allocated list of immutable String ids.
+It does not retain or mutate the borrowed message after returning.

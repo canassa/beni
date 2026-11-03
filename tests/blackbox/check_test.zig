@@ -1342,7 +1342,8 @@ fn wordedPackages(w: *World, out: *std.ArrayList(Package)) !void {
 /// (`Tea` in browser-tea and browser-inline), so a pin counts for a package
 /// only when its file lies under that package's directory.
 const Pins = struct {
-    files: std.StringHashMapUnmanaged(std.ArrayList([]const u8)) = .empty,
+    const File = struct { path: []const u8, intrinsic_package: ?[]const u8 = null };
+    files: std.StringHashMapUnmanaged(std.ArrayList(File)) = .empty,
 
     fn parse(arena: std.mem.Allocator, list: []const u8) !Pins {
         var p: Pins = .{};
@@ -1351,18 +1352,33 @@ const Pins = struct {
             if (row.len == 0 or row[0] == '#') continue;
             var fields = std.mem.tokenizeScalar(u8, row, ' ');
             const file = fields.next() orelse continue;
-            const got = try p.files.getOrPut(arena, fields.next() orelse continue);
+            const decl = fields.next() orelse continue;
+            _ = fields.next() orelse return error.BodyRowWithoutHash;
+            var owner: ?[]const u8 = null;
+            if (fields.next()) |scope| {
+                const prefix = "intrinsic:";
+                if (!std.mem.startsWith(u8, scope, prefix) or scope.len == prefix.len or
+                    !std.mem.startsWith(u8, file, "src/") or !std.mem.endsWith(u8, file, ".zig") or fields.next() != null)
+                    return error.InvalidIntrinsicPin;
+                owner = scope[prefix.len..];
+            }
+            const got = try p.files.getOrPut(arena, decl);
             if (!got.found_existing) got.value_ptr.* = .empty;
-            try got.value_ptr.append(arena, file);
+            try got.value_ptr.append(arena, .{ .path = file, .intrinsic_package = owner });
         }
         return p;
     }
 
     fn has(p: Pins, dir: []const u8, decl: []const u8) bool {
+        return p.hasForDecl(dir, decl, true);
+    }
+
+    fn hasForDecl(p: Pins, dir: []const u8, decl: []const u8, foreign: bool) bool {
         const files = p.files.get(decl) orelse return false;
         for (files.items) |f| {
-            if (std.mem.eql(u8, dir, "core") and std.mem.startsWith(u8, decl, "Js.") and std.mem.startsWith(u8, f, "src/js/")) return true;
-            if (f.len > dir.len and std.mem.startsWith(u8, f, dir) and f[dir.len] == '/') return true;
+            if (f.intrinsic_package) |owner| {
+                if (foreign and std.mem.eql(u8, owner, dir)) return true;
+            } else if (f.path.len > dir.len and std.mem.startsWith(u8, f.path, dir) and f.path[dir.len] == '/') return true;
         }
         return false;
     }
@@ -1539,8 +1555,12 @@ test "ownership words: every worded declaration, the helpers its body runs and e
         try dumpDecls(&w, package.args, true, &decls);
         var need: std.StringArrayHashMapUnmanaged([]const u8) = .empty;
         try pinNeeds(arena, decls.items, &sources, &need);
+        var foreign: std.StringHashMapUnmanaged(void) = .empty;
+        for (decls.items) |decl| if (decl.foreign) {
+            try foreign.put(arena, try decl.key(arena), {});
+        };
         for (need.keys(), need.values()) |key, why| {
-            if (pins.has(package.dir, key)) continue;
+            if (pins.hasForDecl(package.dir, key, foreign.contains(key))) continue;
             std.debug.print("{s} {s}, and {s} pins no body for it under {s}/\n", .{ key, why, bodies_list, package.dir });
             ok = false;
         }
@@ -2189,7 +2209,7 @@ test "ownership words: typed cell and slot rows notice unsafe flips" {
 test "ownership words: compiler-owned Js implementation pins belong to core" {
     var state = std.heap.ArenaAllocator.init(testing.allocator);
     defer state.deinit();
-    const pins = try Pins.parse(state.allocator(), "src/js/Lower.zig Js.some 00\n");
+    const pins = try Pins.parse(state.allocator(), "src/js/Lower.zig Js.some 00 intrinsic:core\n");
     try testing.expect(pins.has("core", "Js.some"));
     try testing.expect(!pins.has("platforms/browser", "Js.some"));
     try testing.expect(!pins.has("core", "Js.other"));
@@ -2215,4 +2235,47 @@ test "core Js diagnoses nonliteral local cell selectors before lowering" {
         try testing.expectEqual(@as(usize, 2), result.diagnostics.len);
         for (result.diagnostics) |d| try testing.expectEqual(diagnostic.Code.invalid_cell_selector, d.code);
     }
+}
+
+test "ownership words: compiler intrinsic pins retain their defining package and module" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const pins = try Pins.parse(arena.allocator(), "src/js/Lower.zig Js.Any.pack hash intrinsic:core\n" ++
+        "src/js/ReplyScan.zig Worker.Object.replyIds hash intrinsic:platforms/cloudflare\n" ++
+        "src/js/ReplyScan.zig Worker.Object.replyIds hash intrinsic:tests/platforms/reply-scan\n");
+    try testing.expect(pins.hasForDecl("core", "Js.Any.pack", true));
+    try testing.expect(!pins.hasForDecl("platforms/cloudflare", "Js.Any.pack", true));
+    try testing.expect(!pins.hasForDecl("core", "Js.Inspect.pack", true));
+    try testing.expect(!pins.hasForDecl("core", "Js.Any.pack", false));
+    try testing.expect(pins.hasForDecl("platforms/cloudflare", "Worker.Object.replyIds", true));
+    try testing.expect(pins.hasForDecl("tests/platforms/reply-scan", "Worker.Object.replyIds", true));
+    try testing.expect(!pins.hasForDecl("tests/platforms/other", "Worker.Object.replyIds", true));
+    try testing.expectError(error.InvalidIntrinsicPin, Pins.parse(arena.allocator(), "core/Js.js Js.Any.pack hash intrinsic:core\n"));
+    try testing.expectError(error.InvalidIntrinsicPin, Pins.parse(arena.allocator(), "src/js/Lower.zig Js.Any.pack hash intrinsic:\n"));
+}
+
+test "ownership words: compiler intrinsic pins hash the real Any lowering" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const list = try std.Io.Dir.cwd().readFileAlloc(testing.io, bodies_list, a, .limited(1 << 20));
+    const pins = try Pins.parse(a, list);
+    try testing.expect(pins.hasForDecl("core", "Js.Any.pack", true));
+    var rows = std.mem.splitScalar(u8, list, '\n');
+    while (rows.next()) |row| {
+        if (row.len == 0 or row[0] == '#') continue;
+        var fields = std.mem.tokenizeScalar(u8, row, ' ');
+        const file = fields.next() orelse continue;
+        const decl = fields.next() orelse continue;
+        const expected = fields.next() orelse continue;
+        const scope = fields.next() orelse continue;
+        if (!std.mem.eql(u8, decl, "Js.Any.pack") or !std.mem.eql(u8, scope, "intrinsic:core")) continue;
+        const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, file, a, .limited(1 << 24));
+        const body = (try bodyOf(a, source, file, "pack")) orelse return error.IntrinsicBodyMissing;
+        var digest: [32]u8 = undefined;
+        std.crypto.hash.sha2.Sha256.hash(body, &digest, .{});
+        try testing.expectEqualStrings(expected, &std.fmt.bytesToHex(digest, .lower));
+        return;
+    }
+    return error.IntrinsicPinMissing;
 }

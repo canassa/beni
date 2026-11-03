@@ -198,12 +198,14 @@ core/Js/Runtime.js               Js.Runtime.timer         1d90ec25224132c1eb18a9
 core/Js/Runtime.js               Js.Runtime.now           5f8ad749ef8bde915122ab036d1655780f85741a7c969142e4939896d90238ad
 core/Js/Runtime.js               Js.Runtime.random        cd7e7e58dbd410f3c1906a03f74aa3a328c7cca490e47830e5737c47371a164d
 core/Js/Runtime.js               Js.Runtime.defect        08aa1744d1ee477e6899bad6084889d9cf0ee880bd04f9dbffd4ec5768b7a5ce
-src/js/Lower.zig Js.cell e343b103ba37017572c4eb7ee96f8fd9a945972dc4ad44c2cd0cb369c11b632c
-src/js/Lower.zig Js.cellRead 296790d6070ddaaa748d82f71c970d840a4ba8a84855c79c2dcde24e9a25492e
-src/js/Lower.zig Js.cellWrite e360a82c99c61600dc923a2874dca7501e1acf328dc79eb2d4529c2ac2086ac9
-src/js/Lower.zig Js.none d7a476e8e1dc3c02265ce8bbe4af38ac74202995fabede5add2ae79db4dd0fc6
-src/js/Lower.zig Js.some 847efa3c2356fe2fc5267640a0803d7832cdc175c0e10083594a90e4afa8dbb4
-src/js/Lower.zig Js.optMatch 40e05ac344a049035a816bfe36c32015f18459a2d13dd47eaba781bb10acf09b
-src/js/Lower.zig Js.optWithDefault a3a5481bf31840e8e06cef0271ba5cb2516b88086117d02dbb5f9a0486d45bd7
-src/bir/Bir.zig Js.cellRead ff2e6c1c664e26923e024f3b4cef61134f0aa488706c506f055f50549a635c0b
-src/bir/Bir.zig Js.cellWrite a2aa0b9d55af613668718a7c12398432183eefc1af95aeee0070c41050193306
+src/js/Lower.zig Js.cell e343b103ba37017572c4eb7ee96f8fd9a945972dc4ad44c2cd0cb369c11b632c intrinsic:core
+src/js/Lower.zig Js.cellRead 296790d6070ddaaa748d82f71c970d840a4ba8a84855c79c2dcde24e9a25492e intrinsic:core
+src/js/Lower.zig Js.cellWrite e360a82c99c61600dc923a2874dca7501e1acf328dc79eb2d4529c2ac2086ac9 intrinsic:core
+src/js/Lower.zig Js.none d7a476e8e1dc3c02265ce8bbe4af38ac74202995fabede5add2ae79db4dd0fc6 intrinsic:core
+src/js/Lower.zig Js.some 847efa3c2356fe2fc5267640a0803d7832cdc175c0e10083594a90e4afa8dbb4 intrinsic:core
+src/js/Lower.zig Js.optMatch 40e05ac344a049035a816bfe36c32015f18459a2d13dd47eaba781bb10acf09b intrinsic:core
+src/js/Lower.zig Js.optWithDefault a3a5481bf31840e8e06cef0271ba5cb2516b88086117d02dbb5f9a0486d45bd7 intrinsic:core
+src/bir/Bir.zig Js.cellRead ff2e6c1c664e26923e024f3b4cef61134f0aa488706c506f055f50549a635c0b intrinsic:core
+src/bir/Bir.zig Js.cellWrite a2aa0b9d55af613668718a7c12398432183eefc1af95aeee0070c41050193306 intrinsic:core
+
+src/js/Lower.zig Js.Any.pack 5b11b4cc87ae4b3a364def7dd945f823323a70fbf9b3b320583d77c582a77a00 intrinsic:core

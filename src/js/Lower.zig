@@ -10855,6 +10855,7 @@ pub const Lowerer = struct {
             }
             // Any's guard and payload stay typed; only an exact compiler
             // identity match can construct Just at the requested type.
+            // ownership pin begin: pack
             if (which == .any_pack or which == .any_unpack) {
                 if (roots.len == 0 or l.in.dispatch.term(roots[roots.len - 1]) != .identity) {
                     try l.reportEvidenceShape(inst);
@@ -10876,6 +10877,7 @@ pub const Lowerer = struct {
                 const matches = try l.binary(.strict_eq, try l.member(boxed, type_key, p), id, p);
                 return l.condOf(matches, try l.coreCtorApplied("Maybe", "Just", &.{try l.member(boxed, value_key, p)}, p), try l.coreCtorApplied("Maybe", "Nothing", &.{}, p), p);
             }
+            // ownership pin end: pack
             // `Js.fingerprint x` is the identity its site carries, the last
             // root (`backend.md` §4, *`Js.fingerprint` is its type's
             // identity*); `x` is evaluated for what it does.
