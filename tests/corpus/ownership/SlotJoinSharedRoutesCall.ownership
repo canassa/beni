@@ -1,0 +1,20 @@
+module SlotJoinSharedRoutesCall
+  20:13 List.push xs: accepted param
+  40:7 call SlotJoinSharedRoutesCall.pushIt xs: rejected alias: t.a.items holds it and is read at 40:18 (SlotJoinSharedRoutesCall.pushIt writes π1)
+  49:7 call SlotJoinSharedRoutesCall.pushIt xs: rejected alias: t.a.items holds it and is read at 49:18 (SlotJoinSharedRoutesCall.pushIt writes π1)
+  58:7 call SlotJoinSharedRoutesCall.pushIt xs: rejected alias: t.b.items holds it and is read at 58:18 (SlotJoinSharedRoutesCall.pushIt writes π1)
+  67:7 call SlotJoinSharedRoutesCall.pushIt xs: rejected call: t.b.items may hold it through the call at 66:9, and is read at 67:18 (SlotJoinSharedRoutesCall.pushIt writes π1) (approx)
+  76:7 call SlotJoinSharedRoutesCall.pushIt xs: accepted fresh (SlotJoinSharedRoutesCall.pushIt writes π1)
+  summary pushIt: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary readA: π1.a.items R
+  summary readB: π1.b.items R
+  summary pick: π2 RA, π3 RA; res π2 π3
+  summary bothArms: res .0 fresh1
+  summary thenArmA: res .0 fresh1
+  summary elseArmB: res .0 fresh1
+  summary pickedB: res .0 fresh1
+  summary apart: res .0 fresh1
+  demands 6: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 6: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause alias 3
+cause call 1

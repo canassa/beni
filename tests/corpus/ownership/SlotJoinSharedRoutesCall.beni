@@ -1,0 +1,76 @@
+-- ownership: a join under two shared-owner routes, read through a call
+-- (ownership-v2.md §2.3.5, §2.8, §2.11.2; the slot form of the shape
+-- domain's planned `SharedOwnerRoutesJoin`). `t` is a choice of two
+-- records; in an arm, one `w` is both `t.a` and `t.b`, so `xs` is reached
+-- through two owners. The join keeps every arm's slots: `pushIt` writes
+-- `xs` while a call reads `t` after, along `a` or `b`. Each read through a
+-- route an arm keeps to `xs` is refused, whichever arm holds it. A join
+-- that a call answers (`pick`) keeps them as well. With no arm that reaches
+-- `xs` (`apart`), the call is accepted.
+type alias W =
+    items : List Int
+
+
+type alias T =
+    a : W
+    b : W
+
+
+pushIt : List Int → List Int
+pushIt xs = List.push xs 2
+
+
+readA : T → Int
+readA t = List.length t.a.items
+
+
+readB : T → Int
+readB t = List.length t.b.items
+
+
+pick : Bool, T, T → T
+pick c x y = if c then x else y
+
+
+pub bothArms : Bool → List Int × Int
+bothArms c =
+    xs = [ 1 ]
+    w = { items = xs }
+    t = if c then { a = w, b = w } else { a = { items = [ 2 ] }, b = w }
+    ( pushIt xs, readA t + readB t )
+
+
+pub thenArmA : Bool → List Int × Int
+thenArmA c =
+    xs = [ 1 ]
+    w = { items = xs }
+    v = { items = [ 2 ] }
+    t = if c then { a = w, b = w } else { a = v, b = v }
+    ( pushIt xs, readA t )
+
+
+pub elseArmB : Bool → List Int × Int
+elseArmB c =
+    xs = [ 1 ]
+    w = { items = xs }
+    v = { items = [ 2 ] }
+    t = if c then { a = v, b = v } else { a = w, b = w }
+    ( pushIt xs, readB t )
+
+
+pub pickedB : Bool → List Int × Int
+pickedB c =
+    xs = [ 1 ]
+    w = { items = xs }
+    v = { items = [ 2 ] }
+    t = pick c { a = v, b = v } { a = w, b = w }
+    ( pushIt xs, readB t )
+
+
+pub apart : Bool → List Int × Int
+apart c =
+    xs = [ 1 ]
+    w = { items = [ 3 ] }
+    v = { items = [ 2 ] }
+    t = pick c { a = w, b = w } { a = v, b = v }
+    ( pushIt xs, readA t + readB t )
