@@ -1,0 +1,2 @@
+# v2 refuses the push while the closure mk handed back still reads the list (#1772).
+22:10 list_still_used List.push
