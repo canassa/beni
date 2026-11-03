@@ -78,7 +78,12 @@ pub fn holdsAt(ev: *Relation.Eval, hd: Hold, target: u32, out: *std.ArrayList(He
             if (try Subtree.without(fr.slots, g, fr.account, fr.places, lf.slots, minus.items)) |rest| {
                 var rl = lf;
                 rl.slots = rest;
-                const o2 = try Distinct.overlap(ev, try fr.leaf(rl), target, true);
+                // A target of the holder's own root lies in the slots taken
+                // out; a symbol keeps a subtree taken out in its set
+                // (`Subtree.without` excludes explicit slots only), so the
+                // rest is asked apart from it, as distinct slots are (#1742).
+                const own = tls.items.len == 1 and tls.items[0] == target;
+                const o2 = if (own) try Distinct.apartOf(ev, try fr.leaf(rl), target, true) else try Distinct.overlap(ev, try fr.leaf(rl), target, true);
                 if (o2.kind != .no) try out.append(g, .{ hd.q, o2 });
             }
             return;
