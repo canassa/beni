@@ -1,0 +1,6 @@
+{"socket": "a", "path": "/a"}
+# 24 000 empty pongs, 144 000 bytes in one write: two chunks of about 10 900 frames each.
+{"send": "a", "repeat": 24000, "opcode": 10}
+{"send": "a", "text": "still here"}
+{"receive": "a"}
+{"signal": "SIGTERM"}

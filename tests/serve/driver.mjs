@@ -539,6 +539,13 @@ const socketStep = async (step) => {
       const payload = f.hex !== undefined ? Buffer.from(f.hex, "hex") : Buffer.from(f.text ?? "", "utf8");
       say(`> (socket ${step.send}) frame ${JSON.stringify(f)}`);
       ws.socket.write(clientFrame({ fin: f.fin ?? true, rsv: f.rsv ?? 0, opcode: f.opcode, payload, mask: f.mask ?? true, length: f.length }));
+    } else if (step.repeat !== undefined && step.opcode !== undefined) {
+      // `"repeat": n, "opcode": k`: n empty frames of opcode k, masked, in
+      // one write — 6 bytes each, the most frames one chunk can hold.
+      say(`> (socket ${step.send}) ${step.repeat} empty frames of opcode ${step.opcode}`);
+      const frames = [];
+      for (let i = 1; i <= step.repeat; i++) frames.push(clientFrame({ opcode: step.opcode, payload: Buffer.alloc(0) }));
+      ws.socket.write(Buffer.concat(frames));
     } else if (step.repeat !== undefined) {
       // `"repeat": n, "bytes": b`: n messages of b bytes, each `<i> ` then
       // `x`s, for i from 1, in one write.

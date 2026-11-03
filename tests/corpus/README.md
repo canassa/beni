@@ -201,6 +201,10 @@ browser answers one:
     {"send": "a", "repeat": 300, "bytes": 1024}
                                 300 messages of 1024 bytes, `<i> ` then `x`s,
                                 in one write
+    {"send": "a", "repeat": 24000, "opcode": 10}
+                                24000 empty frames of that opcode, masked, in
+                                one write: 6 bytes each, for a chunk of many
+                                frames
     {"send": "a", "frame": {"opcode": 1, "text": "x", "fin": false, "mask": false, "rsv": 4, "hex": "…", "length": 9}}
                                 one frame as written, for a fault: the
                                 payload is `text` or `hex`, `length` the
