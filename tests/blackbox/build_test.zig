@@ -13593,3 +13593,50 @@ test "typed Cell and Opt preserve release behavior through a warm cache" {
         }
     }
 }
+
+test "Cloudflare Reply-free self posts build without test hooks" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTree("tests/corpus/build/good/workers/ReplyFreeSelf", "_expected.");
+    for ([_]bool{ false, true }) |release| {
+        const result = if (release)
+            try w.run(&.{ "build", "--platform=cloudflare", "--release", "--no-cache", "--out=out-release", "Main.beni" })
+        else
+            try w.run(&.{ "build", "--platform=cloudflare", "--no-cache", "--out=out", "Main.beni" });
+        if (result.exit_code != 0) std.debug.print("{s}\n", .{result.stderr});
+        try testing.expectEqual(@as(u8, 0), result.exit_code);
+        try testing.expectEqual(@as(usize, 0), result.diagnostics.len);
+        if (!release) {
+            const scanner = try w.read("out/_platform/Worker/Object.mjs");
+            try testing.expect(std.mem.indexOf(u8, scanner, "$replyPlans") == null);
+            for ([_][]const u8{ "Dict$", "Map$make", "Cloudflare$objectId", "Cloudflare$idText", "Cloudflare$requestText" }) |wrapper| {
+                try testing.expect(std.mem.indexOf(u8, scanner, wrapper) == null);
+            }
+        }
+    }
+}
+
+test "Cloudflare workers corpus builds without test hooks" {
+    var fixtures = try std.Io.Dir.cwd().openDir(testing.io, "tests/corpus/workers", .{ .iterate = true });
+    defer fixtures.close(testing.io);
+    var it = fixtures.iterate();
+    var count: usize = 0;
+    while (try it.next(testing.io)) |entry| {
+        if (entry.kind != .directory) continue;
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const path = try std.fmt.allocPrint(w.arena.allocator(), "tests/corpus/workers/{s}", .{entry.name});
+        try w.copyTree(path, "_expected.");
+        for ([_]bool{ false, true }) |release| {
+            const result = if (release)
+                try w.run(&.{ "build", "--platform=cloudflare", "--release", "--allow-debug", "--out=out-release", "Main.beni" })
+            else
+                try w.run(&.{ "build", "--platform=cloudflare", "--out=out", "Main.beni" });
+            if (result.exit_code != 0) std.debug.print("{s} release={}: {s}\n", .{ entry.name, release, result.stderr });
+            try testing.expectEqual(@as(u8, 0), result.exit_code);
+            try testing.expectEqual(@as(usize, 0), result.diagnostics.len);
+        }
+        count += 1;
+    }
+    try testing.expect(count > 0);
+}

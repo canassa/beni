@@ -1,0 +1,19 @@
+import Schema
+import Worker
+import Worker.Object as Object
+
+
+main : Worker.Program
+main = Worker.program { fetch = λ_ _ → Worker.text 200 "ok", objects = [ counter ] }
+
+
+counter : Worker.Definition
+counter =
+    Object.define "Counter" Schema.int (λ_ → 0)
+        { Object.none | request = request, received = λ_ state message → state + message }
+
+
+request : Object.Context Int, Int, Worker.Request → Int × Worker.Response
+request ctx state _ =
+    Object.post (Object.self ctx) 1
+    ( state, Worker.text 200 "posted" )

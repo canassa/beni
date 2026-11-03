@@ -36,9 +36,9 @@ pub fn main(init: std.process.Init) !u8 {
         const js = try callable.sibling(arena, native.module);
         if (js.len != 0) try out.writeFile(init.io, .{ .sub_path = try std.fmt.allocPrint(arena, "Browser/Host/{s}.js", .{native.name}), .data = js });
     }
-    for ([_][]const u8{ "Timers", "Uint8Array", "Immediate", "Date", "Math", "Events", "NodeProcess", "Promise", "Rejection", "NodeFs", "NodeDirent", "Data", "Json", "Fetch", "ReadResult", "RegExp", "Cloudflare" }) |name| {
+    for ([_][]const u8{ "Timers", "Uint8Array", "Immediate", "Date", "Math", "Events", "NodeProcess", "Promise", "Rejection", "NodeFs", "NodeDirent", "Data", "Json", "Fetch", "ReadResult", "RegExp", "Cloudflare", "Map" }) |name| {
         const module = try std.fmt.allocPrint(arena, "Browser.Host.{s}", .{name});
-        try out.writeFile(init.io, .{ .sub_path = try std.fmt.allocPrint(arena, "Browser/Host/{s}.beni", .{name}), .data = try Native.Callable.source(arena, module, if (std.mem.eql(u8, name, "Uint8Array") or std.mem.eql(u8, name, "Rejection") or std.mem.eql(u8, name, "NodeDirent") or std.mem.eql(u8, name, "ReadResult") or std.mem.eql(u8, name, "RegExp")) name else if (std.mem.eql(u8, name, "Promise")) "Promise a" else if (std.mem.eql(u8, name, "Fetch")) "Init" else null) });
+        try out.writeFile(init.io, .{ .sub_path = try std.fmt.allocPrint(arena, "Browser/Host/{s}.beni", .{name}), .data = try Native.Callable.source(arena, module, if (std.mem.eql(u8, name, "Uint8Array") or std.mem.eql(u8, name, "Rejection") or std.mem.eql(u8, name, "NodeDirent") or std.mem.eql(u8, name, "ReadResult") or std.mem.eql(u8, name, "RegExp")) name else if (std.mem.eql(u8, name, "Map")) "Map key value" else if (std.mem.eql(u8, name, "Promise")) "Promise a" else if (std.mem.eql(u8, name, "Fetch")) "Init" else null) });
         try out.writeFile(init.io, .{ .sub_path = try std.fmt.allocPrint(arena, "Browser/Host/{s}.js", .{name}), .data = try Native.Callable.sibling(arena, module) });
     }
     return 0;
@@ -115,7 +115,7 @@ test "shipped native modules are exactly the pinned generator output" {
         const module = try std.fmt.allocPrint(a, "Browser.Host.{s}", .{name});
         const path = try std.fmt.allocPrint(a, "core/Browser/Host/{s}.beni", .{name});
         const actual = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, path, a, .limited(64 * 1024));
-        try std.testing.expectEqualStrings(try Native.Callable.source(a, module, if (std.mem.eql(u8, name, "Cloudflare") or std.mem.eql(u8, name, "Timers") or std.mem.eql(u8, name, "Immediate") or std.mem.eql(u8, name, "Date") or std.mem.eql(u8, name, "Math") or std.mem.eql(u8, name, "Events") or std.mem.eql(u8, name, "NodeProcess") or std.mem.eql(u8, name, "NodeFs") or std.mem.eql(u8, name, "Data") or std.mem.eql(u8, name, "Json")) null else if (std.mem.eql(u8, name, "Promise")) "Promise a" else if (std.mem.eql(u8, name, "Fetch")) "Init" else name), actual);
+        try std.testing.expectEqualStrings(try Native.Callable.source(a, module, if (std.mem.eql(u8, name, "Cloudflare") or std.mem.eql(u8, name, "Timers") or std.mem.eql(u8, name, "Immediate") or std.mem.eql(u8, name, "Date") or std.mem.eql(u8, name, "Math") or std.mem.eql(u8, name, "Events") or std.mem.eql(u8, name, "NodeProcess") or std.mem.eql(u8, name, "NodeFs") or std.mem.eql(u8, name, "Data") or std.mem.eql(u8, name, "Json")) null else if (std.mem.eql(u8, name, "Map")) "Map key value" else if (std.mem.eql(u8, name, "Promise")) "Promise a" else if (std.mem.eql(u8, name, "Fetch")) "Init" else name), actual);
         const js_path = try std.fmt.allocPrint(a, "core/Browser/Host/{s}.js", .{name});
         const js = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, js_path, a, .limited(64 * 1024));
         try std.testing.expectEqualStrings(try Native.Callable.sibling(a, module), js);

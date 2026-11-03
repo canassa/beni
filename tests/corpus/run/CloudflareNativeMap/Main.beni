@@ -1,0 +1,5 @@
+import Test
+
+
+main : Test.Program
+main = Test.program ⊤

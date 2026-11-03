@@ -25,11 +25,9 @@ module WebSocket
   value attachment : Socket, (Schema e a) → Result (List Issue) (Maybe a)  -- impure
   value close : Socket, Close → Result CloseError ⊤  -- impure
   value eq : Socket, Socket → Bool
-  value fromNative : Socket → Socket
   value id : Socket → String  -- impure
   value protocol : Socket → String  -- impure
   value tags : Socket → List String  -- impure
-  value toNative : Socket → Socket
   value write : Socket, String → Result WriteError ⊤  -- impure
 module Worker
   opaque type Context
@@ -53,40 +51,25 @@ module Worker
   value byId : (Namespace msg), String → Result IdError (Ref msg)  -- impure
   value byName : (Namespace msg), String → (Ref msg)  -- impure
   value callService : Service, Request → Result ServiceError Response  -- suspends
-  value chainNow : ⊤ → String  -- impure
   value empty : Int → Response  -- impure
   value env : Context → Env
   value forward : Ref msg, Request → Result StubError Response  -- suspends
-  value fromHost : Response → Response
   value header : Request, String → Maybe String  -- impure
   value headers : Request → List (String × String)  -- impure
-  value hostRequest : Request → Request
-  value hostResponse : Response → Response
   value html : Int, String → Response  -- impure
-  value makeRequest : Request → Request
   value method : Request → String  -- impure
-  value nativeEnv : Env → Env
   value objects : Env, String, (Schema e msg) → Maybe (Namespace msg)  -- impure
   value path : Request → String  -- impure
-  value printRef : (Ref msg), msg → Result (List Issue) String
   value program : { fetch : (Context), Request → Response, objects : List Definition } → Program  -- impure
   value redirect : Request, String, Int → Response  -- impure
   value refId : Ref msg → String
   value refName : Ref msg → Maybe String
-  value refPost : Ref msg → Maybe (msg → ⊤)
-  value refStub : Ref msg → Maybe Stub
-  value requestBody : Request → String
-  value requestWithBody : Request, String → Request
-  value selfRef : String, Maybe String, (msg → Result (List Issue) String), (msg → ⊤) → Ref msg
   value service : Env, String → Maybe Service  -- impure
-  value setDraining : Maybe (⊤ → Maybe String) → ⊤  -- impure
-  value settleHost : Promise a → Result Rejection a  -- suspends
   value text : Int, String → Response  -- impure
   value unique : (Namespace msg) → (Ref msg)  -- impure
   value url : Request → String  -- impure
   value var : Env, String → Maybe String  -- impure
   value withHeader : Response, String, String → Response  -- impure
-  value wrapEnv : Env → Env
 module Worker.Object
   type AcceptError
     NotAnUpgrade
@@ -119,13 +102,11 @@ module Worker.Object
   value cancelAlarm : Context msg → ⊤  -- impure
   value define : String, (Schema e msg), (Context msg → state), { alarm : Context msg, state → state, closed : Context msg, state, Socket, Close → state, failed : Context msg, state, Socket, String → state, message : Context msg, state, Socket, String → state, received : Context msg, state, msg → state, request : Context msg, state, Request → state × Response, tick : state → Maybe Duration, ticked : Context msg, state → state } → Definition  -- impure
   value env : Context msg → Env  -- impure
-  value hostState : Context msg → ObjectState  -- impure
   value id : Context msg → String  -- impure
   value name : Context msg → Maybe String  -- impure
   value none : Handlers state msg
   value post : (Ref msg), msg → ⊤  -- impure
   value reply : (Reply a), a → ⊤  -- impure
-  value replyIds : msg → List String
   value replySchema : (Schema e a) → (Schema String (Reply a))  -- impure
   value self : Context msg → (Ref msg)  -- impure
   value sockets : Context msg → List Socket  -- impure

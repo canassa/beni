@@ -73,7 +73,6 @@ module Browser.Navigation
 module Cmd
   alias Cmd a
   alias Item a
-  type ItemStorage a b c
     Perform
     Now
     Keyed
@@ -87,7 +86,6 @@ module Cmd
     Queue
     Concurrent
   alias Send a
-  type Storage a
     Cmd
   value afterRender : ((Send msg) → ⊤) → Cmd msg  -- impure
   value batch : List (Cmd msg) → Cmd msg
@@ -292,7 +290,6 @@ module Storage
   value save : Area, String, String, (Error → msg) → Cmd msg  -- impure
   value set : Area, String, String → Result Error ⊤  -- impure
 module Sub
-  type Storage a
     None
     Listen
   alias Sub a

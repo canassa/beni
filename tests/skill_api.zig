@@ -122,15 +122,23 @@ pub fn generate(arena: Allocator, io: Io, beni: []const u8, root: []const u8, pa
 
 // Runtime-only names are not part of the application API.
 fn runtimePrivate(module: []const u8, line: []const u8, is_core: bool) bool {
-    if (@import("core_private").access(module, "", true)) |access| if ((access == .worker) != is_core) return true;
+    if (@import("core_private").access(module, "", true)) |access| if (privateInPackage(access, is_core)) return true;
     for ([_][]const u8{ "  value ", "  foreign value ", "  type ", "  opaque type " }) |prefix| {
         if (!std.mem.startsWith(u8, line, prefix)) continue;
         const rest = line[prefix.len..];
         const end = std.mem.indexOfScalar(u8, rest, ' ') orelse rest.len;
         const access = @import("core_private").access(module, rest[0..end], std.mem.indexOf(u8, prefix, "value") != null) orelse return false;
-        return (access == .worker) != is_core;
+        return privateInPackage(access, is_core);
     }
     return false;
+}
+
+fn privateInPackage(access: @import("core_private").Access, is_core: bool) bool {
+    return switch (access) {
+        .worker, .cloudflare => !is_core,
+        .platform => true,
+        .core, .task, .runtime, .debug => is_core,
+    };
 }
 
 /// One dump line in beni's notation (§12.1).

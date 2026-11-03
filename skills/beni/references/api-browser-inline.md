@@ -102,7 +102,6 @@ module Inline
 module Listen
   value on : String, String, (Value → a), (a → ⊤) → (⊤ → ⊤)  -- impure
 module Sub
-  type Storage a
     Sub
   alias Sub a
   value batch : List (Sub msg) → Sub msg

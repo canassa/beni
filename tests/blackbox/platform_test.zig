@@ -2784,3 +2784,23 @@ test "Cloudflare reply scans rederive plans when a cached platform becomes Cloud
     try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
     try w.expectProgram("out/_main.mjs", .{ .stdout = "\"effect\"\n[]\n" });
 }
+
+test "native Map signatures preserve their element parameter" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTreeInto("core", "core", "_expected.");
+    const original = try w.read("core/Browser/Host/Map.beni");
+    try w.write("core/MapProbe.beni", "import Browser.Host.Map as NativeMap\npub value : ⊤ → NativeMap.Map String Int\nvalue ⊤ = NativeMap.make ⊤\n");
+    try w.write("Main.beni", "import MapProbe\npub value = MapProbe.value ⊤\n");
+    for ([_][2][]const u8{
+        .{ "String → Maybe a", "String → Maybe String" },
+        .{ "String, a → ⊤", "String, Int → ⊤" },
+        .{ "List (String × a)", "List (String × Int)" },
+    }) |change| {
+        try w.write("core/Browser/Host/Map.beni", try std.mem.replaceOwned(u8, w.arena.allocator(), original, change[0], change[1]));
+        const result = try w.run(&.{ "check", "--core", "--core-root=core", "--no-cache", "Main.beni" });
+        try testing.expectEqual(@as(u8, 1), result.exit_code);
+        try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
+        try testing.expectEqual(diagnostic.Code.invalid_native_binding, result.diagnostics[0].code);
+    }
+}

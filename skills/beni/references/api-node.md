@@ -63,9 +63,7 @@ module Io
 module Node
   opaque type Program
   value done : Program
-  value exitCode : Program → Int
   value exitWith : String, Int → Program
-  value output : Program → String
   value print : String → Program
   value printLines : List String → Program
 module NodeRuntime

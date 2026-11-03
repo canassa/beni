@@ -3,6 +3,7 @@
 
 import Browser.Host.Cloudflare as Native
 import Browser.Host.Date as Date
+import Browser.Host.Map as NativeMap
 import Browser.Host.Promise as Promise
 import Browser.Host.Rejection as Rejection
 import Browser.Host.Request as HostRequest
@@ -10,7 +11,6 @@ import Browser.Host.Response as HostResponse
 import Browser.Host.TextEncoder as TextEncoder
 import Browser.Host.Timers as Timers
 import Browser.Host.Uint8Array as Uint8Array
-import Dict exposing (Dict)
 import Duration exposing (Duration)
 import Js
 import Js.Chain as Chain
@@ -60,7 +60,7 @@ pub foreign pure replyIds : borrowed msg → fresh List String
 
 
 type alias ReplyOwner =
-    asks : Js.Ref (Dict String AskEntry)
+    asks : NativeMap.Map String AskEntry
     name : String
 
 
@@ -191,7 +191,7 @@ start className schema restore handlers ctx bindings =
     context = Context holder
     state = Js.ref Nothing
     scheduler = Task.schedulerWith (runLater context _) (laterTurn context _) λ⊤ → defect context
-    owner = { asks = Js.ref Dict.empty, name = className }
+    owner = { asks = NativeMap.make ⊤, name = className }
     current =
         { ctx = ctx
         , env = Worker.wrapEnv bindings
@@ -412,11 +412,8 @@ received context payload chain askId completion =
                 Nothing →
                     ⊤
                 Just askKey →
-                    Js.write
-                        current.owner.asks
-                        (Dict.insert (Js.read current.owner.asks) askKey
-                            { completion = completion, returned = Js.ref False }
-                        )
+                    NativeMap.set current.owner.asks askKey
+                        { completion = completion, returned = Js.ref False }
             -- RPC failures are the host abort’s Reset, after the object shuts down.
             enqueue context chain [] Nothing λ⊤ →
                 current.received message
@@ -424,7 +421,7 @@ received context payload chain askId completion =
                     Nothing →
                         Promise.resolve completion Js.null
                     Just askKey →
-                        case Dict.get (Js.read current.owner.asks) askKey of
+                        case NativeMap.get current.owner.asks askKey of
                             Nothing →
                                 ⊤
                             Just entry →
@@ -542,9 +539,9 @@ settlePending : Context msg → ⊤
 settlePending context =
     current = instance context
     if Task.schedulerFibers current.scheduler ≤ 1 then
-        each (Dict.toList (Js.read current.owner.asks)) λ( askKey, entry ) →
+        each (NativeMap.entries current.owner.asks) λ( askKey, entry ) →
             if Js.read entry.returned && not (carried context askKey) then
-                Js.write current.owner.asks (Dict.remove (Js.read current.owner.asks) askKey)
+                NativeMap.remove current.owner.asks askKey
                 Promise.resolve entry.completion (answerValue "none" Nothing)
 
 
@@ -852,11 +849,11 @@ reply (Reply channel) value =
         Nothing →
             lateReply "?" channel.print value
         Just owner →
-            case Dict.get (Js.read owner.asks) channel.id of
+            case NativeMap.get owner.asks channel.id of
                 Nothing →
                     lateReply owner.name channel.print value
                 Just entry →
-                    Js.write owner.asks (Dict.remove (Js.read owner.asks) channel.id)
+                    NativeMap.remove owner.asks channel.id
                     case channel.print value of
                         Err _ →
                             Promise.resolve entry.completion (answerValue "unparsed" Nothing)

@@ -7,9 +7,9 @@ const List = std.ArrayList(N);
 const E = std.mem.Allocator.Error;
 
 // ownership pin begin: replyIds
-pub fn emit(l: anytype, value: N, root: N, plans: N, brand: N, keys: N, is_view: N, opt_none: ?N, p: u32) E!N {
+pub fn emit(l: anytype, value: N, root: N, plans: N, brand: N, keys: N, is_view: N, opt_none: ?N, dynamic_only: bool, p: u32) E!N {
     var g: Generator(@TypeOf(l.*)) = .{ .l = l, .p = p };
-    return g.emit(value, root, plans, brand, keys, is_view, opt_none);
+    return g.emit(value, root, plans, brand, keys, is_view, opt_none, dynamic_only);
 }
 
 fn Generator(comptime L: type) type {
@@ -90,9 +90,11 @@ fn Generator(comptime L: type) type {
         fn dec(g: *G, out: *List, i: N) E!void {
             try g.assign(out, i, try g.bin(.sub, i, try g.num("1")));
         }
-        fn emit(g: *G, value: N, root: N, input_plans: N, brand: N, input_keys: N, is_view: N, opt_none: ?N) E!N {
+        fn emit(g: *G, value: N, root: N, input_plans: N, brand: N, input_keys: N, is_view: N, opt_none: ?N, dynamic_only: bool) E!N {
             var body: List = .empty;
-            const plans = try g.bind(&body, "$replyPlans", input_plans, false);
+            // A variable root and every child use the guarded dynamic fallback.
+            // Its plan interpreter branches are unreachable, so emit only that walk.
+            const plans = if (dynamic_only) try g.l.nullNode(g.p) else try g.bind(&body, "$replyPlans", input_plans, false);
             const keys = try g.bind(&body, "$replyBrandKeys", input_keys, false);
             const result = try g.bind(&body, "$replyIds", try g.array(&.{}), false);
             const stack = try g.bind(&body, "$replyPending", try g.array(&.{try g.array(&.{ value, root })}), false);
@@ -107,20 +109,20 @@ fn Generator(comptime L: type) type {
             const null_v = try g.l.nullNode(g.p);
             try g.iff(&walk, try g.bin(.logical_or, try g.eq(v, null_v), try g.bin(.strict_ne, try g.l.unary(.type_of, v, g.p), try g.lit("object"))), &.{cont});
             if (opt_none) |none| try g.iff(&walk, try g.eq(v, none), &.{cont});
-            const kind = try g.bind(&walk, "$replyKind", try g.num("5"), true);
-            const edges = try g.bind(&walk, "$replyEdges", try g.array(&.{}), true);
+            const kind = if (dynamic_only) try g.num("5") else try g.bind(&walk, "$replyKind", try g.num("5"), true);
+            const edges = if (dynamic_only) try g.array(&.{}) else try g.bind(&walk, "$replyEdges", try g.array(&.{}), true);
             var planned: List = .empty;
             const plan = try g.bind(&planned, "$replyPlan", try g.at(plans, n), false);
             try g.iff(&planned, try g.eq(plan, try g.num("0")), &.{cont});
             try g.assign(&planned, kind, try g.slot(plan, 0));
             try g.assign(&planned, edges, try g.slot(plan, 1));
-            try g.iff(&walk, try g.bin(.ge, n, try g.num("0")), planned.items);
+            if (!dynamic_only) try g.iff(&walk, try g.bin(.ge, n, try g.num("0")), planned.items);
             // A statically nominal Reply uses the selected boxing, then stops.
             var unwrap: List = .empty;
             try g.assign(&unwrap, v, try g.field(v, "a"));
             var reply: List = .empty;
             try g.iff(&reply, try g.not(edges), unwrap.items);
-            try g.iff(&walk, try g.eq(kind, try g.num("7")), reply.items);
+            if (!dynamic_only) try g.iff(&walk, try g.eq(kind, try g.num("7")), reply.items);
             const visited = try g.bind(&walk, "$replyVisited", try g.method(seen, "get", &.{v}), true);
             var first: List = .empty;
             try g.assign(&first, visited, try g.new("Set"));
@@ -142,21 +144,21 @@ fn Generator(comptime L: type) type {
             try branded.append(g.l.scratch, cont);
             const marker = try g.bind(&walk, "$replyMarker", try g.method(try g.global("Object"), "getOwnPropertyDescriptor", &.{ v, try g.slot(keys, 0) }), false);
             try g.iff(&walk, try g.bin(.logical_and, marker, try g.eq(try g.field(marker, "value"), brand)), branded.items);
-            try g.iff(&walk, try g.eq(kind, try g.num("7")), &.{cont});
+            if (!dynamic_only) try g.iff(&walk, try g.eq(kind, try g.num("7")), &.{cont});
             // A release-unboxed one-field constructor is an alias of its child.
             var alias: List = .empty;
             try g.push(&alias, stack, v, edges);
             try alias.append(g.l.scratch, cont);
-            try g.iff(&walk, try g.eq(kind, try g.num("10")), alias.items);
+            if (!dynamic_only) try g.iff(&walk, try g.eq(kind, try g.num("10")), alias.items);
             // A present Opt is its payload; absence was skipped by identity.
             var optional: List = .empty;
             try g.push(&optional, stack, v, try g.slot(try g.slot(edges, 0), 1));
             try optional.append(g.l.scratch, cont);
-            try g.iff(&walk, try g.eq(kind, try g.num("9")), optional.items);
+            if (!dynamic_only) try g.iff(&walk, try g.eq(kind, try g.num("9")), optional.items);
             var ref_body: List = .empty;
             try g.push(&ref_body, stack, try g.field(v, "v"), try g.slot(try g.slot(edges, 0), 1));
             try ref_body.append(g.l.scratch, cont);
-            try g.iff(&walk, try g.eq(kind, try g.num("8")), ref_body.items);
+            if (!dynamic_only) try g.iff(&walk, try g.eq(kind, try g.num("8")), ref_body.items);
             // Known lists and dynamically recognised arrays/views visit active elements.
             var items: List = .empty;
             const base = try g.bind(&items, "$replyBase", v, true);
@@ -171,7 +173,7 @@ fn Generator(comptime L: type) type {
             const child = try g.bind(&items, "$replyChild", try g.num("-1"), true);
             var typed_list: List = .empty;
             try g.assign(&typed_list, child, try g.slot(try g.slot(edges, 0), 1));
-            try g.iff(&items, try g.eq(kind, try g.num("1")), typed_list.items);
+            if (!dynamic_only) try g.iff(&items, try g.eq(kind, try g.num("1")), typed_list.items);
             const i = try g.bind(&items, "$replyIndex", try g.field(v, "length"), true);
             var elements: List = .empty;
             try g.iff(&elements, try g.eq(i, try g.num("0")), &.{stop});
@@ -179,7 +181,8 @@ fn Generator(comptime L: type) type {
             try g.push(&elements, stack, try g.at(base, try g.bin(.add, offset, i)), child);
             try g.loop(&items, elements.items);
             try items.append(g.l.scratch, cont);
-            try g.iff(&walk, try g.bin(.logical_or, try g.eq(kind, try g.num("1")), try g.bin(.logical_or, is_array, try g.bin(.logical_or, view, trie))), items.items);
+            const list_like = try g.bin(.logical_or, is_array, try g.bin(.logical_or, view, trie));
+            try g.iff(&walk, if (dynamic_only) list_like else try g.bin(.logical_or, try g.eq(kind, try g.num("1")), list_like), items.items);
             // Tagged unions select just their active payload tuple.
             var tagged: List = .empty;
             const ti = try g.bind(&tagged, "$replyVariant", try g.field(edges, "length"), true);
@@ -193,7 +196,7 @@ fn Generator(comptime L: type) type {
             try g.iff(&variants, try g.eq(try g.field(v, "$"), try g.slot(edge, 0)), active.items);
             try g.loop(&tagged, variants.items);
             try tagged.append(g.l.scratch, cont);
-            try g.iff(&walk, try g.eq(kind, try g.num("4")), tagged.items);
+            if (!dynamic_only) try g.iff(&walk, try g.eq(kind, try g.num("4")), tagged.items);
             // Closed products use only planned fields. Generic/open rows use own keys,
             // replacing the dynamic default with known field plans where available.
             var closed: List = .empty;
@@ -205,15 +208,15 @@ fn Generator(comptime L: type) type {
             try g.push(&fields, stack, try g.at(v, try g.slot(ce, 0)), try g.slot(ce, 1));
             try g.loop(&closed, fields.items);
             try closed.append(g.l.scratch, cont);
-            try g.iff(&walk, try g.bin(.logical_or, try g.eq(kind, try g.num("2")), try g.eq(kind, try g.num("3"))), closed.items);
+            if (!dynamic_only) try g.iff(&walk, try g.bin(.logical_or, try g.eq(kind, try g.num("2")), try g.eq(kind, try g.num("3"))), closed.items);
             const names = try g.bind(&walk, "$replyKeys", try g.method(try g.global("Object"), "keys", &.{v}), false);
             const ki = try g.bind(&walk, "$replyKeyIndex", try g.field(names, "length"), true);
             var unknown: List = .empty;
             try g.iff(&unknown, try g.eq(ki, try g.num("0")), &.{stop});
             try g.dec(&unknown, ki);
             const key = try g.bind(&unknown, "$replyKey", try g.at(names, ki), false);
-            const kn = try g.bind(&unknown, "$replyKeyNode", try g.num("-1"), true);
-            const ei = try g.bind(&unknown, "$replyKnown", try g.field(edges, "length"), true);
+            const kn = if (dynamic_only) try g.num("-1") else try g.bind(&unknown, "$replyKeyNode", try g.num("-1"), true);
+            const ei = if (dynamic_only) try g.num("0") else try g.bind(&unknown, "$replyKnown", try g.field(edges, "length"), true);
             var known: List = .empty;
             try g.iff(&known, try g.eq(ei, try g.num("0")), &.{stop});
             try g.dec(&known, ei);
@@ -222,7 +225,7 @@ fn Generator(comptime L: type) type {
             try g.assign(&found, kn, try g.slot(ke, 1));
             try found.append(g.l.scratch, stop);
             try g.iff(&known, try g.eq(key, try g.slot(ke, 0)), found.items);
-            try g.loop(&unknown, known.items);
+            if (!dynamic_only) try g.loop(&unknown, known.items);
             const descriptor = try g.bind(&unknown, "$replyDescriptor", try g.method(try g.global("Object"), "getOwnPropertyDescriptor", &.{ v, key }), false);
             var data: List = .empty;
             try g.push(&data, stack, try g.field(descriptor, "value"), kn);

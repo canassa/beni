@@ -1,0 +1,1 @@
+[{"code":"private_name","severity":"error","span":{"file":"tests/corpus/check/bad/NativeMapFenced.beni","start":{"line":4,"col":13},"end":{"line":4,"col":27}},"title":"PRIVATE NAME","message":"This name is private to core and platform runtimes."}]
