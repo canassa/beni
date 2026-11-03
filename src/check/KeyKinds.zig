@@ -91,6 +91,7 @@ pub const Preparation = struct {
     vars: []Var,
     published: []Kind,
     changed: bool = false,
+    markup_payload: ?struct { inst: Bir.Inst.Index, decl: u32, v: Var } = null,
     params: []?[]const Var,
     alias_roots: []Var.Optional,
     projections: []Projection,
@@ -211,7 +212,15 @@ pub const Preparation = struct {
                     p.alias_roots[i] = (try b.read(at)).toOptional();
                 },
                 .adt => for (p.bir.declCtors(d)) |ctor| {
-                    for (p.bir.extraSlice(.{ .start = ctor.args_start, .end = ctor.args_end }, Bir.Inst.Index)) |at| _ = try b.read(at);
+                    for (p.bir.extraSlice(.{ .start = ctor.args_start, .end = ctor.args_end }, Bir.Inst.Index)) |at| {
+                        const value = try b.read(at);
+                        if (p.types.isUnboxedMarkup(p.graph, @fromBackingInt(@intCast(i)))) {
+                            // A renderer's optional slot must distinguish every
+                            // unboxed markup payload from the absence sentinel.
+                            p.markup_payload = .{ .inst = at, .decl = e.decl.int(), .v = value };
+                            try p.uses.append(p.a, .{ .source = none, .required = .opt_payload, .actual = value, .region = at });
+                        }
+                    }
                 },
                 .foreign => unreachable,
             }

@@ -1,0 +1,16 @@
+import Js
+
+
+pub opaque type Program
+    = Program String String
+
+
+pub opaque type Html msg
+    = Html (Js.Opt Int)
+
+
+pub element "p"
+
+
+pub bad : ⊤ → ⊤
+bad ⊤ = ⊤

@@ -1629,10 +1629,21 @@ back under its budget: 4 264 M instructions, where the whole platform made it 4 
 |---|---|---|
 | `lowering` | the name of a markup lowering compiled into this beni binary (§9.5) | when the platform is loaded: an unknown name is **`unknown_markup_lowering`**, reported against `<platform root>/beni.json` at `1:1` with no excerpt, the shape `invalid_entry_file` uses, and the message lists the lowerings this binary has. A `build` in which a markup root or a markup primitive survives and whose chain names **no** lowering is the same code, against the top platform's manifest, saying none is named |
 | `vocabulary` | the module of the chain that holds the `pub element`, `pub attribute`, `pub event` and `pub markup` declarations | when a module uses markup: a name that is no module of the chain is `no_markup_vocabulary`, whose message names this key |
-| `type` | the markup type: a `pub foreign type` of one parameter, in any module of the chain | likewise |
+| `type` | the markup type: a `pub foreign type`, or a public opaque nominal type with one constructor and one field; either has exactly one parameter and belongs to a module of the chain | likewise |
 | `runtime` | the **markup runtime**, a JavaScript file of the package that declares this field, whose exports are the lowering's well-known entry points and the vocabulary's primitives (§9.4.5) | by §4's checks 2, 3 and 4, exactly as a sibling (§9.7), whenever `lowering` is checked |
 
-Each field is inherited on its own (§9.1): `browser`'s build has `html`'s `vocabulary` and `type` and
+*Amended by the owner, 2026-11-03.* The opaque form lets HostFree retain typed native
+handles and closed jobs inside `Html`. Its one constructor is unboxed in development
+and release: a markup value is its payload, with no constructor object or extra
+indirection. The markup syntax, public API and opacity do not change. A lowering
+and its runtime must use that payload ABI; the browser and Node SSR producers and
+readers must agree. The payload obeys `Opt`'s existing non-nesting requirement:
+an optional renderer slot must distinguish it from the absence sentinel without
+adding a box. A payload parameter inherits that requirement; a normal wrapper
+around an `Opt` stays boxed. The foreign form remains accepted.
+
+Each field is inherited on its own (§9.1):
+ `browser`'s build has `html`'s `vocabulary` and `type` and
 its own `lowering` and `runtime`. A chain with no `vocabulary` has no markup: a program that writes
 some is `no_markup_vocabulary`. Two platforms of a chain may both declare `lowering` — `node` and
 `browser` do, over one `html` — and the first found wins, which is how one vocabulary is lowered two
@@ -1811,7 +1822,7 @@ The smallest readings, and what waits for the lowering interface:
   order. A surviving markup ROOT cannot occur yet: a module that writes markup does not check
   (`frontend.md` §9.7's stop, amended there).
 - **The vocabulary module and the markup type** are looked up among the chain's modules when the
-  graph is built: `"vocabulary"` names a module, `"type"` a `pub foreign type` of one parameter as
+  graph is built: `"vocabulary"` names a module, `"type"` a public unary foreign or opaque type (§9.2) as
   `Module.Name`. Either failing leaves the build without a vocabulary, and a module that writes
   markup gets `no_markup_vocabulary` naming the key; its message says "this build's platform", not
   the platform's name, which the checker is not given.

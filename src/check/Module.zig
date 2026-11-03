@@ -180,6 +180,7 @@ pub fn check(in: Input) Error!Check.Counters {
     schemas.key_observer = key_preparation.observer();
     try schemas.buildAll();
     try key_preparation.run();
+    var markup_payload = key_preparation.markup_payload;
     schemas.key_observer = null;
     schemas.key_errors = &key_errors;
     var too_deep: std.ArrayList(Context.TooDeep) = .empty;
@@ -330,9 +331,12 @@ pub fn check(in: Input) Error!Check.Counters {
     for (bir.decls) |d| if (d.kind == .schema) {
         var final_keys = try KeyKinds.Preparation.init(scratch, store, in.types, in.graph, in.artifacts, in.interfaces, in.interner, in.module, bir, &schemas, &key_errors);
         try final_keys.run();
+        markup_payload = final_keys.markup_payload;
         if (final_keys.changed) try KeyKinds.validateFormations(scratch, store, in.types, bir, inst_type, decl_scheme, &key_errors);
         break;
     };
+
+    if (markup_payload) |payload| try solver.instantiate.opt_payload.append(gpa, .{ .inst = payload.inst, .decl = payload.decl, .v = payload.v });
 
     // What P2 and P4 found too deep, reported now so its declaration's
     // failure bit is set before P7 reads it.
@@ -681,9 +685,9 @@ fn reportMarkup(report: *Report, bir: *const Bir, graph: *const Graph) Error!voi
             \\platform or the platforms it depends on (`docs/design/boundary.md` §9.2).
         ),
         .bad_type => try report.emitText(.no_markup_vocabulary, root, null, lead ++
-            \\The `"markup"` `"type"` of this build's platform must name a `pub foreign type`
-            \\of one parameter in a module of the platform or the platforms it depends on,
-            \\and it names none (`docs/design/boundary.md` §9.2).
+            \\The `"markup"` `"type"` must name a public type of one parameter in this
+            \\platform or its dependencies: a `foreign type`, or an `opaque type` with
+            \\one constructor and one field. It names none (`docs/design/boundary.md` §9.2).
         ),
     }
 }

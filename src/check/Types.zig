@@ -319,6 +319,13 @@ pub inline fn ofDecl(types: *const Types, module: Graph.Index, decl: Bir.DeclInd
     return types.by_decl[base + decl.int()];
 }
 
+/// A configured opaque markup wrapper has its payload ABI in both modes.
+/// Graph has already checked its single constructor and single field.
+pub fn isUnboxedMarkup(types: *const Types, graph: *const Graph, id: TypeId) bool {
+    const declared = graph.markup.opaque_type orelse return false;
+    return id != .none and types.ofDecl(declared.module, declared.decl) == id;
+}
+
 /// The type at `index` in `module`'s interface.
 pub inline fn ofInterface(types: *const Types, module: Graph.Index, index: Interface.TypeIndex) TypeId {
     reads.note(.types_of_interface, module);

@@ -126,11 +126,13 @@ pub const Markup = struct {
     status: Status = .no_platform,
     /// The vocabulary module: every module that writes markup depends on it.
     vocabulary: ?Index = null,
-    /// The markup type: a `pub foreign type` of one parameter.
+    /// The unary public markup type: foreign, or an opaque single-field nominal.
     type_module: Symbol.Optional = .none,
     type_name: Symbol.Optional = .none,
     /// The selected lowering's checked capture demands (identity/data bits).
     operand_evidence: u8 = 0,
+    /// The opaque form has the payload ABI in every emission mode.
+    opaque_type: ?OpaqueType = null,
 
     /// `children`, interned: the field a component's children fill
     /// (`language.md` §11.8), which no source need spell.
@@ -142,6 +144,8 @@ pub const Markup = struct {
     lowering: Symbol.Optional = .none,
     layer_lowerings: []const Symbol.Optional = &.{},
 
+    pub const OpaqueType = struct { module: Index, decl: Bir.DeclIndex };
+
     pub const Status = enum(u8) {
         /// The run names no platform.
         no_platform,
@@ -149,8 +153,8 @@ pub const Markup = struct {
         undeclared,
         /// `"vocabulary"` names no module of the chain.
         no_vocabulary_module,
-        /// `"type"` names no `pub foreign type` of one parameter in a module
-        /// of the chain, or the chain declares none.
+        /// `"type"` names no supported public unary markup type in the
+        /// chain (foreign, or opaque with one constructor and one field).
         bad_type,
         /// Both resolved.
         ok,
@@ -566,6 +570,12 @@ pub fn build(
                 }
             };
         }
+        if (bir.uses_markup) if (g.markup.opaque_type) |declared| {
+            if (declared.module != index and dep_stamp[declared.module.int()] != stamp) {
+                dep_stamp[declared.module.int()] = stamp;
+                try deps.append(gpa, declared.module);
+            }
+        };
         // The types the checker MINTS for this module
         // (`static-dispatch-spike.md` §6.8). Resolved against `core` and
         // not against the module's own package, because that is where
@@ -658,7 +668,7 @@ pub fn isImplicitCore(g: *const Graph, m: Index) bool {
 
 /// The chain's vocabulary module and markup type (`boundary.md` §9.2), each
 /// looked up among the platform modules, the type checked for what §9.2
-/// says it is: a `pub foreign type` of one parameter.
+/// says it is: public and unary, with the foreign or unboxed opaque ABI.
 fn resolveMarkup(g: *const Graph, gpa: Allocator, artifacts: *const Artifacts, interner: *InternPool.Global, platforms: Platforms) Allocator.Error!Markup {
     var m = try resolveVocabulary(g, gpa, artifacts, interner, platforms);
     if (!platforms.chain) return m;
@@ -683,8 +693,15 @@ fn resolveVocabulary(g: *const Graph, gpa: Allocator, artifacts: *const Artifact
     const type_name = try interner.getOrPut(gpa, qualified[dot + 1 ..]);
     const owner = g.find(.platform, module_name) orelse return .{ .status = .bad_type };
     const bir = artifacts.bir(g.moduleFile(owner));
-    const declared = for (bir.decls) |d| {
-        if (d.kind == .foreign_type and d.is_pub and d.params == 1 and bir.symbol(d.name) == type_name) break true;
+    var opaque_type: ?Markup.OpaqueType = null;
+    const declared = for (bir.decls, 0..) |d, di| {
+        if (!d.is_pub or d.params != 1 or bir.symbol(d.name) != type_name) continue;
+        if (d.kind == .foreign_type) break true;
+        if (d.kind != .type or !d.is_opaque) break false;
+        const constructors = bir.declCtors(d);
+        if (constructors.len != 1 or Bir.SubRange.len(.{ .start = constructors[0].args_start, .end = constructors[0].args_end }) != 1) break false;
+        opaque_type = .{ .module = owner, .decl = @fromBackingInt(@intCast(di)) };
+        break true;
     } else false;
     if (!declared) return .{ .status = .bad_type };
     return .{
@@ -692,6 +709,7 @@ fn resolveVocabulary(g: *const Graph, gpa: Allocator, artifacts: *const Artifact
         .vocabulary = vocabulary,
         .type_module = module_name.toOptional(),
         .type_name = type_name.toOptional(),
+        .opaque_type = opaque_type,
         .children = (try interner.getOrPut(gpa, "children")).toOptional(),
     };
 }

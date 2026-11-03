@@ -1,0 +1,5 @@
+import TypedHtml
+
+
+main : TypedHtml.Program
+main = TypedHtml.program ◁ <p><b>compiler</b>{TypedHtml.literal "<em>source</em>"}</p>
