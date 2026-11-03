@@ -57,6 +57,8 @@ const layers = [_]Entry{
     // A contract's result trees, hash-consed by node (#1714, §2.10).
     .{ .file = "Trees.zig", .layer = 2, .max_lines = 200 },
     // The readers and the union of result trees, below the contracts (#1714).
+    // A read's result slots as a column, for `ReadOff` and `Relation` (#1714).
+    .{ .file = "Dests.zig", .layer = 3, .max_lines = 200 },
     // The identity tree's one normal form, below `Contract` (#1714).
     .{ .file = "Normal.zig", .layer = 3, .max_lines = 40 },
     .{ .file = "Forest.zig", .layer = 3, .max_lines = 380 },
@@ -454,7 +456,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 71), layers.len);
+    try testing.expectEqual(@as(usize, 72), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 
