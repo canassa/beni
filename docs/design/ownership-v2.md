@@ -1362,6 +1362,77 @@ A call `k` of a code with contract `C` and argument values `a1…an`:
 5. **Escapes.** The objects at `C.escapes`' projections are escaped at the call (§2.4), deep.
 6. **Labels.** Each of `C.labels` is instantiated (§2.11.3).
 
+*Specified 2026-11-03 (#1714): a projection carries a route set.* A projection (items 2–4) walks the
+argument's value, and an `alt` sends the walk down each arm under that arm's tag. A value two arms both
+reach (`xᵢ = if … then xᵢ₋₁ else if … then b else xᵢ₋₁`, or the arms `Rose [ sN, Rose aᵢ ]` that share
+`sN`) was walked once per arm, and each walk made its own entries: a chain of n such choices gave 2ⁿ
+entries of one leaf, and the distinct check compared them (`reads two positions of one image through a chain
+of n choices`: 6 706 / 86 834 records at n = 2 / 4, past the limit at 8).
+
+- **The walk.** The selection's walk (`Paths.zig`, the occurrences of one parameter projected together) reads
+  the argument's values in decreasing value id. A value's kids are made before it, so every arrival at a
+  value is known before the value is read. Two arrivals at one value with the same remaining paths and the
+  same literal route (§2.9.3: built steps only, an arm adds none) are one item, whose **routes** are the
+  union of theirs (a route set of §2.3.5, `Routes.Set`). An arm's tag is put in front of every route of the
+  set as one node (`pre`) when its choice comes before every choice the set names, which is the order an
+  enclosing `case` gives its arms; otherwise the routes are written out with the tag merged in. An output
+  is `(leaf, route, routes)`: the leaf is reached under each route of the set, merged with the leaf's own
+  tags (set 0 is the one unconditional route). A route set's routes never hold together: two arrivals at
+  one value by one literal route parted at an `alt`, by two arms of one choice. So one item names its object
+  at most once, as the arrivals did, each alone.
+- **The distinct check reads route sets** (§2.9.3). An entry carries its projection's routes. Wherever the
+  check asks whether two entries hold together (a pair of a group, an atom's entries, a callback's answer),
+  it asks whether a route of one and a route of the other merge (`Routes.Table.setsMeet`): the sets are
+  walked from their latest choices together, each node's tags merged into a running tag list, which drops
+  every choice later than both remaining sets name, so the walk is asked once per pair of nodes and running
+  list. An entry's expansion (a call's parts) keeps its routes; a vouched block keeps one entry per leaf
+  and route set. Equal route sets under equal tags hold together when the set is not empty.
+- **Other readers** of a projection (write targets, §2.11.2 item 4; holders, §2.8) keep the walk by arms,
+  each output one tag list, as before.
+- **Exactness.** A set is the union of the routes the per-arm walk gave, and each question the check asks of
+  two entries is asked of every pair of their routes at once: every verdict and condition is the one the
+  per-arm entries gave. Only the number of entries changes.
+
+*Specified 2026-11-03 (#1714): a write onto a caller's parameter stops at the parameter.* Item 4 projects
+each write of `C.writes` onto its argument, and a callee whose writes double (`t₁ ( a, b ) = touch a + touch
+b`, `tₖ ( a, b ) = tₖ₋₁ a + tₖ₋₁ b`) has 2ᵏ writes and a `req` of 2ᵏ occurrences: `caller w = tₖ w` made 2ᵏ
+demands and instantiated 2ᵏ occurrences (1 591 / 25 966 records at k = 4 / 8), and `f` handing `tₖ` a
+doubling literal over one list projected 2ᵏ paths onto the same list.
+
+- **Writes and `req` are trees** (§2.10 *Effects as trees*, extended): `writes` per parameter a hash-consed
+  tree whose node says what it writes at its own slot (nothing, shallow, deep) and its kids; `req` per
+  parameter a tree of the same kind whose node says which occurrence it holds at its slot (none, plain,
+  apart; deep or not). A doubling callee's writes and `req` are then k nodes.
+- **The stop.** A write node whose argument projects, by an exact prefix (no `[*]`, no `⟲`, no `alt`), onto
+  an exact leaf of one of the caller's parameters at slot `c` is not projected on. Its target is that leaf
+  with the callee's node **grafted** below `c`. Its demands are one per **state**: the node walked
+  together with the trie `T(c)` of the caller's slots at and below `c` that something else in the frame names
+  (a holder live at the call, another argument of the call, an escape, a later use of a holder). A route
+  that leaves `T(c)` never comes back, so the routes that leave it at one trie node, by steps to one place,
+  and reach one write node are one state, and the frame cannot tell them apart. The demand names its least
+  route in canonical order. Each route of a state has the verdict its least route has (the argument of the
+  removed `TransferGroups` design, #1412, with "use node" read as "write node"). `caller w = tₖ w` is one
+  demand (one state). A K-wide `T` whose root's list and K children's lists are written is two: the
+  children's lists leave the root by K steps to one place, `T`'s, and the root's list by its own.
+- **The caller's contract** takes the grafted node: its `writes` at `c` are the callee's node, and its
+  `req` the callee's `req` node grafted at `c` (an instantiation onto one exact parameter leaf is the
+  occurrence tree moved to `c`; the routed rule and the distinct check of §2.9.3 find no pair in it that
+  the callee's own selection did not have).
+- **A literal argument** is projected once per (tree node, value): `f` hands `tₖ` the value `xₖ = ( xₖ₋₁,
+  xₖ₋₁ )` and the walk meets `(nodeᵢ, xᵢ)` by two routes. The second route reaching a pair whose subtree
+  selects a plain occurrence at an object is that object twice: the instantiated `req` is `no` there and
+  then, and the write's targets are the pair's leaves once.
+
+*Specified 2026-11-03 (#1714): stored selections fold exactly.* A stored selection (a contract's `req`, a
+`res_cond`, a supply's condition) names each object slot it asks. A slot every object slot of whose subtree
+is asked plain, the slot's own included, is stored as one deep occurrence `s*` (§2.9.1), its occurrences
+below dropped. The test is exact and made on the occurrence tree with the place: a node is **full** when its
+own slot is asked plain or is no object, and every step its place takes to a slot that is or holds an object
+leads to a full kid. A place with a cycle below the slot is never full (its subtree names infinitely many
+slots, not stored as a list). The count of objects below a slot (`Place.objectsBelow`, F7) saturates at 16
+and is not this test. A deep occurrence asks the same objects the folded occurrences asked, so nothing reads
+less: `tₖ`'s `req`, `{.0…0, …, .1…1~}`, is `{.0*, .1.0*, …, .1…1.0*, .1…1~}`, k + 1 occurrences.
+
 #### 2.11.3 Callbacks
 
 A call whose callee is a value reached from a parameter — `f x` with `f` a parameter, `r.on x` with a field of
@@ -1537,6 +1608,30 @@ slot; any other open arrival is its projection at the slot, read once, and each 
 slot's own key; a plain entry's atom is itself at its slot. Measured after it (2026-11-02): generic
 `removeMin` 23 539, `Dict.removeMin` 23 621, `Dict.descend` 24 422, `Schema.madeNode` 21 625,
 `Schema.shapeOf` 290 571 (its source continuation is 310 272) and `Schema.shapesOf` 20 418, all with growth 0.
+
+*Specified 2026-11-03 (#1714): judgements kept across rounds.* Each round evaluates every code from nothing
+and judges every demand again. In `rot a₁ … aₙ k` (`GroupRotate`), which calls itself with its lists
+rotated by one, the callee's candidate gains one parameter's write a round, so there are n + 2 rounds and
+each judges n demands against n operands: growth 58 290 of 65 536 at n = 64, `Resolve.resolve` 97 % of it.
+A verdict from round r is stale in round r + 1 only where something it read moved. So:
+
+- **A judgement records what it read** of the candidates: for each group callee and each field it read
+  (`res`, `reads`, `writes`, `escapes`, `req`, a label), that field's tree node for the one parameter it read
+  (or the result's node), by dense id, as the candidate stood. The reads it makes through the frame (a later
+  use's footprint, an operand's projection, an escape) name the call whose callee they read, so they record
+  the same. The relies of a call (`C.req` instantiated, item 4) are the call's, made once a round, and a
+  demand records only that it relied on them.
+- **A demand is the same demand in the next round** when its key is: the walk's demand sites are fixed by
+  the walk; a call's write demand is `(call, parameter, write node)`. The keys index flat arrays by dense id,
+  the round's state beside the walk's.
+- **Re-judging.** In round r + 1, a demand whose recorded nodes are all the candidates' nodes now keeps its
+  judgement, its verdict and the occurrences it gathered (§2.9.4); any other is judged again. Contract trees
+  are hash-consed (§2.10), so "the same node" is one comparison of ids, and it is exact: an unchanged node is
+  an unchanged fact. The validation round (step 3) judges every demand of every code, as before, and its
+  verdicts are the lines.
+- This is the fixpoint's own state across its rounds, as the distinct check's rounds keep theirs (§2.9.3):
+  never a table of earlier answers to unrelated questions. `rot` re-judges the demands of the parameters
+  whose nodes moved: one a round.
 
 **Termination.** The vocabulary is finite: the slots are fixed by the types, the arrivals by the parameters'
 slots and the labels by the instructions. Every delivered fact is added once; every condition moves at most
