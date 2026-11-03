@@ -1418,6 +1418,16 @@ of n choices`: 6 706 / 86 834 records at n = 2 / 4, past the limit at 8).
   arms 2 602 / 5 178 records at N = 8 / 32, ×2.0, bar ×1.5). Its growth is now the walk's alone: an `alt`'s
   leaf set (`Leaves.arms`) merges the shared tower's N elements once per arm, N × D (`join2`), since the
   tower sits in each arm's set under that arm's tag and no node of it is shared.
+- *As built (#1714, 2026-11-03), the shared subtree.* A leaf set has a **route wrap** node (`Leaves.zig`):
+  a set whose elements are all unconditional (no route, no wrap below it), under a route set. Where an
+  `alt`'s join meets one such node on both sides, under any tag wraps and at most one route wrap each, it
+  makes one route wrap over it whose routes are the two sides' united (`Routes.unite`), in one step. A
+  join that looks inside opens the wrap one level, as it does a tag wrap. The iterator gives an element
+  below the wrap the wrap's routes. `alike` and `minus` read two wraps over one node as not alike, without
+  walking it. The elements and their routes are those the join key by key gave. Measured (Debug):
+  `call over a choice whose arms share a subtree`: six more arms 2 602 / 5 178 records at N = 8 / 32
+  (×2.0) are now 1 778 / 1 812 (×1.0), and the test passes. The ledger moves no verdict and no summary. The
+  cost table moves by −0.6 % (`removeMinF`) or less, and every growth is still 0.
 
 *Specified 2026-11-03 (#1714): a write onto a caller's parameter stops at the parameter.* Item 4 projects
 each write of `C.writes` onto its argument, and a callee whose writes double (`t₁ ( a, b ) = touch a + touch
@@ -3888,7 +3898,7 @@ L0  Ids  Counters  Scratch
 | `Regions.zig` | 4 | the region tree, compatibility, `rank₂` (§2.5) | Ids, Facts, Prepass |
 | `ContractText.zig` | 4 | a contract's text, the dump's `summary` line (§2.10, §3.5) | Ids, Place, Slots, Contract |
 | `Worded.zig` | 4 | a module's worded contracts by declaration and places, one footprint a callee (§4.1, #1714) | Ids, Runs, Contract |
-| `Leaves.zig` | 4 | a value's leaf set: the persistent Patricia set, its coexisting and choice joins, its pass reader (§2.3.4, §2.3.5, #1714) | Ids, Routes |
+| `Leaves.zig` | 4 | a value's leaf set: the persistent Patricia set, its coexisting and choice joins, a plain subtree under a route set, its pass reader (§2.3.4, §2.3.5, §2.11.2, #1714) | Ids, Routes |
 | `Value.zig` | 5 | a walk's roots, positions, values, leaves and tags; each value's leaf set made with it (§2.3, §3.3) | Ids, Place, Slots, Subtree, Contract, Leaves |
 | `Liveness.zig` | 5 | the use index and its queries (§2.7, §3.4a) | Ids, Facts, Place, Regions |
 | `Relation.zig` | 6 | a value's leaves, projection, a call's instantiation and expansion (§2.11.2) | Ids, Place, Slots, Subtree, Contract, Value |
