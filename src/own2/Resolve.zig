@@ -38,6 +38,7 @@ const Stack = @import("Stack.zig");
 const TagTree = @import("TagTree.zig");
 const Later = @import("Later.zig");
 const Descent = @import("Descent.zig");
+const HoldAt = @import("HoldAt.zig");
 const Kept = @import("Kept.zig");
 const Parts = @import("Parts.zig");
 const Twins = @import("Twins.zig");
@@ -309,7 +310,7 @@ const Resolver = struct {
         const hds = r.live.holdsOf(hi);
         for (met) |k| {
             r.hs.clearRetainingCapacity();
-            try Descent.holdsAt(r.ev(), hds[k], t, &r.hs);
+            try HoldAt.holdsAt(r.ev(), .{ .leaf = hds[k].leaf, .q = hds[k].q, .refine = hds[k].refine }, t, &r.hs);
             for (r.hs.items) |x| {
                 const u = try r.uses.liveOnce(h.local, x[0], point);
                 if (u != null or visit.dead) try visit.each(visit.ctx, k, x[0], x[1], u);

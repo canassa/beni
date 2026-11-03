@@ -300,7 +300,8 @@ const Walker = struct {
         try w.stack.append(g, at);
         const start: u32 = @intCast(w.kids.items.len);
         const l = e.f.leafAt(li);
-        if (l.kind == .ref and e.expandable(l)) try e.expand(li, &w.kids);
+        // Each kid once under its route set (§2.3.5, *a key's leaf*): a key is not a route.
+        if (l.kind == .ref and e.expandable(l)) try e.expandRouted(li, &w.kids);
         try w.span.append(g, .{ start, @intCast(w.kids.items.len) });
         try k.grow(g, e.f.leaves.items.len);
         try w.frames.append(g, .{ .at = at, .next = start });
