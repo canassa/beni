@@ -192,3 +192,64 @@ Tests pin plan clearing and replacement, runtime removal and rejected rechecks,
 and agreement between check and build diagnostics. Existing runtime execution
 tests and byte comparisons cover both output modes. This establishes a used build-wide metadata boundary before
 independent projections and finite entry discovery are added.
+
+### Cloudflare reply discovery (owner, 2026-11-03)
+
+`Worker.Object.replyIds : borrowed msg → fresh List String` is a compiler
+intrinsic restricted through `CorePrivate.zig` to modules of the Cloudflare
+platform. It may occur only as a direct saturated call. The compiler derives
+its scan from the checked message type using Wire plans in reply mode. Each
+call's instruction index and plan root survive in the cached Wire artifact;
+cache reload and cold checking produce the same traversal and emitted bytes.
+Ordinary builds without this intrinsic acquire no reply analysis or runtime.
+
+The nominal Cloudflare `Worker.Object.Reply a` has one constructor with one
+record payload: `brand`, `id`, `local`, `owner`, `print`. Its private
+`replyBrand : Js.Ref ⊤` identifies the payload. A scan emits `id` only when
+`local` is True, and stops at the payload even when local is False. It never
+enters `owner` or `print`. The compiler retains the brand binding when needed
+and uses the actual field and constructor representations in both development
+and release output, including boxed and unboxed opaque constructors.
+
+Reply-mode plans walk records, tuples, active constructor payloads and active
+list elements in depth-first element/field order. List views respect their
+base and offset; inactive backing elements are excluded. Functions and native
+objects are leaves. Shared or cyclic containers are visited once. Traversal
+uses an explicit bounded-by-input work stack rather than JavaScript recursion.
+At generic or open-row positions the guarded dynamic fallback visits only
+plain data containers, recognises the private brand by reference identity,
+and stops at every branded payload. It does not use Schema printing, callback
+reflection, or constructor spelling as evidence of a Reply.
+
+A type unable to contain a Reply has no scan traversal in the output: the call
+returns `[]`, while the argument is evaluated normally. Generic positions keep
+the guarded fallback; a concrete function or native handle alone does not.
+
+The generic walk relies on the checker's boundary guarantees. Wire rejects
+`Js.Ref`, `Js.Cell`, and `Js.Opt` at every depth, including instantiation of
+Wire-constrained type variables; their plain storage representations cannot
+reach its dynamic fallback. A user record shaped like that storage is ordinary
+data. Actual List views have a private class identity and the Wire fallback
+normalizes only their active elements, never records with matching field names.
+
+Reply scans instead compute conservative reachability for NoReply suppression.
+A Reply reachable through a `Js.Ref`'s `v` field counts as held. That plain
+storage wrapper is traversable data in reply mode, including at a generic
+position; it needs no new Ref representation or identity test. Functions and
+native objects with non-data prototypes remain leaves. This exception does not
+permit traversal through a branded Reply's owner or print payloads.
+
+The type-key cache section's format 4 stores reply roots in instruction order,
+with a mode bit on plan nodes and a separate canonical nominal-type palette.
+Reply-only types do not become Wire boundary roots or pin release encodings.
+Cached edges stay within their mode and every root, edge and nominal index is
+bounded before loading. An artifact containing scan roots is retained even
+when it has no ordinary type-key nodes.
+
+List readers distinguish all three runtime forms: a plain array, a trie header
+with the private `$plain()` materializer, and the privately branded b/o suffix
+view. Generic Wire normalizes headers and views through typed List copying.
+Reply traversal uses the header's active materialization and visits its elements,
+not its structural or cached fields. `$plain` belongs to core's private List
+protocol and is not a source record field. Materialization may populate core's
+private flattening cache; the scan does not edit message fields or list elements.

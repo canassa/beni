@@ -1,0 +1,21 @@
+import Js
+import Worker.Object as Object
+
+
+pub run : ⊤ → ⊤
+run _ =
+    Object.run ⊤
+    ids = Object.replyIds (Object.local "external")
+    methodIds = method ⊤
+    Js.to
+        (Js.call (Js.global "console") "log"
+            [ Js.call (Js.global "JSON") "stringify" [ Js.from ids ] ]
+        )
+    Js.to
+        (Js.call (Js.global "console") "log"
+            [ Js.call (Js.global "JSON") "stringify" [ Js.from methodIds ] ]
+        )
+
+
+pub method : ⊤ → List String
+method _ = (Object.local "method").replyIds

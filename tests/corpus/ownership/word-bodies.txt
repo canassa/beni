@@ -290,3 +290,9 @@ src/js/Lower.zig List.isTree 2a652bf97d2043c13d562e013a97de58fa5b5d1807b584cb7c1
 core/Js/Any.js Js.Any.Box 7cbb50b054da40acfbe0fca4f4525192fffb9150468f1c6345c84aab6bfe7c53
 core/Js/Any.js Js.Any.pack 7e5109fb2c066bd589d93b37971a381c53799bb034761b0be721201db897dc35
 core/Js/Any.js Js.Any.unpack 6a43c64191a8c740770f79a1e9785d088ce84f56b7b78c3a6a695efec7fb7ed6
+
+tests/platforms/reply-scan/Worker/Object.beni Worker.Object.scan 9d9c0630fd53b5199f39b00ce82a65f6f9f5ba612f15be0833a07a3c2bd60881
+src/js/Lower.zig Worker.Object.replyIds 56d7113219f697c646de4ad7ddc80b29043ce491d6dac7bd5564a3ee197bb5ea intrinsic:tests/platforms/reply-scan
+src/js/Lower.zig Worker.Object.replyIds 56d7113219f697c646de4ad7ddc80b29043ce491d6dac7bd5564a3ee197bb5ea intrinsic:platforms/cloudflare
+src/js/ReplyScan.zig Worker.Object.replyIds d8abdb23cd214d38d0a299ec4eb658a17b5fef67053053a113b046ed6fc69582 intrinsic:tests/platforms/reply-scan
+src/js/ReplyScan.zig Worker.Object.replyIds d8abdb23cd214d38d0a299ec4eb658a17b5fef67053053a113b046ed6fc69582 intrinsic:platforms/cloudflare

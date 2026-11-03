@@ -130,6 +130,7 @@ pub fn claim(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void {
                 cutoff.interner,
                 &d.interfaces[m.int()],
             );
+            dropInvalidScans(d, m);
             dropWithoutBlock(d, cutoff, m);
             if (d.options.cached[m.int()] != null) {
                 cutoff.hit[m.int()] = true;
@@ -146,6 +147,7 @@ pub fn claim(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void {
         cutoff.interner,
         &d.interfaces[m.int()],
     );
+    dropInvalidScans(d, m);
     dropWithoutBlock(d, cutoff, m);
     cutoff.hit[m.int()] = d.options.cached[m.int()] != null;
 }
@@ -347,5 +349,22 @@ pub fn install(d: *Driver, m: Graph.Index, loaded: *CacheEntry.Loaded) Error!voi
             .token = if (row.has_token) row.token else null,
             .message = message,
         });
+    }
+}
+
+/// Instruction roots are bounded against the matching frontend artifact,
+/// which the byte decoder intentionally does not own.
+fn dropInvalidScans(d: *Driver, m: Graph.Index) void {
+    const loaded = if (d.options.cached[m.int()]) |*loaded| loaded else return;
+    if (loaded.type_keys.artifact.wire.scans.len == 0) return;
+    const bir = d.artifacts.bir(d.graph.moduleFile(m));
+    for (loaded.type_keys.artifact.wire.scans) |scan| {
+        if (scan.inst < bir.insts.len) {
+            const tag = bir.instTag(@fromBackingInt(scan.inst));
+            if (tag == .call or tag == .method_call) continue;
+        }
+        loaded.deinit(d.gpa);
+        d.options.cached[m.int()] = null;
+        return;
     }
 }

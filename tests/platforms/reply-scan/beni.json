@@ -1,0 +1,6 @@
+{
+  "platform": true,
+  "name": "cloudflare",
+  "program": "Page.Program",
+  "runtime": "runtime.js"
+}

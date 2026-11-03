@@ -303,6 +303,7 @@ pub const Input = struct {
     extra_roots: []const Node = &.{},
     // Wire values arrive from another entry, outside this entry's builders.
     wire_types: []const Types.TypeId = &.{},
+    type_keys: []const @import("../check/TypeKeys.zig").Artifact = &.{},
     // Deferred Program bodies belong only to their selected entry.
     deferred: []const Node = &.{},
     /// The schema plans, one per module: what a schema member's edges are
@@ -1047,6 +1048,8 @@ pub const Builder = struct {
         const in_place = try b.jsInPlace(bir, m);
         const sg_now = b.schemaGraph();
         const valid: SchemaValid.Sites = if (b.in.interner) |it| try SchemaValid.sites(b.scratch, b.in.graph, b.in.interfaces, b.in.provenance, it, bir, dispatch, m, if (sg_now) |*g| g else null, b.in.schema_library, b.in.schema_shapes) else .{};
+        const reply_plan = if (b.in.graph.isCloudflare(m) and m.int() < b.in.type_keys.len) &b.in.type_keys[m.int()].wire else null;
+        const reply_needs = if (reply_plan) |plan| try @import("../check/Wire.zig").replyNodes(b.scratch, plan) else &.{};
 
         const decl_at = try b.scratch.alloc(u32, bir.decls.len + 1);
         var decl_targets: std.ArrayList(Target) = .empty;
@@ -1130,7 +1133,27 @@ pub const Builder = struct {
                 // A leg-1 row has no position. The `.top` instruction made
                 // with it is guarded where it stands, so the row adds an
                 // edge only when no instruction names its target.
-                if (position != Edges.no_position and position < in_place.len and in_place[position]) continue;
+                if (position != Edges.no_position and position < in_place.len and in_place[position]) {
+                    if (reply_plan) |plan| for (plan.scans) |scan| {
+                        const call_data = bir.instData(@fromBackingInt(scan.inst));
+                        const callee_position = if (bir.instTag(@fromBackingInt(scan.inst)) == .method_call) scan.inst else call_data.lhs;
+                        if (callee_position != position or !reply_needs[scan.node]) continue;
+                        const owner = b.in.graph.find(.platform, b.in.interner.?.find("Worker.Object") orelse continue) orelse continue;
+                        const owner_bir = b.in.birOf(owner);
+                        for (owner_bir.decls, 0..) |decl, di| {
+                            if (!std.mem.eql(u8, b.in.interner.?.slice(owner_bir.symbol(decl.name)), "replyBrand")) continue;
+                            try decl_targets.append(b.scratch, .{ .node = .{ .module = owner, .kind = .decl, .index = @intCast(di) }, .chain = guards.at(position) });
+                            if (b.in.graph.find(.core, InternPool.WellKnown.List.symbol())) |list_module| {
+                                const list_bir = b.in.birOf(list_module);
+                                for (list_bir.decls, 0..) |ld, li| {
+                                    if (std.mem.eql(u8, b.in.interner.?.slice(list_bir.symbol(ld.name)), "isView"))
+                                        try decl_targets.append(b.scratch, .{ .node = .{ .module = list_module, .kind = .decl, .index = @intCast(li) }, .chain = guards.at(position) });
+                                }
+                            }
+                        }
+                    };
+                    continue;
+                }
                 const chain = if (position == Edges.no_position) blk: {
                     if (edge == .top and guards.namesTop(edge.top)) continue;
                     break :blk 0;
@@ -1248,13 +1271,16 @@ pub const Builder = struct {
         const dispatch = b.in.dispatchOf(m);
         const tags = bir.insts.items(.tag);
         const data = bir.insts.items(.data);
+        const replies = b.in.graph.isCloudflare(m);
         const marks = try b.scratch.alloc(bool, bir.insts.len);
         @memset(marks, false);
-        for (tags, data, 0..) |tag, d, i| if (tag == .call or tag == .ext_value) switch (tag) {
+        for (tags, data, 0..) |tag, d, i| if (tag == .call or tag == .ext_value or (replies and tag == .method_call)) switch (tag) {
             .call => if (d.lhs < marks.len) {
                 // A `++` on lists calls `List.append` (`listEdges`), and
                 // its `Basics.append` is no reference.
                 if (dispatch.isListAppend(@fromBackingInt(@intCast(i)))) {
+                    marks[d.lhs] = true;
+                } else if (replies and @import("../check/Wire.zig").replyIntrinsic(b.in.graph, b.in.interfaces, bir, m, @fromBackingInt(@intCast(d.lhs)), interner)) {
                     marks[d.lhs] = true;
                 } else if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @fromBackingInt(@intCast(d.lhs)), interner)) |which| {
                     // Any packing calls its shared sibling constructor.
@@ -1269,6 +1295,9 @@ pub const Builder = struct {
                     // always does.
                     if (bir.subRange(@fromBackingInt(@intCast(d.rhs))).len() == which.arity()) marks[d.lhs] = true;
                 }
+            },
+            .method_call => if (replies and @import("../check/Wire.zig").replyMethod(b.in.graph, b.in.interfaces, bir, m, dispatch, @fromBackingInt(@intCast(i)), interner)) {
+                marks[i] = true;
             },
             .ext_value => if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @fromBackingInt(@intCast(i)), interner)) |which| {
                 if (which == .null or which == .undefined or which == .development or which == .testHooks) marks[i] = true;

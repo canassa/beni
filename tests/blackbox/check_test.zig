@@ -2254,13 +2254,16 @@ test "ownership words: compiler intrinsic pins retain their defining package and
     try testing.expectError(error.InvalidIntrinsicPin, Pins.parse(arena.allocator(), "src/js/Lower.zig Js.Any.pack hash intrinsic:\n"));
 }
 
-test "ownership words: compiler intrinsic pins hash the real Any lowering" {
+fn expectScopedPinBodies(owner: []const u8, declaration: []const u8) !usize {
     var arena: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
     const list = try std.Io.Dir.cwd().readFileAlloc(testing.io, bodies_list, a, .limited(1 << 20));
     const pins = try Pins.parse(a, list);
-    try testing.expect(pins.hasForDecl("core", "Js.Any.pack", true));
+    try testing.expect(pins.hasForDecl(owner, declaration, true));
+    const wanted_scope = try std.fmt.allocPrint(a, "intrinsic:{s}", .{owner});
+    const name = declaration[(std.mem.lastIndexOfScalar(u8, declaration, '.') orelse return error.BodyRowName) + 1 ..];
+    var count: usize = 0;
     var rows = std.mem.splitScalar(u8, list, '\n');
     while (rows.next()) |row| {
         if (row.len == 0 or row[0] == '#') continue;
@@ -2269,13 +2272,37 @@ test "ownership words: compiler intrinsic pins hash the real Any lowering" {
         const decl = fields.next() orelse continue;
         const expected = fields.next() orelse continue;
         const scope = fields.next() orelse continue;
-        if (!std.mem.eql(u8, decl, "Js.Any.pack") or !std.mem.eql(u8, scope, "intrinsic:core")) continue;
+        if (!std.mem.eql(u8, decl, declaration) or !std.mem.eql(u8, scope, wanted_scope)) continue;
         const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, file, a, .limited(1 << 24));
-        const body = (try bodyOf(a, source, file, "pack")) orelse return error.IntrinsicBodyMissing;
+        const body = (try bodyOf(a, source, file, name)) orelse return error.IntrinsicBodyMissing;
         var digest: [32]u8 = undefined;
         std.crypto.hash.sha2.Sha256.hash(body, &digest, .{});
         try testing.expectEqualStrings(expected, &std.fmt.bytesToHex(digest, .lower));
-        return;
+        count += 1;
     }
-    return error.IntrinsicPinMissing;
+    try testing.expect(count != 0);
+    return count;
+}
+
+test "ownership words: compiler intrinsic pins hash the real Any lowering" {
+    _ = try expectScopedPinBodies("core", "Js.Any.pack");
+}
+
+test "ownership words: compiler intrinsic pins cover the reply scan fixture" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var decls: std.ArrayList(DumpDecl) = .empty;
+    try dumpDecls(&w, &.{ "dump", "--stage=bir", "--platform=tests/platforms/reply-scan", "tests/platforms/reply-scan" }, true, &decls);
+    const pins = try Pins.parse(w.arena.allocator(), try std.Io.Dir.cwd().readFileAlloc(testing.io, bodies_list, w.arena.allocator(), .limited(1 << 20)));
+    var found = false;
+    for (decls.items) |decl| {
+        if (!std.mem.eql(u8, decl.module, "Worker.Object") or !std.mem.eql(u8, decl.name, "replyIds")) continue;
+        try testing.expect(decl.foreign and decl.worded);
+        try testing.expect(pins.hasForDecl("tests/platforms/reply-scan", "Worker.Object.replyIds", decl.foreign));
+        found = true;
+    }
+    try testing.expect(found);
+    // Lowering also owns the fresh empty-result path, while ReplyScan owns
+    // the traversal. Both independently pinned regions must remain covered.
+    try testing.expectEqual(@as(usize, 2), try expectScopedPinBodies("tests/platforms/reply-scan", "Worker.Object.replyIds"));
 }

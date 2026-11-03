@@ -2363,6 +2363,7 @@ const Emitter = struct {
             for (b.decls, 0..) |d, index| {
                 if (d.kind != .foreign_value) continue;
                 if (e.compilerOwnedJs(m, d)) continue;
+                if (e.graph().isCloudflare(m) and std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Worker.Object") and std.mem.eql(u8, e.session.interner.slice(b.symbol(d.name)), "replyIds")) continue;
                 // The calling convention every call of this `foreign` is
                 // lowered with (`check/Convention.zig`, checker-v2.md §12.5),
                 // so check 4 and the call sites cannot disagree: the arity is
@@ -6313,6 +6314,7 @@ const Emitter = struct {
             try wire_types.appendSlice(e.scratch, wire.types);
         }
         var in: Reach.Input = .{
+            .type_keys = e.session.checked.type_keys,
             .wire_types = wire_types.items,
             .graph = e.graph(),
             .store = &e.session.store,
