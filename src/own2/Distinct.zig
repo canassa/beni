@@ -544,6 +544,11 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
                 try e.charge(.edge, 1);
                 e.route_count += 1;
                 if (blk != none and (try seen.getOrPut(g, .{ x, en.routes })).found_existing) continue;
+                // A leaf the entry was expanded from, met again around a
+                // cycle of expansions (a fold's supply and its step's
+                // answer): its objects are that ancestor's, which this
+                // chain reads already (the least fixpoint, §2.9.3).
+                if (try onChain(e, &st, ti, x)) continue;
                 try st.add(g, .{ .leaf = x, .route = 0x4000_0000 | e.route_count, .occ = if (Contract.isApart(en.occ)) en.occ else 0, .block = blk, .routes = en.routes }, .{ ti, @intCast(nth), st.par.items[ti][2] + 1 });
             }
         }
@@ -559,6 +564,18 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
     }
     if (occs.run.items.len == 0) return acc;
     return Cond.conj(e.arena, e.account(), acc, try Cond.of(e.account(), try e.arena.dupe(u64, occs.run.items)));
+}
+
+/// Whether entry `at` or one it was expanded from has leaf `x`; a step
+/// each, charged. The chain's leaves are distinct (a leaf met again is
+/// never added), so it is at most the leaves long.
+fn onChain(e: *Eval, st: *const Entries.Rounds, at: u32, x: u32) Error!bool {
+    var a = at;
+    while (a != none) : (a = st.par.items[a][0]) {
+        try e.charge(.cond, 1);
+        if (st.ents.items[a].leaf == x) return true;
+    }
+    return false;
 }
 
 /// `xs` in the inline order of the check's entries (an insertion sort by
