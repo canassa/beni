@@ -1256,8 +1256,9 @@ pub const Builder = struct {
                 // its `Basics.append` is no reference.
                 if (dispatch.isListAppend(@fromBackingInt(@intCast(i)))) {
                     marks[d.lhs] = true;
-                } else if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @fromBackingInt(@intCast(d.lhs)), interner) != null) {
-                    marks[d.lhs] = true;
+                } else if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @fromBackingInt(@intCast(d.lhs)), interner)) |which| {
+                    // Any packing calls its shared sibling constructor.
+                    marks[d.lhs] = which != .any_pack;
                 } else if (SchemaGraph.jsonCall(b.in.graph, b.in.interfaces, bir, dispatch, interner, @fromBackingInt(@intCast(i))) != null) {
                     // A derived codec's own `parse` or `print` (schema.md
                     // §12.10): `Json`'s function is not called.

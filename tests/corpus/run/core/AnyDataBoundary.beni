@@ -1,0 +1,20 @@
+-- A checked existential remains outside plain host data, even with a data payload.
+import Js.Any as Any
+import Js.Data as Data
+import Node
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ case Data.checked { answer = 42 } of
+            Just _ →
+                "plain"
+            Nothing →
+                "missing data"
+        , case Data.checked (Any.pack { answer = 42 }) of
+            Nothing →
+                "hidden"
+            Just _ →
+                "leaked existential"
+        ]

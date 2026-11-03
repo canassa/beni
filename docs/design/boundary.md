@@ -708,7 +708,9 @@ projections. `Browser.Host.Event.dataOnly` returns inspected plain data;
 Key-only Dynamic. It is one core/platform-only checked existential, distinct
 from Js.Value: `pack : a → Any` records the real payload and its compiler
 type identity; `unpack : Any → Maybe a` returns Just only on an exact identity
-match. Neither operation requires compare. Identity evidence travels through
+match. Each box owns its identity and payload slots and shares one private
+constructor prototype. The checked-data conversion refuses this envelope even
+when its payload is plain data. Neither operation requires compare. Identity evidence travels through
 generic declarations and local helpers without a written where clause, only
 where Any is reached (checker-v2.md §33; static-dispatch-spike.md §8.6).
 Stored interface profiles preserve callback purity, suspension, sync and realm

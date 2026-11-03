@@ -8210,8 +8210,10 @@ its SHA-256 is checked exactly like every other body pin. There is no dummy
 sibling and no exemption from pinning. `Pins` checks both the owner scope and
 foreign status before a scoped row can satisfy a package's body requirement.
 
-For `Js.Any.pack`, the pinned lowering allocates a fresh wrapper whose private
-prototype carries the typed payload and its identity. It retains that payload,
+For `Js.Any.pack`, the pinned lowering calls the pinned sibling constructor.
+Each fresh box owns its typed payload and identity slots and shares one private
+prototype. Both the `pack` export and its `Box` helper have sibling body pins.
+The box retains that payload,
 which justifies `escaped a → fresh Any`; the identity guard and payload remain
 typed. Reply discovery's corresponding region reads message containers into
 local scan state and returns a newly allocated list of immutable String ids.

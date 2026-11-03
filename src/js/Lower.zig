@@ -10867,12 +10867,9 @@ pub const Lowerer = struct {
                 const type_key = try l.interner.getOrPut(l.gpa, "type");
                 const value_key = try l.interner.getOrPut(l.gpa, "value");
                 if (which == .any_pack) {
-                    const payload = try l.object(&.{
-                        try l.property(type_key, id, p),
-                        try l.property(value_key, values[0], p),
-                    }, p);
-                    const object_global = try l.member(try l.add(.global_this, p, Node.Data.unused, Node.Data.unused), try l.interner.getOrPut(l.gpa, "Object"), p);
-                    return l.hostCall(try l.member(object_global, try l.interner.getOrPut(l.gpa, "create"), p), &.{payload}, p);
+                    // One sibling constructor owns the shared private prototype.
+                    // A fresh prototype per box makes heterogeneous data megamorphic.
+                    return l.call(try l.referenceName(callee_inst), &.{ id, values[0] }, p);
                 }
                 const boxed = try l.bindSubject(out, values[0], p);
                 const matches = try l.binary(.strict_eq, try l.member(boxed, type_key, p), id, p);
