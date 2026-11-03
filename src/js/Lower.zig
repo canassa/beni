@@ -480,7 +480,18 @@ pub const Markup = struct {
 
     /// A runtime export the module supplies: its name, its declaration in
     /// the module, and its row among the module's interface values.
-    pub const Supplied = struct { name: []const u8, decl: u32, value: u32 };
+    pub const IdentityArgument = struct {
+        argument: u32,
+        endpoint: enum { encoded, typed },
+    };
+    pub const Supplied = struct {
+        name: []const u8,
+        decl: u32,
+        value: u32,
+        arity: u32 = 0,
+        call_arity: u32 = 0,
+        identities: []const IdentityArgument = &.{},
+    };
 };
 
 /// What a program lowering (`Lowering.program`, `boundary.md` §9.4.6,
@@ -20079,11 +20090,37 @@ pub const Lowerer = struct {
             var known = false;
             for (l.markup_module_uses.items) |u| known = known or std.mem.eql(u8, u, s.name);
             if (!known) try l.markup_module_uses.append(l.scratch, s.name);
-            if (module == l.in.module) return try l.topName(s.decl);
+            if (module == l.in.module) return try l.suppliedIdentityBridge(s, try l.topName(s.decl));
             try l.need(module, s.value);
-            return try l.externalName(module, s.value);
+            return try l.suppliedIdentityBridge(s, try l.externalName(module, s.value));
         }
         return null;
+    }
+
+    /// Keep a lowering's written arguments separate from the compiler's
+    /// identity arguments. Schema values retain the identities of both ends.
+    fn suppliedIdentityBridge(l: *Lowerer, supplied: Markup.Supplied, target: JsIr.NameIndex) Allocator.Error!JsIr.NameIndex {
+        if (supplied.identities.len == 0) return target;
+        const hint = try std.fmt.allocPrint(l.scratch, "$identity${s}", .{supplied.name});
+        const st = l.mk.?;
+        if (st.cx.hoisted(hint)) |found| return @fromBackingInt(@intCast(@backingInt(found)));
+        const p = st.pos;
+        const params = try l.scratch.alloc(JsIr.NameIndex, supplied.arity);
+        var args: std.ArrayList(Node.Index) = .empty;
+        for (params) |*param| param.* = try l.fresh(l.well.temp);
+        for (supplied.identities) |identity| {
+            const getter = try l.coreSchemaValue(if (identity.endpoint == .encoded) "encodedIdentity" else "typedIdentity", p);
+            const schema = try l.ident(params[identity.argument], p);
+            try args.append(l.scratch, try l.call(getter, &.{schema}, p));
+        }
+        for (params) |param| try args.append(l.scratch, try l.ident(param, p));
+        var unit = supplied.arity;
+        while (unit < supplied.call_arity) : (unit += 1) try args.append(l.scratch, try l.nullNode(p));
+        const body = try l.returnStmt(try l.call(try l.ident(target, p), args.items, p), p);
+        const bridge_name = try MarkupContext.hoistName(l, hint);
+        const record = try l.funcRecord(params, &.{body});
+        try st.hoisted.append(l.scratch, try l.add(.func_decl, p, @backingInt(bridge_name), @backingInt(record)));
+        return bridge_name;
     }
 
     fn markupRuntime(l: *Lowerer, export_name: []const u8) (Allocator.Error || error{Reported})!JsIr.NameIndex {
@@ -20216,7 +20253,7 @@ const Bound = union(enum) {
 };
 
 /// The `Context` and `Js` of `boundary.md` §9.4.3, over one `Lowerer`.
-const markup_vtable: beni_markup.VTable = struct {
+const MarkupContext = struct {
     const M = beni_markup;
     const E = M.Error;
 
@@ -20240,7 +20277,7 @@ const markup_vtable: beni_markup.VTable = struct {
         return l.mk.?.pos;
     }
 
-    fn symbolOf(l: *Lowerer, text: []const u8) E!Symbol {
+    fn symbolOf(l: *Lowerer, text: []const u8) Allocator.Error!Symbol {
         return l.interner.getOrPut(l.gpa, text);
     }
 
@@ -20259,7 +20296,7 @@ const markup_vtable: beni_markup.VTable = struct {
     /// A module-level name `<Module>$<hint>`, told apart by a tag when the
     /// module already declares or hoisted that name — a declaration called
     /// `k7` is `<Module>$k7` too.
-    fn hoistName(l: *Lowerer, hint: []const u8) E!JsIr.NameIndex {
+    fn hoistName(l: *Lowerer, hint: []const u8) Allocator.Error!JsIr.NameIndex {
         const st = l.mk.?;
         const base = try symbolOf(l, hint);
         const declared = std.sort.binarySearch(u32, st.decl_names, @backingInt(base), struct {
@@ -20276,7 +20313,7 @@ const markup_vtable: beni_markup.VTable = struct {
         }
     }
 
-    fn takeName(l: *Lowerer, n: JsIr.NameIndex) E!void {
+    fn takeName(l: *Lowerer, n: JsIr.NameIndex) Allocator.Error!void {
         const st = l.mk.?;
         if (n.int() >= st.taken.bit_length) try st.taken.resize(l.scratch, @max(n.int() + 1, st.taken.bit_length * 2), false);
         st.taken.set(n.int());
@@ -21147,7 +21184,9 @@ const markup_vtable: beni_markup.VTable = struct {
         .block = block,
         .statement = statement,
     };
-}.vtable;
+};
+
+const markup_vtable: beni_markup.VTable = MarkupContext.vtable;
 
 // ---------------------------------------------------------------------------
 // Tests

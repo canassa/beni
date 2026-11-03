@@ -3346,8 +3346,46 @@ const Emitter = struct {
         return null;
     }
 
+    /// Match each hidden identity to a checked Schema argument. A schema's
+    /// stored endpoint identities have exactly its two quantified types.
+    /// Other evidence still needs an explicit typed caller; it cannot be
+    /// recovered from a value's shape or a template's identity.
+    fn runtimeIdentityArguments(e: *Emitter, iface: *const Interface, scheme: Interface.Scheme) !?[]const Lower.Markup.IdentityArgument {
+        const root = try e.expandRuntimeType(.{ .iface = iface, .at = scheme.body });
+        const function = root.iface.term(root.at);
+        if (function.tag != .func) return null;
+        const params = root.iface.range(function.lhs);
+        var sources: std.ArrayList(Lower.Markup.IdentityArgument) = .empty;
+        var q: u32 = 0;
+        while (q < scheme.quantified_count) : (q += 1) {
+            const quantified = iface.quantified(scheme, q);
+            if (quantified.constraints_len != 0) return null;
+            if (!quantified.identity) continue;
+            const source: Lower.Markup.IdentityArgument = found: {
+                for (params, 0..) |param, argument| {
+                    const view = try e.expandRuntimeType(.{ .iface = root.iface, .at = @fromBackingInt(@intCast(param)), .bindings = root.bindings });
+                    const t = view.iface.term(view.at);
+                    if (t.tag != .app) continue;
+                    const ref = view.iface.typeRef(@fromBackingInt(@intCast(t.lhs))) orelse continue;
+                    if (ref.package != .core or !std.mem.eql(u8, e.session.interner.slice(view.iface.symbol(ref.module)), "Schema") or !std.mem.eql(u8, e.session.interner.slice(view.iface.symbol(ref.name)), "Schema")) continue;
+                    const ends = view.iface.range(t.rhs);
+                    if (ends.len != 2) continue;
+                    for (ends, 0..) |endpoint, which| {
+                        const endpoint_view = try e.expandRuntimeType(.{ .iface = view.iface, .at = @fromBackingInt(@intCast(endpoint)), .bindings = view.bindings });
+                        const variable = endpoint_view.iface.term(endpoint_view.at);
+                        if (endpoint_view.iface == iface and variable.tag == .@"var" and variable.lhs == q)
+                            break :found .{ .argument = @intCast(argument), .endpoint = if (which == 0) .encoded else .typed };
+                    }
+                }
+                return null;
+            };
+            try sources.append(e.scratch, source);
+        }
+        return try sources.toOwnedSlice(e.scratch);
+    }
+
     /// Take out of `expected` every export the runtime module supplies, held
-    /// to its count (`boundary.md` §9.2): no evidence, and the declared
+    /// to its count (`boundary.md` §9.2): no method evidence, and the declared
     /// count of parameters, a trailing run of `()` counted or not, as check
     /// 4 counts a sibling's. A markup primitive is supplied likewise, and
     /// its uses then read the module's value (`Lower.primitiveName`).
@@ -3385,7 +3423,10 @@ const Emitter = struct {
             const d = b.decls[index];
             const use = Convention.ofDecl(dispatch, b, index);
             const units = unitTail(b, d.annotation, use.arity);
-            if (use.evidence != 0 or want.arity > use.arity or want.arity + units < use.arity) {
+            const value = iface.findValue(&e.session.interner, b.symbol(d.name)) orelse continue;
+            const scheme_index = iface.values[@backingInt(value)].scheme;
+            const identities: ?[]const Lower.Markup.IdentityArgument = if (use.evidence == 0) &.{} else try e.runtimeIdentityArguments(iface, iface.scheme(scheme_index));
+            if (identities == null or identities.?.len != use.evidence or want.arity > use.arity or want.arity + units < use.arity) {
                 try e.report(
                     .foreign_arity_mismatch,
                     file,
@@ -3401,8 +3442,7 @@ const Emitter = struct {
                 );
                 continue;
             }
-            const value = iface.findValue(&e.session.interner, b.symbol(d.name)) orelse continue;
-            try supplied.append(e.scratch, .{ .name = want.name, .decl = index, .value = @backingInt(value) });
+            try supplied.append(e.scratch, .{ .name = want.name, .decl = index, .value = @backingInt(value), .arity = want.arity, .call_arity = use.arity, .identities = identities.? });
         }
         e.runtime_module = module;
         e.supplied = supplied.items;
@@ -3457,6 +3497,22 @@ const Emitter = struct {
         e.program_names = names.items;
     }
 
+    /// Edges introduced by an identity adapter are not in the runtime's
+    /// source body, so root its private Schema readers with that export.
+    fn runtimeIdentityRoots(e: *Emitter, out: *std.ArrayList(Reach.Node), supplied: Lower.Markup.Supplied) !void {
+        if (supplied.identities.len == 0) return;
+        const module = e.graph().lookup(.core, InternPool.WellKnown.Schema.symbol()) orelse return;
+        const b = e.bir(module);
+        for (supplied.identities) |identity| {
+            const name = if (identity.endpoint == .encoded) "encodedIdentity" else "typedIdentity";
+            for (b.decls, 0..) |decl, index| {
+                if (!std.mem.eql(u8, e.session.interner.slice(b.symbol(decl.name)), name)) continue;
+                try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = @intCast(index) });
+                break;
+            }
+        }
+    }
+
     /// The runtime module's roots (`backend.md` §15.1, *The runtime
     /// module*), coarse: every export it supplies and every value the file
     /// imports from it.
@@ -3465,7 +3521,10 @@ const Emitter = struct {
         try e.workerHostRoots(&out);
         if (e.selectedRuntime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = if (e.entry_runtime_twin) .twin else .decl, .index = runner.decl });
         const module = e.runtime_module orelse return out.items;
-        for (e.supplied) |s| try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = s.decl });
+        for (e.supplied) |s| {
+            try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = s.decl });
+            try e.runtimeIdentityRoots(&out, s);
+        }
         for (e.program_names) |n| if (e.moduleValue(module, n)) |decl| {
             try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = decl });
         };
@@ -3502,6 +3561,7 @@ const Emitter = struct {
 
         for (names.items) |n| if (e.moduleValue(module, n)) |decl| {
             try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = decl });
+            if (e.suppliedAs(n)) |supplied| try e.runtimeIdentityRoots(&out, supplied);
         };
         return out.items;
     }
