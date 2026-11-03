@@ -99,6 +99,7 @@ pub fn source(arena: Allocator, module: []const u8, type_name: ?[]const u8) ![]c
     if (std.mem.eql(u8, module, "Browser.Host.Promise")) try w.writeAll("pub foreign type Resolvers a\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Node")) try w.writeAll("import Js\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Node")) try w.writeAll("pub type MoveError\n    = HierarchyRequestError\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Array")) try w.writeAll("pub foreign type View a\n\n\n");
     if (type_name) |name| try w.print("pub foreign type {s}\n", .{name});
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
@@ -205,6 +206,13 @@ pub fn sibling(arena: Allocator, module: []const u8) ![]const u8 {
             .worker_event_target => "(endpoint) => { return endpoint; }",
             .global_event_target => "(ignored) => { return globalThis; }",
             .event_data_only => "(event) => { const value = event.data;\n" ++ CheckedData.body ++ "}",
+            .array_make => "(ignored) => { return []; }",
+            .array_get_or, .array_view_get_or => "(array, index, fallback) => { return index >>> 0 === index && Object.hasOwn(array, index) ? array[index] : fallback; }",
+            .array_set => "(array, index, value) => { if (index >>> 0 !== index || index === 4294967295) return false; array[index] = value; return true; }",
+            .array_push => "(array, value) => { array.push(value); return null; }",
+            .array_size, .array_view_length => "(array) => { return array.length; }",
+            .list_array_view => "(list) => { return Array.isArray(list) ? list : list.$plain ? list.$plain() : list.b.slice(list.o); }",
+            .array_view_slice => "(array, start) => { return array.slice(start); }",
             .key_map_values => "(map) => { return globalThis.Array.from(map.values()); }",
             .key_map_make => "(unit) => { return new globalThis.Map(); }",
             .key_map_get_or => "(map, key, fallback) => { const value = map.get(key); return value !== undefined || map.has(key) ? value : fallback; }",

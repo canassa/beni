@@ -182,6 +182,26 @@ pub fn valid(cx: *const Context, row: Operations.Row, v: Var) bool {
         .worker_event_target => a.len == 1 and named(cx, a[0], "Browser.Host.Worker", "Endpoint") and native(cx, r, "EventTarget"),
         .global_event_target => a.len == 1 and unit(cx, a[0]) and native(cx, r, "EventTarget"),
         .event_data_only => a.len == 1 and native(cx, a[0], "Event") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |data| named(cx, data, "Js", "Value") else false),
+        .array_make => a.len == 1 and unit(cx, a[0]) and argument(cx, r, "Browser.Host.Array", "Array", 0) != null,
+        .array_get_or, .array_view_get_or => blk: {
+            if (a.len != 3 or !named(cx, a[1], "Basics", "Int")) break :blk false;
+            const value = argument(cx, a[0], "Browser.Host.Array", if (row.recipe == .array_get_or) "Array" else "View", 0) orelse break :blk false;
+            break :blk cx.store.find(value) == cx.store.find(a[2]) and cx.store.find(value) == cx.store.find(r);
+        },
+        .array_set, .array_push => blk: {
+            const setting = row.recipe == .array_set;
+            if (a.len != (if (setting) @as(usize, 3) else 2)) break :blk false;
+            const value = argument(cx, a[0], "Browser.Host.Array", "Array", 0) orelse break :blk false;
+            break :blk cx.store.find(value) == cx.store.find(a[if (setting) @as(usize, 2) else 1]) and (if (setting) named(cx, a[1], "Basics", "Int") and named(cx, r, "Basics", "Bool") else unit(cx, r));
+        },
+        .array_size, .array_view_length => a.len == 1 and argument(cx, a[0], "Browser.Host.Array", if (row.recipe == .array_size) "Array" else "View", 0) != null and named(cx, r, "Basics", "Int"),
+        .list_array_view, .array_view_slice => blk: {
+            const slicing = row.recipe == .array_view_slice;
+            if (a.len != (if (slicing) @as(usize, 2) else 1)) break :blk false;
+            const value = argument(cx, a[0], if (slicing) "Browser.Host.Array" else "List", if (slicing) "View" else "List", 0) orelse break :blk false;
+            const result = argument(cx, r, "Browser.Host.Array", "View", 0) orelse break :blk false;
+            break :blk cx.store.find(value) == cx.store.find(result) and (!slicing or named(cx, a[1], "Basics", "Int"));
+        },
         .key_map_values => blk: {
             if (a.len != 1) break :blk false;
             const value = argument(cx, a[0], "Browser.Host.KeyMap", "Map", 1) orelse break :blk false;

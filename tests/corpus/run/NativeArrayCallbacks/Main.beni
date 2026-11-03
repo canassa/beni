@@ -1,0 +1,6 @@
+-- Typed native maps retain callback keys and values through generic helpers.
+import Test
+
+
+main : Test.Program
+main = Test.program Test.inspect
