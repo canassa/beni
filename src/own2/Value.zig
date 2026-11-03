@@ -176,8 +176,10 @@ pub const Leaf = struct {
     root: u32 = none,
     pos: u32 = none,
     slots: SetId = Slots.empty,
-    /// A tag set (`Frame.tags`), 0 for none.
+    /// A tag set (`Frame.tags`), 0 for none; a route set a projection
+    /// reached it under, relative to `tags` (§2.11.2), 0 for none.
     tags: u32 = 0,
+    routes: u32 = 0,
     /// A shallow target at its position's own slot only.
     at_pos: bool = false,
 };
@@ -197,7 +199,7 @@ pub const Frame = struct {
     pos_index: Ids.FixedDict(4) = .{},
     vals: std.ArrayList(Val) = .empty,
     leaves: std.ArrayList(Leaf) = .empty,
-    leaf_index: Ids.FixedDict(7) = .{},
+    leaf_index: Ids.FixedDict(8) = .{},
     /// Leaf and tag sets; per value, its leaf set and its storage's (§2.3.4).
     sets: Leaves.Table = .{},
     deep: std.ArrayList(u32) = .empty,
@@ -440,7 +442,7 @@ pub const Frame = struct {
 
     pub fn leaf(f: *Frame, l: Leaf) Error!u32 {
         try f.charge(.cell, 1);
-        const key: [7]u32 = .{ @backingInt(l.kind) | (@as(u32, @intFromBool(l.at_pos)) << 8), l.atom, l.extra, l.root, l.pos, l.slots, l.tags };
+        const key: [8]u32 = .{ @backingInt(l.kind) | (@as(u32, @intFromBool(l.at_pos)) << 8), l.atom, l.extra, l.root, l.pos, l.slots, l.tags, l.routes };
         if (f.leaf_index.get(key)) |hit| return hit;
         const id: u32 = @intCast(f.leaves.items.len);
         try f.leaves.append(f.gpa, l);

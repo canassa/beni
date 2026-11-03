@@ -12,6 +12,7 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
+const Routed = @import("Routed.zig");
 const Contract = @import("Contract.zig");
 const Walk = @import("Walk.zig");
 const Regions = @import("Regions.zig");
@@ -456,7 +457,7 @@ pub const Escapes = struct {
 /// Whether `l` is a parameter's untagged target, not a cell's `◆` (§2.8,
 /// *Holder entries judged by base leaves*, step 2).
 pub fn paramTarget(f: *const Value.Frame, l: Value.Leaf) bool {
-    if (l.kind != .ref or l.tags != 0 or f.roots.items[l.root].kind != .param) return false;
+    if (l.kind != .ref or l.tags != 0 or l.routes != 0 or f.roots.items[l.root].kind != .param) return false;
     if (l.at_pos) {
         const tp = f.pos.items[l.pos];
         if (tp.kind == .plain and Place.Step.fromWord(tp.a).kind == .contents) return false;
@@ -508,7 +509,7 @@ pub const Operands = struct {
         defer ls.deinit(g);
         for (ev.f.calls.items[call].args, 0..) |a, k| {
             ls.clearRetainingCapacity();
-            try ev.leavesOf(a, 0, &ls);
+            try Routed.leavesOf(ev, a, &ls);
             for (ls.items) |l| {
                 try ev.f.charge(.inspection, 1);
                 const ks = try keys.of(ev, l);

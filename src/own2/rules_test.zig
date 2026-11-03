@@ -42,6 +42,8 @@ const layers = [_]Entry{
     .{ .file = "Runs.zig", .layer = 1, .max_lines = 90 },
     // The tags and routes of a leaf set (#1714), split from `Leaves`.
     .{ .file = "Routes.zig", .layer = 1, .max_lines = 680 },
+    // Whether route sets hold together, split from `Routes` (#1714).
+    .{ .file = "Coexist.zig", .layer = 2, .max_lines = 240 },
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
     // Holds read by their tags (#1714).
     .{ .file = "TagTree.zig", .layer = 2, .max_lines = 250 },
@@ -72,8 +74,9 @@ const layers = [_]Entry{
     .{ .file = "Entries.zig", .layer = 7, .max_lines = 400 },
     // The atoms a result holds open already, for the read-off (#1716).
     .{ .file = "Held.zig", .layer = 7, .max_lines = 70 },
-    // One walk of a value along several paths, below `Distinct` (#1714).
-    .{ .file = "Paths.zig", .layer = 8, .max_lines = 140 },
+    // One walk of a value along several paths by route sets, below
+    // `Distinct` (#1714, §2.11.2).
+    .{ .file = "Routed.zig", .layer = 8, .max_lines = 370 },
     // Split from `Relation` and `Eval` (#1685): the walk reads leaves of
     // values, the distinct check reads a call's instantiation.
     // A cell's `◆` as an evaluation reads it, from `Eval` (#1729).
@@ -400,7 +403,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 46), layers.len);
+    try testing.expectEqual(@as(usize, 47), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

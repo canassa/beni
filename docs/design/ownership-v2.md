@@ -1369,7 +1369,7 @@ reach (`xᵢ = if … then xᵢ₋₁ else if … then b else xᵢ₋₁`, or th
 entries of one leaf, and the distinct check compared them (`reads two positions of one image through a chain
 of n choices`: 6 706 / 86 834 records at n = 2 / 4, past the limit at 8).
 
-- **The walk.** The selection's walk (`Paths.zig`, the occurrences of one parameter projected together) reads
+- **The walk.** The selection's walk (`Routed.zig`, the occurrences of one parameter projected together) reads
   the argument's values in decreasing value id. A value's kids are made before it, so every arrival at a
   value is known before the value is read. Two arrivals at one value with the same remaining paths and the
   same literal route (§2.9.3: built steps only, an arm adds none) are one item, whose **routes** are the
@@ -1392,6 +1392,23 @@ of n choices`: 6 706 / 86 834 records at n = 2 / 4, past the limit at 8).
 - **Exactness.** A set is the union of the routes the per-arm walk gave, and each question the check asks of
   two entries is asked of every pair of their routes at once: every verdict and condition is the one the
   per-arm entries gave. Only the number of entries changes.
+- *As built (#1714, 2026-11-03).* `Routed.zig` (L8) replaces `Paths.zig`: one walk for the selection's
+  occurrences, a call's writes of one argument, a callee's reads at a use and a choice read deep at a use. An
+  item keeps one tag list while one arrival reaches it and takes a route set only when a second does (the sets
+  of all its arrivals united once, when it is read), so a walk with no shared value costs what the walk by
+  arms did. A set of one route is that route's list. `Coexist.zig` (L2, split from `Routes`) holds the meet
+  of two sets: lists written out (a `flat` set or a `join` of them) go into the tree of tails that
+  `anyPair` reads, one block a set, and any other set is read by the walk above. Write targets carry their
+  set in the leaf (`Value.Leaf.routes`); the operands' deep read (`Routed.leavesOf`) gives each element
+  once under its set; the live holders, read by their tags (§2.8), meet a target route by route, as before.
+  Measured (Debug): `reads two positions of one image through a chain of n choices`, `f` 6 706 / 86 834 at
+  n = 2 / 4 and past the limit at 8, is 3 909 / 6 236 / 10 967 at n = 8 / 16 / 32, and the test passes;
+  `chainCallCold` 246 / 278 / 301 → 280 / 336 / 407; test 21's `read32` 11 034 → 10 530 records. The
+  ledger moves no verdict and no summary; every growth on the cost table stays 0, totals +0.3 % to +5 %
+  (the sets an arm's arrivals unite). **Not done:** `call over a choice whose arms share a subtree` (six more
+  arms 2 602 / 5 178 records at N = 8 / 32, ×2.0, bar ×1.5). Its growth is now the walk's alone: an `alt`'s
+  leaf set (`Leaves.arms`) merges the shared tower's N elements once per arm, N × D (`join2`), since the
+  tower sits in each arm's set under that arm's tag and no node of it is shared.
 
 *Specified 2026-11-03 (#1714): a write onto a caller's parameter stops at the parameter.* Item 4 projects
 each write of `C.writes` onto its argument, and a callee whose writes double (`t₁ ( a, b ) = touch a + touch
@@ -3820,7 +3837,7 @@ L0  Ids  Counters  Scratch
 | `Scratch.zig` | 0 | a walk's sparse sets and maps | Counters |
 | `Place.zig` | 1 | place graphs, steps, canonical paths, levels and their expansion | Ids |
 | `Runs.zig` | 1 | runs of words interned by content, a column by path id (§3.2) | Ids |
-| `Routes.zig` | 1 | tag lists with shared tails and jump pointers, route sets, the atom pairs a parting rules out (§2.3.5, §2.9.3, #1714) | Ids |
+| `Routes.zig` | 1 | tag lists with shared tails and jump pointers, route sets (§2.3.5, §2.9.3, #1714) | Ids |
 | `Facts.zig` | 2 | the records that cross layers: uses, demand kinds, verdicts, causes, the pre-pass's facts, report lines | Ids |
 | `TagTree.zig` | 2 | a run of tag lists as the tree of their shared tails; the members a list may hold with (§2.8, #1714) | Ids, Routes |
 | `PlaceBelow.zig` | 2 | what a place graph says below a path: object slots counted, a family read off (§2.3.1, #1714) | Ids, Place |
@@ -3841,6 +3858,8 @@ L0  Ids  Counters  Scratch
 | `Held.zig` | 6 | the atoms a draft's result holds open at or above a slot, which the read-off of a call's subtree below it need not describe again (§2.10 *Read-off*, #1716) | Ids, Contract, Value |
 | `Walk.zig` | 7 | one walk: a rule per BIR tag, uses, pending operands, escapes, constructions, calls (§2.6, §2.7) | Ids, Facts, Place, Slots, Contract, Value, Relation, Regions, Liveness, Prepass |
 | `Distinct.zig` | 7 | the one relation, selections, a call's separation, the distinct check (§2.9) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Entries |
+| `Routed.zig` | 8 | one walk of a value along several paths, a value several arms reach read once under a route set (§2.11.2, #1714) | Ids, Place, Relation, Coexist, Contract |
+| `Coexist.zig` | 2 | whether two route sets hold together; the atom pairs a parting rules out (§2.3.5, §2.9.3, §2.11.2, #1714) | Ids, Routes |
 | `Cells.zig` | 7 | a cell's `◆` as an evaluation reads it: cell operations and their targets behind the barrier, a cell callback's supply, the contents an answer may share (§2.13.7, #1729) | Ids, Place, Slots, Contract, Value, Relation, Forest |
 | `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Distinct, Walk, Cells |
 | `Holders.zig` | 8 | what resolution reads of a frame's leaves: their base keys, the escape index, the operand index (§2.8) | Ids, Place, Value, Relation, Distinct, Contract, Walk, Regions |
