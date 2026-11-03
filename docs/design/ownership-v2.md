@@ -1095,6 +1095,14 @@ The relation is computed once per pair of leaves per walk and reserved before wo
 **distinct check** over `v`'s leaves, each **entry** a leaf with its **route** (the literal kid path that
 reached it, so one value placed twice is two entries):
 
+*Amended 2026-11-03 (#1714): a `many` leaf has two routes.* A value's leaf set holds a leaf two coexisting
+kids reach once, marked `many` (§2.3.4), and a read of the set gives it twice. A projection that reads a
+set whole (a deep occurrence at a built value or a choice, a value's own storage, a step a literal cannot
+follow) gave both copies the one route it was at, and the check took the second for the first: `idd`'s
+`π1{ε*}` projected over `P t t` asked `t` once, and `firstOnly (P t t)` wrote `a` while `b` was the same
+tree (the program printed `3 2` where its copy semantics print `3 3`). The second copy now takes a route of
+its own (`Relation.Eval.readAt`), so it is a second entry, as the kids it came from are.
+
 - An entry that is a family (`ref` not `at_position`) asks its root's own separation on its slots; `⊤` and
   `shared` entries make the check `no`.
 - Entries are **grouped by root**. Within a group, a conflict is two entries at related positions whose slots
