@@ -27,111 +27,15 @@ const Distinct = @import("Distinct.zig");
 const Liveness = @import("Liveness.zig");
 const Later = @import("Later.zig");
 const Sweep = @import("Sweep.zig");
+const DagRoutes = @import("DagRoutes.zig");
+const HoldAt = @import("HoldAt.zig");
 
 pub const Error = Ids.ChargeError;
 const PathId = Ids.PathId;
 const Hold = Sweep.Hold;
 const none: u32 = Ids.none_int;
 
-/// A path at which a hold holds a target's object, and the relation there.
-pub const Held = struct { PathId, Relation.Ov };
-
-/// The paths at which hold `hd` holds an object `target` may be, and
-/// the relation there: each `(path, ov)`.
-pub fn holdsAt(ev: *Relation.Eval, hd: Hold, target: u32, out: *std.ArrayList(Held)) Error!void {
-    const fr = ev.f;
-    const g = ev.gpa();
-    const o = try Distinct.overlap(ev, hd.leaf, target, true);
-    if (o.kind == .no) return;
-    if (!hd.refine) return out.append(g, .{ hd.q, o });
-    // The path of the hold: below `q` by the steps from the leaf's
-    // position to the slots that meet the target's.
-    const lf = fr.leafAt(hd.leaf);
-    // The target as leaves of the holder's root: itself, or what a
-    // call's leaf comes from (its arrivals).
-    var tls: std.ArrayList(u32) = .empty;
-    defer tls.deinit(g);
-    try sameRoot(ev, lf, target, &tls);
-    if (lf.kind == .ref and tls.items.len != 0) {
-        const pslot = fr.pos.items[lf.pos].slot;
-        var any = false;
-        var met: std.ArrayList(u32) = .empty;
-        defer met.deinit(g);
-        // Each slot, or whole subtree (`↓ts`, §2.3.1), the holder meets: one
-        // pass over the target leaf's slots (`MeetRun`).
-        for (tls.items) |tli| try MeetRun.meetRun(fr.slots, g, fr.account, fr.places, lf.slots, fr.slots.elems(fr.leafAt(tli).slots), &met);
-        for (met.items) |el| {
-            const ts = Slots.pathOf(el).int();
-            // Held at the leaf's own slot, the hold's path is the target's,
-            // a node of its trie when no `⟲` is on its way (§2.8).
-            if (hd.q == pslot and !fr.places.paths.col.info[ts].levels) {
-                try fr.account.reserve(.path, 1 + fr.places.ancestorAt(.from(ts), fr.places.pathDepth(pslot))[1]);
-                if (!fr.places.isPrefix(pslot, .from(ts))) continue;
-                try out.append(g, .{ .from(ts), o });
-                any = true;
-                continue;
-            }
-            const rel = (try fr.slots.relBelow(g, fr.account, fr.places, pslot, .from(ts))) orelse continue;
-            var ps: std.ArrayList(u32) = .empty;
-            defer ps.deinit(g);
-            try Slots.replay(g, fr.account, fr.places, hd.q, fr.slots.relWords(rel), &ps);
-            for (ps.items) |p| {
-                try out.append(g, .{ .from(p), o });
-                any = true;
-            }
-        }
-        if (any) {
-            // The holder's other objects are the target only where its
-            // root is not separated: held at the holder's path, under
-            // that condition.
-            var minus: std.ArrayList(u32) = .empty;
-            defer minus.deinit(g);
-            for (tls.items) |tli| try minus.append(g, fr.leafAt(tli).slots);
-            if (try Subtree.without(fr.slots, g, fr.account, fr.places, lf.slots, minus.items)) |rest| {
-                var rl = lf;
-                rl.slots = rest;
-                // A target of the holder's own root lies in the slots taken
-                // out; a symbol keeps a subtree taken out in its set
-                // (`Subtree.without` excludes explicit slots only), so the
-                // rest is asked apart from it, as distinct slots are (#1742).
-                const own = tls.items.len == 1 and tls.items[0] == target;
-                const o2 = if (own) try Distinct.apartOf(ev, try fr.leaf(rl), target, true) else try Distinct.overlap(ev, try fr.leaf(rl), target, true);
-                if (o2.kind != .no) try out.append(g, .{ hd.q, o2 });
-            }
-            return;
-        }
-    }
-    try out.append(g, .{ hd.q, o });
-}
-
-/// The leaves of target `t` at the holder leaf `lf`'s root: `t`
-/// itself when it is of that root, else, while it is a call's or a
-/// supply's, what it comes from (§2.9.2 step 4), a few levels deep.
-fn sameRoot(ev: *Relation.Eval, lf: Value.Leaf, t: u32, out: *std.ArrayList(u32)) Error!void {
-    const fr = ev.f;
-    const g = ev.gpa();
-    if (lf.kind != .ref) return;
-    var cur: std.ArrayList(u32) = .empty;
-    defer cur.deinit(g);
-    try cur.append(g, t);
-    var depth: u32 = 0;
-    while (cur.items.len != 0 and depth < 4) : (depth += 1) {
-        var next: std.ArrayList(u32) = .empty;
-        defer next.deinit(g);
-        for (cur.items) |x| {
-            try fr.charge(.inspection, 1);
-            const xl = fr.leafAt(x);
-            if (xl.kind != .ref) continue;
-            if (xl.root == lf.root) {
-                try out.append(g, x);
-                continue;
-            }
-            const k = fr.roots.items[xl.root].kind;
-            if (k == .call or k == .supply) try ev.expand(x, &next);
-        }
-        std.mem.swap(std.ArrayList(u32), &cur, &next);
-    }
-}
+pub const Held = HoldAt.Held;
 
 /// What the descent hands its caller: hold `k` (its index in the holder's
 /// holds) holds the target at `q` with `ov`, and the holder's first use
@@ -186,50 +90,80 @@ pub fn descend(uses: *Later.Uses, live: *const Sweep.Live, hi: u32, met: []const
         }
     }
     if (has[0] != 2) return;
-    // Per `(node, use, below a family)`: met already, at a path no greater,
-    // by a subtree that answers for its paths (each of its holds is then
-    // met once; an exact path is still met after one below a `[*]`).
-    var done: Ids.FixedDict(3) = .{};
-    defer done.deinit(g);
+    // The items, in the order the descent meets them (a node before its
+    // kids, kids in order): `(node, path)`, or, in a subtree that answers
+    // for its paths, `(node, use, below a family)` at the path it is met at
+    // first. Each is read once, under the routes `DagRoutes` unites for it.
+    var dr: DagRoutes.Table = .{};
+    defer dr.deinit(g);
+    var index: Ids.FixedDict(4) = .{};
+    defer index.deinit(g);
     const Item = struct { n: u32, q: PathId, flat: bool = false, use: u32 = none };
-    var stack: std.ArrayList(Item) = .empty;
+    var items: std.ArrayList(Item) = .empty;
+    defer items.deinit(g);
+    var order: std.ArrayList(u32) = .empty;
+    defer order.deinit(g);
+    var stack: std.ArrayList(struct { u32, PathId }) = .empty;
     defer stack.deinit(g);
+    const root = try dr.add(g, nodes[n0].v);
+    try items.append(g, .{ .n = n0, .q = nodes[n0].q });
+    try stack.append(g, .{ root, nodes[n0].q });
+    while (stack.pop()) |top| {
+        try fr.charge(.inspection, 1);
+        const id = top[0];
+        if (dr.items.items[id].edges.start != none) continue;
+        items.items[id].q = top[1];
+        try order.append(g, id);
+        const it = items.items[id];
+        dr.begin(id);
+        // The kids, pushed last first so that the first is met first.
+        const ks = edges[nodes[it.n].edges.start..][0..nodes[it.n].edges.len];
+        const s0 = stack.items.len;
+        for (ks) |e| {
+            if (has[e.node - n0] != 2) continue;
+            const c = if (e.step) |st| (try fr.places.extend(g, fr.gc(), it.q, st)) orelse it.q else it.q;
+            var kid: Item = .{ .n = e.node, .q = c };
+            if (it.flat or c == it.q) {
+                kid = .{ .n = e.node, .q = c, .flat = it.flat, .use = it.use };
+            } else if (try flatAt(uses, h.local, c, point)) {
+                const u = try uses.liveOnce(h.local, c, point);
+                if (u == null and !visit.dead) continue;
+                kid = .{ .n = e.node, .q = c, .flat = true, .use = if (u) |x| x.int() else none };
+            }
+            const key: [4]u32 = if (kid.flat) .{ kid.n, kid.use, @intFromBool(fr.places.isSummary(c)), 1 } else .{ kid.n, c.int(), 0, 0 };
+            const got = try index.getOrPut(g, key);
+            if (!got.found_existing) {
+                got.value_ptr.* = try dr.add(g, nodes[kid.n].v);
+                try items.append(g, kid);
+            }
+            try dr.edge(g, id, got.value_ptr.*, e.arm);
+            try stack.append(g, .{ got.value_ptr.*, c });
+        }
+        std.mem.reverse(struct { u32, PathId }, stack.items[s0..]);
+    }
+    try dr.settle(ev, root);
     var hs: std.ArrayList(Held) = .empty;
     defer hs.deinit(g);
-    try stack.append(g, .{ .n = n0, .q = nodes[n0].q });
-    while (stack.pop()) |it| {
-        try fr.charge(.inspection, 1);
-        if (it.flat and (try done.getOrPut(g, .{ it.n, it.use, @intFromBool(fr.places.isSummary(it.q)) })).found_existing) continue;
+    var ls: std.ArrayList(u32) = .empty;
+    defer ls.deinit(g);
+    for (order.items) |id| {
+        const ri = dr.items.items[id];
+        if (!ri.reached) continue;
+        const it = items.items[id];
         const nd = nodes[it.n];
         const use: ?Liveness.UseId = if (it.use == none) null else .from(it.use);
         for (holds[nd.holds.start..][0..nd.holds.len], nd.holds.start..) |hd0, k| {
             if (!is_met[k]) continue;
-            var hd = hd0;
-            hd.q = it.q;
-            hs.clearRetainingCapacity();
-            try holdsAt(ev, hd, t, &hs);
-            for (hs.items) |x| {
-                const u = if (it.flat) use else try uses.liveOnce(h.local, x[0], point);
-                if (u != null or visit.dead) try visit.each(visit.ctx, @intCast(k), x[0], x[1], u);
+            ls.clearRetainingCapacity();
+            try DagRoutes.under(ev, hd0.leaf, ri, &ls);
+            for (ls.items) |l| {
+                hs.clearRetainingCapacity();
+                try HoldAt.holdsAt(ev, .{ .leaf = l, .q = it.q, .refine = hd0.refine }, t, &hs);
+                for (hs.items) |x| {
+                    const u = if (it.flat) use else try uses.liveOnce(h.local, x[0], point);
+                    if (u != null or visit.dead) try visit.each(visit.ctx, @intCast(k), x[0], x[1], u);
+                }
             }
-        }
-        // The kids, pushed last first so that the first is met first.
-        const ks = edges[nd.edges.start..][0..nd.edges.len];
-        var i = ks.len;
-        while (i > 0) {
-            i -= 1;
-            const e = ks[i];
-            if (has[e.node - n0] != 2) continue;
-            const c = if (e.step) |s| (try fr.places.extend(g, fr.gc(), it.q, s)) orelse it.q else it.q;
-            if (it.flat or c == it.q) {
-                try stack.append(g, .{ .n = e.node, .q = c, .flat = it.flat, .use = it.use });
-                continue;
-            }
-            if (try flatAt(uses, h.local, c, point)) {
-                const u = try uses.liveOnce(h.local, c, point);
-                if (u == null and !visit.dead) continue;
-                try stack.append(g, .{ .n = e.node, .q = c, .flat = true, .use = if (u) |x| x.int() else none });
-            } else try stack.append(g, .{ .n = e.node, .q = c });
         }
     }
 }

@@ -3,7 +3,7 @@
 //! for each member alone, without its anchor-by-anchor prefix test. A
 //! member is in a symbol `↓p` when the member or one of its ancestors is an
 //! anchor of `p`, looked up in the anchors' sorted run, so a member costs
-//! its depth, never the anchors' count. Read by `Descent.holdsAt`.
+//! its depth, never the anchors' count. Read by `HoldAt.holdsAt`.
 //!
 //! Obligations kept here: none of §2.14's directly (each member is kept
 //! exactly when `Subtree.meetIn` of it alone is true).
