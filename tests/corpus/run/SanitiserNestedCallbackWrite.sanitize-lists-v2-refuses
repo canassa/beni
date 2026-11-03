@@ -1,0 +1,2 @@
+# v2 refuses the closure that edits what its captured cell holds, called many times (§2.11.4).
+22:9 list_still_used once

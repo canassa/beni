@@ -1,0 +1,27 @@
+-- A runtime catch for a callback whose own callback edits in place
+-- (`ownership-v2.md` §2.11.3, §2.11.4, #1753): `List.map`'s callback calls
+-- the captured `openIt`, whose cell callback pushes onto the cell's list
+-- through a fold. That write is a virtual call inside a virtual call, and
+-- the checker read its pending operands at an index past the walked calls
+-- and panicked. `openIt` edits what its captured cell holds, so it is
+-- `once`, and `List.map` calls it many times: refused.
+import List
+import Node
+import Ref
+
+
+type alias W =
+    sparks : List Int
+    n : Int
+
+
+main : Node.Program
+main =
+    r = Ref.make { sparks = [ 1 ], n = 0 }
+    openIt =
+        λ⊤ →
+            Ref.update r λw →
+                ( s, _ ) = List.foldl [ 1 ] ( w.sparks, 0 ) λ_ ( acc, k ) → ( List.push acc 9, k )
+                { w | sparks = s }
+    _ = List.map [ 1, 2 ] λ_ → openIt ⊤
+    Node.print (String.fromInt (List.length (Ref.get r).sparks))
