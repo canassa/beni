@@ -21,7 +21,7 @@ const Writer = struct {
     visited: u32 = 0,
 
     fn literal(w: *Writer, bytes: []const u8) Error!Node.Index {
-        return w.l.stringNode(bytes, w.pos);
+        return w.l.identityString(bytes, w.pos);
     }
     fn append(w: *Writer, left: Node.Index, right: Node.Index) Error!Node.Index {
         return w.l.binary(.add, left, right, w.pos);

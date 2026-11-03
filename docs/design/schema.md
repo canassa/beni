@@ -1146,6 +1146,26 @@ calls `box`. A compiled maker's worker is made by `parserOf`/`printerOf` when a 
 runs it, in that maker's `Made` arm. So a build ships the list worker only if it makes a compiled
 `list`, and a build that composes and describes schemas without running one ships no worker.
 
+**Checked endpoint identities** (2026-11-03). The engine-owned source builders
+`typedBox`, `primitiveWith` and `compiledBoxWith` carry the same hidden
+identity demands as `Any.pack`. Their private `endpointIdentity` witness
+asks for its checked element type, never inspects a value, and emits only the
+compiler-supplied identity. It has no public operation or JavaScript sibling.
+Generated producers derive the same identity grammar from checked endpoint plans;
+both paths feed the ordinary typed engine constructors. Neither packs a dummy
+value to discover a type nor reads or slices identity text at runtime.
+
+Identity demands and operand roots are persisted in checked dispatch and covered
+by its cache key. Development identities may be readable. Before release
+specialisation, the linker numbers identity atoms in lexical order across the
+build, replacing only compiler-marked identity literals. The private alphabet is
+injective, including nominal arguments, function types and record fields. This
+numbering runs after cached lowering, so cached checked evidence cannot retain a
+build-specific ordinal. Source builders, generated workers and markup operands
+therefore agree across imports, job counts and warm caches. No identity module or
+type names appear in release output. Stored compiled workers use the shared typed
+Opt protocol directly, without a per-call Maybe adapter.
+
 **The guarantee.** A program whose schemas are all statically known ships no library
 interpreter, whichever of `parse`, `print`, `decode`, `encode`, `read`, `write`, their `With` forms
 and `describe` it calls. It ships no `core/Schema.run` and no `box`. Each of its runs is compiled

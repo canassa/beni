@@ -579,13 +579,13 @@ const Gen = struct {
 
     fn schemaIdentities(g: *Gen, params: []const NameIndex) ![2]Node.Index {
         return .{
-            if (g.codec) try g.str("core:Schema.Value") else try g.typeIdentity(g.def.root, true, params),
+            if (g.codec) try g.l.identityString("core:Schema.Value", g.p) else try g.typeIdentity(g.def.root, true, params),
             try g.typeIdentity(g.def.root, false, params),
         };
     }
 
     fn unitIdentity(g: *Gen) !Node.Index {
-        const identity = try g.str("()");
+        const identity = try g.l.identityString("()", g.p);
         try g.l.schema_checks.put(g.l.scratch, identity, try g.l.checkedShape(&.{.{ .kind = .unit }}, &.{}, g.p));
         return identity;
     }
@@ -650,7 +650,7 @@ const Gen = struct {
     }
 
     fn wrappedIdentity(g: *Gen, prefix: []const u8, inner: Node.Index) !Node.Index {
-        const wrapped = try g.bin(.add, try g.bin(.add, try g.str(prefix), inner), try g.str(")"));
+        const wrapped = try g.bin(.add, try g.bin(.add, try g.l.identityString(prefix, g.p), inner), try g.l.identityString(")", g.p));
         const type_id = g.l.in.types.find(g.l.in.graph, .core, try g.sym("Schema"), try g.sym("Presence"));
         const check = try g.l.checkedShape(&.{ .{ .kind = .named, .count = 1, .value = type_id.int() }, .{ .kind = .parameter, .value = 0 } }, &.{g.l.schema_checks.get(inner).?}, g.p);
         try g.l.schema_checks.put(g.l.scratch, wrapped, check);

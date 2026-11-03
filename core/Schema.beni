@@ -2915,15 +2915,14 @@ readValidSlot ((Schema state) as schema) =
             interpretedSlot schema
 
 
--- Empty typed lists witness their element types without fabricating or
--- inspecting an element. The compiler identity is `core:List.List(a)`.
-resultIdentity : List a → String
-resultIdentity witness = String.slice (Any.fingerprint (Any.pack witness)) 15 (-1)
+-- The engine supplies this element type's checked identity as hidden evidence.
+-- The empty witness carries only its static type and is never inspected.
+foreign pure endpointIdentity : List a → String
 
 
 typedBox : Node, List e, List a → Schema e a
 typedBox node encoded typed =
-    boxWithIds Data.checked Data.checked (resultIdentity encoded) (resultIdentity typed) node
+    boxWithIds Data.checked Data.checked (endpointIdentity encoded) (endpointIdentity typed) node
 
 
 -- Generated schema producers already carry these exact endpoint identities.
@@ -3628,7 +3627,7 @@ primitive kind = primitiveWith kind []
 
 primitiveWith : PrimitiveKind, List a → Schema a a
 primitiveWith kind witness =
-    typeId = resultIdentity witness
+    typeId = endpointIdentity witness
     declared Data.checked Data.checked typeId typeId (λ⊤ → nPrim kind)
         (Just (primitiveSlot kind))
         (Just (primitiveSlot kind))
@@ -3798,7 +3797,12 @@ compiledBox node workers = compiledBoxWith node workers [] []
 
 compiledBoxWith : Node, Workers e a, List e, List a → Schema e a
 compiledBoxWith node workers encoded typed =
-    declared Data.checked Data.checked (resultIdentity encoded) (resultIdentity typed) (λ⊤ → node)
+    declared
+        Data.checked
+        Data.checked
+        (endpointIdentity encoded)
+        (endpointIdentity typed)
+        (λ⊤ → node)
         workers.parse
         workers.print
         workers.args

@@ -13640,3 +13640,26 @@ test "Cloudflare workers corpus builds without test hooks" {
     }
     try testing.expect(count > 0);
 }
+
+test "Schema endpoint identities agree across imports and warm compiled and library builds" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    for ([_][]const u8{ "Main.beni", "Types.beni", "Factory.beni" }) |name| {
+        const path = try w.arena.allocator().print("tests/corpus/run/core/SchemaEndpointIdentity/{s}", .{name});
+        const contents = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, w.arena.allocator(), .limited(world.max_stream_bytes));
+        try w.write(name, contents);
+    }
+    for ([_][]const []const u8{ &.{}, &.{"--release"}, &.{"--schema-library"}, &.{ "--schema-library", "--release" } }) |mode| {
+        for (0..2) |pass| {
+            var args: std.ArrayList([]const u8) = .empty;
+            defer args.deinit(w.arena.allocator());
+            try args.appendSlice(w.arena.allocator(), &.{ "build", "--core", "--platform=node", "--roundtrip-dispatch", "--out=out", if (pass == 0) "--jobs=1" else "--jobs=8" });
+            try args.appendSlice(w.arena.allocator(), mode);
+            try args.appendSlice(w.arena.allocator(), &.{ "Main.beni", "Types.beni", "Factory.beni" });
+            const built = try w.run(args.items);
+            try expectBuilt(built);
+            try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+            try w.expectProgram("out/_main.mjs", .{ .stdout = "42/43\n42/43\n3/3,4\n3/3,4\n" });
+        }
+    }
+}

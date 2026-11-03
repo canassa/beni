@@ -13,4 +13,3 @@ export const unpack = (type, box) => {
   if (packetType !== undefined) return packetType === type ? { $: "Just", a: box } : { $: "Nothing", a: null };
   return box.type === type ? { $: "Just", a: box.value } : { $: "Nothing", a: null };
 };
-export const fingerprint = (box) => box.type;

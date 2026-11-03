@@ -1,0 +1,14 @@
+-- Endpoint identities are private release ids, including source-built schemas.
+import Schema exposing (Schema)
+
+
+pub reverse : Schema e a → Schema a e
+reverse schema = Schema.flip schema
+
+
+pub integer : Schema Int Int
+integer = reverse Schema.int
+
+
+pub strings : Schema (List String) (List String)
+strings = reverse (Schema.list Schema.string)

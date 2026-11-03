@@ -2345,6 +2345,7 @@ const Emitter = struct {
     // ---- boundary.md §4, checks 2, 3 and 4 --------------------------------
 
     fn compilerOwnedJs(e: *Emitter, m: Graph.Index, d: Bir.Decl) bool {
+        if (e.graph().modulePackage(m) == .core and std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Schema") and std.mem.eql(u8, e.session.interner.slice(e.bir(m).symbol(d.name)), "endpointIdentity")) return true;
         if (e.graph().modulePackage(m) != .core or (!std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Js") and !std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Js.Array"))) return false;
         const which = std.meta.stringToEnum(@import("JsIntrinsic.zig").Which, e.session.interner.slice(e.bir(m).symbol(d.name))) orelse return false;
         return @import("JsIntrinsic.zig").compilerOnly(which);
@@ -7606,6 +7607,11 @@ const Emitter = struct {
         // Worker target paths remain symbolic until final artifact printing (#1627).
         const token = e.session.profile.begin();
         defer e.session.profile.end(0, token, .specialise, 0, 0);
+        var identity_modules: std.ArrayList(*JsIr) = .empty;
+        for (todo) |i| if (slots[i].lowered) |*lowered| {
+            if (lowered.diagnostics.len == 0) try identity_modules.append(e.scratch, &lowered.ir);
+        };
+        try @import("PrivateIdentities.zig").compact(e.gpa, e.scratch, identity_modules.items);
         var ids: std.AutoHashMapUnmanaged(Rename.Globals.Key, u32) = .empty;
         // Property names, by text: a key or a member's name is a plain name
         // of its module, possibly in the module's overlay.

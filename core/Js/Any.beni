@@ -9,6 +9,3 @@ pub foreign pure pack : escaped a → fresh Any
 
 -- The compiler supplies the requested a's identity before this can read it.
 pub foreign pure unpack : borrowed Any → Maybe a
-
-
-pub foreign pure fingerprint : borrowed Any → String

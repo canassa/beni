@@ -1,0 +1,3 @@
+-- A generated producer whose two endpoint types differ after instantiation.
+pub schema Payload item =
+    value : item

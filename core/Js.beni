@@ -306,7 +306,8 @@ pub foreign pure maySuspend : f → bool
 
 
 --| The identity of `k`'s type: a string the compiler writes where this is
---| called, naming the type with its module and every argument, so two
+--| called. Development names the type with its module and every argument;
+--| release linking uses private atom ids in the same grammar. Thus two
 --| calls give equal strings exactly when their types are one. Where `k` is
 --| a type variable, the string is built from the identity the declaration's
 --| own callers hand it, which the compiler supplies with nothing written.

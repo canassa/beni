@@ -225,14 +225,16 @@ records containing callbacks with different suspension behavior.
 
 Schema uses the same Any envelope internally for heterogeneous traversal data;
 its reported Issue.input still comes only from the checked data conversion.
-Generic schema values retain both endpoint identities. Source builders witness
-those identities with empty typed lists, and generated producers derive the
-same deterministic identity grammar from checked plan types and supplied
-schema arguments. This is private metadata, not a new schema member argument
-or public constraint. Compiled workers keep their exact input/output types and
-return Maybe at the storage boundary. Generated adapters translate the
-specialised traversal's failure marker. Validator reader and constructor
-configuration is typed; only statically proven plain data crosses Js.Value.
+Generic schema values retain both endpoint identities. The compiler supplies
+checked identity demands to the engine-owned source builders, through their
+private endpoint witness, just as it does for Any.pack. Generated producers use
+the same checked endpoint grammar. No identity is recovered by packing a dummy
+value or inspecting identity text; Any has only pack and unpack. Checked demands
+are cached, while release linking assigns deterministic private atom ids after
+cached lowering, without module/type-name strings. Compiled workers retain exact
+input/output types and return Js.Opt directly; no per-call Just adapter is needed.
+Validator reader and constructor configuration is typed; only statically proven
+plain data crosses Js.Value.
 
 **Owner decision, 2026-11-02:** Debug uses a borrowed read-only inspection
 view, Raw, rather than converting arbitrary values to Js.Value. Raw is

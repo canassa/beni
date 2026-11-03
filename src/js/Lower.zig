@@ -1753,6 +1753,13 @@ pub const Lowerer = struct {
         return l.add(.string, p, offset, len);
     }
 
+    /// Identity text is private metadata. Release linking replaces its atoms.
+    pub fn identityString(l: *Lowerer, bytes: []const u8, p: u32) !Node.Index {
+        const value = try l.stringNode(bytes, p);
+        l.b.markIdentity(value);
+        return value;
+    }
+
     pub fn numberNode(l: *Lowerer, bytes: []const u8, p: u32) !Node.Index {
         const offset, const len = try l.b.addString(bytes);
         return l.add(.number, p, offset, len);
@@ -3492,6 +3499,7 @@ pub const Lowerer = struct {
     }
 
     fn typedIntrinsicDecl(l: *Lowerer, decl: Bir.Decl) ?JsIntrinsic.Which {
+        if (l.in.graph.modulePackage(l.in.module) == .core and std.mem.eql(u8, l.text(l.module_name), "Schema") and std.mem.eql(u8, l.text(l.bir.symbol(decl.name)), "endpointIdentity")) return .schemaIdentity;
         if (l.in.graph.modulePackage(l.in.module) != .core or (!std.mem.eql(u8, l.text(l.module_name), "Js") and !std.mem.eql(u8, l.text(l.module_name), "Js.Array"))) return null;
         const which = std.meta.stringToEnum(JsIntrinsic.Which, l.text(l.bir.symbol(decl.name))) orelse return null;
         return if (JsIntrinsic.compilerOnly(which)) which else null;
@@ -8271,7 +8279,7 @@ pub const Lowerer = struct {
         var out: ?Node.Index = null;
         for (parts) |part| {
             const value = switch (d.term(part)) {
-                .text => |r| try l.stringNode(d.textOf(r), p),
+                .text => |r| try l.identityString(d.textOf(r), p),
                 .param => try l.termName(d.term(part), p),
                 else => {
                     try l.reportEvidenceShape(l.region);
@@ -11070,7 +11078,7 @@ pub const Lowerer = struct {
             // `Js.fingerprint x` is the identity its site carries, the last
             // root (`backend.md` §4, *`Js.fingerprint` is its type's
             // identity*); `x` is evaluated for what it does.
-            if (which == .fingerprint) {
+            if (which == .fingerprint or which == .schemaIdentity) {
                 for (arg_insts) |a| try l.discard(out, a, p);
                 if (roots.len == 0 or l.in.dispatch.term(roots[roots.len - 1]) != .identity) {
                     try l.reportEvidenceShape(inst);
@@ -11807,7 +11815,7 @@ pub const Lowerer = struct {
     fn jsTypedValue(l: *Lowerer, which: JsIntrinsic.Which, p: u32) !Node.Index {
         const arity: usize = switch (which) {
             .optMatch, .arraySet => 3,
-            .optWithDefault, .arrayDone => 2,
+            .schemaIdentity, .optWithDefault, .arrayDone => 2,
             else => 1,
         };
         var names: [3]JsIr.NameIndex = undefined;
@@ -11824,6 +11832,7 @@ pub const Lowerer = struct {
             return l.arrowOf(names[0..arity], body.items, p);
         }
         const result = switch (which) {
+            .schemaIdentity => values[0],
             .cell => try l.object(&.{try l.add(.spread_property, p, values[0].int(), Node.Data.unused)}, p),
             .some => values[0],
             .none => try l.optNone(p),
@@ -12045,8 +12054,7 @@ pub const Lowerer = struct {
             // Answered at the call, before it gets here (`callExpr`).
             W.maySuspend => l.add(.true_lit, p, Node.Data.unused, Node.Data.unused),
             // Answered at the call, from its site (`callExpr`).
-            W.any_fingerprint => l.member(v[0], try l.interner.getOrPut(l.gpa, "type"), p),
-            W.any_pack, W.any_unpack, W.fingerprint => l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+            W.any_pack, W.any_unpack, W.fingerprint, W.schemaIdentity => l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
             W.throw => blk: {
                 try out.append(l.scratch, try l.add(.throw_stmt, p, v[0].int(), Node.Data.unused));
                 break :blk l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);

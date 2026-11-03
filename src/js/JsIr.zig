@@ -102,7 +102,7 @@ pub const Node = struct {
     /// `Suspend`'s loop-mode copy of a tail-call loop's rest).
     flags: Flags = .{},
 
-    pub const Flags = packed struct(u8) { host: bool = false, cell: bool = false, _pad: u6 = 0 };
+    pub const Flags = packed struct(u8) { host: bool = false, cell: bool = false, identity: bool = false, _pad: u5 = 0 };
 
     /// Meaning depends on `tag`; see `Tag`. Unused halves are zero.
     pub const Data = struct {
@@ -1405,6 +1405,7 @@ pub const Builder = struct {
         const index = try b.addParts(node.tag, node.pos, node.data.lhs, node.data.rhs);
         if (node.flags.host) b.markHost(index);
         if (node.flags.cell) b.markCell(index);
+        if (node.flags.identity) b.markIdentity(index);
         return index;
     }
 
@@ -1413,6 +1414,12 @@ pub const Builder = struct {
         std.debug.assert(b.tagOf(node) == .call);
         const flags: [*]Node.Flags = @ptrCast(b.cols.ptrs[@backingInt(NodeList.Field.flags)]);
         flags[node.int()].host = true;
+    }
+
+    pub fn markIdentity(b: *Builder, node: Node.Index) void {
+        std.debug.assert(b.tagOf(node) == .string);
+        const flags: [*]Node.Flags = @ptrCast(b.cols.ptrs[@backingInt(NodeList.Field.flags)]);
+        flags[node.int()].identity = true;
     }
 
     pub fn markCell(b: *Builder, node: Node.Index) void {

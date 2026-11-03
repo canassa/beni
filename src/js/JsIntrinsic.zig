@@ -116,7 +116,7 @@ pub const Which = enum {
     fingerprint,
     any_pack,
     any_unpack,
-    any_fingerprint,
+    schemaIdentity,
 };
 
 /// Whether `inst` is a `case` on `Js.development` or on `Js.testHooks` —
@@ -267,9 +267,9 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
     if (same(module_name, "Js.Any")) {
         if (same(name, "pack")) return .any_pack;
         if (same(name, "unpack")) return .any_unpack;
-        if (same(name, "fingerprint")) return .any_fingerprint;
         return null;
     }
+    if (same(module_name, "Schema")) return if (same(name, "endpointIdentity")) .schemaIdentity else null;
     if (same(module_name, "Js.Array")) {
         const which = std.meta.stringToEnum(Which, name) orelse return null;
         return switch (which) {
@@ -286,7 +286,7 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
 /// does not change the sibling copied by an existing development program.
 pub fn compilerOnly(which: Which) bool {
     return switch (which) {
-        .arrayAllocate, .arraySet, .arrayDone, .optNone, .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
+        .schemaIdentity, .arrayAllocate, .arraySet, .arrayDone, .optNone, .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
         else => false,
     };
 }

@@ -430,6 +430,7 @@ fn identityPrimitive(cx: *const Context, name: []const u8) bool {
     if (cx.graph.modulePackage(cx.module) != .core) return false;
     const module = cx.interner.slice(cx.graph.moduleName(cx.module));
     return (std.mem.eql(u8, module, "Js") and std.mem.eql(u8, name, "fingerprint")) or
+        (std.mem.eql(u8, module, "Schema") and std.mem.eql(u8, name, "endpointIdentity")) or
         ((std.mem.eql(u8, module, "Js.Any") and (std.mem.eql(u8, name, "pack") or std.mem.eql(u8, name, "unpack"))) or
             (std.mem.eql(u8, module, "Js.Data") and std.mem.eql(u8, name, "checkedGraph")));
 }
@@ -439,7 +440,7 @@ pub fn run(in: Input) Error!Result {
     const gpa = cx.gpa;
     const scratch = cx.scratch;
     const bir = cx.bir;
-    const general = in.uses.len != 0 or (cx.graph.modulePackage(cx.module) == .core and (std.mem.eql(u8, cx.interner.slice(cx.graph.moduleName(cx.module)), "Js.Any") or std.mem.eql(u8, cx.interner.slice(cx.graph.moduleName(cx.module)), "Js.Data")));
+    const general = in.uses.len != 0 or (cx.graph.modulePackage(cx.module) == .core and (std.mem.eql(u8, cx.interner.slice(cx.graph.moduleName(cx.module)), "Schema") or std.mem.eql(u8, cx.interner.slice(cx.graph.moduleName(cx.module)), "Js.Any") or std.mem.eql(u8, cx.interner.slice(cx.graph.moduleName(cx.module)), "Js.Data")));
     const quantifiers = if (general) try quantifiedBinders(in) else Quantified{};
     if (general) try prepareSlots(in, quantifiers);
     const slots = in.out.slots;

@@ -2754,6 +2754,15 @@ An identity parameter is an ordinary parameter after the evidence (`$m$<n>`); no
 document changes for it. A declaration whose every call passes one literal has the parameter folded
 away under `--release` by whole-program specialisation (Â§9).
 
+*Amended 2026-11-03:* compiler identity literals carry a private JsIr flag.
+Before release specialisation, `PrivateIdentities` collects their complete
+atoms, sorts them by text and substitutes injective short ids across the build.
+Structural punctuation and generic identity parameters retain the same grammar.
+Ordinary strings are untouched. Numbering happens after cached lowering; checked
+identity demands, including Schema endpoint demands, remain in the dispatch cache
+under the compiler key. No build-specific ordinal is persisted in checked
+artifacts, and no module or type names from identities ship in release output.
+
 ### `Debug.toString` reads the argument's type
 
 *Added 2026-10-02* (specified with `language.md` Appendix B and `checker-v2.md` Â§32, before the

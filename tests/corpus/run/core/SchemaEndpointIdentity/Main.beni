@@ -1,0 +1,50 @@
+-- Source/generated identities agree across imports and all engine directions.
+import Factory
+import Node
+import Schema exposing (Schema)
+import Types
+
+
+exercise : Schema (Types.Payload.Encoded String) (Types.Payload.Type Int) → String
+exercise schema =
+    decoded =
+        case Schema.decode schema { value = "42" } of
+            Ok row →
+                String.fromInt row.value
+            Err _ →
+                "decode failed"
+    encoded =
+        case Schema.encode schema { value = 43 } of
+            Ok row →
+                row.value
+            Err _ →
+                "encode failed"
+    decoded ++ "/" ++ encoded
+
+
+exerciseList : Schema (List (Types.Payload.Encoded String)) (List (Types.Payload.Type Int)) → String
+exerciseList schema =
+    decoded =
+        case Schema.decode schema [ { value = "1" }, { value = "2" } ] of
+            Ok rows →
+                String.fromInt (List.sum (List.map rows .value))
+            Err _ →
+                "list decode failed"
+    encoded =
+        case Schema.encode schema [ { value = 3 }, { value = 4 } ] of
+            Ok rows →
+                String.join (List.map rows .value) ","
+            Err _ →
+                "list encode failed"
+    decoded ++ "/" ++ encoded
+
+
+main : Node.Program
+main =
+    generated = Types.Payload.schema Factory.decimal
+    Node.printLines
+        [ exercise generated
+        , exercise (Factory.interpreted generated)
+        , exerciseList (Factory.repeated generated)
+        , exerciseList (Factory.interpreted (Factory.repeated generated))
+        ]

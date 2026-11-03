@@ -1,0 +1,25 @@
+-- Imported generic builders retain checked endpoint evidence through both engines.
+import Schema exposing (Schema)
+
+
+pub decimal : Schema String Int
+decimal =
+    Schema.converted Schema.string
+        (Schema.conversion
+            (λtext →
+                case String.toInt text of
+                    Just value →
+                        Ok value
+                    Nothing →
+                        Err [ Schema.issue "expected integer" ]
+            )
+            λvalue → Ok (String.fromInt value)
+        )
+
+
+pub interpreted : Schema e a → Schema e a
+interpreted schema = Schema.flip (Schema.flip schema)
+
+
+pub repeated : Schema e a → Schema (List e) (List a)
+repeated schema = Schema.list schema

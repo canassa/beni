@@ -830,7 +830,8 @@ comparisons are operators*).
 
 **`fingerprint : k, order → name where k.compare : k, k → order`** (pure, 2026-10-02, the owner's
 decision on keys, §9.8.3) is **the identity of `k`'s type**: a string the compiler writes at the
-call, naming the type with its module, its package and every argument, equal at two calls exactly
+call, naming the type with its module, its package and every argument in development. Release
+linking substitutes deterministic private atom ids in the same grammar. It is equal at two calls exactly
 when the two types are one (`static-dispatch-spike.md` §8.6). `name` is a `String` and `order` an
 `Order`, each a type variable because this module names no core type: the second argument is any
 `Order` — `Js.fingerprint k EQ` — and only says what `compare` answers, since a `where` clause may
