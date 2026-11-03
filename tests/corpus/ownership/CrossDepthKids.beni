@@ -140,9 +140,6 @@ incA a =
             A (incBs bs)
 
 
--- The group walks past the default growth allowance (#1372): 79 297 and
--- 75 940 growth in 12 and 11 walks, raised here by a tenth.
-@ownership_summary_size(88000)
 incBs : List B → List B
 incBs bs =
     case bs of
@@ -153,7 +150,6 @@ incBs bs =
             []
 
 
-@ownership_summary_size(88000)
 incAs : List A → List A
 incAs xs =
     case xs of
