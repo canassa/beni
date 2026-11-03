@@ -1423,7 +1423,7 @@ package that declares `"runtime"`:
 
 | Field | Is | Checked |
 |---|---|---|
-| `module` | a beni module of the package that declares `runtime`, whose `pub` values stand in for runtime exports | when `lowering` is checked: a name that is no module of that package is `foreign_sibling_missing` against the manifest; one of another package is the exit-2 `markup_split` failure `lowering` and `runtime` already have |
+| `module` | a beni module of the package that declares `runtime`, whose `pub` values stand in for runtime exports | when `lowering` is checked: a name that is no module of that package is `foreign_sibling_missing` against the manifest; one of another package is the exit-2 `markup_split` failure `lowering` and `runtime` already have. *Amended 2026-11-03* (#1810): `module` is read from the package that declares the chain's first `lowering`, so a lower package's `module` is shadowed with its `lowering` and `runtime` — a platform over `node` that names `ssr` with a `runtime` file of its own sees nothing of `node`'s `Rt` (`build/bad/MarkupRuntimeArity`) |
 
 - **Which exports it supplies.** Every name of §9.4.5's union — a lowering's declared export, one
   per markup primitive of the vocabulary, and `run` when the markup runtime is also the program

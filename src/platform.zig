@@ -105,6 +105,17 @@ pub const Chain = struct {
         return null;
     }
 
+    /// The runtime module of the package that declares the chain's first
+    /// `lowering`, or null: a lower package's `module` is shadowed with its
+    /// `lowering` and `runtime` (§9.2, amended 2026-11-03, #1810), as a
+    /// platform over `node` that names `ssr` with a file of its own sees
+    /// nothing of `node`'s `Rt`.
+    pub fn loweringModule(chain: *const Chain) ?Found {
+        const lowering = chain.firstMarkup("lowering") orelse return null;
+        const value = chain.layers[lowering.layer].manifest.markup.module orelse return null;
+        return .{ .value = value, .layer = lowering.layer };
+    }
+
     /// As `first`, for one field of `"markup"` (§9.2).
     pub fn firstMarkup(chain: *const Chain, comptime field: []const u8) ?Found {
         for (chain.layers, 0..) |layer, i| {
@@ -216,18 +227,9 @@ pub fn resolveChainIn(
             .lowering = chain.layers[lowering.layer].name,
             .runtime = chain.layers[runtime.layer].name,
         } });
-        // The runtime module is the runtime's other half, of its package.
-        if (chain.firstMarkup("module")) |module| if (module.layer != runtime.layer) return r.fail(.{ .markup_split = .{
-            .lowering = chain.layers[lowering.layer].name,
-            .runtime = chain.layers[module.layer].name,
-        } });
-    } else if (chain.firstMarkup("module")) |module| {
-        // No runtime file: the runtime module is the whole runtime, and it
-        // too is written for the lowering (§9.2, amended 2026-10-02).
-        if (lowering.layer != module.layer) return r.fail(.{ .markup_split = .{
-            .lowering = chain.layers[lowering.layer].name,
-            .runtime = chain.layers[module.layer].name,
-        } });
+        // The runtime module is the runtime's other half, of its package:
+        // `loweringModule` reads it from the lowering's package alone, so
+        // a lower package's module cannot split the pair.
     };
     return chain;
 }
@@ -455,7 +457,7 @@ pub fn load(arena: Allocator, session: *Session, chain: *const Chain, needs_prog
     // A chain whose runtime module is the whole runtime names no file
     // (`boundary.md` §5.2, amended 2026-10-02): the module's `run` is what
     // the entry file hands `main` to, held to that by `Emit`.
-    const module_runtime = chain.firstMarkup("lowering") != null and chain.firstMarkup("module") != null;
+    const module_runtime = chain.loweringModule() != null;
     if (needs_program and (program == null or (runtime == null and !module_runtime))) return error.Incomplete;
     const entry = chain.first("entry");
     const html = chain.first("html");
@@ -484,7 +486,7 @@ pub fn load(arena: Allocator, session: *Session, chain: *const Chain, needs_prog
             .lowering_root = if (lowering) |l| chain.layers[l.layer].root else chain.top().root,
             .markup_runtime = if (markup_runtime) |r| r.value else null,
             .markup_runtime_dir = if (markup_runtime) |r| chain.layers[r.layer].out_dir else Emit.platform_dir,
-            .markup_module = if (chain.firstMarkup("module")) |m| m.value else null,
+            .markup_module = if (chain.loweringModule()) |m| m.value else null,
             .html = if (html) |h| h.value else null,
             .html_root = if (html) |h| chain.layers[h.layer].root else chain.top().root,
             .exports = if (exports) |x| x.decl else .none,
