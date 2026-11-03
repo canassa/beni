@@ -677,7 +677,8 @@ dictionary forms in the flat fragment.
 - `DictFree` (`Support.lean`). `FlatType.list t` and `FlatType.dict t` ask
   `DictFree t`: a list element and a dictionary's value hold no dictionary.
   A record or a result can hold one. No type that the fragment admitted
-  before leaves it. `FlatANF0` gets `dictEmpty t` (with `DictFree t`),
+  before leaves it. A list of dictionaries and a dictionary of dictionaries
+  stay outside the fragment (#522). `FlatANF0` gets `dictEmpty t` (with `DictFree t`),
   `dictInsert`, `dictRemove`, `dictGet` and `dictSize`; `literal t` also asks
   `DictFree t`.
 - `FlatInvariant` keeps its static clauses at the source type and states its

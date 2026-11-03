@@ -289,7 +289,10 @@ def captureTypes (ds : List Decl) (id : Nat) : List Ty :=
 /-- The concrete path of the abstract path `q` of a value of type `t`: a
     dictionary's element step is the element step and then field 1, the
     entry's value. List elements, record fields and result slots follow the
-    type. Every other step is the same step. -/
+    type. Every other step is the same step. The clauses apply it only to a
+    canonical path (`canonicalPath`), which has no capture step:
+    `canonicalInput` makes a function input symbolic, with the paths `[]` and
+    `[.env]`, and refuses a function below an input path. -/
 def entryPath : Ty → Path → Path
   | .dict t, .element :: rest => .element :: .field 1 :: entryPath t rest
   | .list t, .element :: rest => .element :: entryPath t rest
@@ -344,11 +347,15 @@ theorem fieldType_nil (t : Ty) : fieldType t [] = t := by
   cases t <;> rfl
 
 /-- The types of a declaration's inputs, its parameters and then its
-    captures, as `inputOrigin` numbers them. -/
+    captures, as `inputOrigin` numbers them. An unknown declaration has no
+    input types; the theorems use it only at an entry of the published
+    summary, whose `argsLength` and `capsLength` tie `e.decl` to a
+    declaration and its inputs. -/
 def inputTypes (ds : List Decl) (id : Nat) : List Ty :=
   ((ds[id]?).map fun d => d.parameters ++ d.captures).getD []
 
-/-- The result type of a declaration. -/
+/-- The result type of a declaration; `Int` for an unknown declaration,
+    which the theorems do not meet (`inputTypes`). -/
 def resultType (ds : List Decl) (id : Nat) : Ty :=
   ((ds[id]?).map (·.result)).getD .int
 
@@ -431,7 +438,11 @@ def keptReaches (s : State) (c : Nat) : Prop := ∃ k ∈ s.kept.toList, Reaches
     The inputs have the types `tys` and the result has the type `rty`. A
     canonical path is an abstract path, so the clauses read it on the heap
     through `entryPath`, and the result's abstract through `entryAbstract`
-    (#1796): a dictionary's value is field 1 of its entry. -/
+    (#1796): a dictionary's value is field 1 of its entry. `tys` has one type
+    per input: a missing type reads as `Int`, whose path and abstract are the
+    identity, so a caller must pass every type. `summary_sound` and
+    `map_summary_sound` pass `inputTypes`, one type per parameter and capture
+    of the declaration. -/
 structure CallSound (ds : List Decl) (s : Summary) (ins : List Abstract) (tys : List Ty) (rty : Ty)
     (inputs : List Value) (nargs : Nat) (pre post : State) (r : Value) : Prop where
   /-- 1. An input array changed by the call is at a `W` path, or is in the
@@ -534,7 +545,8 @@ def WritePermitted (s : Summary) (nargs i : Nat) (q : Path) : Prop :=
     share origins. Storage no input reaches is
     unconstrained, so a read-only split such as `readBoth(rest, xs)` stays
     inside the theorem. The canonical paths are read on the heap through the
-    inputs' types `tys` (`entryPath`, #1796). -/
+    inputs' types `tys` (`entryPath`, #1796), one type per input, as in
+    `CallSound`. -/
 def LinkedWritesCovered (s : Summary) (ins : List Abstract) (tys : List Ty) (inputs : List Value)
     (nargs : Nat) (pre : State) : Prop :=
   ∀ i q c, canonicalPath ins i q →
