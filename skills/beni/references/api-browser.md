@@ -152,8 +152,8 @@ module Hosted
   value mapJob : Job a, (a → b) → Job b
   value mapLater : Later a, (a → b) → Later b
   value mapTap : Tap a, (a → b) → Tap b
-  value outlet : Host msg → Outlet msg
-  value relay : Host msg, Tap msg → Relay msg
+  value outlet : Host msg → Outlet msg  -- impure
+  value relay : Host msg, Tap msg → Relay msg  -- impure
   value retap : Relay msg, List (Tap msg) → ⊤  -- impure
   value run : Relay msg → ⊤  -- impure
   value runHeard : Relay msg → ⊤  -- suspends

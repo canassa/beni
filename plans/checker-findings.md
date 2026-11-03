@@ -6718,3 +6718,13 @@ fixture uses a scope the checker cannot identify.
 --stage=ownership` recurse without end (`instCb` → `passOn`) and die of a stack overflow; `check`
 passes. R-7.12: every input ends in a report or `ownership_limit`. The golden is the report of the same
 program with the lambda named (`twice f x`); the slice that turns it green blesses the real one.
+
+## CK-317 — platform callback and native erasure remains accepted during HostFree rollout (2026-11-03)
+
+**Issue:** #1295. **Fixture:** `tests/pending/build/bad/CloudflareHostErasure`.
+HostFree is deliberately off on `workers-hostfree` until the storage families
+are migrated. The fixture authors a platform and erases a callback and an
+opaque server-socket handle directly, in records/lists/unions and through a
+generic helper. The scratch HostFree compiler reports six `host_value_erasure`
+diagnostics and writes no output. The default compiler still builds it; promote
+the fixture when HostFree is enabled by default.

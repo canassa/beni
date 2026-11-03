@@ -1,0 +1,44 @@
+-- A platform's opaque server-socket handle must never enter Js.Value.
+import Js
+
+
+pub foreign type Socket
+
+
+pub opaque type Program
+    = Program
+
+
+pub done : Program
+done = Program
+
+
+pub callback : Js.Value
+callback = Js.from λvalue → value + 1
+
+
+pub native : Socket → Js.Value
+native socket = Js.from socket
+
+
+pub nestedRecord : Socket → Js.Value
+nestedRecord socket = Js.from { kept = [ socket ] }
+
+
+type Envelope a
+    = Envelope a
+
+
+pub nestedUnion : Socket → Js.Value
+nestedUnion socket = Js.from (Envelope socket)
+
+
+pub erase value = Js.from { kept = value }
+
+
+pub throughGeneric : Socket → Js.Value
+throughGeneric socket = erase socket
+
+
+pub nestedCallback : Js.Value
+nestedCallback = Js.from [ { run = λ⊤ → 42 } ]

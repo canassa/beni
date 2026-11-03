@@ -18,29 +18,31 @@ module WebSocket
   type CloseError
     InvalidCode
     ReasonTooLong
-  type Socket
+  opaque type Socket
   type WriteError
     NotOpen
   value attach : Socket, (Schema e a), a → Result AttachError ⊤  -- impure
   value attachment : Socket, (Schema e a) → Result (List Issue) (Maybe a)  -- impure
   value close : Socket, Close → Result CloseError ⊤  -- impure
   value eq : Socket, Socket → Bool
+  value fromNative : Socket → Socket
   value id : Socket → String  -- impure
   value protocol : Socket → String  -- impure
   value tags : Socket → List String  -- impure
+  value toNative : Socket → Socket
   value write : Socket, String → Result WriteError ⊤  -- impure
 module Worker
-  type Context
-  type Definition
-  type Env
+  opaque type Context
+  alias Definition
+  opaque type Env
   type IdError
     InvalidId
-  type Namespace a
-  type Program
-  type Ref a
-  type Request
+  opaque type Namespace a
+  alias Program
+  opaque type Ref a
+  opaque type Request
   opaque type Response
-  type Service
+  opaque type Service
   type ServiceError
     Unavailable
   type StubError
@@ -48,28 +50,43 @@ module Worker
     Reset
     Transient
     Cycle
-  value byId : Namespace msg, String → Result IdError (Ref msg)  -- impure
-  value byName : Namespace msg, String → Ref msg  -- impure
+  value byId : (Namespace msg), String → Result IdError (Ref msg)  -- impure
+  value byName : (Namespace msg), String → (Ref msg)  -- impure
   value callService : Service, Request → Result ServiceError Response  -- suspends
+  value chainNow : ⊤ → String  -- impure
   value empty : Int → Response  -- impure
-  value env : Context → Env  -- impure
+  value env : Context → Env
   value forward : Ref msg, Request → Result StubError Response  -- suspends
+  value fromHost : Response → Response
   value header : Request, String → Maybe String  -- impure
   value headers : Request → List (String × String)  -- impure
+  value hostRequest : Request → Request
+  value hostResponse : Response → Response
   value html : Int, String → Response  -- impure
+  value makeRequest : Request → Request
   value method : Request → String  -- impure
-  value objects : Env, String, Schema e msg → Maybe (Namespace msg)  -- impure
+  value nativeEnv : Env → Env
+  value objects : Env, String, (Schema e msg) → Maybe (Namespace msg)  -- impure
   value path : Request → String  -- impure
-  value program : { fetch : Context, Request → Response, objects : List Definition } → Program  -- impure
+  value printRef : (Ref msg), msg → Result (List Issue) String
+  value program : { fetch : (Context), Request → Response, objects : List Definition } → Program  -- impure
   value redirect : Request, String, Int → Response  -- impure
-  value refId : Ref msg → String  -- impure
-  value refName : Ref msg → Maybe String  -- impure
+  value refId : Ref msg → String
+  value refName : Ref msg → Maybe String
+  value refPost : Ref msg → Maybe (msg → ⊤)
+  value refStub : Ref msg → Maybe Stub
+  value requestBody : Request → String
+  value requestWithBody : Request, String → Request
+  value selfRef : String, Maybe String, (msg → Result (List Issue) String), (msg → ⊤) → Ref msg
   value service : Env, String → Maybe Service  -- impure
+  value setDraining : Maybe (⊤ → Maybe String) → ⊤  -- impure
+  value settleHost : Promise a → Result Rejection a  -- suspends
   value text : Int, String → Response  -- impure
-  value unique : Namespace msg → Ref msg  -- impure
+  value unique : (Namespace msg) → (Ref msg)  -- impure
   value url : Request → String  -- impure
   value var : Env, String → Maybe String  -- impure
   value withHeader : Response, String, String → Response  -- impure
+  value wrapEnv : Env → Env
 module Worker.Object
   type AcceptError
     NotAnUpgrade
@@ -87,28 +104,30 @@ module Worker.Object
   type AutoReplyError
     RequestTooLarge
     ResponseTooLarge
-  type Context a
+  alias Context a
   alias Handlers a b
     Handlers
   alias Ref a
-  type Reply a
+  opaque type Reply a
   value accept : Context msg, Request, List String → Result AcceptError (Socket × Response)  -- impure
   value acceptWith : Context msg, Request, { protocol : Maybe String, tags : List String } → Result AcceptError (Socket × Response)  -- impure
   value alarmAt : Context msg, Int → ⊤  -- impure
   value alarmIn : Context msg, Duration → ⊤  -- impure
-  value ask : Ref msg, (Schema e a), (Reply a → msg) → Result AskError a  -- suspends
+  value ask : (Ref msg), (Schema e a), ((Reply a) → msg) → Result AskError a  -- suspends
   value autoReply : Context msg, String, String → Result AutoReplyError ⊤  -- impure
-  value body : Request → String  -- impure
+  value body : Request → String
   value cancelAlarm : Context msg → ⊤  -- impure
-  value define : String, Schema e msg, (Context msg → state), { alarm : Context msg, state → state, closed : Context msg, state, Socket, Close → state, failed : Context msg, state, Socket, String → state, message : Context msg, state, Socket, String → state, received : Context msg, state, msg → state, request : Context msg, state, Request → state × Response, tick : state → Maybe Duration, ticked : Context msg, state → state } → Definition
+  value define : String, (Schema e msg), (Context msg → state), { alarm : Context msg, state → state, closed : Context msg, state, Socket, Close → state, failed : Context msg, state, Socket, String → state, message : Context msg, state, Socket, String → state, received : Context msg, state, msg → state, request : Context msg, state, Request → state × Response, tick : state → Maybe Duration, ticked : Context msg, state → state } → Definition  -- impure
   value env : Context msg → Env  -- impure
+  value hostState : Context msg → ObjectState  -- impure
   value id : Context msg → String  -- impure
   value name : Context msg → Maybe String  -- impure
   value none : Handlers state msg
-  value post : Ref msg, msg → ⊤  -- impure
-  value reply : Reply a, a → ⊤  -- impure
-  value replySchema : Schema e a → (Schema String (Reply a))  -- impure
-  value self : Context msg → Ref msg  -- impure
+  value post : (Ref msg), msg → ⊤  -- impure
+  value reply : (Reply a), a → ⊤  -- impure
+  value replyIds : msg → List String
+  value replySchema : (Schema e a) → (Schema String (Reply a))  -- impure
+  value self : Context msg → (Ref msg)  -- impure
   value sockets : Context msg → List Socket  -- impure
   value socketsTagged : Context msg, String → List Socket  -- impure
 module Worker.Storage

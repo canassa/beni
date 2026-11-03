@@ -1,0 +1,6 @@
+-- Internal host bridges do not expose unchecked response/KV constructors.
+import Browser.Host.Cloudflare as Native
+
+
+pub raw : Native.Env → Native.Env
+raw value = value

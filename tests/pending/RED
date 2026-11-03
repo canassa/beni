@@ -348,3 +348,5 @@ scenario/TASK-NONE retained-runtime
 scenario/TASK-SYNC retained-runtime
 scenario/TASK-WAITS retained-runtime
 scenario/TASK-GUARDS retained-runtime
+
+tests/pending/build/bad/CloudflareHostErasure BuildDidNotFail

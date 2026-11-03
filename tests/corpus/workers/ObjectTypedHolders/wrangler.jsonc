@@ -1,0 +1,8 @@
+{
+  "name": "typed-reply-holders",
+  "main": "out/_worker.mjs",
+  "compatibility_date": "2026-05-18",
+  "vars": { "PREFIX": "typed" },
+  "durable_objects": { "bindings": [{ "name": "SCORERS", "class_name": "Scorer" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Scorer"] }]
+}

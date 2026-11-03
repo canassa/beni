@@ -1,0 +1,6 @@
+-- CK-317: platform callback/native erasure is refused once HostFree is on.
+import Test
+
+
+main : Test.Program
+main = Test.done

@@ -1,0 +1,1 @@
+{ "platform": true, "name": "cloudflare-hostfree-refusals", "program": "Test.Program", "entryHost": "serviceWorker", "runtime": "runtime.js" }

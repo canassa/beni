@@ -266,3 +266,36 @@ documented exception classes. Event data uses the shared checked graph
 conversion before reaching Js.Value; native error reasons remain Rejection.
 Adapter fixtures preserve unknown thrown identities and retained callback
 behavior in development and release.
+
+**Owner decisions, 2026-11-03 (Cloudflare):** Cloudflare's published
+`@cloudflare/workers-types` 5.20261102.1 is the pinned source for reviewed
+non-WebIDL native operations. Its tarball SHA-256 is
+`da7490189724147cf656ad1adfdb61f809ceccceeb13e02512b3920290dbd0ef`.
+Generated native handles retain bindings, execution/object contexts, namespaces,
+stubs, SQLite KV and sockets. Native Promise resolvers retain their payload
+and rejection types. Closed jobs and typed queues retain scheduler drains,
+mailbox events, request completions and handler state. Host export adapters
+retain the exact native callback signatures; platform logic remains beni.
+Only documented failures are mapped; unknown native rejections are raised
+unchanged.
+
+The platform-private reply-holder intrinsic derives a traversal from the
+message type, using the Wire plan's record, tuple, list and constructor
+positions. It collects the ids of actual `Worker.Object.Reply` handles,
+without converting a message to `Js.Value` or invoking a callback. Functions
+and native handles are leaves. Generic positions follow Wire's generic
+positions. A message type that cannot contain a Reply produces `[]` and no
+traversal. Only Cloudflare may call it. A queued self message holds exactly the
+Replies it contains; unrelated messages and Replies stored only in state do
+not postpone `NoReply`.
+Promise resolver constructors expose only the unit, string, plain-data and
+Response payloads used by this host protocol. A universal constructor or a
+map returning arbitrary `b` would be unsound for a thenable `b`: JavaScript
+adopts it instead of retaining it as the declared payload. The completion
+reaction returns unit; rejection reasons keep their native identity.
+
+Cloudflare Context uses a private parameterised carrier for its instance.
+The instance parameter preserves independent callback effect classes rather
+than merging synchronous host controls with suspendable handlers. Request jobs retain native Response resolvers; Ask entries retain native
+data resolvers. RPC, socket and alarm events keep their original pending
+promise until completion or the host abort, preserving the host Reset result.
