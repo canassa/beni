@@ -10112,6 +10112,64 @@ test "the checker v2 reads a chain of 400 calls at its end in records linear in 
     }
 }
 
+/// `chain`'s total in a v2 dump of a chain of n choices written inline:
+/// `x_k = if c then x_{k-1} else [ 1 ]`, or, `knots`, `x_k = if c then
+/// T [ x_{k-1} ] else t`. `x_n` holds the parameter `xs` (`zs` inside
+/// `x0 = L zs`), so a push of it while `x_n` is read after is refused.
+fn inlineChoiceChainTotal(w: *World, n: u32, knots: bool) !u64 {
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    if (knots) {
+        try src.appendSlice(a, "type T =\n    T (List T)\n    | L (List Int)\n\n\npub chain : Bool, T, List Int → Int\nchain c t xs =\n    x0 = L xs\n");
+        for (1..n + 1) |k| try src.print(a, "    x{d} = if c then T [ x{d} ] else t\n", .{ k, k - 1 });
+        try src.print(a, "    ys = List.push xs 1\n    List.length ys + String.length (Debug.toString x{d})\n", .{n});
+    } else {
+        try src.appendSlice(a, "pub chain : Bool, List Int → Int\nchain c xs =\n    x0 = xs\n");
+        for (1..n + 1) |k| try src.print(a, "    x{d} = if c then x{d} else [ 1 ]\n", .{ k, k - 1 });
+        try src.print(a, "    ys = List.push xs 1\n    List.length ys + List.length x{d}\n", .{n});
+    }
+    try w.write("Main.beni", src.items);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "\n  limit ") == null);
+    var want_buf: [96]u8 = undefined;
+    const want = try std.fmt.bufPrint(&want_buf, ":10 List.push xs: rejected alias: x{d}", .{n});
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, want) != null);
+    try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, "chain", "growth"));
+    return accountTotal(dump.stdout, "chain");
+}
+
+test "the checker v2 reads a chain of choices written inline in n log n" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.3.4 *Reading*, §2.11.2 (#1714): the call-free
+    // twins of the call chains above. Each use of `x_k` is read deep in the
+    // read-off's one pass, and every set node of `x_{k-1}` is under the
+    // wrap of `x_k`'s choice; a pass that read a wrapped node again at each
+    // use read all k leaves again, Σk. At four times the links, at most six
+    // times the records (n log n at most, never sixteen), with growth 0.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const sizes = [_]u32{ 16, 64, 256, 1_024 };
+    for ([_]bool{ false, true }) |knots| {
+        var cost: [sizes.len]u64 = undefined;
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        for (sizes, 0..) |n, i| cost[i] = try inlineChoiceChainTotal(&w, n, knots);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        for (1..sizes.len) |i| if (cost[i] > 6 * cost[i - 1]) {
+            std.debug.print("inline choice chain (knots {}): {any} records at {any}\n", .{ knots, cost, sizes });
+            return error.TestUnexpectedResult;
+        };
+    }
+}
+
 test "the checker v2 charges a callee's deep write path a few records a step at each call" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
