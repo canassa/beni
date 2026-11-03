@@ -2482,7 +2482,7 @@ fn entryBytes(session: *Session, gpa: Allocator, m: Graph.Index) Allocator.Error
     defer gpa.free(plan);
     // An artifact with no key at all is an empty section (checker-v2.md §36).
     const artifact = &session.checked.type_keys[m.int()];
-    const keys: []u8 = if (artifact.locals.len == 0 and artifact.insts.len == 0 and artifact.nodes.len == 0)
+    const keys: []u8 = if (artifact.locals.len == 0 and artifact.insts.len == 0 and artifact.nodes.len == 0 and artifact.wire.roots.len == 0 and artifact.wire.scans.len == 0)
         &.{}
     else
         try type_keys_bytes.write(gpa, artifact, &session.checked.types, &session.interner);
