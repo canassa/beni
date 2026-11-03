@@ -1568,7 +1568,7 @@ with no contract), stay `⊤`.
   `Js.set` (so the record escapes) and holds `Js.construct`'s `Set`: its result is `ε host`, not
   `ε fresh ⊤`, and the scope label's supply is apart from the lists the callback edits (`Control` 17:5,
   #1735). A spawned fiber's or a finaliser's hold on those lists is still refused at the edit (`escaped`).
-- **Text and block.** It prints `host`. The block's arrival kind 5 is `host` (block version 18).
+- **Text and block.** It prints `host`. The block's arrival kind 5 is `host` (block version 18 on its lineage; 19 once joined with the write trees, 2026-11-03).
 - **As built (2026-11-03).** `Host.zig` keeps the frame's escapes of its own objects and what the read-off
   said; `Rows`/`Groups` give a `foreign` the `host` result; `Distinct.overlapRaw`, `Holders` and
   `Resolve.judge` read the leaf. Ledger over every root: one position moves accepted → refused,
@@ -1819,7 +1819,7 @@ doubling literal over one list projected 2ᵏ paths onto the same list.
 - *As built (#1714, 2026-11-03).* `writes` are one tree a parameter, kept as the reads are (`Table.writesOf`,
   §2.10 *Effects as trees*): a plain mark writes its slot, an open one its slot and everything below. The
   summary prints them written out, an entry a slot, as the flat runs did; a block encodes them as the reads
-  (version 18). A reader that takes a write a slot at a time (a closure's captures, `once`, a write that
+  (version 18; 19 once joined with `host` arrivals and `fed` occurrences, 2026-11-03). A reader that takes a write a slot at a time (a closure's captures, `once`, a write that
   does not stop) writes the tree out (`Table.writesFlat`). `Graft.zig` (L8) holds the stop. Its demands are
   judged on **every** object of their routes, not on the least route alone: a subtree that writes every object
   below its slot (the test of *Stored selections fold exactly*, made on the write tree) is one target, the deep
