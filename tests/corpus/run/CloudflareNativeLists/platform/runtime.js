@@ -28,4 +28,25 @@ export const run = async (program) => {
     if (accepted.join(",") !== "one,two" || !Array.isArray(attachment.tags) || attachment.tags.join(",") !== "one,two" || attachment.id !== "id" || attachment.protocol !== "protocol" || attachment.data !== null) throw new Error(`${shape} tag reader changed`);
     console.log(`${shape} tags one,two`);
   }
+  const expectedTags = Array.from({ length: 41 }, (_, i) => String(i + 1));
+  let acceptedLarge, attachedLarge, protocolsLarge;
+  const largeSocket = { serializeAttachment(value) { attachedLarge = structuredClone(value); } };
+  const largeState = { acceptWebSocket(socket, tags) {
+    if (socket !== largeSocket) throw new Error("large socket identity changed");
+    acceptedLarge = tags.slice();
+  } };
+  const OriginalWebSocket = globalThis.WebSocket;
+  let large;
+  try {
+    globalThis.WebSocket = class { constructor(url, protocols) { protocolsLarge = protocols.slice(); } };
+    large = program.e({ name: "large" }, largeState, largeSocket);
+  } finally { globalThis.WebSocket = OriginalWebSocket; }
+  if (large.a.objects.length !== 41 || large.a.objects.some(item => item.name !== "large")) throw new Error("real trie definitions changed");
+  const response = large.b;
+  if (response.headers.get("x-repeat") !== Array(40).fill("1").join(", ") || response.headers.get("x-last") !== "41" || await response.text() !== "ok") throw new Error("real trie headers changed");
+  for (const tags of [acceptedLarge, attachedLarge.tags, protocolsLarge]) {
+    if (!Array.isArray(tags) || JSON.stringify(tags) !== JSON.stringify(expectedTags)) throw new Error("real trie tags/protocols changed");
+  }
+  if (large.c.$ !== "Just" || attachedLarge.id !== "id" || attachedLarge.protocol !== "protocol" || attachedLarge.data !== null) throw new Error("real trie attachment changed");
+  console.log("real trie definitions, headers, tags, protocols 41");
 };

@@ -1,5 +1,6 @@
 import Browser.Host.Cloudflare as Native
 import Browser.Host.Response as HostResponse
+import Browser.Host.WebSocket as WebSocket
 import Js.Protocol as Protocol
 
 
@@ -9,10 +10,15 @@ pub opaque type Program
         (List (String × String) → HostResponse.Response)
         (Native.ObjectState, Native.Socket, List String → ⊤)
         String
+        (Native.Definition
+         , Native.ObjectState
+         , Native.Socket
+         → Native.Program × HostResponse.Response × Maybe WebSocket.WebSocket
+        )
 
 
 pub program : String → Program
-program label = Program make makeResponse install label
+program label = Program make makeResponse install label large
 
 
 make : List Native.Definition → Native.Program
@@ -27,3 +33,17 @@ install : Native.ObjectState, Native.Socket, List String → ⊤
 install state socket tags =
     Native.acceptSocket state socket tags
     Native.socketInitialize socket "id" "protocol" tags
+
+
+-- A push beyond the small-array limit makes actual trie headers, including a tail.
+large :
+      Native.Definition
+    , Native.ObjectState
+    , Native.Socket
+    → Native.Program × HostResponse.Response × Maybe WebSocket.WebSocket
+large definition state socket =
+    definitions = List.push (List.repeat definition 40) definition
+    headers = List.push (List.repeat ( "x-repeat", "1" ) 40) ( "x-last", "41" )
+    tags = List.push (List.map (List.range 1 40) String.fromInt) "41"
+    install state socket tags
+    ( make definitions, makeResponse headers, WebSocket.tryCreate "wss://example.test/" tags )

@@ -1,0 +1,31 @@
+-- List.push at length40 crosses into the trie representation, not a mock view.
+-- The generic formatter exercises Debug's borrowed inspection reader.
+import Js
+import Js.Data as Data
+import Node
+
+
+showAny : a → String
+showAny value = Debug.toString value
+
+
+arrayOf : List Js.Value → Js.Value
+arrayOf = Js.array
+
+
+main : Node.Program
+main =
+    values = List.push (List.range 1 40) 41
+    checked =
+        case Data.checked values of
+            Just raw →
+                showAny raw
+            Nothing →
+                "not data"
+    Node.printLines
+        [ showAny values
+        , checked
+        , showAny (arrayOf (List.push (List.map (List.range 1 40) Js.from) (Js.from 41)))
+        , String.fromInt (List.sum values)
+        , String.fromInt (List.sum (List.drop values 32))
+        ]
