@@ -20,3 +20,13 @@ can have exactly the same shape. Wire rejects native Ref storage through
 instantiation, while reply discovery intentionally follows conservative Ref
 reachability. Reply-only nominal types must not pin Wire boundary encodings,
 and cached scan roots must survive even without ordinary type-key nodes.
+
+**Library emission follow-up**
+
+The platform pack maker lowers libraries without worker entry state. It now
+receives the same checked per-call reply plans as normal emission through a
+separate input. Missing plans and constructor information report diagnostics
+rather than aborting. The real pack maker rebuilding the reply fixture's
+Cloudflare platform reproduces the previous abort and passes with the fix.
+That regression is part of both `skill-api` and the gates; `skill-api` also
+successfully rebuilt the safe compiler and embedded platform libraries.
