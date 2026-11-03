@@ -1,0 +1,3 @@
+An edit in place of a list made after a loan (ownership-v2.md §2.8 step 5, made after): a list literal after
+Deferred.wait and a copy after Task.join. Built again under --ownership=v2 and the list stale-read sanitiser. v2
+accepts both edits, and neither loan reads the list an edit changed.
