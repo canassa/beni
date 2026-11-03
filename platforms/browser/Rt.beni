@@ -752,8 +752,10 @@ pub elements : V → V
 elements list =
     if Js.to (Js.call (Js.global "Array") "isArray" [ list ]) then
         list
-    else
+    else if Js.isUndefined (Js.get list "$plain") then
         Js.call (Js.get list "b") "slice" [ Js.get list "o" ]
+    else
+        Js.call list "$plain" []
 
 
 -- `(slot, list)`: a `List Html` hole, its blocks matched by position.

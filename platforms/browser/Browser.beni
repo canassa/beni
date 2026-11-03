@@ -95,13 +95,8 @@ programs list =
     -- protocol reads one (`backend.md` §4, *Lists are arrays*).
     mounts = Js.array []
 
-    items =
-        if Js.to (Js.call (Js.global "Array") "isArray" [ Js.from list ]) then
-            Js.from list
-        else
-            Js.call (Js.get (Js.from list) "b") "slice" [ Js.get (Js.from list) "o" ]
-
-    Js.each items λp → Js.each p λm → Js.to (Js.call mounts "push" [ m ])
+    List.foldl list ⊤ λpage _ →
+        Js.each (Js.from page) λmount → Js.to (Js.call mounts "push" [ mount ])
     Js.to mounts
 
 
