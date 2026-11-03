@@ -1122,10 +1122,14 @@ body before it is pushed.
   `readdir` with `withFileTypes`, asked of `process.getBuiltinModule` at each call as `startRead`
   is; `then` takes two lambdas. The fulfilment, unless the canceller ran (a `Js.Ref Bool`:
   `readdir` takes no signal, so a cancelled fiber's listing finishes and no one waits for it),
-  maps each `Dirent` to an `Entry` — `name` by `Js.get`, `kind` by the entry's `isFile`,
-  `isDirectory` and `isSymbolicLink` in that order, else `Other` — sorts the list with
-  `List.sortBy` on `name` (`String.compare` is code point order, which is the order of the UTF-8
-  bytes the sibling's `Buffer.compare` gave), and resumes with `Ok`. The rejection handler
+  sorts the host array of `Dirent`s with the host's `sort` and a comparator of `Buffer.compare`
+  over the names (code point order, the sibling's own), maps it with the host's `map` to an
+  `Entry` each — `name` by `Js.get`, `kind` by the entry's `isFile`, `isDirectory` and
+  `isSymbolicLink` in that order, else `Other` — and resumes with `Ok` of `Js.to` of the array.
+  Both loops are the host's, as the sibling's were: a first cut used `List.sortBy` on
+  `String.compare` (the same order) and `List.map`, and each of the four `run/ReadDir*` programs
+  grew by 264 to 444 brotli bytes for core's merge sort, then by 22 to 78 for its map loop
+  alone. The rejection handler
   `dirRejected` is `rejected`'s shape with no abort case: an `Error` whose `code` is a key of
   `dirCodes` — the sibling's nine codes, a `Js.object` read by `Object.hasOwn` and `Reflect.get`,
   kept apart from `codes` because `IsADirectory` and `TooLarge` are never a listing's answer —
@@ -1135,10 +1139,13 @@ body before it is pushed.
 
 **What changes shape.** `Result FileError (List Entry)` crossed the boundary through
 `startReadDir`'s `foreign` annotation, which pinned `Result`'s tags, `Entry`'s `name` and `kind`
-and `EntryKind`'s tags in every release build that lists a directory; it crosses nothing now, so
-a release build gives `Result` and `EntryKind` integer tags and `kind` a short name where nothing
-else pins them. `Entry.name` keeps its name: `Js.get entry "name"` reads the `Dirent`'s property of
-that text, and one source text has one spelling everywhere (`boundary.md` §4, amended 2026-10-22).
+and `EntryKind`'s tags in every release build that lists a directory. `Result` crosses nothing
+now, so a release build gives it integer tags where nothing else pins them. `Entry` and
+`EntryKind` still cross: the mapping lambda is handed to the host's `map` through `Js.from` at
+`Value → Entry`, a use at the type that pins it (`backend.md` §9 item 4), so `name` and `kind`
+keep their names and `EntryKind` its string tags, as the sibling's annotation kept them. (`name`
+would keep its name either way: `Js.get entry "name"` reads the `Dirent`'s property of that text,
+and one source text has one spelling everywhere, `boundary.md` §4 amended 2026-10-22.)
 `FileError` keeps its string tags, as step 10 says: `dirCodes` holds its constructors through
 `Js.from`. `Event`, `Dispatched` and `Pointer` stay `foreign type`s, and `Pointer`'s three keys
 stay literal (`Js.object`), so `pointerEvent`, `localX` and `localY` read what they read. `String`

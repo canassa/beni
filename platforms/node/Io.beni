@@ -221,15 +221,36 @@ startReadDir path resume =
     λ⊤ → Js.write cancelled True
 
 
--- The fulfilment handler of a listing (above): each `Dirent` as an
--- `Entry`, sorted by name in code point order (`String.compare`), which
--- is the order of the UTF-8 bytes, the same on every file system.
+-- The fulfilment handler of a listing (above): the host array of
+-- `Dirent`s sorted by name with the host's `sort` and `byName`, then each
+-- as an `Entry` with the host's `map`. Both are the host's, as the
+-- sibling's were: `List.sortBy` and `List.map` cost each program that
+-- lists a directory core's merge sort and map loop, 22 to 444 brotli
+-- bytes more than the sibling. The lambda crosses through `Js.from` at
+-- `Entry`, which keeps `Entry`'s names and `EntryKind`'s string tags in a
+-- release build (`backend.md` §9 item 4), as the sibling's annotation did.
 listed : Js.Ref Bool, Resume (Result FileError (List Entry)), Value → ⊤
 listed cancelled resume entries =
     if not (Js.read cancelled) then
-        list = List.map (Js.to entries) λentry →
-            { name = Js.to (Js.get entry "name"), kind = kindOf entry }
-        Task.resume resume (Ok (List.sortBy list λentry → entry.name))
+        _ = Js.call entries "sort" [ Js.from byName ]
+        list = Js.call entries "map" [ Js.from entryOf ]
+        Task.resume resume (Ok (Js.to list))
+
+
+entryOf : Value → Entry
+entryOf entry = { name = Js.to (Js.get entry "name"), kind = kindOf entry }
+
+
+-- Code point order, which is the order of the UTF-8 bytes, the same on
+-- every file system. `<` on strings is UTF-16 code unit order, which
+-- differs above U+FFFF.
+byName : Value, Value → Int
+byName a b =
+    buffer = Js.global "Buffer"
+    Js.to
+        (Js.call buffer "compare"
+            [ Js.call buffer "from" [ Js.get a "name" ], Js.call buffer "from" [ Js.get b "name" ] ]
+        )
 
 
 -- `EntryKind` from the `Dirent`'s own tests, in that order. A symbolic
