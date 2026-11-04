@@ -1,0 +1,1 @@
+[{"code":"private_name","severity":"error","span":{"file":"tests/corpus/check/bad/PrivateArraySort.beni","start":{"line":5,"col":8},"end":{"line":5,"col":23}},"title":"PRIVATE NAME","message":"This name is private to core runtime modules."}]

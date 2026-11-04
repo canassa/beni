@@ -3532,6 +3532,11 @@ pub const Lowerer = struct {
 
     fn typedIntrinsicDecl(l: *Lowerer, decl: Bir.Decl) ?JsIntrinsic.Which {
         if (l.in.graph.modulePackage(l.in.module) == .core and std.mem.eql(u8, l.text(l.module_name), "Schema") and std.mem.eql(u8, l.text(l.bir.symbol(decl.name)), "endpointIdentity")) return .schemaIdentity;
+        if (l.in.graph.modulePackage(l.in.module) == .core and std.mem.eql(u8, l.text(l.module_name), "Js.Kernel")) {
+            const kernel_name = l.text(l.bir.symbol(decl.name));
+            if (std.mem.eql(u8, kernel_name, "slotPack")) return .kernelPack;
+            if (std.mem.eql(u8, kernel_name, "slotRead")) return .kernelRead;
+        }
         if (l.in.graph.modulePackage(l.in.module) == .core and std.mem.eql(u8, l.text(l.module_name), "Js.Any") and std.mem.eql(u8, l.text(l.bir.symbol(decl.name)), "unpackOpt")) return .any_unpack_opt;
         if (l.in.graph.modulePackage(l.in.module) != .core or (!std.mem.eql(u8, l.text(l.module_name), "Js") and !std.mem.eql(u8, l.text(l.module_name), "Js.Array"))) return null;
         const which = std.meta.stringToEnum(JsIntrinsic.Which, l.text(l.bir.symbol(decl.name))) orelse return null;
@@ -12431,6 +12436,7 @@ pub const Lowerer = struct {
     // ownership pin begin: arrayGet
     // ownership pin begin: arrayLength
     // ownership pin begin: arrayWrite
+    // ownership pin begin: arraySort
     fn typedArrayOperation(l: *Lowerer, out: *StmtList, which: JsIntrinsic.Which, values: []const Node.Index, p: u32) !Node.Index {
         switch (which) {
             .arrayAllocate => {
@@ -12460,6 +12466,10 @@ pub const Lowerer = struct {
                 try out.append(l.scratch, try l.add(.assign_stmt, p, slot.int(), values[2].int()));
                 return l.nullNode(p);
             },
+            .arraySort => {
+                const target = try l.member(values[0], try l.interner.getOrPut(l.gpa, "sort"), p);
+                return l.call(target, &.{values[1]}, p);
+            },
             .arrayDone => {
                 const builder = try l.bindSubject(out, values[0], p);
                 const size = try l.member(builder, try l.interner.getOrPut(l.gpa, "length"), p);
@@ -12470,6 +12480,7 @@ pub const Lowerer = struct {
         }
     }
 
+    // ownership pin end: arraySort
     // ownership pin end: arrayWrite
     // ownership pin end: arrayLength
     // ownership pin end: arrayGet
@@ -12521,7 +12532,7 @@ pub const Lowerer = struct {
     fn jsTypedValue(l: *Lowerer, which: JsIntrinsic.Which, p: u32) !Node.Index {
         const arity: usize = switch (which) {
             .optMatch, .arraySet, .arrayWrite => 3,
-            .any_unpack_opt, .schemaIdentity, .optWithDefault, .arrayDone, .arrayGet => 2,
+            .any_unpack_opt, .schemaIdentity, .optWithDefault, .arrayDone, .arrayGet, .arraySort => 2,
             else => 1,
         };
         var names: [3]JsIr.NameIndex = undefined;
@@ -12537,14 +12548,14 @@ pub const Lowerer = struct {
             return l.arrowOf(names[0..arity], body.items, p);
         }
         if (which == .some) return l.optSomeArrow(names[0], values[0], p);
-        if (which == .arrayAllocate or which == .arraySet or which == .arrayDone or which == .arrayGet or which == .arrayLength or which == .arrayWrite) {
+        if (which == .arrayAllocate or which == .arraySet or which == .arrayDone or which == .arrayGet or which == .arrayLength or which == .arrayWrite or which == .arraySort) {
             var body: StmtList = .empty;
             const result = try l.typedArrayOperation(&body, which, values[0..arity], p);
             try body.append(l.scratch, try l.returnStmt(result, p));
             return l.arrowOf(names[0..arity], body.items, p);
         }
         const result = switch (which) {
-            .schemaIdentity => values[0],
+            .kernelPack, .kernelRead, .schemaIdentity => values[0],
             .cell => try l.object(&.{try l.add(.spread_property, p, values[0].int(), Node.Data.unused)}, p),
             .some => values[0],
             .none => try l.optNone(p),
@@ -12725,6 +12736,11 @@ pub const Lowerer = struct {
         return switch (which) {
             W.null => l.nullNode(p),
             W.undefined => l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+            // ownership pin begin: slotPack
+            // ownership pin begin: slotRead
+            W.kernelPack, W.kernelRead => v[0],
+            // ownership pin end: slotRead
+            // ownership pin end: slotPack
             W.from, W.to => v[0],
             W.invoke => l.hostCall(v[0], &.{ v[1], v[2] }, p),
             W.completion => if (l.completion != .none)
@@ -12795,7 +12811,7 @@ pub const Lowerer = struct {
                 l.b.markCell(object_);
                 break :blk object_;
             },
-            W.arrayAllocate, W.arraySet, W.arrayDone, W.arrayGet, W.arrayLength, W.arrayWrite => l.typedArrayOperation(out, which, v, p),
+            W.arrayAllocate, W.arraySet, W.arrayDone, W.arrayGet, W.arrayLength, W.arrayWrite, W.arraySort => l.typedArrayOperation(out, which, v, p),
             W.optNone, W.cellRead, W.cellWrite => unreachable,
             W.none => l.optNone(p),
             W.some => if (l.optPlainAt(intrinsic)) v[0] else l.call(try l.optCoreValue("some", p), &.{v[0]}, p),

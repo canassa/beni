@@ -21,8 +21,8 @@ core/Debug.beni Debug.log 0027a590612d84d0bdfb13861c3da3ab82a9540fe90baa88c54e2c
 core/Debug.beni Debug.toString 613ca54abbe8d10944bf759e0d7f2f89f955126744e02ec1e82d30efddd339a3
 core/Task.beni                   Task.timeout             f50be3112f2996bdbba6304178953f5503b61e2d2b0624885b086beaa9f020bc
 core/Task.beni                   Task.raceOk              039a240424cf3295941a88afed1dcbb5406a9957a5e7bde955297b01ba5c3185
-core/Task.beni Task.startIn cf2ca228682a36a00275e89255cf2488364ab4c13515577003484974df987d20
-core/Task.beni Task.firstOf 331ec058a9304b57f4c12310d6dc66dc386227e2f331e4f3d3bef36b3fda7ffc
+core/Task.beni Task.startIn 46274fd3d8d44bda1eb16b3c9d9ce2d07206e9d04baba3bf02e9dec1f34dfb41
+core/Task.beni Task.firstOf be9c50472be7f5c9a40dd00d50c8510c1ed342b37d649fcb3e98e9c966e68b48
 core/Task.beni                   Task.haltOthers          cb415ff10e57f6fbed74f437047f820ddc809935768197e69178b520bde44629
 core/Task.beni                   Task.haltAs              e90e451c285f9a3a01b439d061f6ee36b7297c965c04afca78abf0a9abb3d894
 core/Task.beni                   Task.startRacers         9f8a121fe97e1dfa90d96cb2045176d3c6ef97707434cdfd1ba1122527dfcaac
@@ -114,22 +114,21 @@ src/js/Lower.zig Lower.listConsStep 584c9d920d77481b7bb184d6a433e5272f45bf2d175c
 src/js/Lower.zig Lower.listConsScalar b83eed7b4a45546226966250fcd19936a10e23b1d8a75a6ddbeb50c5e4142a9f
 core/Js.js Js.invoke deed135f854650a35e005310f5e1c414898bd0615855db4baa04366b14f9ca1e
 core/Task.beni                   Task.scope               ab1de28cccca6f8b513c03a46bd6a0fb069ad118825b4096990ad0c1a94e467e
-core/Task.beni Task.makeFiber d52d06dac0d65db414d4b1184c4457c7a1853fc25e0f13951349554c7492ae08
-core/Task.beni                   Task.poll                a1ac39db9b8128dea838876b74f76562b768bf5b54a3b656f7827ac5bd3beb8a
-core/Task.beni Task.wait c035e5fda6a5da8e1963d47829536c87a245ebdc423114fda794a5c010247106
-core/Task.beni                   Task.join                76863f4141a6c49a3ddf63b7978beb807b67ebcbb1d3466896760814fc950cc7
-core/Task.beni                   Task.entry               d7d15e727f2f93a919f77d5603261fabbe10698f00b92fbc170a9e8c9be4006c
+core/Task.beni Task.makeFiber 2abba7ee85cf99dfac2f17b10df597b23cfdceb10fd9661a0204a7ad8bc92645
+core/Task.beni Task.poll 9f897a2d2c7fb8fe8315ef311f046eb2351abf68fed87409c2a922aa85aba3fe
+core/Task.beni Task.wait 5c312e89eec3f148a9328e66381edc6196a9e583e5fe613338545e4660d74976
+core/Task.beni Task.join 61c41afa649600c1f8a6c6914992ac94da226fdba97baa18932bdc96843fd9fa
+core/Task.beni Task.entry b9c80b88dd93de378434884e581d3819cea426162c8a6145c66ab0020b4e84af
 core/Task.beni Task.requeue 1afd037bc8b6e28d482171d70cc8d55be370bc8f4cc128838efc7cef55e6b176
 core/Js/Runtime.js               Js.Runtime.parked        cd78ee9414dfa1aa0eb7a27df6392c884bd73f958da80bce43ef92115ef5e432
 core/Js/Runtime.js               Js.Runtime.defect        08aa1744d1ee477e6899bad6084889d9cf0ee880bd04f9dbffd4ec5768b7a5ce
-src/js/Lower.zig Js.cell 58de437558375293d4d02b01c02e302e7d2876a53921ceafb14b16a44eeb59eb intrinsic:core
-src/js/Lower.zig Js.cellRead 23493c898c05c22804f9b6c0260827afdd6a8fefd5f4528942699bbe5687d339 intrinsic:core
-src/js/Lower.zig Js.cellWrite 84d96a7a3495954556e3357cc82a09bdb836445e7ecaf824a1a36e6047ae66a0 intrinsic:core
-src/js/Lower.zig Js.none ecd3265d8d2077ab83c6538a9d3ee02ab4a2ca9adb8ad16f7d2518f23e112987 intrinsic:core
-src/js/Lower.zig Js.some 4cbc02dc4144490a5f4cf79b83bb56727c0f3a67fcf25b3f1a1e5245d35ff293 intrinsic:core
-src/js/Lower.zig Js.optMatch fe5f3d7ca8f81e6a34b8a9a7228eb452b1fb55c98275e88958b4ebeb69a98946 intrinsic:core
-src/js/Lower.zig Js.optWithDefault 00d3494be084398f522645ae79b68dc316e058769c96dfebeb0cb034e7ef03c5 intrinsic:core
-
+src/js/Lower.zig Js.cell 33d10210d22ace047a027814bd610cfe9e063913fc0090c5895325f737cf745c intrinsic:core
+src/js/Lower.zig Js.cellRead f497190bd65c56b37f952f5dd3028eb83a5ab774de397e6782888be8f8c78efd intrinsic:core
+src/js/Lower.zig Js.cellWrite b78f25854ece39654c4959ff3056cf8781804573430ba7f5fa0c1514f8b62a2f intrinsic:core
+src/js/Lower.zig Js.none ad273142817d8e38d99e493c3e1364638af799eb52ab2e8711658dd879c6382a intrinsic:core
+src/js/Lower.zig Js.some bacf7119adac4760caf2423ed1a3d318737a7b28161141b22ef7cf36f8af622e intrinsic:core
+src/js/Lower.zig Js.optMatch 2be9139c860735ca8368d53048ada8885f990857ad30669483950e90202d2629 intrinsic:core
+src/js/Lower.zig Js.optWithDefault e437bd439334bf60d8da47db509f1f9413aa266ad1bbbde79074f3fb8ec76ef8 intrinsic:core
 src/bir/Bir.zig Js.cellRead ff2e6c1c664e26923e024f3b4cef61134f0aa488706c506f055f50549a635c0b intrinsic:core
 src/bir/Bir.zig Js.cellWrite a2aa0b9d55af613668718a7c12398432183eefc1af95aeee0070c41050193306 intrinsic:core
 
@@ -297,9 +296,9 @@ src/js/Lower.zig Worker.Object.replyIds a5e4cfb134e387eea1a381ce1b44171a052830f9
 src/js/Lower.zig Worker.Object.replyIds a5e4cfb134e387eea1a381ce1b44171a052830f9bfc7e729556a5dcc2dcac04f intrinsic:platforms/cloudflare
 src/js/ReplyScan.zig Worker.Object.replyIds bc1a0e22ab156b0e697875f1d6be7492bad1baded4bee7fddbbd741305ed2755 intrinsic:tests/platforms/reply-scan
 src/js/ReplyScan.zig Worker.Object.replyIds bc1a0e22ab156b0e697875f1d6be7492bad1baded4bee7fddbbd741305ed2755 intrinsic:platforms/cloudflare
-src/js/Lower.zig Js.Array.arrayAllocate 95c15b072a1991560b6f1e77abed7a6a69d9b56240008675dcb1d2000f5b4dae intrinsic:core
-src/js/Lower.zig Js.Array.arraySet 2b30b449307ff06a74832ac7648ad2d7de622628a13f8bb568517f23fc8a4a82 intrinsic:core
-src/js/Lower.zig Js.Array.arrayDone 1bbbee55fcf6aa0af6bc60d18d9576324be10bef9e741b532ac612cbf2825389 intrinsic:core
+src/js/Lower.zig Js.Array.arrayAllocate 7bd5fb2bc580f25b3094aff7480b5b84b2ae55a80a18faeb25063199126cae96 intrinsic:core
+src/js/Lower.zig Js.Array.arraySet d0c3806c75efe6adebf0bc42704882d38be34f8631dc2db30d28a717f8df79f9 intrinsic:core
+src/js/Lower.zig Js.Array.arrayDone fbf4ee2745eca4934107f4e9df276a70ca937a21f676bd65316121cff13173c8 intrinsic:core
 
 # Individually read native/inspection/FIFO bodies, 2026-11-03 (#1804).
 core/Browser/Host/Event.js Browser.Host.Event.errorMessage 2a5c1c42ca2f37eca07d01f3634b8a569f5b47da06fa3842dfcd2e6d28c98646
@@ -449,11 +448,9 @@ src/js/Lower.zig Browser.Host.Node.rendererInsertBefore c94e09968d136e3e731b0bbd
 src/js/Lower.zig Browser.Host.Node.rendererAppend c2cf19a5a419a3d109a5b1041260423ba26730f4b49f628a839b6b4baa77dad8 intrinsic:core
 src/js/Lower.zig Browser.Host.Node.rendererRemove a4b3c6609f3a343836e31ce1aa5da68a00fb9c869c263b1c8e059abe75872e6a intrinsic:core
 src/js/Lower.zig Browser.Host.Node.rendererClone 62d55b45cc0427dff3ce8aa6a55f5816ad2253fbb8a7618a61d85223c4717fd2 intrinsic:core
-
 src/js/Lower.zig Browser.Host.Array.rendererTruncate ddd9a769ed8fec804bf1d67984fa387ba57847ff2299f30aeca11bc05f181ab5 intrinsic:core
 src/js/Lower.zig Browser.Host.Array.rendererAt a1741e52c9e1a9f1d9397f309326fa68e69ef030b3f11c8a9c257adb9dd440fc intrinsic:core
 src/js/Lower.zig Browser.Host.Array.rendererHas ad1f8125ece858720f840e463496cba0c2900fa9fcb0c36aec5ec97c7cde73ac intrinsic:core
-
 # Typed renderer prerequisites: raw payloads are retained, never invoked.
 core/Browser/Host/Array.js Browser.Host.Array.make 7bd6e1ccd91ac4716c09969173660c5c16bc840b283e14f23be4922505502907
 core/Browser/Host/Array.js Browser.Host.Array.getOr 4271d0eaf23394c0e7c3dccbe35d1394677edb06ca185f708449cb5421556dc7
@@ -478,9 +475,7 @@ core/Browser/Host/Element.js Browser.Host.Element.styleText a1b6001c609e049fcee4
 core/Browser/Host/Event.js Browser.Host.Event.message dd734602fbb4224c4dc5dddef3b1d763e4b36000552434dffe542e97a7d03744
 core/Browser/Host/Node.js Browser.Host.Node.append d202a9053055004f2cace3d12ebd5e5cfca39f303cf10b027453e4d496dbd245
 core/Browser/Host/Rejection.js Browser.Host.Rejection.display 4d128c47f2233e1098c7d218846f1c7af379a780ba6e105e73d4555ab0502c16
-
 src/js/Lower.zig Js.Any.unpackOpt edd04c4ce1ff6ff3097c5aba9ed16dc4b32f151f448042d28086712e7598d214 intrinsic:core
-
 # Supplied foreign record fields audited 2026-11-04 (§24.4, §24.8).
 platforms/browser/zig/protocol.zig Rt.protocol be161d51e394d8316961bacbd0ad08e2a665de9d3caafa1722c02ab4897c9858
 platforms/browser/zig/protocol.zig Rt.protocol.unit 54a3934a1fdf0b80cba99896105669730bd198b9de7e39da4fcf71059f863e30
@@ -606,6 +601,9 @@ src/js/Lower.zig Browser.Host.Event.rendererEarlyRemember 9a140291efa7e0a0579d11
 src/js/Lower.zig Browser.Host.Event.rendererEarlyValue 2b2b26815156280bbf5a59838a584ca0a7acfc1e77de918667d8cf9911ac9784 intrinsic:core
 src/js/Lower.zig Browser.Host.Event.rendererEarlyChecked 7fa67c696c854959bae0e3f957af386a0f1b639a776cdf5adc6002cd396262e3 intrinsic:core
 src/js/Lower.zig Browser.Host.Event.rendererEarlySelectedIndex 92745111cf28c2110deefa1cc8b879b515d899721ca3faf6f8c81f51eeda67ac intrinsic:core
-src/js/Lower.zig Js.Array.arrayGet 239b4e178a88bae55be2b57e23ec9edfb50d511c537e595a3ec2ba9c1161809f intrinsic:core
-src/js/Lower.zig Js.Array.arrayLength b63c157e08f6938d265692c18b395ea431dd7e7233659b2b94beda0e9ad3d359 intrinsic:core
-src/js/Lower.zig Js.Array.arrayWrite 9386622c89b6de8f04acb9458f821fdb197110873f6bafc080d900821d9f8d0a intrinsic:core
+src/js/Lower.zig Js.Array.arrayGet 96df2b006057d44fa3cf40847c0c44163e4655f56920c294bc5a2b087fa7a940 intrinsic:core
+src/js/Lower.zig Js.Array.arrayLength ee77092e58a9bfad284347485f87909ada3ed861001250cc482ddfae079411b9 intrinsic:core
+src/js/Lower.zig Js.Array.arrayWrite e7b920afaaf2dcfc064845893a3ef22e017db0049c3db2a42d7807c34bd8e2ce intrinsic:core
+src/js/Lower.zig Js.Kernel.slotPack fcc09c88fd5f8cbec6e39e5cdab6d891956a2e3d7a9c3fe5a723f359d5f75e47 intrinsic:core
+src/js/Lower.zig Js.Kernel.slotRead 7011cab5e184805594ac7a6d9fb250ead44d435b461915695abbebecd9de0caa intrinsic:core
+src/js/Lower.zig Js.Array.arraySort bc26928712f7e992651296148f15e448b4e96e38633ce64bc5b5067ed2a16aaf intrinsic:core

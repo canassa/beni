@@ -1,0 +1,21 @@
+-- #1719: native stable sorting preserves ties and first-class comparator arity.
+import Js.Array as Array
+import Node
+
+
+main : Node.Program
+main =
+    values = Array.arrayAllocate 3
+    Array.arrayWrite values 0 { rank = 1, label = 1 }
+    Array.arrayWrite values 1 { rank = 1, label = 2 }
+    Array.arrayWrite values 2 { rank = 0, label = 3 }
+    sorted = Array.arraySort values λleft right → left.rank - right.rank
+    a = (Array.arrayGet sorted 0).label
+    b = (Array.arrayGet sorted 1).label
+    c = (Array.arrayGet sorted 2).label
+    sorter = Array.arraySort
+    reversed = sorter sorted λleft right → right.rank - left.rank
+    d = (Array.arrayGet reversed 0).label
+    e1 = (Array.arrayGet reversed 1).label
+    f = (Array.arrayGet reversed 2).label
+    Node.print "${a},${b},${c};${d},${e1},${f}"

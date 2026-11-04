@@ -439,3 +439,7 @@ core Browser.Host.Event.rendererEarlySelectedIndex ownership/core/NativeEvents.b
 core Js.Array.arrayGet ownership/core/JsArrayRuntimeWords.beni - Array.arrayGet
 core Js.Array.arrayLength ownership/core/JsArrayRuntimeWords.beni - Array.arrayLength
 core Js.Array.arrayWrite ownership/core/JsArrayRuntimeWords.beni 3:escaped>borrowed Array.arrayWrite
+# The Task-private existential reader grants no freshness. Packing cannot
+# bypass that unknown-result barrier; Task.timeout pins the paired endpoint.
+core Js.Kernel.slotPack ownership/TaskWords.beni - Task.timeout
+core Js.Kernel.slotRead ownership/core/KernelSlotWords.beni res:unknown>fresh Task.poll

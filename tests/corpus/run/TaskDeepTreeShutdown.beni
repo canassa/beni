@@ -1,0 +1,29 @@
+-- #1719: teardown must traverse a deep ownership tree without growing the
+-- JavaScript call stack. Child-first cleanup must still complete.
+import Deferred
+import Io
+import Node
+import Ref
+import Task
+
+
+branch : Int, Deferred.Deferred ⊤, Ref.Ref Int → ⊤
+branch depth ready released =
+    Task.bracket (λ⊤ → ⊤) (λ_ _ → Ref.set released (Ref.get released + 1)) λ_ →
+        if depth == 0 then
+            _ = Deferred.complete ready ⊤
+            ⊤
+        else
+            _ = Task.spawn λ⊤ → branch (depth - 1) ready released
+            ⊤
+        Task.never ⊤
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    ready = Deferred.make ⊤
+    released = Ref.make 0
+    _ = Task.spawn λ⊤ → branch 4095 ready released
+    Deferred.wait ready
+    Task.shutdown 10000 λcut → Debug.log "released ${Ref.get released}, cut ${cut}" ⊤
+    Node.done

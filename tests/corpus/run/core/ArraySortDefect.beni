@@ -1,0 +1,12 @@
+-- #1719: a comparator defect propagates through native sort without a catch.
+import Js.Array as Array
+import Node
+
+
+main : Node.Program
+main =
+    values = Array.arrayAllocate 2
+    Array.arrayWrite values 0 2
+    Array.arrayWrite values 1 1
+    _ = Array.arraySort values λ_ _ → Debug.todo "comparator defect"
+    Node.print "unreachable"

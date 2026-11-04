@@ -1,0 +1,12 @@
+-- #1719: the intrusive wait list is core coordination, not application API.
+import Task
+
+
+waiting : Task.WaitList Int
+waiting = Task.waitList ⊤
+
+
+read = Task.parkIn
+
+
+write = Task.wakeFirst

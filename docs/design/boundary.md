@@ -9213,3 +9213,22 @@ indexed read, length read or indexed store. Their element types and stored
 callback summaries survive; no native value or callable is erased. These
 are unchecked core operations: runtime containers prove initialization and
 bounds before reading. The exact ownership rows are in ownership-checker.md.
+
+
+*Kernel slot amendment, owner decision D3, 2026-11-04 (#1719).* Js.Kernel
+names an identity-represented Slot and compiler-owned pack/read operations,
+accessible only from core Task, not other core or platform modules. The slot
+is the kernel's unchecked existential resume/result storage, with matched typed
+endpoints; it never becomes Js.Value and grants no freshness. Callables stored
+through it retain the writer obligation in workers.md §4. There are no sibling
+exports or new public representations.
+
+
+*Typed runtime sort amendment, manager approval 2026-11-04 (#1719).* The
+core-fenced Js.Array.arraySort is `foreign impure` with a written returned Builder a
+and a borrowed sync (a, a → Int) comparator, returning that same Builder. It sorts that existing
+native array in place by direct .sort emission, including first-class uses;
+there is no sibling export or new representation. Comparator arguments are
+borrowed, and a comparator defect propagates without a catch. Task uses this
+only for the transient teardown sweep, never ordinary scheduling. ES2019+
+sort is stable; Task's unique birth ordinals fully determine ordering anyway.

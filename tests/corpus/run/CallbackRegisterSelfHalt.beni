@@ -1,0 +1,32 @@
+-- #1909: registration can synchronously halt its own root. The returned
+-- canceller must run once, clear the gate and suppress the parked body.
+import Io
+import Node
+import Ref
+import Task
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    gate = Ref.make Nothing
+    cancelled = Ref.make 0
+    root = Task.openRoot ⊤
+    fiber = Task.spawnIn root λ⊤ →
+        value = Task.callback λwake →
+            Ref.set gate (Just wake)
+            Task.closeRoot root
+            λ⊤ →
+                Ref.set gate Nothing
+                Ref.set cancelled (Ref.get cancelled + 1)
+        Debug.log "body resumed" value
+    Task.yieldNow ⊤
+    _ = Task.wait fiber
+    gateState =
+        case Ref.get gate of
+            Just wake →
+                Task.resume wake 42
+                "gate still registered"
+            Nothing →
+                "gate cleared"
+    Task.yieldNow ⊤
+    Node.printLines [ gateState, "cancelled: ${Ref.get cancelled}" ]

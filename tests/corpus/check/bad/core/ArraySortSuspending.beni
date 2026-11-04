@@ -1,0 +1,10 @@
+-- #1719: native sort cannot invoke a suspending comparator.
+import Js
+import Js.Array as Array
+import Task
+
+
+sort : Js.Builder Int → Js.Builder Int
+sort values = Array.arraySort values λleft right →
+    Task.yieldNow ⊤
+    left - right

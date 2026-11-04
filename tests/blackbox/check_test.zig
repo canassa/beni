@@ -2381,3 +2381,7 @@ test "ownership words: native event containers retain element aliases" {
 test "ownership words: runtime array stores retain captured aliases" {
     try expectFlips("ownership/core/JsArrayRuntimeWords.beni", &.{"--core"});
 }
+
+test "ownership words: kernel result slot grants no freshness" {
+    try expectFlips("ownership/core/KernelSlotWords.beni", &.{"--core"});
+}

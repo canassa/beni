@@ -534,3 +534,195 @@ Only `withLogContext` introduces a nonempty log slot; clock/scheduler changes
 preserve it and clearing can only remove it. Before that entry is reached,
 `currentLogContext` is Nothing and `hasLogContext` is False. In particular,
 a clearing consumer must not make its own presence test appear possible.
+
+
+**Task kernel and intrusive waits, owner-approved 2026-11-04 (#1719).**
+A Fiber a is the Control Cell itself: its result lives in the private slot,
+with ended/cancelled flag bits, rather than a second Ref or an eagerly made
+Exit. Only poll/wait form the public Exit. Control has fixed fields for flags,
+masks, top frame, optional deeper stack, value, owner fiber, owner scope,
+sibling prev/next, first child, finalizers, wait source, wait prev/next,
+joiners, inherited slots and optional extensions. Two optional typed owner
+fields avoid an allocated owner union; exactly one may be present. There is
+no per-fiber registry link, child container, observer container, result Ref,
+wait record or run-queue job. Completed handles clear stack, child, finalizer,
+wait and joiner fields. After reports and scheduler counts, a completed handle
+clears inherited context slots as well. Rare facilities allocate extensions
+only when used.
+
+The private Js.Kernel Slot is an identity representation, not Js.Value or
+Any. Its compiler-owned pack/read operations are fenced to core Task alone,
+including first-class references and imported methods. They grant no ownership
+freshness. Stored callable arrows are charged to their writer, including
+frames supplied by the compiler's current typed completion convention. Only
+paired typed endpoints read a Slot. Resume and result payloads are data and
+are never called through the slot; frames and host cancellers are invoked
+only at their established typed endpoints.
+The same representation becomes the protocol resume slot in the later lowering
+slice; no suspension lowering or DOM producer changes belong to this slice.
+
+The first frame occupies top directly. A native array stack is allocated only
+when another frame must be retained; popped slots are cleared. Finalizers are
+linked records created per bracket/scope/restore, removable without searching.
+Children and scope children link through each Control's sibling fields. Ending
+cancels and waits for children before finalizers, cancels children created by
+cleanup, then unlinks the owner and wakes joiners. A parent's child wait uses
+its own wait state; the last unlink wakes it without an observer. A scope has
+a typed child head and an intrusive close-wait list. Internal walks use loops,
+never temporary Lists. Public combinators may still walk caller-provided Lists.
+
+A core-private WaitList a has a typed head and tail; parkIn links the current
+fiber itself and wakeFirst unlinks it before storing a and enqueueing it.
+Cancellation unlinks it in constant time. Core join/wait use a unit completion
+list and read the target's typed result after waking. Coordination modules
+can adopt the same API separately. The wait source distinguishes host cancel
+functions, intrusive lists and child waits using kernel flag bits and the
+private slot. Registering a wait makes no waiter record or result Ref.
+
+Host callback/resume preserves synchronous registration, once-only delivery,
+and stale-resume rejection. Each host wait creates a fresh wake closure and
+stores it in the private value slot solely as an identity epoch. The wake
+compares that token with itself using === while the host-active bit is set;
+it is never called through the slot or read as a value of type a. Delivery
+overwrites the token with the typed payload before enqueueing or returning
+synchronously. Cancellation clears the active bit before invoking the host
+canceller. Fresh closures prevent ABA; no numeric epoch, overflow or SMI
+transition remains. The token is charged to its writer under workers.md §4,
+exactly like frames under D3. Intrusive core waits need no token.
+
+Waiting and queued fibers share their next link only after unlinking the
+wait; QUEUED prevents duplicate membership. Fiber jobs are intrusive; a
+separate typed Soon chain shares FIFO order through enqueue/dequeue positions.
+Scheduler drain callbacks remain host jobs. Microtask draining, its
+64-resumption limit and defect cleanup are unchanged.
+
+Root fibers and root scopes form the program tree. Ordinary children need no
+separate global or scheduler membership nodes. Custom scheduler membership,
+loans, selective observers and cleanup bookkeeping belong to rare extensions;
+teardown walks the tree and filters scheduler ownership, also accounting for
+loans. Existing facility flags keep unused scheduler, slot, child, finalizer,
+soon and release facilities unreachable. Public effects, ownership, log-context,
+clock and shutdown order are unchanged. The deterministic memory/allocation
+and brotli ratchets remain in force; each PR uses the review harness.
+
+The facility flags also guard lazy finalizers, typed joins, selective observers,
+scopes and Soon dispatch. Their creating entry points set finalising, joined,
+observed, scoped and soonable respectively. An absent facility's completion,
+teardown and queue branches are unreachable; the flags do not alter the Cell
+representation or the behavior once that facility is enabled.
+
+Child order remains creation order. The first child's before link holds the
+tail, while after links end at none; this supports constant-time append and
+removal without a separate tail field. A Control also has a numeric birth
+ordinal. Shutdown collects live controls from the tree into one transient,
+typed native array and stably sorts by that ordinal before cancellation,
+preserving global start order across nested scopes and fibers without a
+permanent per-fiber registry node. The core-fenced Js.Array.arraySort emits native .sort directly
+on that private plain builder with a synchronous numeric-field comparator;
+there is no Js.Value conversion, new representation or new native surface.
+The transient array is released after the sweep, and the sort is unreachable
+when neither child nor scope facilities are used. Ordinal exhaustion defects
+rather than losing exact-integer ordering. The fixed Control row is eighteen
+fields with the two typed owner fields and this ordinal (about 168 B itself).
+
+The typed sort runs only in phase-one teardown, after gathering and before
+cancellation; it is absent from spawn, join, wake, yield and ordinary drains.
+ES2019+ Array.prototype.sort is stable, and the unique birth ordinals fully
+determine the order regardless. A throwing comparator is a defect; no catch
+surrounds the call. The array is a private plain ECMAScript array, not a proxy
+or frozen value. Only teardown constructs and sorts this transient capacity.
+
+The native sort's receiver must be fresh, not lent from a Cell. sortSweep
+allocates a fresh local builder, fills it from the gathered controls through
+the ownership-preserving arraySet construction path, sorts that local value,
+then hands the sorted array to the teardown recovery state. No array read
+back from that state is sorted or edited in place. The additional linear fill
+is cold-path work and preserves the ordinary uniqueness check; the fenced
+writer rule is a declaration policy, not an ownership exemption.
+
+As with arraySet, sorting consumes the input binding and returns the same
+Builder, matching native Array.prototype.sort. The caller binds that returned
+version before handing it to recovery state; it never rereads the consumed
+input. The pinned row retains only the receiver/element aliases, not freshness.
+
+Host callback registration has its own callbacking facility flag. Only host
+waits need epochs and retained cancellation functions; intrusive core and
+child waits simply mark parked state. Without that entry, the host-canceller
+branch is unreachable. Scope and cleanup consumers test their facility flag
+before reading optional state, so consumers cannot keep their own producers
+reachable.
+
+Flags are set by facility entry points, not by internal copies of already
+registered state. In particular, finalising is set by bracket, scope opening,
+slot restoration and deferred cleanup registration; copying finalizers during
+shutdown cannot keep its own facility alive. Similarly, spawn consults Soon
+state only after the Soon entry flag has been set.
+
+Root controls use the same sibling fields as owned children, since a root has
+no owner. The registered bit distinguishes a listed root from an unregistered
+fast branch. Root scopes and nested scopes likewise share their typed scope
+links. Cleanup membership is a circular doubly linked list in the rare extension,
+with its head preserving entry order and the head's before link holding the tail. These lists allocate no Chain token or
+root wrapper per fiber. Completing a control clears the extension after its
+reports and scheduler counts have run.
+
+Deferred scope cleanup has a releasing flag set only by Task.defer. A program
+without that entry keeps no deferred list runner or temporary finalizer chain.
+Outside-fiber finalizers move their linked records directly to a cleanup fiber;
+its rare extension points to the original holder so each cleanup reloads that
+holder's current slot snapshot, as before. No temporary list is constructed.
+
+Tree collection uses the gather array itself as a breadth-first work queue.
+It appends root controls and root-scope children, then scans that growing array
+by index, appending each control's children and nested scope children. Matching
+controls compact into its already-read prefix. Each live control is visited
+once without recursive JavaScript calls, extra traversal nodes or a second
+traversal stack; the fresh sort copy takes only that matching prefix.
+
+Normal completion stores the raw result and marks unwinding; join reads that
+slot after a unit wait without making an Exit. Only poll, wait and the start
+report form public Exit values. The run loop drives cancellation/finalizers
+when its frame stack is empty: it waits for initial children, invokes one
+finalizer through Js.invoke, and after all finalizers waits for their children.
+Active cleanup membership identifies the current finalizer, so no boundary
+frames or per-finalizer driver closures are needed. A cut-short cleanup drops
+only that cleanup's frames and continues with the remaining linked finalizers.
+
+Root scopes have a separate entry flag set only by openRoot. Nested scope
+creation does not retain root registration, root teardown or root unlisting;
+those consumers test the root entry flag before consulting root-only fields.
+The pending scalar distinguishes ordinary parking from forced self-cancellation,
+which remains effective inside masks and already-running cleanup.
+
+Finalizer nodes retain a synchronous typed step which invokes the original
+work with its current completion argument. It returns the original unit or
+parking sentinel directly, without converting it to a Boolean and back. The
+empty-stack driver needs no per-finalizer continuation closure.
+
+A nested scope keeps only its removable finalizer token. Its existing owner
+link supplies the Control when normal close removes that token; no redundant
+owner/token tuple is allocated. The token is removed before unlinking the scope.
+
+A scheduler allocates its loan registry only at the first loan, not during
+program scheduler construction. Its optional typed registry is read only in
+the custom-scheduler facility; ordinary programs retain no Chain factory for it.
+FIFO fiber positions reset when the last queued job is removed. Enqueue defects
+before an exact-integer position could overflow in a continuously nonempty queue.
+
+A delivered host wait retains its canceller and parked bit until the queued
+fiber begins resuming. The identity epoch is already inactive, so duplicate
+wakes remain ignored; cancellation during this handoff still runs the canceller
+to give Queue values or Semaphore permits back. Synchronous inline delivery
+clears this state before returning. A combinator branch which returns inline
+finishes its empty-stack completion before deciding whether to register it.
+
+Ordinary parent links and child-wait phase bits are created only by spawn.
+Their linking, unlinking and wait-reset consumers test that same monotonic
+facility flag; spawnIn creates scope membership without enabling ordinary
+parent-child machinery. This applies the existing facility policy to both
+producers and consumers, without changing any ownership row or runtime field.
+
+An explicit list-kind bit identifies an intrusive wait independently of host
+activity or delivery. If a host registration halts its own fiber, its returned
+canceller runs immediately and the step leaves through forced cancellation;
+no canceller can be decoded as an intrusive list, and no resumed body runs.

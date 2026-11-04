@@ -1,0 +1,10 @@
+-- Task-private unchecked existential. Only paired typed kernel endpoints read it.
+pub foreign type Slot
+
+
+--| Identity storage; callable obligations remain charged to the writer.
+pub foreign pure slotPack : returned a → Slot
+
+
+--| Identity read at the matching typed endpoint, granting no freshness.
+pub foreign pure slotRead : borrowed Slot → unknown a

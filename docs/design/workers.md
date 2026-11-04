@@ -308,7 +308,12 @@ called in the enclosing declaration, including the work passed to Task.start.
 Writes through Ref, Js.Ref, Deferred and Queue attribute stored callable
 arrows to the writer. The obligation comes from the resolved callee's
 scheme, so qualified calls, dot calls and aliases follow the same rule.
-A local cell retains the same rule. A foreign callback dependency belongs to
+A local cell retains the same rule. Kernel frames, private wake-identity tokens
+and the kernel-private unchecked existential resume/result slot obey the same
+writer rule: typed endpoints fix the data type, resume and result data are never
+called through the slot, while the driver calls frames and wait cancellers at
+their established typed endpoints, and each stored frame is charged to its
+enclosing declaration (#1719, owner decision D3). A foreign callback dependency belongs to
 its nearest enclosing positive arrow; a returned callback receiver keeps the dependency when stored as a
 top-level value. These are realm-only edges and do not change purity or
 suspension inference.

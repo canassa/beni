@@ -13,7 +13,7 @@ module RecordUpdateEscapes
   72:9 update <literal>[*]: accepted fresh (RecordUpdateEscapes.escHead writes it)
   73:7 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
   summary size: π1.items R, π1.n R
-  summary keep: π1 RE; res #Fiber.0#Control.0 esc2{lost}r{lost}, #Fiber.0#Control.0⋆ ~condition(fresh4) ~esc3{lost}r{lost} ~esc5{lost}r{lost} ~fresh501◦ ~fresh502◦ ~shared(Task.emptySlots) ~λr{lost} ~⊤{lost}r{lost}, #Fiber.1 esc3{lost}r{lost}, condition(fresh1){lost}r{lost}
+  summary keep: π1 RE; res #Fiber.0#Control.0 esc1{lost}r{lost}, #Fiber.0#Control.0⋆ ~esc2{lost}r{lost} ~fresh501◦ ~fresh502◦ ~fresh503◦ ~fresh504◦ ~shared(Task.emptySlots) ~⊤{lost}r{lost}
   summary openEsc: π1 REW{n}, π1.items RAW; res π1.items
   summary plain: π1 RE, π1.items RAW; res π1.items
   summary viaCallee: π1 REW{n}, π1.items RAW; res π1.items

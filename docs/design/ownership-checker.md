@@ -8613,3 +8613,21 @@ directly; core FIFO writers retain the element's real callback summary.
 These rows reuse List's native capacity read/write representation. The core
 writer fence is the writer-rule justification; this is not an ownership
 fallback for application List writes.
+
+
+*Kernel slot amendment, owner decision D3, 2026-11-04 (#1719).* Task-private
+Js.Kernel.slotPack has `returned a → Slot`; read has `borrowed Slot → unknown a`.
+Both are identity emission; neither grants freshness, write permission or a
+copy. The Task fence excludes application, platform and other core callers.
+Typed wait/result endpoints fix reads; callable storage remains charged to its
+writer. The trusted catalogue and emitter pins cover these operations.
+
+
+*Typed runtime sort row, manager approval 2026-11-04 (#1719).* Js.Array.arraySort
+has `written returned Js.Builder a, borrowed sync (a, a → Int) → Js.Builder a`, with borrowed
+comparator arguments. The row is a pinned in-place array write, returning only the receiver alias
+and its elements, with no freshness or ownership permission. The existing core fence admits this
+writer under the fenced-writer rule; Totality has no new name exemption.
+Application and platform callers are refused by the same Js.Array fence as
+get/length/write. Comparator effects belong to the caller, and a throw is a
+defect, not a typed error or a caught fallback.

@@ -1,0 +1,11 @@
+-- #1719: the private result slot grants no freshness to a polled payload.
+import Task
+
+
+editPolled : Task.Fiber (List Int) → List Int
+editPolled fiber =
+    case Task.poll fiber of
+        Just (Task.Done xs) →
+            List.push xs 7
+        _ →
+            []
