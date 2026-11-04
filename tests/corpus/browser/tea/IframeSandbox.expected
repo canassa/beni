@@ -1,0 +1,16 @@
+-- load
+<body>
+  <main>
+    <button id="lift">"lift"</button>
+    <iframe id="fixed" sandbox="allow-scripts" title="fixed"></iframe>
+    <iframe id="held" title="held" sandbox=""></iframe>
+  </main>
+</body>
+-- click #lift
+<body>
+  <main>
+    <button id="lift">"lift"</button>
+    <iframe id="fixed" sandbox="allow-scripts" title="fixed"></iframe>
+    <iframe id="held" title="held" sandbox="allow-scripts allow-forms"></iframe>
+  </main>
+</body>

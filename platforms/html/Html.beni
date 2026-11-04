@@ -871,6 +871,15 @@ pub attribute "rows" on "textarea" : Int
 pub attribute "rowspan" on "td" "th" : Int
 
 
+--| The restrictions of an `iframe`'s document, as the HTML standard's
+--| space-separated tokens: `""` for all of them, and each token lifts one,
+--| as `allow-scripts` lets the frame run scripts. A token the browser does
+--| not know lifts nothing, so a misspelt one keeps its restriction. A frame
+--| takes its restrictions when it navigates, so write `sandbox` as text when
+--| its `src` comes from a hole.
+pub attribute "sandbox" on "iframe" : String
+
+
 pub attribute "selected" property stateful on "option" : Bool
 
 
