@@ -32,6 +32,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 14 | **The three thin files**: `html`'s `Html.js` (`targetValue`, `targetChecked`, `pointer`), `node`'s `Prerender.js` (`writeRecords`) and `Io.js` (`startReadDir`) | **specified 2026-11-03**, below: five declarations, the three siblings deleted |
 | 15 | **`node`'s `markup.js` and `runtime.js`** (`escape`, `escapeAttr`, `safeUrl`, `list`, `classes`, `styles`, `rawText`, `text`, `map`; `run`) | **specified 2026-11-03**, below: the runtime module `Rt.beni`, as `browser`'s; both files deleted |
 | 16 | **A runtime module without markup** (`cloudflare`'s `runtime.js` needs it; #1812) | **built 2026-11-04**, below: a top-level `"module"` key for a chain with no lowering; the build waits on `runtime-in-beni-q3` (#1813) |
+| 17 | **`cloudflare`'s `runtime.js`** (`run`: the handler table and `exports(name)`, the Durable Object class) | **specified 2026-11-04**, below: `Js.method` with parameters and `Js.module` (`boundary.md` §4.2), then the runtime module `Rt.beni` over step 16; the last file of #877 |
 
 ## Step 1 — slot and mount (2026-10-02)
 
@@ -1296,3 +1297,33 @@ own, built and run in both builds (the exports one is the red fixture of the pru
 the missing module. No size figure: the feature changes no existing program, and the `emit/`
 goldens prove it byte for byte. Found on the way: `backend.md` holds a double-encoded
 section sign on 1 091 lines, which is #886 (open since `540e16e03`); the evidence is there.
+
+
+## Step 17 — `cloudflare`'s `runtime.js` (2026-11-04)
+
+**What is wanted.** The last hand-written file of the platforms (`core/Js.js` stays, the owner's
+deferral of 2026-10-02): `platforms/cloudflare/runtime.js`, whose `run` answers the Worker's
+handler table and `exports(name)`, the Durable Object class of a definition, written in beni as
+the runtime module `platforms/cloudflare/Rt.beni` over step 16's top-level `"module"` and the
+file deleted (#1813). It needs two `Js` spellings the owner chose on 2026-11-04
+(`runtime-in-beni-q3`, A): **`Js.method` with parameters** — `Js.method λself request → …` is
+`function (request) { const self = this; … }`, the checker typing the lambda by its own count and
+holding it `sync` — for the constructor (`self.constructor` in place of `new.target`), `fetch`,
+`alarm`, `$beni` and the WebSocket hooks; and **`Js.module "cloudflare:workers"`**, a static
+namespace import of a host built-in, since `DurableObject` is no global, Workers have no
+`getBuiltinModule`, and `exports(name)` runs at load before a dynamic `import()` could settle.
+Spec: `boundary.md` §4.2 (both paragraphs), `backend.md` §4 (*`Js.method` is a `function`*) and
+§9 (*Host imports*), `checker-v2.md` §30.
+
+**The order.** The two spellings first, each with fixtures of its own (`run/JsMethodParams`,
+`emit/core/JsMethodParams`, `check/bad/core/MethodParamsSuspends`; `run/JsModule` over `node:`,
+`emit/release/core/JsModule` for the hoisted import, `check/bad/core/JsModuleNotBuiltin`), then
+the move, with the `workers/` corpus under Miniflare (`zig build test-workers`) as the proof that
+the class the host gets is the same: RPC on its stub, the alarm, the WebSocket hooks. The bar is
+R47-3 on the `workers/` programs' release builds, measured against master's `runtime.js`.
+
+**What the sibling's comments say that the module keeps.** `exports(name)` throws, in beni's
+words, for a name the program defines nothing for (§9.12 (c)); the class is built over
+`DurableObject` through `Reflect.construct`, so the host offers RPC on its stub (§9.12 (e.11)),
+with its methods on the prototype; the two keywords the release compactor cannot hoist past
+(`class`, `new.target`) stay out, which `Js.method` and `Reflect.construct` keep true.

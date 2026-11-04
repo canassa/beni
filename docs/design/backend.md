@@ -2810,6 +2810,10 @@ wherever `global_this` is. Both printers write it `function(){â¦}` with a bl
 in the method's own statements as `this`, never one read in a nested arrow, whose statements it does
 not enter; an arrow nested in the method reads the receiver through the name. `this_lit` is not an
 atom (`Lower.isAtom`), so no argument substitution can carry it into another function.
+*Amended 2026-11-04 (`boundary.md` §4.2, the owner's answer A to `runtime-in-beni-q3`):* the
+lambda's parameters after the first are the `function`'s, in order — `Js.method λself a b →
+body` is `function (a, b) { const self = this; return body }` — and everything above holds of
+them: `Lower.methodFunc` keeps them as the arrow's parameters and binds only the first to `this`.
 
 **An object holding a method is one object** (the specialiser, Â§9). A method reads and writes its
 receiver through `this`, which the points-to pass cannot follow to a site, so:
@@ -7038,7 +7042,10 @@ spelling. What is new is the hand-written files' top-level bindings, which join 
   emitted code imports them as.
 
 **Host imports.** A hand-written file's `import` of a `node:` built-in moves to the top of the one
-file, once per distinct statement text; a built-in's evaluation is not observable to the program, so
+file, once per distinct statement text (*amended 2026-11-04:* and so does an emitted module's
+`import * as <name> from "<specifier>";`, which `Js.module` writes, `boundary.md` §4.2 — once per
+distinct specifier, the name spelled as the one scope spells the module's binding; a development
+build and a multi-file release build write it first among the module's statements); a built-in's evaluation is not observable to the program, so
 evaluating it first moves nothing anyone can see. *Amended 2026-10-23: a `cloudflare:` built-in is a
 host built-in the same way — the `cloudflare` platform's runtime imports `DurableObject` from
 `cloudflare:workers`, which the host requires of a class that answers RPC (`boundary.md` §9.12
