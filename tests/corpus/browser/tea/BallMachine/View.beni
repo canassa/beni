@@ -70,7 +70,7 @@ score w =
         tenths = round (toFloat (List.length (List.filter w.events \ev -> ev.1)) / span * 10)
         "${tenths // 10}.${Int.mod tenths 10}"
     else
-        "–"
+        "\u{2013}"
 
 
 tally : World -> Html Msg
@@ -78,7 +78,9 @@ tally w =
     span = round (min w.t 10)
     done = List.length (List.filter w.events \ev -> ev.1)
     failed = List.length (List.filter w.events \ev -> not ev.1)
-    <p class="tally"><b>{score w}</b> balls/s · last {span} s: {done} done · {failed} failed</p>
+    <p class="tally">
+        <b>{score w}</b> balls/s &middot; last {span} s: {done} done &middot; {failed} failed
+    </p>
 
 
 pub view : Model -> Html Msg
@@ -120,7 +122,7 @@ view model =
                 </label>
             </div>
             <p id="cap-note" class="cap-note" hidden={model.perBatch <= model.atOnce}>
-                The bucket can't hold more balls than are allowed in at once: raise “At once” to fill it.
+                The bucket can't hold more balls than are allowed in at once: raise &ldquo;At once&rdquo; to fill it.
             </p>
             <div class="machine-status">
                 {tally w}
