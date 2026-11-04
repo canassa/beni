@@ -13705,3 +13705,21 @@ test "release libraries keep sibling imports and exports consistent" {
         \\
     });
 }
+
+test "nodeBody is the one function of core/Schema.beni that takes a Node apart" {
+    // The accessor this check knows by name (`Schema$nodeBody`): if core
+    // reads a node any other way, the check is blind to it.
+    const source = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "core/Schema.beni", std.testing.allocator, .limited(1 << 20));
+    defer std.testing.allocator.free(source);
+    var takers: usize = 0;
+    var lines = std.mem.splitScalar(u8, source, '\n');
+    while (lines.next()) |line| {
+        if (std.mem.indexOf(u8, line, "(Node ") == null) continue;
+        if (std.mem.startsWith(u8, line, "--") or std.mem.indexOf(u8, line, " : ") != null) continue;
+        takers += 1;
+        try std.testing.expect(std.mem.startsWith(u8, line, "nodeBody (Node "));
+    }
+    try std.testing.expectEqual(@as(usize, 1), takers);
+    // And `nodeRef` is the one that builds a node.
+    try std.testing.expect(std.mem.indexOf(u8, source, "nodeRef : NodeBody → Node") != null);
+}

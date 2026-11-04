@@ -3187,10 +3187,11 @@ registration still uses `Maybe`, once when the schema is constructed.
   its permission to what it calls. The check goes red when `parseWith` cases on
   `nodeBody (nodeOf schema)`, when it calls `describe`, and when `taggedRead` reads a variant's
   payload node (`run/SchemaTagged`). The markers must match the module: one that declares
-  `nodeRef` or `nodeBody` but builds no node in that form, or tests a tag with no `nodeBody`,
+  `nodeRef` or `nodeBody` but builds no node in that form, or references `nodeBody` without declaring it,
   fails; one that declares neither builds and reads no node (every schema a declaration) and
-  passes. A unit test pins `nodeBody` and `nodeRef` as the one destructor and the one builder of
-  `Node` in `core/Schema.beni`. What the reference graph still cannot see is code written into
+  passes. An independent source test pins `nodeBody` and `nodeRef` as the one destructor and the one builder of
+  `Node` in `core/Schema.beni`. Dead-code elimination may remove the unused accessor while
+  builders remain; a tag test still counts as a read without that accessor. What the reference graph still cannot see is code written into
   the body of `variant` or `tagged` itself, a closure there being the maker's own text; the
   makers' workers are declarations of their own and are checked.
 - **Typed issues through the compiled path.** `run/SchemaComposed` exercises `list`, `nullable`,

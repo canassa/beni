@@ -8,13 +8,15 @@
 //! output, not from a list here. The markers must match the module, or the
 //! check would see nothing (`Report.missing`): a module that declares the
 //! builder or the accessor but builds no node in the form above has a
-//! printing this check no longer knows, and one that tests a tag with no
-//! `Schema$nodeBody` declared reads through an accessor it does not know.
+//! printing this check no longer knows, and one that references
+//! `Schema$nodeBody` without declaring it has an accessor this check cannot locate.
+//! An unused accessor may be eliminated while builders remain; direct tag tests
+//! still count as reads even without the accessor.
 //! A module that declares neither builds and reads no description node:
 //! reachability dropped both, as it does when every schema of a program is
 //! a declaration. That `nodeBody` and `nodeRef` are the one function of
 //! `core/Schema.beni` that takes a `Node` apart and the one that builds it
-//! is pinned against the source by a test below.
+//! is pinned against the source by a separate build test.
 //!
 //! Two kinds of code may read a description. Inspection: `describe`, and
 //! every declaration it reaches, which walk the graph and run no
@@ -148,8 +150,8 @@ pub const Entry = struct {
 };
 
 pub const Report = struct {
-    /// What the module lacks of the markers: `Schema$nodeBody`'s declaration,
-    /// or any `Schema$nodeRef({ $: "…"` tag. Null when it has both.
+    /// A dangling accessor reference, or a surviving builder/accessor with
+    /// no recognized description tags. Null when the markers agree.
     missing: ?[]const u8,
     /// Each declaration that reads descriptions and may not.
     forbidden: []const Entry,
@@ -171,12 +173,10 @@ pub fn check(arena: std.mem.Allocator, text: []const u8) !Report {
         accessor = accessor or std.mem.eql(u8, d.name, "Schema$nodeBody");
         builder = builder or std.mem.eql(u8, d.name, "Schema$nodeRef");
     }
-    var tested = false;
-    for (decls) |d| tested = tested or try testsTag(arena, d.text, tags);
     const missing: ?[]const u8 = if ((builder or accessor) and tags.len == 0)
         "Schema$nodeRef or Schema$nodeBody but no node built as Schema$nodeRef({ $: \"…\""
-    else if (!accessor and tested)
-        "a test of a description tag and no declaration of Schema$nodeBody"
+    else if (!accessor and names(text, "Schema$nodeBody"))
+        "a reference to Schema$nodeBody without its declaration"
     else
         null;
     // `reads[i]`: the declaration through which `i` reads, or itself.
@@ -331,33 +331,18 @@ test "a module without the markers is a failure, not a pass" {
     const a = arena.allocator();
     const no_accessor = try check(a, try mutant(a, "const Schema$nodeBody = ", "const Schema$bodyOf = "));
     try std.testing.expect(no_accessor.missing != null);
-    // Nothing reads a node, and reachability dropped the accessor: no
-    // tag test, no read, nothing missing.
+    // DCE may drop an unused accessor while keeping description builders.
     const unread = try std.mem.replaceOwned(u8, a, sample[0..std.mem.indexOf(u8, sample, "const Schema$variantClashes").?], "const Schema$nodeBody = ($p$1) => {\n  return $p$1.v;\n};\n", "");
     const dropped = try check(a, unread);
     try std.testing.expectEqual(@as(?[]const u8, null), dropped.missing);
     try std.testing.expectEqual(@as(usize, 0), dropped.forbidden.len);
+    const no_accessor_tag_test = try check(a, try std.mem.replaceOwned(u8, a, unread, "const Schema$nRecord", "const Schema$bad = (n) => n.$ === \"NList\";\nconst Schema$nRecord"));
+    try std.testing.expectEqual(@as(?[]const u8, null), no_accessor_tag_test.missing);
+    try std.testing.expectEqual(@as(usize, 1), no_accessor_tag_test.forbidden.len);
+    try std.testing.expectEqualStrings("Schema$bad", no_accessor_tag_test.forbidden[0].name);
     const no_tags = try check(a, try std.mem.replaceOwned(u8, a, sample, "Schema$nodeRef({ $: ", "Schema$nodeRef({ tag: "));
     try std.testing.expect(no_tags.missing != null);
     // Neither builder nor accessor: no description at all.
     const none = try check(a, "const Schema$parse = (s$1, t$2) => s$1.workers.parse(t$2);\nexport { Schema$parse };\n");
     try std.testing.expectEqual(@as(?[]const u8, null), none.missing);
-}
-
-test "nodeBody is the one function of core/Schema.beni that takes a Node apart" {
-    // The accessor this check knows by name (`Schema$nodeBody`): if core
-    // reads a node any other way, the check is blind to it.
-    const source = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "core/Schema.beni", std.testing.allocator, .limited(1 << 20));
-    defer std.testing.allocator.free(source);
-    var takers: usize = 0;
-    var lines = std.mem.splitScalar(u8, source, '\n');
-    while (lines.next()) |line| {
-        if (std.mem.indexOf(u8, line, "(Node ") == null) continue;
-        if (std.mem.startsWith(u8, line, "--") or std.mem.indexOf(u8, line, " : ") != null) continue;
-        takers += 1;
-        try std.testing.expect(std.mem.startsWith(u8, line, "nodeBody (Node "));
-    }
-    try std.testing.expectEqual(@as(usize, 1), takers);
-    // And `nodeRef` is the one that builds a node.
-    try std.testing.expect(std.mem.indexOf(u8, source, "nodeRef : NodeBody → Node") != null);
 }
