@@ -300,6 +300,7 @@ def entryPath : Ty → Path → Path
   | .builder t, .element :: rest => .element :: entryPath t rest
   | .record ts, .field i :: rest => .field i :: entryPath (ts[i]?.getD .int) rest
   | .result e s, .field i :: rest => .field i :: entryPath (resultSlot e s i) rest
+  | .object ts, .element :: rest => .element :: entryPath (.record ts) rest
   | _, q => q
 
 mutual
@@ -315,6 +316,7 @@ def entryAbstract (ds : List Decl) : Ty → Abstract → Abstract
   | .builder t, .list cs x ex => .list cs (entryAbstract ds t x) ex
   | .record ts, .record xs => .record (entryFields ds ts xs)
   | .result e s, .record xs => .record (entryFields ds [.int, e, s] xs)
+  | .object ts, .list cs x ex => .list cs (entryAbstract ds (.record ts) x) ex
   | _, .function cs alts => .function cs (entryAlternatives ds alts)
   | _, .bottom => .bottom
   | _, .scalar => .scalar
@@ -338,6 +340,7 @@ def fieldType : Ty → Path → Ty
   | t, [] => t
   | .record ts, .field i :: rest => fieldType (ts[i]?.getD .int) rest
   | .result e s, .field i :: rest => fieldType (resultSlot e s i) rest
+  | .object ts, .element :: rest => fieldType (.record ts) rest
   | _, _ :: _ => .int
 
 theorem entryPath_nil (t : Ty) : entryPath t [] = [] := by
@@ -842,6 +845,8 @@ def obsTyped (ds : List Decl) (o : Observation) (t : Ty) : Bool :=
     if tag == 0 then obsTyped ds e err else tag == 1 && obsTyped ds a ok
   | .list os, .chain t | .list os, .list t | .list os, .builder t => os.attach.all fun o => obsTyped ds o.val t
   | .list os, .dict t => os.attach.all fun o => obsTyped ds o.val (.record [.int, t])
+  -- A record object is a one-slot array holding the record (`Ty.object`).
+  | .list os, .object ts => os.length == 1 && os.attach.all fun o => obsTyped ds o.val (.record ts)
   | .closure id caps, .fn ps r =>
     match ds[id]? with
     | some d => d.parameters == ps && d.result == r && caps.length == d.captures.length &&

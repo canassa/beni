@@ -20,6 +20,8 @@ import Ownership.LinkClauses
 import Ownership.FlatFragment.Trace
 import Ownership.DictPrograms
 import Ownership.DictProbes
+import Ownership.RecordPrograms
+import Ownership.RecordProbes
 import Ownership.CallDerivation
 import Ownership.LinkedWriteStep
 import Ownership.StatementChecks.LinkedCallControl

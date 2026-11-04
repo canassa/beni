@@ -33,6 +33,7 @@ inductive DictFree : Ty → Prop where
   | result (error success : Ty) : DictFree error → DictFree success →
       DictFree (.result error success)
   | fn (parameters : List Ty) (result : Ty) : DictFree (.fn parameters result)
+  | object (ts : List Ty) : (∀ t ∈ ts, DictFree t) → DictFree (.object ts)
 
 /-- The types of the flat fragment: integers, lists of flat types, integer
 chains, records, results and dictionaries of flat types (#522). A list can
@@ -60,6 +61,7 @@ def entryType : Ty → Ty
   | .result e a => .result (entryType e) (entryType a)
   | .int => .int
   | .fn ps r => .fn ps r
+  | .object ts => .object (entryTypes ts)
 def entryTypes : List Ty → List Ty
   | [] => []
   | t :: ts => entryType t :: entryTypes ts
@@ -782,6 +784,15 @@ theorem entryType_of_dictFree {t : Ty} (free : DictFree t) : entryType t = t := 
     | some t' => simp only [Option.map_some]; rw [ih t' (List.mem_of_getElem? found)]
   | result e a _ _ ihE ihA => show Ty.result (entryType e) (entryType a) = _; rw [ihE, ihA]
   | fn ps r => rfl
+  | object ts _ ih =>
+    show Ty.object (entryTypes ts) = _
+    congr 1
+    apply List.ext_getElem?
+    intro i
+    rw [entryTypes_getElem?]
+    cases found : ts[i]? with
+    | none => rfl
+    | some t' => simp only [Option.map_some]; rw [ih t' (List.mem_of_getElem? found)]
 
 /-- A representation holds no dictionary. -/
 theorem dictFree_entryType : ∀ (t : Ty), DictFree (entryType t)
@@ -810,6 +821,19 @@ theorem dictFree_entryType : ∀ (t : Ty), DictFree (entryType t)
   | .result e a => .result _ _ (dictFree_entryType e) (dictFree_entryType a)
   | .int => .int
   | .fn ps r => .fn ps r
+  | .object ts => .object _ (by
+      intro t' member
+      obtain ⟨i, found⟩ := List.mem_iff_getElem?.mp member
+      rw [entryTypes_getElem?] at found
+      cases original : ts[i]? with
+      | none => rw [original] at found; cases found
+      | some t0 =>
+        rw [original] at found
+        cases Option.some.inj found
+        have : sizeOf t0 < 1 + sizeOf ts := by
+          have := List.sizeOf_lt_of_mem (List.mem_of_getElem? original)
+          omega
+        exact dictFree_entryType t0)
 termination_by t => sizeOf t
 decreasing_by
   all_goals simp_wf

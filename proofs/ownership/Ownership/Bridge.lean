@@ -21,6 +21,7 @@ def ty : Ty → String
   | .builder t => node "builder" [ty t]
   | .dict t => node "dict" [ty t]
   | .record ts => node "record" [arr (ts.attach.map fun t => ty t.val)]
+  | .object ts => node "object" [arr (ts.attach.map fun t => ty t.val)]
   | .fn ps r => node "fn" [arr (ps.attach.map fun t => ty t.val), ty r]
 termination_by t => sizeOf t
 decreasing_by
@@ -53,6 +54,8 @@ def prim : Prim → String
   | .dictEmpty t => node "dict-empty" [ty t]
   | .dictInsert => node "dict-insert" | .dictRemove => node "dict-remove"
   | .dictGet => node "dict-get" | .dictSize => node "dict-size"
+  | .object => node "object" | .get i => node "get" [toString i]
+  | .recordCopy => node "record-copy"
 
 def expr : Expr → String
   | .atom a => node "atom" [atom a]
@@ -67,6 +70,7 @@ def expr : Expr → String
   | .branch c a b => node "branch" [atom c, expr a, expr b]
   | .focus a i x b => node "focus" [atom a, atom i, toString x, expr b]
   | .dictFocus a k x b => node "dict-focus" [atom a, atom k, toString x, expr b]
+  | .assign w fs b vs => node "assign" [toString w, arr (fs.map toString), atom b, arr (vs.map atom)]
   | .traverse k a z i x acc b => node "traverse"
       [quote (match k with | .list => "list" | .range => "range" | .model => "model"),
        atom a, atom z, toString i, toString x, toString acc, expr b]
@@ -108,6 +112,7 @@ def maxVar : Expr → Nat
     [maxAtom input, e, a, maxVar left, maxVar right].foldl max 0
   | .branch c a b => max (maxAtom c) (max (maxVar a) (maxVar b))
   | .focus a i x b | .dictFocus a i x b => max x (max (maxAtom a) (max (maxAtom i) (maxVar b)))
+  | .assign _ _ b vs => ((b :: vs).map maxAtom).foldl max 0
   | .traverse _ a z i x acc b =>
     [maxAtom a, maxAtom z, i, x, acc, maxVar b].foldl max 0
 

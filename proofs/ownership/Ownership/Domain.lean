@@ -268,6 +268,11 @@ def atomUses : Atom → Live
 
 def atomsUses (xs : List Atom) : Live := xs.flatMap atomUses
 
+/-- The uses of fields `fs` of the record object `a`: the object's element,
+    then the field. A record object is a one-slot array (`Ty.object`). -/
+def fieldUses (a : Atom) (fs : List Nat) : Live :=
+  (atomUses a).flatMap fun (v, p) => fs.map fun f => (v, p ++ [.element, .field f])
+
 def removeVars (xs : List Var) (l : Live) : Live := l.filter fun (v, _) => !xs.contains v
 
 /-- The captures of the closures an expression creates along its let chain
@@ -285,6 +290,8 @@ def usesArms (nonzero : Bool) (armClosures : Bool := true) (prependRead : Bool :
   | .letE v rhs rest => union (usesArms nonzero armClosures prependRead rhs) (removeVars [v] (usesArms nonzero armClosures prependRead rest))
   | .prim .prepend [x, base] => if prependRead then atomsUses [x, base] else atomUses x
   | .prim .close (x :: _) => atomUses x
+  -- A field read uses the object's field, not the object (§31.4 item 5).
+  | .prim (.get i) [x] => fieldUses x [i]
   | .prim _ xs | .recur xs => atomsUses xs
   | .closure _ xs => atomsUses xs
   | .app f xs => union (atomUses f) (atomsUses xs)
@@ -308,6 +315,9 @@ def usesArms (nonzero : Bool) (armClosures : Bool := true) (prependRead : Bool :
     union (atomsUses [src, init]) (removeVars [i, x, acc] (usesArms nonzero armClosures prependRead body))
   | .focus src i x body | .dictFocus src i x body =>
     union (atomsUses [src, i]) (removeVars [x] (usesArms nonzero armClosures prependRead body))
+  -- An update reads the fields it keeps (§7.1), and its new values.
+  | .assign width fields base values =>
+    union (fieldUses base ((List.range width).filter (!fields.contains ·))) (atomsUses values)
 
 def uses (e : Expr) : Live := usesArms true true true e
 

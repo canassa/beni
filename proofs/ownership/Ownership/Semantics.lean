@@ -67,6 +67,15 @@ def dictPut (key : α → Option Int) (es : List α) (k : Int) (e : α) : List �
 def dictDrop (key : α → Option Int) (es : List α) (k : Int) : List α :=
   es.filter fun e => key e != some k
 
+/-! ## Record objects (#316)
+
+A record object is a one-slot array whose element is the record: the value
+interpreter holds it as `list [record fields]`, the in-place interpreter as a
+heap array `[record fields]`. `Expr.assign` replaces some of its fields:
+the value interpreter builds a new record, the in-place interpreter writes the
+array in place, so every holder of the object sees the new fields
+(`assignFields`, `Syntax.lean`). -/
+
 structure Trace where
   reads : List Observation
   finalValue : Observation
@@ -178,6 +187,9 @@ def prim (op : Prim) (vs : List Value) : M Value := do
     let n := Observation.int es.length
     read n
     pure n
+  | .object, xs => pure (.list [.record xs])
+  | .get i, [.list [.record xs]] => xs[i]?.toExcept "value record field"
+  | .recordCopy, [.list [.record xs]] => pure (.list [.record xs])
   | _, _ => throw "value primitive shape"
 
 def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
@@ -251,6 +263,10 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
         | .record [.int 1, _, w] => pure (.list (dictPut entryKey es k (.record [.int k, w])))
         | .record [.int 0, _, _] => pure (.list (dictDrop entryKey es k))
         | _ => throw "value dictionary focus answer"
+      | .assign _ fields base values =>
+        let .list [.record xs] ← atom env base | throw "value update"
+        let vs ← values.mapM (m := Except String) (atom env)
+        pure (.list [.record (assignFields xs fields vs)])
     observeKept
     pure result
 termination_by depth
@@ -555,6 +571,11 @@ def prim (op : Prim) (vs : List Value) : M Value := do
     let n := Value.int (← array c).length
     read n
     pure n
+  | .object, xs => alloc [.record xs]
+  | .get i, [.ref c] => do
+    let [.record xs] ← array c | throw "in-place record object"
+    xs[i]?.toExcept "in-place record field"
+  | .recordCopy, [.ref c] => do alloc (← array c)
   | _, _ => throw "in-place primitive shape"
 
 def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
@@ -660,6 +681,13 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
         | .record [.int 1, _, w] => writeCounted c (dictPut entryKey (← array c) k (.record [.int k, w]))
         | .record [.int 0, _, _] => writeCounted c (dictDrop entryKey (← array c) k)
         | _ => throw "in-place dictionary focus answer"
+      | .assign _ fields base values =>
+        -- Every value is evaluated before the store (§31.10's order); the
+        -- store is one counted write of the object's array.
+        let .ref c ← atom env base | throw "in-place update"
+        let vs ← values.mapM (m := Except String) (atom env)
+        let [.record xs] ← array c | throw "in-place update object"
+        writeCounted c [.record (assignFields xs fields vs)]
     observeKept
     pure result
 termination_by depth
