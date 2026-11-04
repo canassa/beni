@@ -8,7 +8,7 @@ length items = List.length items
 
 
 pub empty : ⊤ → Int
-empty ⊤ = length []
+empty ⊤ = List.length []
 
 
 pub chosen : Bool → Int
