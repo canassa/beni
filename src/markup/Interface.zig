@@ -118,6 +118,8 @@ pub const TypeStep = union(enum) {
     function_result,
     tuple_field: u32,
     record_field: []const u8,
+    /// 1.30: a named type's argument, by position (`Maybe a`'s `a`).
+    type_argument: u32,
 };
 
 /// A compiler-issued token; it carries no runtime object.
@@ -712,6 +714,9 @@ pub const RuntimeExport = struct {
 pub const RuntimeProtocol = struct {
     /// The supplied values' names, each a `foreign` of the runtime module.
     values: []const []const u8,
+    /// The runtime module's values the supplied expressions name: what a
+    /// supplied value reaches while it lives (`backend.md` §9).
+    uses: []const []const u8,
     /// The expression of one of `values`, called when the runtime module
     /// lowers that declaration, at most once per build.
     supply: *const fn (cx: *Context, name: []const u8) Error!Expr,

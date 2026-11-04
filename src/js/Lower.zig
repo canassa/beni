@@ -21402,6 +21402,7 @@ const MarkupContext = struct {
             const entry = l.in.types.entry(id);
             const text = try std.fmt.allocPrint(l.scratch, "core:{s}.{s}", .{
                 l.interner.slice(entry.module_name), l.interner.slice(entry.name),
+                .type_argument => |index_| if (shape.kind == .named and children.len > index_) children[index_] else return null,
             });
             return keepEvidence(l, try l.identityString(text, pos(l)), .identity);
         }

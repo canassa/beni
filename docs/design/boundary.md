@@ -3106,10 +3106,14 @@ without one: `run` and `start` are called by the entry file, `Html.text` and
 types, and a view written only with `Html.text` has no markup root, so no unit
 of the build held a record at all.
 
-- `Lowering.runtime_protocol` is `{ values, supply }`: the names of the runtime
-  module's values the lowering supplies, and the hook that writes each one's
+- `Lowering.runtime_protocol` is `{ values, uses, supply }`: the names of the
+  runtime module's values the lowering supplies, the names of the runtime
+  module's values their expressions read, and the hook that writes each one's
   expression. Its 1.27 fields `module`, `record` and `carriers` are withdrawn;
   nothing read them, and the carriers' facts come from their Beni declarations.
+  The reachability pass treats each supplied value as an edge to every one of
+  `uses`, followed while the supplied value is live: the expression is the
+  lowering's, so no declaration's own edges can say what it reads.
 - The runtime module declares each supplied value as a body-less `foreign`
   value with its ordinary typed annotation. The compiler binds it to the
   expression `supply(cx, name)` returns, as a `const` of that module, built
@@ -3132,8 +3136,13 @@ of the build held a record at all.
   module that writes markup imports. The record's construction is a pure
   module-level initialiser, so the record is the same object at `--jobs=1`
   and `--jobs=8` and does not depend on module completion order.
-- Emitted code reaches the record through the runtime export `protocol` and
-  passes it to the runtime's slot, row and `Show` operations. An empty node or
+- The runtime's slot, row and `Show` exports read the record themselves, so
+  emitted code calls them as before, without it; emitted code names the
+  record (`protocol`, a runtime export) only where a row that is not markup
+  mounts or patches its block. A keyed list's and a `Show`'s key identity is
+  the compiler's evidence (`cx.evidence`, `cx.suppliedRuntime`); a `Show` on
+  its value reads it through the new type step `type_argument`, a named
+  type's argument by position (`Maybe a`'s `a`). An empty node or
   block link is the existing `Js.Opt` empty value, never `null`. A text hole
   of a non-`String` value is converted by the producer with JavaScript's own
   `ToString` (`"" + v`), which is what the DOM's coercion printed before.
