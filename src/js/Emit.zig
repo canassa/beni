@@ -6077,6 +6077,21 @@ const Emitter = struct {
         return e.session.checked.types.find(e.graph(), .platform, try e.session.interner.getOrPut(e.gpa, platformModule(qualified)), try e.session.interner.getOrPut(e.gpa, shortName(qualified)));
     }
 
+    /// A route row that holds a shape hands core's `Schema.ShapePlan` to the
+    /// markup runtime as JavaScript data, and the runtime tells a shape from
+    /// a row's own loader function by `typeof` (`browser-inline.md` §8.4,
+    /// amended 2026-10-24): a JavaScript observation the lowering writes
+    /// with no `Js.from`, so the type keeps its development representation
+    /// (`boundary.md` §4, *What JavaScript may read of a beni value*).
+    fn routeShapeType(e: *Emitter) !Dispatch.TypeId {
+        const d = e.direct orelse return .none;
+        const shaped = outer: for (d.programs) |prog| {
+            for (prog.routes.rows) |r| if (r.shape != null) break :outer true;
+        } else false;
+        if (!shaped) return .none;
+        return e.session.checked.types.find(e.graph(), .core, try e.session.interner.getOrPut(e.gpa, "Schema"), try e.session.interner.getOrPut(e.gpa, "ShapePlan"));
+    }
+
     fn closeBoundary(e: *Emitter) !void {
         e.boundary = null;
         if (!e.options.release or e.options.library or e.reachesDebug()) return;
@@ -6094,7 +6109,7 @@ const Emitter = struct {
             b.* = e.bir(m);
             d.* = e.dispatchOf(m);
         }
-        const runtime_types = [_]Dispatch.TypeId{try e.jsRuntimeProgramType()};
+        const runtime_types = [_]Dispatch.TypeId{ try e.jsRuntimeProgramType(), try e.routeShapeType() };
         e.boundary = try Fields.close(.{
             .observed_types = &runtime_types,
 
@@ -8186,7 +8201,7 @@ const Emitter = struct {
             bb.* = e.bir(m);
             dt.* = e.dispatchOf(m);
         }
-        const runtime_types = [_]Dispatch.TypeId{try e.jsRuntimeProgramType()};
+        const runtime_types = [_]Dispatch.TypeId{ try e.jsRuntimeProgramType(), try e.routeShapeType() };
         const refined = try Fields.close(.{
             .observed_types = &runtime_types,
             .arena = e.scratch,
