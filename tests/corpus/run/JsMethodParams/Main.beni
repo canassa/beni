@@ -1,0 +1,19 @@
+-- `Js.method` with parameters after its receiver (boundary.md §4.2,
+-- amended 2026-11-04): an accumulator adding its two arguments, a method
+-- storing its argument on its receiver and answering the receiver, an
+-- argument read by an arrow the method makes, and an argument beyond the
+-- lambda's count, dropped.
+import Methods
+import Node
+
+
+main : Node.Program
+main =
+    acc = Methods.accumulator 10
+    Node.printLines
+        [ String.fromInt (Methods.add acc 1 2)
+        , String.fromInt (Methods.add acc 3 4)
+        , Methods.keeper ⊤
+        , String.fromInt (Methods.deferred 37)
+        , String.fromInt (Methods.extra ⊤)
+        ]

@@ -1,0 +1,21 @@
+-- `Js.method` with parameters (`backend.md` §4, *`Js.method` is a
+-- `function`*, amended 2026-11-04): the lambda's parameters after the
+-- first are the `function`'s, in order, and the first is bound to `this`
+-- by the function's first statement; an arrow nested in it reads both
+-- through their names. Built with `--core`, which is what lets a
+-- root-package module import `Js`.
+import Js
+
+
+pub add : Js.Value
+add = Js.method λself a b → Js.to (Js.get self "n") + Js.to a + Js.to b
+
+
+pub keep : Js.Value
+keep = Js.method λself v →
+    Js.set self "kept" v
+    self
+
+
+pub later : Js.Value
+later = Js.method λself step → Js.from λ⊤ → Js.to (Js.get self "base") + Js.to step
