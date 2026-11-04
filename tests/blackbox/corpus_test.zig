@@ -108,6 +108,7 @@ const Io = std.Io;
 const testing = std.testing;
 const Part = @import("corpus_parts.zig").Part;
 const run_hash = @import("run_hash.zig");
+const description_walk = @import("description_walk.zig");
 const browser = @import("browser.zig");
 const serve = @import("serve.zig");
 const worker_harness = @import("workers.zig");
@@ -233,6 +234,10 @@ const Kind = enum {
 /// `run/`'s two builds of one fixture. Every other kind has one pass,
 /// which `partOf` is asked about as `.dev`.
 const RunPass = enum { dev, release, dev_fiber };
+
+test {
+    _ = description_walk;
+}
 
 test "corpus: parse/good" {
     try walk(.parse_good);
@@ -1722,8 +1727,9 @@ const Case = struct {
     /// Every schema runs compiled, including runtime composition (schema.md A.14).
     /// A compiled-schemas marker additionally requires a Schema module in
     /// development output; its text explains the fixture and is not blessed.
-    /// The retired-name guard below is not proof that runs avoid description
-    /// walks; #1818 tracks a guard using the actual execution/inspection boundary.
+    /// In that module only inspection (`describe`) and the makers' checks at
+    /// construction may read a description node; no runner reaches a read
+    /// (`description_walk.zig`, #1818).
     fn checkCompiledSchemas(c: Case, out_dir: []const u8) !void {
         const path = try std.fmt.allocPrint(c.arena, "{s}/_core/Schema.mjs", .{out_dir});
         if (!c.w.exists(path)) {
@@ -1733,13 +1739,20 @@ const Case = struct {
             return error.CompiledSchemasNoSchema;
         }
         const text = try c.w.read(path);
-        const banned = [_][]const u8{ "const Schema$run = ", "const Schema$box = " };
-        for (banned) |b| {
-            if (std.mem.indexOf(u8, text, b) == null) continue;
-            detail("{s} [{s}]: every schema must run compiled, but this build ships the removed interpreter: `{s}` is in _core/Schema.mjs\n", .{ c.fixture.name, out_dir, b });
-            because("[{s}] ships the schema interpreter ({s})", .{ out_dir, b });
-            return error.ShipsSchemaInterpreter;
+        const report = try description_walk.check(c.arena, text);
+        if (report.missing) |what| {
+            detail("{s} [{s}]: _core/Schema.mjs has {s}, so the check of its description reads would see nothing; the guard's markers (description_walk.zig) no longer match the module\n", .{ c.fixture.name, out_dir, what });
+            because("[{s}] _core/Schema.mjs has {s}", .{ out_dir, what });
+            return error.DescriptionMarkersMissing;
         }
+        const entries = report.forbidden;
+        if (entries.len == 0) return;
+        for (entries) |e| {
+            const chain = try std.mem.join(c.arena, " → ", e.path);
+            detail("{s} [{s}]: every schema must run compiled, but `{s}` in _core/Schema.mjs reads a description ({s}); only describe, what it reaches, and the makers' construction checks may read one\n", .{ c.fixture.name, out_dir, e.name, chain });
+        }
+        because("[{s}] {s} reads a schema description", .{ out_dir, entries[0].name });
+        return error.RunReadsDescription;
     }
 
     fn goldenExists(c: Case, ext: []const u8) bool {

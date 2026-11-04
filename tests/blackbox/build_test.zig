@@ -80,14 +80,16 @@ test "a program computes something and prints the right answer" {
     // One `.mjs` per source module, mirroring the source tree, packages in
     // directories of their own, plus each sibling next to its module and the
     // platform's runtime (backend.md §5, boundary.md §5.2). `Node` has no
-    // sibling since 2026-10-23 (#877): its values are beni over `Js`.
+    // sibling since 2026-10-23 (#877): its values are beni over `Js`. Its
+    // runtime is the typed entry module `NodeRuntime` (its manifest's
+    // `"entryKinds"`) since 3948c1f9c, not a hand-written `runtime.js`.
     for ([_][]const u8{
         "out/Main.mjs",
         "out/_main.mjs",
         "out/_core/Basics.mjs",
         "out/_core/List.mjs",
         "out/_platform/Node.mjs",
-        "out/_platform/runtime.foreign.mjs",
+        "out/_platform/NodeRuntime.mjs",
     }) |path| {
         if (!w.exists(path)) {
             std.debug.print("expected {s} to exist\n", .{path});
@@ -4601,7 +4603,7 @@ test "a development build maps a crash in a case arm back to the beni line and c
         \\(n$1) => -> Main.beni:22:7 twice
         \\n$1 * 2 -> Main.beni:22:5
         \\Main$describe(Main$Stop -> Main.beni:27:41
-        \\frame todo Debug.beni:43:15
+        \\frame todo Debug.beni:44:15
         \\frame describe Main.beni:17:13
         \\frame <anonymous> Main.beni:27:41
         \\exit 1
@@ -4729,11 +4731,12 @@ test "a release build maps the one hoisted file back to each module's beni sourc
     // name, and `Debug.todo` is a body copied from `core/Debug` to its call,
     // so it maps to the call. `report` is written with `countDown` in it, a loop
     // whose variable the printer declares in a `for` head (item 4). The
-    // runtime's `process.stdout` is hand-written and the entry's
-    // `run(main)` the link step's: both unmapped, under Node's own reader
-    // too, for which the map's last segment must end with its line. So is
-    // the runtime's `import` at the top, before the first stretch, which is
-    // where a file §9 declines to hoist is imported too. A module with no
+    // `process.stdout` write is the generated `Browser.Host.NodeProcess`
+    // sibling's, hand-written JavaScript, and the entry's `run(main)` the
+    // link step's: both unmapped, under Node's own reader too, for which
+    // the map's last segment must end with its line. So is `List`'s
+    // hand-written view constructor at the top, before the first stretch,
+    // which is where a file §9 declines to hoist is imported too. A module with no
     // mark (`core/Debug`, whose `todo` is copied to its call) is no source
     // of the map. Under
     // Node's `--enable-source-maps`, the crash names `describe` at the call,
@@ -4810,24 +4813,24 @@ test "a release build maps the one hoisted file back to each module's beni sourc
         "check-release-map.mjs",
         "out/_main.mjs",
         "run",
-        "p=|a=>{",
+        "l=|a=>{",
         "let b=a*7919",
         "let |b=a*7919",
         "b=|a*7919",
         "b+b*3",
-        "q=|b=>{if",
-        "return a(p(",
+        "m=|a=>{if",
+        "return f(l(",
         "throw new Error",
-        "r=|a=>a.length",
-        "r(n(a))",
-        "r(|n(a))",
-        "s=|b=>{let d=0",
-        "for(let c=b",
-        "for(let |c=b",
-        "let |d=0",
-        "import process",
-        "process.stdout",
-        "u(t)",
+        "n=|a=>a.length",
+        "+|n(1>=a",
+        "n(|1>=a",
+        "o=|a=>{let c=0",
+        "for(let b=a",
+        "for(let |b=a",
+        "let |c=0",
+        "const q=function",
+        "const i=a=>{globalThis",
+        "k(p)",
     });
 
     // ┌─────────────────────────────────────────┐
@@ -4836,28 +4839,29 @@ test "a release build maps the one hoisted file back to each module's beni sourc
     try testing.expectEqualStrings("", checked.stderr);
     try testing.expectEqualStrings(
         \\version 3, file _main.mjs
-        \\source beni:///core/String.beni: embedded
         \\source beni:///core/List.beni: embedded
+        \\source beni:///core/String.beni: embedded
         \\source beni:///platforms/node/Node.beni: embedded
+        \\source beni:///platforms/node/NodeRuntime.beni: embedded
         \\source ../src/Main.beni: its text
-        \\p=|a=>{ -> Main.beni:24:13 spread
+        \\l=|a=>{ -> Main.beni:24:13 spread
         \\let b=a*7919 -> Main.beni:22:5
         \\let |b=a*7919 -> Main.beni:22:5 doubled
         \\b=|a*7919 -> Main.beni:23:9
         \\b+b*3 -> Main.beni:24:5
-        \\q=|b=>{if -> Main.beni:12:5 describe
-        \\return a(p( -> Main.beni:14:13
+        \\m=|a=>{if -> Main.beni:12:5 describe
+        \\return f(l( -> Main.beni:14:13
         \\throw new Error -> Main.beni:17:13
-        \\r=|a=>a.length -> Main.beni:29:5 total
-        \\r(n(a)) -> Main.beni:34:17
-        \\r(|n(a)) -> Main.beni:33:14
-        \\s=|b=>{let d=0 -> Main.beni:50:5 report
-        \\for(let c=b -> Main.beni:49:9
-        \\for(let |c=b -> Main.beni:49:9 i
-        \\let |d=0 -> Main.beni:49:9 acc
-        \\import process -> unmapped
-        \\process.stdout -> unmapped
-        \\u(t) -> unmapped
+        \\n=|a=>a.length -> Main.beni:29:5 total
+        \\+|n(1>=a -> Main.beni:34:17
+        \\n(|1>=a -> Main.beni:33:14
+        \\o=|a=>{let c=0 -> Main.beni:50:5 report
+        \\for(let b=a -> Main.beni:49:9
+        \\for(let |b=a -> Main.beni:49:9 i
+        \\let |c=0 -> Main.beni:49:9 acc
+        \\const q=function -> unmapped
+        \\const i=a=>{globalThis -> unmapped
+        \\k(p) -> unmapped
         \\frame describe Main.beni:17:13
         \\frame <anonymous> Main.beni:55:114
         \\exit 1
@@ -4965,10 +4969,10 @@ test "a branch that specialisation decides maps to the code it keeps" {
     // └─────────────────────────────────────────┘
     const built = try w.runWith(&.{ "build", "--platform=node", "--release", "--allow-debug", "--source-maps", "--out=out", "src" }, .{ .raw_diagnostics = true });
     try expectBuilt(built);
-    const checked = try w.runNode(&.{ "check-release-map.mjs", "out/_main.mjs", "run", "a(|b())", "a(|b*2)" });
+    const checked = try w.runNode(&.{ "check-release-map.mjs", "out/_main.mjs", "run", "a(|g())", "a(|b*2)" });
     const and_built = try w.runWith(&.{ "build", "--platform=node", "--release", "--allow-debug", "--source-maps", "--out=and-out", "and" }, .{ .raw_diagnostics = true });
     try expectBuilt(and_built);
-    const and_checked = try w.runNode(&.{ "check-release-map.mjs", "and-out/_main.mjs", "no", "a()?\"y\"" });
+    const and_checked = try w.runNode(&.{ "check-release-map.mjs", "and-out/_main.mjs", "no", "f()?\"y\"" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -4977,12 +4981,13 @@ test "a branch that specialisation decides maps to the code it keeps" {
     try testing.expectEqualStrings(
         \\version 3, file _main.mjs
         \\source beni:///core/String.beni: embedded
-        \\source beni:///core/Debug.beni: embedded
         \\source beni:///platforms/node/Node.beni: embedded
+        \\source beni:///platforms/node/NodeRuntime.beni: embedded
+        \\source beni:///core/Debug.beni: embedded
         \\source ../src/Main.beni: its text
-        \\a(|b()) -> Main.beni:14:9
+        \\a(|g()) -> Main.beni:14:9
         \\a(|b*2) -> Main.beni:8:41
-        \\frame todo Debug.beni:43:15
+        \\frame todo Debug.beni:44:15
         \\frame <anonymous> Main.beni:14:9
         \\exit 1
         \\
@@ -4991,10 +4996,12 @@ test "a branch that specialisation decides maps to the code it keeps" {
     try testing.expectEqualStrings("", and_checked.stderr);
     try testing.expectEqualStrings(
         \\version 3, file _main.mjs
-        \\source beni:///core/Debug.beni: embedded
+        \\source beni:///core/String.beni: embedded
         \\source beni:///platforms/node/Node.beni: embedded
+        \\source beni:///platforms/node/NodeRuntime.beni: embedded
+        \\source beni:///core/Debug.beni: embedded
         \\source ../and/Main.beni: its text
-        \\a()?"y" -> Main.beni:8:16
+        \\f()?"y" -> Main.beni:8:16
         \\
     , and_checked.stdout);
 }
@@ -6703,13 +6710,13 @@ fn expectSameWithBuiltEdges(w: *World, platform: []const u8, out: []const u8, ar
             // units included. The manifest hashes those maps, so its map
             // lines are masked; the map bytes themselves are compared here.
             const want_cmp = if (mapped and std.mem.endsWith(u8, a, ".mjs.map"))
-                try comparableMapSources(arena, want_bytes)
+                try comparableMapSources(arena, a, want_bytes)
             else if (mapped and std.mem.eql(u8, a, "_manifest.txt"))
                 try comparableManifestHashes(arena, want_bytes)
             else
                 want_bytes;
             const got_cmp = if (mapped and std.mem.endsWith(u8, b, ".mjs.map"))
-                try comparableMapSources(arena, got_bytes)
+                try comparableMapSources(arena, b, got_bytes)
             else if (mapped and std.mem.eql(u8, b, "_manifest.txt"))
                 try comparableManifestHashes(arena, got_bytes)
             else
@@ -6725,15 +6732,22 @@ fn expectSameWithBuiltEdges(w: *World, platform: []const u8, out: []const u8, ar
 
 /// A map's `sources` names the core two ways: `beni:///core/…` when the
 /// binary carries it, the relative path from the map's directory to
-/// `mycore/…` when `--core-root` reads it. Both become `core/…`, so the
+/// `mycore/…` when `--core-root` reads it: one `../` per directory of
+/// `map_path`, the map's path below the output directory, and one for the
+/// output directory itself. Both become `core/…`, so the
 /// comparison is about the map's positions rather than where its source
 /// came from. The same two substitutions run on both trees, whose sources
 /// are the same inputs; a source that contained either spelling would be
 /// rewritten on both sides, so the rewrite cannot make two different
 /// sources equal.
-fn comparableMapSources(arena: std.mem.Allocator, bytes: []const u8) ![]const u8 {
-    const embedded = try std.mem.replaceOwned(u8, arena, bytes, "beni:///core/", "core/");
-    return std.mem.replaceOwned(u8, arena, embedded, "../../mycore/", "core/");
+fn comparableMapSources(arena: std.mem.Allocator, map_path: []const u8, bytes: []const u8) ![]const u8 {
+    const text = try std.mem.replaceOwned(u8, arena, bytes, "beni:///core/", "core/");
+    // A map at a wrong depth keeps its other `../` and stays unequal.
+    var built: std.ArrayList(u8) = .empty;
+    try built.appendSlice(arena, "../");
+    for (map_path) |c| if (c == '/') try built.appendSlice(arena, "../");
+    try built.appendSlice(arena, "mycore/");
+    return std.mem.replaceOwned(u8, arena, text, built.items, "core/");
 }
 
 /// A manifest hashes every file, its maps included, and a core map's hash
@@ -13791,4 +13805,22 @@ test "typed row module matches development and release emit goldens" {
         const expected = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, arena, .limited(world.max_stream_bytes));
         try testing.expectEqualStrings(expected, try w.read("out/_platform/Rt/Rows.mjs"));
     }
+}
+
+test "nodeBody is the one function of core/Schema.beni that takes a Node apart" {
+    // The accessor this check knows by name (`Schema$nodeBody`): if core
+    // reads a node any other way, the check is blind to it.
+    const source = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "core/Schema.beni", std.testing.allocator, .limited(1 << 20));
+    defer std.testing.allocator.free(source);
+    var takers: usize = 0;
+    var lines = std.mem.splitScalar(u8, source, '\n');
+    while (lines.next()) |line| {
+        if (std.mem.indexOf(u8, line, "(Node ") == null) continue;
+        if (std.mem.startsWith(u8, line, "--") or std.mem.indexOf(u8, line, " : ") != null) continue;
+        takers += 1;
+        try std.testing.expect(std.mem.startsWith(u8, line, "nodeBody (Node "));
+    }
+    try std.testing.expectEqual(@as(usize, 1), takers);
+    // And `nodeRef` is the one that builds a node.
+    try std.testing.expect(std.mem.indexOf(u8, source, "nodeRef : NodeBody → Node") != null);
 }

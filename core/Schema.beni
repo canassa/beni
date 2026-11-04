@@ -593,7 +593,7 @@ key (Fields bundle) external =
     case List.last bundle.fields of
         Nothing →
             Fields
-                { bundle
+                { Record.copy bundle
                     | problem =
                         firstProblem
                             bundle.problem
@@ -602,7 +602,7 @@ key (Fields bundle) external =
         Just last →
             if last.renamed then
                 Fields
-                    { bundle
+                    { Record.copy bundle
                         | problem =
                             firstProblem
                                 bundle.problem
@@ -610,7 +610,7 @@ key (Fields bundle) external =
                     }
             else
                 Fields
-                    { bundle
+                    { Record.copy bundle
                         | fields =
                             [ …(List.copy (List.take bundle.fields (List.length bundle.fields - 1)))
                             , { Record.copy last | key = external, renamed = True }

@@ -1,1 +1,1 @@
-{"platform":true,"name":"platform-program-unbox","program":"Test.Program","entryHost":"node","runtime":"runtime.js","platforms":["node"]}
+{"platform":true,"name":"platform-program-fields","program":"Test.Program","entryHost":"node","runtime":"runtime.js","platforms":["node"]}

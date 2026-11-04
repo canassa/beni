@@ -748,12 +748,13 @@ fresh one except a platform's reference check, which is the point.
 
 *Amended 2026-10-24 (#916): one constant for the one file.* "Per module" was decided for files:
 one object for the whole program would need a file to import it from. A release application is
-one scope-hoisted file (§9), where there is no import to pay for, so there each imported
-nullary constructor's constant is declared once. Each module that builds one still declares its
+one scope-hoisted file (§9), where there is no import to pay for, so compatible copies of an
+imported nullary constructor can share one declaration. Each module that builds one still declares its
 `<Module>$<Declaring$Module>$<Ctor>`; the link step (`Emit.shareNullaries`) keeps the first
-declaration in the file's order and drops every later one, whose name is numbered as the first's.
-The first is evaluated before every later module, and every one is the same object literal of
-constants, so each use reads an equal value, and the render loop's rule above still holds: the
+declaration in the file's order, gives it a covering literal (§9, amended 2026-11-04, #1856),
+and drops compatible later copies, whose names are numbered as the first's. A group with no
+covering literal stays separate. The first is evaluated before every later module, and the
+kept literal holds every field of each dropped copy, so each use reads an equal value, and the render loop's rule above still holds: the
 same expression yields the same object every time it runs. A constant of a module's own
 constructor (`<Module>$<Ctor>`), a multi-file build and a development build are as before. On
 S1 seed 1 this is one `{$:1,a:null}` in place of one per widget module: −2.6 B per widget from
@@ -9195,6 +9196,41 @@ decided `return`. Measured (release, brotli 11, raw in brackets, each golden tha
 state through shape tables; they move only by a typed number input's parse, fused into its
 validator as in `inline/FormLocal`: N = 64 15 217 / 15 222 / 15 121 → 15 177 / 15 170 / 15 117,
 N = 256 45 409 / 45 791 / 47 041 → 45 464 / 45 703 / 47 020 (seed 1 grows after brotli only).
+
+*Amended 2026-11-04 (#1817): a failure that is one object of the program.* A schema worker's
+failure is Opt's absence sentinel (*Typed cells and optional slots*): a top-level `const m =
+{…}` of core that every worker returns and every caller compares with, `x === m`. The rule above
+decided a comparison only against a local stable chain, so a copy at `return m` kept `m === m`,
+and one at `return {$: "Set", …}` read on through a test it could not decide; the copies were
+over the function, and every worker stayed shared, making a constructor per successful read
+for its caller to test. One more decision takes the site, exact as the others: a name of a
+top-level `const` of an object or array literal that the program never assigns (`heldObject`)
+is one object for the whole run, never `NaN`, whatever its properties are later written to. So
+`x === y` (`!==`), `y` such a name, is `true` (`false`) at a `return` of the same name; `false`
+(`true`) at a primitive literal; and `false` (`true`) at another such name, unless a later pass
+may make the two one object (`heldVerdict`): two names of one base in two modules — the
+constant of one imported nullary constructor, which `Emit.shareNullaries` shares by its name —
+or two literals of the same code (`sameCode`) are left undecided. The constants may have different fields after
+release pruning. Sharing uses a literal that covers every field of every copy, with exactly
+the same literal value for every shared field, including the constructor tag. If no copy
+covers the others, or shared values conflict, those copies stay separate. When several copies
+cover all the others, the lexicographically first module name chooses the literal; its bytes
+are independent of encounter order and of jobs 1 or 8. The first declaration in evaluation
+order receives that literal, so earlier uses never read a later uninitialised constant.
+A runtime-safety assertion checks that the kept literal covers every dropped copy. This
+replaces the earlier null-padding-only check: pruning can remove the tag too. In
+`run/NullaryCoverage`, an early identity-only `Nothing` was `{}`, and two later host readers
+therefore printed `{}` instead of `{"$":"Nothing","a":null}`. The shared covering literal
+restores both reads (#1856). `run/SchemaDeadTagsShapes` also keeps differently padded copies.
+Pinned by `emit/release/app/SchemaWorkerFusion` (a tagged worker fused into its `case`: its
+`return`s are `7`, `c`, `7+d` and `0`, and no `Set`, `Bump` or `Calm` is built; the declared
+`Calm` decides the different-literal `false`), `run/SchemaWorkerFusion` (every arm, both builds)
+and `Spec`'s unit test *a held object is itself, and another only when no pass may share them*.
+Measured (release, brotli 11, this branch's output before and after; the goldens of these
+programs are stale on this branch for other reasons and are left to #1848 §D):
+`app/SchemaDeadTags` 942 → 881, `app/ValidatorRun` 892 → 841, `app/CaseAcrossClosure` 2 211 →
+2 146, `inline/CaseLoader` 1 735 → 1 673, `inline/TickFresh` 1 597 → 1 507; sixteen release
+outputs move, every one smaller. `SchemaDeadTags`'s `step` on valid reads: 9.4 → 4.0 ns a call.
 
 **Identical functions are one** (*added 2026-10-24*, #934; `Spec.mergeSame`). In a release build,
 `Maybe.withDefault` and `Result.withDefault` are the same code once `Just` and `Ok` are both tag 0

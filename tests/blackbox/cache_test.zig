@@ -2416,13 +2416,17 @@ test "a platform read from a directory is checked by the build, and an embedded 
     try testing.expectEqual(disk.counters.modules, disk.counters.checked + disk.counters.embedded_modules);
     try testing.expect(disk.counters.embedded_modules > 0);
     // The embedded `node` lazily reaches only what `Main` imports — `Node`,
-    // `Random` and `Ssr` — so the platform's other modules (`Io`,
-    // `Http.Server`) are not in its graph, and none of them is checked.
-    // Neither are the core modules only `Io` reaches: `Log`, for the
+    // `Random` and `Ssr` — and the typed entry runtime `NodeRuntime` its
+    // manifest names, so the platform's other modules (`Io`, `Http.Server`,
+    // `WebSocket`, `Prerender`) are not in its graph, and none of them is
+    // checked. Neither are the core modules only those reach: `Log`, for the
     // sink `Io.run` installs, and its `Clock`; `Record` is already reached through `Task`;
-    // nor `Schema`, which only `Prerender` reaches.
-    const unreached = node_modules - 3;
-    const unreached_core = 3;
+    // `Schema`, which only `Prerender` reaches; `Js.Any` and `Js.Data`; and
+    // the generated natives their typed bindings import (`AbortController`,
+    // `AbortSignal`, `DOMException`, `Data`, `Json`, `NodeDirent`, `NodeFs`,
+    // `Promise`, all `Browser.Host`).
+    const unreached = node_modules - 4;
+    const unreached_core = 13;
     try testing.expectEqual(@as(u64, 1), embedded.counters.checked);
     try testing.expectEqual(disk.counters.modules, embedded.counters.modules + unreached + unreached_core);
 }

@@ -1,0 +1,6 @@
+-- Dropping the generic helper triggers refinement of the field boundary.
+import Test
+
+
+main : Test.Program
+main = Test.program "refined program fields: ok"

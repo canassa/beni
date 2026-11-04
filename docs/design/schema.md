@@ -3173,6 +3173,27 @@ registration still uses `Maybe`, once when the schema is constructed.
   - `browser/direct/HttpJson` and `HttpJsonBody`.
 
   The check went red when `Schema.string` was put back on `box`.
+
+  *Amended 2026-11-04 (#1818).* `Schema$run` and `Schema$box` are gone (A.14), so their names
+  prove nothing. The check now reads where the development `_core/Schema.mjs` reads a
+  description node: a call of `nodeBody`, or a test of a tag the module builds nodes with
+  (`nodeRef({ $: "N…"`). Over the module's top-level declarations, a declaration that reads one,
+  or names one that does, reads descriptions. Each such declaration must be inspection —
+  `describe` or a declaration it reaches — or construction: the makers `variant` and `tagged`,
+  or the helpers their checks call, named one by one (`taggedNode`, `variantClashes`). And of
+  them only `describe` and the makers may be exported. So a runner that walks a description,
+  calls `describe`, or calls a helper that reads one is named with its chain, and so is a run-time
+  worker that only a maker reaches (`taggedRead`, `taggedWorkers`, …): the maker does not lend
+  its permission to what it calls. The check goes red when `parseWith` cases on
+  `nodeBody (nodeOf schema)`, when it calls `describe`, and when `taggedRead` reads a variant's
+  payload node (`run/SchemaTagged`). The markers must match the module: one that declares
+  `nodeRef` or `nodeBody` but builds no node in that form, or references `nodeBody` without declaring it,
+  fails; one that declares neither builds and reads no node (every schema a declaration) and
+  passes. An independent source test pins `nodeBody` and `nodeRef` as the one destructor and the one builder of
+  `Node` in `core/Schema.beni`. Dead-code elimination may remove the unused accessor while
+  builders remain; a tag test still counts as a read without that accessor. What the reference graph still cannot see is code written into
+  the body of `variant` or `tagged` itself, a closure there being the maker's own text; the
+  makers' workers are declarations of their own and are checked.
 - **Typed issues through the compiled path.** `run/SchemaComposed` exercises `list`, `nullable`,
   `converted`, a list of lists, a generic declaration given a composition, and a primitive at the
   root. It covers each kind of failure: `AllErrors`, `Reject`, the depth bound, invalid options,

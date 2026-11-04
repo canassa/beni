@@ -1,0 +1,1 @@
+{ "platform": true, "name": "nullary-coverage", "platforms": ["node"], "reexports": ["Node"] }

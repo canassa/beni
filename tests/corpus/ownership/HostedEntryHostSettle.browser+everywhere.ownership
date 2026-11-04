@@ -1,9 +1,9 @@
 module HostedEntryHostSettle
   20:5 List.push state: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
   25:5 entry HostedEntryHostSettle.settle model: rejected escaped: at some message the runtime keeps it: a command or a subscription holds it, or update escapes it (§20.4) (approx)
-  summary retain: π1 RE, π2 RE
+  summary retain: π1 R, π1#Host.1 R, π2 RE; π1#Host.0 calls many, supply 1 ⊤ borrowed{lost}r{lost}; π1#Host.1 calls ≤1, supply 1◇ π1 borrowed{lost}, supply 1◇#LaterStorage.0 fresh borrowed{lost}
   summary update: π3 RA; res π3
-  summary settle: π1 RE, π2 RAEW[storage], π2[*] A; res [*] ~π2[*], π2
+  summary settle: π1 R, π1#Host.1 R, π2 RAEW[storage], π2[*] A; res [*] ~π2[*], π2; π1#Host.0 calls many, supply 1 ⊤ borrowed{lost}r{lost}; π1#Host.1 calls ≤1, supply 1◇ π1 borrowed{lost}, supply 1◇#LaterStorage.0 fresh borrowed{lost}
   demands 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
 total 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
 cause escaped 2

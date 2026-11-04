@@ -32,4 +32,4 @@ pub foreign impure name : borrowed Rejection → String
 pub foreign impure code : borrowed Rejection → Maybe String
 
 
-pub foreign impure raise : escaped Rejection → a
+pub foreign impure raise : escaped Rejection → fresh a

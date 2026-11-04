@@ -1,0 +1,16 @@
+-- Equal literal code remains undecided; different literal code and a
+-- primitive are unequal to a held object (backend.md §9, #1817).
+import Node
+import Probe
+
+
+show : Bool → String
+show b = if b then "same" else "different"
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ String.join (List.map [ 1, 0, -1, -2 ] λn → show (Probe.same n)) "\n"
+        , Probe.description ⊤
+        ]

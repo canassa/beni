@@ -52,11 +52,11 @@ on k start tag =
         [ ( Key.key k
           , Any.pack λsend → start λvalue → Dispatch.send send (Any.pack value)
           , λpacket →
-                case Any.unpack packet of
-                    Just value →
-                        tag value
-                    Nothing →
-                        Protocol.defect "invalid typed inline subscription value"
+              case Any.unpack packet of
+                  Just value →
+                      tag value
+                  Nothing →
+                      Protocol.defect "invalid typed inline subscription value"
           )
         ]
 

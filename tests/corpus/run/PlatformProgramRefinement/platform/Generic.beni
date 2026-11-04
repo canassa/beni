@@ -1,0 +1,3 @@
+pub same : a → Bool
+    where a.eq : a, a → Bool
+same value = value == value

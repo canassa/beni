@@ -1,0 +1,35 @@
+--! Identity decisions across a returned top-level object (backend.md §9).
+
+import Js
+
+
+first = { value = 1 }
+
+
+second = { value = 1 }
+
+
+other = { value = 2 }
+
+
+choose : Int → Js.Value
+choose n =
+    case n of
+        1 →
+            Js.from first
+        0 →
+            Js.from second
+        -1 →
+            Js.from other
+        _ →
+            Js.from 3
+
+
+pub same : Int → Bool
+same n =
+    value = choose n
+    if Js.same value first then True else False
+
+
+pub description : ⊤ → String
+description ⊤ = Js.to (Js.call (Js.global "JSON") "stringify" [ Js.from [ first, second, other ] ])

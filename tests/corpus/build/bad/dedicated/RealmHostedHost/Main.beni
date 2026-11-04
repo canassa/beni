@@ -1,4 +1,4 @@
--- Stored and returned callbacks must keep their execution realm.
+-- Stored and returned callbacks keep their execution realm: a run typed job.
 import Hosted
 import Page
 import Ref
@@ -14,8 +14,8 @@ cell = Ref.make λ⊤ → ⊤
 
 
 setIt _ =
-    _ = Hosted.later λ_ → pageCb ⊤
-    ⊤
+    job = Hosted.job λ_ → pageCb ⊤
+    Hosted.callJob job λ_ → ⊤
 
 
 callIt _ = (Ref.get cell) ⊤

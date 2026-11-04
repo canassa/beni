@@ -1,0 +1,56 @@
+-- `emit/release/app/SchemaWorkerFusion`'s worker, run on every arm: each
+-- read gives its arm's value in both builds, the sentinel's failure the
+-- `Err _` arm's (`backend.md` §9, *Slice 9 across a call*, amended
+-- 2026-11-04, #1817).
+import Node
+import Schema exposing (Value)
+
+
+schema Event tagged "type" of
+    Set as "set"
+        value : Int
+    Bump as "bump"
+        by : Int
+    Calm as "calm"
+
+
+step : Value, Int → Int
+step v n =
+    case Schema.read (Event.schema ⊤) v of
+        Ok (Event.Set s) →
+            s.value
+
+        Ok (Event.Bump b) →
+            n + b.by
+
+        Ok Event.Calm →
+            0
+
+        Err _ →
+            n
+
+
+line : String → String
+line text =
+    case Schema.parse Schema.value text of
+        Ok v →
+            "${text} ${String.fromInt (step v 7)}"
+
+        Err _ →
+            "${text} not JSON"
+
+
+main : Node.Program
+main = Node.print (String.join (List.map inputs line) "\n")
+
+
+inputs : List String
+inputs =
+    [ "{\"type\": \"set\", \"value\": 3}"
+    , "{\"type\": \"bump\", \"by\": 2}"
+    , "{\"type\": \"calm\"}"
+    , "{\"type\": \"set\", \"value\": \"x\"}"
+    , "{\"type\": \"other\"}"
+    , "5"
+    , "null"
+    ]
