@@ -3190,17 +3190,19 @@ names Basics' empty type. `*` in a type is `×`: `Int * String * Bool` is a flat
 Public `fmt --to-unicode` converts these synonyms while formatting code only.
 `--check --to-unicode` fails while conversion or formatting would change a file.
 Strings, chars, multiline strings, comments and markup text keep their bytes;
-interpolation and markup holes are code. Conversion of `Never` honors
-`topNeverShadowed`; qualified names follow explicit module aliases before the
-prelude. Comments inside unit parentheses are retained.
+interpolation and markup holes are code. Conversion keeps an unqualified `Never` when the file declares a type, alias,
+schema or foreign type named `Never`, or explicitly imports `Never` from a
+module other than `Basics`. Qualified names follow explicit module aliases
+before the prelude. Comments inside unit parentheses are retained.
 `--migrate-unicode` and `--migrate-lambda` are retired. `--migrate-top` retains
 only structural rewrites (dropping `else ⊤` or `else ()`, deleting warned `_ =`).
 `--migrate-cons` is unchanged. Diagnostics, dumps and type rendering stay Unicode.
 
 `x <-1` lexes as `x <- 1`. The existing `unexpected_token` or `expected_token` diagnostic at a
-rejected bind suggests `x < -1` with a space for comparison with a negative number.
-A numeric right-hand side rejected as `bind_rhs_not_application` gets the same
-hint when it immediately follows an ASCII bind. Valid binds stay accepted.
+rejected bind suggests `x < -1` with a space only when the token after `<-` is
+a number literal.
+A number literal rejected as `bind_rhs_not_application` gets the same hint
+when it immediately follows an ASCII bind. Valid binds stay accepted.
 
 
 *Specified 2026-10-01; built 2026-10-02* — taught, the repository migrated, and the ASCII

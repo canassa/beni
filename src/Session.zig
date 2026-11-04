@@ -1942,7 +1942,23 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
             return;
         }
     } else if (session.options.to_unicode) {
-        try Format.toUnicode(worker.arena.allocator(), tree, session.artifacts.tokens(file), session.artifacts.comments(file), text, session.store.lineStarts(file), &out.writer);
+        const problem = Format.toUnicode(worker.arena.allocator(), tree, session.artifacts.tokens(file), session.artifacts.comments(file), text, session.store.lineStarts(file), &out.writer) catch |err| switch (err) {
+            error.SyntaxErrors => {
+                out.deinit();
+                return;
+            },
+            error.WriteFailed => return error.OutOfMemory,
+            else => |e| return e,
+        };
+        if (problem) |found| {
+            out.deinit();
+            const at = diagnostic.position(session.store.lineStarts(file), text, found.start);
+            var message: Io.Writer.Allocating = .init(gpa);
+            defer message.deinit();
+            try message.writer.print("`beni fmt --to-unicode` left this file alone: the rewritten text does not parse ({t}). Convert it by hand.", .{found.code});
+            try worker.report(session, file, found.code, at, at, message.written());
+            return;
+        }
     } else (if (session.options.migrate_cons) Format.migrateCons(
         worker.arena.allocator(),
         tree,
