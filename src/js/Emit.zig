@@ -8928,6 +8928,10 @@ const Emitter = struct {
                         got.value_ptr.* = name;
                         continue;
                     }
+                    // Shared by name, not by code: a module that reads no
+                    // field of the constant may hold it as `{}`, so the two
+                    // need not be one literal, and `Spec`'s `heldVerdict`
+                    // decides no comparison of two of one base.
                     // The plan has a bit for every node it ran on (`Opt.run`);
                     // a module with none keeps its declaration and its name.
                     const words: []u32 = @constCast(slot.plan.dropped);

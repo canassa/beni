@@ -1,0 +1,49 @@
+-- A schema worker fused into the `case` that reads it (`backend.md` §9,
+-- *Slice 9 across a call*, amended 2026-11-04, #1817). The worker fails by
+-- returning Opt's absence sentinel, a top-level object of core, and the
+-- caller tests it before the tag. That test is decided at every `return` of
+-- the copy: true at the sentinel, false at a constructor's object literal and
+-- at the declared `Calm`, a literal of other code. So each `return` is its
+-- arm's value — `return 7`, `return c`, `return 7+d`, `return 0` — and no
+-- `Set`, `Bump` or `Calm` object is built for a read. `run/SchemaWorkerFusion`
+-- proves the answers.
+import Node
+import Schema exposing (Value)
+
+
+schema Event tagged "type" of
+    Set as "set"
+        value : Int
+    Bump as "bump"
+        by : Int
+    Calm as "calm"
+
+
+step : Value, Int → Int
+step v n =
+    case Schema.read (Event.schema ⊤) v of
+        Ok (Event.Set s) →
+            s.value
+
+        Ok (Event.Bump b) →
+            n + b.by
+
+        Ok Event.Calm →
+            0
+
+        Err _ →
+            n
+
+
+line : String → String
+line text =
+    case Schema.parse Schema.value text of
+        Ok v →
+            String.fromInt (step v 7)
+
+        Err _ →
+            "not JSON"
+
+
+main : Node.Program
+main = Node.print (line "{\"type\": \"bump\", \"by\": 2}")
