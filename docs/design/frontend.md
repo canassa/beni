@@ -1705,7 +1705,8 @@ Literal and comment bytes stay untouched; `Never` conversion honors
 `topNeverShadowed`, and unit conversion retains interior comments.
 `--migrate-unicode` and `--migrate-lambda` are retired; `--migrate-top` keeps only
 structural rewrites. `--migrate-cons` is unchanged. A rejected bind's
-`unexpected_token` or `expected_token` message suggests `x < -1` for comparison.
+`unexpected_token`, `expected_token` or numeric `bind_rhs_not_application`
+message suggests `x < -1` for comparison.
 The artifact version is bumped to invalidate cached spelling diagnostics.
 
 
@@ -1849,7 +1850,8 @@ Literal and comment bytes stay untouched; `Never` conversion honors
 `topNeverShadowed`, and unit conversion retains interior comments.
 `--migrate-unicode` and `--migrate-lambda` are retired; `--migrate-top` keeps only
 structural rewrites. `--migrate-cons` is unchanged. A rejected bind's
-`unexpected_token` or `expected_token` message suggests `x < -1` for comparison.
+`unexpected_token`, `expected_token` or numeric `bind_rhs_not_application`
+message suggests `x < -1` for comparison.
 The artifact version is bumped to invalidate cached spelling diagnostics.
 
 
