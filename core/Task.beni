@@ -2797,6 +2797,9 @@ installHooks : ⊤ → ⊤
 installHooks ⊤ =
     if not (Js.read hooksInstalled) then
         Js.write hooksInstalled True
+        if Hooks.stopped ⊤ then
+            (Scheduler s) = program
+            Js.cellWrite s 1 .phase
         Hooks.install shutdownRuntime cleansUp
 
 

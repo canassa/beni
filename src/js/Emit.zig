@@ -7958,6 +7958,7 @@ const Emitter = struct {
         @memset(duplicate_functions, false);
         for (todo, gids, 0..) |i, gid, at| {
             const lowered = &(slots[i].lowered orelse continue);
+            if (lowered.diagnostics.len != 0) continue;
             const ir = &lowered.ir;
             allocation_modules[at] = .{ .ir = ir, .plan = &slots[i].plan, .globals = gid };
             for (ir.extraSlice(ir.body, JsIr.Node.Index)) |stmt| {

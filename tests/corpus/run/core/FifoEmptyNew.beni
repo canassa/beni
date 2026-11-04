@@ -1,0 +1,9 @@
+-- #1873: an empty FIFO defects before reading an uninitialized slot.
+import Js.Fifo as Fifo
+import Node
+
+
+main : Node.Program
+main =
+    queue = Fifo.make ⊤
+    Node.print (String.fromInt (Fifo.shift queue))

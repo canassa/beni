@@ -64,3 +64,39 @@ payload retention and rejects an unsound borrowed-word mutation.
 The browser hook patch is saved as `browser-hooks.patch` in evidence and was
 measured in a scratch copy of the platform chain. No DOM-lane file is included
 in this change. The manager applies that patch after the DOM family merges.
+
+## Review corrections
+
+The empty FIFO now checks count before reading or writing capacity. A fresh
+queue and a cleared queue previously returned undefined with exit 0; both now
+exit 1 with `Error: an empty FIFO was shifted`. This protects platform callers
+as well as the existing core callers that already check emptiness.
+
+Lazy hook installation also sets the program scheduler's phase to stopped
+when the bridge was stopped before registration. `ShutdownBeforeFirstFiber`
+prints only its synchronous scheduled line, matching the exact base; the
+pre-fix PR head wrongly invoked the new fiber's exit callback.
+
+The allocation proof again accepts template chunks and templates whose parts
+are inert. `AllocationOnlyTemplate` keeps a shared live Ref factory and an
+unknown native string to prevent earlier folding: before the fix the unread
+factory/template remains, afterwards it disappears and the program still
+prints `dynamicab`. Existing hidden-effect regressions remain green. The
+proof skips lowered modules with diagnostics, and a release build of
+MarkupRestructured preserves its exact three diagnostics with no output.
+The backend amendment now precedes the record-lambda discussion and explicitly
+limits the new proof to top-level initializers in pruneOptimised.
+
+Accepted callable-multiplicity precision debt is tracked in #1876.
+
+The two correctness checks increase size. The manager authorized only the
+minimum S1 and S5 cap changes: 3565 → 3579 (+14) and 4615 → 4633 (+18).
+All other caps stay unchanged. Against a scratch core with the shutdown fix
+but without the FIFO guard, the guard costs 13 and 14 brotli bytes respectively;
+the phase fix also costs 4 bytes in each program. The previous S1 cap had
+3 bytes of slack. A single attempted shared defect handler saved 2/1 bytes
+there but worsened S4 compression beyond its cap, so that factoring was
+reverted. The guard was never weakened. These cap reasons are recorded next
+to the ratchets in budgets.json. The performance table above records the
+pre-review measurement; post-review deterministic cost tests are checked
+separately. No new full gates were run, as directed by the manager.
