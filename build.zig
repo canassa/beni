@@ -851,6 +851,16 @@ pub fn build(b: *std.Build) void {
     // the site.
     playground_step.dependOn(&b.addInstallDirectory(.{ .source_dir = b.path(playground_dir), .install_dir = .prefix, .install_subdir = playground_dir, .exclude_extensions = &.{".sh"} }).step);
     playground_step.dependOn(&shipped_wasm_install.step);
+    // The page's own beni (§10.8): a development `--library` build of
+    // `playground/src/`, which the page's remaining JavaScript imports from
+    // `beni/`. It runs on every `playground`, so an edit under
+    // `playground/src/` is never served stale; the build takes milliseconds.
+    const page_beni = b.addRunArtifact(safe.exe);
+    page_beni.addArgs(&.{ "build", "--library", "--platform=browser-tea", "--no-source-maps", "--no-cache" });
+    const page_beni_out = page_beni.addPrefixedOutputDirectoryArg("--out=", "beni");
+    page_beni.addDirectoryArg(b.path(playground_dir ++ "/src"));
+    page_beni.has_side_effects = true;
+    playground_step.dependOn(&b.addInstallDirectory(.{ .source_dir = page_beni_out, .install_dir = .prefix, .install_subdir = playground_dir ++ "/beni", .exclude_extensions = &.{".txt"} }).step);
     // TodoMVC is a sample (§4.3), kept once, where its benchmark keeps it.
     playground_step.dependOn(&b.addInstallFileWithDir(
         b.path("bench/todomvc/apps/beni/Sandbox.beni"),

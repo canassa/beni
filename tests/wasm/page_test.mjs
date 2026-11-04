@@ -13,101 +13,41 @@
 //       page's link to its notice
 //   node tests/wasm/page_test.mjs tabs
 //       every tab of `index.html` controls a panel the page has
-//   node tests/wasm/page_test.mjs syntax
-//       the grammar names the tokens of each line as the test says
+//   node tests/wasm/page_test.mjs syntax <library>
+//       the grammar names the tokens of each line as the test says, from
+//       the beni build of `playground/src/` in <library>
 //   node tests/wasm/page_test.mjs vendor
 //       every vendored editor module is the bytes `SHA256SUMS` names, and
 //       `index.html`'s import map names each module and nothing else, and
 //       the page links to their notice
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { rangeOf } from "../../playground/positions.js";
 import { decode, encode, maxSource } from "../../playground/share.js";
 import { srcdoc } from "../../playground/srcdoc.js";
-import { copyState, startState, token } from "../../playground/syntax.js";
+/// A beni list as an array: it is one, or a view that `$plain()` copies.
+const plain = (list) => (Array.isArray(list) ? list : list.$plain());
 
-/// The tokens of `lines`, as `[text, name]`, with the state carried from
-/// line to line as CodeMirror's `StreamLanguage` carries it.
-function tokenize(lines) {
-  let state = startState();
-  const out = [];
-  for (const line of lines) {
-    const stream = new Stream(line);
-    while (!stream.eol()) {
-      stream.start = stream.pos;
-      const name = token(stream, state);
-      if (stream.pos === stream.start) throw new Error(`no progress at ${stream.pos} of ${JSON.stringify(line)}`);
-      if (name !== null) out.push([stream.current(), name]);
+/// The named pieces of `lines`, as `[text, name]`, from the beni grammar in
+/// <library> (`playground/src/Syntax.beni`), with the state carried from
+/// line to line as the editor carries it. Every piece of a line together
+/// is the line.
+async function tokenizer(library) {
+  const { Syntax$line, Syntax$start } = await import(pathToFileURL(resolve(library, "Syntax.mjs")).href);
+  return (lines) => {
+    let state = Syntax$start;
+    const out = [];
+    for (const line of lines) {
+      const { pieces, state: next } = Syntax$line(state, line);
+      const all = plain(pieces);
+      if (all.map((p) => p.text).join("") !== line) throw new Error(`the pieces of ${JSON.stringify(line)} are not the line: ${JSON.stringify(all)}`);
+      for (const piece of all) if (piece.name !== "") out.push([piece.text, piece.name]);
+      state = next;
     }
-    state = copyState(state);
-  }
-  return out;
-}
-
-/// The part of CodeMirror's `StringStream` the grammar and the Elm mode it
-/// extends use, over one line, as `@codemirror/language` defines them.
-class Stream {
-  constructor(string) {
-    this.string = string;
-    this.pos = 0;
-    this.start = 0;
-  }
-  eol() {
-    return this.pos >= this.string.length;
-  }
-  peek() {
-    return this.string.charAt(this.pos) || undefined;
-  }
-  next() {
-    return this.pos < this.string.length ? this.string.charAt(this.pos++) : undefined;
-  }
-  eat(match) {
-    const ch = this.string.charAt(this.pos);
-    const ok = typeof match === "string" ? ch === match : ch !== "" && (match instanceof RegExp ? match.test(ch) : match(ch));
-    if (!ok) return undefined;
-    this.pos += 1;
-    return ch;
-  }
-  eatWhile(match) {
-    const start = this.pos;
-    while (this.eat(match) !== undefined);
-    return this.pos > start;
-  }
-  skipTo(ch) {
-    const found = this.string.indexOf(ch, this.pos);
-    if (found === -1) return undefined;
-    this.pos = found;
-    return true;
-  }
-  eatSpace() {
-    const start = this.pos;
-    while (/[\s ]/.test(this.string.charAt(this.pos))) this.pos += 1;
-    return this.pos > start;
-  }
-  skipToEnd() {
-    this.pos = this.string.length;
-  }
-  match(pattern, consume = true) {
-    if (typeof pattern === "string") {
-      if (!this.string.startsWith(pattern, this.pos)) return null;
-      if (consume) this.pos += pattern.length;
-      return true;
-    }
-    const m = this.string.slice(this.pos).match(pattern);
-    if (m === null || m.index > 0) return null;
-    if (consume) this.pos += m[0].length;
-    return m;
-  }
-  column() {
-    return this.start;
-  }
-  indentation() {
-    return this.string.search(/\S|$/);
-  }
-  current() {
-    return this.string.slice(this.start, this.pos);
-  }
+    return out;
+  };
 }
 
 /// `index.html` links to the notice `href` with an `<a>` element, not with
@@ -186,8 +126,9 @@ if (mode === "positions") {
   check(await decode(await encode("node", "x", "", tooLarge)) === null, "total project size is bounded in UTF-8 bytes");
   check(await decode(await encode("node", "x", "", { "Other.beni": "x" }, "Missing.beni")) === null, "a missing focused module is a damaged project");
 } else if (mode === "syntax") {
-  // Lines, and the name the grammar gives each piece of them (null for
-  // none), in order; a piece not listed is not checked.
+  // Lines, and the name the grammar gives each piece of them, in order; a
+  // piece not listed is not checked.
+  const tokenize = await tokenizer(args[0]);
   const cases = [
     [["-- a comment"], [["-- a comment", "lineComment"]]],
     [["--| a doc comment"], [["--| a doc comment", "docComment"]]],
@@ -354,7 +295,7 @@ if (mode === "positions") {
     check(named === panel, `${tag} names the same panel in its data attribute and in aria-controls`);
   }
 } else {
-  process.stderr.write("usage: node tests/wasm/page_test.mjs (positions <source> <diagnostics.json> <text>… | share | srcdoc | samples | syntax | tabs | vendor)\n");
+  process.stderr.write("usage: node tests/wasm/page_test.mjs (positions <source> <diagnostics.json> <text>… | share | srcdoc | samples | syntax <library> | tabs | vendor)\n");
   process.exit(2);
 }
 process.exitCode = failures === 0 ? 0 : 1;
