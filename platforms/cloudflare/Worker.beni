@@ -776,6 +776,8 @@ reserved at =
             (String.endsWith at "/__beni/tick"
                 || String.endsWith at "/__beni/alarm"
                 || String.endsWith at "/__beni/hold"
+                || String.endsWith at "/__beni/host-alarm"
+                || String.endsWith at "/__beni/alarms"
             )
     else
         True

@@ -8054,6 +8054,17 @@ pub type AskError
   #593's probe, still owed, so #550 stays open until it settles. *2026-10-29: at the edge it
   prevents hibernation but not the idle eviction, 60 s kept and 120 s not ((e.5), measured,
   #864).*
+- **The wake** ((e.5), 2026-11-04, #864) is built in `Object.beni`. `counted` sets it when the
+  count rises above the consumer while none is pending. `hostAlarmed` is the class's `alarm()`:
+  it drops the wake and sets it again, with a new hold timer, while a fiber lives, and it
+  delivers the program's `alarm` only at the program's time. `alarmRan` clears that time after
+  the handler, unless the handler set another. `realarm` calls `setAlarm` or `deleteAlarm` only
+  when the earlier of the two times changes. The program's time is the one row of `beni_alarm`,
+  read once per instance. `workers/ObjectWake` shows each rule through `/__beni/host-alarm` and
+  `/__beni/alarms`: no alarm on a firing that is only the wake, the program's alarm once when it
+  is due while a fiber lives, the next alarm an `alarm` handler sets, the wake that stays after
+  the fiber ends and then gives the host alarm back, and, after a hibernation, a new instance
+  that finds the program's time in the table and runs no alarm.
 - **`tick`'s check is not placed** ((e.5)): `Js.maySuspend` on the record's field answers yes in
   `define`'s suspendable twin, which every program whose other handlers may wait reaches, so a
   pure `tick` was refused at load (*measured*, the probe (e.5) owed). The form is the owner's
