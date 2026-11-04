@@ -324,6 +324,14 @@ vertical bucket indicators and a lit exit mouth. Finished balls keep up to
 seven frame positions for short fading trails. This is drawing state; it does
 not alter collisions, admission, batching, semaphore ownership or retry timing.
 
+*Amended 2026-11-04, issue #1903 (Jayson Reis: "make the samples shareable urls").* Each sample in
+`index.json` has an `id`: one or more words of lower-case ASCII letters and digits, joined by
+`-`. The ids are `counter`, `todomvc`, `ball-machine` and `fibonacci`. The short link of §4.5
+names a sample by its id, and a person can keep such a link for a long time. So **an id never
+changes once it ships, and no other sample takes it**, also after its own sample goes. An id is
+never `shared`, the value of the sample list's "(shared)" entry. The sample list's values are
+the ids. A gate test (§6) checks the ids.
+
 ### 4.4 The tabs (second pull request)
 
 The emitted JavaScript, `beni dump --stage=types` and `beni dump --stage=ownership`, each from
@@ -358,6 +366,39 @@ on up.
 
 *Amended 2026-10-15, issue #143:* the link also holds the CSS pane, as `&css=<base64url>` after
 `code` (§4.6, *The link*).
+
+*Amended 2026-11-04, issue #1903: the short link of a sample.* A code link holds every module of
+its project, so the link of a large sample is long: the ball machine has nine modules. The site
+serves every file of a sample, so a link to an unchanged sample only names it:
+`#sample=<id>` (§4.3).
+
+- **The address names the sample.** When the page opens a sample, the address becomes
+  `#sample=<id>`, with `history.replaceState`, so the history gets no new entry. The page opens
+  a sample when a person chooses one in the list, when it opens with a short link, and when it
+  opens with no program (no fragment, a damaged link or an unknown id) and so shows the first
+  sample.
+- **A short link opens its sample** as the list does: its platform, its modules, its focused
+  module and its CSS.
+- **An unknown id**, or an empty one, opens the first sample, and the status of its first build
+  says that the link names no sample of the playground, as it says for a damaged code link.
+- **A change clears the short link**, as it clears a code link: a person's edit of a module or of
+  the CSS, and a change of platform.
+- **Share.** While the editor holds the sample unchanged, **Share** writes `#sample=<id>` into
+  the address and copies it, and the sample list stays on the sample. After a person's change,
+  **Share** makes the code link, as before, and the list shows "(shared)". The page keeps the id
+  of the unchanged sample in a variable, which a person's change clears; it does not read it
+  back from the address, which a person can edit by hand.
+- **A fragment with `code` is a code link**, whatever else it holds: `#sample=counter&code=@@@@`
+  is a damaged code link, not a short link. So every link made before this amendment opens as it
+  did.
+- **A short link opens the sample as the site serves it on the day it opens.** When a later
+  version of the site changes the sample, the link opens the changed sample. A person who wants
+  the exact text in the link makes a code link: an edit, then **Share**.
+- **The short link is beni** (§10.8). `playground/src/Share.beni` gives the fragment of a
+  sample's short link, and the sample that the page opens for a fragment with no program, with
+  the note for the status. It reads a fragment's fields as `URLSearchParams` does. `page.js`
+  calls it, and keeps the id of the unchanged sample until the page is beni (§10.7 step 7). The
+  code link stays in `share.js` until §10.7 step 3.
 
 ### 4.6 The program's CSS
 
@@ -539,6 +580,17 @@ a comment, for `vendor/LICENSES.txt` and for `samples/LICENSES.txt`, and each li
 tab; a link with an empty `css=` opens no program, as one with an empty `code=` does; and the
 `aria-controls` of each tab names an element of the page, the same one that its data attribute
 names. Item 3 also checks: the note's two links open a new tab, and the site serves each file.
+
+*Amended 2026-11-04, issue #1903* (§4.3, §4.5). Item 2 also checks: each sample's id is well
+formed, unique and not `shared`, and each of the four ids that shipped still names a sample; and,
+on the beni build of `playground/src/` (`page_test.mjs links`), a short link's round trip, the
+sample and the note for a fragment with no program, the same answer as `URLSearchParams` gives,
+and that a fragment with `code` is not a short link. Item 3 also checks: a
+choice in the sample list sets the address to that sample's short link and adds no history
+entry; a page opened with `#sample=ball-machine` opens the ball machine, with its modules, its
+focused module and its CSS; an unknown id opens the first sample and says so; an edit clears the
+short link; and **Share** copies the short link for an unchanged sample and the code link after
+an edit.
 
 A test compares every file of the output tree and both streams byte for byte, and the exit code.
 It does not compare the persistent cache's directory, `.beni-cache/`, whose keys name the
@@ -771,6 +823,13 @@ Measured on 2026-11-04 with Node 24.19's `zlib` at brotli quality 11, one file a
 *Amended 2026-11-04 (#1903):* short links for the samples, `#sample=<id>`, change `share.js`,
 `page.js` and `samples/index.json` (§4.3, §4.5). The beni `share.js` and `page.js` (§10.7, steps
 3 and 7) carry them.
+
+*Amended 2026-11-04, #1903 as built* (Jayson Reis: "write it in beni already to avoid introducing
+more js"): the short link needs no host API of §10.6, so it is beni already:
+`playground/src/Share.beni` (§4.5, *The short link is beni*). `share.js` gets no new code. Step 3
+adds the code link to that module, and step 7 moves the rest of the feature from `page.js` into
+the page program: the id of the unchanged sample, and the calls when a sample loads, at **Share**
+and when the page opens.
 
 **`vendor/`**, the 19 CodeMirror modules (§4.2), stays until the beni editor lands. Issue #142 kept
 it. *Amended 2026-11-04:* it then goes, with `vendor.sh`, `vendor/SHA256SUMS` and
