@@ -4327,7 +4327,7 @@ relates them to an argument. Async inputs are conservatively escaped.
 | `Browser.Host.NodeFs.readUtf8` | `String, escaped AbortSignal.AbortSignal → Promise.Promise String`: the asynchronous file operation retains its cancellation signal |
 | `Browser.Host.ReadResult.value` | `aliased ReadResult → Maybe Uint8Array.Uint8Array`: Just holds result.value |
 | `Browser.Host.ReadableStreamDefaultReader.read` | `escaped ReadableStreamDefaultReader → Promise.Promise ReadResult.ReadResult`: an asynchronous read may retain the reader |
-| `Browser.Host.Rejection.raise` | `escaped Rejection → a`: throw hands the native reason to JavaScript |
+| `Browser.Host.Rejection.raise` | `escaped Rejection → fresh a`: throw hands the native reason to JavaScript; the call never returns, so what it returns is the call's own, as for `Js.throw` (amended 2026-11-04: an unworded result was `⊤`, which every caller's answer then held at every path) |
 | `Browser.Host.Response.headers` | `aliased Response → Headers.Headers`: the result is response.headers |
 | `Browser.Host.Response.text` | `escaped Response → Promise.Promise String`: asynchronous body consumption may retain response parts |
 | `Browser.Host.Response.reader` | `aliased Response → Maybe ReadableStreamDefaultReader.ReadableStreamDefaultReader`: the returned reader retains the response body stream |
