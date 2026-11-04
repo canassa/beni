@@ -176,10 +176,12 @@ pub foreign impure array : aliased elements → fresh Value
 pub foreign pure object : aliased fields → fresh Value
 
 
---| `function () { const self = this; … }`: a function JavaScript calls as
---| a method, `o.m()`, its receiver handed to the lambda. Written with a
---| lambda, `Js.method λself → …`, the lambda's body is the function's and
---| no arrow is made. `sync`: JavaScript calls it and waits for nothing.
+--| `function (a, b) { const self = this; … }`: a function JavaScript calls
+--| as a method, `o.m(x, y)`, its receiver handed to the lambda as `self`
+--| and its arguments as the parameters after it. Written with a lambda,
+--| `Js.method λself a b → …`, the lambda's body is the function's and no
+--| arrow is made; the lambda is typed by its own count, each parameter a
+--| `Value`. `sync`: JavaScript calls it and waits for nothing.
 pub foreign pure method : sync (Value → a) → Value
 
 

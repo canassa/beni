@@ -410,9 +410,18 @@ fn call(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var,
     // The callee first, so the solver knows its arrows; then the call, so
     // §8.3 sees both the arrows and what the result was wanted for; then
     // the arguments, against a callee that is already concrete.
-    try parts.append(g.cx.scratch, try expr(g, @fromBackingInt(@intCast(data.lhs)), callee, .{ .tag = .general }));
-    try parts.append(g.cx.scratch, try g.add(.call, inst, payload, 0, category));
     const which = jsIntrinsic(g, @fromBackingInt(@intCast(data.lhs)));
+    // `Js.method` with a lambda of parameters after its receiver is typed
+    // by the lambda's count (`methodLambda`): the declaration is generated
+    // against a variable of its own, so the use is recorded, and `callee`
+    // takes the shape the lambda gives it.
+    const by_count = which == .method and methodLambdaCount(g, args) != null;
+    try parts.append(g.cx.scratch, try expr(g, @fromBackingInt(@intCast(data.lhs)), if (by_count) try g.freshFlex() else callee, .{ .tag = .general }));
+    try parts.append(g.cx.scratch, try g.add(.call, inst, payload, 0, category));
+    if (by_count) {
+        try parts.append(g.cx.scratch, try methodLambda(g, inst, @fromBackingInt(@intCast(data.lhs)), args, callee, expected, category));
+        return g.conj(parts.items);
+    }
     const in_place = if (which) |w| JsIntrinsic.inPlaceLiterals(w) else 0;
     for (args, arg_vars, 0..) |arg, v, i| {
         if (i < 8 and in_place & (@as(u8, 1) << @intCast(i)) != 0) {
@@ -432,6 +441,45 @@ fn call(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var,
         }));
     }
     return g.conj(parts.items);
+}
+
+/// `Js.method`'s lambda, written in place with parameters after its
+/// receiver (`boundary.md` §4.2, amended 2026-11-04; checker-v2.md §30):
+/// the call is typed as `(Value, …, Value → a) → Value`, the arrow of the
+/// lambda's own count, in place of the declaration's `sync (Value → a) →
+/// Value`, and that arrow is demanded `sync` as the declaration's callback
+/// is, so a body that may suspend is `sync_boundary` at the call.
+/// `methodLambdaCount` says when: a lambda of two or more parameters; one
+/// of one parameter meets the declaration as before, and any other
+/// argument is generated as usual (the backend refuses it).
+fn methodLambdaCount(g: *Generator, args: []const Bir.Inst.Index) ?usize {
+    const bir = g.cx.bir;
+    if (args.len != 1 or bir.instTag(args[0]) != .lambda) return null;
+    const lam = bir.instData(args[0]);
+    const count = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(lam.lhs))), Bir.Inst.Index).len;
+    if (count < 2) return null;
+    const js = g.cx.interner.find("Js") orelse return null;
+    const value_name = g.cx.interner.find("Value") orelse return null;
+    if (g.cx.types.find(g.cx.graph, .core, js, value_name) == .none) return null;
+    return count;
+}
+
+fn methodLambda(g: *Generator, inst: Bir.Inst.Index, reference: Bir.Inst.Index, args: []const Bir.Inst.Index, callee: Var, expected: Var, category: Category) Error!Constraint {
+    const count = methodLambdaCount(g, args).?;
+    const value = try g.primitive(g.cx.types.find(g.cx.graph, .core, g.cx.interner.find("Js").?, g.cx.interner.find("Value").?));
+    const params = try g.cx.scratch.alloc(Var, count);
+    defer g.cx.scratch.free(params);
+    @memset(params, value);
+    const arrow = try g.func(params, try g.freshFlex());
+    const shape = try g.func(&.{arrow}, value);
+    var parts: std.ArrayList(Constraint) = .empty;
+    defer parts.deinit(g.cx.scratch);
+    try parts.append(g.cx.scratch, try g.equal(callee, shape, inst, category));
+    try parts.append(g.cx.scratch, try g.equal(expected, value, inst, category));
+    try parts.append(g.cx.scratch, try expr(g, args[0], arrow, .{ .tag = .call_arg, .index = 1, .owner = inst.toOptional() }));
+    // The site is the reference to `Js.method`, which the report names.
+    if (g.cx.effects) |e| try e.demand(.{ .v = arrow, .kind = .argument, .site = @backingInt(reference) });
+    return try g.conj(parts.items);
 }
 
 /// Which of core's `Js` declarations `callee` is, if any: what tells the
