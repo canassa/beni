@@ -102,6 +102,11 @@ def prim (env : Env Value) (op : Prim) (vs : List Value) : M Value := do
   | .dictGet, [.ref c, .int k] => do
     pure (InPlaceSemantics.maybe ((dictFind InPlaceSemantics.entryKey (← array c) k).map InPlaceSemantics.entryValue))
   | .dictSize, [.ref c] => do pure (Value.int (← array c).length)
+  | .object, xs => alloc [.record xs]
+  | .get i, [.ref c] => do
+    let [.record xs] ← array c | throw "record object"
+    xs[i]?.toExcept "record field"
+  | .recordCopy, [.ref c] => do alloc (← array c)
   | _, _ => throw "shape"
 
 def call (env : Env Value) (m : M Value) : M Value := do
@@ -188,6 +193,11 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
         writeNoted env c (dictPut InPlaceSemantics.entryKey (← array c) k (.record [.int k, w]))
       | .record [.int 0, _, _] => writeNoted env c (dictDrop InPlaceSemantics.entryKey (← array c) k)
       | _ => throw "dictionary focus answer"
+    | .assign _ fields base values =>
+      let .ref c ← InPlaceSemantics.atom env base | throw "update"
+      let vs ← values.mapM (m := Except String) (InPlaceSemantics.atom env)
+      let [.record xs] ← array c | throw "update object"
+      writeNoted env c [.record (assignFields xs fields vs)]
 termination_by depth
 decreasing_by all_goals simp_wf; omega
 

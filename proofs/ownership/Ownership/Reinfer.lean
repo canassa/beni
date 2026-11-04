@@ -167,6 +167,7 @@ def primitive (ctx : Context) (site : List Nat) (op : Prim) (args : List Abstrac
   match op, args with
   | .add, _ | .sub, _ | .eq, _ | .lt, _ => pure .scalar
   | .construct _, _ | .view _, _ => throw "limit: construction or view in frozen per-call checker"
+  | .object, _ | .get _, _ | .recordCopy, _ => throw "limit: record object in frozen per-call checker"
   | .record, xs => pure (.record xs)
   | .events, [.record [_, events]] => pure events
   | .owned _, [value, retained] => do
@@ -231,6 +232,7 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
     | .prim op args => primitive ctx site op (← args.mapM (m := Except String) (abstractAtom env)) later
     | .entry .. | .resultCase .. | .chainCase .. | .dictFocus .. =>
       throw "limit: sum/recursive data in frozen per-call checker"
+    | .assign .. => throw "limit: record object in frozen per-call checker"
     | .branch c yes no =>
       let _ ← abstractAtom env c
       let a ← inferExpr f ctx env yes after (site ++ [0])
@@ -353,6 +355,7 @@ def typeShape : Ty → Abstract
   | .result e a => .record [.scalar, typeShape e, typeShape a]
   | .record xs => .record (xs.attach.map (fun x => typeShape x.val))
   | .chain t | .list t | .builder t | .dict t => .list [.unknown] (typeShape t) true
+  | .object xs => .list [.unknown] (.record (xs.attach.map (fun x => typeShape x.val))) true
   | .fn _ _ => .function [] []
 termination_by a => sizeOf a
 decreasing_by
@@ -364,7 +367,7 @@ decreasing_by
 
 def containsFunction : Ty → Bool
   | .fn .. => true
-  | .record xs => xs.attach.any (fun x => containsFunction x.val)
+  | .record xs | .object xs => xs.attach.any (fun x => containsFunction x.val)
   | .chain t | .list t | .builder t | .dict t => containsFunction t
   | .int => false
   | .result e a => containsFunction e || containsFunction a

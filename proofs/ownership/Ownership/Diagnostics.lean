@@ -357,6 +357,13 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
           writeEvent site "dict-focus" c (held ++ readers ++ container)
             (writeCounted c (dictDrop entryKey entries k))
         | _ => throw "in-place dictionary focus answer"
+      | .assign _ fields base newValues =>
+        let .ref c ← fromExcept (atom env base) | throw "in-place update"
+        let vs ← fromExcept (newValues.mapM (m := Except String) (atom env))
+        let [.record xs] ← runtime (array c) | throw "in-place update object"
+        let readers ← pending env after site
+        writeEvent site "assign" c (held ++ readers ++ values site "stored operand" vs)
+          (writeCounted c [.record (assignFields xs fields vs)])
     runtime observeKept
     pure result
 termination_by depth

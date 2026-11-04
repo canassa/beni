@@ -271,7 +271,8 @@ export function translate(ds, main) {
         } else if (['length', 'copy', 'push', 'set'].includes(op)) text = `List.${op} ${args(xs)}`;
         else if (op === 'at') text = `case List.get (${aa[0]}) (${aa[1]}) of\n    Just found${serial} →\n        found${serial++}\n    Nothing →\n        ${aa[2]}`;
         else fail(({builder:'private-builder', put:'private-put', close:'private-close',
-          events:'abstract-event-boundary', owned:'abstract-owned-boundary'})[op] ?? `primitive-${op}`);
+          events:'abstract-event-boundary', owned:'abstract-owned-boundary',
+          object:'record-object', get:'record-object', 'record-copy':'record-object'})[op] ?? `primitive-${op}`);
         if (["length", "at"].includes(op)) text = `bridgeRead (\n${ind(text)}\n)`;
         return text;
       }
@@ -293,6 +294,9 @@ export function translate(ds, main) {
         const src = e[1] === 'list' ? a(e[2]) : `(List.range 0 (${a(e[2])} - 1))`;
         return `List.foldl (${src}) (${a(e[3])}) (λ${e[1] === 'list' ? item : index} ${acc} →\n${ind(emit(e[7], next, key + '/body', self))}\n)`;
       }
+      // A record object (#316) has no bridge spelling yet: its record lines
+      // are not compared (BRIDGE.md, the record update demands).
+      case 'assign': fail('record-object');
       default: throw Error(`unknown expression ${e[0]}`);
     }
   }

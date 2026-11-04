@@ -3857,6 +3857,7 @@ theorem mem_paths_entryAbstract (ds : List Decl) (t : Ty) (a : Abstract) (r : Pa
     | list t' => exact elementCase _ (fun r'' path => mem_paths_entryAbstract ds t' x r'' cs path) member
     | chain t' => exact elementCase _ (fun r'' path => mem_paths_entryAbstract ds t' x r'' cs path) member
     | builder t' => exact elementCase _ (fun r'' path => mem_paths_entryAbstract ds t' x r'' cs path) member
+    | object ts => exact elementCase _ (fun r'' path => mem_paths_entryAbstract ds (.record ts) x r'' cs path) member
     | int => exact ⟨r, member⟩
     | record _ => exact ⟨r, member⟩
     | result _ _ => exact ⟨r, member⟩
@@ -3887,6 +3888,7 @@ theorem mem_paths_entryAbstract (ds : List Decl) (t : Ty) (a : Abstract) (r : Pa
     | builder _ => exact ⟨r, member⟩
     | dict _ => exact ⟨r, member⟩
     | fn _ _ => exact ⟨r, member⟩
+    | object _ => exact ⟨r, member⟩
   | .function roots alts =>
     rw [entryAbstract_function] at member
     rcases mem_function_paths member with ⟨rfl, rfl⟩ | ⟨alt, altMem, i, y, r'', lookup, rfl, path⟩

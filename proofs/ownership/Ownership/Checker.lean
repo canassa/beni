@@ -313,6 +313,22 @@ def liveCellsWith (cfg : Config) (env : Env Abstract) (l : Live) : List Origin :
           !(match q with | .capture _ :: _ => true | _ => false)).foldl (fun cs (q, ds) =>
         if isPrefix p q || isPrefix q p then union cs ds else cs) cs) []
 
+/-- The cells live uses hold, read per field for a demand on the record
+    objects `cs` that writes the fields `written` (§31.4 item 5, #316): a use
+    that goes through one of the objects into a field the update keeps is no
+    use of it; a field read leaves the object's array by its element, then the
+    field (`fieldUses`). Every other use is read as `liveCells` reads it. -/
+def recordLiveCells (written : List Nat) (cs : List Origin) (env : Env Abstract) (l : Live) : List Origin :=
+  let keeps : Path → Bool := fun rest => match rest with
+    | .element :: .field g :: _ => !written.contains g
+    | _ => false
+  l.foldl (fun acc (v, p) =>
+    match env.lookup v with
+    | none => union acc [.unknown]
+    | some a => a.paths.foldl (fun acc (q, ds) =>
+        if isPrefix q p && cellOverlap ds cs && keeps (p.drop q.length) then acc
+        else if isPrefix p q || isPrefix q p then union acc ds else acc) acc) []
+
 /-- Liveness includes terminal results, within each arm's own context. The
     controls remove only the corresponding read rule, never interpreter code. -/
 def usesWith (cfg : Config) (e : Expr) (resultRead : Bool := true) : Live :=
@@ -362,6 +378,7 @@ def typeShape : Ty → Abstract
   | .result e a => .record [.scalar, typeShape e, typeShape a]
   | .record xs => .record (xs.attach.map (fun x => typeShape x.val))
   | .chain t | .list t | .builder t | .dict t => .list [.unknown] (typeShape t) true
+  | .object xs => .list [.unknown] (.record (xs.attach.map (fun x => typeShape x.val))) true
   | .fn _ _ => .function [] []
 termination_by a => sizeOf a
 decreasing_by
@@ -372,7 +389,7 @@ decreasing_by
 
 def containsFunction : Ty → Bool
   | .fn .. => true
-  | .record xs => xs.attach.any (fun x => containsFunction x.val)
+  | .record xs | .object xs => xs.attach.any (fun x => containsFunction x.val)
   | .chain t | .list t | .builder t | .dict t => containsFunction t
   | .int => false
   | .result e a => containsFunction e || containsFunction a
@@ -389,6 +406,7 @@ def tyPaths : Ty → List Path
   | .result e a => (tyPaths e).map (.field 1 :: ·) ++ (tyPaths a).map (.field 2 :: ·)
   | .record ts => ts.attach.zipIdx.flatMap fun (t, i) => (tyPaths t.val).map (.field i :: ·)
   | .chain t | .list t | .builder t | .dict t => [] :: (tyPaths t).map (.element :: ·)
+  | .object ts => [] :: ts.attach.zipIdx.flatMap fun (t, i) => (tyPaths t.val).map (.element :: .field i :: ·)
 termination_by a => sizeOf a
 decreasing_by
   all_goals simp_wf
@@ -405,6 +423,10 @@ def shapeOf (cells : List (Path × List Origin)) (exclusive : List Path) (spines
   | .record ts, p => .record (ts.attach.zipIdx.map fun (t, i) => shapeOf cells exclusive spines t.val (p ++ [.field i]))
   | .chain t, p | .list t, p | .builder t, p | .dict t, p =>
     .list ((cells.lookup p).getD []) (shapeOf cells exclusive spines t (p ++ [.element])) ⟨exclusive.contains p, spines.contains p⟩
+  | .object ts, p =>
+    .list ((cells.lookup p).getD [])
+      (.record (ts.attach.zipIdx.map fun (t, i) => shapeOf cells exclusive spines t.val (p ++ [.element, .field i])))
+      ⟨exclusive.contains p, spines.contains p⟩
 termination_by t => sizeOf t
 decreasing_by
   all_goals simp_wf
@@ -583,6 +605,19 @@ def primitive (ctx : Context) (site : List Nat) (op : Prim) (args : List Abstrac
     -- a fresh `[]`. The `view-alias` control forgets the sharing.
     noteRead cs
     pure (.list (if ctx.config.has .viewAlias then [fresh] else union cs [fresh]) elem ex)
+  -- A record object (§31.2, #316) is a one-slot array whose element is the
+  -- record: the literal stores one record, as a list literal of one item.
+  | .object, xs =>
+    let r := Abstract.record xs
+    pure (.list [fresh] r ⟨storeExclusive ctx [r] later [], storeSpines ctx [r] later []⟩)
+  | .get i, [.list cs (.record fs) _] => do
+    noteRead cs
+    pure (fs[i]?.getD .bottom)
+  -- `Record.copy` (§31.15): a new object holding the same fields, so, as a
+  -- list copy, it proves no certificate.
+  | .recordCopy, [.list cs elem _] => do
+    noteRead cs
+    pure (.list [fresh] elem false)
   | _, _ =>
     if args.any (· == .bottom) then pure .bottom else throw s!"abstract primitive shape: {repr op}"
 
@@ -640,6 +675,7 @@ def readCount (v : Var) : Expr → Nat
       (if readCount v b == 0 then 0 else 2)
   | .focus a i _ b | .dictFocus a i _ b => atomReadCount v a + atomReadCount v i +
       (if readCount v b == 0 then 0 else 2)
+  | .assign _ _ b xs => atomReadCount v b + (xs.map (atomReadCount v)).sum
 
 /-- A deliberately narrow private-read proof: one straight allocation/alias/
     capture chain ends in the single initializer; ineligible sources stay shared.
@@ -654,7 +690,7 @@ def privateToInit (v : Var) : Expr → Bool
     else readCount v rhs == 1 && readCount v rest == 0 &&
       match rhs with
       | .entry .. => privateToInit v rhs
-      | .atom _ | .closure .. | .prim .record _ => privateToInit n rest
+      | .atom _ | .closure .. | .prim .record _ | .prim .object _ => privateToInit n rest
       | _ => false
   | _ => false
 
@@ -827,6 +863,33 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
         | .record [_, _, w] => pure w
         | .bottom => pure .bottom
         | _ => throw "abstract dictionary focus answer"
+    | .assign _ written base values =>
+      -- `{ base | f = v, … }` written in place (§31.3–§31.4, #316): one
+      -- demand on the base's objects, after every new value.
+      let b ← abstractAtom env base
+      let vs ← values.mapM (m := Except String) (abstractAtom env)
+      match b with
+      | .bottom => pure .bottom
+      | .list cs (.record fs) ex => do
+        -- Dead reads the continuation per field (item 5): a later use that
+        -- goes through an object into a field the update keeps is no use of
+        -- it. A later read of a written field is a use: this core has no
+        -- hoist (§31.14), so its in-place run would read the new value.
+        let dead := union (recordLiveCells written cs env after) ctx.pinned
+        let kept := (fs.zipIdx.filter fun (_, i) => !written.contains i).map Prod.fst
+        let keptCells := kept.foldl (fun xs a => union xs a.cells) []
+        let newCells := vs.foldl (fun xs a => union xs a.cells) []
+        -- Disjoint (item 3): no new value, and no field the object keeps,
+        -- holds the object.
+        demand ctx.config cs dead (union keptCells newCells)
+        -- The result is the base's object (§31.3), its kept fields and the
+        -- new values. Its certificate is the old one over the kept fields,
+        -- with the new values stored as a set stores one (§18.2).
+        let deep := ex.deep && storeExclusive ctx vs later keptCells
+        let spine := ex.spine && storeSpines ctx vs later keptCells &&
+          (kept.flatMap containers).all (fun (_, old) => individuallyOwned ctx old && !cellOverlap old newCells)
+        pure (.list cs (.record (assignFields fs written vs)) ⟨deep, spine⟩)
+      | _ => throw "abstract update shape"
     | .traverse kind src initial i x acc body =>
       let input ← abstractAtom env src
       let init ← abstractAtom env initial

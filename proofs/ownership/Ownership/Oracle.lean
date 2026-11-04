@@ -372,6 +372,8 @@ def reductions : Expr → List Expr
       (atomReductions i).map (fun a => .focus src a x body)
   | .dictFocus src k x body => [.atom src] ++ (reductions body).map (fun b => .dictFocus src k x b) ++
       (atomReductions k).map (fun a => .dictFocus src a x body)
+  | .assign w fs base values => [.atom base] ++
+      (argumentReductions values).map (.assign w fs base)
 
 /-- Fuel-bounded greedy reduction over syntax, integers, indices and call counts. Every
     proposed reduction must remain ordinarily typed, accepted and disagreeing. -/

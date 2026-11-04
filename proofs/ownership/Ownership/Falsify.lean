@@ -739,6 +739,7 @@ def mentionsDecl (ids : List Nat) : Expr → Bool
 def writeOps : Expr → Bool
   | .prim .push _ | .prim .set _ | .focus .. => true
   | .prim .dictInsert _ | .prim .dictRemove _ | .dictFocus .. => true
+  | .assign .. => true
   | .resultCase _ _ _ a b | .chainCase _ _ _ a b | .entry a _ _ b
   | .letE _ a b | .branch _ a b => writeOps a || writeOps b
   | .traverse _ _ _ _ _ _ body => writeOps body

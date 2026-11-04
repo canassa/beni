@@ -444,6 +444,15 @@ theorem mem_namesAt_entryPath (ds : List Decl) (q : Path) :
             exact member
           · rw [if_neg unknown] at member ⊢
             exact ih t' x o firstOrderX member
+        | object ts =>
+          change o ∈ namesAt (.list cs (entryAbstract ds (.record ts) x) ex)
+            (.element :: entryPath (.record ts) rest) at member
+          simp only [namesAt] at member ⊢
+          by_cases unknown : cs.contains .unknown = true
+          · rw [if_pos unknown] at member ⊢
+            exact member
+          · rw [if_neg unknown] at member ⊢
+            exact ih (.record ts) x o firstOrderX member
         | int => exact member
         | record _ => exact member
         | result _ _ => exact member
@@ -492,6 +501,7 @@ theorem mem_namesAt_entryPath (ds : List Decl) (q : Path) :
         | builder _ => exact member
         | dict _ => exact member
         | fn _ _ => exact member
+        | object _ => exact member
       | element =>
         obtain ⟨ys, typed⟩ := entryAbstract_record ds t xs
         rw [typed, concrete] at member
