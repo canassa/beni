@@ -67,6 +67,15 @@ def dead := "Dead: an old holder is live after the demand"
 -- A local bound before the update, read at a kept field: accepted.
 #guard (check aliasKept).isOk && agree aliasKept
 
+-- An update that writes every field reads nothing of its base: accepted.
+-- The old holder captured whole afterwards is a use: refused; in place the
+-- closure reads the new field.
+#guard (check allFields).isOk && agree allFields
+#guard refused allFieldsCaptured dead
+#guard match ValueSemantics.run allFieldsCaptured 200, InPlaceSemantics.run allFieldsCaptured 200 with
+  | .ok t, .ok t' => t.finalValue == .int 7 && t'.finalValue == .int 11
+  | _, _ => false
+
 /-! ## #316's three two-holder shapes -/
 
 -- A stored payload read at the written field: refused; read at a kept field:

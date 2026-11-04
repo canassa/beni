@@ -317,7 +317,13 @@ def liveCellsWith (cfg : Config) (env : Env Abstract) (l : Live) : List Origin :
     objects `cs` that writes the fields `written` (§31.4 item 5, #316): a use
     that goes through one of the objects into a field the update keeps is no
     use of it; a field read leaves the object's array by its element, then the
-    field (`fieldUses`). Every other use is read as `liveCells` reads it. -/
+    field (`fieldUses`). Every other use is read as `liveCells` reads it.
+
+    The test does not ask what the value at `q` is. Only `fieldUses` makes a
+    use path with an element step, and only at a record object, so a path that
+    continues `.element :: .field g` past cells of `cs` goes into an object of
+    the demand. A holder with no binding is `⊤`, which `cs` never passes
+    (Known). -/
 def recordLiveCells (written : List Nat) (cs : List Origin) (env : Env Abstract) (l : Live) : List Origin :=
   let keeps : Path → Bool := fun rest => match rest with
     | .element :: .field g :: _ => !written.contains g
@@ -612,9 +618,13 @@ def primitive (ctx : Context) (site : List Nat) (op : Prim) (args : List Abstrac
     pure (.list [fresh] r ⟨storeExclusive ctx [r] later [], storeSpines ctx [r] later []⟩)
   | .get i, [.list cs (.record fs) _] => do
     noteRead cs
-    pure (fs[i]?.getD .bottom)
+    -- Typing keeps `i` in range; an index past the fields is refused, never
+    -- read as a dead field.
+    let field ← fs[i]?.toExcept "abstract field shape"
+    pure field
   -- `Record.copy` (§31.15): a new object holding the same fields, so, as a
-  -- list copy, it proves no certificate.
+  -- list copy, it proves no certificate. The `copy-exclusive` control weakens
+  -- the list copy only.
   | .recordCopy, [.list cs elem _] => do
     noteRead cs
     pure (.list [fresh] elem false)

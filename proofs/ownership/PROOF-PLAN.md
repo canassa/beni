@@ -785,7 +785,7 @@ parser, and `obsTyped`, `entryPath`, `entryAbstract`, `fieldType` read the new
 forms. `fieldUses` (`Domain.lean`) gives a field read and an update's base use
 their paths. The flat fragment's representation lemmas gained the object case
 (`entryType`, `DictFree.object`); `FlatANF0`, `FlatType` and every theorem
-statement did not change. `RecordPrograms.lean` holds 28 probe programs,
+statement did not change. `RecordPrograms.lean` holds 30 probe programs,
 `RecordProbes.lean` their `#guard`s.
 
 #704 (the pairwise-apart construction atom) is not in slice 1. This core has

@@ -62,6 +62,28 @@ def wholeUse : Program := { main := (
   .letE 1 (.assign 2 [0] (v 0) [.int 5]) <|
   .prim .record [v 0, v 1]) }
 
+/-- An update that writes every field: its base use reads nothing, and the
+    old holder is dead. -/
+def allFields : Program := { main := (
+  .letE 0 (.prim .object [.int 1, .int 2]) <|
+  .letE 1 (.assign 2 [0, 1] (v 0) [.int 5, .int 6]) <|
+  .prim (.get 1) [v 1]) }
+
+/-- Declaration 0, a closure that captures a record and reads field `a`. -/
+def readers : List Decl := [
+  { name := "readA", parameters := [], captures := [tP], result := .int,
+    body := .prim (.get 0) [v 0] }]
+
+/-- `allFields` with the old holder captured whole after the update and read
+    through the closure. -/
+def allFieldsCaptured : Program := { declarations := readers, main := (
+  .letE 0 (.prim .object [.int 1, .int 2]) <|
+  .letE 1 (.assign 2 [0, 1] (v 0) [.int 5, .int 6]) <|
+  .letE 2 (.closure 0 [v 0]) <|
+  .letE 3 (.app (v 2) []) <|
+  .letE 4 (.prim (.get 1) [v 1]) <|
+  .prim .add [v 3, v 4]) }
+
 /-- A local bound to the record before the update (§31.0 item 7), read at a
     field the update keeps. -/
 def aliasKept : Program := { main := (
