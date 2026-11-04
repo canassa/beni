@@ -7,6 +7,7 @@ import Api exposing (Cred)
 import Article exposing (Article)
 import Author
 import Cmd exposing (Cmd)
+import Date
 import Html exposing (Html)
 import Page
 import Route
@@ -79,15 +80,15 @@ viewArticles (Model model) =
          else
             <div class="article-list">
                 <For each={model.articles} keyed={.slug}>
-                    {viewPreview (Session.cred model.session) _}
+                    {viewPreview (Session.cred model.session) (Session.zone model.session) _}
                 </For>
             </div>
         }
     </>
 
 
-viewPreview : Maybe Cred, Article → Html Msg
-viewPreview maybeCred article =
+viewPreview : Maybe Cred, Date.Zone, Article → Html Msg
+viewPreview maybeCred zone article =
     profile = Author.profile article.author
     summary =
         <>
@@ -103,7 +104,7 @@ viewPreview maybeCred article =
             </a>
             <div class="info">
                 {Author.link article.author}
-                {Article.timestamp article.createdAt}
+                {Article.timestamp zone article.createdAt}
             </div>
             {case maybeCred of
                 Just cred →
