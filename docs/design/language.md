@@ -180,7 +180,7 @@ eof
 | `...` | *Added 2026-10-01.* One token, `ellipsis`, wherever code is lexed — longest match, so `...` is never `..` and `.`. It is the spread of a list (§6.8) and, as the first token of a hole in a tag, the spread of a component's attributes (§11.5), which is where it was a token before. Anywhere else it is `unexpected_token`, with a message that says where a spread goes |
 | `::` | *Amended 2026-10-01.* Still one token, `op_colon_colon`, but no construct uses it: it is lexed only so that the parser can report `cons_removed` with the bracket form in the message (§6.8, §10), once for a whole `a :: b :: rest` |
 | `λ`, `\`, `let`, `in` | *Added 2026-10-02 (§12.1, §12.2).* `λ` (`CE BB`) is the symbol `lambda`, the one non-ASCII token. `\` stays the token `backslash` but no construct uses it: it is lexed only so that the parser can report `backslash_lambda_removed`. `let` and `in` stay keywords, used by no construct, so that a `let` can be reported as `let_removed` |
-| `→ ← ≠ ≤ ≥ ▷ ◁ … ×` | *Added 2026-10-01 (§12.7, built 2026-10-02).* Nine more non-ASCII tokens, each the new spelling of a symbol or operator above with its grammar and binding power — `×` excepted, a type token of its own (§12.8). The ASCII `->`, `<-`, `/=`, `<=`, `>=`, `\|>`, `<\|` and `...` become `ascii_*` tokens, lexed after the enforce step only to be reported as `ascii_symbol_removed`, as `\` is. §12.7 lists the lookalikes the lexer refuses with a named suggestion |
+| `→ ← ≠ ≤ ≥ ▷ ◁ … ×` | *Added 2026-10-01 (§12.7, built 2026-10-02).* Nine more non-ASCII tokens, each the new spelling of a symbol or operator above with its grammar and binding power — `×` excepted, a type token of its own (§12.8). The ASCII `->`, `<-`, `/=`, `<=`, `>=`, `\|>`, `<\|` and `...` become `ascii_*` tokens, accepted as exact synonyms (amended 2026-11-04). §12.7 lists the lookalikes the lexer refuses with a named suggestion |
 
 ### 2.3 Comments
 
@@ -766,8 +766,7 @@ non-associative operators reject a second operator of the same precedence withou
 
 *Amended 2026-10-01 (§12.7, built 2026-10-02):* `◁` and `▷` are written for `<|` and `|>` at
 precedence 0, and `≠`, `≤`, `≥` for `/=`, `<=`, `>=` at precedence 4, each with the binding power
-and associativity of the operator it replaces; the ASCII spellings are removed
-(`ascii_symbol_removed`). `||`, `&&`, `==`, `<`, `>`, `++` and the arithmetic operators do not
+and associativity of the operator it replaces; both spellings are accepted (amended 2026-11-04). `||`, `&&`, `==`, `<`, `>`, `++` and the arithmetic operators do not
 change.
 
 | Rule | Detail |
@@ -1209,7 +1208,7 @@ representations is in the table at the end of this subsection.
 
 *Amended 2026-10-01 (§12.7, built 2026-10-02):* the spread is written `…` (U+2026), one
 token, in expressions, patterns and a tag's attribute hole alike — `[ x, …rest ]`, `[ …init, last ]`,
-`{…attrs}` — and `...` is removed (`ascii_symbol_removed`). Everything below holds with `…` read
+`{…attrs}` — and `...` remains an accepted synonym (amended 2026-11-04). Everything below holds with `…` read
 for `...`.
 
 **Expressions.** A list literal's items are expressions and **spreads**, `...e`, in any number and
@@ -1520,8 +1519,8 @@ the one place a source break between elements does not pin the vertical form. No
 layout: this overrides the one-line/source-break choice for these bodies.
 *Amended 2026-10-01 (§12.9, built 2026-10-02):* the formatter writes the Unicode symbols with the
 spacing their ASCII spellings had, measures width in code points, breaks a product type before
-each `×`, and until the enforce step prints each token in the spelling it read; it never converts
-one spelling to the other.
+each `×`, and prints each token in the spelling it read; only `--to-unicode` converts
+spellings (amended 2026-11-04).
 
 | Construct | Rule |
 |---|---|
@@ -1671,10 +1670,10 @@ name the constructors that are missing. `nesting_too_deep` is shared the same wa
 | `cons_removed`, `two_spreads_in_pattern` | the list syntax | appended on 2026-10-01, again never inserted, with the owner's decision that `::` leaves the language (§6.8, *The list syntax*). Both are the parser's. `cons_removed` is at the first `::` of a chain — in an expression, in a pattern, or as `(::)` — and its message is the bracket form of the whole chain, built from the text the author wrote (`[ a, b, ...rest ]`, `[ x ]`, `List.cons`); the chain is parsed as before and lowered to an error, so it costs one message. `two_spreads_in_pattern` is at a list pattern's second spread, which would make the split between the leading and trailing items ambiguous. A spread outside a list and a pattern spread whose operand is not a name or `_` reuse `unexpected_token`, with messages of their own |
 | `invalid_html_shell` | the backend again | appended on 2026-10-01, again never inserted, with the page shell a platform declares ([`backend.md`](backend.md) §2, *The page shell*; [`boundary.md`](boundary.md) §5.2's `"html"`). A program build writes the shell as `index.html`, its `{{entry}}` replaced by the entry file; a template that never says `{{entry}}` would ship a page that loads nothing — a build that succeeds and does nothing — so it is an error, against the template at `1:1` with no excerpt. A template that cannot be read is the same code, against the `beni.json` that named it |
 | `backslash_lambda_removed` … `suspicious_argument_order` | the syntax batch | the two lines appended on 2026-10-02, again never inserted, with §12 (specified, not built). Three are the parser's: **`backslash_lambda_removed`** at a `\` that begins a lambda, its message the `λ` head; **`let_removed`** at a `let`, its message the block the bindings become (both parse the old form on, as `cons_removed` does, so one mistake costs one message); and **`block_ends_in_binding`** at a block's last item when it is a binding, an annotation or a bind. **`statement_not_unit`** is the checker's ([`checker-v2.md`](checker-v2.md) §29): a statement whose type is not `()`, naming the type, `_ =` and a binding as the fixes. **`name_removed`** is lowering's for an unqualified name and resolution's for a qualified one: `modBy`, `remainderBy` or `logBase`, its message the call rewritten with `Int.mod`, `Int.rem` or `Float.log` (§12.4). **`suspicious_argument_order`** is a `warning`, the checker's, on by default for the root package only: a call of a function §12.4 keeps with an order Elm does not share, in the shape a call written in Elm's order has (§12.5) |
-| `ascii_symbol_removed`, `tuple_type_removed` | Unicode notation | the next line, appended on 2026-10-01, again never inserted, with §12.7–§12.8 (built 2026-10-02). Both are the parser's, and both parse the old form on as the new one, so one stale spelling costs one message. **`ascii_symbol_removed`** is at each `->`, `<-`, `/=`, `<=`, `>=`, `\|>`, `<\|` or `...`, its message the symbol to write, its code point, `beni fmt --migrate-unicode` and the editor input — one code for eight spellings, because the fix and the flag are one. **`tuple_type_removed`** is at the `(` of a parenthesised tuple type, its message the type written with `×`. The lookalikes of §12.7 reuse `invalid_character`, `expected_token` and `unexpected_token`, each with a message naming the symbol |
+| `ascii_symbol_removed`, `tuple_type_removed` | Unicode notation | Allocated 2026-10-01. **Amended 2026-11-04:** `ascii_symbol_removed` is retired; `tuple_type_removed` stays at the `(` of a comma tuple type, with the product spelling in its message. |
 | `core_contract_violation` | the backend again | the line before the last, appended on 2026-10-02, again never inserted. A core package that does not declare a value the code generator calls on its own — `Basics.eq` and `String.compare` for a comparison, `List`'s core-private `unsafeGet`, `view`, `base`, `offset` and `close` for a list pattern, a walk or a building loop ([`backend.md`](backend.md) §4, *The emitter's imports of the core-private exports*). Only a `--core-root` core can lack one. Reported where a module first needs the value, once per module and value, and nothing is written; it replaced `internal` for the two comparison values the same day |
 | `invalid_js_object` | `Js` | the line before the last, appended on 2026-10-02, again never inserted, with `Js.object` ([`boundary.md`](boundary.md) §4.2; [`backend.md`](backend.md) §4, *`Js.object` is an object literal*). The checker's, at a call of core's `Js.object` whose fields are not a list literal of `( "key", value )` pairs, each key a string literal that is a JavaScript identifier other than `__proto__`, no key twice. Only core and a platform package can write one (`js_outside_platform`) |
-| `unit_spelling_removed` … `unit_discarded` | `⊤` and `⊥` | the line before the last, appended on 2026-10-02, again never inserted, with §12.10 (built the same day). **`unit_spelling_removed`** is the parser's, at the `(` of a `()` in a type, an expression or a pattern; **`never_spelling_removed`** lowering's, at a `Never` that names `Basics`' empty type; both go on as `⊤` and `⊥`, so one stale spelling costs one message. **`if_without_else_not_unit`** is the checker's, at the `then` branch of an `if` without `else` whose type is not `⊤`. **`unit_discarded`** is a `warning`, the checker's, for the root package only, at a `_ =` in front of a `⊤` |
+| `unit_spelling_removed` … `unit_discarded` | `⊤` and `⊥` | Allocated 2026-10-02. **Amended 2026-11-04:** unit and Never spelling refusals are retired; `if_without_else_not_unit` and warning `unit_discarded` stay (§12.10). |
 | `view_not_compiled`, `program_mounted_twice` | the program hook | the line before the last, appended on 2026-10-09, again never inserted, with [`boundary.md`](boundary.md) §9.4.6's version 1.6 and `browser-direct`'s slice S0. Both are `build`'s, raised for a lowering that compiles whole programs. **`view_not_compiled`** is a program whose `view` no compiler can reach as markup — a `view` a call computes, a program constructor used as a value — on a platform with no run-time renderer to hand it to ([`browser-direct.md`](browser-direct.md) §11.1): the one refusal of a program shape left, an error because no fallback exists, and its message names `browser-tea`, which renders any `view`. **`program_mounted_twice`** is one top-level program value placed twice among `main`'s placements on a platform whose programs keep their state per program value ([`browser-direct.md`](browser-direct.md) §8.2): two mounts would share one model and show each other's writes, so it is an error, and the message names the escape, a program built by a function |
 | `prepend_in_loop` | the list representation | the line before the last, appended on 2026-10-11, again never inserted, with the owner's decision that a prepend copies (§6.8, *`[ x, …xs ]` copies*). A `warning`, the checker's, on by default for the root package only ([`checker-v2.md`](checker-v2.md) §35): a list built by putting elements in front of an accumulator a loop carries — a parameter a function hands back to itself, or the accumulator a `List.foldl` or `List.foldr` callback receives and returns — which copies the accumulator at every step. Its message shows the push form, `[ …acc, x ]`, which needs no `List.reverse`, and names the escape: bind the new list to a name first. Not at a one-off prepend, a list pattern or a push |
 | `misplaced_ownership_word` | ownership words | the line before the last, appended on 2026-10-12, again never inserted, with ownership words (§5.4; [`ownership-checker.md`](ownership-checker.md) §24.4). Lowering's, at the word, which is dropped: a word in a package that may not write `foreign` (one message per signature: Change 5(b), words on application code, is not approved), inside a type rather than in front of a parameter or the result, a function's word on a value, a result's word on a parameter or a parameter's on the result, or a word that cannot hold beside another written there (`borrowed` with any other, `once` with `many`, `exclusive` without `fresh`, …). *Amended 2026-10-26* (§5.4): the same code, at the word, for the ownership checker v2's words and type words — a word without its companion, a cell word on another parameter than its own, `cellupdate` or `cellmodify` on a function not marked `sync`, a type word on a declaration it does not describe, `failure` on a type that does not have exactly two unary constructors; and for a result selector without its parameters' words, or a stored callback without the words that say where its answer goes (`once taken` and a `written returned` first parameter, or a cell word), or with one that contradicts it |
@@ -3176,15 +3175,39 @@ their lines after an operand, which is the markup row of §12.2's layout. The mi
 were vertical vertical (the never-join rule), leave the `Toggle` record update nested rather than
 naming `todos`.
 
-### 12.7 Unicode notation: one symbol for each arrow, comparison, pipe and spread
+### 12.7 Unicode notation: symbols and ASCII synonyms
+
+*Amended 2026-11-04 — supersedes the spelling-enforcement history below.* Both
+ASCII and Unicode are accepted as exact synonyms, mixed token by token with no
+spelling diagnostic: `->`/`→`, `<-`/`←`, `/=`/`≠`, `<=`/`≤`, `>=`/`≥`,
+`|>`/`▷`, `<|`/`◁`, `...`/`…`, `\`/`λ`, `()`/`⊤` (type, value, pattern),
+and prelude `Never`/`⊥`. `Never` remains an ordinary shadowable name; `⊥` always
+names Basics' empty type. `*` in a type is `×`: `Int * String * Bool` is a flat
+3-tuple, `(Int * String) * Bool` a nested pair. Comma tuple types remain
+`tuple_type_removed`, and `×` remains refused in expressions.
+
+`beni fmt` preserves each spelling; `fmt --check` accepts formatted ASCII.
+Public `fmt --to-unicode` converts these synonyms while formatting code only.
+`--check --to-unicode` fails while conversion or formatting would change a file.
+Strings, chars, multiline strings, comments and markup text keep their bytes;
+interpolation and markup holes are code. Conversion of `Never` honors
+`topNeverShadowed`; comments inside unit parentheses are retained.
+`--migrate-unicode` and `--migrate-lambda` are retired. `--migrate-top` retains
+only structural rewrites (dropping `else ⊤` or `else ()`, deleting warned `_ =`).
+`--migrate-cons` is unchanged. Diagnostics, dumps and type rendering stay Unicode.
+
+`x <-1` lexes as `x <- 1`. The existing `unexpected_token` or `expected_token` diagnostic at a
+rejected bind suggests `x < -1` with a space for comparison with a negative number.
+Valid binds, including negative numeric right-hand sides, stay accepted.
+
 
 *Specified 2026-10-01; built 2026-10-02* — taught, the repository migrated, and the ASCII
-spellings refused (`frontend.md` §11.8's *As built* notes). The owner adopted Lean 4's Unicode notation on 2026-10-01
+spellings initially refused (`frontend.md` §11.8's historical *As built* notes). The owner adopted Lean 4's Unicode notation on 2026-10-01
 ([`plans/browser-decisions.md`](../../plans/browser-decisions.md) S8: "let's adopt the lean unicode
 stuff"), with one spelling each, as §12.1 made `λ` the only lambda: Lean accepts `->` beside `→`
-and `<=` beside `≤`, beni keeps only the symbol. This subsection is the contract for the tokens,
+and `<=` beside `≤`; beni now accepts both too. This subsection is the contract for the tokens,
 §12.8 for tuple types written with `×`, §12.9 for the formatter, the editor and the order of work;
-[`frontend.md`](frontend.md) §11.8 says how the lexer, parser and `beni fmt --migrate-unicode`
+[`frontend.md`](frontend.md) §11.8 says how the lexer, parser and `beni fmt --to-unicode`
 build it. The open choices it made are `plans/syntax-batch.md` §1.3, Z1–Z15, all confirmed by the
 owner as recommended on 2026-10-02.
 
@@ -3213,12 +3236,12 @@ definition).
 
 | Rule | Detail |
 |---|---|
-| **tokens** | each symbol is a token tag of its own, distinct from its ASCII spelling's, because a token's length is re-derived from its tag (`frontend.md` §3.2). The symbol takes the tag name above; the ASCII spelling is renamed `ascii_arrow`, `ascii_arrow_left`, `ascii_ne`, `ascii_le`, `ascii_ge`, `ascii_pipe_right`, `ascii_pipe_left` and `ascii_ellipsis` (so `op_slash_eq`, `op_lte` and `op_gte` are gone as names). The parser treats the two tags of a pair as one token everywhere, so until the enforce step a file may mix spellings, token by token |
+| **tokens** | each symbol is a token tag of its own, distinct from its ASCII spelling's, because a token's length is re-derived from its tag (`frontend.md` §3.2). The symbol takes the tag name above; the ASCII spelling is renamed `ascii_arrow`, `ascii_arrow_left`, `ascii_ne`, `ascii_le`, `ascii_ge`, `ascii_pipe_right`, `ascii_pipe_left` and `ascii_ellipsis` (so `op_slash_eq`, `op_lte` and `op_gte` are gone as names). The parser treats the two tags of a pair as one token everywhere, so a file may mix spellings, token by token |
 | **the lexer** | §2.4's ASCII-only rule gains nine more exceptions beside `λ`: the byte sequences in the table are those tokens wherever code is lexed — a markup hole, an interpolation hole, an attribute's `{…}` value and a `where` clause included. They are **never** recognised inside a string, a character literal, a multiline string, a comment (doc comments included), markup text or a quoted attribute value, which keep whatever bytes they hold. A symbol is never part of an identifier or of another token: `a→b` is three tokens, `≤=` is `≤` then `=`, `……` is two spreads |
-| **negative operands** | §2.2's longest-match trap — `x <-1` lexes as `<-`, so a comparison with a negative operand needs a space — does not exist for the symbols: `x ≤-1` and `x ≥-1` are `x ≤ -1` and `x ≥ -1`, the `-` being negation by §6.5's rule. `x <-1` itself still lexes as `ascii_arrow_left` (the enforce step reports it, and its message names `x < -1`) |
+| **negative operands** | `x <-1` lexes as `x <- 1`. A rejected bind reports `unexpected_token` or `expected_token` with the hint `x < -1`, with a space. Valid binds remain accepted. |
 | **operators as functions** | `(≠)`, `(≤)` and `(≥)` are the 2-ary functions `(/=)`, `(<=)` and `(>=)` were; `(▷)` and `(◁)` are `operator_not_a_function`, as `(\|>)` and `(<\|)` are (§6.5) |
 | **`×` outside a type** | `times` is a type token only. In an expression it is `unexpected_token`, with a message that says multiplication is `*` and a tuple value is `( a, b )` |
-| **the ASCII spellings, removed** | from the enforce step (§12.9) each `ascii_*` token is still lexed, only so that the parser can report **`ascii_symbol_removed`** at it — title REMOVED ASCII SYMBOL, the message naming the symbol, its code point, the flag `beni fmt --migrate-unicode` and the editor input below — and then parse on as the symbol, so one stale token costs one message and the rest of the file checks. It is reported at every occurrence, as `backslash_lambda_removed` is, because each one is an edit and an editor needs each span. The `<-` message adds *if you meant less than a negative number, write `x < -1`*; a `...` where no spread may stand gets `ascii_symbol_removed` and not the spread's `unexpected_token`. The parenthesised tuple type is §12.8's `tuple_type_removed` |
+| **ASCII spellings (amended 2026-11-04)** | Accepted as exact synonyms; no spelling diagnostics. Comma tuple types remain `tuple_type_removed`. |
 | **columns** | §2.1's column counts bytes, so every symbol here (two or three bytes, one column on screen) would move a diagnostic's column and its excerpt's `^` one or two places right of where an editor shows it, on most lines of a program — the defect §12.1's *columns* row accepted for `λ` alone. **From the teach step, a column counts code points** (Unicode scalar values) from the line start, in every diagnostic's `{line, col}`, its excerpt's underline, and every layout comparison. Byte offsets stay what spans are made of. Indentation is ASCII, so no line-start column moves, and §12.1's one exception — a `case` whose first branch shares the `of` line after a `λ` — is no longer one. A code point is not a display cell: a CJK character in a string is two cells and one column, as in Rust's and Lean's own diagnostics. *Built 2026-10-02, before the symbols:* `diagnostic.position` takes the source and counts code points; the parser keeps every token's column when a file holds a byte past ASCII; the excerpt pads and underlines in code points; the token, AST and diagnostic outputs and the formatter's measure all count the same way |
 
 **Lookalikes.** A character that a reader cannot tell from one of the symbols, or that a habit from
@@ -3242,12 +3265,16 @@ non-ASCII byte outside a string, character or comment stays plain `invalid_chara
 | U+FF01 – U+FF5E | the fullwidth forms (`＜`, `＞`, `＝`, `｜` …) | the ASCII character 0xFEE0 below it, named; the parse does **not** go on as that character, which may be a letter |
 | `!=` | ASCII `!` then `=` (a lone `!` is `invalid_character` today) | `≠` — one message for the pair |
 | `=>` | ASCII `=` then `>`, adjacent, where `→` is expected (a `case` branch, a lambda) | `→`, as `expected_token`'s message — the parser's, not the lexer's |
-| `*` in a type | `Int * String` | `×`, as `unexpected_token`'s message |
+| `*` in a type | `Int * String` | accepted synonym of `×` (2026-11-04) |
 
 `x` between two types (`Int x Int`) is an ordinary type variable and cannot be refused; it is a
 `wrong_type_arity` on `Int` like any other.
 
 ### 12.8 `×` writes a tuple type
+
+*Amended 2026-11-04:* `*` is an exact synonym for `×` in types, with the
+same precedence and flat n-ary reading. `(Int * String) * Bool` remains nested.
+Comma tuple types remain refused; `×` in an expression remains refused.
 
 **A tuple type is its element types joined by `×`**: `Int × String` is the type of `( 1, "a" )`.
 It replaces `( Int, String )` in every place a type is written — an annotation, a `type alias`, a
@@ -3259,7 +3286,7 @@ of two or more, `ambiguous_tuple`. `()` is unit, not a product, and does not cha
 Type        := TypeParams '→' Type                               -- n-ary, right assoc in result
              | Product
 TypeParams  := Product (',' Product)*                            -- no comma is a 1-ary function
-Product     := TypeApp ('×' TypeApp)*                            -- n ≥ 2 operands: an n-tuple
+Product     := TypeApp (('×' | '*') TypeApp)*                            -- n ≥ 2 operands: an n-tuple
 TypeApp     := … as in §3 …                                      -- 'equatable' may start each operand
 TypeAtom    := … as in §3, less the tuple line …                 -- '(' Type ')' still groups
 ```
@@ -3311,14 +3338,19 @@ is already U+2026; a type has no spread, so the two cannot be confused.
 
 ### 12.9 The formatter, the editor, and the order of work
 
+*Amended 2026-11-04:* the spelling-enforcement step is withdrawn. The preserving
+formatter is the default indefinitely. `fmt --to-unicode` formats and converts
+code spellings; `--check --to-unicode` checks both. See §12.7 for conversion scope,
+retired flags and the negative-number hint.
+
 | Rule | Detail |
 |---|---|
 | **spacing** | the formatter writes one space either side of `→`, `←`, `≠`, `≤`, `≥`, `▷`, `◁` and `×`, and `…` against its operand (`[ x, …rest ]`, `{…attrs}`), as it wrote their ASCII spellings. `λx → e` |
 | **width** | the 100-column measure (§9, `frontend.md` §3.7) counts code points, as §12.7's columns do: `→` is one column, not three bytes. No canonical file changes for it — a measure that shrinks can only let a construct fit, and the never-join rule keeps every construct an author broke broken. *As built (2026-10-02):* not quite — a hung trailing lambda (§12.5) is joined to its head line whenever the whole fits, so fifteen files of the gate's scope, each with a hung lambda whose joined line is at most 100 code points but more than 100 bytes, were joined in the commit that moved the measure |
 | **a product type** | on one line when it fits and the author wrote it on one line; otherwise it breaks **before** each `×`, the operands after the first one per line, indented 4, `×` leading — the shape of an operator chain (§9). Parentheses the author wrote around a product are kept, as every grouping in a type is (§3) |
-| **during the teach and migrate steps** | the formatter prints each token in the spelling it read, so a file may mix spellings and `beni fmt` moves no file from one to the other; a tuple type written `( a, b )` is printed as it was |
-| **from the enforce step** | a file holding an ASCII spelling or a comma tuple type has syntax errors, so `beni fmt` reports it and leaves it untouched (§9, *total on valid input*); the formatter only ever prints the symbols |
-| **`beni fmt` does not convert** | as with `λ` (§12.1, Y2): converting would make the ASCII a second input spelling. `beni fmt --migrate-unicode` migrates files (`frontend.md` §11.8) |
+| **preserving default (2026-11-04)** | the formatter prints each token in the spelling it read, so a file may mix spellings and `beni fmt` moves no file from one to the other; comma tuple types remain syntax errors |
+| **conversion (2026-11-04)** | `fmt --to-unicode` formats and converts code; `--check --to-unicode` checks both. Comma tuple types remain syntax errors. |
+| **plain `beni fmt`** | preserves spelling, including ASCII `*` products, unit parentheses, backslash lambdas and `Never`. |
 
 **Typing the symbols.** None is on a keyboard. The editor answer is the language server (M5) and
 editor modes, which replace the ASCII spelling **as it is typed**, in code only — never in a
@@ -3326,9 +3358,9 @@ string, a character, a multiline string, a comment or markup text: `->` becomes 
 `≠`, `<=` `≤`, `>=` `≥`, `|>` `▷`, `<|` `◁`, `...` `…`, a `*` typed where a type is expected `×`,
 and `\` `λ` (§12.1). Lean's editors use backslash abbreviations (`\to`, `\le`, `\x`); beni's do
 not, because a typed `\` is already `λ`. An undo after a replacement restores the ASCII, so `x <`
-`-1` can still be typed (and is then refused, with the message to write `x < -1`).
+`-1` can still be typed; a rejected bind suggests `x < -1` with a space.
 
-**The order of work** is §12's for `λ`: **teach** (the lexer reads the symbols and `×`, the
+**The historical order of work** (the spelling-enforcement step was withdrawn on 2026-11-04) was §12's for `λ`: **teach** (the lexer reads the symbols and `×`, the
 parser accepts both spellings, the lookalikes are refused, columns count code points, `beni fmt
 --migrate-unicode` exists), **migrate** (one mechanical commit: the flag over every `.beni` file,
 then plain `beni fmt` over the gate's scope for any tuple type it joined past 100 columns; core's
@@ -3338,6 +3370,10 @@ alongside, by a reviewed script, because the flag does not touch comments), **en
 quotes code switch to the symbols). `plans/syntax-batch.md` slices 18–20.
 
 ### 12.10 `⊤` and `⊥`: the trivial and the empty type, and `if` without `else`
+
+*Amended 2026-11-04:* `()` and prelude `Never` are accepted synonyms of `⊤` and `⊥`.
+`Never` is still shadowable. `--to-unicode` converts spellings; `--migrate-top`
+performs only structural rewrites. The other typing and warning rules stay.
 
 *Specified 2026-10-02; built the same day* (the owner's decision S10,
 [`plans/browser-decisions.md`](../../plans/browser-decisions.md)). **`⊤` is the unit type and its one
@@ -3380,7 +3416,7 @@ Expr        := 'if' Expr 'then' Body ('else' Body)?              -- §12.2's lin
 | **`⊥` is core's empty type, always** | it names the type `Basics` declares, in every module, whatever the module declares or imports under the name `Never`: it cannot be shadowed, as `⊤` cannot. `Basics` keeps declaring the type as `type Never = JustOneMore ⊥` — a declaration needs an upper identifier — and from the enforce step that name is written only inside `Basics`. `never : ⊥ → a` keeps its name |
 | **`T`, the lookalike** | a capital `T` is the one ASCII character a reader may take for `⊤`. The lexer cannot refuse it — `T` is a legal type and constructor name, and a program may declare one — so the hint is resolution's: an **unbound** `T`, as a type (`unbound_type`) or as a constructor in an expression or a pattern (`unbound_constructor`), keeps its code and its message gains one sentence, *did you mean `⊤` (U+22A4 DOWN TACK), the unit type and its value?* A `T` the program declares or imports is that declaration, as any name is: it is never read as `⊤`, and nothing is accepted silently |
 | **lookalikes** | §12.7's *Lookalikes* gain five, each `invalid_character` with the symbol named and the parse going on as that symbol: `⟙` U+27D9 LARGE DOWN TACK, `⫟` U+2ADF SHORT DOWN TACK and `⊺` U+22BA INTERCALATE → `⊤`; `⟘` U+27D8 LARGE UP TACK and `⫠` U+2AE0 SHORT UP TACK → `⊥` |
-| **`( )`** | the unit written with whitespace or a newline between its parentheses is the same `()` (§3 reads two tokens), and is migrated and refused exactly as `()` is. One with a comment between its parentheses is refused the same way; the flag leaves its file alone and names it, for a hand edit |
+| **`( )`** | Whitespace or comments between unit parentheses are accepted; `--to-unicode` retains comments while replacing the delimiters with `⊤`. |
 | **markup** | `()` in markup text or a quoted attribute value is text, which no rule here reaches. In a markup hole or a `{…}` attribute value it is code, and is `⊤` like any other |
 | **the type renderer** | from the enforce step, prints `⊤` for the unit type and `⊥` for `Basics`' empty type, so a diagnostic, `dump --stage=types` and `--stage=interface` show what the program must write. Neither is ever parenthesised. A type's run-time identity (`checker-v2.md` §33) is a key, not source, and keeps `()` |
 | **`Debug.toString`** | from the enforce step, writes the unit value as `⊤` (Appendix B), as beni source writes it: `Mark ⊤` |
@@ -3416,10 +3452,8 @@ the enforce step it is emitted only under `--explain`, which is how the migratio
 The prelude's exposed types keep `Never` (Appendix A), so that a stale `Never` gets the removal
 diagnostic rather than `unbound_type`.
 
-**The migration**, `beni fmt --migrate-top` (`frontend.md` §11.9), is an edit in §12.9's family —
-it keeps the file's layout and reaches its fixed point in one run: `()` → `⊤` in every type,
-expression and pattern; `Never` → `⊥` where the file neither declares nor imports a `Never` of its
-own; `else ⊤` dropped from an `if` whose `else` branch is exactly the unit atom, unless an `else`
+**The structural migration**, `beni fmt --migrate-top` (`frontend.md` §11.9), keeps
+the file's layout and reaches its fixed point in one run: `else ⊤` (or `else ()`) dropped from an `if` whose `else` branch is exactly the unit atom, unless an `else`
 follows it (the `if` then ends the `then` branch of an outer `if`, and dropping it would hand the
 outer `else` to the inner one); and, given the warnings of a `check --explain --diagnostics=json` run as
 `--discards=<file>`, `_ = ` deleted in front of each `unit_discarded` line. Dropping `else ⊤` is

@@ -1,5 +1,10 @@
 # The playground — beni compiled to WebAssembly, in a page
 
+*Amended 2026-11-04:* the Counter, Print, TodoMVC and Ball machine sample
+sources use the accepted ASCII spellings (`language.md` §12.7–§12.10).
+Plain formatting preserves them; `fmt --to-unicode` is an optional conversion.
+
+
 > Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
 > requirements were removed (#740). Each test or corpus case now has a
 > 120-second wall-clock hang guard. Older counts and budget references below

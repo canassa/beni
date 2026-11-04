@@ -1695,6 +1695,20 @@ commit, whose diff outside `core/Debug.beni` is mechanical.
 
 ### 11.8 Unicode notation in the front end
 
+*Amended 2026-11-04 — supersedes spelling-enforcement history below:*
+ASCII and Unicode are exact synonyms (`language.md` §12.7–§12.10), including
+`*` products, backslash lambdas, unit parentheses and prelude `Never`.
+Parsing and lowering emit no spelling refusals; comma tuple types remain errors.
+The formatter preserves spelling. Public `fmt --to-unicode` converts code tokens
+and type nodes, then formats; `--check --to-unicode` reports either change.
+Literal and comment bytes stay untouched; `Never` conversion honors
+`topNeverShadowed`, and unit conversion retains interior comments.
+`--migrate-unicode` and `--migrate-lambda` are retired; `--migrate-top` keeps only
+structural rewrites. `--migrate-cons` is unchanged. A rejected bind's
+`unexpected_token` or `expected_token` message suggests `x < -1` for comparison.
+The artifact version is bumped to invalidate cached spelling diagnostics.
+
+
 *Added 2026-10-01; built 2026-10-02* (the *As built* notes below). How the lexer, parser, formatter and `beni fmt
 --migrate-unicode` build [`language.md`](language.md) §12.7–§12.9, in the order
 [`plans/syntax-batch.md`](../../plans/syntax-batch.md) slices 18–20 give.
@@ -1719,8 +1733,8 @@ commit, whose diff outside `core/Debug.beni` is mechanical.
   at `start`, as an identifier's is. The parser reads a `lookalike` as its payload's tag, so the
   parse goes on as though the symbol had been written. `!=` is one `lookalike` (payload `op_ne`,
   length 2); `−` and `－` carry `op_minus`. A fullwidth form is plain `invalid_character` with the
-  ASCII character named and no token, as today. `=>` and a `*` in a type are the parser's, as
-  messages of the codes they already raise.
+  ASCII character named and no token, as today. `=>` is the parser's, as a message of the code it already raises.
+  A `*` in a type is accepted as a product separator.
 - **Columns.** A diagnostic's column, its excerpt's underline (`src/render/text.zig`) and the
   parser's layout comparisons count code points (§3.1). A token that begins its line follows ASCII
   indentation, so its column is still `o - line_starts[l] + 1` and costs nothing; only a column
@@ -1729,7 +1743,7 @@ commit, whose diff outside `core/Debug.beni` is mechanical.
 
 **The parser.** Every site that matches `arrow`, `arrow_left`, `ellipsis` or one of the six
 operators matches the pair, through one helper that maps an `ascii_*` tag to its symbol's, so
-until slice 20 the two spellings parse identically and build identical nodes. The type parser
+the two spellings parse identically and build identical nodes. The type parser
 gains `Product` (`language.md` §12.8): after a `TypeApp`, a `times` continues a product whose
 operands are `TypeApp`s, flat, and a parenthesised type is an operand that is never flattened. A
 product is the existing node **`type_tuple`**, its `main_token` the first `times`; the
@@ -1737,39 +1751,31 @@ parenthesised form keeps building `type_tuple` with its `(` as `main_token`, so 
 dumps of `Int × String` and `( Int, String )` are byte-identical (the teach slice's fixture says
 so) and the formatter can tell the two spellings apart by the tag of `main_token`. The dumps
 name an operator by its symbol whichever tag was read (`language.md` §12.7), so the `ast` and `bir`
-goldens that print `/=`, `<=`, `>=`, `|>` or `<|` move in slice 18, and only there. From slice 20
-the helper reports `ascii_symbol_removed` once per `ascii_*` token it consumes, and the tuple type
-`tuple_type_removed` at its `(`, its message the product built from the node's own children; both
-parse on. The frontend artifact's format version moves in slice 18 for the new tags and in slice
-20 for the two codes (`fast-compiler.md` §8), the cache entry's with it.
+goldens that print `/=`, `<=`, `>=`, `|>` or `<|` moved when the symbols landed.
+Comma tuple types report `tuple_type_removed` at their `(` and parse on.
+Spelling refusals are retired (2026-11-04); the artifact version moves to
+invalidate cached diagnostics (`fast-compiler.md` §8).
 
-**The formatter** prints each token from its tag, so it keeps the spelling it read for free until
-slice 20 removes the ASCII; a `type_tuple` whose `main_token` is `(` prints as it did, one whose
-`main_token` is `times` as a product (`language.md` §12.9). §3.7's measure counts a token's code
-points, not its bytes — one more pass over the token's bytes, which the measure already slices —
-and the printer's `curCol` with it.
+**The formatter** preserves each token's spelling, including ASCII products,
+backslash lambdas, unit parentheses and `Never`. Products are detected by the
+`times` or `op_star` main token; commas in a tuple type remain syntax errors.
+The measure and cursor count code points (§3.7).
 
-**`--migrate-unicode`** is an edit in the family of §11.4: it keeps the file's own layout, may run
-on every `.beni` file including the deliberately unformatted ones, reaches its fixed point in one
-run, accepts a file whose only syntax errors are `ascii_symbol_removed` and `tuple_type_removed`
-(an error filter, as `--migrate-lambda` has), re-parses its output and leaves untouched — naming
-it with the re-parse's first diagnostic — a file that no longer parses.
+**`--to-unicode`** formats and converts code, reaching a fixed point in one run.
+It replaces ASCII symbol tokens and backslash lambda heads; product separators
+are identified through type nodes, leaving multiplication alone. Unit nodes lose
+their parentheses and gain `⊤`, with interior comments retained. Type references
+`Never` become `⊥` unless `topNeverShadowed` finds a declaration or a non-Basics
+import; an explicit `Basics.Never` still converts. Literal text, characters,
+multiline strings, comments, markup text and quoted attributes keep their bytes.
+Interpolation and markup holes remain code. The formatter first normalizes
+layout so shortening arrows cannot misalign same-line case branches, then
+converts tokens, reparses, and formats the result. `--check --to-unicode` checks
+both spelling and layout. Invalid files are reported and left untouched.
 
-- **Tokens.** Every `ascii_*` token is replaced by its symbol and nothing else on the line moves.
-  It reaches only tokens, so a string, character, multiline string, comment, doc comment, markup
-  text or quoted attribute value is never touched, and the code in an interpolation hole, a markup
-  hole and an attribute's `{…}` value is. A `<-` outside a bind (`x <-1`, meant as `x < -1`) is a
-  syntax error today, so a file holding one is left alone and named.
-- **Tuple types.** Every `type_tuple` whose `main_token` is `(` is written as its element types
-  joined by ` × `, each element's own text kept (rewritten recursively, innermost first), and
-  wrapped in parentheses exactly where a product must be an atom — a type-application argument,
-  a constructor's payload, an operand of an enclosing product — and nowhere else. A tuple type the
-  author wrote across lines is written on its first line, which is safe because a type holds no
-  layout; one that holds a comment is left and named for a hand edit.
-- **Columns** shift on a rewritten line (`->` is two columns, `→` one; a tuple type shrinks), and
-  layout compares only line-start columns but for the `case` of `language.md` §12.1, which the re-parse catches.
-- The slice that runs it then runs plain `beni fmt` over the gate's scope, for a joined tuple type
-  that now passes 100 columns; it is the one way the flag's output can fail the gate.
+The hidden `--migrate-unicode` and `--migrate-lambda` flags are retired.
+The following *As built* notes record the historical implementation, superseded
+by this amendment where they describe spelling refusal or retired flags.
 
 *As built, the teach step (2026-10-02):*
 
@@ -1831,6 +1837,20 @@ budget that way.
 
 ### 11.9 `⊤`, `⊥` and `if` without `else` in the front end
 
+*Amended 2026-11-04 — supersedes spelling-enforcement history below:*
+ASCII and Unicode are exact synonyms (`language.md` §12.7–§12.10), including
+`*` products, backslash lambdas, unit parentheses and prelude `Never`.
+Parsing and lowering emit no spelling refusals; comma tuple types remain errors.
+The formatter preserves spelling. Public `fmt --to-unicode` converts code tokens
+and type nodes, then formats; `--check --to-unicode` reports either change.
+Literal and comment bytes stay untouched; `Never` conversion honors
+`topNeverShadowed`, and unit conversion retains interior comments.
+`--migrate-unicode` and `--migrate-lambda` are retired; `--migrate-top` keeps only
+structural rewrites. `--migrate-cons` is unchanged. A rejected bind's
+`unexpected_token` or `expected_token` message suggests `x < -1` for comparison.
+The artifact version is bumped to invalidate cached spelling diagnostics.
+
+
 *Added 2026-10-02; built the same day* (the *As built* notes below). How the front end builds [`language.md`](language.md) §12.10, in
 the order [`plans/syntax-batch.md`](../../plans/syntax-batch.md) slices 21–24 give.
 
@@ -1852,8 +1872,7 @@ block item (`language.md` §12.2 B2) gains `top`; the type-atom set gains `botto
 token outside the `if`'s block invisible, which is what gives `language.md` §12.10's layout reading); without
 one it builds the new node **`if_then`**, `lhs` the condition and `rhs` the `then` body. The
 existing `if` node is untouched, so every consumer that handles it handles the old form as before.
-From the enforce step the parser reports `unit_spelling_removed` at the `(` of every unit leaf
-whose `main_token` is `l_paren`, and parses on.
+Both unit spellings are accepted without a diagnostic (amended 2026-11-04).
 
 **Lowering.** `type_unit`, `unit` and `pat_unit` lower as they do. `type_bottom` lowers to the
 type `Basics` declares as `Never`: inside core's `Basics`, the module's own type; everywhere else
@@ -1861,13 +1880,12 @@ the import reference the prelude's `Never` resolves to — never through the mod
 declaration or import can shadow it. `if_then` lowers as `if` does, its `False` branch a `unit`
 instruction whose `lhs` is **1**, the mark that the checker reads as "the missing branch"
 (`checker-v2.md` §34); every other pass reads a `unit` as a unit, so the emitted JavaScript is the
-`if c then a else ⊤`'s. From the enforce step lowering reports `never_spelling_removed` at a type
-name `Never` that resolves to `Basics`' — through the prelude, an `exposing` list of an import of
-`Basics`, or `Basics.Never` — in any module but core's `Basics`, and resolves on. An unbound `T`
+`if c then a else ⊤`'s. Prelude and qualified `Never` are accepted without a
+spelling diagnostic (amended 2026-11-04). An unbound `T`
 gets `language.md` §12.10's sentence from the texts of `unbound_type` and `unbound_constructor`. The BIR format
 does not change (the mark is a value of a field the instruction already has).
 
-**The formatter** prints a unit leaf from its `main_token` — `⊤`, or `()` until the enforce step
+**The formatter** prints a unit leaf from its `main_token` — `⊤` or `()` according to its spelling
 — and measures it by its token; `type_bottom` as `⊥`; `if_then` as `if` prints, without the
 `else` half: on one line when it was written on one line and fits, otherwise `if c then` and the
 body indented 4. A paren node around an `if_then` that is the `then` branch of an `if` is kept,
@@ -1875,16 +1893,9 @@ as every paren the author wrote is.
 
 **`beni fmt --migrate-top`** is an edit in §11.4's family: it keeps the layout, may run on every
 `.beni` file including the deliberately unformatted ones, reaches its fixed point in one run,
-accepts a file whose only syntax errors are `unit_spelling_removed` (an error filter), re-parses
-its output and leaves untouched — naming it — a file that no longer parses. Its edits, in one
+requires valid syntax, re-parses its output and leaves untouched — naming it — a file that no longer parses. Its edits, in one
 source-order walk:
 
-- **Unit.** A unit leaf whose `main_token` is `(` is replaced, from its `(` to its `)`, by `⊤`.
-  One whose parentheses hold a comment leaves its file untouched and named.
-- **`Never`.** A type name `Never` — unqualified, or `Basics.Never` — becomes `⊥`, unless the
-  file declares a type, alias or schema named `Never` or imports one by name from a module other
-  than `Basics`. Lowering's resolution is not needed: the flag works on one file with no project,
-  and the two conditions are what make the file's `Never` the prelude's.
 - **`else ⊤`.** An `if` whose `else` branch is a unit leaf (either spelling) loses its `else`
   half — from the end of its `then` body to the end of the unit — unless the token after the unit
   is an `else` (the `if` ends the `then` branch of an outer `if`, whose `else` would become this
