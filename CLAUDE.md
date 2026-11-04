@@ -318,6 +318,7 @@ zig build test-workers    # the workers/ corpus under Miniflare (nix develop .#w
 zig build playground      # the playground site, beni as ReleaseSmall wasm -> zig-out/playground/ (docs/design/playground.md)
 zig build test-playground # that wasm against the native beni, byte for byte, on the corpus; not a gate, CI runs it
 zig build test-playground-page  # the playground in headless Chrome (nix develop .#browser); not a gate
+zig build test-pages      # the examples' site and its 404 stand-in at deep paths in headless Chrome (nix develop .#browser); not a gate, CI runs it
 zig build test-time-report  # where the gates' time goes -> plans/test-time-report.md
 zig build coverage        # lines of src/ the black-box tests reach -> zig-out/coverage/
 zig build fuzz            # random sweeps of the byte readers, lexer and parser; not a gate
