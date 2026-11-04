@@ -1087,13 +1087,23 @@ fn bodyOf(arena: std.mem.Allocator, source: []const u8, file: []const u8, name: 
     var out: std.ArrayList(u8) = .empty;
     var lines = std.mem.splitScalar(u8, source, '\n');
     if (std.mem.endsWith(u8, file, ".beni")) {
-        const sig_pub = try std.fmt.allocPrint(arena, "pub {s} :", .{name});
         const sig = try std.fmt.allocPrint(arena, "{s} :", .{name});
         const def = try std.fmt.allocPrint(arena, "{s} ", .{name});
         var in = false;
         while (lines.next()) |line| {
             if (!in) {
-                if (std.mem.startsWith(u8, line, sig_pub) or std.mem.startsWith(u8, line, sig)) in = true else continue;
+                var signature = line;
+                if (std.mem.startsWith(u8, signature, "pub ")) signature = signature[4..];
+                if (std.mem.startsWith(u8, signature, "foreign ")) {
+                    signature = signature[8..];
+                    for ([_][]const u8{ "pure ", "impure ", "suspends " }) |rung| {
+                        if (std.mem.startsWith(u8, signature, rung)) {
+                            signature = signature[rung.len..];
+                            break;
+                        }
+                    }
+                }
+                if (std.mem.startsWith(u8, signature, sig)) in = true else continue;
             } else if (line.len != 0 and line[0] != ' ' and !std.mem.startsWith(u8, line, def)) break;
             try out.appendSlice(arena, line);
             try out.append(arena, '\n');
@@ -2384,4 +2394,8 @@ test "ownership words: runtime array stores retain captured aliases" {
 
 test "ownership words: kernel result slot grants no freshness" {
     try expectFlips("ownership/core/KernelSlotWords.beni", &.{"--core"});
+}
+
+test "ownership words: typed browser bridge preserves aliases and escaped callbacks" {
+    try expectFlips("ownership/core/BrowserBridgeWords.beni", &.{ "--core", "--platform=browser" });
 }

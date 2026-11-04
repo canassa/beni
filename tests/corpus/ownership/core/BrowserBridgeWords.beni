@@ -1,0 +1,28 @@
+-- Identity blocks retain aliases; retained root/fuzz callbacks escape captures.
+import Browser.Bridge as Bridge
+import Browser.Host.Node as Node
+
+
+block value = Bridge.block value
+
+
+root node send = Bridge.installRoot node send
+
+
+fuzz send = Bridge.installFuzz send
+
+
+pub rootCapture node =
+    values = [ 1 ]
+    Bridge.installRoot node λ_ →
+        _ = List.length values
+        ⊤
+    List.push values 2
+
+
+pub fuzzCapture ⊤ =
+    values = [ 1 ]
+    Bridge.installFuzz λ_ _ →
+        _ = List.length values
+        ⊤
+    List.push values 2

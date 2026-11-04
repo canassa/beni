@@ -1,14 +1,14 @@
 import Browser
-import Js
 import Rt
 
 
-pub foreign type Program
+pub opaque type Program
+    = Program Browser.Program
 
 
 pub program : Browser.Program → Program
-program value = Js.to (Js.from value)
+program value = Program value
 
 
 pub run : Program → ⊤
-run value = Rt.run (Js.from value)
+run (Program value) = Rt.run value

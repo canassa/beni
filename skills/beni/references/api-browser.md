@@ -11,19 +11,19 @@ wait says so in a trailing comment, `-- impure` or `-- suspends`.
 ```text
 module Browser
   alias Host a
-  type Program
+  opaque type Program
   alias Send a
   type UrlRequest
     Internal
     External
   value flush : ⊤ → ⊤  -- impure
-  value hosted : { init : Host msg → model, settle : Host msg, model → model, update : Host msg, msg, model → model, view : model → Html msg } → Program  -- impure
+  value hosted : { init : Host msg → model, settle : Host msg, model → model, update : Host msg, msg, model → model, view : model → Html msg } → (Program)
   value installRendered : (Resume ⊤ → (⊤ → ⊤)) → ⊤  -- impure
-  value mountAt : Program, String → Program  -- impure
+  value mountAt : Program, String → Program
   value onRendered : Resume ⊤ → (⊤ → ⊤)  -- impure
   value prerender : Program, List String → Program
-  value program : { init : ⊤ → model, update : msg, model → model, view : model → Html msg } → Program  -- impure
-  value programs : List Program → Program  -- impure
+  value program : { init : ⊤ → model, update : msg, model → model, view : model → Html msg } → (Program)
+  value programs : List Program → Program
 module Browser.Events
   alias Size
     Size
@@ -73,20 +73,12 @@ module Browser.Navigation
 module Cmd
   alias Cmd a
   alias Item a
-    Perform
-    Now
-    Keyed
-    KeyedNow
-    Cancel
-    CancelAll
-    After
   type Policy
     Restart
     Ignore
     Queue
     Concurrent
   alias Send a
-    Cmd
   value afterRender : ((Send msg) → ⊤) → Cmd msg  -- impure
   value batch : List (Cmd msg) → Cmd msg
   value cancel : k → Cmd msg where k.compare : k, k → Order
@@ -252,7 +244,7 @@ module Rt
   value flush : ⊤ → ⊤  -- impure
   value forKeyed : Slot, List item, (item → key), RowRecipe item key, Opt Any, SiteProtocol, Payload → ⊤  -- impure
   value forPosition : Slot, List item, RowRecipe item ⊤, Opt Any, SiteProtocol, Payload → ⊤  -- impure
-  value fuzzInstall : V → V  -- impure
+  value fuzzInstall : Block → Block  -- impure
   value hide : Slot, Opt Block → ⊤  -- impure
   value identity : V → V
   value insertText : Node, Opt Node, String → Node  -- impure
@@ -262,7 +254,7 @@ module Rt
   value positionHead : RowRecipe item ⊤, Any, Slot → Opt Node  -- impure
   value positionRestate : RowRecipe item ⊤, Any, Slot, Int → ⊤  -- impure
   value positionTail : RowRecipe item ⊤, Any, Slot → Opt Node  -- impure
-  value protocol : { again : Instance → ⊤, childMaybe : Slot, Opt Block → ⊤, contextApply : Context, Payload → Payload, contextParent : Context → Context, contextPresent : Context → Bool, controls : Node → Opt Control, dead : ⊤ → Bool, drop : Instance → ⊤, eventPayload : Node, Event, String, String → Payload, first : Instance → Node, handlerFlags : Node, String → Int, hasHandler : Node, String → Bool, hasRoot : Node → Bool, last : Instance → Node, live : Instance → Bool, makeSite : SiteProtocol, Payload, Any → RowSite, nodeContext : Node → Context, none : Context, parentOf : Slot → Node, patch : Instance, Block, Context → Instance, put : Node, Instance, Opt Node → ⊤, restate : Slot → ⊤, sendRoot : Node, Payload → ⊤, setControls : Node, Control → ⊤, setSiteScope : RowSite, SiteProtocol, Payload → ⊤, siteData : RowSite → Any, siteDispose : RowSite, Slot → ⊤, siteHead : RowSite, Slot → Opt Node, siteRestate : RowSite, Slot, Int → ⊤, siteScope : RowSite → Payload, siteTail : RowSite, Slot → Opt Node, stop : ⊤ → ⊤, swap : Instance, Instance → ⊤, turn : Bool, (⊤ → ⊤) → ⊤, unit : Block, Context → Instance }
+  value protocol : { again : Instance → ⊤, childMaybe : Slot, Opt Block → ⊤, contextApply : Context, Payload → Payload, contextParent : Context → Context, contextPresent : Context → Bool, controls : Node → Opt (Control), dead : ⊤ → Bool, drop : Instance → ⊤, eventPayload : Node, Event, String, String → Payload, first : Instance → Node, handlerFlags : Node, String → Int, hasHandler : Node, String → Bool, hasRoot : Node → Bool, last : Instance → Node, live : Instance → Bool, makeSite : SiteProtocol, Payload, Any → RowSite, nodeContext : Node → Context, none : Context, parentOf : Slot → Node, patch : Instance, Block, Context → Instance, put : Node, Instance, Opt Node → ⊤, restate : Slot → ⊤, sendRoot : Node, Payload → ⊤, setControls : Node, Control → ⊤, setSiteScope : RowSite, SiteProtocol, Payload → ⊤, siteData : RowSite → (Any), siteDispose : RowSite, Slot → ⊤, siteHead : RowSite, Slot → Opt Node, siteRestate : RowSite, Slot, Int → ⊤, siteScope : RowSite → Payload, siteTail : RowSite, Slot → Opt Node, stop : ⊤ → ⊤, swap : Instance, Instance → ⊤, turn : Bool, (⊤ → ⊤) → ⊤, unit : Block, Context → Instance }
   value protocolChildMaybe : Slot, Opt Block → ⊤  -- impure
   value protocolDead : ⊤ → Bool  -- impure
   value protocolDrop : Instance → ⊤  -- impure
@@ -283,7 +275,7 @@ module Rt
   value rowsHead : RowRecipe item key, Any, Slot → Opt Node  -- impure
   value rowsRestate : RowRecipe item key, Any, Slot, Int → ⊤  -- impure
   value rowsTail : RowRecipe item key, Any, Slot → Opt Node  -- impure
-  value run : V → ⊤  -- impure
+  value run : (Program) → ⊤  -- impure
   value safeUrl : V → V  -- impure
   value show : Slot, key, Block, Opt String, SiteProtocol, Payload → ⊤  -- impure
   value slot : Opt Node, Opt Node, Context → Slot  -- impure
@@ -312,8 +304,6 @@ module Storage
   value save : Area, String, String, (Error → msg) → Cmd msg  -- impure
   value set : Area, String, String → Result Error ⊤  -- impure
 module Sub
-    None
-    Listen
   alias Sub a
   value batch : List (Sub msg) → Sub msg
   value listen : k, ((Send a) → ⊤), (a → msg) → Sub msg where k.compare : k, k → Order

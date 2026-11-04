@@ -88,6 +88,9 @@ pub const Which = enum {
     cellWrite,
     none,
     some,
+    browserBlock,
+    browserInstallRoot,
+    browserInstallFuzz,
     kernelPack,
     kernelRead,
     arrayAllocate,
@@ -266,6 +269,11 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
     const d = bir.instData(inst);
     const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
     if (module.int() >= interfaces.len) return null;
+    if (graph.modulePackage(module) == .platform and same(interner.slice(graph.moduleName(module)), "Browser.Bridge")) {
+        const iface_ = &interfaces[module.int()];
+        if (d.rhs >= iface_.values.len) return null;
+        return browserBridge(interner.slice(iface_.symbols[@backingInt(iface_.values[d.rhs].name)]));
+    }
     if (graph.modulePackage(module) != .core) return null;
     const module_name = interner.slice(graph.moduleName(module));
     const iface = &interfaces[module.int()];
@@ -299,11 +307,18 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
 /// does not change the sibling copied by an existing development program.
 pub fn compilerOnly(which: Which) bool {
     return switch (which) {
-        .any_unpack_opt, .kernelPack, .kernelRead, .schemaIdentity, .arrayAllocate, .arraySet, .arrayDone, .arrayGet, .arrayLength, .arrayWrite, .arraySort, .optNone, .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
+        .any_unpack_opt, .browserBlock, .browserInstallRoot, .browserInstallFuzz, .kernelPack, .kernelRead, .schemaIdentity, .arrayAllocate, .arraySet, .arrayDone, .arrayGet, .arrayLength, .arrayWrite, .arraySort, .optNone, .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
         else => false,
     };
 }
 
 pub fn needsOptNone(which: Which) bool {
     return which == .any_unpack_opt or which == .none or which == .some or which == .optMatch or which == .optWithDefault;
+}
+
+pub fn browserBridge(name: []const u8) ?Which {
+    if (same(name, "block")) return .browserBlock;
+    if (same(name, "installRoot")) return .browserInstallRoot;
+    if (same(name, "installFuzz")) return .browserInstallFuzz;
+    return null;
 }

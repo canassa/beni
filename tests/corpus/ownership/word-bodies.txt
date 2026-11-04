@@ -59,9 +59,9 @@ platforms/node/Node.beni        Node.exitWith       5b2baac4cdc06c32bbd21afba887
 platforms/node/Ssr.beni         Ssr.render          045f71e7ff0de60367e997ca719fcc6d3a102caa10e0e2df17deed0c922bff8a
 
 # Entry protocols audited 2026-10-22: ownership-checker.md §24.8 and §30.3.
-platforms/browser/Browser.beni               Browser.program          a1a03d3bdb04728a2178b66cab64a4ee5b0a208a1df64457b3653f821d0980f8
-platforms/browser/Browser.beni               Browser.hosted           b60687d2b82a5f5c513e529c47f2bcf18fa63bb2aebd38360f9e5cc013dd5c62
-platforms/browser/Browser.beni               Browser.host             352a87a1502aa65f006c1b5f43f50bcf29a3ff68668017236e477101894e667c
+platforms/browser/Browser.beni               Browser.program          63c876c0cf051440b34166cb5681537c619c73058ae2190d2769fb8002b3beb3
+platforms/browser/Browser.beni               Browser.hosted           16f4b5fbd5663b83430659f2860d51395bba8abb11f24c92f79ae51510778da1
+platforms/browser/Browser.beni               Browser.host             177180a00d2c5d731ed117dafded107604846a54f222bf12a839e962a4bc9935
 platforms/browser-tea/Tea.beni               Tea.sandbox              8e3b27e500a7feac2eb34e69e9fcf30fa4f498653e306168d75936f47cf113e1
 platforms/browser-tea/Tea.beni               Tea.element              b4024695983c46b54e8cf3822573fbefcf65bc38cb76e55468e728e2bac6f523
 platforms/browser-tea/Tea.beni               Tea.document             1f37469ef95b2ebf4b679547bdc80d9432c4ea5b6169438bd44bb70b6aa58c29
@@ -122,13 +122,13 @@ core/Task.beni Task.entry b9c80b88dd93de378434884e581d3819cea426162c8a6145c66ab0
 core/Task.beni Task.requeue 1afd037bc8b6e28d482171d70cc8d55be370bc8f4cc128838efc7cef55e6b176
 core/Js/Runtime.js               Js.Runtime.parked        cd78ee9414dfa1aa0eb7a27df6392c884bd73f958da80bce43ef92115ef5e432
 core/Js/Runtime.js               Js.Runtime.defect        08aa1744d1ee477e6899bad6084889d9cf0ee880bd04f9dbffd4ec5768b7a5ce
-src/js/Lower.zig Js.cell 33d10210d22ace047a027814bd610cfe9e063913fc0090c5895325f737cf745c intrinsic:core
-src/js/Lower.zig Js.cellRead f497190bd65c56b37f952f5dd3028eb83a5ab774de397e6782888be8f8c78efd intrinsic:core
-src/js/Lower.zig Js.cellWrite b78f25854ece39654c4959ff3056cf8781804573430ba7f5fa0c1514f8b62a2f intrinsic:core
-src/js/Lower.zig Js.none ad273142817d8e38d99e493c3e1364638af799eb52ab2e8711658dd879c6382a intrinsic:core
-src/js/Lower.zig Js.some bacf7119adac4760caf2423ed1a3d318737a7b28161141b22ef7cf36f8af622e intrinsic:core
-src/js/Lower.zig Js.optMatch 2be9139c860735ca8368d53048ada8885f990857ad30669483950e90202d2629 intrinsic:core
-src/js/Lower.zig Js.optWithDefault e437bd439334bf60d8da47db509f1f9413aa266ad1bbbde79074f3fb8ec76ef8 intrinsic:core
+src/js/Lower.zig Js.cell 361b43d9a724029cf6a58fe0de8da14868a1aa1a15068cb7a2cb469d6abf2dd9 intrinsic:core
+src/js/Lower.zig Js.cellRead d99a84ecb423d7f8dc8fa21fdfde152a9df292e6d721d2a9fd1d31ff5c74a0be intrinsic:core
+src/js/Lower.zig Js.cellWrite d2898ac5a81071b5299f0f625e518a63afaa621e42217f3667670d890fcad4e5 intrinsic:core
+src/js/Lower.zig Js.none 05881cea99f8d8d5727d8d70f26465a16bb08aca0fedc5e1d4b3e983efa32fce intrinsic:core
+src/js/Lower.zig Js.some 7fbab2d9b34baddc3fa262ab7ef05a513153460d943ae83cbf52f34bab7a540e intrinsic:core
+src/js/Lower.zig Js.optMatch b0189753fa6bd1859cb9587c3cebf9e3a9bd6a7edbbe89150507bc31926cfa23 intrinsic:core
+src/js/Lower.zig Js.optWithDefault f6df3e5dcd18459b1bd9c04037ffa73717a388ae17fbfc01d7bc3db2b2985564 intrinsic:core
 src/bir/Bir.zig Js.cellRead ff2e6c1c664e26923e024f3b4cef61134f0aa488706c506f055f50549a635c0b intrinsic:core
 src/bir/Bir.zig Js.cellWrite a2aa0b9d55af613668718a7c12398432183eefc1af95aeee0070c41050193306 intrinsic:core
 
@@ -607,3 +607,7 @@ src/js/Lower.zig Js.Array.arrayWrite e7b920afaaf2dcfc064845893a3ef22e017db0049c3
 src/js/Lower.zig Js.Kernel.slotPack fcc09c88fd5f8cbec6e39e5cdab6d891956a2e3d7a9c3fe5a723f359d5f75e47 intrinsic:core
 src/js/Lower.zig Js.Kernel.slotRead 7011cab5e184805594ac7a6d9fb250ead44d435b461915695abbebecd9de0caa intrinsic:core
 src/js/Lower.zig Js.Array.arraySort bc26928712f7e992651296148f15e448b4e96e38633ce64bc5b5067ed2a16aaf intrinsic:core
+src/js/Lower.zig Browser.Bridge.block aed070beae2ee5383ff39992aac5af469418a0f8dd5da88fe279a71f58e74672 intrinsic:platforms/browser
+src/js/Lower.zig Browser.Bridge.installRoot 74b63cb88438e084fb74e1cf903ac33ab81f7afedf881f07ee04ffb80a3da9dd intrinsic:platforms/browser
+src/js/Lower.zig Browser.Bridge.installFuzz b857424ddd6999e7695027b7c4c27d96cb77ea7f0261d0fda483d0e7c0a4c100 intrinsic:platforms/browser
+platforms/browser/Rt.beni Rt.protocol 3af7118610bed77a9ac386375657bb116163fef858dcb29fbb2ec84b8d6a030a

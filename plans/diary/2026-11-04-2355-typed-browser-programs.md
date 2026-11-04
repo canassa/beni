@@ -1,0 +1,11 @@
+# Typed browser programs and root effects
+
+Part of #1807. Protocol purity defect: https://github.com/canassa/beni/issues/1921. Size debt: #1861.
+
+Browser.Program now keeps typed closed mount jobs and element IDs rather than erased callback records. Models, views, sender closures and queue jobs stay typed through boot, run and mount. The private compiler bridge erases block conversion to its input and installs root/fuzz callbacks without Js.Value. Core or the owning platform layer can use it; apps and foreign platform layers are refused. Html.Runtime 1.30 is byte-identical.
+
+The typed direct fuzz send exposed Rt.protocol's old false pure declaration: release erased the effect. All 34 fields were audited against their lowering bodies. The 22 effectful fields now share an honest impure rung; the remaining 12 metadata readers/allocator conservatively inherit it. text/map remain pure block constructors. The actual ProtocolEffects run fixture prints sent in both modes after reproducing empty release output before the fix. The declaration and all operation bodies are pinned; callback escapes and block aliases have direct unsafe-word flips.
+
+Ordinary BR11 bytes against 8a23569764 are empty1299→1561, text1301→1562, no-command TEA element1862→2037, two programs1664→1866. The rung correction itself changes no measured raw/gzip/brotli bytes. Generic mount-list traversal, optional-ID lookup and boot dispatch remain reachable; the growth and cause are on #1861 comment6644108454. Control messages allocate zero per send/render: one shared scalar, no message wrapper. Ordinary pages contain no fuzz registration, and block introduces no runtime wrapper/allocation.
+
+Browser's normal default-on core-pack stage goes from 18 refusals to zero. The all-platform build then stops at browser-inline's 14, assigned as a separate next proposal/PR. Chrome807 cases plus a targeted repair of the layered fixture's old erased adapter cover the browser behavior. TEA development/release fuzz agrees. Jobs1/8 outputs and cache artifacts match on empty, text, element and multi-program pages. The final branch gates compare against shared wd-gates evidence for 8a23569764; inherited failures are retained and reported in the PR.

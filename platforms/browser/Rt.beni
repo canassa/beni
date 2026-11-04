@@ -21,6 +21,8 @@
 --! release build writes where the call is (`backend.md` §9, *A function
 --! called once is written where it is called*).
 
+import Browser
+import Browser.Bridge as Bridge
 import Browser.Host.Document as HostDocument
 import Browser.Host.Element as HostElement
 import Browser.Host.Event as HostEvent
@@ -52,7 +54,7 @@ type alias V =
 -- them. Slots, rows and scheduling are this module's own (`Rt.Slots`,
 -- `Rt.Rows`), handed the record.
 
-pub foreign pure protocol :
+pub foreign impure protocol :
     { none : Runtime.Context
     , unit :
         (aliased escaped Runtime.Block, aliased escaped Runtime.Context → fresh Runtime.Instance)
@@ -509,135 +511,48 @@ flush ⊤ =
                 if Js.read ok then ⊤ else stop ⊤
 
 
--- `(program)`: start every program the array holds, in order.
-pub run : V → ⊤
+-- Start the closed typed jobs in their declared order.
+pub run : Browser.Program → ⊤
 run program =
     ok = Js.ref False
     Js.finally
         (λ⊤ →
-            Js.each program λm → startOne m
+            Browser.runMounts program
+                { render = mountRenderer
+                , hasRoot = protocol.hasRoot
+                , schedule = scheduleRender
+                , dead = λ⊤ → Js.read dead
+                , hosted = λ⊤ → TaskHooks.onTurn λf → turn True f
+                , flush = flush
+                , phase = setPhase
+                , stop = stop
+                }
             Js.write ok True
         )
         λ⊤ → if Js.read ok then ⊤ else stop ⊤
 
 
-startOne : V → ⊤
-startOne m =
-    document = Js.global "document"
+mountRenderer : HostNode.Node → (Runtime.Block → ⊤)
+mountRenderer node =
+    viewSlot = Slots.slot (Js.some node) (Js.none ⊤) protocol.none
+    λblock →
+        childHtml viewSlot block
+        renderEnded node
 
-    root =
-        if Js.isNull (Js.get m "n") then
-            Js.get document "body"
-        else
-            Js.call document "getElementById" [ Js.get m "n" ]
 
-    -- A mount node that is missing, or that holds a program already, is
-    -- a fault of the page, thrown before that program renders anything.
-    if Js.isNull root || not (Js.isUndefined (Js.get root "$$root")) then
-        id : String
-        id = Js.to (Js.get m "n")
-        Js.throw
-            (Js.construct (Js.global "Error")
-                [ Js.from
-                    (if Js.isNull root then
-                        "no element has the id \"${id}\" to mount a program at"
-                     else if Js.isNull (Js.get m "n") then
-                        "the page's body already holds a program"
-                     else
-                        "the element \"${id}\" already holds a program"
-                    )
-                ]
-            )
-    -- The same node, typed, for its slot (a lookup the check above has
-    -- just shown to succeed).
-    node =
-        if Js.isNull (Js.get m "n") then
-            HostDocument.rendererBody ⊤
-        else
-            case HostDocument.byId (Js.to (Js.get m "n")) of
-                Just element →
-                    HostElement.toNode element
-
-                Nothing →
-                    Protocol.defect "the mount node is gone"
-    if Js.isUndefined (Js.get m "h") then
-        mount (Js.get m "a") root node
-    else
-        -- Only a hosted program runs fibers: each drain of core's
-        -- scheduler is a turn, so what its fibers send renders when it
-        -- ends.
-        TaskHooks.onTurn λf → turn True f
-        mount
-            (Js.apply (Js.get m "h")
-                [ root
-                , Js.from flush
-                , Js.from λf → setPhase f
-                , Js.from stop
-                ]
-            )
-            root
-            node
+scheduleRender : (⊤ → ⊤) → ⊤
+scheduleRender render =
+    _ = Chain.append (Js.read queued) render
+    if not (Js.read scheduled) then
+        Js.write scheduled True
+        if not (Js.read turning) then
+            Timers.queueMicrotask microtask
 
 
 setPhase : (⊤ → ⊤) → Bool
 setPhase f =
     Js.write phase (Just f)
     Js.read scheduled
-
-
--- Render `view (init ⊤)` after the children of `root`, and mark `root` with
--- the program's `send`. `init` is called here, once per mount
--- (`boundary.md` §9.8.16).
-mount : V, V, HostNode.Node → ⊤
-mount program root node =
-    s = Slots.slot (Js.some node) (Js.none ⊤) protocol.none
-    model = Js.ref (Js.call program "init" [])
-    waiting = Js.ref False
-
-    render =
-        λ⊤ →
-            Js.write waiting False
-            childHtml s (Js.to (Js.call program "view" [ Js.read model ]))
-            renderEnded root
-
-    Js.set
-        root
-        "$$root"
-        (Js.from λmsg →
-            -- A stopped page applies no message, from a
-            -- handler, a fiber or after-render work alike.
-            if Js.read dead then
-                ⊤
-            else
-                if Js.read waiting then
-                    ⊤
-                else
-                    Js.write waiting True
-                    _ = Chain.append (Js.read queued) render
-                    if Js.read scheduled then
-                        ⊤
-                    else
-                        Js.write scheduled True
-                        -- A turn flushes when it ends.
-                        if Js.read turning then
-                            ⊤
-                        else
-                            Timers.queueMicrotask microtask
-                -- `update` has the program's log context, whoever sends
-                -- the message (`boundary.md` §9.8.16 (b), amended
-                -- 2026-10-23). The call is written twice, so that a build
-                -- in which nothing sets a slot keeps only the second.
-                if TaskHooks.hasLogContext ⊤ then
-                    Js.write
-                        model
-                        (TaskHooks.withoutLogContext λ⊤ →
-                            Js.call program "update" [ msg, Js.read model ]
-                        )
-                else
-                    Js.write model (Js.call program "update" [ msg, Js.read model ])
-        )
-    childHtml s (Js.to (Js.call program "view" [ Js.read model ]))
-    renderEnded root
 
 
 microtask : ⊤ → ⊤
@@ -671,8 +586,8 @@ pub edited : HostNode.Node → ⊤
 edited node = Events.edited node
 
 
-renderEnded : V → ⊤
-renderEnded root = Events.renderEnded (Js.to root)
+renderEnded : HostNode.Node → ⊤
+renderEnded root = Events.renderEnded root
 
 
 -- ---- Attributes (backend.md §15.3, §15.6) --------------------------------
@@ -839,24 +754,20 @@ listen node name flags = Events.listen protocol node name flags
 --| in `update` stops the page as one from a click does, never a bare
 --| `$$root` call. Only a `--fuzz` build's markup calls it, where a root is
 --| evaluated; every other build ships none of it.
-pub fuzzInstall : V → V
+pub fuzzInstall : Runtime.Block → Runtime.Block
 fuzzInstall x =
-    if Js.isUndefined (Js.get (Js.global "globalThis") "__beniFuzzSend") then
-        Js.set (Js.global "globalThis") "__beniFuzzSend" (Js.from λnode msg → fuzzSend node msg)
+    Bridge.installFuzz fuzzSend
     x
 
 
--- A message value sent to the program mounted at `node`, as an untrusted
--- event's handler sends one: guarded, rendered as such a send renders.
-fuzzSend : V, V → ⊤
+-- The test harness enters the same guarded, untrusted turn as an event.
+fuzzSend : HostNode.Node, Runtime.Payload → ⊤
 fuzzSend node msg = turn False λ⊤ →
-    if Js.read dead then
-        ⊤
-    else
+    if not (Js.read dead) then
         ok = Js.ref False
         Js.finally
             (λ⊤ →
-                _ = Js.call node "$$root" [ msg ]
+                protocol.sendRoot node msg
                 Js.write ok True
             )
             λ⊤ → if Js.read ok then ⊤ else stop ⊤

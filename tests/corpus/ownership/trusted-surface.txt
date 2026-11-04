@@ -443,3 +443,7 @@ core Js.Array.arrayWrite ownership/core/JsArrayRuntimeWords.beni 3:escaped>borro
 # bypass that unknown-result barrier; Task.timeout pins the paired endpoint.
 core Js.Kernel.slotPack ownership/TaskWords.beni - Task.timeout
 core Js.Kernel.slotRead ownership/core/KernelSlotWords.beni res:unknown>fresh Task.poll
+
+browser Browser.Bridge.block ownership/core/BrowserBridgeWords.beni 1:returned>borrowed Bridge.block
+browser Browser.Bridge.installRoot ownership/core/BrowserBridgeWords.beni 2:escaped>borrowed Bridge.installRoot
+browser Browser.Bridge.installFuzz ownership/core/BrowserBridgeWords.beni 1:escaped>borrowed Bridge.installFuzz

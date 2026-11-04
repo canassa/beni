@@ -1,0 +1,21 @@
+-- The typed fuzz hook and a real event both reach the root's sender.
+-- A direct call of the supplied protocol.sendRoot must retain its effect
+-- in release, just as the delegated event path does.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Increment
+
+
+update : Msg, Int → Int
+update Increment model = model + 1
+
+
+view : Int → Html Msg
+view model = <button id="increment" onClick={Increment}>{model}</button>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → 0, update = update, view = view }

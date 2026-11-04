@@ -399,6 +399,11 @@ fn expectPackageCurrent(package: []const u8) !void {
         std.debug.print("skills/beni/references/{s} is stale: run `zig build skill-api` and commit the result\n", .{name});
         return error.StaleGeneratedFile;
     }
+    if (std.mem.eql(u8, package, "browser")) {
+        for ([_][]const u8{ "alias Boot", "value runMounts", "module Browser.Bridge" }) |private| {
+            try testing.expect(std.mem.indexOf(u8, generated, private) == null);
+        }
+    }
     // The file holds beni's notation and none of the dump's (§12.1). `Never`
     // is checked as a whole word: `NeverKind` is a constructor and stays.
     for ([_][]const u8{ " !", "foreign ", "markup value", "(equatable)" }) |mark| {

@@ -803,7 +803,7 @@ const Pass = struct {
             namespace == .value,
             privacy.authority(p.graph.modulePackage(m), p.core_app, p.app_is_platform),
             p.interner.slice(p.graph.moduleName(m)),
-            .{ .owner_cloudflare = p.graph.isCloudflare(target), .caller_cloudflare = p.graph.isCloudflare(m) },
+            .{ .same_layer = p.graph.samePlatformLayer(target, m), .owner_cloudflare = p.graph.isCloudflare(target), .caller_cloudflare = p.graph.isCloudflare(m) },
         )) {
             try p.report(.{ .code = .private_name, .module = m, .token = token, .name = name.toOptional(), .module_name = module_symbol.toOptional() });
             return .poison(.private_name);

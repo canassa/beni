@@ -335,6 +335,15 @@ queues and internal containers must preserve real callback types, including
 callbacks whose captures are plain but whose bodies use the DOM. The selected
 mechanism does not follow a second hidden native-shape graph through Js.Value.
 
+**Browser program storage** *(amended 2026-11-04, Part of #1807).* Browser
+Program holds closed typed mount jobs. Its model, Html views, send callbacks and
+internal control messages never cross Js.Value. The narrowly fenced compiler-owned
+block/installRoot/installFuzz bridge is specified in boundary.md §9.4–9.5, separate
+from frozen Html.Runtime 1.30. Identity block conversion does no runtime work;
+root callback storage preserves its real callback facts. Fuzz registration is
+absent from ordinary builds. No HostFree exception, generic callback erasure or
+unchecked source-level message/native read is introduced.
+
 Host.Raw is the private opaque type for unknown foreign values and WebIDL any
 or object intake. It cannot pass through Js.Value conversions, raw member
 operations, ordinary data containers or public APIs. Private quarantine queues
