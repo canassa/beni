@@ -14,3 +14,7 @@ retained array =
 
 pub read : Array.Array Int, Int → Int
 read array index = Array.rendererAt array index
+
+
+pub present : Array.Array a, Int → Bool
+present array index = Array.rendererHas array index

@@ -5,6 +5,9 @@ pub foreign type View a
 pub sequence foreign type Array a
 
 
+pub foreign pure rendererHas : borrowed Array a, Int → Bool
+
+
 pub foreign impure rendererTruncate : written Array a, borrowed Int → ⊤
 
 

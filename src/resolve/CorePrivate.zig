@@ -10,6 +10,7 @@ const Entry = struct {
 };
 
 const entries = [_]Entry{
+    .{ .module = "Browser.Host.Array", .name = "rendererHas", .access = .platform },
     .{ .module = "Browser.Host.Array", .name = "rendererTruncate", .access = .platform },
     .{ .module = "Browser.Host.Array", .name = "rendererAt", .access = .platform },
     .{ .module = "Browser.Host.Node", .name = "rendererFirstChild", .access = .platform },

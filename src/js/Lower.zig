@@ -11103,6 +11103,19 @@ pub const Lowerer = struct {
     }
     // ownership pin end: rendererTruncate
 
+    // ownership pin begin: rendererHas
+    fn rendererHas(l: *Lowerer, values: []const Node.Index, p: u32) Allocator.Error!Node.Index {
+        const index = values[1];
+        const unsigned = try l.binary(.shr, index, try l.intNode(0, p), p);
+        const size = try l.member(values[0], try l.interner.getOrPut(l.gpa, "length"), p);
+        const valid = try l.binary(.logical_and, try l.binary(.strict_eq, index, unsigned, p), try l.binary(.lt, index, size, p), p);
+        const global = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
+        const object_ctor = try l.member(global, try l.interner.getOrPut(l.gpa, "Object"), p);
+        const has = try l.member(object_ctor, try l.interner.getOrPut(l.gpa, "hasOwn"), p);
+        return l.binary(.logical_and, valid, try l.call(has, values, p), p);
+    }
+    // ownership pin end: rendererHas
+
     // ownership pin begin: rendererAt
     fn rendererAt(l: *Lowerer, out: *StmtList, values: []const Node.Index, p: u32) Allocator.Error!Node.Index {
         const index = values[1];
@@ -11124,6 +11137,7 @@ pub const Lowerer = struct {
         const global = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
         const document = try l.member(global, try l.interner.getOrPut(l.gpa, "document"), p);
         switch (row.recipe) {
+            .renderer_has => return l.rendererHas(values, p),
             .renderer_truncate => return l.rendererTruncate(out, values, p),
             .renderer_at => return l.rendererAt(out, values, p),
             .renderer_first_child, .renderer_next_sibling, .renderer_parent => {

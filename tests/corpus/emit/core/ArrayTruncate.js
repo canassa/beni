@@ -1,4 +1,4 @@
-import { Browser$Host$Array$rendererTruncate, Browser$Host$Array$rendererAt } from "./_core/Browser/Host/Array.mjs";
+import { Browser$Host$Array$rendererAt, Browser$Host$Array$rendererTruncate, Browser$Host$Array$rendererHas } from "./_core/Browser/Host/Array.mjs";
 const ArrayTruncate$shrink = (array$1, length$2) => {
   array$1.length = length$2;
   return null;
@@ -9,6 +9,7 @@ const ArrayTruncate$read = (array$1, index$2) => {
   }
   return array$1[index$2];
 };
-const ArrayTruncate$functions = { at: Browser$Host$Array$rendererAt, truncate: Browser$Host$Array$rendererTruncate };
-export { ArrayTruncate$shrink, ArrayTruncate$read, ArrayTruncate$functions };
+const ArrayTruncate$present = (array$1, index$2) => index$2 === index$2 >>> 0 && index$2 < array$1.length && globalThis.Object.hasOwn(array$1, index$2);
+const ArrayTruncate$functions = { at: Browser$Host$Array$rendererAt, has: Browser$Host$Array$rendererHas, truncate: Browser$Host$Array$rendererTruncate };
+export { ArrayTruncate$shrink, ArrayTruncate$read, ArrayTruncate$present, ArrayTruncate$functions };
 //# sourceMappingURL=ArrayTruncate.mjs.map

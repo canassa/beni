@@ -10,4 +10,9 @@ pub read : Array.Array a, Int → a
 read array index = Array.rendererAt array index
 
 
-pub functions = { truncate = Array.rendererTruncate, at = Array.rendererAt }
+pub present : Array.Array a, Int → Bool
+present array index = Array.rendererHas array index
+
+
+pub functions =
+    { at = Array.rendererAt, truncate = Array.rendererTruncate, has = Array.rendererHas }

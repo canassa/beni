@@ -823,6 +823,10 @@ and then reads the initialized element, without a fallback or wrapper.
 Both are reviewed ECMAScript native entries available in every host realm,
 reserved by the same core/platform fence above. Browser.Host.Array.Array is
 a `sequence` type, so its storage writes require unique ownership under v2.
+`rendererHas : borrowed Array a, Int → Bool` is a pure, allocation-free
+`Object.hasOwn` presence test with an unsigned in-range index guard; it
+returns false for a hole or out-of-range index and preserves a present
+`undefined` or private `NONE` key as a raw array element.
 
 The caller of `Document.rendererBody` must wait until `document.body` exists;
 an earlier call violates the renderer contract and is a defect.
