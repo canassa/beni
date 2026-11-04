@@ -31,7 +31,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 13 | **`node`'s `WebSocket.js`** (`fromUpgrade`, `next`, `send`, `begin`, `finish`, `unsent`, `chosen`, `awaitDrain`) | **specified 2026-11-03**, below: eight exports and twenty helpers; the frames over the host buffer by `Js.setAt` and `Js.bitXor` |
 | 14 | **The three thin files**: `html`'s `Html.js` (`targetValue`, `targetChecked`, `pointer`), `node`'s `Prerender.js` (`writeRecords`) and `Io.js` (`startReadDir`) | **specified 2026-11-03**, below: five declarations, the three siblings deleted |
 | 15 | **`node`'s `markup.js` and `runtime.js`** (`escape`, `escapeAttr`, `safeUrl`, `list`, `classes`, `styles`, `rawText`, `text`, `map`; `run`) | **specified 2026-11-03**, below: the runtime module `Rt.beni`, as `browser`'s; both files deleted |
-| 16 | **A runtime module without markup** (`cloudflare`'s `runtime.js` needs it; #1812) | **specified 2026-11-03**, below: a top-level `"module"` key for a chain with no lowering; the build waits on `runtime-in-beni-q3` (#1813) |
+| 16 | **A runtime module without markup** (`cloudflare`'s `runtime.js` needs it; #1812) | **built 2026-11-04**, below: a top-level `"module"` key for a chain with no lowering; the build waits on `runtime-in-beni-q3` (#1813) |
 
 ## Step 1 — slot and mount (2026-10-02)
 
@@ -1272,3 +1272,27 @@ read `runtime_module`. Proof: `tests/platforms/program-module`, a platform over 
 `Js` spellings the owner decides (`runtime-in-beni-q3`, 2026-11-03): under A the feature is built
 and the move follows; under B `runtime.js` stays, and a runtime module without markup serves
 nothing, so it is not built. The spec stands either way.
+
+**The answer** (Jayson, 2026-11-04 06:26 UTC, `runtime-in-beni-q3`): A, both spellings. So the
+feature is built, and the move (#1813, step 17) follows on a stacked branch.
+
+**As built (2026-11-04).** `Manifest.zig` has the top-level `module` key; `platform.resolveChain`
+refuses it beside `"runtime"` in one package (`module_beside_runtime`) and beside a lowering in
+the chain (`module_with_lowering`), two exit-2 lines; `platform.load` counts it as the whole
+runtime and hands `Emit` a `program_module` with its package's root. `Emit.moduleIsRuntime` is
+true for it, `checkMarkupRuntime` asks no lowering for a list — `run` is the one expected export —
+and a missing module or `run` is reported against the manifest that named the module. Two things
+the plan did not foresee: `"exports": "program"` refused every runtime module (`backend.md` §2,
+"not in this slice"), and `cloudflare` declares it, so the refusal is now the markup runtime
+module's only and `emitEntryExporting` imports `run` from the module; and under `--release` the
+entry's `run(main)` was handed to the specialisation pass "its result unread", which pruned
+`run`'s returned object to `{}` under the exports mode — the pass now gets the call only when
+the entry does not read the result, so a chain with `"exports"` does not specialise `run` on
+`main` (`backend.md` §9, *The entry's call is a call*, amended; a form that hands the call over
+with its result read is open, and `run/ProgramModuleExports` is its measure). Proof: the
+`run/` fixtures `ProgramModule` and `ProgramModuleExports`, each a project with a platform of its
+own, built and run in both builds (the exports one is the red fixture of the pruning); five
+`World` tests in `platform_test.zig` for the entry file, the exports entry, the two refusals and
+the missing module. No size figure: the feature changes no existing program, and the `emit/`
+goldens prove it byte for byte. Found on the way: #1837, `backend.md` holds a double-encoded
+section sign on 1 091 lines.
