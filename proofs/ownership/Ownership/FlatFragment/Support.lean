@@ -988,6 +988,310 @@ inductive TagsDeep (heap : Heap) : Ty → Abstract → Value → Prop where
       TagsDeep heap error ae w →
       TagsDeep heap (.result error success) (.record [tag, ae, aa]) (.record [.int 0, w, .int 0])
 
+/-! ## A heap typing (#169)
+
+The relation types a live value at its representation (`entryType`), where
+a dictionary of `t` and a list of `{Int, t}` records have one shape. A heap
+typing `kinds` keeps the source type of every typed array. An array holds
+values of its element type, a binding's value has its declared type, and both
+ends of a link are lists of one type. So no link names a dictionary's array,
+and a dictionary write is never a linked write. The value relation reads no
+heap: a reference has the type that the map gives its array. -/
+
+/-- A runtime value has a source type under a heap typing. -/
+inductive Kinded (kinds : Nat → Option Ty) : Ty → Value → Prop where
+  | int (i : Int) : Kinded kinds .int (.int i)
+  | list (t : Ty) (c : Nat) : kinds c = some (.list t) → Kinded kinds (.list t) (.ref c)
+  | chain (t : Ty) (c : Nat) : kinds c = some (.chain t) → Kinded kinds (.chain t) (.ref c)
+  | dict (t : Ty) (c : Nat) : kinds c = some (.dict t) → Kinded kinds (.dict t) (.ref c)
+  | record (ts : List Ty) (ws : List Value) : ws.length = ts.length →
+      (∀ (i : Nat) (t : Ty) (w : Value), ts[i]? = some t → ws[i]? = some w → Kinded kinds t w) →
+      Kinded kinds (.record ts) (.record ws)
+  | ok (error success : Ty) (w : Value) : Kinded kinds success w →
+      Kinded kinds (.result error success) (.record [.int 1, .int 0, w])
+  | err (error success : Ty) (w : Value) : Kinded kinds error w →
+      Kinded kinds (.result error success) (.record [.int 0, w, .int 0])
+
+/-- The contents of an array of a source type: a list's and a chain's
+elements have the element type, and a dictionary's entries are records
+`[key, value]` whose value has the value type. -/
+inductive ContentsKinded (kinds : Nat → Option Ty) : Ty → List Value → Prop where
+  | list (t : Ty) (xs : List Value) : (∀ x ∈ xs, Kinded kinds t x) → ContentsKinded kinds (.list t) xs
+  | chain (t : Ty) (xs : List Value) : (∀ x ∈ xs, Kinded kinds t x) → ContentsKinded kinds (.chain t) xs
+  | dict (t : Ty) (xs : List Value) :
+      (∀ x ∈ xs, ∃ (k : Int) (v : Value), x = .record [.int k, v] ∧ Kinded kinds t v) →
+      ContentsKinded kinds (.dict t) xs
+
+/-- A heap typing of a state: every typed array exists and holds contents of
+its type, both ends of every link are lists of one element type, and every
+binding, live or dead, has its declared type. -/
+structure StateKinded (kinds : Nat → Option Ty) (hs : InPlaceSemantics.State)
+    (env : List (Var × Observation × Value)) (tenv : Env Ty) : Prop where
+  heap : ∀ c t, kinds c = some t → ∃ xs, hs.heap[c]? = some xs ∧ ContentsKinded kinds t xs
+  links : ∀ v s front, (v, s, front) ∈ hs.links →
+    ∃ t, kinds v = some (.list t) ∧ kinds s = some (.list t)
+  env : ∀ x ty o w, tenv.lookup x = some ty → env.lookup x = some (o, w) → Kinded kinds ty w
+
+/-- What a step concludes of its result: one heap typing of the state after
+it types every binding and the result. -/
+def KindsAt (hs : InPlaceSemantics.State) (env : List (Var × Observation × Value)) (tenv : Env Ty)
+    (type : Ty) (actual : Value) : Prop :=
+  ∃ kinds, StateKinded kinds hs env tenv ∧ Kinded kinds type actual
+
+theorem kinded_mono {kinds kinds' : Nat → Option Ty}
+    (mono : ∀ c t, kinds c = some t → kinds' c = some t) :
+    ∀ {t : Ty} {w : Value}, Kinded kinds t w → Kinded kinds' t w := by
+  intro t w typed
+  induction typed with
+  | int i => exact .int i
+  | list t c found => exact .list t c (mono c _ found)
+  | chain t c found => exact .chain t c (mono c _ found)
+  | dict t c found => exact .dict t c (mono c _ found)
+  | record ts ws lengths _ ih => exact .record ts ws lengths ih
+  | ok error success w _ ih => exact .ok error success w ih
+  | err error success w _ ih => exact .err error success w ih
+
+theorem contentsKinded_mono {kinds kinds' : Nat → Option Ty}
+    (mono : ∀ c t, kinds c = some t → kinds' c = some t) {t : Ty} {xs : List Value}
+    (contents : ContentsKinded kinds t xs) : ContentsKinded kinds' t xs := by
+  cases contents with
+  | list t xs typed => exact .list t xs fun x member => kinded_mono mono (typed x member)
+  | chain t xs typed => exact .chain t xs fun x member => kinded_mono mono (typed x member)
+  | dict t xs typed =>
+    refine .dict t xs fun x member => ?_
+    obtain ⟨k, v, shape, typedV⟩ := typed x member
+    exact ⟨k, v, shape, kinded_mono mono typedV⟩
+
+/-- A typed array is allocated. -/
+theorem StateKinded.bound {kinds : Nat → Option Ty} {hs : InPlaceSemantics.State}
+    {env : List (Var × Observation × Value)} {tenv : Env Ty}
+    (state : StateKinded kinds hs env tenv) {c : Nat} {t : Ty} (typed : kinds c = some t) :
+    c < hs.heap.size := by
+  obtain ⟨xs, lookup, _⟩ := state.heap c t typed
+  exact (Array.getElem?_eq_some_iff.mp lookup).1
+
+/-- An integer has no array. -/
+theorem kinded_int_inv {kinds : Nat → Option Ty} {w : Value} (typed : Kinded kinds .int w) :
+    ∃ i, w = .int i := by
+  cases typed with
+  | int i => exact ⟨i, rfl⟩
+
+/-- A list has the root that the map types as that list. -/
+theorem kinded_list_inv {kinds : Nat → Option Ty} {t : Ty} {w : Value} (typed : Kinded kinds (.list t) w) :
+    ∃ c, w = .ref c ∧ kinds c = some (.list t) := by
+  cases typed with
+  | list t c found => exact ⟨c, rfl, found⟩
+
+theorem kinded_chain_inv {kinds : Nat → Option Ty} {t : Ty} {w : Value} (typed : Kinded kinds (.chain t) w) :
+    ∃ c, w = .ref c ∧ kinds c = some (.chain t) := by
+  cases typed with
+  | chain t c found => exact ⟨c, rfl, found⟩
+
+theorem kinded_dict_inv {kinds : Nat → Option Ty} {t : Ty} {w : Value} (typed : Kinded kinds (.dict t) w) :
+    ∃ c, w = .ref c ∧ kinds c = some (.dict t) := by
+  cases typed with
+  | dict t c found => exact ⟨c, rfl, found⟩
+
+theorem kinded_record_inv {kinds : Nat → Option Ty} {ts : List Ty} {w : Value}
+    (typed : Kinded kinds (.record ts) w) :
+    ∃ ws, w = .record ws ∧ ws.length = ts.length ∧
+      ∀ (i : Nat) (t : Ty) (x : Value), ts[i]? = some t → ws[i]? = some x → Kinded kinds t x := by
+  cases typed with
+  | record ts ws lengths fields => exact ⟨ws, rfl, lengths, fields⟩
+
+theorem kinded_result_inv {kinds : Nat → Option Ty} {error success : Ty} {w : Value}
+    (typed : Kinded kinds (.result error success) w) :
+    (∃ x, w = .record [.int 1, .int 0, x] ∧ Kinded kinds success x) ∨
+      (∃ x, w = .record [.int 0, x, .int 0] ∧ Kinded kinds error x) := by
+  cases typed with
+  | ok error success x typedX => exact Or.inl ⟨x, rfl, typedX⟩
+  | err error success x typedX => exact Or.inr ⟨x, rfl, typedX⟩
+
+/-- The payload of a success has the success type. -/
+theorem kinded_ok_payload {kinds : Nat → Option Ty} {error success : Ty} {w : Value}
+    (typed : Kinded kinds (.result error success) (.record [.int 1, .int 0, w])) : Kinded kinds success w := by
+  rcases kinded_result_inv typed with ⟨x, same, typedX⟩ | ⟨x, same, _⟩
+  · simp only [Value.record.injEq, List.cons.injEq] at same
+    rw [same.2.2.1]
+    exact typedX
+  · simp at same
+
+/-- The payload of an error has the error type. -/
+theorem kinded_err_payload {kinds : Nat → Option Ty} {error success : Ty} {w : Value}
+    (typed : Kinded kinds (.result error success) (.record [.int 0, w, .int 0])) : Kinded kinds error w := by
+  rcases kinded_result_inv typed with ⟨x, same, _⟩ | ⟨x, same, typedX⟩
+  · simp at same
+  · simp only [Value.record.injEq, List.cons.injEq] at same
+    rw [same.2.1]
+    exact typedX
+
+/-- The contents of an array that the map types as a list. -/
+theorem StateKinded.list_contents {kinds : Nat → Option Ty} {hs : InPlaceSemantics.State}
+    {env : List (Var × Observation × Value)} {tenv : Env Ty}
+    (state : StateKinded kinds hs env tenv) {c : Nat} {t : Ty} (typed : kinds c = some (.list t))
+    {xs : List Value} (lookup : hs.heap[c]? = some xs) : ∀ x ∈ xs, Kinded kinds t x := by
+  obtain ⟨ys, lookup', contents⟩ := state.heap c _ typed
+  rw [lookup] at lookup'
+  cases Option.some.inj lookup'
+  cases contents with
+  | list t xs typed => exact typed
+
+theorem StateKinded.chain_contents {kinds : Nat → Option Ty} {hs : InPlaceSemantics.State}
+    {env : List (Var × Observation × Value)} {tenv : Env Ty}
+    (state : StateKinded kinds hs env tenv) {c : Nat} {t : Ty} (typed : kinds c = some (.chain t))
+    {xs : List Value} (lookup : hs.heap[c]? = some xs) : ∀ x ∈ xs, Kinded kinds t x := by
+  obtain ⟨ys, lookup', contents⟩ := state.heap c _ typed
+  rw [lookup] at lookup'
+  cases Option.some.inj lookup'
+  cases contents with
+  | chain t xs typed => exact typed
+
+theorem StateKinded.dict_contents {kinds : Nat → Option Ty} {hs : InPlaceSemantics.State}
+    {env : List (Var × Observation × Value)} {tenv : Env Ty}
+    (state : StateKinded kinds hs env tenv) {c : Nat} {t : Ty} (typed : kinds c = some (.dict t))
+    {xs : List Value} (lookup : hs.heap[c]? = some xs) :
+    ∀ x ∈ xs, ∃ (k : Int) (v : Value), x = .record [.int k, v] ∧ Kinded kinds t v := by
+  obtain ⟨ys, lookup', contents⟩ := state.heap c _ typed
+  rw [lookup] at lookup'
+  cases Option.some.inj lookup'
+  cases contents with
+  | dict t xs typed => exact typed
+
+/-- No link names an array that the map types as a dictionary. -/
+theorem StateKinded.dict_unlinked {kinds : Nat → Option Ty} {hs : InPlaceSemantics.State}
+    {env : List (Var × Observation × Value)} {tenv : Env Ty}
+    (state : StateKinded kinds hs env tenv) {c : Nat} {t : Ty} (typed : kinds c = some (.dict t)) :
+    ∀ v s front, (v, s, front) ∈ hs.links → v ≠ c ∧ s ≠ c := by
+  intro v s front member
+  obtain ⟨u, viewTyped, sourceTyped⟩ := state.links v s front member
+  constructor
+  · intro same
+    subst same
+    rw [typed] at viewTyped
+    cases viewTyped
+  · intro same
+    subst same
+    rw [typed] at sourceTyped
+    cases sourceTyped
+
+/-- The same heap typing holds of a state with the same typed arrays and
+links. -/
+theorem StateKinded.of_heap {kinds : Nat → Option Ty} {hs hs' : InPlaceSemantics.State}
+    {env : List (Var × Observation × Value)} {tenv : Env Ty}
+    (state : StateKinded kinds hs env tenv)
+    (heap : ∀ c t, kinds c = some t → hs'.heap[c]? = hs.heap[c]?) (links : hs'.links = hs.links) :
+    StateKinded kinds hs' env tenv := by
+  refine ⟨?_, ?_, state.env⟩
+  · intro c t typed
+    rw [heap c t typed]
+    exact state.heap c t typed
+  · rw [links]
+    exact state.links
+
+/-- A write of contents of the written array's type keeps the heap typing. -/
+theorem StateKinded.of_write {kinds : Nat → Option Ty} {hs hs' : InPlaceSemantics.State}
+    {env : List (Var × Observation × Value)} {tenv : Env Ty}
+    (state : StateKinded kinds hs env tenv) {root : Nat} {t : Ty} {xs : List Value}
+    (typed : kinds root = some t) (contents : ContentsKinded kinds t xs)
+    (heap : hs'.heap = hs.heap.set! root xs) (links : hs'.links = hs.links) :
+    StateKinded kinds hs' env tenv := by
+  refine ⟨?_, ?_, state.env⟩
+  · intro c u typedC
+    rw [heap]
+    by_cases same : c = root
+    · subst same
+      rw [typed] at typedC
+      cases Option.some.inj typedC
+      refine ⟨xs, ?_, contents⟩
+      simp [state.bound typed]
+    · rw [HeapProof.lookup_set_other hs.heap root xs same]
+      exact state.heap c u typedC
+  · rw [links]
+    exact state.links
+
+/-- An allocation of contents of a source type extends the heap typing at
+the new address. -/
+theorem StateKinded.of_alloc {kinds : Nat → Option Ty} {hs hs' : InPlaceSemantics.State}
+    {env : List (Var × Observation × Value)} {tenv : Env Ty}
+    (state : StateKinded kinds hs env tenv) {t : Ty} {xs : List Value}
+    (contents : ContentsKinded kinds t xs)
+    (heap : hs'.heap = hs.heap.push xs) (links : hs'.links = hs.links) :
+    ∃ kinds', StateKinded kinds' hs' env tenv ∧ (∀ c u, kinds c = some u → kinds' c = some u) ∧
+      kinds' hs.heap.size = some t := by
+  have untyped : kinds hs.heap.size = none := by
+    cases found : kinds hs.heap.size with
+    | none => rfl
+    | some u =>
+      have := state.bound found
+      omega
+  let kinds' : Nat → Option Ty := fun c => if c = hs.heap.size then some t else kinds c
+  have mono : ∀ c u, kinds c = some u → kinds' c = some u := by
+    intro c u typed
+    have different : c ≠ hs.heap.size := by
+      intro same
+      rw [same, untyped] at typed
+      cases typed
+    simp [kinds', different, typed]
+  refine ⟨kinds', ⟨?_, ?_, ?_⟩, mono, by simp [kinds']⟩
+  · intro c u typed
+    rw [heap]
+    by_cases same : c = hs.heap.size
+    · subst same
+      have : u = t := by simpa [kinds'] using typed.symm
+      subst this
+      exact ⟨xs, by simp, contentsKinded_mono mono contents⟩
+    · have old : kinds c = some u := by simpa [kinds', same] using typed
+      obtain ⟨ys, lookup, contentsC⟩ := state.heap c u old
+      refine ⟨ys, ?_, contentsKinded_mono mono contentsC⟩
+      rw [Array.getElem?_push]
+      simp [same, lookup]
+  · intro v s front member
+    rw [links] at member
+    obtain ⟨u, viewTyped, sourceTyped⟩ := state.links v s front member
+    exact ⟨u, mono v _ viewTyped, mono s _ sourceTyped⟩
+  · intro x ty o w declared binding
+    exact kinded_mono mono (state.env x ty o w declared binding)
+
+theorem kindsAt_of_heap {hs hs' : InPlaceSemantics.State} {env : List (Var × Observation × Value)}
+    {tenv : Env Ty} {type : Ty} {actual : Value} (kinds : KindsAt hs env tenv type actual)
+    (heap : hs'.heap = hs.heap) (links : hs'.links = hs.links) : KindsAt hs' env tenv type actual := by
+  obtain ⟨heapTyping, state, typed⟩ := kinds
+  exact ⟨heapTyping, state.of_heap (fun _ _ _ => by rw [heap]) links, typed⟩
+
+/-- A projection along a field path has the type at that path. -/
+theorem kinded_project {kinds : Nat → Option Ty} :
+    ∀ {p : Path} {ty t : Ty} {w w' : Value}, Kinded kinds ty w →
+      Ownership.FlatFragment.Fields.tyAt ty p = some t → projectVal w p = some w' → Kinded kinds t w' := by
+  intro p
+  induction p with
+  | nil =>
+    intro ty t w w' typed at_p valuePath
+    simp only [Ownership.FlatFragment.Fields.tyAt, Option.some.injEq] at at_p
+    simp only [projectVal, Option.some.injEq] at valuePath
+    subst at_p
+    subst valuePath
+    exact typed
+  | cons step rest ih =>
+    intro ty t w w' typed at_p valuePath
+    cases step with
+    | field i =>
+      cases ty with
+      | record ts =>
+        obtain ⟨ws, rfl, _, fields⟩ := kinded_record_inv typed
+        simp only [Ownership.FlatFragment.Fields.tyAt] at at_p
+        cases foundT : ts[i]? with
+        | none => rw [foundT] at at_p; cases at_p
+        | some ti =>
+          rw [foundT] at at_p
+          simp only [projectVal] at valuePath
+          cases foundW : ws[i]? with
+          | none => rw [foundW] at valuePath; cases valuePath
+          | some wi =>
+            rw [foundW] at valuePath
+            exact ih (fields i ti wi foundT foundW) at_p valuePath
+      | _ => simp [Ownership.FlatFragment.Fields.tyAt] at at_p
+    | _ => cases ty <;> simp [Ownership.FlatFragment.Fields.tyAt] at at_p
+
 /-- An integer primitive types only at two `Int` operands, and its result is `Int`. -/
 theorem primType_scalar_success {op : Prim} {tyA tyB type : Ty} (sop : Ownership.FlatFragment.Support.ScalarOp op)
     (flatA : FlatType tyA) (flatB : FlatType tyB) (run : primType op [tyA, tyB] = .ok type) :
@@ -1121,6 +1425,7 @@ structure FlatInvariant (declarations : List Decl)
   namingBound : NamingBound gamma hs.heap.size
   observers : ∃ footprint,
     RepresentsMany hs.heap observationDepth hs.kept.toList vs.kept.toList footprint
+  heapKinds : ∃ kinds, StateKinded kinds hs env tenv
 
 /-! The audit refuses `extends`, so the prefix invariant is a plain field.
 These wrappers keep every projection of the parent available by dot notation. -/
@@ -1153,6 +1458,17 @@ theorem FlatInvariant.named {declarations : List Decl} {vs : ValueSemantics.Stat
   inv.toInvariant.named
 
 theorem FlatInvariant.separating {declarations : List Decl} {vs : ValueSemantics.State} {hs : InPlaceSemantics.State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma) : Separating gamma := inv.toInvariant.separating
+
+/-- A step that keeps the heap and the links keeps the heap typing; the
+result has its type under it. -/
+theorem FlatInvariant.kindsAt_of {declarations : List Decl} {vs : ValueSemantics.State} {hs : InPlaceSemantics.State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming}
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
+    {hs' : InPlaceSemantics.State} (heap : hs'.heap = hs.heap) (links : hs'.links = hs.links)
+    {type : Ty} {actual : Value}
+    (typed : ∀ kinds, StateKinded kinds hs env tenv → Kinded kinds type actual) :
+    KindsAt hs' env tenv type actual := by
+  obtain ⟨kinds, state⟩ := inv.heapKinds
+  exact ⟨kinds, state.of_heap (fun _ _ _ => by rw [heap]) links, typed kinds state⟩
 
 /-- The current heap value of every runtime reference remains allocated.
 The binding need not occur in the live-use set. -/
@@ -1202,6 +1518,8 @@ theorem flatInvariant_initial (declarations : List Decl) (fuel : Nat)
     liveTyped := ?_
     namingBound := emptyNaming_bound 0
     observers := ⟨[], RepresentsMany.nil⟩
+    heapKinds := ⟨fun _ => none, ⟨(by intro c t typed; simp at typed),
+      (by intro v s front member; simp at member), (by intro x ty o w declared; simp at declared)⟩⟩
   }
   · intro x ty present
     simp at present
@@ -1951,7 +2269,8 @@ theorem success_of_dictFree {declarations : List Decl} {depth : Nat}
         Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
         Ownership.FlatFragment.HeapPreservation.AllocatedFlatValue hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual) :
+        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual ∧
+        KindsAt hs' env tenv type actual) :
     ∀ value vs',
       (ValueSemantics.eval depth declarations none (valueEnv env) e).run vs = .ok (value, vs') →
       ∃ actual hs' gamma',
@@ -1964,7 +2283,8 @@ theorem success_of_dictFree {declarations : List Decl} {depth : Nat}
         Ownership.FlatFragment.HeapPreservation.AllocatedFlatValue hs'.heap actual (entryType type) ∧
         ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
         ChainTags (entryType type) (entryAbstract declarations type result) value ∧
-        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual := by
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual := by
   intro value vs' run
   rw [entryType_of_dictFree free, entryAbstract_of_dictFree free shape]
   exact success value vs' run

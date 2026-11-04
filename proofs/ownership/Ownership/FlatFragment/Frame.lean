@@ -101,7 +101,8 @@ theorem flatInvariant_heap_frame {gamma : Naming}
     (bounded : NamingBound gamma' hs'.heap.size) (separating : Separating gamma')
     (reads : vs'.reads = hs'.reads) (external : vs'.externalReads = hs'.externalReads)
     (fuel : vs'.fuel = hs'.fuel)
-    (escapesMono : ∀ origin, Escaped escapes origin → Escaped escapes' origin) :
+    (escapesMono : ∀ origin, Escaped escapes origin → Escaped escapes' origin)
+    (heapKinds : ∃ kinds, StateKinded kinds hs' env tenv) :
     FlatInvariant declarations vs' hs' env live' aenv tenv escapes' gamma' := by
   have footprintFrame : ∀ address ∈ footprint, hs'.heap[address]? = hs.heap[address]? := by
     intro address member
@@ -163,6 +164,7 @@ theorem flatInvariant_heap_frame {gamma : Naming}
     liveTyped := fun x p ty member declared => inv.liveTyped x p ty (liveSub _ member) declared
     namingBound := bounded
     observers := ⟨footprint, framed⟩
+    heapKinds := heapKinds
   }
   · intro i o w valueAt heapAt
     have valueList : vs'.kept.toList[i]? = some o := by simpa using valueAt

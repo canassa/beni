@@ -118,7 +118,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
           refine ⟨w, Ownership.FlatFragment.StateFrame.heapAtomPost hs vs.kept.toList, gamma, heapRun,
             Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub,
             Nat.le_of_eq (congrArg Array.size (heapAtomPost_heap hs vs.kept.toList).symm), ?_, ?_,
-            observed, ?_, ?_, tags, chains, by simpa only [heapAtomPost_heap] using deep⟩
+            observed, ?_, ?_, tags, chains, by simpa only [heapAtomPost_heap] using deep,
+            inv.kindsAt_of (heapAtomPost_heap hs vs.kept.toList)
+              (by unfold Ownership.FlatFragment.StateFrame.heapAtomPost heapObserved; split <;> rfl)
+              (fun _ state => kinded_atom inv state atomTyped covered heapAtom)⟩
           · rw [heapAtomPost_heap]; exact paired
           · rw [heapAtomPost_heap]; exact described
           · rw [heapAtomPost_heap]; exact valueTyped

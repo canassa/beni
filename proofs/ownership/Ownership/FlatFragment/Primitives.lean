@@ -138,7 +138,8 @@ theorem alloc_post_invariant {declarations : List Decl} {vs : ValueSemantics.Sta
     (storedBounded : ∀ x ∈ stored, ∀ d, Reaches hs'.heap x (.ref d) → d < hs'.heap.size)
     (keptSame : hs'.kept = hs.kept) (valueKeptSame : vs'.kept = vs.kept)
     (reads : vs'.reads = hs'.reads) (external : vs'.externalReads = hs'.externalReads)
-    (fuel : vs'.fuel = hs'.fuel) :
+    (fuel : vs'.fuel = hs'.fuel)
+    (heapKinds : ∃ kinds, StateKinded kinds hs' env tenv) :
     ∃ gamma',
       FlatInvariant declarations vs' hs' env live aenv tenv escapes gamma' ∧
       hs.heap.size ∈ gamma' (.site site 0) ∧
@@ -151,6 +152,7 @@ theorem alloc_post_invariant {declarations : List Decl} {vs : ValueSemantics.Sta
   refine flatInvariant_heap_frame inv (hole := hs.heap.size) (footprint := footprint)
     (fun _ member => member) (by rw [heapEq]; simp) ⟨stored, by rw [heapEq]; simp, storedBounded⟩ links ?_ ?_
     represented ?_ keptSame valueKeptSame old ?_ separating reads external fuel (fun _ escaped => escaped)
+    heapKinds
   · intro c different
     rw [heapEq]
     simp [Array.getElem?_push, different]
@@ -169,7 +171,8 @@ theorem alloc_post_invariant {declarations : List Decl} {vs : ValueSemantics.Sta
 by the site. -/
 theorem literal_post_invariant {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (integers : List Int) (site : List Nat) :
+    (integers : List Int) (site : List Nat)
+    (heapKinds : ∃ kinds, StateKinded kinds (heapObserved (heapAllocated hs integers) vs.kept.toList) env tenv) :
     ∃ gamma',
       FlatInvariant declarations (valueObserved (valueTicked vs))
         (heapObserved (heapAllocated hs integers) vs.kept.toList) env live aenv tenv escapes gamma' ∧
@@ -184,6 +187,40 @@ theorem literal_post_invariant {declarations : List Decl} {vs : ValueSemantics.S
     (by rw [valueObserved_kept]; rfl) (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
     (observed_external (valueTicked vs) (heapAllocated hs integers) inv.keptSize inv.external)
     (by rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapAllocated, inv.fuel])
+    heapKinds
+
+/-- The heap typing after an integer allocation of a chain or a dictionary
+type: the new address has that type. -/
+theorem literal_kinds {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming}
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
+    (integers : List Int) {t : Ty}
+    (contents : ∀ kinds, ContentsKinded kinds t (heapInts integers)) :
+    ∃ kinds', StateKinded kinds' (heapObserved (heapAllocated hs integers) vs.kept.toList) env tenv ∧
+      kinds' hs.heap.size = some t := by
+  obtain ⟨kinds, state⟩ := inv.heapKinds
+  obtain ⟨kinds', state', _, typed⟩ := state.of_alloc (contents kinds)
+    (hs' := heapObserved (heapAllocated hs integers) vs.kept.toList)
+    (by rw [heapObserved_heap]; rfl) (by rw [heapObserved_links]; rfl)
+  exact ⟨kinds', state', typed⟩
+
+/-- The heap typing after an allocation of contents of a source type: the
+new address has that type. -/
+theorem alloc_kinds_of {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming}
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
+    {hs' : State} {stored : List Value} {t : Ty}
+    (heapEq : hs'.heap = hs.heap.push stored) (links : hs'.links = hs.links)
+    (contents : ∀ kinds, StateKinded kinds hs env tenv → ContentsKinded kinds t stored) :
+    ∃ kinds', StateKinded kinds' hs' env tenv ∧ kinds' hs.heap.size = some t := by
+  obtain ⟨kinds, state⟩ := inv.heapKinds
+  obtain ⟨kinds', state', _, typed⟩ := state.of_alloc (contents kinds state) heapEq links
+  exact ⟨kinds', state', typed⟩
+
+/-- An integer array is a chain of integers under any heap typing. -/
+theorem chain_contents_ints (kinds : Nat → Option Ty) (integers : List Int) :
+    ContentsKinded kinds (.chain .int) (heapInts integers) := by
+  refine .chain .int _ fun x member => ?_
+  obtain ⟨i, _, rfl⟩ := List.mem_map.mp member
+  exact .int i
 
 /-- The literal expression case over element values (slice 2b of #522): typing
 fixes the operand types to the element type, the live uses supply the values,
@@ -212,7 +249,8 @@ theorem literal_preserved {declarations : List Decl} {vs : ValueSemantics.State}
         AllocatedFlatValue hs'.heap actual (entryType type) ∧
         ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
         ChainTags (entryType type) (entryAbstract declarations type result) value ∧
-        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual) ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim (.literal t) args)).run vs = .error message →
@@ -314,6 +352,16 @@ theorem literal_preserved {declarations : List Decl} {vs : ValueSemantics.State}
           fun w member => allocated_of_agree (elemsShaped w member) (agree w member)
         have shapedNew : AllocatedFlatValue (hs.heap.push ws) (.ref hs.heap.size) (.list (entryType t)) :=
           .list _ ws (entryType t) lookupNew shapedZ
+        obtain ⟨kinds, state⟩ := inv.heapKinds
+        have itemsKinded : ∀ w ∈ ws, Kinded kinds t w := by
+          intro w member
+          obtain ⟨i, ws_i⟩ := List.mem_iff_getElem?.mp member
+          obtain ⟨ty, types_i⟩ := index_of_same_length lenW ws_i
+          have k := kinded_atoms inv state atomsTyped covered heapAtoms i w ty ws_i types_i
+          rwa [typesT ty (List.mem_of_getElem? types_i)] at k
+        obtain ⟨kinds', state', _, newTyped⟩ :=
+          state.of_alloc (hs' := heapObserved (heapAllocatedValues hs ws) vs.kept.toList)
+            (ContentsKinded.list t ws itemsKinded) heapEq (by rw [heapObserved_links]; rfl)
         obtain ⟨gamma', postInvariant, fresh, old⟩ := alloc_post_invariant inv ws site heapEq
           (by rw [heapObserved_links]; exact inv.links)
           (fun w member d reach => by
@@ -323,6 +371,7 @@ theorem literal_preserved {declarations : List Decl} {vs : ValueSemantics.State}
           (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
           (observed_external (valueTicked vs) (heapAllocatedValues hs ws) inv.keptSize inv.external)
           (by rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapAllocatedValues, inv.fuel])
+          ⟨kinds', state'⟩
         have rootNamed' : named gamma' [.site site 0] hs.heap.size := ⟨.site site 0, by simp, fresh⟩
         have rootApart : ∀ w ∈ ws, ¬ Reaches (hs.heap.push ws) w (.ref hs.heap.size) := by
           intro w member reach
@@ -422,7 +471,7 @@ theorem literal_preserved {declarations : List Decl} {vs : ValueSemantics.State}
         refine ⟨.ref hs.heap.size, heapObserved (heapAllocatedValues hs ws) vs.kept.toList, gamma',
           heapRun, by rw [nextEscapes]; exact postInvariant, ?_, ?_, ?_, ?_, ?_, ?_,
           by rw [resultRep]; exact .list _ _ _ _ _, .list _ _ _,
-          by rw [heapEq, resultRep]; exact deepNew _ _⟩
+          by rw [heapEq, resultRep]; exact deepNew _ _, ⟨kinds', state', .list t _ newTyped⟩⟩
         · rw [heapEq]; simp
         · rw [heapEq]
           exact corresponds_list_of_elements lookupNew (lenO.trans lenW.symm) (fun i o w os_i ws_i => by
@@ -606,7 +655,8 @@ theorem length_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
         Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
         AllocatedFlatValue hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual) ∧
+        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .length [receiver])).run vs = .error message →
@@ -645,7 +695,9 @@ theorem length_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
         refine ⟨.int os.length, heapRead hs (.int os.length) vs.kept.toList, gamma,
           heapRun, ?_, ?_, Ownership.FlatFragment.AtomPreservation.integer_corresponds _, ?_, by simp [obsTyped],
           ⟨1, .int os.length, [], .int, by simp [obsTyped]⟩, .int _, by rw [resultScalar]; exact .int _,
-          .int _ _, .int _ _⟩
+          .int _ _, .int _ _,
+          inv.kindsAt_of (by unfold heapRead; rw [heapObserved_heap]) (by unfold heapRead; rw [heapObserved_links])
+            (fun _ _ => .int _)⟩
         · rw [nextEscapes]; exact read_post_invariant inv _
         · exact Nat.le_of_eq (by unfold heapRead; rw [heapObserved_heap])
         · rw [resultScalar]; exact Ownership.FlatFragment.AtomPreservation.integer_described _
@@ -763,7 +815,8 @@ theorem scalar_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
         Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
         AllocatedFlatValue hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual) ∧
+        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim op [a, b])).run vs = .error message →
@@ -800,7 +853,11 @@ theorem scalar_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
           AtomPreservation.heapAtomPost hs vs.kept.toList, gamma,
           heapRun, ?_, ?_, AtomPreservation.integer_corresponds _, ?_,
           by simp [obsTyped], ⟨1, .int (scalarResult op x y), [], .int, by simp [obsTyped]⟩, .int _,
-          by rw [resultScalar]; exact .int _, .int _ _, .int _ _⟩
+          by rw [resultScalar]; exact .int _, .int _ _, .int _ _,
+          inv.kindsAt_of
+            (by unfold AtomPreservation.heapAtomPost AtomPreservation.heapTicked; rw [heapObserved_heap])
+            (by unfold AtomPreservation.heapAtomPost AtomPreservation.heapTicked; rw [heapObserved_links])
+            (fun _ _ => .int _)⟩
         · rw [nextEscapes]; exact AtomPreservation.integer_atom_post_invariant inv
         · exact Nat.le_of_eq (by
             unfold AtomPreservation.heapAtomPost
@@ -972,6 +1029,10 @@ theorem shared_post_invariant {declarations : List Decl} {vs : ValueSemantics.St
     liveTyped := inv.liveTyped
     namingBound := by rw [heapSame]; exact inv.namingBound
     observers := ⟨_, witnessList⟩
+    heapKinds := by
+      obtain ⟨kinds, state⟩ := inv.heapKinds
+      exact ⟨kinds, state.of_heap (fun _ _ _ => by rw [heapSame])
+        (by unfold heapShared; rw [heapObserved_links])⟩
   }
   · unfold valueShared heapShared valueObserved heapObserved
     simp [Array.isEmpty, Array.size_push, inv.external]
@@ -1136,7 +1197,8 @@ theorem shared_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
         AllocatedFlatValue hs'.heap actual (entryType type) ∧
         ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
         ChainTags (entryType type) (entryAbstract declarations type result) value ∧
-        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual) ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .shared [atom])).run vs = .error message →
@@ -1211,7 +1273,7 @@ theorem shared_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
           unfold heapShared; rw [heapObserved_heap]
         refine ⟨v, heapShared hs v (vs.kept.toList ++ [x]), gamma, heapRun,
           shared_post_invariant inv witness mono newEscaped,
-          Nat.le_of_eq (congrArg Array.size heapSame.symm), ?_, ?_, observed, ?_, ?_, ?_, ?_, ?_⟩
+          Nat.le_of_eq (congrArg Array.size heapSame.symm), ?_, ?_, observed, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · rw [heapSame]; exact paired
         · rw [heapSame]; exact resultDescribed
         · rw [heapSame]; exact valueTyped
@@ -1219,6 +1281,8 @@ theorem shared_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
         · rw [typedResult]; exact resultTags_mapOrigins _ tags []
         · rw [typedResult]; exact chainTags_mapOrigins _ chains []
         · rw [heapSame, typedResult]; exact tagsDeep_mapOrigins _ deepTags []
+        · exact inv.kindsAt_of heapSame (by unfold heapShared; rw [heapObserved_links])
+            (fun _ state => kinded_atom inv state atomTyped covered heapAtom)
   · intro message failed
     by_cases noDepth : depth = 0
     · exact ⟨"in-place execution exhausted depth", by
@@ -1487,7 +1551,8 @@ theorem push_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
         AllocatedFlatValue hs'.heap actual (entryType type) ∧
         ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
         ChainTags (entryType type) (entryAbstract declarations type result) value ∧
-        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual) ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .push [receiver, item])).run vs = .error message →
@@ -1635,9 +1700,22 @@ theorem push_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
           · rw [List.mem_singleton.mp new]
             exact elementTags_of_agree
               (elementTags_join_right (elementTags_of_corresponds pairedN tagsN chainsN deepN) elemShape shapeN) agreeItem
+        obtain ⟨kinds, state⟩ := inv.heapKinds
+        have rootTyped : kinds root = some (.list t) := by
+          obtain ⟨c0, same0, typed0⟩ :=
+            kinded_list_inv (kinded_atom inv state receiverTyped coveredR heapReceiver)
+          cases same0
+          exact typed0
+        have state' : StateKinded kinds (heapObserved (heapPushedValues hs root ys w) vs.kept.toList) env tenv :=
+          state.of_write rootTyped (.list t _ fun z member => by
+              rcases List.mem_append.mp member with old | new
+              · exact state.list_contents rootTyped lookup z old
+              · rw [List.mem_singleton.mp new]; exact kinded_atom inv state itemTyped coveredI heapItem)
+            heapEq (by rw [heapObserved_links]; rfl)
         refine ⟨.ref root, heapObserved (heapPushedValues hs root ys w) vs.kept.toList, gamma, heapRun, ?_,
           Nat.le_of_eq (by rw [heapEq, sizeEq]), ?_, ?_, ?_, ?_, ?_,
-          by rw [resultRep]; exact .list _ _ _ _ _, .list _ _ _, by rw [heapEq, resultRep]; exact deepNew _ _⟩
+          by rw [resultRep]; exact .list _ _ _ _ _, .list _ _ _, by rw [heapEq, resultRep]; exact deepNew _ _,
+          ⟨kinds, state', .list t root rootTyped⟩⟩
         · rw [escapesEq]
           refine flatInvariant_heap_frame inv (hole := root) (footprint := footprint) afterSub
             (by rw [heapEq, sizeEq]; exact Nat.le_refl _) ⟨ys ++ [w], by rw [heapEq]; exact lookupNew, ?_⟩
@@ -1647,7 +1725,7 @@ theorem push_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
             (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
             (observed_external (valueTicked vs) (heapPushedValues hs root ys w) inv.keptSize inv.external)
             (by rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapPushedValues, inv.fuel])
-            (fun _ escaped => escaped)
+            (fun _ escaped => escaped) ⟨kinds, state'⟩
           · intro z member d reach
             rw [heapEq] at reach ⊢
             exact allocated_reach_bound (shapedZ z member) reach
@@ -1743,7 +1821,8 @@ theorem record_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
         AllocatedFlatValue hs'.heap actual (entryType type) ∧
         ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
         ChainTags (entryType type) (entryAbstract declarations type result) value ∧
-        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual) ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .record args)).run vs = .error message →
@@ -1793,8 +1872,14 @@ theorem record_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
         rw [valueRun] at run
         cases run
         have heapSame := heapAtomPost_heap hs vs.kept.toList
+        have kindsNew : KindsAt (AtomPreservation.heapAtomPost hs vs.kept.toList) env tenv (.record types)
+            (.record ws) :=
+          inv.kindsAt_of heapSame
+            (by unfold AtomPreservation.heapAtomPost AtomPreservation.heapTicked; rw [heapObserved_links])
+            (fun _ state => .record types ws lenW (fun i t w types_i ws_i =>
+              kinded_atoms inv state atomsTyped covered heapAtoms i w t ws_i types_i))
         refine ⟨.record ws, AtomPreservation.heapAtomPost hs vs.kept.toList, gamma, heapRun, ?_,
-          Nat.le_of_eq (congrArg Array.size heapSame.symm), ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+          Nat.le_of_eq (congrArg Array.size heapSame.symm), ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, kindsNew⟩
         · rw [nextEscapes]; exact AtomPreservation.integer_atom_post_invariant inv
         · rw [heapSame]
           refine corresponds_record_of_fields (lenO.trans lenW.symm) ?_
@@ -1953,7 +2038,8 @@ theorem result_preserved_of_parts {declarations : List Decl} {vs : ValueSemantic
     (valueTyped : ValueTyped declarations hs.heap actual type)
     (shaped : AllocatedFlatValue hs.heap actual shapeType)
     (tags : ResultTags shapeType result actual) (chains : ChainTags shapeType result value)
-    (deepTags : TagsDeep hs.heap shapeType result actual) :
+    (deepTags : TagsDeep hs.heap shapeType result actual)
+    (kinded : ∀ kinds, StateKinded kinds hs env tenv → Kinded kinds type actual) :
     (∀ value' vs',
       (ValueSemantics.eval depth declarations none (valueEnv env) (.prim op [x])).run vs =
         .ok (value', vs') →
@@ -1966,7 +2052,7 @@ theorem result_preserved_of_parts {declarations : List Decl} {vs : ValueSemantic
         obsTyped declarations value' type = true ∧ ValueTyped declarations hs'.heap actual' type ∧
         AllocatedFlatValue hs'.heap actual' shapeType ∧
         ResultTags shapeType result actual' ∧ ChainTags shapeType result value' ∧
-        TagsDeep hs'.heap shapeType result actual') ∧
+        TagsDeep hs'.heap shapeType result actual' ∧ KindsAt hs' env tenv type actual') ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env) (.prim op [x])).run vs =
         .error message →
@@ -1992,7 +2078,11 @@ theorem result_preserved_of_parts {declarations : List Decl} {vs : ValueSemantic
         have heapSame := heapAtomPost_heap hs vs.kept.toList
         refine ⟨actual, AtomPreservation.heapAtomPost hs vs.kept.toList, gamma, heapRun,
           AtomPreservation.integer_atom_post_invariant inv,
-          Nat.le_of_eq (congrArg Array.size heapSame.symm), ?_, ?_, observed, ?_, ?_, tags, chains, by simpa only [heapSame] using deepTags⟩
+          Nat.le_of_eq (congrArg Array.size heapSame.symm), ?_, ?_, observed, ?_, ?_, tags, chains,
+          by simpa only [heapSame] using deepTags,
+          inv.kindsAt_of heapSame
+            (by unfold AtomPreservation.heapAtomPost AtomPreservation.heapTicked; rw [heapObserved_links])
+            kinded⟩
         · rw [heapSame]; exact paired
         · rw [heapSame]; exact described
         · rw [heapSame]; exact valueTyped
@@ -2073,7 +2163,8 @@ theorem ok_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs 
         AllocatedFlatValue hs'.heap actual (entryType type) ∧
         ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
         ChainTags (entryType type) (entryAbstract declarations type result) value ∧
-        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual) ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim (.ok error) [x])).run vs = .error message →
@@ -2113,6 +2204,7 @@ theorem ok_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs 
       (.ok (entryType error) (entryType t) _ _ _ w (resultTags_ne_bottom tags) tags)
       (.ok (entryType error) (entryType t) _ _ _ o chains)
       (.ok (entryType error) (entryType t) _ _ _ w deepTags)
+      (fun _ state => .ok error t w (kinded_atom inv state atomTyped covered heapAtom))
 
 theorem err_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {inferenceFuel : Nat} {ctx : Context} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract} {success : Ty} {x : Atom} {self : Decl} {type : Ty}
     (inv : FlatInvariant declarations vs hs env live aenv tenv before.facts.escapes gamma)
@@ -2137,7 +2229,8 @@ theorem err_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
         AllocatedFlatValue hs'.heap actual (entryType type) ∧
         ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
         ChainTags (entryType type) (entryAbstract declarations type result) value ∧
-        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual) ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim (.err success) [x])).run vs = .error message →
@@ -2178,6 +2271,7 @@ theorem err_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
       (.err (entryType t) (entryType success) _ _ _ w (resultTags_ne_bottom tags) tags)
       (.err (entryType t) (entryType success) _ _ _ o chains)
       (.err (entryType t) (entryType success) _ _ _ w deepTags)
+      (fun _ state => .err t success w (kinded_atom inv state atomTyped covered heapAtom))
 
 end Ownership.FlatFragment.Result
 
@@ -2329,7 +2423,8 @@ theorem endChain_preserved {declarations : List Decl} {vs : ValueSemantics.State
         Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
         AllocatedFlatValue hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual) ∧
+        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim (.endChain .int) [])).run vs = .error message →
@@ -2352,7 +2447,8 @@ theorem endChain_preserved {declarations : List Decl} {vs : ValueSemantics.State
       · obtain ⟨valueRun, heapRun⟩ := endChain_runtime_success inv noDepth noFuel
         rw [valueRun] at run
         cases run
-        obtain ⟨gamma', postInvariant, fresh, _⟩ := literal_post_invariant inv [] site
+        obtain ⟨kinds', state', newTyped⟩ := literal_kinds inv [] (chain_contents_ints · [])
+        obtain ⟨gamma', postInvariant, fresh, _⟩ := literal_post_invariant inv [] site ⟨kinds', state'⟩
         have heapEq : (heapObserved (heapAllocated hs []) vs.kept.toList).heap =
             hs.heap.push (heapInts []) := by
           rw [heapObserved_heap]; rfl
@@ -2360,7 +2456,8 @@ theorem endChain_preserved {declarations : List Decl} {vs : ValueSemantics.State
             some (heapInts []) := by
           rw [heapEq]; simp
         refine ⟨.ref hs.heap.size, heapObserved (heapAllocated hs []) vs.kept.toList, gamma',
-          heapRun, postInvariant, ?_, ?_, ?_, ?_, ?_, .chain _ [] lookupNew, .chainInt _ _ _ _, .chainBottom _ _, .chain _ _⟩
+          heapRun, postInvariant, ?_, ?_, ?_, ?_, ?_, .chain _ [] lookupNew, .chainInt _ _ _ _, .chainBottom _ _, .chain _ _,
+          ⟨kinds', state', .chain .int _ newTyped⟩⟩
         · rw [heapEq]; simp
         · exact corresponds_integer_ref lookupNew
         · exact allocated_list_described lookupNew ⟨.site site 0, by simp, fresh⟩
@@ -2400,7 +2497,8 @@ theorem link_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
         Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
         AllocatedFlatValue hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual) ∧
+        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .link [head, tail])).run vs = .error message →
@@ -2436,7 +2534,8 @@ theorem link_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
           link_runtime_success inv valueHead heapHead valueTail heapTail lookup noDepth noFuel
         rw [valueRun] at run
         cases run
-        obtain ⟨gamma', postInvariant, fresh, _⟩ := literal_post_invariant inv (n :: integers) site
+        obtain ⟨kinds', state', newTyped⟩ := literal_kinds inv (n :: integers) (chain_contents_ints · _)
+        obtain ⟨gamma', postInvariant, fresh, _⟩ := literal_post_invariant inv (n :: integers) site ⟨kinds', state'⟩
         have heapEq : (heapObserved (heapAllocated hs (n :: integers)) vs.kept.toList).heap =
             hs.heap.push (heapInts (n :: integers)) := by
           rw [heapObserved_heap]; rfl
@@ -2445,7 +2544,7 @@ theorem link_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
           rw [heapEq]; simp
         refine ⟨.ref hs.heap.size, heapObserved (heapAllocated hs (n :: integers)) vs.kept.toList, gamma',
           heapRun, postInvariant, ?_, ?_, ?_, ?_, ?_, .chain _ (n :: integers) lookupNew, .chainInt _ _ _ _,
-          .chainScalar _ _ _, .chain _ _⟩
+          .chainScalar _ _ _, .chain _ _, ⟨kinds', state', .chain .int _ newTyped⟩⟩
         · rw [heapEq]; simp
         · exact corresponds_integer_ref lookupNew
         · exact allocated_list_described lookupNew ⟨.site site 0, by simp, fresh⟩
@@ -2731,7 +2830,8 @@ theorem at_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs 
         AllocatedFlatValue hs'.heap actual (entryType type) ∧
         ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
         ChainTags (entryType type) (entryAbstract declarations type result) value ∧
-        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual) ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .at [receiver, index, fallback])).run vs = .error message →
@@ -2812,6 +2912,14 @@ theorem at_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs 
           cases run
           have heapSame : (heapRead hs (atObs os i d) vs.kept.toList).heap = hs.heap := by
             unfold heapRead; rw [heapObserved_heap]
+          have kindsNew : KindsAt (heapRead hs (atObs os i d) vs.kept.toList) env tenv t (atVal ys i w) :=
+            inv.kindsAt_of heapSame (by unfold heapRead; rw [heapObserved_links]) (fun kinds state => by
+              obtain ⟨c, same, rootTyped⟩ :=
+                kinded_list_inv (kinded_atom inv state receiverTyped coveredR heapReceiver)
+              cases same
+              rcases atVal_cases ys i w with eq | ⟨y, member, eq⟩
+              · rw [eq]; exact kinded_atom inv state fallbackTyped coveredD heapFallback
+              · rw [eq]; exact state.list_contents rootTyped lookup y member)
           refine ⟨atVal ys i w, heapRead hs (atObs os i d) vs.kept.toList, gamma, heapRun, ?_,
             Nat.le_of_eq (congrArg Array.size heapSame.symm), by rw [heapSame]; exact paired,
             by rw [heapSame, resultRep]; exact described,
@@ -2819,7 +2927,7 @@ theorem at_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs 
             by rw [heapSame]; exact allocated,
             by rw [resultRep]; exact chosenTags.1,
             by rw [resultRep]; exact chosenTags.2.1 _ paired,
-            by rw [heapSame, resultRep]; exact chosenTags.2.2⟩
+            by rw [heapSame, resultRep]; exact chosenTags.2.2, kindsNew⟩
           · rw [nextEscapes]; exact read_post_invariant inv _
   · intro message failed
     by_cases noDepth : depth = 0
@@ -3020,7 +3128,8 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
         AllocatedFlatValue hs'.heap actual (entryType type) ∧
         ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
         ChainTags (entryType type) (entryAbstract declarations type result) value ∧
-        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual) ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .set [receiver, index, item])).run vs = .error message →
@@ -3262,9 +3371,22 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
           · rw [new]
             exact elementTags_of_agree
               (elementTags_join_right (elementTags_of_corresponds pairedN tagsN chainsN deepN) elemShape shapeN) agreeItem
+        obtain ⟨kinds, state⟩ := inv.heapKinds
+        have rootTyped : kinds root = some (.list t) := by
+          obtain ⟨c0, same0, typed0⟩ :=
+            kinded_list_inv (kinded_atom inv state receiverTyped coveredR heapReceiver)
+          cases same0
+          exact typed0
+        have state' : StateKinded kinds (heapObserved (heapSetValues hs root ys i w) vs.kept.toList) env tenv :=
+          state.of_write rootTyped (.list t _ fun z member => by
+              rcases mem_setVals member with old | new
+              · exact state.list_contents rootTyped lookup z old
+              · rw [new]; exact kinded_atom inv state itemTyped coveredV heapItem)
+            heapEq (by rw [heapObserved_links]; rfl)
         refine ⟨.ref root, heapObserved (heapSetValues hs root ys i w) vs.kept.toList, gamma, heapRun, ?_,
           Nat.le_of_eq (by rw [heapEq, sizeEq]), ?_, ?_, ?_, ?_, ?_,
-          by rw [resultRep]; exact .list _ _ _ _ _, .list _ _ _, by rw [heapEq, resultRep]; exact deepNew _ _⟩
+          by rw [resultRep]; exact .list _ _ _ _ _, .list _ _ _, by rw [heapEq, resultRep]; exact deepNew _ _,
+          ⟨kinds, state', .list t root rootTyped⟩⟩
         · rw [escapesEq]
           refine flatInvariant_heap_frame inv (hole := root) (footprint := footprint) afterSub
             (by rw [heapEq, sizeEq]; exact Nat.le_refl _) ⟨setVals ys i w, by rw [heapEq]; exact lookupNew, ?_⟩
@@ -3274,7 +3396,7 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
             (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
             (observed_external (valueTicked vs) (heapSetValues hs root ys i w) inv.keptSize inv.external)
             (by rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapSetValues, inv.fuel])
-            (fun _ escaped => escaped)
+            (fun _ escaped => escaped) ⟨kinds, state'⟩
           · intro z member d reach
             rw [heapEq] at reach ⊢
             exact allocated_reach_bound (shapedZ z member) reach
@@ -3372,7 +3494,8 @@ theorem copy_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
         AllocatedFlatValue hs'.heap actual (entryType type) ∧
         ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
         ChainTags (entryType type) (entryAbstract declarations type result) value ∧
-        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual) ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .copy [receiver])).run vs = .error message →
@@ -3422,6 +3545,12 @@ theorem copy_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
           intro y member c reach
           have bound := allocated_reach_bound (elemsShaped y member) reach
           simp [Array.getElem?_push, Nat.ne_of_lt bound]
+        obtain ⟨kinds', state', newTyped⟩ := alloc_kinds_of inv (t := .list t) heapEq
+          (by rw [heapObserved_links]; rfl) (fun kinds state => by
+            obtain ⟨c, same, rootTyped⟩ :=
+              kinded_list_inv (kinded_atom inv state receiverTyped covered heapReceiver)
+            cases same
+            exact .list t ys (state.list_contents rootTyped lookup))
         obtain ⟨gamma', postInvariant, fresh, old⟩ := alloc_post_invariant inv ys site heapEq
           (by rw [heapObserved_links]; exact inv.links)
           (fun y member d reach => by
@@ -3433,6 +3562,7 @@ theorem copy_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
           (by rw [valueObserved_kept]; rfl) (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
           (observed_external (valueTicked vs) (heapAllocatedValues hs ys) inv.keptSize inv.external)
           (by rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapAllocatedValues, inv.fuel])
+          ⟨kinds', state'⟩
         have lookupNew : (hs.heap.push ys)[hs.heap.size]? = some ys := by simp
         have shapedNew : AllocatedFlatValue (hs.heap.push ys) (.ref hs.heap.size) (.list (entryType t)) :=
           .list _ ys (entryType t) lookupNew (fun y member => allocated_of_agree (elemsShaped y member) (agree y member))
@@ -3444,7 +3574,7 @@ theorem copy_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
         refine ⟨.ref hs.heap.size, heapObserved (heapAllocatedValues hs ys) vs.kept.toList, gamma',
           heapRun, by rw [nextEscapes]; exact postInvariant, ?_, ?_, ?_, obsTyped_list_of_elements elemsTyped, ?_,
           by rw [heapEq]; exact shapedNew, by rw [resultRep]; exact .list _ _ _ _ _, .list _ _ _,
-          by rw [heapEq, resultRep]; exact deepNew _ _⟩
+          by rw [heapEq, resultRep]; exact deepNew _ _, ⟨kinds', state', .list t _ newTyped⟩⟩
         · rw [heapEq]; simp
         · rw [heapEq]
           exact corresponds_list_of_elements lookupNew lenO
@@ -3607,7 +3737,8 @@ theorem prepend_preserved {declarations : List Decl} {vs : ValueSemantics.State}
         AllocatedFlatValue hs'.heap actual (entryType type) ∧
         ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
         ChainTags (entryType type) (entryAbstract declarations type result) value ∧
-        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual) ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .prepend [item, receiver])).run vs = .error message →
@@ -3689,6 +3820,15 @@ theorem prepend_preserved {declarations : List Decl} {vs : ValueSemantics.State}
             · exact allocated_of_agree (elemsShaped z old) (agreeOld z old)
           have shapedNew : AllocatedFlatValue (hs.heap.push (w :: ys)) (.ref hs.heap.size) (.list (entryType t)) :=
             .list _ _ (entryType t) lookupNew shapedZ
+          obtain ⟨kinds', state', newTyped⟩ := alloc_kinds_of inv (t := .list t) heapEq
+            (by rw [heapObserved_links]; rfl) (fun kinds state => by
+              obtain ⟨c, same, rootTyped⟩ :=
+                kinded_list_inv (kinded_atom inv state receiverTyped coveredR heapReceiver)
+              cases same
+              refine .list t (w :: ys) fun z member => ?_
+              rcases List.mem_cons.mp member with rfl | old
+              · exact kinded_atom inv state itemTyped coveredI heapItem
+              · exact state.list_contents rootTyped lookup z old)
           obtain ⟨gamma', postInvariant, fresh, old⟩ := alloc_post_invariant inv (w :: ys) site heapEq
             (by rw [heapObserved_links]; exact inv.links)
             (fun z member d reach => by
@@ -3698,6 +3838,7 @@ theorem prepend_preserved {declarations : List Decl} {vs : ValueSemantics.State}
             (by rw [valueObserved_reads, heapObserved_reads]; simp [valuePrependedValues, heapPrependedValues, inv.reads])
             (observed_external (valuePrependedValues vs os) (heapPrependedValues hs ys os w) inv.keptSize inv.external)
             (by rw [valueObserved_fuel, heapObserved_fuel]; simp [valuePrependedValues, heapPrependedValues, inv.fuel])
+            ⟨kinds', state'⟩
           have rootNamed' : named gamma' (union [.site site 0] roots) hs.heap.size :=
             ⟨.site site 0, mem_union _ _ _ (Or.inl (by simp)), fresh⟩
           have rootApart : ∀ z ∈ w :: ys, ¬ Reaches (hs.heap.push (w :: ys)) z (.ref hs.heap.size) := by
@@ -3789,7 +3930,8 @@ theorem prepend_preserved {declarations : List Decl} {vs : ValueSemantics.State}
             · exact elementTags_of_agree (elementTags_join_right (elemTags z old) shapeN elemShape) (agreeOld z old)
           refine ⟨.ref hs.heap.size, heapObserved (heapPrependedValues hs ys os w) vs.kept.toList, gamma',
             heapRun, by rw [nextEscapes]; exact postInvariant, ?_, ?_, ?_, ?_, ?_, ?_,
-            by rw [resultRep]; exact .list _ _ _ _ _, .list _ _ _, by rw [heapEq, resultRep]; exact deepNew _ _⟩
+            by rw [resultRep]; exact .list _ _ _ _ _, .list _ _ _, by rw [heapEq, resultRep]; exact deepNew _ _,
+            ⟨kinds', state', .list t _ newTyped⟩⟩
           · rw [heapEq]; simp
           · rw [heapEq]
             exact corresponds_list_of_elements lookupNew (by simp [lenO]) (fun i o' y os_i ys_i => by

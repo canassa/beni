@@ -120,6 +120,9 @@ theorem flatInvariant_state_frame
     liveTyped := inv.liveTyped
     namingBound := by simpa only [heapSame] using inv.namingBound
     observers := by simpa only [heapSame, valueKept, heapKept] using inv.observers
+    heapKinds := by
+      obtain ⟨kinds, state⟩ := inv.heapKinds
+      exact ⟨kinds, state.of_heap (fun _ _ _ => by rw [heapSame]) linksSame⟩
   }
 
 /-- The computed atom post-states change only fuel and external observer

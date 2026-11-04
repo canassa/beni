@@ -331,6 +331,8 @@ The generic theorem `flat_preserved` carries `FlatInvariant` through every fragm
 Its premises use the actual acceptance, typing and shadow checks.
 `FlatInvariant.deepTags` tracks result and chain tags inside arrays at live typed paths.
 Every preservation case supplies deep tags for its result, so binders and later reads retain this evidence.
+`FlatInvariant.heapKinds` types every array at its source type, so a dictionary's array is never a link end (#169).
+Every preservation case supplies this typing for its result.
 
 The fragment excludes calls, closures, views, `construct`, builders, scopes, `traverse`, `focus`, dictionary forms and all other primitives.
 The three general obligations remain open.

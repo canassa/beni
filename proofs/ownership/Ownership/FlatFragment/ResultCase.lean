@@ -142,7 +142,7 @@ theorem resultCase_arm_preserved {declarations : List Decl} {vs : ValueSemantics
         obtain ⟨p2, armValueRun, run⟩ := except_bind_success run
         rcases p2 with ⟨y, s2⟩
         obtain ⟨actual, hs2, gamma2, armHeapRun, inv2, size2, paired2, described2, observed2, typed2,
-          shaped2, tags2, chains2, deep2⟩ := armPreserved.success y s2 armValueRun
+          shaped2, tags2, chains2, deep2, kinds2⟩ := armPreserved.success y s2 armValueRun
         try dsimp only at run
         obtain ⟨p3, observeRun, run⟩ := except_bind_success run
         rcases p3 with ⟨u, s3⟩
@@ -203,7 +203,8 @@ theorem resultCase_arm_preserved {declarations : List Decl} {vs : ValueSemantics
             · rw [entryAbstract_join shapeOther' shapeArm]
               exact chainTags_join_right chains2 (flatAbstract_entry shapeOther') (flatAbstract_entry shapeArm)
         refine ⟨actual, heapObserved hs2 s2.kept.toList, gamma2, ?_, inv3, ?_, ?_, ?_, observed2, ?_, ?_,
-          tagsJoin, chainsJoin, by simpa only [heapObserved_heap] using deepJoin⟩
+          tagsJoin, chainsJoin, by simpa only [heapObserved_heap] using deepJoin,
+          kindsAt_of_heap (kindsAt_unbind kinds2 fresh) (heapObserved_heap _ _) (heapObserved_links _ _)⟩
         · rw [heap_resultCase_eval_equation hs (heapEnv env) heapInput]
           rw [if_neg noDepth, if_neg heapFuel]
           simp only [heapArmRun]
@@ -435,9 +436,12 @@ theorem resultCase_preserved {declarations : List Decl} {input : Atom} {err ok :
           · rw [bottomS] at bottom; cases bottom
           obtain ⟨flatB, rightShape⟩ := successStatic bottomS rightRun
           -- The invariant under the binder, at the ticked states and the arm's facts.
+          have kindsS : KindsAt (heapTicked hs) env tenv a wS :=
+            inv.kindsAt_of (hs' := heapTicked hs) rfl rfl (fun _ state =>
+              kinded_ok_payload (kinded_atom inv state inputTyped covered heapInput))
           have invArm := flatInvariant_bind (ticked_invariant inv) freshOk paired2 describedS flatA hS
             observedS allocatedS tagsS chainsS
-            (by cases deepTags with | ok _ _ _ _ _ _ d => exact d) successLiveSub successLiveTyped
+            (by cases deepTags with | ok _ _ _ _ _ _ d => exact d) kindsS successLiveSub successLiveTyped
           have armPreserved := ihSuccess (valueTicked vs) (heapTicked hs) ((ok, o2, wS) :: env)
             (union (uses onSuccess) after) ((ok, aa) :: aenv) ((ok, a) :: tenv)
             {middle with facts := before.facts} last gamma b' (ok :: bound) after (site ++ [1]) right
@@ -482,9 +486,12 @@ theorem resultCase_preserved {declarations : List Decl} {input : Atom} {err ok :
           rcases leftRun with ⟨bottom, _, _⟩ | ⟨_, leftRun⟩
           · rw [bottomE] at bottom; cases bottom
           obtain ⟨flatType, leftShape⟩ := errorStatic bottomE leftRun
+          have kindsE : KindsAt (heapTicked hs) env tenv e wE :=
+            inv.kindsAt_of (hs' := heapTicked hs) rfl rfl (fun _ state =>
+              kinded_err_payload (kinded_atom inv state inputTyped covered heapInput))
           have invArm := flatInvariant_bind (ticked_invariant inv) freshErr paired1 describedE flatE hE
             observedE allocatedE tagsE chainsE
-            (by cases deepTags with | err _ _ _ _ _ _ d => exact d) errorLiveSub errorLiveTyped
+            (by cases deepTags with | err _ _ _ _ _ _ d => exact d) kindsE errorLiveSub errorLiveTyped
           have armPreserved := ihError (valueTicked vs) (heapTicked hs) ((err, o1, wE) :: env)
             (union (uses onError) after) ((err, ae) :: aenv) ((err, e) :: tenv) before middle gamma type
             (err :: bound) after (site ++ [0]) left childFuel (depth - 1) _ invArm errorTyped errorShadow
