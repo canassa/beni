@@ -2521,6 +2521,12 @@ The probes are the reviewer's, in the session scratchpad at `ck/r4rev/`, and eac
   accepted programs lower to). Red proof on the Debug harness binary (a ReleaseSafe 7fd409e builds
   the 60 000-field program without crashing).
 
+*Amended 2026-11-04 (#1171, the owner's decision of 2026-11-04):* the printer takes 112 levels by
+recursion, not 256. It was 128 from 2026-10-29 (`f049a55b36`), after 256 overflowed its 1 MiB
+small stack. At 128 the levels took 50.5 % of that stack, measured from the thread's first frame.
+At 112 they take 44.5 %, and the test "the recursive printer's levels take at most half of the
+small stack" holds it (`Options.recursion_limit` in `src/js/Print.zig` has the frames).
+
 ### CK-82 — A nominal payload record wider than 65 535 fields panics the checker, compared or not
 
 - **Severity** compiler-crash-or-hang. **Area** derivation's evidence count (`check/Solve.zig`).

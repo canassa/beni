@@ -38,6 +38,7 @@ const Opt = @import("Opt.zig");
 const Rename = @import("Rename.zig");
 const Fields = @import("Fields.zig");
 const SourceMap = @import("SourceMap.zig");
+const small_stack = @import("../small_stack.zig");
 const Join = @import("Join.zig");
 
 const Node = JsIr.Node;
@@ -121,14 +122,20 @@ pub const Options = struct {
     /// print everything through the stack and compare.
     ///
     /// The number comes from the stack a level costs. In the Debug test
-    /// binary (2026-10-29) one level is three frames, `rawRecursive`
-    /// 3 664 B, `expression` 240 B and `raw` 144 B, about 3.9 KB with the
-    /// return addresses, so 128 levels take about 0.5 MiB: half of
-    /// `small_stack.size`, the stack the depth tests run on, with the other
-    /// half for the printer's entry frames and for `testing.allocator`'s
-    /// stack-trace capture under an allocation. At 256 the levels alone took
-    /// about 1 000 KB of its 1 024 KB, and a frame 32 B larger overflowed it.
-    recursion_limit: u32 = 128,
+    /// binary (2026-11-04, self-hosted x86_64) one level is two frames,
+    /// `rawRecursive` 3 664 B and `expression` 240 B (or `raw` 144 B):
+    /// 3 936 B with the saved frame pointers and the return addresses. The
+    /// entry frames above the first level take 25 472 B. So 112 levels reach
+    /// 466 304 B, 44.5 % of `small_stack.size`, the stack the depth tests run
+    /// on. The other half is for what runs below the deepest level: `run`'s
+    /// loop and `testing.allocator`'s stack-trace capture under an
+    /// allocation. The test "the recursive printer's levels take at most half
+    /// of the small stack" holds it. 128 levels reached 529 280 B, 50.5 %;
+    /// 256 took about 1 000 KB of the 1 024 KB, and a frame 32 B larger
+    /// overflowed it. LLVM's frames are smaller: 128 levels took 38.9 %.
+    /// 112 is the owner's decision of 2026-11-04 (#1171): lower the limit,
+    /// and measure from the thread's first frame, entry frames included.
+    recursion_limit: u32 = 112,
     /// A scope-hoisted build (§9, *One scope-hoisted file under
     /// `--release`*): the module's `import` and `export` statements are not
     /// printed, because every name they carry is already one binding of the
@@ -503,7 +510,7 @@ const Printer = struct {
     /// Expression levels entered by recursion, against `recursion_limit`.
     depth: u32 = 0,
     /// `Options.recursion_limit`.
-    recursion_limit: u32 = 128,
+    recursion_limit: u32 = 112,
     /// `Options.fields`.
     fields: ?*const Fields.Table = null,
     /// Each name's printed text, spelled the first time it is printed
@@ -2287,6 +2294,8 @@ const Printer = struct {
     /// stack is shared and this is re-entered by an `arrow`'s block body, so
     /// each call owns only the entries above its `base`.
     fn run(p: *Printer, first: Work, level: u32) Allocator.Error!void {
+        // Where the recursion stopped, for the margin test; empty outside tests.
+        small_stack.mark();
         const base = p.work.items.len;
         defer p.work.shrinkRetainingCapacity(base);
         var next: ?Work = first;
@@ -3459,7 +3468,6 @@ const reserved_words: std.StaticStringMap(void) = .initComptime(.{
 // ---------------------------------------------------------------------------
 
 const testing = std.testing;
-const small_stack = @import("../small_stack.zig");
 const Arena = @import("../Arena.zig");
 
 /// `print` with a scratch arena of its own.
@@ -4251,10 +4259,11 @@ test "reserved words are the ECMAScript set, the strict-mode ones included" {
 /// Deeper than the printer can take by recursion on `small_stack.size`:
 /// with no switch to its work stack (`recursion_limit` unbounded) it printed
 /// 250 links on the Debug test binary and overflowed at 400, when the test
-/// was written. Its default 128 recursive levels take about half of that
-/// stack (`Options.recursion_limit` has the frames); 256 took nearly all of
-/// it, and the overflow a few more bytes per frame caused was found only as
-/// a hang (the segfault handler deadlocks the test process).
+/// was written. Its default recursive levels take less than half of that
+/// stack (`Options.recursion_limit` has the frames, and a margin test holds
+/// it). 256 took nearly all of it, and the overflow that a few more bytes
+/// per frame caused was found only as a hang, before a crash on a test
+/// thread failed the test at once (#1171).
 const deep_chain = 800;
 
 test "a chain deeper than the recursive printer survives prints in a loop, not a stack frame per link" {
@@ -4266,10 +4275,11 @@ test "a chain deeper than the recursive printer survives prints in a loop, not a
     try small_stack.run(printDeepChains, .{});
 }
 
-fn printDeepChains() !void {
+/// `const c = a && a && …; const l = { b: { b: … null … } };`, each chain
+/// `deep_chain` links long: a left-nested `&&` (a derived `eq`'s shape) and
+/// a right-nested object in the last property (a list literal's).
+fn deepChains(f: *Fixture) !JsIr {
     const depth = deep_chain;
-    var f = try Fixture.init(testing.allocator);
-    defer f.deinit();
     const a = try f.name("a");
     var chain = try f.node(.ident, @backingInt(a), 0);
     for (1..depth) |_| chain = try f.binary(.logical_and, chain, try f.node(.ident, @backingInt(a), 0));
@@ -4285,7 +4295,14 @@ fn printDeepChains() !void {
     try f.constDecl(&out, "c", chain);
     try f.constDecl(&out, "l", list);
     const body = try f.b.addRange(out.items);
-    var ir = try f.b.toOwned(body);
+    return f.b.toOwned(body);
+}
+
+fn printDeepChains() !void {
+    const depth = deep_chain;
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    var ir = try deepChains(&f);
     defer ir.deinit(testing.allocator);
     // `--release`'s planning walks the same two trees; it finds nothing to
     // drop at the top level, and what matters is that it returns.
@@ -4309,6 +4326,36 @@ fn printDeepChains() !void {
         for (0..depth) |_| try expected.appendSlice(testing.allocator, close);
         try expected.appendSlice(testing.allocator, ";\n");
         try testing.expectEqualStrings(expected.items, text);
+    }
+}
+
+test "the recursive printer's levels take at most half of the small stack" {
+    // `Options.recursion_limit` is sized for half of `small_stack.size`; the
+    // other half is for what runs below the deepest level: `run`'s loop and
+    // `testing.allocator`'s stack-trace capture under an allocation. A frame
+    // that grows moves the limit toward an overflow, and an overflow is
+    // found only as a crash (#1171): this test fails first. `run` marks the
+    // frame where the recursion stopped; both chains are deeper than the
+    // limit, so it stopped at `recursion_limit` levels.
+    try small_stack.run(printMargin, .{});
+}
+
+fn printMargin() !void {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    var ir = try deepChains(&f);
+    defer ir.deinit(testing.allocator);
+    for ([_]bool{ false, true }) |compact| {
+        const text = try printAlone(testing.allocator, &ir, .fromLocal(&f.interner), .{ .compact = compact });
+        testing.allocator.free(text);
+    }
+    const used = small_stack.deepest();
+    try testing.expect(used != 0);
+    if (used > small_stack.size / 2) {
+        std.debug.print("the printer's {d} recursive levels took {d} B of the {d} B small stack, more than half\n", .{
+            (Options{}).recursion_limit, used, small_stack.size,
+        });
+        return error.TestUnexpectedResult;
     }
 }
 
