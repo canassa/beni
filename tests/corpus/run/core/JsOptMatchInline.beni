@@ -11,6 +11,17 @@ choose : Js.Opt a, sync (⊤ → String), sync (a → String) → String
 choose slot missing present = Js.optMatch slot missing present
 
 
+-- Each returned closure keeps its own iteration's optional parameter.
+captures : Int, List (⊤ → Int) → List (⊤ → Int)
+captures remaining callbacks =
+    if remaining == 0 then
+        callbacks
+    else
+        next = Js.optMatch (Js.some remaining) (λ⊤ → callbacks) λvalue →
+            List.push callbacks λ⊤ → value
+        captures (remaining - 1) next
+
+
 main : Node.Program
 main =
     trace = Js.ref ""
@@ -50,6 +61,11 @@ main =
     nested = Js.some empty
     deeper = Js.some nested
     pair = Js.optMatch (Js.some ( 3, 4 )) (λ⊤ → 0) λ( x, y ) → x * 10 + y
+    watched = Js.ref (Js.some 11)
+    snapshot = Js.optMatch (Js.read watched) (λ⊤ → -1) λvalue →
+        Js.write watched (Js.some 99)
+        value
+    held = captures 3 []
     Node.printLines
         [ a
         , b
@@ -60,4 +76,7 @@ main =
         , show nested λinner → show inner String.fromInt
         , show deeper λinner → show inner λlast → show last String.fromInt
         , String.fromInt pair
+        , String.fromInt snapshot
+        , show (Js.read watched) String.fromInt
+        , String.join (List.map held λcallback → String.fromInt (callback ⊤)) ","
         ]

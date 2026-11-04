@@ -12037,6 +12037,7 @@ pub const Lowerer = struct {
                 // payloads are snapshotted once, including for patterns.
                 const subject = try l.bindSubject(block, payload, p);
                 if (l.bir.instTag(param) == .pat_var and l.b.tagOf(subject) == .ident and
+                    l.bir.instData(param).lhs < l.local_names.len and
                     l.local_names[l.bir.instData(param).lhs] == .none)
                 {
                     l.local_names[l.bir.instData(param).lhs] = @fromBackingInt(@intCast(l.b.dataOf(subject).lhs));
