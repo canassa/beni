@@ -248,9 +248,12 @@ runs the program again (`tests/blackbox/serve.zig`).
 
 ### A program whose schemas are all compiled
 
-Every `run/` fixture checks its development output for the removed Schema
-interpreter: if `_core/Schema.mjs` exists, it must declare neither `Schema$run`
-nor `Schema$box`. A `<name>.compiled-schemas` marker additionally requires that
+Every `run/` fixture checks its development output for a schema run that reads a
+description: if `_core/Schema.mjs` exists, only `describe` and what it reaches
+(inspection), and the makers `variant` and `tagged` with their named check helpers
+(construction), may read a description node — a call of `Schema$nodeBody` or a
+test of a node tag (`tests/blackbox/description_walk.zig`, `schema.md` §16,
+amended 2026-11-04). A `<name>.compiled-schemas` marker additionally requires that
 module to exist; browser fixtures use the marker to opt into the same assertion.
 The marker is written by hand and never blessed. The check reads the output of
 the existing development build and adds no build pass.
