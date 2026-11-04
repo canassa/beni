@@ -10845,12 +10845,13 @@ pub const Lowerer = struct {
         return l.object(props, p);
     }
 
-    /// `Js.method λself → body`: the lambda lowered as an arrow, then made a
-    /// `function` of no parameters whose first statement binds `self` to
-    /// `this` — the receiver of a method JavaScript calls as `o.m()`
-    /// (`backend.md` §4, *`Js.method` is a `function`*).
+    /// `Js.method λself a b → body`: the lambda lowered as an arrow, then
+    /// made a `function` of the parameters after the first, whose first
+    /// statement binds the first, `self`, to `this` — the receiver of a
+    /// method JavaScript calls as `o.m(x, y)` (`backend.md` §4, *`Js.method`
+    /// is a `function`*, amended 2026-11-04 for the parameters).
     fn methodFunc(l: *Lowerer, out: *StmtList, lambda: Inst.Index, p: u32) !Node.Index {
-        const refused = "`Js.method` takes a lambda of one parameter, its receiver, written in place.";
+        const refused = "`Js.method` takes a lambda of its receiver and any parameters, written in place.";
         if (l.bir.instTag(lambda) != .lambda) {
             try l.report(.internal, lambda, refused, .{});
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
@@ -10868,8 +10869,8 @@ pub const Lowerer = struct {
             .body_start = @fromBackingInt(@intCast(l.b.extra.items[at + 2])),
             .body_end = @fromBackingInt(@intCast(l.b.extra.items[at + 3])),
         };
-        const params = l.b.extra.items[@backingInt(f.params_start)..@backingInt(f.params_end)];
-        if (params.len != 1) {
+        const params = try l.scratch.dupe(u32, l.b.extra.items[@backingInt(f.params_start)..@backingInt(f.params_end)]);
+        if (params.len == 0) {
             try l.report(.internal, lambda, refused, .{});
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
@@ -10877,8 +10878,9 @@ pub const Lowerer = struct {
         try l.constDecl(&stmts, @fromBackingInt(@intCast(params[0])), try l.add(.this_lit, p, Node.Data.unused, Node.Data.unused), p);
         for (l.b.extra.items[@backingInt(f.body_start)..@backingInt(f.body_end)]) |s| try stmts.append(l.scratch, @fromBackingInt(@intCast(s)));
         const body = try l.b.addRange(stmts.items);
-        const none = try l.b.addNames(&.{});
-        const record = try l.b.addRecord(JsIr.Func{ .params_start = none.start, .params_end = none.end, .body_start = body.start, .body_end = body.end });
+        // The parameters after the receiver are the `function`'s.
+        const rest = try l.b.addNames(@ptrCast(params[1..]));
+        const record = try l.b.addRecord(JsIr.Func{ .params_start = rest.start, .params_end = rest.end, .body_start = body.start, .body_end = body.end });
         return l.add(.arrow, p, @backingInt(record), Node.arrow_method);
     }
 
