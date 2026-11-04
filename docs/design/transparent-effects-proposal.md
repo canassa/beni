@@ -2425,7 +2425,7 @@ and the outside-any-fiber record the same four:
 
 | Slot | Holds | Default | Read by |
 |---|---|---|---|
-| **clock** | the real clock, or a `Clock.Virtual` (§17.6) | the real clock | `Task.sleep`, `Clock.now`, `Log`'s time and spans, `Trace`'s times, `retry`/`repeat`'s elapsed time, `Time.now` |
+| **clock** | the real clock, or a `Clock.Virtual` (§17.6) | the real clock | `Task.sleep`, `Clock.now`, `Clock.elapsed` (§17.6's amendment of 2026-11-05), `Log`'s time and spans, `Trace`'s times, `retry`/`repeat`'s elapsed time, `Time.now` |
 | **scheduler** | the scheduler the fiber's resumptions are queued on | the one scheduler of §16.4 | the kernel. **No API in this section writes it**: it exists so that a deterministic scheduler for tests can be installed per subtree later without adding a field to every fiber (report 21 §8.4: retrofitting one means threading it through every primitive) |
 | **log context** | the annotations, the log spans, the minimum level and a sink override (§17.11), and the current trace span | none, none, `Info`, none, none | `Log`, `Trace` |
 | **random seed** | `Maybe` a seed of core's `Random.Pcg` | `Nothing` | `retry`/`repeat`'s jitter (§17.8); `Random.withSeed` and the platforms' `Random.value` (P9) |
@@ -2760,6 +2760,49 @@ parameters or results are `Js.Value` — `currentClock`, `withClock`, `virtualCl
 (`Debug.logAs`'s precedent). A virtual clock is a record of its reading and its sleepers, kept in
 wake-time order and, among equal times, in the order they began to sleep. Setting the clock slot is
 the first slot write, so it is what turns on `fork`'s copy of the slots (§17.5's amendment).
+
+*Amended 2026-11-05 (the owner, Cesar, 2026-11-04, `playground-beni-q9`; #1889).* **`Clock.elapsed`
+is the monotonic clock.** The playground's own JavaScript measures time with `performance.now()`
+(`playground/wasi.js`'s monotonic clock, `playground/worker.js`'s compile time), and beni had no
+reading that never goes back: `Clock.now` reads `Date.now()`, which follows the wall clock.
+
+```elm
+-- core/Clock.beni
+pub elapsed : ⊤ → Float                  -- impure: milliseconds since a start the host chooses, through the clock slot
+```
+
+- **The reading** is milliseconds, with a fraction, since a start that the host chooses. The start
+  is not the epoch, so a program compares a reading only with another reading of the same clock in
+  the same program, and the difference of two readings is how long the work between them took. The
+  owner chose milliseconds as a `Float`, which is what `performance.now()` gives, over nanoseconds
+  as a 64-bit word. A `Clock.nanos` on `Binary`'s 64-bit word (#1278) can come later; it is not
+  part of this amendment.
+- **On the real clock** it is the host's `performance.now()`, through `Js.global`, which every host
+  beni targets has. In a page and a Web Worker it is the HR-Time monotonic clock, which does not go
+  back. On Node it counts from the start of the process (Node's `perf_hooks` documentation). On
+  Cloudflare's workerd it is exactly `Date.now()` (`src/workerd/api/performance.c++`,
+  `Performance::now`: "due to Spectre concerns it returns exactly what Date.now() returns"),
+  `performance.timeOrigin` is 0, and the time moves only after I/O. workerd's default path puts a
+  floor at the last time it gave (`src/workerd/io/io-context.c++`, `IoContext::observeTime`), but
+  its precise-timers path reads the system calendar clock with no floor, so there the host's
+  reading can go back.
+- **It never goes back, on every host.** `core/Clock` keeps the highest reading that `elapsed` gave
+  on the real clock, in a `Js.Ref` of the module, and `elapsed` gives the higher of that and the
+  host's reading. A host clock that goes back therefore holds `elapsed` at its highest reading
+  until the host passes it again; a duration is never negative. The cell belongs to one JavaScript
+  realm, as the host's clock does: a page, each Web Worker and each workerd isolate has its own.
+- **On a virtual clock**, inside `Clock.run`, it is the virtual clock's own reading: the number
+  that `Clock.now` gives, as a `Float`. It moves only with `adjust`, so it does not go back, and a
+  fiber that sleeps on the clock reads the time it woke at.
+- **Nothing is `foreign`**: `elapsed` is beni over `Js` and `Task.currentClock`, as `now` is. The
+  host's `performance` object is not changed. The browser driver's virtual clock pins `Date.now`
+  and not `performance.now` (`tests/corpus/README.md`), so on the driver a page that reads
+  `elapsed` outside `Clock.run` reads the host's real clock; #1930 pins it.
+- **Fixtures.** `run/VirtualClockElapsed`: the reading of `Clock.virtual 1500`, of a sleeper that
+  wakes 40 ms later, and of the clock after an `adjust` of 250 ms, the last equal to `Clock.now`;
+  two real readings in a row do not go back. `run/ClockElapsedNeverBack`: a test platform makes
+  the host's `performance.now()` answer 5.5, 10.25, 7 and 12, and `elapsed` answers 5.5, 10.25,
+  10.25 and 12.
 
 ### 17.7 Structured combinators (P3)
 

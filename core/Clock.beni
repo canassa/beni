@@ -46,6 +46,32 @@ now ⊤ =
         Js.to (Js.get clock "now")
 
 
+--| The milliseconds, with a fraction, since a start that the host chooses,
+--| on the calling fiber's clock: the host's `performance.now()` on the real
+--| clock, the reading of a virtual one inside `run`. It never goes back, so
+--| the difference of two readings is how long the work between them took.
+--| The start is not the epoch: compare a reading only with another reading
+--| of the same clock in the same program.
+pub elapsed : ⊤ → Float
+elapsed ⊤ =
+    clock = Task.currentClock ⊤
+
+    if Js.isUndefined clock then
+        latest = max (Js.to (Js.call (Js.global "performance") "now" [])) (Js.read highest)
+        Js.write highest latest
+        latest
+    else
+        Js.to (Js.get clock "now")
+
+
+-- The highest reading `elapsed` gave on the real clock. A host's reading
+-- can go back: workerd's `performance.now()` is its `Date.now()`, which
+-- has no floor when precise timers are on. So `elapsed` never gives less
+-- than this (transparent-effects-proposal.md §17.6, amended 2026-11-05).
+highest : Js.Ref Float
+highest = Js.ref 0
+
+
 --| A new virtual clock reading `epoch` milliseconds, with nothing waiting
 --| on it. Two clocks are independent.
 pub virtual : Int → Virtual

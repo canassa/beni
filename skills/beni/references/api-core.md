@@ -84,6 +84,7 @@ module Char
 module Clock
   opaque type Virtual
   value adjust : Virtual, Duration → ⊤  -- suspends
+  value elapsed : ⊤ → Float  -- impure
   value now : ⊤ → Int  -- impure
   value run : Virtual, (⊤ → a) → a  -- impure
   value virtual : Int → Virtual  -- impure

@@ -1,0 +1,18 @@
+-- A host clock that goes back, as workerd's `performance.now()` can when
+-- precise timers are on: `performance.now` answers `readings` in order,
+-- and then the last one again.
+import Js
+
+
+pub goesBack : List Float → ⊤
+goesBack readings =
+    next = Js.ref 0
+    count = List.length readings
+
+    answer =
+        λ⊤ →
+            at = Js.read next
+            Js.write next (min (at + 1) (count - 1))
+            Maybe.withDefault (List.get readings at) 0
+
+    Js.set (Js.global "performance") "now" (Js.from answer)
