@@ -290,6 +290,7 @@ pub const Input = struct {
     /// (`toString`, `constructor`, …): an object literal without one does
     /// not read as `undefined` there.
     builtin_props: []const u32 = &.{},
+    length_prop: u32 = none,
     /// The property-name ids of `implicit_host_keys`. A key of one is not
     /// unread. The host reads it with no member expression in the program.
     implicit_props: []const u32 = &.{},
@@ -3160,10 +3161,30 @@ const Spec = struct {
         };
         if (!s.pts.ok) return .top;
         const obj = chain orelse s.pts.vals[m.index][d.lhs];
+        if (id != none and id == s.in.length_prop) if (try s.arrayLength(m, @fromBackingInt(@intCast(d.lhs)), obj)) |length| return length;
         const v = try s.propValue(obj, id);
         if (v.state == .lit and chain != null and s.pts.known(obj)) return v;
         if (id != none and id == s.in.tag_prop) if (try s.tagValue(m, @fromBackingInt(@intCast(d.lhs)), id, named)) |t| return t;
         return s.demote(v);
+    }
+
+    /// Length is intrinsic to a closed array allocation; an unknown call or
+    /// a write could change it, so either refuses this fold.
+    fn arrayLength(s: *Spec, m: *Mod, receiver: Index, obj: Pts.Val) Allocator.Error!?Lat {
+        if (obj.top or obj.prim or obj.nullish() or obj.sites.len == 0) return null;
+        if (!inert(m.ir, receiver) and try s.pts.safeChain(m.index, s.cur_top, receiver) == null) return null;
+        var length: ?u32 = null;
+        for (obj.sites) |site| {
+            try s.readsSite(site);
+            const st = &s.pts.sites.items[site];
+            if (st.kind != .array or st.escaped or st.any_written or st.prog_any or st.prog_props.items.len != 0) return null;
+            const ir = s.mods[st.module].ir;
+            const n: u32 = @intCast(ir.extraSlice(JsIr.inlineRange(ir.data(st.node)), Index).len);
+            if (length) |old| {
+                if (old != n) return null;
+            } else length = n;
+        }
+        return try s.number(@floatFromInt(length.?));
     }
 
     /// Slice 9: a constructor's tag `$`, read through a chain that may only
@@ -3577,12 +3598,19 @@ const Spec = struct {
             .not => .{ .state = .nonnull, .truth = s.truthOf(a).not() },
             // The name of a type: a string that is never empty.
             .type_of, .worker_definition_type => .{ .state = .nonnull, .truth = .yes },
+            .number_is_finite, .number_is_integer, .number_is_safe_integer => .nonnull,
             .neg => .nonnull,
             // What the generator is resumed with, not what it yields.
             .yield => .top,
         };
         const lit = s.litOf(a);
         switch (op) {
+            .number_is_finite, .number_is_integer, .number_is_safe_integer => {
+                if (lit.kind != .number) return s.boolean(false);
+                const x = parseNumber(lit.bytes) orelse return .top;
+                const finite = std.math.isFinite(x);
+                return s.boolean(finite and (op == .number_is_finite or (@trunc(x) == x and (op != .number_is_safe_integer or @abs(x) <= 9007199254740991))));
+            },
             .not => return switch (s.truthy(lit)) {
                 .yes => s.boolean(false),
                 .no => s.boolean(true),
@@ -4483,7 +4511,7 @@ const Spec = struct {
         const d = ir.data(node);
         switch (ir.tag(node)) {
             .unary => return switch (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs)))) {
-                .not, .type_of, .worker_definition_type => s.effectFreeTest(m, @fromBackingInt(@intCast(d.lhs)), depth + 1),
+                .not, .type_of, .worker_definition_type, .number_is_finite, .number_is_integer, .number_is_safe_integer => s.effectFreeTest(m, @fromBackingInt(@intCast(d.lhs)), depth + 1),
                 .neg => s.primitive(m, @fromBackingInt(@intCast(d.lhs))) and try s.effectFreeTest(m, @fromBackingInt(@intCast(d.lhs)), depth + 1),
                 .yield => false,
             },
@@ -5054,11 +5082,80 @@ const Spec = struct {
         return true;
     }
 
+    const HeldTest = struct { local: NameIndex, held: u32, equal: bool };
+
+    fn heldTest(s: *Spec, m: *Mod, node: Index) ?HeldTest {
+        const ir = m.ir;
+        if (ir.tag(node) != .binary) return null;
+        const op: JsIr.BinaryOp = @fromBackingInt(@intCast(ir.data(node).rhs));
+        if (op != .strict_eq and op != .strict_ne) return null;
+        const b = ir.extraData(@fromBackingInt(@intCast(ir.data(node).lhs)), JsIr.Binary);
+        const held, const local = if (s.heldObject(m, b.right)) |g| .{ g, b.left } else if (s.heldObject(m, b.left)) |g| .{ g, b.right } else return null;
+        if (ir.tag(local) != .ident) return null;
+        const name: NameIndex = @fromBackingInt(@intCast(ir.data(local).lhs));
+        if (m.globalOf(name) != null) return null;
+        return .{ .local = name, .held = held, .equal = op == .strict_eq };
+    }
+
+    /// Within a branch, an immutable local keeps its relation to a held
+    /// object. Do not carry a branch fact into a deferred function body.
+    fn refineHeld(s: *Spec, m: *Mod, roots: []const Index, fact: HeldTest, taken: bool) Allocator.Error!bool {
+        var stack = try s.takeStack();
+        defer s.giveStack(&stack);
+        for (roots) |root| try JsIr.pushOperand(s.arena, &stack, root);
+        var changed = false;
+        while (JsIr.popOperand(&stack)) |node| {
+            switch (m.ir.tag(node)) {
+                .arrow, .func_decl, .gen_decl => continue,
+                else => {},
+            }
+            if (m.ir.tag(node) == .cond) {
+                const d = m.ir.data(node);
+                if (s.heldTest(m, @fromBackingInt(@intCast(d.lhs)))) |test_| if (test_.local == fact.local and test_.held == fact.held) {
+                    const c = m.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond);
+                    const kept = if (taken == (test_.equal == fact.equal)) c.consequent else c.alternate;
+                    try m.foldTo(s.gpa, node, kept);
+                    if (node.int() < m.memo.len and kept.int() < m.memo.len) m.memo[node.int()] = m.memo[kept.int()];
+                    changed = true;
+                    try JsIr.pushOperand(s.arena, &stack, node);
+                    continue;
+                };
+            }
+            if (s.heldTest(m, node)) |test_| if (test_.local == fact.local and test_.held == fact.held) {
+                const value = taken == (test_.equal == fact.equal);
+                m.setNode(node, if (value) .true_lit else .false_lit, 0, 0);
+                if (node.int() < m.memo.len) m.memo[node.int()] = try s.boolean(value);
+                changed = true;
+                continue;
+            };
+            try pushChildren(s.arena, m.ir, node, &stack);
+        }
+        return changed;
+    }
+
+    fn heldBranches(s: *Spec, m: *Mod, node: Index) Allocator.Error!bool {
+        const ir = m.ir;
+        if (ir.tag(node) != .cond and ir.tag(node) != .if_stmt) return false;
+        const d = ir.data(node);
+        const test_ = s.heldTest(m, @fromBackingInt(@intCast(d.lhs))) orelse return false;
+        if (try declCount(s, m, s.cur_top, test_.local) > 1 or try s.assignedInTop(m, s.cur_top, test_.local)) return false;
+        if (ir.tag(node) == .cond) {
+            const c = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond);
+            const yes = try s.refineHeld(m, &.{c.consequent}, test_, true);
+            const no = try s.refineHeld(m, &.{c.alternate}, test_, false);
+            return yes or no;
+        }
+        const b = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
+        const yes = try s.refineHeld(m, ir.extraSlice(b.thenBody(), Index), test_, true);
+        const no = try s.refineHeld(m, ir.extraSlice(b.elseBody(), Index), test_, false);
+        return yes or no;
+    }
+
     /// The statement lists below one statement, each folded in its owner.
     fn foldBelow(s: *Spec, m: *Mod, stmt: Index, depth: u32) Allocator.Error!bool {
         const ir = m.ir;
         const d = ir.data(stmt);
-        var any = false;
+        var any = try s.heldBranches(m, stmt);
         switch (ir.tag(stmt)) {
             .const_decl => any = try s.foldExprLists(m, @fromBackingInt(@intCast(d.rhs)), depth),
             .let_decl => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |v| {
@@ -5124,6 +5221,7 @@ const Spec = struct {
         defer s.giveStack(&stack);
         try JsIr.pushOperand(s.arena, &stack, root);
         while (JsIr.popOperand(&stack)) |node| {
+            if (try s.heldBranches(m, node)) any = true;
             if (m.ir.tag(node) == .arrow) {
                 if (try s.foldFunc(m, @fromBackingInt(@intCast(m.ir.data(node).lhs)), depth)) any = true;
                 continue;
@@ -6649,6 +6747,8 @@ const Spec = struct {
         const fm = &s.mods[module];
         const ir = fm.ir;
         const first = body[0];
+        if (body.len == 1 and ir.tag(first) == .block_stmt and @as(NameIndex, @fromBackingInt(@intCast(ir.data(first).lhs))) == .none)
+            return s.returnExpr(module, ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(ir.data(first).rhs))), Index), depth + 1);
         if (ir.tag(first) == .return_stmt) {
             if (body.len != 1) return null;
             return (@as(Node.OptionalIndex, @fromBackingInt(@intCast(ir.data(first).lhs)))).unwrap();
@@ -17505,7 +17605,7 @@ fn plainValue(ir: *const JsIr, node: Index, depth: u32) bool {
     return switch (ir.tag(node)) {
         .ident, .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
         .unary => switch (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs)))) {
-            .not, .type_of, .worker_definition_type => plainValue(ir, @fromBackingInt(@intCast(d.lhs)), depth + 1),
+            .not, .type_of, .worker_definition_type, .number_is_finite, .number_is_integer, .number_is_safe_integer => plainValue(ir, @fromBackingInt(@intCast(d.lhs)), depth + 1),
             else => false,
         },
         .binary => switch (@as(JsIr.BinaryOp, @fromBackingInt(@intCast(d.rhs)))) {

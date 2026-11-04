@@ -1,0 +1,20 @@
+-- The second absence test is redundant in the else arm. Its generic payload
+-- can itself be Opt, so the nesting escape must still be read.
+import Js
+
+
+pub guarded : Js.Opt a, (a → Int) → Int
+guarded slot read =
+    if Js.same slot (Js.none ⊤) then
+        0
+    else
+        Js.optMatch slot (λ⊤ → -99) read
+
+
+-- Testing a different slot supplies no fact about the one being read.
+pub different : Js.Opt a, Js.Opt a, (a → Int) → Int
+different guard slot read =
+    if Js.same guard (Js.none ⊤) then
+        0
+    else
+        Js.optMatch slot (λ⊤ → -99) read

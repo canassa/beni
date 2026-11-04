@@ -1,0 +1,34 @@
+-- The predicates never coerce, including through a first-class adapter.
+import Browser.Host.Data as HostData
+import Js
+import Node
+
+
+label : Bool → String
+label value = if value then "true" else "false"
+
+
+through : (Js.Value → Bool), Js.Value → Bool
+through predicate value = predicate value
+
+
+main : Node.Program
+main =
+    Node.print
+        (String.join ","
+            (List.map
+                [ HostData.isInteger (Js.from 512)
+                , HostData.isInteger (Js.from 0.5)
+                , HostData.isInteger (Js.from "512")
+                , HostData.isInteger Js.null
+                , HostData.isInteger Js.undefined
+                , HostData.isInteger (Js.object [])
+                , HostData.isFinite (Js.from 1.5)
+                , HostData.isFinite (Js.global "Infinity")
+                , HostData.isSafeInteger (Js.from 9007199254740991.0)
+                , HostData.isSafeInteger (Js.from 9007199254740992.0)
+                , through HostData.isInteger (Js.from 7)
+                ]
+                label
+            )
+        )
