@@ -37,6 +37,7 @@ effects ⊤ =
 main : Node.Program
 main =
     Node.print
-        (String.join ","
+        (String.join
             (List.map [ empty ⊤, chosen True, chosen False, modified ⊤, effects ⊤ ] String.fromInt)
+            ","
         )
