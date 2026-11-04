@@ -11095,6 +11095,9 @@ receiver has no effect. A sole unlabelled block does not prevent recognising a
 small function's return expression.
 A guarded read of a worker result may drop its absence defect only when the same
 immutable value has already been proved different from the same held sentinel.
+A context-specific rewrite copies the affected branch before refining it: shared
+JsIr expression nodes outside that branch must retain their original tests. The
+copied graph is solved again before any per-node fact is consumed.
 Concrete optional payloads retain the identity representation; generic or nested
 payloads keep their escapes until a representation proof licenses removing them.
 Threading representation evidence through generic functions is deferred to #1865;
