@@ -927,7 +927,7 @@ module's output. A chain that names neither is refused before a source is read, 
 with no `"program"` asks the module for no `run`. `browser` is such a platform since this
 amendment: its `runtime.js` exported nothing once `safeUrl` moved to `Rt.beni`, and is deleted.
 
-**A runtime module without markup** (*specified 2026-11-03, not built*; #1812,
+**A runtime module without markup** (*specified 2026-11-03, built 2026-11-04*; #1812,
 `plans/runtime-in-beni.md` step 16). A chain that declares no markup `"lowering"` has no
 `"markup".module` to name a runtime module in, so a platform with no markup — `cloudflare` —
 could keep `run` only in a `"runtime"` file. A top-level `"module"` of the package that declares
@@ -939,9 +939,13 @@ terms: `run` is a `pub` value with a body that takes one parameter and no eviden
 is `foreign_sibling_missing` there. A package that declares both `"runtime"` and `"module"`, or a
 top-level `"module"` in a chain that declares a `lowering` (its runtime module is `"markup"`'s,
 §9.2), is the exit-2 manifest failure, as a key of the wrong JSON type is. Inherited first-found
-down the chain like every field (§9.1). The test platform `tests/platforms/program-module` and
-a `run/` fixture over it prove the shape; `cloudflare` takes it when its `runtime.js` moves
-(#1813).
+down the chain like every field (§9.1). `"exports": "program"` takes such a module: the entry
+file imports `run` from the module's output and holds its result, as §9.12 (c) writes it for a
+runtime file (*amended 2026-11-04*; the markup runtime module still refuses the key, §9.12 (c)).
+The `run/` fixture `ProgramModule`, a program over a platform of its own that declares
+`"program"` and `"module"` and nothing else, proves the shape in both builds; the two refusals
+are tested beside `markup_split`'s (`tests/blackbox/platform_test.zig`); `cloudflare` takes it
+when its `runtime.js` moves (#1813).
 
 **Whether the platform edits lists in place is part of that shape, and it is `"lists"`** (*added
 2026-10-13*, [`ownership-checker.md`](ownership-checker.md) §28.2). `"lists": "in-place"` says that the
@@ -7253,7 +7257,10 @@ key; this is its whole contract.
   in Node 24 as `SyntaxError: Duplicate export of 'flush'`; the refusal is static, the same in
   both builds, where a test of the runtime's exports would follow reachability and differ between
   them; `stop` is not refused, because only a runtime module supplies it and this key refuses a
-  runtime module*); otherwise
+  runtime module*; *amended 2026-11-04: a runtime module without markup, §5.2, supplies `run`
+  alone, so the key takes it — the entry file imports `run` from the module's output, `import {
+  Rt$run as $run } from "./_platform/Rt.mjs";`, and the rest of the file is as below; a markup
+  runtime module, which may supply `stop`, is still refused*); otherwise
   `invalid_entry_export`, a diagnostic of the build reported during emit against the app's
   manifest at `1:1`, naming the entry, as `invalid_entry_file` is (exit 1; a `"exports"` that is
   not a list of strings is the manifest's exit-2 failure, as any key of the wrong JSON type is,
