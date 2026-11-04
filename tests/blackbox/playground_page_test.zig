@@ -89,6 +89,17 @@ test "the playground's link gives back the source and the platform it was made f
     try expectPageTest(&w, &.{"share"});
 }
 
+test "the playground's short link opens its sample, and a fragment with no program the first sample with a note" {
+    // The short link is beni (`playground/src/Share.beni`, `playground.md`
+    // §4.5): the beni build of the compiler under test reads each fragment
+    // as `URLSearchParams` reads it, and a fragment with `code` is a code
+    // link, whatever else it holds.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try buildPageBeni(&w);
+    try expectPageTest(&w, &.{ "links", "lib" });
+}
+
 test "the playground's output frame gets the CSS pane's text unchanged, and nothing when the pane is empty" {
     // An empty pane gives the frame's document of before the pane, byte for
     // byte (`playground.md` §4.6); a CSS with `</style>` and `</script>` in

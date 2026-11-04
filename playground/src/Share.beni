@@ -1,0 +1,96 @@
+--! The playground's shareable links (`docs/design/playground.md` §4.5): the
+--! short link of a sample, `#sample=<id>`, and the sample that the page
+--! opens for a fragment that holds no program. The code link
+--! (`#platform=…&code=…`) is still `share.js`: it needs host APIs that no
+--! module wraps yet (§10.6, §10.7 step 3).
+--!
+--! A fragment's fields are read as `URLSearchParams` reads them: `&`
+--! between two fields, the first `=` between a field's name and its value,
+--! and `+` as a space before the percent-decoding. A `%` that does not
+--! decode stays as it is.
+
+import List
+import Maybe
+import String
+import Url
+
+
+--| The sample that the page opens, and the note for the status of its first
+--| build: `""` when the page opens what the link asks for.
+pub type alias Opening =
+    sample : String
+    notice : String
+
+
+--| One field of a fragment.
+type alias Field =
+    name : String
+    value : String
+
+
+--| The fragment, without its `#`, of the short link to the sample `id`. An
+--| id is lower-case ASCII letters, digits and `-` (§4.3), so it needs no
+--| escape.
+pub sampleFragment : String → String
+sampleFragment id = "sample=" ++ id
+
+
+--| The sample that the page opens for `fragment` (with or without its `#`)
+--| when `share.js` finds no program in it. `ids` are the samples' ids, in
+--| the order of the list; the first is the one a link that fails opens.
+--|
+--| - A short link to a sample of `ids` opens it.
+--| - A short link to another id, or to an empty one, opens the first sample
+--|   and says that the link named no sample.
+--| - A fragment with `code` is a code link, whatever else it holds, so here
+--|   it is a damaged one. It, and every other fragment, opens the first
+--|   sample and says that the link held no program.
+--| - An empty fragment opens the first sample, with no note.
+pub opening : String, List String → Opening
+opening fragment ids =
+    body = if String.startsWith fragment "#" then String.dropLeft fragment 1 else fragment
+    fields = List.filterMap (String.split body "&") fieldOf
+    first = Maybe.withDefault (List.head ids) ""
+    if List.any fields λf → f.name == "code" then
+        { sample = first, notice = heldNoProgram }
+    else
+        case List.head (List.filter fields λf → f.name == "sample") of
+            Just { value } →
+                if List.member ids value then
+                    { sample = value, notice = "" }
+                else
+                    { sample = first, notice = namedNoSample }
+
+            Nothing →
+                { sample = first, notice = if String.isEmpty body then "" else heldNoProgram }
+
+
+heldNoProgram : String
+heldNoProgram = " (the link held no program, so this is the first sample)"
+
+
+namedNoSample : String
+namedNoSample = " (the link named no sample of the playground, so this is the first sample)"
+
+
+--| A field of a fragment's text, or nothing for the empty text between two
+--| `&`.
+fieldOf : String → Maybe Field
+fieldOf piece =
+    case String.split piece "=" of
+        [ "" ] →
+            Nothing
+
+        [ name, …rest ] →
+            Just { name = decoded name, value = decoded (String.join rest "=") }
+
+        [] →
+            Nothing
+
+
+--| `text` with `+` as a space, then percent-decoded; as it is where it
+--| does not decode.
+decoded : String → String
+decoded text =
+    spaced = String.replace text "+" " "
+    Maybe.withDefault (Url.percentDecode spaced) spaced
