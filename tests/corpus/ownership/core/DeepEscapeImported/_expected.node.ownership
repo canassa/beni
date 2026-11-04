@@ -1,0 +1,10 @@
+module Main
+  10:12 update form: rejected escaped: it was given to JavaScript, or kept by a callee (approx) [copy]
+  summary edit: π1 RE, π1.form RW{name}; res .0 fresh1{lost}r{lost}, .1 π1.form◦
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 1: accepted 0, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
+module Pack
+  summary store: π1 RE; res fresh1{lost}r{lost}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 1: accepted 0, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0

@@ -1,0 +1,21 @@
+module DeepErase
+  23:12 update form: rejected escaped: it was given to JavaScript, or kept by a callee (approx) [copy]
+  29:12 List.push model.form.rows: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  36:12 update form: rejected escaped: it was given to JavaScript, or kept by a callee (approx) [copy]
+  43:5 update form: rejected escaped: it was given to JavaScript, or kept by a callee (approx) [copy]
+  50:12 update form: rejected escaped: it was given to JavaScript, or kept by a callee (approx) [copy]
+  62:12 update form: accepted param
+  capture model.form.name: read 60:38; before 60:23
+  summary packModel: π1 RE; res fresh1{lost}r{lost}
+  summary record: π1 RE, π1.form RW{name}; res .0 fresh1{lost}r{lost}, .1 π1.form◦
+  summary nested: π1 RE, π1.form.rows RAW[storage], π1.form.rows[*] A; res .0 fresh1{lost}r{lost}, .1 π1.form.rows, .1[*] ~π1.form.rows[*]
+  summary closure: π1 RE, π1.form RW{name}; res .0 fresh1{lost}r{lost}, .1 π1.form◦
+  summary legacy: π1 RE, π1.form RW{name}; res π1.form◦
+  summary reference: π1 RE, π1.form RW{name}; res .0 fresh1{lost}r{lost}, .1 π1.form◦
+  summary readName: π1.form.name R
+  summary fieldCapture: π1.form RW{name}, π1.form.name R; res .0 fresh1{lost}r{lost}, .1 π1.form◦
+  demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+  records 5: accepted 1, pending 0, rejected 4 (copy 4, restructure 0); hoisted 0, eager reads 1
+total 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+records 5: accepted 1, pending 0, rejected 4 (copy 4, restructure 0); hoisted 0, eager reads 1
+cause escaped 1

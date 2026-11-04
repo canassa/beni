@@ -22233,9 +22233,11 @@ const Walker = struct {
         }
         // E: a parameter cell in Esc.
         for (w.escaped.items) |x| {
-            // §31.4 item 2: a record object's escape is `bit_k`, the record
-            // demand's E.
-            const rec_only = w.listFacing(x.cell) == null;
+            // §31.8 (2026-11-04): only an explicit object-only escape
+            // is shallow. A whole record behind erased storage keeps all
+            // descendants, even when its type contains no lists.
+            const escaped_cell = w.cells.items[x.cell];
+            const rec_only = escaped_cell.kind == .except and escaped_cell.b == except_all;
             const c = w.cells.items[try w.takenBase(if (rec_only) (w.recordObject(x.cell) orelse x.cell) else x.cell)];
             if (w.paramIndex(c, frame, params)) |pi| try uses.append(keep, .{ .param = pi, .path = c.path, .bits = if (rec_only) bit_k else if (x.why != 0) bit_j else bit_e, .grown = x.grown });
         }
