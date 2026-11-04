@@ -765,6 +765,10 @@ are closed as not planned. The text below is amended where it named CodeMirror.
 
 Measured on 2026-11-04 with Node 24.19's `zlib` at brotli quality 11, one file at a time.
 
+*Amended 2026-11-04 (#1903):* short links for the samples, `#sample=<id>`, change `share.js`,
+`page.js` and `samples/index.json` (§4.3, §4.5). The beni `share.js` and `page.js` (§10.7, steps
+3 and 7) carry them.
+
 **`vendor/`**, the 19 CodeMirror modules (§4.2), stays until the beni editor lands. Issue #142 kept
 it. *Amended 2026-11-04:* it then goes, with `vendor.sh`, `vendor/SHA256SUMS` and
 `vendor/LICENSES.txt` (§10.10).
