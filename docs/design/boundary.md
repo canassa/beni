@@ -7170,7 +7170,9 @@ alarm at a time, delivered to `alarm()` at least once, and retried on an uncaugh
 has a synchronous key-value store, `ctx.storage.kv`
 ([storage](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)); its key and
 value together may hold 2 MB ([limits](https://developers.cloudflare.com/durable-objects/platform/limits/)).
-Each of these is one piece of the API below, and nothing else of the host is reached.
+Each of these is one piece of the API below, and nothing else of the host is reached. *Amended
+2026-11-04: the platform also reaches `ctx.storage.sql`, for one table of its own that keeps the
+program's alarm time while the wake shares the host alarm ((e.5)); the program reaches no SQL.*
 
 **(b) The package.** `platforms/cloudflare/`, embedded like `node` (§5.3): a fifth platform in
 the binary, beside §9.1's four (*amended 2026-10-20, L5*; §5.1 and §9.1 carry a dated line each).
@@ -7600,9 +7602,9 @@ pub name : Context msg → Maybe String    -- `ctx.id.name`, when the object was
 pub sockets : Context msg → List Socket  -- every accepted socket still open, `ctx.getWebSockets()`
 pub socketsTagged : Context msg, String → List Socket
 
-pub alarmAt : Context msg, Int → ⊤       -- `setAlarm(ms since the epoch)`; replaces the one set
+pub alarmAt : Context msg, Int → ⊤       -- `setAlarm(ms since the epoch)`; replaces the one set; shared with the wake, (e.5)
 pub alarmIn : Context msg, Duration → ⊤  -- `alarmAt` of `Clock.now ⊤` plus the duration
-pub cancelAlarm : Context msg → ⊤        -- `deleteAlarm`
+pub cancelAlarm : Context msg → ⊤        -- `deleteAlarm`, unless the wake holds the host alarm, (e.5)
 
 -- The socket operations that need the object ((g) has their meaning):
 pub accept : Context msg, Request, List String → Result AcceptError (Socket × Response)
@@ -7755,7 +7757,61 @@ inside a handler queues it behind the events already waiting ((e.10)).
   probe did not measure it. Whether a timer that fires — a renewal every 30 s, say — resets the
   idle clock was not measured, since the deployed code had no short period; by the page's words
   it does not, and an alarm, which is an incoming event, would. The next form is the owner's
-  decision (`cf-workers-q15`, #864).
+  decision (`cf-workers-q15`, #864). ***Measured 2026-11-03 and 2026-11-04 at the edge (#864;
+  Jayson's answer to `cf-workers-q15`, 2026-10-31: "A: a platform alarm every 60 s while a fiber
+  lives, plus one more probe"):*** two plain-JavaScript probe Workers, each deployed to the
+  account's `workers.dev` and deleted after, compatibility date 2026-05-18. The first
+  (`beni-probe-864b`) had an alarm alone: two objects whose `alarm()` arms the next alarm 60 s
+  ahead ran 15 alarms each in 15 minutes, on time, each alarm in a new instance, and reads at 3
+  and at 16 minutes found a new instance; an object with no alarm was new after 2 minutes. So
+  an alarm alone does not keep an object in memory: with no pending timer the object hibernates
+  between two alarms, and each alarm starts a new instance. The second (`beni-probe-864c`) had
+  the pair that A needs: the platform's hold, one `setTimeout(…, 2147483647)`, and an alarm
+  that `alarm()` arms again 60 s ahead. Two objects with the pair were the same instance after 3
+  minutes and after 10 minutes, their counts continued, and each ran its 9 alarms in that one
+  instance, on time; an object with the timer alone was new after 3 minutes, as in the first
+  probe. So the timer stops the hibernation between two alarms, and each alarm, an incoming
+  event, starts the idle period again: the pair keeps the object in memory, measured for 10
+  minutes. That it keeps the object past 15 minutes is *owed*: q15 asked for a read after 16
+  minutes, and this probe read at 10.
+  ***Amended 2026-11-04: the wake (q15's A).*** While the scope has a live fiber beside the
+  consumer, the platform holds the host timer as above and also keeps the object's one host alarm
+  at most 60 s ahead: the **wake**. 60 s is less than the 70 s that the lifecycle page gives as
+  the shortest idle period before an eviction. The program's alarm and the wake share the one
+  host alarm:
+  - **The program's time is durable and the platform's own.** `alarmAt`, `alarmIn` and
+    `cancelAlarm` write the program's time, or its absence, into a table of the platform's in the
+    object's SQLite database, `beni_alarm`, and then set the host alarm. `ctx.storage.kv` does
+    not see the table, so neither does `Worker.Storage` (*measured* under the pinned Miniflare:
+    the table stands beside `_cf_KV`, and `kv.list()` lists the program's keys only). The time
+    must be durable, because the wake of an evicted instance fires in a new one, which must not
+    take it for the program's alarm. This is the platform's one use of `ctx.storage.sql`; SQL for
+    the program stays (j)'s.
+  - **The host alarm is the earlier of the program's time and the wake.** The wake is set to
+    60 s from now when the count rises above the consumer while no wake is pending, and at each
+    firing of the host alarm while a fiber lives; each firing drops the wake it was. The platform
+    calls `setAlarm` or `deleteAlarm` only when that earlier time changes.
+  - **The program sees only its own alarm.** At each firing, the `alarm` event goes into the
+    mailbox only when the program's time has come, and the platform clears that time in the same
+    event. A firing that is only the wake puts nothing in the mailbox. If the `alarm` handler
+    has a defect, the abort discards the event's writes ((e.6)) and the host retries the alarm,
+    which finds the program's time still there.
+  - **When the last fiber ends**, the timer is released at once, as before, and the wake is not
+    taken back: it fires at most 60 s later, finds no live fiber, and sets the host alarm back to
+    the program's time, or to none. So a run of short fibers costs at most one `setAlarm` and
+    one firing, not a write each time a fiber starts or ends.
+  - **At each wake the platform arms the host timer again**, so no pending timer is older than
+    about one period. The 15 minutes that the lifecycle page gives each operation is then never
+    reached; whether it applies to a timer at all is not measured.
+  - **What the wake does not cover.** A deploy, a reset or a restart of the host still ends the
+    instance and loses its fibers ((e.6), *Eviction is a process kill*). The wake stops only
+    the eviction of an idle object. An object that is not SQLite-backed has no
+    `ctx.storage.sql`: the platform throws (h)'s configuration error the first time it needs the
+    table.
+  - **Under `--test-hooks`** no host alarm is set: the platform keeps in memory the host alarm it
+    would set, and two paths drive it ((k)). `/__beni/host-alarm` is the firing of the host
+    alarm, and `/__beni/alarms` answers which alarm the host would hold — `none`, `program` or
+    `wake` — and whether the program has a time.
   Local workerd hibernates an idle object too: the review of #860 ran the
   probe's source under the pinned Miniflare and saw a new instance after 15 s and again after 25 s
   on the same socket (the probe's own dry run idled 2 s and saw nothing), so the corpus can hold
@@ -8519,7 +8575,12 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   object, a path ending in `/__beni/tick` is the timer's firing — a `ticked` event, answered 204
   once it ran, or 409 when `tick` names no timer — and one ending in `/__beni/alarm` an `alarm`
   event, answered 204; under the flag no host timer is armed, so the transcript is the steps'
-  alone. The five object fixtures are listed in (e.10)'s *as built* note. **#593 stays owed**:
+  alone. *2026-11-04, the wake ((e.5)): under the flag no host alarm is set either. A path ending
+  in `/__beni/host-alarm` is the host alarm's firing, answered 204 once the platform has decided
+  (and once the program's `alarm` ran, when its time had come), and one ending in
+  `/__beni/alarms` answers `host <none|program|wake>, program <none|set>`. `/__beni/alarm`
+  stays the program's alarm coming due: it clears the program's time and puts the `alarm` event
+  in the mailbox.* The five object fixtures are listed in (e.10)'s *as built* note. **#593 stays owed**:
   hibernation needs more than the 10 s delay, and a step is limited to 5 s. *2026-10-23: the fact
   is measured by a deployed probe, (e.5), and local workerd hibernates an idle object too (the
   review of #860: a new instance after 15 s and 25 s under Miniflare), so the corpus can hold it
