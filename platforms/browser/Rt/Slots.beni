@@ -1,0 +1,322 @@
+--! Typed node ranges, templates and slots. The lowering opens only the paired
+--! kind/payload ABI; these algorithms retain the existing instance/location cells.
+
+import Browser.Host.Array as Array
+import Browser.Host.Document as Document
+import Browser.Host.Node as Node
+import Html.Runtime as Runtime
+import Js
+import Js.Protocol as Protocol
+
+
+-- An absence here violates the renderer's existing tree invariant.
+required : Js.Opt a → a
+required value = Js.optMatch value (λ⊤ → Protocol.defect "missing renderer node") λpresent → present
+
+
+pub first : Runtime.Protocol, Runtime.Instance → Node.Node
+first protocol value =
+    fields = Runtime.instanceCell value
+    Js.optMatch (Js.cellRead fields .s)
+        (λ⊤ → required (head protocol (required (Js.cellRead fields .q))))
+        λnode → node
+
+
+pub last : Runtime.Protocol, Runtime.Instance → Node.Node
+last protocol value =
+    fields = Runtime.instanceCell value
+    Js.optMatch (Js.cellRead fields .e)
+        (λ⊤ → required (tail protocol (required (Js.cellRead fields .q))))
+        λnode → node
+
+
+-- A site's rows are existential only at this boundary. Its own typed
+-- callbacks retain the row algorithm and raw keys. Ordinary children use u.
+pub head : Runtime.Protocol, Runtime.Slot → Js.Opt Node.Node
+head protocol location =
+    fields = Runtime.slotCell location
+    Js.optMatch (Js.cellRead fields .r)
+        (λ⊤ →
+            Js.optMatch (Js.cellRead fields .u) (λ⊤ → singleHead protocol location) λitems →
+                if Array.size items == 0 then
+                    singleHead protocol location
+                else
+                    Js.some
+                        (first
+                            protocol
+                            (Array.rendererAt items 0)
+                        )
+        )
+        λsite → protocol.siteHead site location
+
+
+singleHead : Runtime.Protocol, Runtime.Slot → Js.Opt Node.Node
+singleHead protocol location =
+    fields = Runtime.slotCell location
+    Js.optMatch (Js.cellRead fields .i) (λ⊤ → Js.cellRead fields .m) λvalue →
+        Js.some (first protocol value)
+
+
+pub tail : Runtime.Protocol, Runtime.Slot → Js.Opt Node.Node
+tail protocol location =
+    fields = Runtime.slotCell location
+    Js.optMatch (Js.cellRead fields .m)
+        (λ⊤ →
+            Js.optMatch (Js.cellRead fields .r)
+                (λ⊤ →
+                    Js.optMatch (Js.cellRead fields .u) (λ⊤ → singleTail protocol location) λitems →
+                        length = Array.size items
+                        if length == 0 then
+                            singleTail protocol location
+                        else
+                            Js.some
+                                (last
+                                    protocol
+                                    (Array.getOr
+                                        items
+                                        (length - 1)
+                                        (Protocol.defect "missing last child")
+                                    )
+                                )
+                )
+                λsite → protocol.siteTail site location
+        )
+        λmarker → Js.some marker
+
+
+singleTail : Runtime.Protocol, Runtime.Slot → Js.Opt Node.Node
+singleTail protocol location =
+    Js.optMatch (Js.cellRead (Runtime.slotCell location) .i) (λ⊤ → Js.none ⊤) λvalue →
+        Js.some (last protocol value)
+
+
+pub put : Runtime.Protocol, Node.Node, Runtime.Instance, Js.Opt Node.Node → ⊤
+put protocol parent value before = putRun parent (first protocol value) (last protocol value) before
+
+
+putRun : Node.Node, Node.Node, Node.Node, Js.Opt Node.Node → ⊤
+putRun parent node end before =
+    next = Node.rendererNextSibling node
+    Node.rendererInsertBefore parent node before
+    if Js.same node end then
+        ⊤
+    else
+        putRun parent (required next) end before
+
+
+pub drop : Runtime.Protocol, Runtime.Instance → ⊤
+drop protocol value = dropRun (first protocol value) (last protocol value)
+
+
+dropRun : Node.Node, Node.Node → ⊤
+dropRun node end =
+    next = Node.rendererNextSibling node
+    Node.rendererRemove node
+    if Js.same node end then
+        ⊤
+    else
+        dropRun (required next) end
+
+
+pub swap : Runtime.Protocol, Runtime.Instance, Runtime.Instance → ⊤
+swap protocol old value =
+    node = first protocol old
+    put protocol (required (Node.rendererParent node)) value (Js.some node)
+    drop protocol old
+
+
+pub parentOf : Runtime.Slot → Node.Node
+parentOf location =
+    fields = Runtime.slotCell location
+    Js.optMatch (Js.cellRead fields .p)
+        (λ⊤ → required (Node.rendererParent (required (Js.cellRead fields .m))))
+        λparent → parent
+
+
+pub slot : Js.Opt Node.Node, Js.Opt Node.Node, Runtime.Context → Runtime.Slot
+slot parent marker context =
+    Runtime.slot
+        (Js.cell
+            { p = parent
+            , m = marker
+            , cx = context
+            , i = Js.none ⊤
+            , u = Js.none ⊤
+            , r = Js.none ⊤
+            , l = False
+            , w = False
+            , v = False
+            , j = Js.none ⊤
+            , k = 0
+            }
+        )
+
+
+pub childHtml : Runtime.Protocol, Runtime.Slot, Runtime.Block → ⊤
+childHtml protocol location block =
+    fields = Runtime.slotCell location
+    value =
+        Js.optMatch (Js.cellRead fields .i)
+            (λ⊤ →
+                mounted = protocol.unit block (Js.cellRead fields .cx)
+                put protocol (parentOf location) mounted (Js.cellRead fields .m)
+                mounted
+            )
+            λold → protocol.patch old block (Js.cellRead fields .cx)
+    Js.cellWrite fields (Js.some value) .i
+    Js.cellWrite fields (protocol.live value) .l
+
+
+pub childMaybe : Runtime.Protocol, Runtime.Slot, Js.Opt Runtime.Block → ⊤
+childMaybe protocol location block =
+    fields = Runtime.slotCell location
+    Js.optMatch block
+        (λ⊤ →
+            Js.optMatch (Js.cellRead fields .i) (λ⊤ → ⊤) λvalue →
+                drop protocol value
+                Js.cellWrite fields (Js.none ⊤) .i
+                Js.cellWrite fields False .l
+        )
+        λvalue → childHtml protocol location value
+
+
+pub restate : Runtime.Protocol, Runtime.Slot → ⊤
+restate protocol location =
+    fields = Runtime.slotCell location
+    if Js.cellRead fields .w then
+        Js.optMatch (Js.cellRead fields .r)
+            (λ⊤ →
+                Js.optMatch (Js.cellRead fields .u) (λ⊤ → ⊤) λitems →
+                    live = restateChildren protocol items 0 False
+                    Js.cellWrite fields live .w
+            )
+            λsite → protocol.siteRestate site location 0
+    if Js.cellRead fields .l then
+        value = required (Js.cellRead fields .i)
+        protocol.again value
+        Js.cellWrite fields (protocol.live value) .l
+
+
+restateChildren : Runtime.Protocol, Array.Array Runtime.Instance, Int, Bool → Bool
+restateChildren protocol items index live =
+    if index == Array.size items then
+        live
+    else
+        value = Array.rendererAt items index
+        if protocol.live value then protocol.again value
+        restateChildren protocol items (index + 1) (live || protocol.live value)
+
+
+pub template : String → (⊤ → Node.Node)
+template html =
+    cached = Js.ref (Js.none ⊤)
+    λ⊤ →
+        source =
+            Js.optMatch (Js.read cached)
+                (λ⊤ →
+                    node = required (Node.rendererFirstChild (Document.rendererTemplate html))
+                    Js.write cached (Js.some node)
+                    node
+                )
+                λnode → node
+        Node.rendererClone source
+
+
+pub templateOf : String, Int → (⊤ → Node.Node)
+templateOf html flags =
+    cached = Js.ref (Js.none ⊤)
+    λ⊤ →
+        source =
+            Js.optMatch (Js.read cached)
+                (λ⊤ →
+                    content = Document.rendererTemplate html
+                    root =
+                        if Js.bitAnd flags 2 == 0 then
+                            content
+                        else
+                            required (Node.rendererFirstChild content)
+                    node =
+                        if Js.bitAnd flags 4 == 0 then
+                            required (Node.rendererFirstChild root)
+                        else if Js.bitAnd flags 2 == 0 then
+                            root
+                        else
+                            fragment = Document.rendererFragment ⊤
+                            gather root fragment
+                            fragment
+                    Js.write cached (Js.some node)
+                    node
+                )
+                λnode → node
+        if Js.bitAnd flags 1 == 0 then
+            Node.rendererClone source
+        else
+            Document.rendererImport source
+
+
+gather : Node.Node, Node.Node → ⊤
+gather from into = Js.optMatch (Node.rendererFirstChild from) (λ⊤ → ⊤) λchild →
+    Node.rendererAppend into child
+    gather from into
+
+
+pub insertText : Node.Node, Js.Opt Node.Node, String → Node.Node
+insertText parent marker value =
+    node = Document.rendererText value
+    Node.rendererInsertBefore parent node marker
+    node
+
+
+-- Lists of ordinary blocks use the existing u array. Its extent is reduced
+-- after removing the old nodes, so no removed instance stays reachable.
+pub childList : Runtime.Protocol, Runtime.Slot, List Runtime.Block → ⊤
+childList protocol location blocks =
+    fields = Runtime.slotCell location
+    Js.cellWrite fields False .w
+    items =
+        Js.optMatch (Js.cellRead fields .u)
+            (λ⊤ →
+                created = Array.make ⊤
+                Js.cellWrite fields (Js.some created) .u
+                created
+            )
+            λexisting → existing
+    childrenFrom protocol location items blocks 0
+    length = List.length blocks
+    dropPast protocol items length
+    Array.rendererTruncate items length
+
+
+childrenFrom :
+      Runtime.Protocol
+    , Runtime.Slot
+    , Array.Array Runtime.Instance
+    , List Runtime.Block
+    , Int
+    → ⊤
+childrenFrom protocol location items blocks index =
+    case blocks of
+        [] →
+            ⊤
+        [ block, …remaining ] →
+            fields = Runtime.slotCell location
+            value =
+                if index < Array.size items then
+                    old = Array.rendererAt items index
+                    updated = protocol.patch old block (Js.cellRead fields .cx)
+                    _ = Array.set items index updated
+                    updated
+                else
+                    mounted = protocol.unit block (Js.cellRead fields .cx)
+                    put protocol (parentOf location) mounted (Js.cellRead fields .m)
+                    Array.push items mounted
+                    mounted
+            if protocol.live value then Js.cellWrite fields True .w
+            childrenFrom protocol location items remaining (index + 1)
+
+
+dropPast : Runtime.Protocol, Array.Array Runtime.Instance, Int → ⊤
+dropPast protocol items index =
+    if index < Array.size items then
+        drop protocol (Array.rendererAt items index)
+        dropPast protocol items (index + 1)

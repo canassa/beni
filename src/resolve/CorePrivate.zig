@@ -12,6 +12,7 @@ const Entry = struct {
 const entries = [_]Entry{
     .{ .module = "Inline", .name = "guarded", .access = .platform },
     .{ .module = "Inline", .name = "unchanged", .access = .platform },
+    .{ .module = "Rt.Slots", .name = null, .access = .platform },
     .{ .module = "Browser.Host.Array", .name = "rendererHas", .access = .platform },
     .{ .module = "Browser.Host.Array", .name = "rendererTruncate", .access = .platform },
     .{ .module = "Browser.Host.Array", .name = "rendererAt", .access = .platform },
