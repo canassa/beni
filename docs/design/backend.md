@@ -11098,6 +11098,25 @@ what it has: its modules are printed apart, and a name one module exports may be
 the walk does not see. Fixtures: `emit/release/inline/PushAndTimer` (`endpointOf` and a schema
 helper go), `emit/release/app/InlineReachable`, `SpecMaybe`, `emit/release/direct/ListScripts`, and
 the `run/` and `browser/` release passes, which run every program the walk changed.
+
+**Schema size recovery (2026-11-04, #1859).** The native catalogue marks the
+non-coercing Number predicates (`isFinite`, `isInteger`, `isSafeInteger`) pure.
+Lowering carries their identity into JsIr so release constant folding can answer a
+literal argument without a host call. It never folds the coercing global predicates.
+A read of an array literal's length folds only when every possible allocation
+has the same length, none escapes and none is written, and evaluating the
+receiver has no effect. A sole unlabelled block does not prevent recognising a
+small function's return expression.
+A guarded read of a worker result may drop its absence defect only when the same
+immutable value has already been proved different from the same held sentinel.
+A context-specific rewrite copies the affected branch before refining it: shared
+JsIr expression nodes outside that branch must retain their original tests. The
+copied graph is solved again before any per-node fact is consumed.
+Concrete optional payloads retain the identity representation; generic or nested
+payloads keep their escapes until a representation proof licenses removing them.
+Threading representation evidence through generic functions is deferred to #1865;
+this change does not infer concrete payload types after their checked types are erased.
+
 ## 10. Chunking
 
 **Release output is chunks; development output is not.** Â§9.5 of the design doc settles that with

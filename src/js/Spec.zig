@@ -290,6 +290,7 @@ pub const Input = struct {
     /// (`toString`, `constructor`, …): an object literal without one does
     /// not read as `undefined` there.
     builtin_props: []const u32 = &.{},
+    length_prop: u32 = none,
     /// The property-name ids of `implicit_host_keys`. A key of one is not
     /// unread. The host reads it with no member expression in the program.
     implicit_props: []const u32 = &.{},
@@ -1560,6 +1561,12 @@ const Spec = struct {
     /// solver*); then what no longer has a reference goes (slice 2).
     fn rounds(s: *Spec) Allocator.Error!void {
         if (!try s.analyse()) return;
+        // Branch refinement copies IR nodes: solve the copied graph before
+        // rewriting or consulting any per-node fact of it.
+        if (try s.refineHeldPass()) {
+            try s.grow();
+            if (!try s.analyse()) return;
+        }
         _ = try s.rewrite();
         _ = try s.prune();
         // A key nothing left reads goes from its literal (fact 3), and
@@ -3160,10 +3167,30 @@ const Spec = struct {
         };
         if (!s.pts.ok) return .top;
         const obj = chain orelse s.pts.vals[m.index][d.lhs];
+        if (id != none and id == s.in.length_prop) if (try s.arrayLength(m, @fromBackingInt(@intCast(d.lhs)), obj)) |length| return length;
         const v = try s.propValue(obj, id);
         if (v.state == .lit and chain != null and s.pts.known(obj)) return v;
         if (id != none and id == s.in.tag_prop) if (try s.tagValue(m, @fromBackingInt(@intCast(d.lhs)), id, named)) |t| return t;
         return s.demote(v);
+    }
+
+    /// Length is intrinsic to a closed array allocation; an unknown call or
+    /// a write could change it, so either refuses this fold.
+    fn arrayLength(s: *Spec, m: *Mod, receiver: Index, obj: Pts.Val) Allocator.Error!?Lat {
+        if (obj.top or obj.prim or obj.nullish() or obj.sites.len == 0) return null;
+        if (!inert(m.ir, receiver) and try s.pts.safeChain(m.index, s.cur_top, receiver) == null) return null;
+        var length: ?u32 = null;
+        for (obj.sites) |site| {
+            try s.readsSite(site);
+            const st = &s.pts.sites.items[site];
+            if (st.kind != .array or st.escaped or st.any_written or st.prog_any or st.prog_props.items.len != 0) return null;
+            const ir = s.mods[st.module].ir;
+            const n: u32 = @intCast(ir.extraSlice(JsIr.inlineRange(ir.data(st.node)), Index).len);
+            if (length) |old| {
+                if (old != n) return null;
+            } else length = n;
+        }
+        return try s.number(@floatFromInt(length.?));
     }
 
     /// Slice 9: a constructor's tag `$`, read through a chain that may only
@@ -3577,12 +3604,19 @@ const Spec = struct {
             .not => .{ .state = .nonnull, .truth = s.truthOf(a).not() },
             // The name of a type: a string that is never empty.
             .type_of, .worker_definition_type => .{ .state = .nonnull, .truth = .yes },
+            .number_is_finite, .number_is_integer, .number_is_safe_integer => .nonnull,
             .neg => .nonnull,
             // What the generator is resumed with, not what it yields.
             .yield => .top,
         };
         const lit = s.litOf(a);
         switch (op) {
+            .number_is_finite, .number_is_integer, .number_is_safe_integer => {
+                if (lit.kind != .number) return s.boolean(false);
+                const x = parseNumber(lit.bytes) orelse return .top;
+                const finite = std.math.isFinite(x);
+                return s.boolean(finite and (op == .number_is_finite or (@trunc(x) == x and (op != .number_is_safe_integer or @abs(x) <= 9007199254740991))));
+            },
             .not => return switch (s.truthy(lit)) {
                 .yes => s.boolean(false),
                 .no => s.boolean(true),
@@ -4483,7 +4517,7 @@ const Spec = struct {
         const d = ir.data(node);
         switch (ir.tag(node)) {
             .unary => return switch (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs)))) {
-                .not, .type_of, .worker_definition_type => s.effectFreeTest(m, @fromBackingInt(@intCast(d.lhs)), depth + 1),
+                .not, .type_of, .worker_definition_type, .number_is_finite, .number_is_integer, .number_is_safe_integer => s.effectFreeTest(m, @fromBackingInt(@intCast(d.lhs)), depth + 1),
                 .neg => s.primitive(m, @fromBackingInt(@intCast(d.lhs))) and try s.effectFreeTest(m, @fromBackingInt(@intCast(d.lhs)), depth + 1),
                 .yield => false,
             },
@@ -5051,6 +5085,124 @@ const Spec = struct {
             const i = n.unwrap() orelse return false;
             if (i >= m.stamp.len or m.stamp[i] != s.current or m.decls[i] != 1) return false;
         }
+        return true;
+    }
+
+    fn refineHeldPass(s: *Spec) Allocator.Error!bool {
+        const saved_top = s.cur_top;
+        defer s.cur_top = saved_top;
+        var changed = false;
+        for (s.mods) |*m| {
+            const roots = try s.arena.dupe(Index, m.ir.extraSlice(m.ir.body, Index));
+            for (roots) |top| {
+                s.cur_top = top;
+                for (try s.preorder(m, top)) |node|
+                    if (try s.heldBranches(m, node)) {
+                        changed = true;
+                    };
+            }
+        }
+        return changed;
+    }
+
+    const HeldTest = struct { local: NameIndex, held: u32, equal: bool };
+
+    fn heldTest(s: *Spec, m: *Mod, node: Index) ?HeldTest {
+        const ir = m.ir;
+        if (ir.tag(node) != .binary) return null;
+        const op: JsIr.BinaryOp = @fromBackingInt(@intCast(ir.data(node).rhs));
+        if (op != .strict_eq and op != .strict_ne) return null;
+        const b = ir.extraData(@fromBackingInt(@intCast(ir.data(node).lhs)), JsIr.Binary);
+        const held, const local = if (s.heldObject(m, b.right)) |g| .{ g, b.left } else if (s.heldObject(m, b.left)) |g| .{ g, b.right } else return null;
+        if (ir.tag(local) != .ident) return null;
+        const name: NameIndex = @fromBackingInt(@intCast(ir.data(local).lhs));
+        if (m.globalOf(name) != null) return null;
+        return .{ .local = name, .held = held, .equal = op == .strict_eq };
+    }
+
+    /// Within a branch, an immutable local keeps its relation to a held
+    /// object. Do not carry a branch fact into a deferred function body.
+    fn refineHeld(s: *Spec, m: *Mod, roots: []const Index, fact: HeldTest, taken: bool, apply: bool) Allocator.Error!bool {
+        var stack = try s.takeStack();
+        defer s.giveStack(&stack);
+        for (roots) |root| try JsIr.pushOperand(s.arena, &stack, root);
+        var changed = false;
+        while (JsIr.popOperand(&stack)) |node| {
+            switch (m.ir.tag(node)) {
+                .arrow, .func_decl, .gen_decl => continue,
+                else => {},
+            }
+            if (m.ir.tag(node) == .cond) {
+                const d = m.ir.data(node);
+                if (s.heldTest(m, @fromBackingInt(@intCast(d.lhs)))) |test_| if (test_.local == fact.local and test_.held == fact.held) {
+                    if (!apply) return true;
+                    const c = m.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond);
+                    const kept = if (taken == (test_.equal == fact.equal)) c.consequent else c.alternate;
+                    try m.foldTo(s.gpa, node, kept);
+                    changed = true;
+                    try JsIr.pushOperand(s.arena, &stack, node);
+                    continue;
+                };
+            }
+            if (s.heldTest(m, node)) |test_| if (test_.local == fact.local and test_.held == fact.held) {
+                if (!apply) return true;
+                const value = taken == (test_.equal == fact.equal);
+                m.setNode(node, if (value) .true_lit else .false_lit, 0, 0);
+                changed = true;
+                continue;
+            };
+            try pushChildren(s.arena, m.ir, node, &stack);
+        }
+        return changed;
+    }
+
+    /// Contextual facts must not mutate a node also reached outside its
+    /// branch. Copy only a branch containing a test we can refine; Copy
+    /// makes its expression graph private before any contextual rewrite.
+    fn refinedHeldExpr(s: *Spec, m: *Mod, root: Index, fact: HeldTest, taken: bool) Allocator.Error!?Index {
+        if (!try s.refineHeld(m, &.{root}, fact, taken, false)) return null;
+        var copy: Copy = .{ .s = s, .src = m, .dst = m, .cross = false, .renamed = &.{}, .subst = &.{} };
+        const result = try copy.expr(root, 0);
+        _ = try s.refineHeld(m, &.{result}, fact, taken, true);
+        return result;
+    }
+
+    fn refinedHeldList(s: *Spec, m: *Mod, range: JsIr.SubRange, fact: HeldTest, taken: bool) Allocator.Error!?JsIr.SubRange {
+        const roots = m.ir.extraSlice(range, Index);
+        if (!try s.refineHeld(m, roots, fact, taken, false)) return null;
+        const source = try s.arena.dupe(Index, roots);
+        var copy: Copy = .{ .s = s, .src = m, .dst = m, .cross = false, .renamed = &.{}, .subst = &.{} };
+        var statements: std.ArrayList(u32) = .empty;
+        for (source) |stmt| try copy.stmtsInto(stmt, &statements, 0);
+        const at = try m.append(s.gpa, statements.items);
+        const result: JsIr.SubRange = .{ .start = @fromBackingInt(at), .end = @fromBackingInt(at + @as(u32, @intCast(statements.items.len))) };
+        _ = try s.refineHeld(m, m.ir.extraSlice(result, Index), fact, taken, true);
+        return result;
+    }
+
+    fn heldBranches(s: *Spec, m: *Mod, node: Index) Allocator.Error!bool {
+        const ir = m.ir;
+        if (ir.tag(node) != .cond and ir.tag(node) != .if_stmt) return false;
+        const d = ir.data(node);
+        const test_ = s.heldTest(m, @fromBackingInt(@intCast(d.lhs))) orelse return false;
+        if (try declCount(s, m, s.cur_top, test_.local) != 1 or try s.assignedInTop(m, s.cur_top, test_.local)) return false;
+        if (ir.tag(node) == .cond) {
+            const c = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond);
+            const yes = try s.refinedHeldExpr(m, c.consequent, test_, true);
+            const no = try s.refinedHeldExpr(m, c.alternate, test_, false);
+            if (yes == null and no == null) return false;
+            const at = try m.append(s.gpa, &.{ (yes orelse c.consequent).int(), (no orelse c.alternate).int() });
+            m.setData(node, d.lhs, at);
+            return true;
+        }
+        const b = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
+        const yes = try s.refinedHeldList(m, b.thenBody(), test_, true);
+        const no = try s.refinedHeldList(m, b.elseBody(), test_, false);
+        if (yes == null and no == null) return false;
+        const t = yes orelse b.thenBody();
+        const e = no orelse b.elseBody();
+        const at = try m.append(s.gpa, &.{ @backingInt(t.start), @backingInt(t.end), @backingInt(e.start), @backingInt(e.end) });
+        m.setData(node, d.lhs, at);
         return true;
     }
 
@@ -6649,6 +6801,8 @@ const Spec = struct {
         const fm = &s.mods[module];
         const ir = fm.ir;
         const first = body[0];
+        if (body.len == 1 and ir.tag(first) == .block_stmt and @as(NameIndex, @fromBackingInt(@intCast(ir.data(first).lhs))) == .none)
+            return s.returnExpr(module, ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(ir.data(first).rhs))), Index), depth + 1);
         if (ir.tag(first) == .return_stmt) {
             if (body.len != 1) return null;
             return (@as(Node.OptionalIndex, @fromBackingInt(@intCast(ir.data(first).lhs)))).unwrap();
@@ -17505,7 +17659,7 @@ fn plainValue(ir: *const JsIr, node: Index, depth: u32) bool {
     return switch (ir.tag(node)) {
         .ident, .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
         .unary => switch (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs)))) {
-            .not, .type_of, .worker_definition_type => plainValue(ir, @fromBackingInt(@intCast(d.lhs)), depth + 1),
+            .not, .type_of, .worker_definition_type, .number_is_finite, .number_is_integer, .number_is_safe_integer => plainValue(ir, @fromBackingInt(@intCast(d.lhs)), depth + 1),
             else => false,
         },
         .binary => switch (@as(JsIr.BinaryOp, @fromBackingInt(@intCast(d.rhs)))) {

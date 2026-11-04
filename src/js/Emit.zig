@@ -7857,6 +7857,7 @@ const Emitter = struct {
             .prop_len = prop_len,
             .tag_prop = props.get("$") orelse Spec.none,
             .builtin_props = builtin.items,
+            .length_prop = props.get("length") orelse Spec.none,
             .implicit_props = implicit.items,
             .proto_prop = proto_prop,
             .node_makers = makers.items,

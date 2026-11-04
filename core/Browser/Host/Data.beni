@@ -7,11 +7,11 @@ pub foreign pure same : Js.Value, Js.Value → Bool
 
 pub foreign impure isArray : Js.Value → Bool
 
-pub foreign impure isFinite : Js.Value → Bool
+pub foreign pure isFinite : Js.Value → Bool
 
-pub foreign impure isInteger : Js.Value → Bool
+pub foreign pure isInteger : Js.Value → Bool
 
-pub foreign impure isSafeInteger : Js.Value → Bool
+pub foreign pure isSafeInteger : Js.Value → Bool
 
 pub foreign impure keys : Js.Value → List String
 

@@ -1,0 +1,5 @@
+import Js.Any
+
+
+pub store : { form : { name : String } } → Js.Any.Any
+store model = Js.Any.pack model

@@ -1722,6 +1722,13 @@ does. The rule is never an estimate of bytes.
   property names, about 350 B past 52 distinct names, so T measures that cliff until the renamer
   orders its short names by use.)*
 
+**Release folding (2026-11-04, #1859).** Default and statically known options
+are ordinary compiler constants. The non-coercing Number predicate on a known
+`maxDepth` folds with its range checks; dynamic options retain validation. A
+worker result already tested for absence does not need a second absence defect
+branch when its binding and the held sentinel cannot change. Nested optional
+payloads retain their distinct absence and identity behavior.
+
 ## 7. Effects
 
 Effectful transformations are part of the intended design. Synchronous delivery
