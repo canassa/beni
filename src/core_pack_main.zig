@@ -209,6 +209,14 @@ fn check(
             _ = fail(stderr, "checking {s}, the module '{s}' left no cache entry", .{ what, session.store.path(session.graph.moduleFile(m)) });
             return error.Reported;
         }
+        const ownership2 = pack.find(.ownership2, session.keys.of(m)) orelse {
+            _ = fail(stderr, "checking {s}, the module '{s}' left no v2 ownership row", .{ what, session.store.path(session.graph.moduleFile(m)) });
+            return error.Reported;
+        };
+        if (@import("beni").own2.Packed.read(ownership2) == null) {
+            _ = fail(stderr, "checking {s}, a v2 ownership row is stale or malformed", .{what});
+            return error.Reported;
+        }
         for (EdgePack.every_options) |options| {
             if (pack.find(.edges, EdgePack.key(session.keys.of(m), options)) == null) {
                 _ = fail(stderr, "checking {s}, the module '{s}' left no edge lists", .{ what, session.store.path(session.graph.moduleFile(m)) });

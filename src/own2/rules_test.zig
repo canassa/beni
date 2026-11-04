@@ -239,6 +239,7 @@ const layers = [_]Entry{
     // way round is the reader's projection (`sameDag`).
     // 1 320 since #1485 part 2: the certified mark and a fold obligation.
     .{ .file = "BlockRead.zig", .layer = 15, .max_lines = 1320 },
+    .{ .file = "Packed.zig", .layer = 15, .max_lines = 100 },
     // 305 since S3b slice 4a: a recursive group member's walks on its account line.
     // 340 since #1547: the lowering channel built from the verdicts (`Hoists`).
     .{ .file = "Ownership.zig", .layer = 16, .max_lines = 340 },
@@ -518,7 +519,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 41), layers.len);
+    try testing.expectEqual(@as(usize, 42), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

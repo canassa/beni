@@ -6069,3 +6069,37 @@ test "cached higher-order writer effects preserve read-only acceptance and writi
     try testing.expectEqualStrings(one.stdout, eight.stdout);
     try testing.expectEqualStrings(one.stderr, eight.stderr);
 }
+
+test "a v2 ownership dump reads platform summaries from the checked pack" {
+    // fast-compiler.md §8, *Ownership v2 beside v1*: a v1-only Http
+    // block left this call unchecked. A source recheck recovers its summary
+    // but defeats the pack; exactly Main must be checked here.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni",
+        \\import Http
+        \\
+        \\
+        \\pub fraction : { sent : Int, size : Int } → Float
+        \\fraction p = Http.fractionSent p
+        \\
+    );
+    const r = try runCounted(&w, arena_state.allocator(), &.{ "dump", "--platform=browser-tea", "--stage=ownership", "--ownership=v2", "src/Main.beni" }, "v2.json");
+    try testing.expectEqual(@as(u8, 0), r.result.exit_code);
+    try testing.expectEqualStrings("", r.result.stderr);
+    try testing.expectEqualStrings(
+        \\module Main
+        \\  account fraction: source 9, baseline 598, growth 0 of 65536, total 598, continuation 68 of 9216, demands 1, direct_data lanes 1, liveness_index lanes 1, call_view lanes 1, transfer_settlement lanes 10
+        \\  crossing: reads 0, redone 0, base moves 0
+        \\  summary fraction: π1 R, π1.sent R, π1.size R
+        \\  block: 428 bytes, hash 29fba0d7b0a2ce2e
+        \\  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+        \\total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+        \\
+    , r.result.stdout);
+    try testing.expectEqual(@as(u64, 1), r.counters.checked);
+    try testing.expect(r.counters.embedded_modules > 0);
+    try testing.expectEqual(r.counters.modules, r.counters.checked + r.counters.embedded_modules);
+}
