@@ -359,6 +359,7 @@ module Html
   attribute "rowspan" on "td" "th" : Int
   attribute "rx" on "ellipse" "rect" : String
   attribute "ry" on "ellipse" "rect" : String
+  attribute "sandbox" on "iframe" : String
   attribute "scale" on "feDisplacementMap" : String
   attribute "seed" on "feTurbulence" : String
   attribute "selected" on "option" property stateful : Bool

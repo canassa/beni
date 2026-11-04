@@ -8810,6 +8810,13 @@ id (`playground.md` §10.3). So `html` gets only `sandbox`, and the rule of 2026
 `playground-beni-q8` (19:32:46 UTC) took a history in beni for the editor and dropped
 `execCommand`, so the `insertText` row does not come.
 
+*As built, 2026-11-04 (#1890):* `pub attribute "sandbox" on "iframe" : String`, as `rel`, `type`
+and `autocomplete` are. The issue asked for the standard's tokens as a type, but the vocabulary
+has no form for a set of tokens (§9.3), and no guarantee needs one: a token that the browser does
+not know lifts no restriction, so a misspelt one keeps the frame restricted. A frame takes its
+restrictions when it navigates, so the attribute's doc comment asks for text when `src` comes from
+a hole; #1911 checks the order of the two holes. Pinned by `tests/corpus/browser/tea/IframeSandbox`.
+
 ## Appendix — what is deliberately not done
 
 - **User-writable `foreign`.** It has never been made safe in any of the fourteen languages surveyed,
