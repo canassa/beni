@@ -1,0 +1,103 @@
+-- Typed containers keep raw keys/elements. Retaining a list forbids editing
+-- it later; returned defaults and List views preserve their aliases.
+import Browser.Host.Array as Array
+import Browser.Host.KeyMap as Map
+
+
+pub arrayMake ⊤ = Array.make ⊤
+
+
+pub arrayRead values fallback = Array.getOr values 0 fallback
+
+
+pub arraySet values item = Array.set values 0 item
+
+
+pub arrayPush values item = Array.push values item
+
+
+pub arraySize values = Array.size values
+
+
+pub arrayView values = Array.fromList values
+
+
+pub viewRead values fallback = Array.atOr values 0 fallback
+
+
+pub viewLength values = Array.length values
+
+
+pub viewSlice values = Array.slice values 1
+
+
+pub mapValues table = Map.values table
+
+
+pub mapMake ⊤ = Map.make ⊤
+
+
+pub mapGet table key = Map.get table key
+
+
+pub mapGetOr table key fallback = Map.getOr table key fallback
+
+
+pub mapSet table key value = Map.set table key value
+
+
+pub mapHas table key = Map.has table key
+
+
+pub mapRemove table key = Map.remove table key
+
+
+pub mapClear table = Map.clear table
+
+
+pub mapSize table = Map.size table
+
+
+pub mapEach table visit = Map.each table visit
+
+
+pub retainedByPush xs =
+    values = Array.make ⊤
+    Array.push values xs
+    List.push xs 1
+
+
+pub retainedBySet xs =
+    values = Array.make ⊤
+    _ = Array.set values 0 xs
+    List.push xs 1
+
+
+pub retainedKey xs =
+    table = Map.make ⊤
+    Map.set table xs 0
+    List.push xs 1
+
+
+pub retainedValue xs =
+    table = Map.make ⊤
+    Map.set table 0 xs
+    List.push xs 1
+
+
+pub arrayDefault values xs =
+    selected = Array.getOr values (-1) xs
+    changed = List.push selected 1
+    List.length changed + List.length xs
+
+
+pub viewDefault values xs =
+    selected = Array.atOr values (-1) xs
+    changed = List.push selected 1
+    List.length changed + List.length xs
+
+
+pub retainedView xs =
+    view = Array.fromList xs
+    changed = List.push xs 1
+    List.length changed + Array.length view

@@ -1,0 +1,10 @@
+-- Capture tuples are native and platform-private.
+import Browser.Host.Event as Event
+
+
+pub keep : Event.EarlyCapture → Event.EarlyCapture
+keep value = value
+
+
+pub keepListeners : Event.EarlyListeners (Event.Event → ⊤) → Event.EarlyListeners (Event.Event → ⊤)
+keepListeners value = value

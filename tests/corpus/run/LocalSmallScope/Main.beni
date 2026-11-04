@@ -1,0 +1,13 @@
+import Io
+import Node exposing (Program)
+import Ref
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    released = Ref.make 0
+    answer = Task.scope λs →
+        Task.bracket (λ⊤ → 21) (λ_ _ → Ref.set released 1) λr →
+            Task.join (Task.spawnIn s λ⊤ → r * 2)
+    Node.print (String.fromInt (answer + Ref.get released))

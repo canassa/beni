@@ -1,0 +1,56 @@
+-- A text hole of a value that is not a `String` is written by JavaScript's
+-- own `ToString`, at mount and at patch (boundary.md §9.4.6, interface
+-- 1.30): the producer converts it, and the page shows what the DOM's own
+-- coercion showed before — `0` for `-0`, `1e+21`, `NaN`,
+-- `0.30000000000000004`, an `Int` and a `Bool`.
+import Browser
+import Html exposing (Html)
+
+
+type alias Model =
+    zero : Float
+    big : Float
+    nan : Float
+    sum : Float
+    count : Int
+    flag : Bool
+
+
+type Msg
+    = Swap
+
+
+start : Model
+start =
+    { zero = -0.0
+    , big = 1.0e21
+    , nan = 0.0 / 0.0
+    , sum = 0.1 + 0.2
+    , count = 7
+    , flag = True
+    }
+
+
+update : Msg, Model → Model
+update _ model =
+    { zero = model.sum
+    , big = model.zero
+    , nan = model.big
+    , sum = model.nan
+    , count = model.count + 1
+    , flag = not model.flag
+    }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="swap" onClick={Swap}>swap</button>
+        <p>zero {model.zero} big {model.big}</p>
+        <p>nan {model.nan} sum {model.sum}</p>
+        <p>count {model.count} flag {model.flag}</p>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → start, update = update, view = view }

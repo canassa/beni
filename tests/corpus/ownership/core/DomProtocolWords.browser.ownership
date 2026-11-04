@@ -1,0 +1,43 @@
+module DomProtocolWords
+  120:14 construction values: rejected call: site⋆ may hold it through the call at 119:23, and is read at 121:24 (approx)
+  134:14 construction values: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  summary unit: π1 RAE, π2 RAE; res fresh1{lost}r{lost}, ⋆ ~π1 ~π2
+  summary patch: π1 RA, π2 RAE, π3 RAE; res ⊤{lost}r{lost}, ⋆ ~π1 ~π2 ~π3
+  summary again: π1 R
+  summary live: π1 R
+  summary eventPayload: π1 R, π2 RE; res ⊤{lost}r{lost}
+  summary nodeContext: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary contextPresent: unused
+  summary contextParent: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary contextApply: π1 R, π2 RE; res ⊤{lost}r{lost}
+  summary sendRoot: π1 R, π2 RE
+  summary controls: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary setControls: π1 R, π2 RE
+  summary hasRoot: π1 R
+  summary hasHandler: π1 R
+  summary handlerFlags: π1 R
+  summary first: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary last: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary put: π1 R, π2 R, π3 R
+  summary drop: π1 R
+  summary swap: π1 R, π2 R
+  summary parentOf: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary childMaybe: π1 R, π2 RE
+  summary restate: π1 R
+  summary turn: π2 R; π2 calls ≤1, supply 1 ⊤ borrowed
+  summary dead: unused
+  summary stop: unused
+  summary makeSite: π1 RA, π2 RA, π3 RA; res fresh1{lost}r{lost}, ⋆ ~π1 ~π2 ~π3
+  summary siteScope: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary setSiteScope: π1 R, π2 RE, π3 RE
+  summary siteData: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary siteHead: π1 RA, π2 RA; res ⊤{lost}r{lost}, ⋆ ~π1 ~π2
+  summary siteTail: π1 RA, π2 RA; res ⊤{lost}r{lost}, ⋆ ~π1 ~π2
+  summary siteRestate: π1 R, π2 R
+  summary siteDispose: π1 R, π2 R
+  summary retainedSite: π1 RAW, π2 RA, π3 RA, π4 RA; res .1 ⊤{lost}r{lost}, .1⋆ ~condition(fresh1){shared}r{shared} ~fresh1{lost}r{lost} ~fresh501◦ ~λr{lost} ~λr{lost} ~λr{lost} ~π1 ~π2 ~π3 ~π4
+  summary escapedSite: π1 REW, π2 R, π3 RE
+  demands 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause escaped 1
+cause call 1

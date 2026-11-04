@@ -1,0 +1,36 @@
+-- load
+<body>
+  <main>
+    <button id="swap">"swap"</button>
+    <section>
+      <span>"0/0"</span>
+      <span>"0/1"</span>
+      <span>"1/0"</span>
+      <span>"1/1"</span>
+    </section>
+  </main>
+</body>
+-- click #swap
+<body>
+  <main>
+    <button id="swap">"swap"</button>
+    <section>
+      <span>"1/0"</span>
+      <span>"1/1"</span>
+      <span>"0/0"</span>
+      <span>"0/1"</span>
+    </section>
+  </main>
+</body>
+-- click #swap
+<body>
+  <main>
+    <button id="swap">"swap"</button>
+    <section>
+      <span>"0/0"</span>
+      <span>"0/1"</span>
+      <span>"1/0"</span>
+      <span>"1/1"</span>
+    </section>
+  </main>
+</body>

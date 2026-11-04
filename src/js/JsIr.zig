@@ -318,6 +318,10 @@ pub const Node = struct {
         /// `(r.f = v, r)` (§31.10, *The form*).
         sequence,
 
+        /// `[key]: value` inside an object. Both payloads are expressions.
+        /// Appended so existing tags keep their serialized ordinals.
+        computed_property,
+
         /// Whether the tag is a statement (the leading run of this enum).
         pub fn isStatement(t: Tag) bool {
             return @backingInt(t) <= @backingInt(Tag.try_stmt);
@@ -850,7 +854,7 @@ pub inline fn pushOperands(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayLis
     const d = ir.data(node);
     switch (ir.tag(node)) {
         .member, .unary, .spread_property => try pushAll(gpa, stack, &.{@fromBackingInt(@intCast(d.lhs))}),
-        .index_get => try pushAll(gpa, stack, &.{ @fromBackingInt(@intCast(d.rhs)), @fromBackingInt(@intCast(d.lhs)) }),
+        .index_get, .computed_property => try pushAll(gpa, stack, &.{ @fromBackingInt(@intCast(d.rhs)), @fromBackingInt(@intCast(d.lhs)) }),
         .property => try pushAll(gpa, stack, &.{@fromBackingInt(@intCast(d.rhs))}),
         .call, .new_call => {
             try pushReversed(gpa, stack, ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Node.Index));
@@ -1157,7 +1161,7 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
             try ir.verifyChild(@fromBackingInt(@intCast(d.lhs)), .expression);
             try ir.verifyName(@fromBackingInt(@intCast(d.rhs)), false);
         },
-        .index_get => {
+        .index_get, .computed_property => {
             try ir.verifyChild(@fromBackingInt(@intCast(d.lhs)), .expression);
             try ir.verifyChild(@fromBackingInt(@intCast(d.rhs)), .expression);
         },
@@ -1168,7 +1172,7 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
             }
             for (ir.extraSlice(props, Node.Index)) |p| {
                 if (p.int() >= ir.nodes.len) return error.OutOfBounds;
-                if (ir.tag(p) != .property and ir.tag(p) != .spread_property) return error.WrongPosition;
+                if (ir.tag(p) != .property and ir.tag(p) != .spread_property and ir.tag(p) != .computed_property) return error.WrongPosition;
             }
         },
         .property => {
@@ -1640,7 +1644,7 @@ pub const Builder = struct {
                     try Push.all(&stack, gpa, at, b.rangeWords(b.record(d.rhs, SubRange)), w.call, 0);
                 },
                 .member, .unary => try Push.one(&stack, gpa, at, d.lhs, w.member, 0),
-                .index_get => {
+                .index_get, .computed_property => {
                     try Push.one(&stack, gpa, at, d.lhs, w.member, 0);
                     try Push.one(&stack, gpa, at, d.rhs, w.member, 0);
                 },
@@ -1713,7 +1717,7 @@ pub const Builder = struct {
                 .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit => {},
                 .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
                 .const_decl, .property => try stack.append(gpa, d.rhs),
-                .assign_stmt, .index_get => try stack.appendSlice(gpa, &.{ d.lhs, d.rhs }),
+                .assign_stmt, .index_get, .computed_property => try stack.appendSlice(gpa, &.{ d.lhs, d.rhs }),
                 .let_decl => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |v| try stack.append(gpa, v.int()),
                 .return_stmt => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |v| try stack.append(gpa, v.int()),
                 .unary => {

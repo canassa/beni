@@ -1,0 +1,88 @@
+-- Checked openings keep raw boxed and fresh-packet payloads, with no Maybe.
+-- A matching empty Opt is present; a wrong identity is the outer NONE.
+import Browser.Host.Array as Array
+import Io
+import Js
+import Js.Any as Any
+import Node
+
+
+slot : Js.Opt a, sync (a → String) → String
+slot value display = Js.optMatch value (λ⊤ → "none") λpayload → "some(" ++ display payload ++ ")"
+
+
+generic : Any.Any → Js.Opt a
+generic value = Any.unpackOpt value
+
+
+intOp : Any.Any → Js.Opt Int
+intOp = Any.unpackOpt
+
+
+forward : (Any.Any → Js.Opt a), Any.Any → Js.Opt a
+forward operation value = operation value
+
+
+type Wrapped
+    = Wrapped (Js.Opt Int)
+
+
+wrapped : Wrapped → String
+wrapped (Wrapped value) = slot value String.fromInt
+
+
+slow : Int → Int
+slow value =
+    Io.sleep 1
+    value + 1
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    integer : Js.Opt Int
+    integer = Any.unpackOpt (Any.pack 42)
+    wrong : Js.Opt String
+    wrong = Any.unpackOpt (Any.pack 42)
+    packet = Any.pack { number = 7, text = "packet" }
+    record : Js.Opt { number : Int, text : String }
+    record = Any.unpackOpt packet
+    existing = { number = 8, text = "box" }
+    boxed : Js.Opt { number : Int, text : String }
+    boxed = Any.unpackOpt (Any.pack existing)
+    empty : Js.Opt Int
+    empty = Js.none ⊤
+    nested : Js.Opt (Js.Opt Int)
+    nested = generic (Any.pack empty)
+    deeper : Js.Opt (Js.Opt (Js.Opt Int))
+    deeper = generic (Any.pack (Js.some empty))
+    wrappedEmpty : Js.Opt Wrapped
+    wrappedEmpty = generic (Any.pack (Wrapped empty))
+    mismatch : Js.Opt (Js.Opt Int)
+    mismatch = generic (Any.pack 42)
+    firstClass : Js.Opt Int
+    firstClass = forward Any.unpackOpt (Any.pack 43)
+    values = Array.make ⊤
+    Array.push values 9
+    native : Js.Opt (Array.Array Int)
+    native = Any.unpackOpt (Any.pack values)
+    callback : Js.Opt (Int → Int)
+    callback = Any.unpackOpt (Any.pack slow)
+    function = Js.optWithDefault callback λ_ → 0
+    called = function 50
+    Node.printLines
+        [ slot integer String.fromInt
+        , slot wrong identity
+        , slot record λvalue → String.fromInt value.number ++ ":" ++ value.text
+        , slot boxed λvalue → String.fromInt value.number ++ ":" ++ value.text
+        , slot nested λvalue → slot value String.fromInt
+        , slot deeper λvalue → slot value λinner → slot inner String.fromInt
+        , slot wrappedEmpty wrapped
+        , slot mismatch λvalue → slot value String.fromInt
+        , slot firstClass String.fromInt
+        , slot (intOp (Any.pack 44)) String.fromInt
+        , slot native λvalue →
+            String.fromInt (Array.size value)
+                ++ ":"
+                ++ (if Js.same value values then "same" else "changed")
+        , String.fromInt called
+        ]

@@ -1,0 +1,53 @@
+-- #1785: the site identity invalidates rows even when their item and
+-- captured callback compare equal. Noop retains ordinary row skipping.
+-- Noop still calls render with a fresh packet and the same identity; the
+-- log must not repeat. The browser corpus runs development and release.
+import Browser
+import Html exposing (Html)
+import Probe
+
+
+type Msg
+    = Flip
+    | Noop
+
+
+type alias Model =
+    float : Bool
+    ticks : Int
+
+
+render : (a → a) → Html Msg
+render value =
+    <main>
+        <button id="flip" onClick={Flip}>flip</button>
+        <button id="noop" onClick={Noop}>noop</button>
+        <Show when={Just "one"} keyed>
+            {λ_ → <p>{Debug.log "identity patch" (Probe.describe value)}</p>}
+        </Show>
+    </main>
+
+
+view : Model → Html Msg
+view model = if model.float then render floatIdentity else render intIdentity
+
+
+intIdentity : Int → Int
+intIdentity = Probe.identity
+
+
+floatIdentity : Float → Float
+floatIdentity = Probe.identity
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Flip →
+            { model | float = not model.float }
+        Noop →
+            { model | ticks = model.ticks + 1 }
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → { float = False, ticks = 0 }, update = update, view = view }

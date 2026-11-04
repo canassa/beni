@@ -1412,6 +1412,7 @@ const Emitter = struct {
     program_uses: []const []const u8 = &.{},
     /// The supplied exports some module's lowering took, by name.
     module_uses: std.ArrayList([]const u8) = .empty,
+    uses_markup_packets: bool = false,
     /// Reachability's roots beside the build's own (`Reach.Input`).
     extra_roots: []const Reach.Node = &.{},
     /// The validators the build shares across its schemas, as roots
@@ -2380,12 +2381,14 @@ const Emitter = struct {
     // ---- boundary.md §4, checks 2, 3 and 4 --------------------------------
 
     fn compilerOwnedJs(e: *Emitter, m: Graph.Index, d: Bir.Decl) bool {
+        if (e.loweringSupplied(m, d)) return true;
         if (e.graph().modulePackage(m) == .core) {
             if (@import("../native/Operations.zig").lookup(e.session.interner.slice(e.graph().moduleName(m)), e.session.interner.slice(e.bir(m).symbol(d.name)))) |row| {
                 if (@import("../native/Operations.zig").renderer(row.recipe)) return true;
             }
         }
         if (e.graph().modulePackage(m) == .core and std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Schema") and std.mem.eql(u8, e.session.interner.slice(e.bir(m).symbol(d.name)), "endpointIdentity")) return true;
+        if (e.graph().modulePackage(m) == .core and std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Js.Any") and std.mem.eql(u8, e.session.interner.slice(e.bir(m).symbol(d.name)), "unpackOpt")) return true;
         if (e.graph().modulePackage(m) != .core or (!std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Js") and !std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Js.Array"))) return false;
         const which = std.meta.stringToEnum(@import("JsIntrinsic.zig").Which, e.session.interner.slice(e.bir(m).symbol(d.name))) orelse return false;
         return @import("JsIntrinsic.zig").compilerOnly(which);
@@ -3382,10 +3385,69 @@ const Emitter = struct {
     fn moduleValue(e: *Emitter, module: Graph.Index, name: []const u8) ?u32 {
         const b = e.bir(module);
         for (b.decls, 0..) |d, index| {
-            if (d.kind != .value or !d.is_pub or d.body == .none) continue;
+            if (!d.is_pub) continue;
+            if (d.kind == .value and d.body != .none) {} else if (!e.loweringSupplied(module, d)) continue;
             if (std.mem.eql(u8, e.session.interner.slice(b.symbol(d.name)), name)) return @intCast(index);
         }
         return null;
+    }
+
+    /// Per module, whether it is a platform module that only the runtime
+    /// module reaches: every module that imports it is the runtime module or
+    /// another such module.
+    fn runtimeOnlyModules(e: *Emitter) ![]const bool {
+        const count = e.graph().count();
+        const only = try e.scratch.alloc(bool, count);
+        @memset(only, false);
+        const runtime = e.runtime_module orelse return only;
+        only[runtime.int()] = true;
+        var changed = true;
+        while (changed) {
+            changed = false;
+            for (0..count) |i| {
+                const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
+                if (only[i] or e.graph().modulePackage(m) != .platform) continue;
+                var imported = false;
+                var all = true;
+                for (0..count) |j| {
+                    const from: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(j))));
+                    if (std.mem.indexOfScalar(Graph.Index, e.graph().dependencies(from), m) == null) continue;
+                    imported = true;
+                    if (!only[j]) all = false;
+                }
+                if (imported and all) {
+                    only[i] = true;
+                    changed = true;
+                }
+            }
+        }
+        return only;
+    }
+
+    /// The runtime module's values the build's lowering supplies, for the
+    /// reachability walk (`boundary.md` §9.4.6, version 1.30).
+    fn loweringSuppliedValues(e: *Emitter) !?Reach.Input.LoweringSupplied {
+        const lowering_name = e.options.platform.lowering orelse return null;
+        const lowering = findLowering(lowering_name) orelse return null;
+        const supplied = lowering.runtime_protocol orelse return null;
+        const module = try e.markupModule() orelse return null;
+        return .{ .module = module, .values = supplied.values, .uses = supplied.uses };
+    }
+
+    /// Whether `d` is a value of the runtime module that the build's markup
+    /// lowering supplies (`Lowering.runtime_protocol`, `boundary.md`
+    /// §9.4.6, version 1.30): compiler-owned, with no sibling export.
+    fn loweringSupplied(e: *Emitter, module: Graph.Index, d: Bir.Decl) bool {
+        if (d.kind != .foreign_value) return false;
+        const lowering_name = e.options.platform.lowering orelse return false;
+        const lowering = findLowering(lowering_name) orelse return false;
+        const supplied = lowering.runtime_protocol orelse return false;
+        const runtime_name = e.options.platform.markup_module orelse return false;
+        if (e.graph().modulePackage(module) != .platform) return false;
+        if (!std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(module)), runtime_name)) return false;
+        const name = e.session.interner.slice(e.bir(module).symbol(d.name));
+        for (supplied.values) |v| if (std.mem.eql(u8, v, name)) return true;
+        return false;
     }
 
     /// Match each hidden identity to a checked Schema argument. A schema's
@@ -3612,11 +3674,27 @@ const Emitter = struct {
         }
     }
 
+    /// A generated packet has no written source call to Any.pack. Keep
+    /// that graph edge during the coarse walk, then only when a lowering
+    /// actually reports a packet producer.
+    fn packetRoots(e: *Emitter, out: *std.ArrayList(Reach.Node)) !void {
+        const name = e.session.interner.find("Js.Any") orelse return;
+        const module = e.graph().lookup(.core, name) orelse return;
+        const b = e.bir(module);
+        for (b.decls, 0..) |decl, index| {
+            if (decl.kind != .foreign_value or !decl.is_pub) continue;
+            if (!std.mem.eql(u8, e.session.interner.slice(b.symbol(decl.name)), "pack")) continue;
+            try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = @intCast(index) });
+            return;
+        }
+    }
+
     /// The runtime module's roots (`backend.md` §15.1, *The runtime
     /// module*), coarse: every export it supplies and every value the file
     /// imports from it.
     fn coarseRuntimeRoots(e: *Emitter) ![]const Reach.Node {
         var out: std.ArrayList(Reach.Node) = .empty;
+        if (e.graph().markup.operand_evidence & 1 != 0) try e.packetRoots(&out);
         try e.workerHostRoots(&out);
         if (e.selectedRuntime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = if (e.entry_runtime_twin) .twin else .decl, .index = runner.decl });
         const module = e.runtime_module orelse return out.items;
@@ -3635,6 +3713,7 @@ const Emitter = struct {
     /// them, and the values the kept part of the file imports.
     fn preciseRuntimeRoots(e: *Emitter, entry: ?Entry) ![]const Reach.Node {
         var out: std.ArrayList(Reach.Node) = .empty;
+        if (e.uses_markup_packets) try e.packetRoots(&out);
         try e.workerHostRoots(&out);
         if (e.selectedRuntime()) |runner| try out.append(e.scratch, .{ .module = runner.module, .kind = if (e.entry_runtime_twin) .twin else .decl, .index = runner.decl });
         const module = e.runtime_module orelse return out.items;
@@ -6454,6 +6533,7 @@ const Emitter = struct {
             .forwarding_foreigns = e.forwarding_foreigns,
             .cuts = e.cuts,
             .pinned = e.lift_roots,
+            .lowering_supplied = try e.loweringSuppliedValues(),
         };
         // What each lifted piece reaches (`browser-inline.md` §7).
         if (e.lifts.len != 0) {
@@ -6878,6 +6958,11 @@ const Emitter = struct {
         // takes its lowering as it is (`reusableLowerings`, #608).
         var first_slots: []ModuleSlot = &.{};
         var reused: []const bool = &.{};
+        // The platform modules only the runtime module reaches (its own
+        // `Rt.Slots`, `Rt.Rows`, `Html.Runtime`) are left to the second
+        // lowering with it: what they keep depends on what the program uses
+        // of the runtime module, as the module's own does.
+        const runtime_only = try e.runtimeOnlyModules();
         while (true) {
             // What each worker needs of the shared arena is made here, first:
             // the arena is the calling thread's alone.
@@ -6892,7 +6977,7 @@ const Emitter = struct {
                 // and nothing imports it, because imports are use-driven and a
                 // use is an edge.
                 if (!e.live.of(m).any() or e.onlyPrimitivesLive(m)) continue;
-                if (!refined and e.runtime_module != null and (m == e.runtime_module.? or e.graph().modulePackage(m) == .core)) {
+                if (!refined and e.runtime_module != null and (m == e.runtime_module.? or e.graph().modulePackage(m) == .core or runtime_only[i])) {
                     skipped = true;
                     continue;
                 }
@@ -6953,6 +7038,7 @@ const Emitter = struct {
             uses_sanitizer = false;
             lowered_clean = true;
             e.uses_markup_runtime = false;
+            e.uses_markup_packets = false;
             e.markup_exports.clearRetainingCapacity();
             e.start.clearRetainingCapacity();
             e.module_uses.clearRetainingCapacity();
@@ -6965,6 +7051,7 @@ const Emitter = struct {
                 uses_runtime = uses_runtime or slot.uses_runtime;
                 uses_sanitizer = uses_sanitizer or slot.uses_sanitizer;
                 e.uses_markup_runtime = e.uses_markup_runtime or slot.uses_markup_runtime;
+                e.uses_markup_packets = e.uses_markup_packets or slot.markup_packets;
                 try e.markup_exports.appendSlice(e.scratch, slot.markup_exports);
                 for (slot.markup_module_uses) |name| {
                     var known = false;
@@ -7138,6 +7225,7 @@ const Emitter = struct {
         /// The runtime exports it took from the runtime module instead,
         /// likewise (`Lower.Result.markup_module_uses`).
         markup_module_uses: []const []const u8 = &.{},
+        markup_packets: bool = false,
         /// The program start data its markup lowering contributed, in the
         /// lowering worker's `kept` arena.
         start: []const Lower.StartPair = &.{},
@@ -7198,6 +7286,7 @@ const Emitter = struct {
             slot.uses_markup_runtime = from.uses_markup_runtime;
             slot.markup_exports = from.markup_exports;
             slot.markup_module_uses = from.markup_module_uses;
+            slot.markup_packets = from.markup_packets;
             slot.start = from.start;
             slot.unobserved = from.unobserved;
             slot.effect_keep = from.effect_keep;
@@ -7337,6 +7426,7 @@ const Emitter = struct {
             slot.uses_runtime = lowered.uses_runtime;
             slot.uses_sanitizer = lowered.uses_sanitizer;
             slot.uses_markup_runtime = lowered.uses_markup_runtime;
+            slot.markup_packets = lowered.markup_packets;
             const exports = try w.kept.allocator().alloc([]const u8, lowered.markup_exports.len);
             for (exports, lowered.markup_exports) |*to, name| to.* = try w.kept.allocator().dupe(u8, name);
             slot.markup_exports = exports;
@@ -7396,6 +7486,7 @@ const Emitter = struct {
                 again.uses_runtime == slot.uses_runtime and
                 again.uses_sanitizer == slot.uses_sanitizer and
                 again.uses_markup_runtime == slot.uses_markup_runtime and
+                again.markup_packets == slot.markup_packets and
                 sameStrings(again.markup_exports, slot.markup_exports) and
                 sameStrings(again.markup_module_uses, slot.markup_module_uses) and
                 sameStart(again.start, slot.start) and

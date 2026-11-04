@@ -1,0 +1,21 @@
+pub opaque type Program
+    = Program String String
+
+
+pub foreign type Html msg
+
+
+pub element "p"
+
+
+pub element "b"
+
+
+pub foreign pure literal : String → Html msg
+
+
+pub foreign pure render : Html msg → String
+
+
+pub program : Html msg → Program
+program html = Program "markup" (render html)

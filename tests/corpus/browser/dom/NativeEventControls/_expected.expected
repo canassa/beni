@@ -1,0 +1,7 @@
+-- load
+<body>
+  <p>"native controls: ok"</p>
+</body>
+-- flush body
+(flushed)
+(the DOM did not change)

@@ -546,6 +546,21 @@ The last five are static dispatch's, and
 call shapes and the evidence convention, Â§9 for the exact JavaScript of every derived function.
 Nothing here reopens a representation decision â Â§9.4's shapes are what derivation walks.
 
+### Unboxed cell wrappers
+
+*Manager decision, 2026-11-03.* A nominal type with exactly one constructor
+and exactly one field whose type is `Js.Cell r` is represented by that cell
+in development and release. Type aliases of the field expand before this test.
+Constructing or matching the nominal adds no object, field access or tag test:
+a single-constructor pattern is total, and the cell already owns the identity.
+This permits recursive renderer graphs without recursive aliases or wrapper
+allocations. Debug shows `<internals>`, as it does for the cell itself.
+The nominal type and its public declarations remain distinct in the checker;
+Task's existing representations are unchanged. A field of `Js.Ref`, an
+arbitrary record or a type parameter keeps today's development boxing. This
+rule does not apply to a constructor with another field or a type with another
+constructor. Ordinary release unboxing below remains separate.
+
 ### Ordered dictionaries
 
 *Added 2026-10-22 (#294), specifying the owner's 2026-10-17 and 2026-10-19
@@ -6244,6 +6259,14 @@ receiver) whose `Func` has parameters `p₁ … pₙ` (n ≥ 0, all distinct) an
 default, a parameter read anywhere else and an argument that is anything but the matching parameter
 all fail the shape; so does a body of two statements.
 
+*Amended 2026-11-04 (Part of #1826): top-level initialisation.* An
+immutable top-level callee must also be bound when the forwarding arrow is
+created. A later same-file `const` is in scope but still in its temporal
+dead zone; replacing a delayed call by that name would introduce a throw
+while a supplied protocol record is constructed. As for local `const`s,
+item 6 declines until its declaration has been planned. Hoisted function
+declarations remain available. This guard is release-only.
+
 **The callee.** `f` must denote the same function at every call of the arrow as at the arrow's
 evaluation, which is true of a name JavaScript never rebinds after its binding:
 
@@ -6869,7 +6892,7 @@ keeps a type's string tags keeps its object:
   answer, at `Order`; so the key's type is opaque at the door and a release build may unbox it.
   `emit/release/tea/HttpSendTracked` shows `Http.Key`'s `Track` box gone and its compare on two
   strings (*amended 2026-10-26*).
-- **A `--library` build, and a build that reaches `Debug`, unbox nothing**, as they number no tag.
+- **Apart from the cell-wrapper rule in §4 and the configured opaque markup ABI, a `--library` build and a build that reaches `Debug` unbox nothing**, as they number no tag.
 - **Markup.** A selector probe (Â§15.5) of such a type is the value itself, which is the field the
   probe would have read; nothing else a lowering writes reads a beni constructor.
 - **`==` and `compare` mean what they meant.** The derived `eq` and `compare` of such a type are
@@ -7940,6 +7963,45 @@ at one call; a function called from many places paid a call at each, an identity
   operators their text, brackets and commas) â an identity, a function returning a name, a wrapper
   of another call. A function every call of which is replaced is then unreferenced and goes.
 
+*Amended 2026-11-04 (Part of #1825): a direct local call.* Slice 8 also accepts a
+plain local `const` arrow at a direct identifier call inside the binding's lexical
+scope. It never follows an alias to obtain a captured body from another invocation.
+Beni bindings are immutable: a captured binding reads the same value at that direct
+call, and creating the closure has no effect. Lowering gives every local binding
+within a top-level declaration a distinct name; the table is rebuilt for each such
+declaration, so nested shadowing and separate invocations cannot exchange captures.
+A body reading lexical `this` is refused: a nested method call could change its receiver.
+The existing small-body, argument-order and size checks still apply. A function
+containing a suspension point is not a small expression; copying an ordinary small
+body inside a suspendable form preserves its calls and their suspension marks.
+This is a release optimiser rule only; development emission is unchanged.
+
+**Guarded projections at a direct call** (*added 2026-11-04, Part of #1861*).
+A bounded release-only extension evaluates a small, unassigned top-level plain
+arrow's guards using the actual argument's facts. The helper has one parameter,
+at most 64 IR nodes, and a strict identity guard against a held object. Only a
+selected path consisting of local bindings, assignments to those locals,
+conditionals and a return of the parameter or its data-field projection is
+eligible. Every discarded guard/read is proved effect-free; a property read
+requires fact 3's existing non-escaped plain-object proof. Unknown guards,
+calls, suspension, loops and unproved reads leave the call alone. Arguments are
+evaluated once in their original order. The remaining projection is accepted
+only when its bytes in slice 8's size model do not exceed the original call;
+there is no speculative code growth or copying fallback. Development emission
+is unchanged.
+
+**Held-object guards in fact 3** (*added 2026-11-04, Part of #1861*). In the
+unequal arm of `chain !== held` (or the else arm of `chain === held`), fact 3
+may exclude the one held allocation from the chain's set. The existing
+`heldObject`/`heldVerdict` definition is reused: an unassigned top-level
+`const` object/array literal is one object for the run. An exclusion requires
+a singleton allocation made once; it never discards another constant merely
+because it has a different site. Same-base or same-code held objects remain
+undecided. Only a proven different object can force an unequal guard. The
+existing chain, alias, getter and guard-kill checks stay; host values remain
+unknown, and a join that may contain the held value keeps its guard. This is a
+fact of the release optimiser, not a new source word or a representation change.
+
 The facts are then asked again (`Spec.grow` sizes their tables to the copied nodes): a constant
 now passed, a field of a literal now read, folds â `scale 1 n` written in is `n`, `measure 3` is
 `10`. With them, **`x.p = x.p`** on program objects â an identity written in place, `a.i =
@@ -8450,6 +8512,19 @@ null})(d)` in `callback` once `suspend` was written there, on a page whose only 
   (`declCount`) and by no `catch`, no `return` but the last leaves the body, and the body holds no
   label, which the list could already hold. A body of one `return e` is the first way's: as
   statements it is bindings and a block, larger than the call.
+
+*Amended 2026-11-04 (Part of #1825): one return that makes closures.* The
+statement form also accepts one `return e` when `e` contains a closure, which the
+expression form refuses. The original guard is from `cf2fa397eb` (2026-10-02):
+"as statements it is bindings and a block, larger than the call." It is a size
+heuristic, not a permission to share captured bindings. Removing the transient
+IIFE now enables direct local-call optimisation. Every argument still becomes a
+block-scoped `const` (`let` only for a written parameter) at the original call's
+statement, inside the original loop, branch or function invocation. It is never
+hoisted above that loop or repeat. Each execution therefore gives the closures
+fresh bindings, just as each IIFE invocation did. All existing distinct-binding,
+catch, label and final-return guards stay. A one-return body without a closure
+still uses the expression form. This remains release-only.
 
 A call whose body reads a parameter twice and whose argument is not a name stays: writing the body
 would evaluate the argument twice, or move it. Measured (release, brotli, the whole bundle,
@@ -12193,6 +12268,14 @@ message visits no control: a value set with no event stays; `pageshow` reconcile
 
 ### 15.4 Blocks: where markup that escapes goes
 
+*Amended 2026-11-04 (Part of #1825, review of #1898):* producer-private
+instance and row keys use the reserved `$` namespace: `$w`, `$c`, `$x`,
+`$a`, `$g`, `$d` and `$l` with their site/index suffixes. InstanceFields
+and RowFields also carry source-named runtime fields, whose release colours
+must never overwrite those producer slots. Field colours exclude `$`.
+Capture tuples retain their ordinary positional Beni fields.
+
+
 W29's answer, in Solid's own split (research 36 Â§0 item 3, Â§4.2; question 3, accepted). A root whose
 value **escapes** â into a `let`, a helper's result, a `case` branch, a list, a record field, a
 component's `children`, or a recursive view â evaluates to a block `{ t, v }`, and the slot that
@@ -12265,6 +12348,28 @@ const Main$p3 = (i, v) => {
 };
 const Main$k3 = { m: (v, cx) => { const r = Main$t3(); â¦walks, slotsâ¦; const i = { â¦, a0: undefined, g0_0: undefined }; Main$p3(i, v); return i; }, p: Main$p3 };
 ```
+
+*Amended 2026-11-03, typed capture packets* (manager decisions in
+boundary.md §9.4.6, versions 1.24–1.25). The dom lowering retains a grouped
+root's inputs in one fresh capture tuple object, tagged by Context.packet with
+the checked tuple identity. Its slots are a, b, …, a26, …, as for a Beni tuple;
+the kind reads those slots. This replaces the input array in the example
+above, with the same one capture allocation and the same outer node shape
+{ t: kind, v: captures }. It introduces no Box, node wrapper, or per-row key
+packet. The caller-side helper uses Any.pack's existing private Symbol in the
+literal. A closed identity's computed property may be moved to cold private
+metadata in the same declaration unit, spread first into the one capture
+object; dynamic checked identities stay in the literal. No property-definition
+helper runs per render. Development prepares the named slots in cold metadata
+too, so cloning overwrites existing fields; release retains the priced
+Symbol-only template. Final packet fields, values and field order are identical.
+The input values themselves retain their identities. A root without
+inputs remains the shared block with v: null. Non-grouped value arrays and a
+row's independent input-comparison array retain their existing contract until
+their typed storage migration. A hidden identity needed only to construct the
+capture packet does not disable grouping: it is read in the caller, not the
+hoisted kind. A declaration whose ordinary source-call evidence reads one of
+its identity parameters keeps the previous non-grouped path.
 
 The rules, exactly:
 
@@ -12379,6 +12484,17 @@ specified in [`write-sets.md`](write-sets.md) (Â§1 the contract, Â§2.5 confl
 and the write set only says which groups need not be tested.
 
 ### 15.5 `For` and `Show` in the `dom` lowering
+
+*Manager amendment, 2026-11-03 (#1785).* A row descriptor may carry `j`,
+the checked identity key of its captured generic environment. Keyed and
+positional lists compare it once per site against the existing slot's `j`.
+A change makes the site's `same` false, so every row re-evaluates; equality
+retains all existing item/input/selector skipping. A descriptor without `j`
+adds no cached slot field. A Show's identity key joins its existing individual
+body-input guards instead. These keys are compiler-supplied private identity
+Strings, not list keys; raw list keys and per-row allocation do not change.
+No input array is added for a site with no ordinary captures. Interface 1.26
+and `boundary.md` §9.4–§9.5 own the lowering contract.
 
 `For` is Solid 2's list (research 27 Â§7.1), with **dom-expressions' `reconcileArrays` without
 `$$SLOT`** as the one DOM patcher (`rt/reconcile.js`, udomdiff; research 27 Â§6.11): a whole-program

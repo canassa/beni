@@ -1,18 +1,95 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
-import Browser.Host.EventTarget as EventTarget
-
-
+import Browser.Host.Array as Array
 import Browser.Host.DOMRect as DOMRect
-
-
-import Js
+import Browser.Host.EventTarget as EventTarget
+import Browser.Host.Node as Node
 import Browser.Host.Rejection as Rejection
+import Js
+
+
+pub foreign type EarlyCapture
+
+
+pub sequence foreign type EarlyListeners handler
 
 
 pub foreign type Event
 
 
+pub foreign impure rendererEarlyListeners : ⊤ → fresh EarlyListeners (Event → ⊤)
+
+
+pub foreign impure rendererEarlyAppend :
+      borrowed EarlyListeners (Event → ⊤)
+    , String
+    , escaped sync (Event → ⊤)
+    → ⊤
+
+
+pub foreign impure rendererEarlySize : borrowed EarlyListeners (Event → ⊤) → Int
+
+
+pub foreign impure rendererEarlyKindAt : borrowed EarlyListeners (Event → ⊤), borrowed Int → String
+
+
+pub foreign impure rendererEarlyHandlerAt :
+      borrowed EarlyListeners (Event → ⊤)
+    , borrowed Int
+    → (Event → ⊤)
+
+
+pub foreign impure rendererTarget : borrowed Event → Js.Opt Node.Node
+
+
+pub foreign impure kind : borrowed Event → String
+
+
+pub foreign impure isTrusted : borrowed Event → Bool
+
+
+pub foreign impure bubbles : borrowed Event → Bool
+
+
+pub foreign impure cancelBubble : borrowed Event → Bool
+
+
+pub foreign impure stopPropagation : borrowed Event → ⊤
+
+
+pub foreign impure target : aliased Event → Maybe EventTarget.EventTarget
+
+
+pub foreign impure rendererCurrentTarget : borrowed Event, Js.Ref (Js.Opt Node.Node) → ⊤
+
+
+pub foreign impure rendererClearCurrentTarget : borrowed Event → ⊤
+
+
+pub foreign impure rendererTakeEarly : ⊤ → Array.Array EarlyCapture
+
+
+pub foreign impure rendererEarlyEvent : borrowed EarlyCapture → Event
+
+
+pub foreign impure rendererEarlyTarget : borrowed EarlyCapture → Node.Node
+
+
+pub foreign impure rendererEarlyRemember : borrowed EarlyCapture → ⊤
+
+
+pub foreign impure rendererEarlyValue : borrowed EarlyCapture, Int → Js.Opt String
+
+
+pub foreign impure rendererEarlyChecked : borrowed EarlyCapture, Int → Js.Opt Bool
+
+
+pub foreign impure rendererEarlySelectedIndex : borrowed EarlyCapture, Int → Js.Opt Int
+
+
 pub foreign impure errorMessage : borrowed Event → Maybe String
+
+
+pub foreign impure message : borrowed Event → String
 
 
 pub foreign impure dataOnly : aliased Event → Maybe Js.Value

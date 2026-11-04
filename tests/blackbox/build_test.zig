@@ -6465,7 +6465,10 @@ test "a release page build lowers each module once" {
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     // One file, and each module in it lowered once: none is lowered two
-    // times, and none is lowered that the file does not hold.
+    // times, and none is lowered that the file does not hold but one:
+    // `Browser.Host.Element`, whose one value the runtime reads, the
+    // identity upcast `toNode` that finds the mount node (interface 1.30),
+    // is written where it is called, so the file holds nothing of it.
     var files: u64 = 0;
     for (try w.listFiles("out")) |path| {
         if (std.mem.endsWith(u8, path, ".mjs")) files += 1;
@@ -6473,7 +6476,7 @@ test "a release page build lowers each module once" {
     try testing.expectEqual(1, files);
     try testing.expectEqual(2, counters.reach_walks);
     try testing.expect(counters.modules_printed > 1);
-    try testing.expectEqual(counters.modules_printed, counters.modules_lowered);
+    try testing.expectEqual(counters.modules_printed + 1, counters.modules_lowered);
 }
 
 test "a program builds the same with the edge lists the binary carries as with lists it builds" {
@@ -13706,6 +13709,111 @@ test "release libraries keep sibling imports and exports consistent" {
     });
 }
 
+test "private renderer arrays truncate in place and defect on invalid reads" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("ArrayProbe.beni",
+        \\import Browser.Host.Array as Array
+        \\import Js
+        \\
+        \\
+        \\make : ⊤ → Array.Array Int
+        \\make ⊤ =
+        \\    array = Array.make ⊤
+        \\    Array.push array 10
+        \\    Array.push array 20
+        \\    array
+        \\
+        \\
+        \\read : Array.Array a, Int → a
+        \\read array index = Array.rendererAt array index
+        \\
+        \\
+        \\truncate : Array.Array Int, Int → ⊤
+        \\truncate array length = Array.rendererTruncate array length
+        \\
+        \\
+        \\pub operations = { make = make, read = read, truncate = truncate, has = Array.rendererHas, none = λ⊤ → Js.none ⊤, functions = { read = Array.rendererAt, truncate = Array.rendererTruncate } }
+    );
+    for ([_]bool{ false, true }) |release| {
+        const args: []const []const u8 = if (release)
+            &.{ "build", "--core", "--platform=node", "--library", "--release", "--out=out", "ArrayProbe.beni" }
+        else
+            &.{ "build", "--core", "--platform=node", "--library", "--out=out", "ArrayProbe.beni" };
+        const result = try w.run(args);
+        try testing.expectEqual(@as(u8, 0), result.exit_code);
+        try testing.expectEqual(@as(usize, 0), result.diagnostics.len);
+        try w.write("probe.mjs",
+            \\import assert from 'node:assert/strict';
+            \\import * as module from './out/ArrayProbe.mjs';
+            \\assert.equal(Object.keys(module).length, 1);
+            \\const { make, read, truncate, functions, has, none } = Object.values(module)[0];
+            \\const array = make(null);
+            \\assert.deepEqual(array, [10, 20]);
+            \\assert.equal(read(array, 1), 20);
+            \\assert.equal(functions.read(array, 0), 10);
+            \\const original = array;
+            \\truncate(array, 1);
+            \\assert.equal(array, original);
+            \\assert.deepEqual(array, [10]);
+            \\for (const index of [-1, 1, 2, 0.5, 4294967296, NaN, Infinity]) {
+            \\  for (const at of [read, functions.read]) {
+            \\    assert.throws(() => at(array, index), { name: 'RangeError', message: 'beni: renderer array index out of bounds' });
+            \\  }
+            \\}
+            \\for (const cut of [truncate, functions.truncate]) {
+            \\  cut(array, array.length);
+            \\  for (const size of [-1, 2, 0.5, 4294967296, NaN, Infinity]) {
+            \\    assert.throws(() => cut(array, size), { name: 'RangeError', message: 'beni: renderer array length out of bounds' });
+            \\    assert.deepEqual(array, [10]);
+            \\  }
+            \\}
+            \\functions.truncate(array, 0);
+            \\assert.deepEqual(array, []);
+            \\assert.throws(() => read(array, 0), { name: 'RangeError', message: 'beni: renderer array index out of bounds' });
+            \\const cache = [];
+            \\cache.length = 5;
+            \\const marker = none(null);
+            \\cache[0] = 'cached-key';
+            \\cache[2] = undefined;
+            \\cache[4] = marker;
+            \\assert.equal(has(cache, 0), true);
+            \\assert.equal(read(cache, 0), 'cached-key');
+            \\assert.equal(has(cache, 1), false);
+            \\assert.equal(has(cache, 2), true);
+            \\assert.equal(read(cache, 2), undefined);
+            \\assert.equal(has(cache, 4), true);
+            \\assert.equal(read(cache, 4), marker);
+            \\for (const index of [-1, 5, 6, 0.5, 4294967296, NaN, Infinity]) assert.equal(has(cache, index), false);
+            \\assert.deepEqual(Object.keys(cache), ['0', '2', '4']);
+            \\console.log('renderer arrays verified');
+        );
+        try w.expectProgram("probe.mjs", .{ .stdout = "renderer arrays verified\n" });
+    }
+}
+
+test "typed row module matches development and release emit goldens" {
+    // The shape belongs to the platform module, which emit/ does not golden.
+    // Build a normal library client; never copy the runtime implementation.
+    for ([_]bool{ false, true }) |release| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const arena = w.arena.allocator();
+        const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/typed-rows/RowsClient.beni", arena, .limited(world.max_stream_bytes));
+        try w.write("RowsClient.beni", source);
+        const built = try w.run(if (release)
+            &.{ "build", "--library", "--platform=browser", "--release", "--out=out", "RowsClient.beni" }
+        else
+            &.{ "build", "--library", "--platform=browser", "--out=out", "RowsClient.beni" });
+        reportUnclean("build typed rows", built);
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqualStrings("", built.stderr);
+        const path = if (release) "tests/fixtures/typed-rows/Rows.release.mjs" else "tests/fixtures/typed-rows/Rows.dev.mjs";
+        const expected = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, arena, .limited(world.max_stream_bytes));
+        try testing.expectEqualStrings(expected, try w.read("out/_platform/Rt/Rows.mjs"));
+    }
+}
+
 test "nodeBody is the one function of core/Schema.beni that takes a Node apart" {
     // The accessor this check knows by name (`Schema$nodeBody`): if core
     // reads a node any other way, the check is blind to it.
@@ -13722,4 +13830,49 @@ test "nodeBody is the one function of core/Schema.beni that takes a Node apart" 
     try std.testing.expectEqual(@as(usize, 1), takers);
     // And `nodeRef` is the one that builds a node.
     try std.testing.expect(std.mem.indexOf(u8, source, "nodeRef : NodeBody → Node") != null);
+}
+
+test "typed events module matches development and release emit goldens" {
+    // Rt.Events is a platform module, which emit/ does not golden: a library
+    // client imports it, and the module's own output is compared.
+    for ([_]bool{ false, true }) |release| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const arena = w.arena.allocator();
+        const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/typed-events/EventsClient.beni", arena, .limited(world.max_stream_bytes));
+        try w.write("EventsClient.beni", source);
+        const built = try w.run(if (release)
+            &.{ "build", "--library", "--platform=browser", "--release", "--out=out", "EventsClient.beni" }
+        else
+            &.{ "build", "--library", "--platform=browser", "--out=out", "EventsClient.beni" });
+        reportUnclean("build typed events", built);
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqualStrings("", built.stderr);
+        const path = if (release) "tests/fixtures/typed-events/Events.release.mjs" else "tests/fixtures/typed-events/Events.dev.mjs";
+        const expected = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, arena, .limited(world.max_stream_bytes));
+        try testing.expectEqualStrings(expected, try w.read("out/_platform/Rt/Events.mjs"));
+    }
+}
+
+test "DOM producer slots stay in the reserved dollar namespace" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    for ([_][]const u8{ "DomGrouped", "DomChildren" }) |name| {
+        const path = try std.fmt.allocPrint(a, "tests/corpus/emit/dom/{s}.beni", .{name});
+        const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, a, .limited(world.max_stream_bytes));
+        try w.write(try std.fmt.allocPrint(a, "{s}.beni", .{name}), source);
+    }
+    const built = try w.run(&.{ "build", "--library", "--platform=browser", "--out=out", "." });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expectEqualStrings("", built.stderr);
+    try w.write("reserved.mjs",
+        \\import assert from 'node:assert/strict';
+        \\import {readFileSync} from 'node:fs';
+        \\const js = ['DomGrouped', 'DomChildren'].map(n => readFileSync('./out/' + n + '.mjs', 'utf8')).join('\n');
+        \\for (const key of ['$w0', '$c0', '$x0', '$a1', '$g0_0', '$d0', '$l0_0']) assert.ok(js.includes(key + ':'), key);
+        \\assert.doesNotMatch(js, /(?<![$\w])(?:w\d+|c\d+|x\d+|a\d+(?:_\d+|[ckv]|i\d+)?|g\d+(?:_\d+)?|d\d+|l\d+_\d+)\s*:/);
+        \\console.log('producer keys reserved');
+    );
+    try w.expectProgram("reserved.mjs", .{ .stdout = "producer keys reserved\n" });
 }

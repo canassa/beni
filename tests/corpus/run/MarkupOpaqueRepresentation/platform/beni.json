@@ -1,0 +1,1 @@
+{"platform":true,"name":"markup-representation","program":"TypedHtml.Program","entryHost":"node","runtime":"runtime.js","markup":{"vocabulary":"TypedHtml","type":"TypedHtml.Html","lowering":"ssr","runtime":"runtime.js"}}

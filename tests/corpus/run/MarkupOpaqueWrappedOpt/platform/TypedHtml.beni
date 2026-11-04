@@ -1,0 +1,27 @@
+import Js
+
+
+pub opaque type Program
+    = Program String String
+
+
+type Payload
+    = Payload (Js.Opt Int)
+
+
+pub opaque type Html msg
+    = Html Payload
+
+
+pub element "p"
+
+
+pub present : ⊤ → Bool
+present ⊤ =
+    value = Html (Payload (Js.none ⊤))
+    Js.optMatch (Js.some value) (λ⊤ → False) λ(Html (Payload slot)) →
+        Js.optMatch slot (λ⊤ → True) λ_ → False
+
+
+pub program : Bool → Program
+program presentValue = Program "optional markup" (if presentValue then "present" else "missing")

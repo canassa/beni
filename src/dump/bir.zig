@@ -397,7 +397,14 @@ const Dumper = struct {
     /// builderdone`: v1's column and the v2 column (ownership-v2.md §2.13.6),
     /// each when the signature has one.
     fn own2Row(d: *Dumper, decl_: Bir.Decl) !void {
-        try d.ownRow("own", d.bir.extra[decl_.own_start..decl_.own_end]);
+        const fields = d.bir.ownFields(decl_);
+        if (fields.len != 0) {
+            for (fields) |field| {
+                if (field.start == field.end) continue;
+                try d.w.print("  own field {s}\n", .{d.names.text(@fromBackingInt(field.name))});
+                try d.ownRow("own", d.bir.extra[field.start..field.end]);
+            }
+        } else try d.ownRow("own", d.bir.extra[decl_.own_start..decl_.own_end]);
         try d.ownRow("own2", d.bir.extra[decl_.own2_start..decl_.own2_end]);
     }
 

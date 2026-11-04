@@ -3,6 +3,8 @@
 -- The page-private fields compete with the wire palette in release output.
 import Int32
 import List
+-- Generic packet identity remains dynamic; the typed wire must ignore its Symbol.
+import Packet
 import Page
 import Protocol exposing (Added, Choice, Empty, Leaf, Message, Node, Tree)
 import String
@@ -18,13 +20,13 @@ rest values =
             []
 
 
-worker : Worker.Program Message Message ((Int → Int))
+worker : Worker.Program (Message × ⊤) (Message × ⊤) ((Int → Int))
 worker =
     Worker.program
         { init = λ_ _ → λvalue → value + 1
         , start = λ_ _ → ⊤
         , handle =
-            λmessage state _ →
+            λ( message, _ ) state _ →
                 requestCount =
                     case message.choice of
                         Added data →
@@ -32,14 +34,19 @@ worker =
                         Empty →
                             0
                 ( inputLabel, inputValues ) = message.pair
-                { message
-                    | longWireLabel = message.longWireLabel ++ "!"
-                    , choice =
-                        Added { count = state (requestCount + 4), data = rest [ "skip", "worker" ] }
-                    , tree = Node (Leaf (rest [ 0, 8, 9 ])) message.tree
-                    , items = [ rest [ 0, 4, 5 ], rest [ 0, 6 ], List.concat message.items ]
-                    , pair = ( inputLabel ++ ":tuple", rest [ 0, 6 + List.sum inputValues ] )
-                }
+                reply =
+                    { message
+                        | longWireLabel = message.longWireLabel ++ "!"
+                        , choice =
+                            Added
+                                { count = state (requestCount + 4)
+                                , data = rest [ "skip", "worker" ]
+                                }
+                        , tree = Node (Leaf (rest [ 0, 8, 9 ])) message.tree
+                        , items = [ rest [ 0, 4, 5 ], rest [ 0, 6 ], List.concat message.items ]
+                        , pair = ( inputLabel ++ ":tuple", rest [ 0, 6 + List.sum inputValues ] )
+                    }
+                ( reply, ⊤ )
         , stream = λ_ _ _ _ → ⊤
         }
 
@@ -53,8 +60,8 @@ sum tree =
             sum left + sum right
 
 
-show : Message → ⊤
-show message =
+show : Message × ⊤ → ⊤
+show ( message, _ ) =
     private = { a = "private", choice = "page:" }
     ( label, values ) = message.pair
     payload =
@@ -86,14 +93,21 @@ launch _ =
     case Worker.open worker of
         Ok handle →
             Worker.receive handle show
-            Worker.send handle
-                { longWireLabel = "ping"
-                , hash = Int32.fromInt 42
-                , choice = Added { count = 1, data = rest [ "skip", "page" ] }
-                , tree = Node (Leaf (rest [ 0, 1, 2 ])) (Leaf [ 3 ])
-                , items = [ rest [ 0, 1, 2 ] ]
-                , pair = ( "page", rest [ 0, 1 ] )
-                }
+            case
+                Packet.packed
+                    { longWireLabel = "ping"
+                    , hash = Int32.fromInt 42
+                    , choice = Added { count = 1, data = rest [ "skip", "page" ] }
+                    , tree = Node (Leaf (rest [ 0, 1, 2 ])) (Leaf [ 3 ])
+                    , items = [ rest [ 0, 1, 2 ] ]
+                    , pair = ( "page", rest [ 0, 1 ] )
+                    }
+            of
+                Just packet →
+                    Worker.send handle packet
+                Nothing →
+                    Page.text "packet identity mismatch"
+
         Err _ →
             Page.text "open failed"
 

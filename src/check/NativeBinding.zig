@@ -48,12 +48,115 @@ pub fn valid(cx: *const Context, row: Operations.Row, v: Var) bool {
     const a = f.params;
     const r = f.result;
     return switch (row.recipe) {
+        .renderer_early_listeners => a.len == 1 and unit(cx, a[0]) and listeners(cx, r),
+        .renderer_early_append => a.len == 3 and listeners(cx, a[0]) and scalar(cx, a[1], "String") and eventCallback(cx, a[2]) and unit(cx, r),
+        .renderer_early_size => a.len == 1 and listeners(cx, a[0]) and scalar(cx, r, "Int"),
+        .renderer_early_kind_at => a.len == 2 and listeners(cx, a[0]) and scalar(cx, a[1], "Int") and scalar(cx, r, "String"),
+        .renderer_early_handler_at => a.len == 2 and listeners(cx, a[0]) and scalar(cx, a[1], "Int") and eventCallback(cx, r),
+        .set_make => a.len == 1 and unit(cx, a[0]) and argument(cx, r, "Browser.Host.Set", "Set", 0) != null,
+        .set_add => a.len == 2 and sameSetItem(cx, a[0], a[1]) and unit(cx, r),
+        .set_has => a.len == 2 and sameSetItem(cx, a[0], a[1]) and scalar(cx, r, "Bool"),
+        .set_size => a.len == 1 and argument(cx, a[0], "Browser.Host.Set", "Set", 0) != null and scalar(cx, r, "Int"),
+        .set_clear => a.len == 1 and argument(cx, a[0], "Browser.Host.Set", "Set", 0) != null and unit(cx, r),
+        .set_each => a.len == 2 and collectionCallback(cx, a[0], "Set", "Set", a[1]) and unit(cx, r),
+        .array_each_view => a.len == 2 and collectionCallback(cx, a[0], "Array", "View", a[1]) and unit(cx, r),
+        .renderer_event_target => a.len == 1 and native(cx, a[0], "Event") and optNode(cx, r),
+        .renderer_node_disabled => a.len == 1 and native(cx, a[0], "Node") and scalar(cx, r, "Bool"),
+        .renderer_node_tag => a.len == 1 and native(cx, a[0], "Node") and scalar(cx, r, "String"),
+        .renderer_node_kind => a.len == 1 and native(cx, a[0], "Node") and scalar(cx, r, "String"),
+        .renderer_node_name => a.len == 1 and native(cx, a[0], "Node") and scalar(cx, r, "String"),
+        .renderer_node_focused => a.len == 1 and native(cx, a[0], "Node") and scalar(cx, r, "Bool"),
+        .renderer_control_value => a.len == 1 and native(cx, a[0], "Node") and scalar(cx, r, "String"),
+        .renderer_control_value_set => a.len == 2 and native(cx, a[0], "Node") and scalar(cx, a[1], "String") and unit(cx, r),
+        .renderer_control_checked => a.len == 1 and native(cx, a[0], "Node") and scalar(cx, r, "Bool"),
+        .renderer_control_checked_set => a.len == 2 and native(cx, a[0], "Node") and scalar(cx, a[1], "Bool") and unit(cx, r),
+        .renderer_control_selected => a.len == 1 and native(cx, a[0], "Node") and scalar(cx, r, "Bool"),
+        .renderer_control_selected_set => a.len == 2 and native(cx, a[0], "Node") and scalar(cx, a[1], "Bool") and unit(cx, r),
+        .renderer_control_selectedIndex => a.len == 1 and native(cx, a[0], "Node") and scalar(cx, r, "Int"),
+        .renderer_control_selectedIndex_set => a.len == 2 and native(cx, a[0], "Node") and scalar(cx, a[1], "Int") and unit(cx, r),
+        .renderer_selectionStart => a.len == 1 and native(cx, a[0], "Node") and optScalar(cx, r, "Int"),
+        .renderer_selectionEnd => a.len == 1 and native(cx, a[0], "Node") and optScalar(cx, r, "Int"),
+        .renderer_selectionDirection => a.len == 1 and native(cx, a[0], "Node") and scalar(cx, r, "String"),
+        .renderer_selection_set => a.len == 4 and native(cx, a[0], "Node") and scalar(cx, a[1], "Int") and scalar(cx, a[2], "Int") and scalar(cx, a[3], "String") and unit(cx, r),
+        .renderer_node_options => a.len == 1 and native(cx, a[0], "Node") and native(cx, argument(cx, r, "Browser.Host.Array", "View", 0) orelse return false, "Node"),
+        .renderer_node_elements => a.len == 1 and native(cx, a[0], "Node") and native(cx, argument(cx, r, "Browser.Host.Array", "View", 0) orelse return false, "Node"),
+        .renderer_document_named => a.len == 1 and scalar(cx, a[0], "String") and native(cx, argument(cx, r, "Browser.Host.Array", "View", 0) orelse return false, "Node"),
+        .renderer_document_controls => a.len == 1 and unit(cx, a[0]) and native(cx, argument(cx, r, "Browser.Host.Array", "View", 0) orelse return false, "Node"),
+        .renderer_node_edits => a.len == 1 and native(cx, a[0], "Node") and native(cx, argument(cx, argument(cx, r, "Js", "Opt", 0) orelse return false, "Browser.Host.Set", "Set", 0) orelse return false, "Node"),
+        .renderer_node_edits_set => a.len == 2 and native(cx, a[0], "Node") and native(cx, argument(cx, a[1], "Browser.Host.Set", "Set", 0) orelse return false, "Node") and unit(cx, r),
+        .array_each => blk: {
+            if (a.len != 2 or !unit(cx, r)) break :blk false;
+            const item = argument(cx, a[0], "Browser.Host.Array", "Array", 0) orelse break :blk false;
+            const callback = Walk.function(cx.store, a[1]) orelse break :blk false;
+            break :blk callback.params.len == 1 and cx.store.find(callback.params[0]) == cx.store.find(item) and unit(cx, callback.result);
+        },
+        .event_type => a.len == 1 and native(cx, a[0], "Event") and named(cx, r, "String", "String"),
+        .event_isTrusted => a.len == 1 and native(cx, a[0], "Event") and named(cx, r, "Basics", "Bool"),
+        .event_bubbles => a.len == 1 and native(cx, a[0], "Event") and named(cx, r, "Basics", "Bool"),
+        .event_cancelBubble => a.len == 1 and native(cx, a[0], "Event") and named(cx, r, "Basics", "Bool"),
+        .event_stop => a.len == 1 and native(cx, a[0], "Event") and unit(cx, r),
+        .event_target => a.len == 1 and native(cx, a[0], "Event") and maybeNative(cx, r, "EventTarget"),
+        .target_node => a.len == 1 and native(cx, a[0], "EventTarget") and maybeNative(cx, r, "Node"),
+        .node_element => a.len == 1 and native(cx, a[0], "EventTarget") and maybeNative(cx, r, "Element"),
+        .node_contains => a.len == 2 and native(cx, a[0], "Node") and native(cx, a[1], "Node") and named(cx, r, "Basics", "Bool"),
+        .element_local => a.len == 1 and native(cx, a[0], "Element") and named(cx, r, "String", "String"),
+        .element_as_input => a.len == 1 and native(cx, a[0], "EventTarget") and maybeNative(cx, r, "HTMLInputElement"),
+        .input_value => a.len == 1 and native(cx, a[0], "HTMLInputElement") and named(cx, r, "String", "String"),
+        .input_value_set => a.len == 2 and native(cx, a[0], "HTMLInputElement") and named(cx, a[1], "String", "String") and controlResult(cx, r, "HTMLInputElement"),
+        .input_checked => a.len == 1 and native(cx, a[0], "HTMLInputElement") and named(cx, r, "Basics", "Bool"),
+        .input_checked_set => a.len == 2 and native(cx, a[0], "HTMLInputElement") and named(cx, a[1], "Basics", "Bool") and unit(cx, r),
+        .input_disabled => a.len == 1 and native(cx, a[0], "HTMLInputElement") and named(cx, r, "Basics", "Bool"),
+        .input_type => a.len == 1 and native(cx, a[0], "HTMLInputElement") and named(cx, r, "String", "String"),
+        .input_name => a.len == 1 and native(cx, a[0], "HTMLInputElement") and named(cx, r, "String", "String"),
+        .input_selectionStart => a.len == 1 and native(cx, a[0], "HTMLInputElement") and maybeScalar(cx, r, "Int"),
+        .input_selectionEnd => a.len == 1 and native(cx, a[0], "HTMLInputElement") and maybeScalar(cx, r, "Int"),
+        .input_selectionDirection => a.len == 1 and native(cx, a[0], "HTMLInputElement") and maybeScalar(cx, r, "String"),
+        .input_selection_set => a.len == 4 and native(cx, a[0], "HTMLInputElement") and named(cx, a[1], "Basics", "Int") and named(cx, a[2], "Basics", "Int") and named(cx, a[3], "String", "String") and controlResult(cx, r, "HTMLInputElement"),
+        .input_node => a.len == 1 and native(cx, a[0], "HTMLInputElement") and native(cx, r, "Node"),
+        .element_as_textarea => a.len == 1 and native(cx, a[0], "EventTarget") and maybeNative(cx, r, "HTMLTextAreaElement"),
+        .textarea_value => a.len == 1 and native(cx, a[0], "HTMLTextAreaElement") and named(cx, r, "String", "String"),
+        .textarea_value_set => a.len == 2 and native(cx, a[0], "HTMLTextAreaElement") and named(cx, a[1], "String", "String") and unit(cx, r),
+        .textarea_disabled => a.len == 1 and native(cx, a[0], "HTMLTextAreaElement") and named(cx, r, "Basics", "Bool"),
+        .textarea_selectionStart => a.len == 1 and native(cx, a[0], "HTMLTextAreaElement") and scalar(cx, r, "Int"),
+        .textarea_selectionEnd => a.len == 1 and native(cx, a[0], "HTMLTextAreaElement") and scalar(cx, r, "Int"),
+        .textarea_selectionDirection => a.len == 1 and native(cx, a[0], "HTMLTextAreaElement") and scalar(cx, r, "String"),
+        .textarea_selection_set => a.len == 4 and native(cx, a[0], "HTMLTextAreaElement") and named(cx, a[1], "Basics", "Int") and named(cx, a[2], "Basics", "Int") and named(cx, a[3], "String", "String") and unit(cx, r),
+        .textarea_node => a.len == 1 and native(cx, a[0], "HTMLTextAreaElement") and native(cx, r, "Node"),
+        .element_as_select => a.len == 1 and native(cx, a[0], "EventTarget") and maybeNative(cx, r, "HTMLSelectElement"),
+        .select_value => a.len == 1 and native(cx, a[0], "HTMLSelectElement") and named(cx, r, "String", "String"),
+        .select_value_set => a.len == 2 and native(cx, a[0], "HTMLSelectElement") and named(cx, a[1], "String", "String") and unit(cx, r),
+        .select_selectedIndex => a.len == 1 and native(cx, a[0], "HTMLSelectElement") and named(cx, r, "Basics", "Int"),
+        .select_selectedIndex_set => a.len == 2 and native(cx, a[0], "HTMLSelectElement") and named(cx, a[1], "Basics", "Int") and unit(cx, r),
+        .select_disabled => a.len == 1 and native(cx, a[0], "HTMLSelectElement") and named(cx, r, "Basics", "Bool"),
+        .select_node => a.len == 1 and native(cx, a[0], "HTMLSelectElement") and native(cx, r, "Node"),
+        .element_as_option => a.len == 1 and native(cx, a[0], "EventTarget") and maybeNative(cx, r, "HTMLOptionElement"),
+        .option_selected => a.len == 1 and native(cx, a[0], "HTMLOptionElement") and named(cx, r, "Basics", "Bool"),
+        .option_selected_set => a.len == 2 and native(cx, a[0], "HTMLOptionElement") and named(cx, a[1], "Basics", "Bool") and unit(cx, r),
+        .option_node => a.len == 1 and native(cx, a[0], "HTMLOptionElement") and native(cx, r, "Node"),
+        .element_as_form => a.len == 1 and native(cx, a[0], "EventTarget") and maybeNative(cx, r, "HTMLFormElement"),
+        .form_node => a.len == 1 and native(cx, a[0], "HTMLFormElement") and native(cx, r, "Node"),
+        .select_options => a.len == 1 and native(cx, a[0], "HTMLSelectElement") and listNative(cx, r, "Node"),
+        .form_elements => a.len == 1 and native(cx, a[0], "HTMLFormElement") and listNative(cx, r, "Node"),
+        .document_named => a.len == 1 and named(cx, a[0], "String", "String") and listNative(cx, r, "Node"),
+        .document_active => a.len == 1 and unit(cx, a[0]) and maybeNative(cx, r, "Element"),
+        .document_controls => a.len == 1 and unit(cx, a[0]) and listNative(cx, r, "Node"),
+        .event_capture => a.len == 3 and native(cx, a[0], "EventTarget") and named(cx, a[1], "String", "String") and eventCallback(cx, a[2]) and unitCallback(cx, r),
+        .renderer_current => a.len == 2 and native(cx, a[0], "Event") and optNode(cx, argument(cx, a[1], "Js", "Ref", 0) orelse return false) and unit(cx, r),
+        .renderer_current_clear => a.len == 1 and native(cx, a[0], "Event") and unit(cx, r),
+        .renderer_early_take => a.len == 1 and unit(cx, a[0]) and early(cx, argument(cx, r, "Browser.Host.Array", "Array", 0) orelse return false),
+        .renderer_early_event => a.len == 1 and early(cx, a[0]) and native(cx, r, "Event"),
+        .renderer_early_target => a.len == 1 and early(cx, a[0]) and native(cx, r, "Node"),
+        .renderer_early_remember => a.len == 1 and early(cx, a[0]) and unit(cx, r),
+        .renderer_early_value => a.len == 2 and early(cx, a[0]) and named(cx, a[1], "Basics", "Int") and optScalar(cx, r, "String"),
+        .renderer_early_checked => a.len == 2 and early(cx, a[0]) and named(cx, a[1], "Basics", "Int") and optScalar(cx, r, "Bool"),
+        .renderer_early_selectedindex => a.len == 2 and early(cx, a[0]) and named(cx, a[1], "Basics", "Int") and optScalar(cx, r, "Int"),
         .renderer_first_child, .renderer_next_sibling, .renderer_parent => a.len == 1 and native(cx, a[0], "Node") and optNode(cx, r),
         .renderer_insert => a.len == 3 and native(cx, a[0], "Node") and native(cx, a[1], "Node") and optNode(cx, a[2]) and unit(cx, r),
         .renderer_append => a.len == 2 and native(cx, a[0], "Node") and native(cx, a[1], "Node") and unit(cx, r),
         .renderer_remove => a.len == 1 and native(cx, a[0], "Node") and unit(cx, r),
         .renderer_clone, .renderer_import => a.len == 1 and native(cx, a[0], "Node") and native(cx, r, "Node"),
         .renderer_fragment, .renderer_body => a.len == 1 and unit(cx, a[0]) and native(cx, r, "Node"),
+        .renderer_document_target => a.len == 1 and unit(cx, a[0]) and native(cx, r, "EventTarget"),
         .renderer_template, .renderer_text => a.len == 1 and named(cx, a[0], "String", "String") and native(cx, r, "Node"),
         .renderer_from_node => a.len == 1 and native(cx, a[0], "Node") and native(cx, r, "EventTarget"),
         .worker_close_self => a.len == 1 and unit(cx, a[0]) and unit(cx, r),
@@ -182,6 +285,72 @@ pub fn valid(cx: *const Context, row: Operations.Row, v: Var) bool {
         .worker_event_target => a.len == 1 and named(cx, a[0], "Browser.Host.Worker", "Endpoint") and native(cx, r, "EventTarget"),
         .global_event_target => a.len == 1 and unit(cx, a[0]) and native(cx, r, "EventTarget"),
         .event_data_only => a.len == 1 and native(cx, a[0], "Event") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |data| named(cx, data, "Js", "Value") else false),
+        .renderer_has => a.len == 2 and argument(cx, a[0], "Browser.Host.Array", "Array", 0) != null and named(cx, a[1], "Basics", "Int") and named(cx, r, "Basics", "Bool"),
+        .renderer_truncate => a.len == 2 and argument(cx, a[0], "Browser.Host.Array", "Array", 0) != null and named(cx, a[1], "Basics", "Int") and unit(cx, r),
+        .renderer_at => blk: {
+            if (a.len != 2 or !named(cx, a[1], "Basics", "Int")) break :blk false;
+            const value = argument(cx, a[0], "Browser.Host.Array", "Array", 0) orelse break :blk false;
+            break :blk cx.store.find(value) == cx.store.find(r);
+        },
+        .array_make => a.len == 1 and unit(cx, a[0]) and argument(cx, r, "Browser.Host.Array", "Array", 0) != null,
+        .array_get_or, .array_view_get_or => blk: {
+            if (a.len != 3 or !named(cx, a[1], "Basics", "Int")) break :blk false;
+            const value = argument(cx, a[0], "Browser.Host.Array", if (row.recipe == .array_get_or) "Array" else "View", 0) orelse break :blk false;
+            break :blk cx.store.find(value) == cx.store.find(a[2]) and cx.store.find(value) == cx.store.find(r);
+        },
+        .array_set, .array_push => blk: {
+            const setting = row.recipe == .array_set;
+            if (a.len != (if (setting) @as(usize, 3) else 2)) break :blk false;
+            const value = argument(cx, a[0], "Browser.Host.Array", "Array", 0) orelse break :blk false;
+            break :blk cx.store.find(value) == cx.store.find(a[if (setting) @as(usize, 2) else 1]) and (if (setting) named(cx, a[1], "Basics", "Int") and named(cx, r, "Basics", "Bool") else unit(cx, r));
+        },
+        .array_size, .array_view_length => a.len == 1 and argument(cx, a[0], "Browser.Host.Array", if (row.recipe == .array_size) "Array" else "View", 0) != null and named(cx, r, "Basics", "Int"),
+        .list_array_view, .array_view_slice => blk: {
+            const slicing = row.recipe == .array_view_slice;
+            if (a.len != (if (slicing) @as(usize, 2) else 1)) break :blk false;
+            const value = argument(cx, a[0], if (slicing) "Browser.Host.Array" else "List", if (slicing) "View" else "List", 0) orelse break :blk false;
+            const result = argument(cx, r, "Browser.Host.Array", "View", 0) orelse break :blk false;
+            break :blk cx.store.find(value) == cx.store.find(result) and (!slicing or named(cx, a[1], "Basics", "Int"));
+        },
+        .key_map_values => blk: {
+            if (a.len != 1) break :blk false;
+            const value = argument(cx, a[0], "Browser.Host.KeyMap", "Map", 1) orelse break :blk false;
+            const item = argument(cx, r, "List", "List", 0) orelse break :blk false;
+            break :blk cx.store.find(value) == cx.store.find(item);
+        },
+        .key_map_make => a.len == 1 and unit(cx, a[0]) and argument(cx, r, "Browser.Host.KeyMap", "Map", 1) != null,
+        .key_map_clear, .key_map_size => a.len == 1 and argument(cx, a[0], "Browser.Host.KeyMap", "Map", 1) != null and (if (row.recipe == .key_map_clear) unit(cx, r) else named(cx, r, "Basics", "Int")),
+        .key_map_set, .key_map_get_or, .key_map_get, .key_map_has, .key_map_remove => blk: {
+            if (a.len != (if (row.recipe == .key_map_set or row.recipe == .key_map_get_or) @as(usize, 3) else 2)) break :blk false;
+            const key = argument(cx, a[0], "Browser.Host.KeyMap", "Map", 0) orelse break :blk false;
+            const value = argument(cx, a[0], "Browser.Host.KeyMap", "Map", 1) orelse break :blk false;
+            if (cx.store.find(key) != cx.store.find(a[1])) break :blk false;
+            break :blk switch (row.recipe) {
+                .key_map_set => cx.store.find(value) == cx.store.find(a[2]) and unit(cx, r),
+                .key_map_get_or => cx.store.find(value) == cx.store.find(a[2]) and cx.store.find(value) == cx.store.find(r),
+                .key_map_get => if (argument(cx, r, "Maybe", "Maybe", 0)) |item| cx.store.find(value) == cx.store.find(item) else false,
+                .key_map_has, .key_map_remove => named(cx, r, "Basics", "Bool"),
+                else => unreachable,
+            };
+        },
+        .key_map_each => blk: {
+            if (a.len != 2 or !unit(cx, r)) break :blk false;
+            const key = argument(cx, a[0], "Browser.Host.KeyMap", "Map", 0) orelse break :blk false;
+            const value = argument(cx, a[0], "Browser.Host.KeyMap", "Map", 1) orelse break :blk false;
+            const callback = Walk.function(cx.store, a[1]) orelse break :blk false;
+            break :blk callback.params.len == 2 and cx.store.find(key) == cx.store.find(callback.params[0]) and cx.store.find(value) == cx.store.find(callback.params[1]) and unit(cx, callback.result);
+        },
+        .document_body => a.len == 1 and unit(cx, a[0]) and (if (argument(cx, r, "Maybe", "Maybe", 0)) |element| native(cx, element, "Element") else false),
+        .document_create_element => a.len == 1 and unit(cx, a[0]) and native(cx, r, "Element"),
+        .node_append => blk: {
+            if (a.len != 2 or !native(cx, a[0], "Node") or !native(cx, a[1], "Node")) break :blk false;
+            const failure = argument(cx, r, "Result", "Result", 0) orelse break :blk false;
+            const value = argument(cx, r, "Result", "Result", 1) orelse break :blk false;
+            break :blk named(cx, failure, "Browser.Host.Node", "MoveError") and unit(cx, value);
+        },
+        .element_attribute => a.len == 2 and native(cx, a[0], "Element") and named(cx, a[1], "String", "String") and unit(cx, r),
+        .event_message => a.len == 1 and native(cx, a[0], "Event") and named(cx, r, "String", "String"),
+        .rejection_display => a.len == 1 and native(cx, a[0], "Rejection") and named(cx, r, "String", "String"),
         .event_error => a.len == 1 and native(cx, a[0], "Event") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |reason| native(cx, reason, "Rejection") else false),
         .console_error_data => a.len == 2 and named(cx, a[0], "String", "String") and named(cx, a[1], "Js", "Value") and unit(cx, r),
         .rejection_abandoned => a.len == 2 and native(cx, a[0], "Rejection") and named(cx, a[1], "Js", "Value") and unit(cx, r),
@@ -382,4 +551,43 @@ fn stringPairs(cx: *const Context, v: Var) bool {
     }
     const fields = Walk.positions(cx.store, pair);
     return fields.len == 2 and named(cx, fields[0], "String", "String") and named(cx, fields[1], "String", "String");
+}
+
+fn maybeNative(cx: *const Context, v: Var, name: []const u8) bool {
+    return native(cx, argument(cx, v, "Maybe", "Maybe", 0) orelse return false, name);
+}
+fn listNative(cx: *const Context, v: Var, name: []const u8) bool {
+    return native(cx, argument(cx, v, "List", "List", 0) orelse return false, name);
+}
+fn scalar(cx: *const Context, v: Var, name: []const u8) bool {
+    return named(cx, v, if (std.mem.eql(u8, name, "String")) "String" else "Basics", name);
+}
+fn maybeScalar(cx: *const Context, v: Var, name: []const u8) bool {
+    return scalar(cx, argument(cx, v, "Maybe", "Maybe", 0) orelse return false, name);
+}
+fn optScalar(cx: *const Context, v: Var, name: []const u8) bool {
+    return scalar(cx, argument(cx, v, "Js", "Opt", 0) orelse return false, name);
+}
+fn controlResult(cx: *const Context, v: Var, owner: []const u8) bool {
+    var buffer: [128]u8 = undefined;
+    const module = std.fmt.bufPrint(&buffer, "Browser.Host.{s}", .{owner}) catch return false;
+    return named(cx, argument(cx, v, "Result", "Result", 0) orelse return false, module, "WriteError") and unit(cx, argument(cx, v, "Result", "Result", 1) orelse return false);
+}
+fn early(cx: *const Context, v: Var) bool {
+    return named(cx, v, "Browser.Host.Event", "EarlyCapture");
+}
+fn sameSetItem(cx: *const Context, set: Var, item: Var) bool {
+    const stored = argument(cx, set, "Browser.Host.Set", "Set", 0) orelse return false;
+    return cx.store.find(stored) == cx.store.find(item);
+}
+fn collectionCallback(cx: *const Context, collection: Var, module: []const u8, name: []const u8, callback: Var) bool {
+    var buffer: [128]u8 = undefined;
+    const qualified = std.fmt.bufPrint(&buffer, "Browser.Host.{s}", .{module}) catch return false;
+    const item = argument(cx, collection, qualified, name, 0) orelse return false;
+    const f = Walk.function(cx.store, callback) orelse return false;
+    return f.params.len == 1 and cx.store.find(f.params[0]) == cx.store.find(item) and unit(cx, f.result);
+}
+
+fn listeners(cx: *const Context, v: Var) bool {
+    return eventCallback(cx, argument(cx, v, "Browser.Host.Event", "EarlyListeners", 0) orelse return false);
 }

@@ -1,0 +1,25 @@
+-- Constructing a supplied protocol must keep delayed calls to later
+-- const functions delayed. The controlled page reaches that protocol.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Change
+
+
+view : String → Html Msg
+view value =
+    <main>
+        <input id="value" value={value} />
+        <button id="change" onClick={Change}>Change</button>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → "a"
+        , update = λChange _ → "b"
+        , view = view
+        }

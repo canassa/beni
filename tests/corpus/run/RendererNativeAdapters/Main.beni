@@ -1,0 +1,6 @@
+-- Typed renderer bindings preserve native identity, nullability and unknown throws.
+import Test
+
+
+main : Test.Program
+main = Test.program Test.inspect Test.body Test.div Test.report

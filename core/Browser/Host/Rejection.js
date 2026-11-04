@@ -1,5 +1,6 @@
 export const create = (message) => { return new globalThis.Error(message); };
 export const assign = (reason, fields) => { Object.assign(reason, fields); return null; };
+export const display = (reason) => { return globalThis.String(reason); };
 export const setAbandoned = (error, reports) => { error.abandonedWorkers = reports; return null; };
 export const typeErrorMessage = (error) => { return error instanceof globalThis.TypeError ? { $: "Just", a: error.message } : { $: "Nothing", a: null }; };
 export const isTypeError = (reason) => { return reason instanceof globalThis.TypeError; };

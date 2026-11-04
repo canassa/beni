@@ -1,0 +1,5 @@
+event identity, propagation and controls: ok
+early tuple identity, takeover and NONE: ok
+named control failure and unknown throws: ok
+capture listener identity and removal: ok
+typed early listeners keep raw pairs, order and bounds: ok

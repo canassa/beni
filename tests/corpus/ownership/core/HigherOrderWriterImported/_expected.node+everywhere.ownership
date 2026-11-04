@@ -1,0 +1,17 @@
+module Main
+  8:5 value <lambda>: rejected need: Writer.fieldWrapped edits what it returns, which may be a list it does not own
+  8:80 List.push xs: pending: it is stored in a record
+  11:26 value <lambda>: rejected need: Writer.fieldWrapped edits what it returns, which may be a list it does not own
+  summary readonly: res .0 condition(fresh2), .0.0 condition(fresh3) fresh3{lost}r{lost}, .1 condition(fresh4) ⊤{lost}r{lost}, condition(fresh1){lost}
+  summary writes: res .0 condition(fresh2), .0.0 condition(fresh3) fresh3{lost}r{lost}, .1 condition(fresh4) ⊤{lost}r{lost}, condition(fresh1){lost}
+  summary unknownEffect: π1 R; res .0 condition(fresh2), .0.0 fresh4{lost}r{lost}, .1 cb1{excl cb1}r{excl cb1} condition(fresh3), condition(fresh1); π1 calls ≤1, unseen, supply 2 fresh owned
+  demands 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 2
+module Writer
+  summary callbacks: res .turn λr{lost} (words)
+  summary callbacks.turn: π1 R, π2 R; res ⊤{lost}r{lost}; π1 calls ≤1, supply 1 ⊤ borrowed (words)
+  summary keepThenCall: π1.call R, π1.keep R, π2 R, π3 R; res .0 cb(π1.keep){excl cb(π1.keep)}r{excl cb(π1.keep)} condition(fresh2), .1 cb(π1.call){excl cb(π1.call)} condition(fresh3), condition(fresh1){sep cb(π1.keep) cb(π1.call)}; π3 calls 0, unseen; π1.keep calls ≤1, supply 1 π2 borrowed{excl π2}; π1.call calls ≤1, supply 1 π3 owned{excl π3}, supply 2 π2 owned{excl π2}
+  summary wrapped: π1 R, π2 R, π3 R; res .0 cb1{excl cb1}r{excl cb1} condition(fresh2), .1 cb2{excl cb2}r{excl cb2} condition(fresh3), condition(fresh1){sep cb1 cb2}; π1 calls ≤1, need owned if π2 writes, unseen, supply 1 fresh borrowed; π2 calls ≤1, unseen, supply 1 π3 owned{excl π3}, supply 2 fresh owned; π3 calls 0, unseen
+  summary fieldWrapped: π1 R, π2 R, π3.work R; res .0 cb1{excl cb1}r{excl cb1} condition(fresh2), .1 cb2{excl cb2}r{excl cb2} condition(fresh3), condition(fresh1){sep cb1 cb2}; π1 calls ≤1, need owned if π2 writes, unseen, supply 1 fresh borrowed; π2 calls ≤1, unseen, supply 1 π3.work owned{excl π3.work}, supply 2 fresh owned; π3.work calls 0, unseen
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 2
+cause need 2

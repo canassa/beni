@@ -1,0 +1,32 @@
+import Js
+import Links
+
+
+pub opaque type Program
+    = Program String String
+
+
+pub program : ⊤ → Program
+program ⊤ =
+    first = Links.make 1
+    second = Links.make 2
+    third = Links.make 3
+    slot = Links.connect first second
+    _ = Links.connect second third
+    _ = Links.connect third first
+    before = Links.walk 6 first 0
+    Js.cellWrite slot (Js.some third) .shown
+    after = Links.walk 3 first 0
+    same =
+        case first of
+            Links.Instance cell →
+                Js.same first (Links.Instance cell)
+    Program "recursive cell wrappers"
+        (String.fromInt before
+            ++ ","
+            ++ String.fromInt after
+            ++ ","
+            ++ (if same then "same cell" else "extra wrapper")
+            ++ ","
+            ++ Debug.toString first
+        )

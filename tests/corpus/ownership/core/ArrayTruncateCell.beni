@@ -1,0 +1,16 @@
+-- A renderer's persistent array lives only in its typed cell. Truncating it
+-- between renders is safe, since nothing else holds the array.
+import Browser.Host.Array as Array
+import Js
+
+
+pub type alias Holder =
+    items : Array.Array Int
+
+
+pub make : ⊤ → Js.Cell Holder
+make ⊤ = Js.cell { items = Array.make ⊤ }
+
+
+pub shrink : Js.Cell Holder, Int → ⊤
+shrink cell length = Array.rendererTruncate (Js.cellRead cell .items) length

@@ -2424,9 +2424,10 @@ test "a platform read from a directory is checked by the build, and an embedded 
     // `Schema`, which only `Prerender` reaches; `Js.Any` and `Js.Data`; and
     // the generated natives their typed bindings import (`AbortController`,
     // `AbortSignal`, `DOMException`, `Data`, `Json`, `NodeDirent`, `NodeFs`,
-    // `Promise`, all `Browser.Host`).
+    // all `Browser.Host`). `Promise` is already reached through the typed
+    // EventTarget → Element projection.
     const unreached = node_modules - 4;
-    const unreached_core = 13;
+    const unreached_core = 12;
     try testing.expectEqual(@as(u64, 1), embedded.counters.checked);
     try testing.expectEqual(disk.counters.modules, embedded.counters.modules + unreached + unreached_core);
 }
@@ -5585,7 +5586,7 @@ fn hoistCache(corrupt: enum { version, placement }) !void {
     // Entry header(32), then seven {offset,len} rows. Hoists is section 6.
     // Entry format 14: embedded interfaces publish declaration totality.
     try testing.expect(good.len >= 88);
-    try testing.expectEqual(@as(u32, 14), std.mem.readInt(u32, good[8..12], .little));
+    try testing.expectEqual(@as(u32, 16), std.mem.readInt(u32, good[8..12], .little));
     try testing.expectEqual(@as(u32, 7), std.mem.readInt(u32, good[12..16], .little));
     const base = std.mem.readInt(u32, good[80..84], .little);
     const len = std.mem.readInt(u32, good[84..88], .little);
@@ -6021,4 +6022,50 @@ test "checked data witnesses retain native and generic shapes through cached int
             try testing.expectEqualStrings("", executed.stderr);
         }
     }
+}
+
+test "cached higher-order writer effects preserve read-only acceptance and writing refusal" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTree("tests/corpus/ownership/core/HigherOrderWriterImported", "_expected.");
+    const readonly =
+        \\import Writer
+        \\
+        \\pub run ⊤ = Writer.fieldWrapped (λxs → ( xs, 1 )) Writer.callbacks.turn { work = λxs → xs }
+        \\
+    ;
+    const writing =
+        \\import Writer
+        \\
+        \\pub run ⊤ = Writer.fieldWrapped (λxs → ( xs, 1 )) Writer.callbacks.turn { work = λxs → List.push xs 9 }
+        \\
+    ;
+    const args = [_][]const u8{ "check", "--core", "--ownership-everywhere", "--platform=node", "--diagnostics=json", "--cache-dir=cache", "--root=.", "." };
+    try w.write("Main.beni", readonly);
+    const cold = try w.runWith(&args, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), cold.exit_code);
+    // Recheck only Main. Writer's worded field and effect dependencies must
+    // be installed from its cache entry, for both possible callback effects.
+    for ([_][]const u8{ writing, readonly ++ "\n-- a fresh consumer\n" }, 0..) |source, i| {
+        try w.write("Main.beni", source);
+        const warm = try runCounted(&w, arena, &args, "writer-hit.json");
+        const plain = try w.runWith(&.{ "check", "--core", "--ownership-everywhere", "--platform=node", "--diagnostics=json", "--no-cache", "--root=.", "." }, .{ .raw_diagnostics = true });
+        try testing.expectEqual(@as(u8, if (i == 0) 1 else 0), plain.exit_code);
+        if (i == 0) try testing.expect(std.mem.indexOf(u8, plain.stderr, "\"code\":\"list_still_used\"") != null);
+        try testing.expectEqual(plain.exit_code, warm.result.exit_code);
+        try testing.expectEqualStrings(plain.stderr, warm.result.stderr);
+        try testing.expect(warm.counters.hits > 0);
+        try testing.expectEqual(@as(u64, 1), warm.counters.checked);
+    }
+    // The interface hash includes the portable effect facts. Scheduling
+    // changes neither those bytes nor the ownership verdict text.
+    const one = try w.runWith(&.{ "check", "--core", "--ownership-everywhere", "--platform=node", "--iface-hash", "--no-cache", "--jobs=1", "--root=.", "." }, .{ .raw_diagnostics = true });
+    const eight = try w.runWith(&.{ "check", "--core", "--ownership-everywhere", "--platform=node", "--iface-hash", "--no-cache", "--jobs=8", "--root=.", "." }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), one.exit_code);
+    try testing.expectEqual(one.exit_code, eight.exit_code);
+    try testing.expectEqualStrings(one.stdout, eight.stdout);
+    try testing.expectEqualStrings(one.stderr, eight.stderr);
 }

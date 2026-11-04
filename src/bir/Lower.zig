@@ -2625,13 +2625,15 @@ fn lowerType(l: *Lower, node: NodeIndex) Allocator.Error!Index {
             return l.addInstAt(main_token, .type_tuple, @backingInt(range.start), @backingInt(range.end));
         },
         .type_record => {
-            const range = try l.lowerTypeFields(l.tree.children(node));
+            const foreign_record = node.int() == l.sig_root and l.decls.items[l.cur_decl].kind == .foreign_value;
+            if (foreign_record) l.sig_root = no_own_slot;
+            const range = try l.lowerTypeFields(l.tree.children(node), foreign_record);
             return l.addInstAt(main_token, .type_record, @backingInt(range.start), @backingInt(range.end));
         },
         .type_record_ext => {
             const ext = l.tree.fullTypeRecordExt(node);
             const base = try l.lowerTypeVar(ext.base);
-            const range = try l.addRangeRecord(try l.lowerTypeFields(ext.fields));
+            const range = try l.addRangeRecord(try l.lowerTypeFields(ext.fields, false));
             return l.addInstAt(main_token, .type_record_ext, base.int(), @backingInt(range));
         },
         else => |tag| {
@@ -2676,7 +2678,9 @@ const FieldNames = struct {
     }
 };
 
-fn lowerTypeFields(l: *Lower, fields: []const NodeIndex) Allocator.Error!SubRange {
+fn lowerTypeFields(l: *Lower, fields: []const NodeIndex, foreign_record: bool) Allocator.Error!SubRange {
+    var signatures: std.ArrayList(u32) = .empty;
+    defer signatures.deinit(l.scratch_allocator);
     const mark = l.scratchMark();
     defer l.shrinkScratch(mark);
     var names: FieldNames = .{};
@@ -2696,11 +2700,46 @@ fn lowerTypeFields(l: *Lower, fields: []const NodeIndex) Allocator.Error!SubRang
             continue;
         }
         const name = try l.addSymbol(symbol);
-        const value = try l.lowerType(l.tree.operand(f));
+        const field_node = l.tree.operand(f);
+        if (foreign_record) {
+            l.sig_root = field_node.int();
+            // Parentheses delimit the field arrow, not another record level.
+            while (l.tree.nodeTag(@fromBackingInt(l.sig_root)) == .type_paren)
+                l.sig_root = l.tree.operand(@fromBackingInt(l.sig_root)).int();
+            if (l.tree.nodeTag(@fromBackingInt(l.sig_root)) != .type_fn) l.sig_root = no_own_slot;
+            l.own_seen.clearRetainingCapacity();
+        }
+        const value = try l.lowerType(field_node);
+        if (foreign_record) {
+            l.sig_root = no_own_slot;
+            l.own_slot = no_own_slot;
+            if (l.own_seen.items.len != 0) try l.recordOwnWords(value);
+            const d = &l.decls.items[l.cur_decl];
+            const start = if (d.own2_end != d.own2_start) d.own2_start else d.own_start;
+            const end = if (d.own2_end != d.own2_start) d.own2_end else d.own_end;
+            try signatures.appendSlice(l.scratch_allocator, &.{ @backingInt(name), value.int(), start, end });
+            d.own_start = 0;
+            d.own_end = 0;
+            d.own2_start = 0;
+            d.own2_end = 0;
+            l.own_seen.clearRetainingCapacity();
+        }
         try l.pushScratch(name);
         try l.pushScratch(value);
     }
-    return l.addRange(l.scratchSince(mark));
+    const range = try l.addRange(l.scratchSince(mark));
+    var worded = false;
+    var si: usize = 0;
+    while (si < signatures.items.len) : (si += 4)
+        worded = worded or signatures.items[si + 2] != signatures.items[si + 3];
+    if (worded) {
+        const d = &l.decls.items[l.cur_decl];
+        d.own_start = @intCast(l.extra.items.len);
+        try l.extra.appendSlice(l.gpa, &.{ Bir.own_fields, 0 });
+        try l.extra.appendSlice(l.gpa, signatures.items);
+        d.own_end = @intCast(l.extra.items.len);
+    }
+    return range;
 }
 
 /// A type variable: bound to a parameter of the enclosing `type` /

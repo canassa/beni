@@ -4172,6 +4172,29 @@ lowers as written):
 `crossing` is read only directly in front of `foreign` (or `equatable foreign`) and is refused outside a
 platform with the same code.
 
+**Supplied foreign record fields (2026-11-04, manager decision; #1825).**
+Existing ownership words may also describe the parameters and result of a
+function field of a top-level `foreign` record **written out in that
+foreign declaration**. Each field arrow is its own signature: its words
+have the same meanings, defaults, companion checks and package wall as
+§24.2. The record itself is a shared value, never fresh per read. The
+summary retains the field's callable class at its named field path, in a
+deterministic order; passing or projecting the record preserves those
+classes. No runtime record, wrapper or callback is added by these facts.
+
+This exception does not extend to a non-foreign record declaration, a
+record nested inside another record or function, a record type alias, or
+an alias used by the foreign declaration. Words in those positions remain
+`misplaced_ownership_word`. A function field's own callback parameter may
+carry the existing callback words; words nested inside that callback's
+arrow remain refused. Html.Runtime's frozen 1.30 API is unchanged: the
+supplied Rt declaration writes out its structural record when it needs
+these facts. Every asserted field is part of §24.6's trusted surface,
+with a pin of the lowering-written body and a direct misuse fixture whose
+verdict changes when its word is moved unsafely. A body whose behaviour
+cannot be stated with the existing words requires a manager decision,
+never an exemption or a new primitive.
+
 ### 24.5 How the checker reads them
 
 - **A declaration with words** has the summary its words give (§24.2), marked asserted, printed with `(words)`
@@ -4384,6 +4407,79 @@ pinned together in `word-bodies.txt`. The native-handle calls in
 sequence verdict can distinguish a weaker word on these handle-only arguments,
 so their flip column is `-`, as for the existing native handle readers.
 
+**Supplied DOM protocol audit (2026-11-04; #1825).** The Rt declaration
+writes out its foreign record under §24.4's exception. Each function is
+read against platforms/browser/zig/protocol.zig and its cold Source
+adapters. Each field has its own body pin; these deliberately cover the
+whole producer helper span, so a change to a shared lowering helper forces
+all affected assertions to be reviewed. The protocol is shared; this
+asserts no per-read record freshness and emits no runtime code.
+
+The native/existential-handle-only fields are listed by name below. They
+expose no owned sequence on which a borrowed→unused or unknown→fresh flip
+can change a verdict, as for the private renderer natives. The observable
+callback capture aliases of makeSite and escapes of setSiteScope have
+direct misuse flips in ownership/core/DomProtocolWords.beni. Generic
+returned, escape, fresh and callback-result facts, including passing the
+record through a function, are pinned by SuppliedRecordWords.beni.
+
+| Field of Rt.protocol | Words | Body reading | Flip boundary |
+|---|---|---|---|
+| `unit` | `(aliased escaped Runtime.Block, aliased escaped Runtime.Context → fresh Runtime.Instance)` | Calls the paired mount, then stores the block and kind on its new instance; block/context may reach DOM handlers. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `patch` | `(aliased Runtime.Instance , aliased escaped Runtime.Block , aliased escaped Runtime.Context → unknown Runtime.Instance )` | Updates and returns the existing instance for the same kind; otherwise mounts and swaps a new instance. No unconditional fresh claim. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `again` | `(borrowed Runtime.Instance → ⊤)` | Runs the paired patch on the stored block; mutates only renderer instance and host state. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `live` | `(borrowed Runtime.Instance → Bool)` | Reads $l and compares it to true. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `eventPayload` | `(borrowed HostNode.Node, escaped HostEvent.Event, String, String → unknown Runtime.Payload)` | Reads the installed handler/extractor; an extractor may retain the native event and returns an unknown message. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `nodeContext` | `(aliased HostNode.Node → Runtime.Context)` | Reads $cx or returns null. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `contextPresent` | `(unused Runtime.Context → Bool)` | Compares the context identity with null. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `contextParent` | `(aliased Runtime.Context → Runtime.Context)` | Reads the up field. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `contextApply` | `(borrowed Runtime.Context, escaped Runtime.Payload → unknown Runtime.Payload)` | Calls the stored mapper with the payload; the mapper may retain it and returns unknown. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `sendRoot` | `(borrowed HostNode.Node, escaped Runtime.Payload → ⊤)` | Calls the installed root sender, which retains the message for dispatch. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `controls` | `(aliased HostNode.Node → Js.Opt Runtime.Control)` | Reads $s or returns the empty sentinel. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `setControls` | `(borrowed HostNode.Node, escaped Runtime.Control → ⊤)` | Stores the typed control chain on $s. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `hasRoot` | `(borrowed HostNode.Node → Bool)` | Tests $root for undefined. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `hasHandler` | `(borrowed HostNode.Node, String → Bool)` | Tests the named handler for undefined. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `handlerFlags` | `(borrowed HostNode.Node, String → Int)` | Reads the named integer flag or returns zero. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `first` | `(aliased Runtime.Instance → HostNode.Node)` | Forwards to Slots.first, which traverses native instance/slot node links. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `last` | `(aliased Runtime.Instance → HostNode.Node)` | Forwards to Slots.last, which traverses native instance/slot node links. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `put` | `(borrowed HostNode.Node, borrowed Runtime.Instance, borrowed Js.Opt HostNode.Node → ⊤)` | Forwards to Slots.put, which moves the native node range. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `drop` | `(borrowed Runtime.Instance → ⊤)` | Forwards to Slots.drop, which removes the native node range. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `swap` | `(borrowed Runtime.Instance, borrowed Runtime.Instance → ⊤)` | Forwards to Slots.swap, which inserts the new native range and removes the old one. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `parentOf` | `(aliased Runtime.Slot → HostNode.Node)` | Forwards to Slots.parentOf, which reads the native parent link. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `childMaybe` | `(borrowed Runtime.Slot, escaped Js.Opt Runtime.Block → ⊤)` | Forwards to Slots.childMaybe; the block may install native event handlers. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `restate` | `(borrowed Runtime.Slot → ⊤)` | Forwards to Slots.restate, patching renderer/native state. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `turn` | `(Bool, once (⊤ → ⊤) → ⊤)` | Forwards to turn; exactly one branch invokes the supplied callback once, with a unit argument. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `dead` | `(unused ⊤ → Bool)` | Reads the runtime dead flag; the unit argument is ignored. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `stop` | `(unused ⊤ → ⊤)` | Runs runtime teardown; the unit argument is ignored. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `makeSite` | `(aliased Runtime.SiteProtocol , aliased Runtime.Payload , aliased Any.Any → fresh Runtime.RowSite )` | Makes a new shallow record containing ops, scope and data; no factory or row allocation is introduced. | Captured list retained through ops; aliased→borrowed changes the refusal. |
+| `siteScope` | `(aliased Runtime.RowSite → Runtime.Payload)` | Reads scope from the retained site. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `setSiteScope` | `(borrowed Runtime.RowSite, escaped Runtime.SiteProtocol, escaped Runtime.Payload → ⊤)` | Stores new operations and scope into an existing site, so both escape. | Captured list stored through ops; escaped→borrowed changes the refusal. |
+| `siteData` | `(aliased Runtime.RowSite → Any.Any)` | Reads data from the retained site. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `siteHead` | `(aliased Runtime.RowSite, aliased Runtime.Slot → Js.Opt HostNode.Node)` | Calls the paired Rows.head callback with stored scope/data and the slot; it reads native handles. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `siteTail` | `(aliased Runtime.RowSite, aliased Runtime.Slot → Js.Opt HostNode.Node)` | Calls the paired Rows.tail callback with stored scope/data and the slot; it reads native handles. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `siteRestate` | `(borrowed Runtime.RowSite, borrowed Runtime.Slot, Int → ⊤)` | Calls the paired Rows.restate callback, editing renderer/native state. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `siteDispose` | `(borrowed Runtime.RowSite, borrowed Runtime.Slot → ⊤)` | Calls the paired Rows.dispose callback, removing renderer/native state. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+**Typed event and control native handles** (2026-11-04; #1826). The new
+Node/Event/control projections borrow native identities and change only native
+DOM state. They retain no Beni sequence. Capture tuples keep the original native
+event and data snapshots; listener tables keep raw alternating strings and
+callbacks. The latter are a host sequence over the handler type, fixed by each
+operation to `Event → ⊤`. Like `Array.push`, append borrows its receiver, a
+host container that no beni value reads, and escapes its callback; indexed reads
+are borrowed and check logical pair bounds. A `written` receiver was tried and
+refused the one use the table exists for, an append to a table read from its
+`KeyMap` (v2: `unknown`), and an append to a new table before it is stored (v2:
+`later-use`). Its retained callback case matches `NativeEscapes`, including the existing
+lambda-under-v2 limitation. Native Set handles are mutable host identities;
+adding an item escapes it, and the retained-list fixture notices an unsafe flip.
+Array/view iteration reads its receiver and invokes the supplied synchronous
+visitor without retaining it. The native recipes and ordinary siblings are pinned
+at their actual bodies, and the platform-private names share the existing fence.
+`EventTarget.rendererDocument` (#1826) adds one arm to the shared renderer region,
+returning `document`, and takes no list: it has no words. Every entry pinned in
+that region was re-read for it; their bodies are unchanged and their words
+stand.
+
 ### 24.9 The decoder in `Expect`
 
 `Http.request r` calls the function `r.expect` holds — `transfer`'s pattern `(Expect accept read)` binds it and
@@ -4399,6 +4495,27 @@ built, for the declaration's own frame:
   `π1.expect#Expect.1` from `transfer`'s `π7#Expect.1`), and a function value there is called through its class.
   Not in a recursive group, whose rounds would number the slots apart, and not inside a lambda
   (*withdrawn 2026-10-16*, §30.9 rule 1: inside a lambda a slot is the declaration's, as a parameter is).
+- **Higher-order writer effects** (*amended 2026-11-04, Part of #1825*). A
+  conditional result-ownership need is discharged only when every callback
+  the potential writer may call has known effects, and none writes a list.
+  Resolve the actual supplied callbacks through the existing class and supply
+  facts, including a supplied foreign record's worded function fields;
+  calling a callback by itself is not evidence that it writes a list. A
+  direct list write or captured-list write keeps the need. Unknown classes,
+  unavailable supplies, unresolved recursive effects or the analysis bound
+  also keep today's refusal. This changes precision, not the obligations of
+  borrowed values or the meaning of a word. Portable effect-only facts record,
+  per supplied argument, direct writes, unknown effects and dependencies on
+  the enclosing declaration’s callback parameters or field slots. Only writer
+  need resolution reads them; they grant no ownership, result, alias,
+  freshness or escape fact. Alternatives join by union, with unknown dominant.
+  Missing facts, cycles and a 32-step resolution bound keep the need. Facts
+  and their dependencies are sorted and deduplicated. Summary block version
+  40, cache entry version 16 and interface version 25 invalidate old bytes,
+  including imported cache hits; the frontend artifact layout is unchanged.
+  Collection reads existing function slots only; other field dependencies live
+  solely in the effect fact as parameter/path projections. They never create
+  ordinary function slots or grant any other summary fact.
 - **Carried lambdas.** A lambda the result holds keeps its class in the summary, with what each capture held in the
   declaration's vocabulary, when calling it needs nothing but its result and its reads: its class writes nothing,
   escapes nothing, relies on nothing (§18.4) and is not once, and no capture holds a function value. Where the call
@@ -8331,10 +8448,13 @@ its SHA-256 is checked exactly like every other body pin. There is no dummy
 sibling and no exemption from pinning. `Pins` checks both the owner scope and
 foreign status before a scoped row can satisfy a package's body requirement.
 
-For `Js.Any.pack`, the pinned lowering calls the pinned sibling constructor.
-Each fresh box owns its typed payload and identity slots and shares one private
-prototype. Both the `pack` export and its `Box` helper have sibling body pins.
-The box retains that payload,
+For a generic `Js.Any.pack` payload, the pinned lowering calls the pinned
+sibling constructor. Each fresh box owns its typed payload and identity slots
+and shares one private prototype. Both the `pack` export and its `Box` helper
+have sibling body pins. Fresh record/tuple literals use the shared caller-side
+helper below: its `freshPackets` region pins the freshness proof and literal
+emitter together, as an ordinary helper pin with no source declaration authority.
+The result retains that payload,
 which justifies `escaped a → fresh Any`; the identity guard and payload remain
 typed. Reply discovery's corresponding region reads message containers into
 local scan state and returns a newly allocated list of immutable String ids.
@@ -8358,6 +8478,32 @@ aliases. arrayAllocate creates fresh exclusive capacity. The fixture
 ownership/core/JsArrayWords observes both a stored element's later use and a
 builder's later write after completion. Finishing a builder does not make its
 pre-existing elements fresh.
+
+**Manager approval, 2026-11-04:** `Js.Any.unpackOpt` borrows the Any and
+returns its existing payload only after the exact identity guard. It promises
+neither fresh nor exclusive ownership of that payload. Its v2 fixture refuses
+a write through an unknown decoded list. V1's pre-existing Opt projection hole
+is tracked in #1831 and kept red under `tests/pending/`; it must be fixed
+before a destructive list write can use v1's judgement. The shared Opt lowering
+block also emits this private operation; the existing Opt words still describe
+the same reads, writes and escapes, with no changed promise.
+
+**Manager approval, 2026-11-04:** `Browser.Host.Array.rendererTruncate` is a storage
+write with the same read/alias/write demand on its uniquely owned first
+argument as the other array writers. It stores nothing and returns unit,
+so its result retains no alias. The lowering writes only the array length;
+removed elements are disposed before the caller invokes it.
+
+*Corrected 2026-11-04 (manager, #1825):* the entry is now `borrowed Array a, borrowed Int → ⊤`, with no asserted row: like `push` and `set`, it mutates a host Array that only `make` creates and that shares storage with no List or View, so a cell-held renderer array can be truncated (`ownership/core/ArrayTruncateCell`).
+
+*Amended 2026-11-04 (manager review of #1898, Part of #1825):* rendererTruncate
+accepts only a whole length with 0 ≤ length ≤ the current array length. An
+invalid length throws a RangeError defect before changing the array. It never
+grows storage or introduces holes. This checks the trusted renderer's structural
+invariant; the borrowed native-handle word and unit result are unchanged.
+The shared renderer pin spans are re-audited: this guard is the sole Lower.zig
+code change. The other 46 operations keep their bodies and words; their hashes
+move because the shared span includes rendererTruncate.
 
 `put` and `done` retain their fresh-builder obligations. `peekArray` returns an
 alias without changing length; it is read only, and only a full immutable tail
@@ -8393,17 +8539,60 @@ argument has no later read for an unsafe unused flip to expose.
 
 **Allocation-neutral Any packets (2026-11-03; §24.8 implementation note).**
 A record or tuple literal allocated directly as Any.pack's argument has no
-pre-existing alias. Its hidden identity slot lets that same fresh object own
-the existential payload, so `escaped a → fresh Any` is unchanged. Other
-arguments retain the shared Box. The private packet helper mutates only that
-fresh packet and a shared descriptor whose identity value is copied by
-Object.defineProperty; it retains no payload. The slot is non-enumerable,
-non-writable and non-configurable. One sibling unpack checks the packet slot
-first, returns Nothing immediately for a mismatch, and otherwise returns that
-packet; only an ordinary Box uses the old type/value fields. Unpack retains no
-input and constructs its own Maybe result, with the same payload alias as
-before. These helper and lowering bodies are pinned with the existing body
-hash mechanism.
+pre-existing alias. The shared caller-side helper additionally proves the JsIr
+value is an object literal with ordinary properties. Aliases, updates and call
+results retain Box even if release inlining later exposes a literal. Only a
+checked Dispatch identity root, or Context.packet's checked identity token,
+reaches the helper; it never invents an identity.
+
+The helper rewrites the original allocation into ONE fresh literal carrying
+Any's existing private Symbol. It preserves each payload expression and its
+evaluation order, and retains those values in the result, so
+`escaped a → fresh Any` is unchanged. A closed identity may live in private cold
+metadata spread into this same payload; that metadata contains only immutable
+identity text and, in development, empty named slots, never an application
+payload. Every empty slot is overwritten by its original payload expression,
+in its original order. The template cache includes the property-name layout,
+so another layout cannot introduce extra fields. Release retains the priced
+Symbol-only template. Dynamic evidence stays in scope.
+The caller's marker is enumerable, writable and configurable, while the existing
+$packet sibling helper keeps its non-enumerable, read-only descriptor unchanged.
+Record.copy carries the enumerable Symbol; checked-data projection omits it,
+and Wire, Debug and derived equality/ordering ignore it. No native or callable
+payload crosses Js.Value.
+
+One sibling unpack checks the packet slot first, returns Nothing immediately
+for a mismatch, and otherwise returns that packet; only an ordinary Box uses
+the old type/value fields. Unpack retains no input and constructs its own Maybe
+result, with the same payload alias as before. The caller region and the shared
+freshPackets proof/emitter region are pinned; the unchanged sibling constructor,
+packet helper, Symbol, descriptor and unpack retain their existing pins.
+
+
+*Renderer prerequisite audit, 2026-11-04 (#1612, #1827):* the typed native
+Array/KeyMap bodies retain raw elements and keys without invoking them.
+`set`/`push` therefore escape the stored values; Map.set escapes both key and
+value. A missing lookup returns its exact supplied default, and fromList
+returns the original array or its list-protocol projection, so those returned
+arguments retain their aliases. make and slice allocate fresh outer storage,
+without claiming to copy nested payloads. NativeContainerWords pins retention
+and returned-alias effects with unsafe flips; native reads and fresh outer
+storage have no stronger observable ownership claim to test with a flip.
+Element.styleText writes only its primitive text, Event.message and
+Rejection.display return primitive strings, and Node.append changes the native
+tree under its checked public error adapter. Their borrowed native handles
+neither return Beni-owned lists nor grant ownership over them. Their exact
+sibling bodies and ordinary typed calls are pinned independently.
+
+*DOM/fiber merge pin audit, 2026-11-04 (Part of #1825).* Re-read the shared
+Lower region for Js.cell, Js.cellRead, Js.cellWrite, Js.none, Js.some,
+Js.optMatch and Js.optWithDefault after merging #1873. Their applicable
+branches and words are unchanged: cell allocates a fresh outer record while
+retaining fields; selector reads preserve aliases; selector writes retain their
+value; Opt construction and matching retain the same payload aliases and call
+only the selected arm. The region also contains the new, separately reviewed
+core array branches and their arity dispatch. Those unrelated additions move
+these seven hashes. Only these seven unchanged operations are re-pinned.
 
 **Core runtime array rows (manager, 2026-11-04; #1857).** These Js.Array
 operations are fencedToCore. No application or platform can call the writer

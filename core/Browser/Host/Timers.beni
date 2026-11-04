@@ -5,8 +5,11 @@ pub foreign type Timer
 
 pub foreign impure queueMicrotask : escaped sync (⊤ → ⊤) → ⊤
 
+
 pub foreign impure start : escaped sync (⊤ → ⊤), Int → Timer
 
+
 pub foreign impure clear : borrowed Timer → ⊤
+
 
 pub foreign impure setTimeout : sync (⊤ → ⊤), Int → Int

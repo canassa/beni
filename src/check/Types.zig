@@ -120,6 +120,8 @@ pub const Entry = struct {
     holds_markup: bool = false,
     holds_collection: bool = false,
     holds_mutable: bool = false,
+    /// A nominal whose sole constructor field is a core Js.Cell.
+    cell_wrapper: bool = false,
     /// Compiler-generated endpoint identity owned by a schema declaration.
     /// These entries have no ordinary type declaration body for the
     /// equatability walk to inspect.
@@ -139,6 +141,7 @@ pub const Entry = struct {
 entries: []Entry,
 key_kinds: []TypeStore.Kind,
 js_opt: TypeId = .none,
+js_cell: TypeId = .none,
 /// Borrowed session interface slots, used to map schema member references
 /// back to their endpoint identity.
 interfaces: []const Interface,
@@ -317,6 +320,13 @@ pub inline fn ofDecl(types: *const Types, module: Graph.Index, decl: Bir.DeclInd
     // index, and a `u32` overflow traps before the test could help.
     if (decl.int() >= limit - base) return .none;
     return types.by_decl[base + decl.int()];
+}
+
+/// A configured opaque markup wrapper has its payload ABI in both modes.
+/// Graph has already checked its single constructor and single field.
+pub fn isUnboxedMarkup(types: *const Types, graph: *const Graph, id: TypeId) bool {
+    const declared = graph.markup.opaque_type orelse return false;
+    return id != .none and types.ofDecl(declared.module, declared.decl) == id;
 }
 
 /// The type at `index` in `module`'s interface.
@@ -644,6 +654,7 @@ pub fn build(
     for (types.entries, 0..) |e, i| {
         if (e.package != .core or !std.mem.eql(u8, interner.slice(e.module_name), "Js")) continue;
         if (std.mem.eql(u8, interner.slice(e.name), "Opt")) types.js_opt = @fromBackingInt(@intCast(i));
+        if (e.kind == .foreign and e.arity == 1 and std.mem.eql(u8, interner.slice(e.name), "Cell")) types.js_cell = @fromBackingInt(@intCast(i));
     }
     types.key_kinds = try gpa.alloc(TypeStore.Kind, key_count);
     @memset(types.key_kinds, .any);
@@ -658,7 +669,40 @@ pub fn build(
     try TypeFacts.settle(&types, gpa, graph, artifacts);
     try @import("MutableTypes.zig").settle(gpa, &types, graph, artifacts, interner);
     try Injective.settle(&types, gpa, graph, artifacts);
+    try settleCellWrappers(&types, gpa, graph, artifacts, interner);
     return types;
+}
+
+// Cell already owns the mutable record identity. A single nominal constructor
+// contributes neither another observable identity nor a refutable tag.
+fn settleCellWrappers(types: *Types, gpa: Allocator, graph: *const Graph, artifacts: *const Artifacts, interner: *const InternPool.Global) Allocator.Error!void {
+    if (types.js_cell == .none) return;
+    for (types.entries) |*e| {
+        if (e.kind != .adt or e.schema_endpoint) continue;
+        const bir = artifacts.bir(graph.moduleFile(e.module));
+        const constructors = bir.declCtors(bir.decl(e.decl));
+        if (constructors.len != 1) continue;
+        const fields = bir.extraSlice(.{ .start = constructors[0].args_start, .end = constructors[0].args_end }, Bir.Inst.Index);
+        if (fields.len != 1) continue;
+        var store: TypeStore = .init(gpa);
+        defer store.deinit();
+        var builder: Builder = .init(&store, types, graph, artifacts, e.module, bir, .flex, TypeStore.generalized, gpa, interner);
+        defer builder.deinit();
+        var payload = try builder.read(fields[0]);
+        while (true) {
+            const content = store.content(store.find(payload));
+            if (content == .alias) {
+                payload = content.alias.actual;
+                continue;
+            }
+            e.cell_wrapper = content == .structure and content.structure == .app and content.structure.app.type == types.js_cell;
+            break;
+        }
+    }
+}
+
+pub fn isCellWrapper(types: *const Types, id: TypeId) bool {
+    return id != .none and types.entry(id).cell_wrapper;
 }
 
 /// Immutable once the declaring module has prepared its types. A cache

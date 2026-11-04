@@ -1,0 +1,76 @@
+import Browser.Host.Array as Array
+import Js
+import Js.Protocol as Protocol
+
+
+pub opaque type Program
+    = Program (⊤ → String) String
+
+
+pub program : sync (⊤ → String) → Program
+program body = Program body "native typed arrays"
+
+
+expect : Bool, String → ⊤
+expect condition message = if not condition then Protocol.defect message
+
+
+pub inspect : ⊤ → String
+inspect ⊤ =
+    calls = Js.ref 0
+    work =
+        λ⊤ →
+            Js.write calls (Js.read calls + 1)
+            42
+    fallback = λ⊤ → 99
+    slots = Array.make ⊤
+    expect ((Array.getOr slots 0 fallback) ⊤ == 99) "empty storage did not use the default"
+    expect (Array.set slots 4 work) "a valid sparse index was refused"
+    expect (Array.size slots == 5) "a sparse write lost its extent"
+    expect (Js.read calls == 0) "storing a callback invoked it"
+    expect ((Array.getOr slots 3 fallback) ⊤ == 99) "a sparse hole was read as a payload"
+    selected = Array.getOr slots 4 fallback
+    expect (Js.read calls == 0) "finding a callback invoked it"
+    expect (selected ⊤ == 42 && Js.read calls == 1) "the callback lost its typed body"
+    expect (not (Array.set slots (-1) work)) "a negative array index was accepted"
+    expect (not (Array.set slots 4294967295 work)) "the reserved array index was accepted"
+    expect (Array.size slots == 5) "an invalid write changed the extent"
+    Array.push slots work
+    expect
+        (Array.size slots == 6 && (Array.getOr slots 5 fallback) ⊤ == 42)
+        "push lost its typed payload"
+    expect ((Array.getOr slots (-1) fallback) ⊤ == 99) "a negative read did not use the default"
+
+    undefineds = Array.make ⊤
+    Array.push undefineds Js.undefined
+    expect
+        (Js.isUndefined (Array.getOr undefineds 0 (Js.from "fallback")))
+        "a stored undefined became the default"
+    expect
+        (Js.same (Array.getOr undefineds 1 (Js.from "fallback")) (Js.from "fallback"))
+        "a missing undefined slot was present"
+
+    source = [ fallback, work, fallback ]
+    view = Array.fromList source
+    expect (Array.length view == 3) "a read-only view changed length"
+    expect ((Array.atOr view 1 fallback) ⊤ == 42) "a read-only view lost its callback"
+    suffix =
+        case source of
+            [ _, …rest ] →
+                rest
+            _ →
+                []
+    suffixView = Array.fromList suffix
+    expect
+        (Array.length suffixView == 2 && (Array.atOr suffixView 0 fallback) ⊤ == 42)
+        "a List suffix was not normalized"
+    sliced = Array.slice view 1
+    expect
+        (Array.length sliced == 2 && (Array.atOr sliced 0 fallback) ⊤ == 42)
+        "a read-only slice lost its callback"
+    growing = List.foldl (List.range 1 200) [] λ_ values → List.push values work
+    grownView = Array.fromList growing
+    expect
+        (Array.length grownView == 200 && (Array.atOr grownView 199 fallback) ⊤ == 42)
+        "a grown List lost its typed elements"
+    "callbacks and sparse slots\ninvalid indices\nundefined remains present\nread-only List and suffix views"

@@ -1,0 +1,44 @@
+-- Exercise the private row runtime through its public markup producer.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Next
+
+
+items : Int → List Int
+items index =
+    case index of
+        0 →
+            [ 1, 2, 3 ]
+        1 →
+            [ 3, 1, 4 ]
+        2 →
+            [ 4 ]
+        3 →
+            []
+        4 →
+            [ 9, 8 ]
+        _ →
+            [ 8, 9 ]
+
+
+view : Int → Html Msg
+view index =
+    rows = items index
+    <main>
+        <button onClick={Next}>Next</button>
+        <ul><For each={rows} keyed={λn → n}>{λn → <li>{n}</li>}</For></ul>
+        <ol><For each={rows} keyed={False}>{λn → <li>{n}</li>}</For></ol>
+        <Show when={List.head rows} keyed={λn → n}>{λn → <p>{n}</p>}</Show>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → 0
+        , update = λNext index → if index == 5 then 0 else index + 1
+        , view = view
+        }

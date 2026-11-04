@@ -1,0 +1,1 @@
+#1831: unpackOpt does not promise a fresh payload. V2 must refuse the list write; v1's pre-existing Js.Opt projection hole accepts it. The correct v1 refusal remains a red fixture under tests/pending/.

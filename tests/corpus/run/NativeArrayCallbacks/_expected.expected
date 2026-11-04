@@ -1,0 +1,5 @@
+native typed arrays
+callbacks and sparse slots
+invalid indices
+undefined remains present
+read-only List and suffix views

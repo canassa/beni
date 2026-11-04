@@ -1,0 +1,72 @@
+-- load
+console.log: one: "Int"
+console.log: two: "Int"
+console.log: three: "Int"
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <button id="select">"select"</button>
+    <button id="noop">"noop"</button>
+    <p class="selected">"Int"</p>
+    <p class="">"Int"</p>
+    <p class="">"Int"</p>
+  </main>
+</body>
+-- click #noop
+(the DOM did not change)
+-- click #select
+console.log: one: "Int"
+console.log: two: "Int"
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <button id="select">"select"</button>
+    <button id="noop">"noop"</button>
+    <p class="">"Int"</p>
+    <p class="selected">"Int"</p>
+    <p class="">"Int"</p>
+  </main>
+</body>
+-- click #flip
+console.log: one: "Float"
+console.log: two: "Float"
+console.log: three: "Float"
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <button id="select">"select"</button>
+    <button id="noop">"noop"</button>
+    <p class="">"Float"</p>
+    <p class="selected">"Float"</p>
+    <p class="">"Float"</p>
+  </main>
+</body>
+-- click #noop
+(the DOM did not change)
+-- click #select
+console.log: one: "Float"
+console.log: two: "Float"
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <button id="select">"select"</button>
+    <button id="noop">"noop"</button>
+    <p class="selected">"Float"</p>
+    <p class="">"Float"</p>
+    <p class="">"Float"</p>
+  </main>
+</body>
+-- click #flip
+console.log: one: "Int"
+console.log: two: "Int"
+console.log: three: "Int"
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <button id="select">"select"</button>
+    <button id="noop">"noop"</button>
+    <p class="selected">"Int"</p>
+    <p class="">"Int"</p>
+    <p class="">"Int"</p>
+  </main>
+</body>

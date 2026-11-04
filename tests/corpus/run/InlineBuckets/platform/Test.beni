@@ -1,0 +1,108 @@
+import Cmd
+import Inline
+import Js
+import Js.Dispatch as Dispatch
+import Js.Protocol as Protocol
+
+
+pub opaque type Program
+    = Program (⊤ → String) String
+
+
+pub program : sync (⊤ → String) → Program
+program body = Program body "typed inline buckets"
+
+
+expect : Bool, String → ⊤
+expect condition message = if not condition then Protocol.defect message
+
+
+pub inspect : ⊤ → String
+inspect ⊤ =
+    tape = Js.ref ""
+    append = λtext → Js.write tape (Js.read tape ++ text)
+    a = Inline.bucket ⊤
+    b = Inline.bucket ⊤
+    _ = Inline.entry (λ⊤ → append "A") [ a, b ]
+    _ = Inline.entry (λ⊤ → append "B") [ b ]
+    _ = Inline.entry (λ⊤ → append "C") [ a ]
+    Inline.first ⊤
+    expect (Js.read tape == "ABC") "initial entries changed document order"
+    Js.write tape ""
+    Inline.pass a
+    expect (Js.read tape == "AC") "single bucket order"
+    Js.write tape ""
+    Inline.passes [ b, a, b ]
+    expect (Js.read tape == "ABC") "union repeated an entry or changed order"
+
+    _ = Inline.entry (λ⊤ → append "D") [ a ]
+    Js.write tape ""
+    Inline.passes [ b, a ]
+    expect (Js.read tape == "ADBC") "equal ordinals lost distinct entries or stable order"
+    Js.write tape ""
+    Inline.first ⊤
+    expect (Js.read tape == "D") "the first pass retained an earlier mount's entries"
+
+    live = Inline.bucket ⊤
+    added = Js.ref False
+    _ =
+        Inline.entry
+            (λ⊤ →
+                append "L"
+                if not (Js.read added) then
+                    Js.write added True
+                    _ = Inline.entry (λ⊤ → append "M") [ live ]
+                    ⊤
+            )
+            [ live ]
+    Js.write tape ""
+    Inline.pass live
+    expect (Js.read tape == "LM") "a bucket did not visit a live append"
+    Js.write tape ""
+    Inline.pass live
+    expect (Js.read tape == "LM") "a bucket consumed its entries"
+    Inline.first ⊤
+
+    registered = Js.ref False
+    _ =
+        Inline.entry
+            (λ⊤ →
+                append "R"
+                if not (Js.read registered) then
+                    Js.write registered True
+                    _ = Inline.entry (λ⊤ → append "S") []
+                    ⊤
+            )
+            []
+    Js.write tape ""
+    Inline.first ⊤
+    expect (Js.read tape == "R") "the first pass consumed the next registration batch"
+    Js.write tape ""
+    Inline.first ⊤
+    expect (Js.read tape == "S") "the next registration batch was lost"
+    Js.write tape ""
+    Inline.roots [ λ⊤ → append "X", λ⊤ → append "Y" ]
+    expect (Js.read tape == "XY") "closed roots changed placement order"
+    Js.write tape ""
+    Dispatch.send
+        (λ⊤ →
+            append "start;"
+            Inline.commands
+                (Cmd.batch
+                    [ Cmd.perform λsend →
+                        append "body1;"
+                        send λ⊤ → append "message1;"
+                        append "after1;"
+                    , Cmd.perform λsend →
+                        append "body2;"
+                        send λ⊤ → append "message2;"
+                    ]
+                )
+                λwork → Protocol.call work ⊤
+            append "end;"
+        )
+        ⊤
+    expect
+        (Js.read tape == "start;end;body1;after1;body2;message1;message2;")
+        "typed commands changed reentrant FIFO order"
+    "first and single passes\nordered unique union\nequal ordinal identity\nlive non-consuming append\nseparate registration batches"

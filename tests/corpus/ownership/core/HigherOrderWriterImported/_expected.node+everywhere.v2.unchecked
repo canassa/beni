@@ -1,0 +1,6 @@
+Main readonly: lines 4-4 (not built: local)
+Main writes: lines 7-8 (not built: local)
+Main unknownEffect: lines 11-11 (not built: local)
+Writer keepThenCall: lines 6-12 (not built: call)
+Writer wrapped: lines 15-15 (not built: call)
+Writer fieldWrapped: lines 20-20 (not built: call)

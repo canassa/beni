@@ -1,0 +1,63 @@
+-- #1785: an identity change invalidates ALL keyed rows, even with an
+-- unchanged selector. A selector-only change retains the existing fast path.
+import Browser
+import Html exposing (Html)
+import Probe
+
+
+type Msg
+    = Flip
+    | Select
+    | Noop
+
+
+type alias Model =
+    float : Bool
+    selected : String
+    ticks : Int
+
+
+render : (a → a), String → Html Msg
+render value selected =
+    <main>
+        <button id="flip" onClick={Flip}>flip</button>
+        <button id="select" onClick={Select}>select</button>
+        <button id="noop" onClick={Noop}>noop</button>
+        <For each={[ "one", "two", "three" ]} keyed={λitem → item}>
+            {λitem →
+                <p class={if item == selected then "selected" else ""}>
+                    {Debug.log item (Probe.describe value)}
+                </p>
+            }
+        </For>
+    </main>
+
+
+intIdentity : Int → Int
+intIdentity = Probe.identity
+
+
+floatIdentity : Float → Float
+floatIdentity = Probe.identity
+
+
+view : Model → Html Msg
+view model =
+    if model.float then render floatIdentity model.selected else render intIdentity model.selected
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Flip →
+            { model | float = not model.float }
+        Select →
+            { model | selected = if model.selected == "one" then "two" else "one" }
+        Noop →
+            { model | ticks = model.ticks + 1 }
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → { float = False, selected = "one", ticks = 0 }, update = update, view = view }

@@ -1,0 +1,10 @@
+-- #1831: v1 loses the Opt payload; v2 must refuse writing the unknown list.
+import Js
+import Js.Any as Any
+
+
+pub defaulted box =
+    value : Js.Opt (List Int)
+    value = Any.unpackOpt box
+    items = Js.optWithDefault value []
+    List.push items 1

@@ -1,0 +1,5 @@
+module AnyUnpackOpt
+  10:5 List.push items: accepted fresh
+  summary defaulted: π1 R; res ~fresh1
+  demands 1: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 1: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

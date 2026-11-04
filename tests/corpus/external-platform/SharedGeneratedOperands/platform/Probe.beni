@@ -66,3 +66,12 @@ capture (Saved saved) example =
 
 
 pub data value = CaptureCheck.data value
+
+
+pub restore : Any.Any, packet → String
+restore saved example =
+    case read saved example of
+        Just _ →
+            "generated tuple matched"
+        Nothing →
+            "generated tuple mismatch"

@@ -1,0 +1,6 @@
+import Js.Any as Any
+
+
+-- Return the same typed value through the shared packet/Box unpack path.
+pub keep : a → a
+keep value = Maybe.withDefault (Any.unpack (Any.pack value)) value

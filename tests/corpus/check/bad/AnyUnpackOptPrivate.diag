@@ -1,0 +1,1 @@
+[{"code":"private_name","severity":"error","span":{"file":"tests/corpus/check/bad/AnyUnpackOptPrivate.beni","start":{"line":5,"col":12},"end":{"line":5,"col":21}},"title":"PRIVATE NAME","message":"This name is private to core and platform runtimes."}]

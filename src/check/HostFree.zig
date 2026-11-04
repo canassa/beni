@@ -73,6 +73,15 @@ pub const State = struct {
         for (cx.types.entries, info, 0..) |entry, *out, i| {
             const bir = cx.artifacts.bir(cx.graph.moduleFile(entry.module));
             const declaration = bir.decl(entry.decl);
+            // The private producer/runtime ABI retains callbacks as well as
+            // native handles, including fields only its checked producer sees.
+            // This strengthens structural facts; it exempts no erasure.
+            if (entry.package == .platform and std.mem.eql(u8, cx.interner.slice(entry.module_name), "Html.Runtime")) {
+                const name = cx.interner.slice(entry.name);
+                inline for (.{ "Payload", "Context", "Kind", "Block", "RowSite", "Instance", "Slot", "Row", "Property", "Control" }) |carrier| {
+                    if (std.mem.eql(u8, name, carrier)) out.flags |= native | callable;
+                }
+            }
             out.parameters = .{ .start = @intCast(parameters.items.len), .len = entry.arity };
             var builder = Types.Builder.init(store, cx.types, cx.graph, cx.artifacts, entry.module, bir, .flex, TypeStore.generalized, a, cx.interner);
             defer builder.deinit();
@@ -87,7 +96,7 @@ pub const State = struct {
             if (entry.schema_endpoint) continue;
             if (entry.kind == .foreign) {
                 if (!plainForeign(cx, entry)) {
-                    out.flags = native;
+                    out.flags |= native;
                     if (entry.package == .core and std.mem.eql(u8, cx.interner.slice(entry.module_name), "Js.Inspect") and std.mem.eql(u8, cx.interner.slice(entry.name), "Raw")) out.flags |= inspection;
                     out.native_type = @fromBackingInt(@intCast(i));
                 }
@@ -305,5 +314,97 @@ test "HostFree internal rollout retains imported generic obligations and rejects
         if (found != scenario.refused) std.debug.print("{s}\n{s}\n", .{ scenario.body, p.stderr.written() });
         try testing.expectEqual(scenario.refused, found);
         if (!scenario.refused) try testing.expectEqual(@as(usize, 0), p.session.diagnostics.items.len);
+    }
+}
+
+test "HostFree renderer storage retains imported erasure obligations in platform code" {
+    const TestProject = @import("../resolve/TestProject.zig");
+    const Session = @import("../Session.zig");
+    const testing = std.testing;
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var modules: std.ArrayList(TestProject.Module) = .empty;
+    defer modules.deinit(testing.allocator);
+    try modules.appendSlice(testing.allocator, &@import("checker_test.zig").test_core);
+    try modules.append(testing.allocator, .{
+        .path = "Js.beni",
+        .package = .core,
+        .source = "pub foreign type Value\npub foreign type Opt a\npub foreign pure from : a → Value\n",
+    });
+    for ([_]struct { file: []const u8, path: [:0]const u8, package: @import("../resolve/Graph.zig").Package }{
+        .{ .file = "core/Browser/Host/Array.beni", .path = "Browser/Host/Array.beni", .package = .core },
+        .{ .file = "core/Browser/Host/KeyMap.beni", .path = "Browser/Host/KeyMap.beni", .package = .core },
+        .{ .file = "core/Js/Any.beni", .path = "Js/Any.beni", .package = .core },
+        .{ .file = "tests/fixtures/renderer-storage-erasure/Library.beni", .path = "Library.beni", .package = .core },
+        .{ .file = "tests/fixtures/renderer-storage-erasure/platform/Test.beni", .path = "Test.beni", .package = .platform },
+        .{ .file = "tests/fixtures/renderer-storage-erasure/Main.beni", .path = "Main.beni", .package = .app },
+    }) |file| {
+        const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, file.file, a, .limited(64 * 1024));
+        try modules.append(testing.allocator, .{ .path = file.path, .package = file.package, .source = try std.fmt.allocPrintSentinel(a, "{s}", .{source}, 0) });
+    }
+    var p = try TestProject.initWith(testing.allocator, modules.items, .{ .phases = Session.check_phases, .host_free = true });
+    defer p.deinit();
+    var refusals: usize = 0;
+    for (p.session.diagnostics.items) |item| if (item.code == .host_value_erasure) {
+        refusals += 1;
+    };
+    if (refusals != 6) std.debug.print("{s}\n", .{p.stderr.written()});
+    try testing.expectEqual(@as(usize, 6), refusals);
+    try testing.expectEqual(@as(usize, 6), p.session.diagnostics.items.len);
+    try testing.expect(std.mem.indexOf(u8, p.stderr.written(), "Browser.Host.Array.View") != null);
+    try testing.expect(std.mem.indexOf(u8, p.stderr.written(), "Browser.Host.KeyMap.Map") != null);
+    try testing.expect(std.mem.indexOf(u8, p.stderr.written(), "erases a callable") != null);
+    try testing.expect(std.mem.indexOf(u8, p.stderr.written(), "Js.Any.Any") != null);
+}
+
+test "HostFree private DOM protocol carriers retain facts through imported containers" {
+    try privateDomProtocolCarriers(false);
+}
+
+test "HostFree nested DOM protocol carriers retain facts through imported containers" {
+    try privateDomProtocolCarriers(true);
+}
+
+fn privateDomProtocolCarriers(nested: bool) !void {
+    const TestProject = @import("../resolve/TestProject.zig");
+    const Session = @import("../Session.zig");
+    const testing = std.testing;
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, "platforms/html/Html/Runtime.beni", a, .limited(64 * 1024));
+    for ([_][]const u8{ "Payload", "Context", "Kind", "Block", "RowSite", "Property", "Control" }) |carrier| {
+        var modules: std.ArrayList(TestProject.Module) = .empty;
+        defer modules.deinit(testing.allocator);
+        try modules.appendSlice(testing.allocator, &@import("checker_test.zig").test_core);
+        try modules.appendSlice(testing.allocator, &.{
+            .{ .path = "Js.beni", .package = .core, .source = "pub foreign type Value\npub cell foreign type Cell r\npub foreign type Opt a\npub foreign pure from : a → Value\npub foreign impure cellRead : cellread Cell r, unused sync (r → a) → lent a\n" },
+            .{ .path = "Js/Any.beni", .package = .core, .source = "pub foreign type Any\n" },
+            .{ .path = "Browser/Host/Array.beni", .package = .core, .source = "pub foreign type Array a\n" },
+            .{ .path = "Browser/Host/Node.beni", .package = .core, .source = "pub foreign type Node\n" },
+            .{ .path = "Browser/Host/Event.beni", .package = .core, .source = "pub foreign type Event\n" },
+            .{ .path = "Library.beni", .package = .core, .source = "import Js\npub erase value = Js.from value\n" },
+            .{ .path = "Html/Runtime.beni", .package = .platform, .source = try std.fmt.allocPrintSentinel(a, "{s}", .{source}, 0) },
+        });
+        const payload = if (nested) "[ { payload = value } ]" else "value";
+        const code = try std.fmt.allocPrintSentinel(a, "import Html.Runtime as Runtime\nimport Js\nimport Library\npub bad : Runtime.{s} → Js.Value\nbad value = Library.erase {s}\n", .{ carrier, payload }, 0);
+        try modules.append(testing.allocator, .{ .path = "M.beni", .package = .platform, .source = code });
+        var project = try TestProject.initWith(testing.allocator, modules.items, .{ .phases = Session.check_phases, .host_free = true });
+        defer project.deinit();
+        var refusals: usize = 0;
+        for (project.session.diagnostics.items) |diagnostic| if (diagnostic.code == .host_value_erasure) {
+            refusals += 1;
+        };
+        if (refusals != 1 or project.session.diagnostics.items.len != 1) std.debug.print("{s} nested={any}\n{s}\n", .{ carrier, nested, project.stderr.written() });
+        try testing.expectEqual(@as(usize, 1), refusals);
+        try testing.expectEqual(@as(usize, 1), project.session.diagnostics.items.len);
+        var found = false;
+        for (project.session.checked.types.entries, project.session.checked.types.host_free.info) |entry, facts| {
+            if (!std.mem.eql(u8, project.session.interner.slice(entry.module_name), "Html.Runtime") or !std.mem.eql(u8, project.session.interner.slice(entry.name), carrier)) continue;
+            found = true;
+            try testing.expectEqual(native | callable, facts.flags & (native | callable));
+        }
+        try testing.expect(found);
     }
 }

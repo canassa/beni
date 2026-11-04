@@ -1,0 +1,13 @@
+-- CK-1831: #1831, v1 must retain the alias through existing Opt entries.
+-- The helper uses only Js.some and Js.optWithDefault. V2 refuses the push;
+-- v1 claims a fresh result, although xs still holds the same logical list.
+import Node
+import Projection
+
+
+main : Node.Program
+main =
+    xs = [ 1 ]
+    items = Projection.select xs
+    grown = List.push items 1
+    Node.print (String.fromInt (List.length grown + List.length xs))

@@ -1,0 +1,14 @@
+-- A library whose markup reaches every list of the typed row module: a
+-- keyed `For`, a `For` by position and a keyed `Show` (interface 1.30).
+-- `Rt.Rows` is private to the platform, so the module is reached as a page
+-- reaches it, through the lowering, and its emitted file is the golden.
+import Html exposing (Html)
+
+
+pub view : List Int → Html msg
+view items =
+    <div>
+        <ul><For each={items} keyed={λn → n}>{λn → <li>{n}</li>}</For></ul>
+        <ol><For each={items} keyed={False}>{λn → <li>{n}</li>}</For></ol>
+        <Show when={List.head items} keyed={λn → n}>{λn → <p>{n}</p>}</Show>
+    </div>

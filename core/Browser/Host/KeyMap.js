@@ -1,0 +1,10 @@
+export const values = (map) => { return globalThis.Array.from(map.values()); };
+export const make = (unit) => { return new globalThis.Map(); };
+export const get = (map, key) => { return map.has(key) ? { $: "Just", a: map.get(key) } : { $: "Nothing", a: null }; };
+export const getOr = (map, key, fallback) => { const value = map.get(key); return value !== undefined || map.has(key) ? value : fallback; };
+export const set = (map, key, value) => { map.set(key, value); return null; };
+export const has = (map, key) => { return map.has(key); };
+export const remove = (map, key) => { return map.delete(key); };
+export const clear = (map) => { map.clear(); return null; };
+export const size = (map) => { return map.size; };
+export const each = (map, visit) => { map.forEach((value, key) => visit(key, value)); return null; };

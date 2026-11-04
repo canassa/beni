@@ -1,0 +1,6 @@
+-- Typed write jobs keep first-pass order, unique entries and live appends.
+import Test
+
+
+main : Test.Program
+main = Test.program Test.inspect

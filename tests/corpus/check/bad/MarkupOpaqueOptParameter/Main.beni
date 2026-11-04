@@ -1,0 +1,4 @@
+import TypedHtml
+
+
+pub value = TypedHtml.bad

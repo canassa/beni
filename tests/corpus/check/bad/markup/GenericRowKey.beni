@@ -1,0 +1,8 @@
+-- A retained markup site's key type is fixed when it is compiled.
+-- The renderer's defensive key-type-mismatch path is tested at its ABI;
+-- it cannot be reached by accepting a generic source key.
+import Html exposing (Html)
+
+
+pub rows : a → Html msg
+rows value = <For each={[ value ]} keyed={identity}>{λ_ → <p>row</p>}</For>

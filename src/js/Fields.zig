@@ -119,8 +119,10 @@ pub fn close(in: Input) Allocator.Error!?Boundary {
         for (in.dispatch[mi].boundary) |row| {
             // Either body: a declaration that may suspend may be written
             // only as its suspendable twin, which casts what it casts.
-            if (!in.live.decl(m, row.decl) and !in.live.twin(m, row.decl)) continue;
-            if (!in.alive(m, row.decl)) continue;
+            const markup_payload = row.kind == .boxed and
+                (if (in.graph.markup.opaque_type) |declared| declared.module == m and declared.decl.int() == row.decl else false);
+            if (!markup_payload and !in.live.decl(m, row.decl) and !in.live.twin(m, row.decl)) continue;
+            if (!markup_payload and !in.alive(m, row.decl)) continue;
             switch (row.kind) {
                 .field => try walk.pin(in.interner.slice(@fromBackingInt(@intCast(row.value)))),
                 .type => try walk.observe(@fromBackingInt(@intCast(row.value))),
@@ -156,6 +158,13 @@ pub fn close(in: Input) Allocator.Error!?Boundary {
         const id: TypeId = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         if (id == in.types.well_known.bool or id == in.types.well_known.order) continue;
         b.integer_tags.set(i);
+    }
+    for (in.types.entries, 0..) |e, i| if (e.cell_wrapper) {
+        b.integer_tags.set(i);
+    };
+    if (in.graph.markup.opaque_type) |declared| {
+        const id = in.types.ofDecl(declared.module, declared.decl);
+        if (id != .none) b.integer_tags.set(id.int());
     }
     return b;
 }
@@ -347,9 +356,10 @@ pub const Conflicts = struct {
 /// text the build writes that is not a field's. A field in either set keeps
 /// its text. No spelling holds a `$`, and none is the text of a field that
 /// keeps it, because the two could be keys of one record. A spelling MAY be
-/// a plain property's text: a record holds nothing but its fields, and
-/// nothing that reads a plain property by name is handed a record whose
-/// fields it does not name (`boundary.md` §4).
+/// a plain property's text only when the representations cannot share an
+/// object. Renderer InstanceFields/RowFields mix source fields with producer
+/// slots: those plain producer keys must contain `$`, outside this alphabet
+/// (`backend.md` §15.4). Boundary-visible names stay pinned (§4).
 pub fn assign(
     arena: Allocator,
     counts: []Count,

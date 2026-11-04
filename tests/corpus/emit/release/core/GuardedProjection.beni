@@ -1,0 +1,32 @@
+import Js
+
+
+pick value = Js.optMatch value (λ⊤ → { x = -1 }) λpresent → present
+
+
+pub known n =
+    value = pick (Js.some { x = n })
+    value.x
+
+
+pub joined choose n =
+    candidate = if choose then Js.some { x = n } else Js.none ⊤
+    value = pick candidate
+    value.x
+
+
+pub sentinel ⊤ =
+    value = pick (Js.none ⊤)
+    value.x
+
+
+marker = { x = 7 }
+
+
+through value = Js.optMatch value (λ⊤ → marker) λpresent → present
+
+
+pub narrowed choose =
+    candidate = if choose then Js.some marker else Js.none ⊤
+    value = through candidate
+    if Js.same value marker then Js.same value marker else False

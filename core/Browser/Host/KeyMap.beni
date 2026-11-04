@@ -1,0 +1,32 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+pub foreign type Map key value
+
+
+pub foreign impure values : borrowed Map key value → List value
+
+
+pub foreign impure make : ⊤ → fresh Map key value
+
+
+pub foreign impure get : borrowed Map key value, borrowed key → Maybe value
+
+
+pub foreign impure getOr : borrowed Map key value, borrowed key, returned value → value
+
+
+pub foreign impure set : borrowed Map key value, escaped key, escaped value → ⊤
+
+
+pub foreign impure has : borrowed Map key value, borrowed key → Bool
+
+
+pub foreign impure remove : borrowed Map key value, borrowed key → Bool
+
+
+pub foreign impure clear : borrowed Map key value → ⊤
+
+
+pub foreign impure size : borrowed Map key value → Int
+
+
+pub foreign impure each : borrowed Map key value, sync (key, value → ⊤) → ⊤

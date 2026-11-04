@@ -13,3 +13,16 @@ existing value = Any.pack value
 
 pub record : Int → Any.Any
 record value = Any.pack { a = value, b = "capture" }
+
+
+-- Updates and calls keep Box even if release later exposes a literal.
+pub updated : { a : Int, b : String }, Int → Any.Any
+updated value number = Any.pack { value | a = number }
+
+
+make : Int → { a : Int, b : String }
+make number = { a = number, b = "capture" }
+
+
+pub called : Int → Any.Any
+called number = Any.pack (make number)

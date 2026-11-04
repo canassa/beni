@@ -1,0 +1,13 @@
+-- load
+console.log: identity patch: "Int"
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <button id="noop">"noop"</button>
+    <p>"Int"</p>
+  </main>
+</body>
+-- click #noop
+(the DOM did not change)
+-- click #noop
+(the DOM did not change)

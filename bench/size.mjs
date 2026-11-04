@@ -439,7 +439,8 @@ function measureFloor(options, beni, work) {
 }
 
 /// The empty mounted page, per browser platform: a program whose `view` is
-/// an empty fragment, mounted and never changing, so what it ships is the
+/// an empty fragment (and `browser text`, one of `Html.text` alone, which
+/// writes no markup root: interface 1.30), mounted and never changing, so what it ships is the
 /// least a page can — its runtime, the mount, and nothing of the program.
 /// The floor above is Node's and answers another question; this is the
 /// number a browser program is weighed against (`backend.md` §13,
@@ -464,6 +465,7 @@ const teaImports = `${pageImports}import Tea\n`;
 const helloBody = '<main><h1 class="title">Hello</h1><p>A static page.</p></main>';
 const pages = [
   { name: "browser", platform: "browser", imports: pageImports, main: "Browser.program { init = λ⊤ → {}, update = λ_ m → m, view = view }" },
+  { name: "browser text", platform: "browser", imports: pageImports, main: "Browser.program { init = λ⊤ → {}, update = λ_ m → m, view = view }", body: "Html.text \"Hello\"" },
   { name: "browser-tea", platform: "browser-tea", imports: teaImports, main: "Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = view }" },
   { name: "browser-tea hello", platform: "browser-tea", imports: teaImports, main: "Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = view }", body: helloBody },
   {

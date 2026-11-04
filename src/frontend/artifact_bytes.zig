@@ -135,7 +135,8 @@ pub const magic = "BENIFE\x00\x00";
 /// `prepended` and the stored callback (ownership-v2.md §2.13.6) — three new
 /// word bits in a declaration's v2 column, and `misplaced_ownership_word`
 /// has two new readings, which shifted the later ones.
-pub const format_version: u32 = 27;
+/// 28 (2026-11-04): a foreign record's field ownership signatures (§24.4).
+pub const format_version: u32 = 28;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///
@@ -1555,4 +1556,51 @@ test "an enum value no version defines is refused, and a non-exhaustive one is n
     // other value is a slot.
     try testing.expect(validEnum(Bir.SymbolIndex, 12345));
     try testing.expect(validEnum(Bir.SymbolIndex, std.math.maxInt(u32)));
+}
+
+test "foreign record field ownership metadata survives artifacts and refuses invalid nested indices" {
+    const gpa = testing.allocator;
+    var sample = try Sample.init(gpa);
+    defer sample.deinit(gpa);
+    const old_extra = sample.bir.extra;
+    defer sample.bir.extra = old_extra;
+    var extra = [_]u32{ Bir.own_result, @import("../parse/Ast.zig").OwnWord.fresh.bit(), 0, 0, 0, 1, Bir.own_fields, 0, 0, 1, 0, 2 };
+    sample.bir.extra = &extra;
+    const tags = sample.bir.insts.items(.tag);
+    const data = sample.bir.insts.items(.data);
+    tags[0] = .type_unit;
+    tags[1] = .type_fn;
+    data[1] = .{ .lhs = 2, .rhs = 0 };
+    tags[2] = .type_record;
+    data[2] = .{ .lhs = 4, .rhs = 6 };
+    const decls: []Bir.Decl = @constCast(sample.bir.decls);
+    decls[0].kind = .foreign_value;
+    decls[0].body = .none;
+    decls[0].annotation = @fromBackingInt(2);
+    decls[0].own_start = 6;
+    decls[0].own_end = 12;
+    try testing.expect(sample.bir.verify(@intCast(sample.tokens.len)));
+    const bytes = try write(gpa, gpa, sample.input(&.{}));
+    defer gpa.free(bytes);
+    var loaded = try read(gpa, bytes, sample_key);
+    defer loaded.deinit(gpa);
+    try testing.expect(loaded.bir.verify(@intCast(sample.tokens.len)));
+    try testing.expectEqualDeep(sample.bir.ownFields(decls[0]), loaded.bir.ownFields(loaded.bir.decls[0]));
+    const mutations = [_]struct { index: usize, value: u32 }{
+        .{ .index = 7, .value = 1 }, // reserved header
+        .{ .index = 8, .value = 99 }, // field symbol
+        .{ .index = 9, .value = 99 }, // type instruction
+        .{ .index = 10, .value = 3 }, // inverted word range
+        .{ .index = 11, .value = 99 }, // word range past extra
+        .{ .index = 11, .value = 7 }, // word range reaches its header
+        .{ .index = 2, .value = 99 }, // function parameter range
+    };
+    for (mutations) |mutation| {
+        const saved = extra[mutation.index];
+        extra[mutation.index] = mutation.value;
+        try testing.expect(!sample.bir.verify(@intCast(sample.tokens.len)));
+        extra[mutation.index] = saved;
+    }
+    decls[0].own_end -= 2;
+    try testing.expect(!sample.bir.verify(@intCast(sample.tokens.len)));
 }
