@@ -275,6 +275,7 @@ core Browser.Host.Node.rendererInsertBefore ownership/core/NativeRenderer.beni -
 core Browser.Host.Node.rendererAppend ownership/core/NativeRenderer.beni - N.rendererAppend
 core Browser.Host.Node.rendererRemove ownership/core/NativeRenderer.beni - N.rendererRemove
 core Browser.Host.Node.rendererClone ownership/core/NativeRenderer.beni - N.rendererClone
+core Browser.Host.Array.rendererTruncate ownership/core/ArrayTruncate.beni - Array.rendererTruncate
 core Browser.Host.Array.rendererAt ownership/core/ArrayTruncate.beni - Array.rendererAt
 core Browser.Host.Array.rendererHas ownership/core/ArrayTruncate.beni - Array.rendererHas
 

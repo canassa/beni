@@ -8352,6 +8352,8 @@ argument as the other array writers. It stores nothing and returns unit,
 so its result retains no alias. The lowering writes only the array length;
 removed elements are disposed before the caller invokes it.
 
+*Corrected 2026-11-04 (manager, #1825):* the entry is now `borrowed Array a, borrowed Int → ⊤`, with no asserted row: like `push` and `set`, it mutates a host Array that only `make` creates and that shares storage with no List or View, so a cell-held renderer array can be truncated (`ownership/core/ArrayTruncateCell`).
+
 `put` and `done` retain their fresh-builder obligations. `peekArray` returns an
 alias without changing length; it is read only, and only a full immutable tail
 becomes a tree leaf. `writeArray` is an impure native capacity write with aliased

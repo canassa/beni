@@ -30,7 +30,7 @@ pub const rows = [_]Row{
     .{ .source = .ecmascript, .owner = "Object", .member = "hasOwn", .module = "Browser.Host.Array", .name = "rendererHas", .signature = "borrowed Array a, Int → Bool", .recipe = .renderer_has, .effect = .pure, .allowed = all, .algorithm = "https://tc39.es/ecma262/#sec-object.hasown" },
     // Dense renderer-owned arrays. Invalid indices are defects; removed
     // elements are disposed before reducing the uniquely owned array length.
-    .{ .source = .ecmascript, .owner = "Array", .member = "length", .module = "Browser.Host.Array", .name = "rendererTruncate", .signature = "written Array a, borrowed Int → ⊤", .recipe = .renderer_truncate, .allowed = all, .algorithm = "https://tc39.es/ecma262/#sec-arraysetlength" },
+    .{ .source = .ecmascript, .owner = "Array", .member = "length", .module = "Browser.Host.Array", .name = "rendererTruncate", .signature = "borrowed Array a, borrowed Int → ⊤", .recipe = .renderer_truncate, .allowed = all, .algorithm = "https://tc39.es/ecma262/#sec-arraysetlength" },
     .{ .source = .ecmascript, .owner = "Array", .member = "get", .module = "Browser.Host.Array", .name = "rendererAt", .signature = "borrowed Array a, borrowed Int → a", .recipe = .renderer_at, .allowed = all, .algorithm = "https://tc39.es/ecma262/#sec-array-exotic-objects" },
     // Private renderer-owned nodes: structural failures propagate as defects (boundary.md).
     .{ .owner = "Node", .member = "firstChild", .module = "Browser.Host.Node", .name = "rendererFirstChild", .signature = "borrowed Node → Js.Opt Node", .recipe = .renderer_first_child, .allowed = window, .algorithm = "https://dom.spec.whatwg.org/" },

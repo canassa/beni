@@ -830,6 +830,9 @@ and then reads the initialized element, without a fallback or wrapper.
 Both are reviewed ECMAScript native entries available in every host realm,
 reserved by the same core/platform fence above. Browser.Host.Array.Array is
 a `sequence` type, so its storage writes require unique ownership under v2.
+
+*Corrected 2026-11-04 (manager, #1825):* `rendererTruncate` takes a `borrowed Array a`, like `push` and `set`; `written` was an error, because only `make` creates an Array and none shares storage with a List or View.
+
 `rendererHas : borrowed Array a, Int → Bool` is a pure, allocation-free
 `Object.hasOwn` presence test with an unsigned in-range index guard; it
 returns false for a hole or out-of-range index and preserves a present

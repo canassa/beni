@@ -1,4 +1,4 @@
--- Truncation is a storage write and cannot edit an array with a later alias.
+-- Truncation mutates a borrowed host Array, like push and set.
 import Browser.Host.Array as Array
 
 

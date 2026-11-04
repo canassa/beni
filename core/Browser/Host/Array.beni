@@ -8,7 +8,7 @@ pub sequence foreign type Array a
 pub foreign pure rendererHas : borrowed Array a, Int → Bool
 
 
-pub foreign impure rendererTruncate : written Array a, borrowed Int → ⊤
+pub foreign impure rendererTruncate : borrowed Array a, borrowed Int → ⊤
 
 
 pub foreign impure rendererAt : borrowed Array a, borrowed Int → a
