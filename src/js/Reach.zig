@@ -330,6 +330,16 @@ pub const Input = struct {
     /// program site needs that no instruction it reads names
     /// (`browser-inline.md` §7).
     pinned: []const Node = &.{},
+    /// The runtime module's values its markup lowering supplies, and the
+    /// runtime values their expressions name (`boundary.md` §9.4.6, 1.30):
+    /// each supplied value is an edge to each of those.
+    lowering_supplied: ?LoweringSupplied = null,
+
+    pub const LoweringSupplied = struct {
+        module: Graph.Index,
+        values: []const []const u8,
+        uses: []const []const u8,
+    };
 
     pub fn birOf(in: Input, m: Graph.Index) *const Bir {
         if (m.int() >= in.birs.len) return &Bir.empty;
@@ -518,7 +528,14 @@ pub fn walk(scratch: Allocator, in: Input, edges: []const ModuleEdges) Allocator
     for (roots.items) |root| {
         if (mark(modules, root)) try stack.append(scratch, root);
     }
+    const supplied = try suppliedEdges(scratch, in);
     while (stack.pop()) |node| {
+        // A value the markup lowering supplies reaches what its expression
+        // names (`boundary.md` §9.4.6, 1.30): edges no packed module's
+        // table can hold, since the lowering writes the expression.
+        if (supplied) |sup| if (node.kind == .decl and node.module == sup.module and std.mem.indexOfScalar(u32, sup.values, node.index) != null) {
+            for (sup.uses) |use| if (mark(modules, use)) try stack.append(scratch, use);
+        };
         if (node.kind == .decl and (in.entry == null or !std.meta.eql(node, in.entry.?))) {
             const deferred = for (in.deferred) |d| {
                 if (std.meta.eql(node, d)) break true;
@@ -540,6 +557,23 @@ pub fn walk(scratch: Allocator, in: Input, edges: []const ModuleEdges) Allocator
     }
 
     return .{ .modules = modules, .provenance = in.provenance, .dispatch = in.dispatch };
+}
+
+/// The declarations of the runtime module's lowering-supplied values, and
+/// of the runtime values their expressions name (`Input.lowering_supplied`).
+fn suppliedEdges(scratch: Allocator, in: Input) Allocator.Error!?struct { module: Graph.Index, values: []const u32, uses: []const Node } {
+    const sup = in.lowering_supplied orelse return null;
+    const interner = in.interner orelse return null;
+    const bir = in.birOf(sup.module);
+    var values: std.ArrayList(u32) = .empty;
+    var uses: std.ArrayList(Node) = .empty;
+    for (bir.decls, 0..) |d, index| {
+        if (d.kind != .value and d.kind != .foreign_value) continue;
+        const name = interner.slice(bir.symbol(d.name));
+        for (sup.values) |v| if (d.kind == .foreign_value and std.mem.eql(u8, v, name)) try values.append(scratch, @intCast(index));
+        for (sup.uses) |u| if (std.mem.eql(u8, u, name)) try uses.append(scratch, .{ .module = sup.module, .kind = .decl, .index = @intCast(index) });
+    }
+    return .{ .module = sup.module, .values = values.items, .uses = uses.items };
 }
 
 /// An edge waiting on a constructor, with the module whose chains its

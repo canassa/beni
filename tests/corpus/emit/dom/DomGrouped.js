@@ -1,5 +1,5 @@
 import { String$fromInt, String$toUpper } from "./_core/String.mjs";
-import { Rt$control, Rt$template } from "./_platform/Rt.mjs";
+import { Rt$control, Rt$template, Rt$empty } from "./_platform/Rt.mjs";
 import { Js$Any$pack } from "./_core/Js/Any.mjs";
 const DomGrouped$p21 = ($i$1, $v$2) => {
   const $input$3 = $v$2.a;
@@ -37,7 +37,7 @@ const DomGrouped$k21 = { m: ($v$9, $cx$10) => {
   const $w$14 = $w$12.nextSibling;
   const $w$15 = $w$14.firstChild;
   const $w$16 = $w$14.nextSibling;
-  const $i$17 = { s: $r$11, q: null, e: $r$11, w0: $r$11, w1: $w$12, w2: $w$13, w4: $w$15, w5: $w$16, a1: undefined, g0_0: NaN, g1: undefined, g2_0: NaN, g3_0: NaN };
+  const $i$17 = { s: $r$11, q: Rt$empty, e: $r$11, w0: $r$11, w1: $w$12, w2: $w$13, w4: $w$15, w5: $w$16, a1: undefined, g0_0: NaN, g1: undefined, g2_0: NaN, g3_0: NaN };
   DomGrouped$p21($i$17, $v$9);
   return $i$17;
 }, p: DomGrouped$p21 };
@@ -67,7 +67,7 @@ const DomGrouped$t36 = Rt$template("<div><span>x");
 const DomGrouped$k36 = { m: ($v$7, $cx$8) => {
   const $r$9 = DomGrouped$t36();
   const $w$10 = $r$9.firstChild;
-  const $i$11 = { s: $r$9, q: null, e: $r$9, w0: $r$9, w1: $w$10, a0: undefined, a1: undefined, a2: undefined, g0_0: NaN, g0_1: NaN };
+  const $i$11 = { s: $r$9, q: Rt$empty, e: $r$9, w0: $r$9, w1: $w$10, a0: undefined, a1: undefined, a2: undefined, g0_0: NaN, g0_1: NaN };
   DomGrouped$p36($i$11, $v$7);
   return $i$11;
 }, p: DomGrouped$p36 };
@@ -96,7 +96,7 @@ const DomGrouped$t50 = Rt$template("<p> ");
 const DomGrouped$k50 = { m: ($v$7, $cx$8) => {
   const $r$9 = DomGrouped$t50();
   const $w$10 = $r$9.firstChild;
-  const $i$11 = { s: $r$9, q: null, e: $r$9, w0: $r$9, w1: $w$10, a0: undefined, a1: undefined, l0_0: NaN, d0: undefined, g0_0: NaN };
+  const $i$11 = { s: $r$9, q: Rt$empty, e: $r$9, w0: $r$9, w1: $w$10, a0: undefined, a1: undefined, l0_0: NaN, d0: undefined, g0_0: NaN };
   DomGrouped$p50($i$11, $v$7);
   return $i$11;
 }, p: DomGrouped$p50 };

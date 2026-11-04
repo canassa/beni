@@ -43,12 +43,13 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const m = @import("beni_markup");
 const parser = @import("platform_html").parser_table;
+const protocol = @import("protocol.zig");
 
 pub const lowering: m.Lowering = .{
     .name = "dom",
-    .targets = .{ .major = 1, .minor = 26 },
+    .targets = .{ .major = 1, .minor = 30 },
     .operand_evidence = .{ .identity = true },
-    .runtime = &.{
+    .runtime = &(protocol.runtime ++ [_]m.RuntimeExport{
         .{ .name = "start", .arity = 1 },
         .{ .name = "delegate", .arity = 1 },
         // `(html)` for a template with no flag, `(html, flags)` for one
@@ -59,10 +60,20 @@ pub const lowering: m.Lowering = .{
         .{ .name = "childHtml", .arity = 2 },
         .{ .name = "childMaybe", .arity = 2 },
         .{ .name = "childList", .arity = 2 },
-        .{ .name = "forKeyed", .arity = 5 },
-        .{ .name = "forPosition", .arity = 4 },
-        .{ .name = "show", .arity = 3 },
+        // The typed lists and `Show` (`Rt.Rows`, interface 1.30): a keyed
+        // list's and a `Show`'s key identity is the compiler's evidence.
+        .{ .name = "forKeyed", .arity = 7 },
+        .{ .name = "forPosition", .arity = 6 },
+        .{ .name = "show", .arity = 6 },
         .{ .name = "hide", .arity = 2 },
+        .{ .name = "rowsHead", .arity = 3 },
+        .{ .name = "rowsTail", .arity = 3 },
+        .{ .name = "rowsRestate", .arity = 4 },
+        .{ .name = "rowsDispose", .arity = 3 },
+        .{ .name = "positionHead", .arity = 3 },
+        .{ .name = "positionTail", .arity = 3 },
+        .{ .name = "positionRestate", .arity = 4 },
+        .{ .name = "positionDispose", .arity = 3 },
         .{ .name = "classes", .arity = 3 },
         .{ .name = "styles", .arity = 3 },
         .{ .name = "attrNS", .arity = 4 },
@@ -75,7 +86,7 @@ pub const lowering: m.Lowering = .{
         // `(el, name, value)`: an attribute written, or removed for null —
         // a `Bool` or a `Maybe String`.
         .{ .name = "attr", .arity = 3 },
-        // `(parent, marker, value)`: a text hole's node, made at mount.
+        // `(parent, marker, text)`: a text hole's node, made at mount.
         .{ .name = "insertText", .arity = 3 },
         // The payload extractor of an event whose handler takes the event.
         .{ .name = "identity", .arity = 1 },
@@ -92,7 +103,10 @@ pub const lowering: m.Lowering = .{
         // `--fuzz` only: the page fuzzer's guarded send, installed where a
         // root is evaluated (`Rt.fuzzInstall`).
         .{ .name = "fuzzInstall", .arity = 1 },
-    },
+    }),
+    // The private record and the primitives `text` and `map`, values of
+    // `Rt` this lowering supplies once per build (interface 1.30).
+    .runtime_protocol = .{ .values = &protocol.values, .uses = &protocol.uses, .supply = protocol.supply },
     .module = module,
     .root = root,
     // A root computes its own values, by what they read (backend.md §15.4,
@@ -179,7 +193,9 @@ pub const Op = struct {
         /// template.
         placeholder: struct { t: u32, value: u32 },
         /// Any other text hole: a text node made at mount.
-        text: struct { at: Place, value: u32 },
+        /// `string`: the hole is a `String`'s; any other is converted by
+        /// JavaScript's own `ToString` (interface 1.30).
+        text: struct { at: Place, value: u32, string: bool = true },
         attribute: struct { t: u32, item: m.Item, value: u32, constant: bool, index: u32 = 0 },
         toggle: struct { t: u32, name: []const u8, value: u32, index: u32 = 0 },
         style: struct { t: u32, name: []const u8, value: u32, index: u32 = 0 },
@@ -229,8 +245,9 @@ pub const Operand = union(enum) {
     thunk: struct { node: m.Node.Index, children: bool },
     /// A component's children written as markup: one block.
     children: struct { node: m.Node.Index, site: u32 },
-    /// A row's inputs, as an array the runtime compares entry by entry.
-    inputs: m.Value.Range,
+    /// A row's inputs, as an array its recipe compares entry by entry, and
+    /// its selector's probe after them (interface 1.30).
+    inputs: struct { range: m.Value.Range, probe: ?m.Value.Index },
 
     /// Whether building it makes a function or a block, so a use builds
     /// it once.
@@ -406,7 +423,14 @@ const Fn = struct {
     row: bool = false,
     /// The markup is live for its own sake (`selfLive`).
     self_live: bool = false,
+    /// A row's `m` (`Runtime.RowRecipe`): its row cell's fields, from the
+    /// item, key and position it is handed.
+    row_cell: ?RowCell = null,
 };
+
+/// What a row's `m` writes into the instance it returns besides the
+/// instance's own fields: `Runtime.RowFields`, by their Beni names.
+const RowCell = struct { item: m.Name, key: m.Name, position: m.Name, through: bool };
 
 pub const Gen = struct {
     cx: *m.Context,
@@ -471,6 +495,23 @@ pub const Gen = struct {
 
     fn nul(g: *Gen) !m.Expr {
         return g.jsb().literal(.null);
+    }
+
+    /// The empty node, block or row link: `Js.Opt`'s own, never `null`
+    /// (interface 1.30).
+    fn empty(g: *Gen) !m.Expr {
+        return g.jsb().name(try g.cx.runtime("empty"));
+    }
+
+    /// The build's private record, a value of `Rt` (interface 1.30).
+    fn proto(g: *Gen) !m.Expr {
+        return g.jsb().name(try g.cx.runtime("protocol"));
+    }
+
+    /// A field of a typed cell — an instance's, a slot's, a row's — by the
+    /// name its Beni record declares (`Js.field`, interface 1.27).
+    fn cell(g: *Gen, e: m.Expr, name: []const u8) !m.Expr {
+        return g.jsb().field(e, name);
     }
 
     fn ident(g: *Gen, n: m.Name) !m.Expr {
@@ -655,7 +696,7 @@ pub const Gen = struct {
                 else => &.{"l"},
             };
             for (parts) |part| {
-                const x = try g.member(slot_, part);
+                const x = try g.cell(slot_, part);
                 e = if (e) |c| try js.binary(.logical_or, c, x) else x;
             }
         }
@@ -666,7 +707,7 @@ pub const Gen = struct {
     fn writeLive(g: *Gen, b: *const Body, f: *const Fn, self: bool) m.Error!void {
         if (self) return;
         const e = try g.liveOf(b, false, f, false) orelse return;
-        try g.jsb().assign(f.block, try g.member(try g.ident(f.i.?), "l"), e);
+        try g.jsb().assign(f.block, try g.member(try g.ident(f.i.?), "$l"), e);
     }
 
     /// One group of a grouped root's ops: the paths it reads (positions in
@@ -1122,9 +1163,10 @@ pub const Gen = struct {
                 .bool => js.literal(if (c.bool) .true else .false),
                 else => g.nul(),
             },
-            .inputs => |range| blk: {
-                const values = try g.a().alloc(m.Expr, range.len);
-                for (values, 0..) |*v, k| v.* = try g.cx.value(range.at(@intCast(k)));
+            .inputs => |x| blk: {
+                const values = try g.a().alloc(m.Expr, x.range.len + @intFromBool(x.probe != null));
+                for (values[0..x.range.len], 0..) |*v, k| v.* = try g.cx.value(x.range.at(@intCast(k)));
+                if (x.probe) |p| values[x.range.len] = try g.cx.value(p);
                 break :blk js.array(values);
             },
             .row => |n| g.rowObject(n),
@@ -1143,52 +1185,30 @@ pub const Gen = struct {
         };
     }
 
-    /// A `For`'s row: a pair compiled in place for a row whose body is
-    /// markup, a block function for any other.
+    /// A `For`'s row: its `Runtime.RowRecipe`, made where the list is
+    /// evaluated. A row whose body is markup is compiled in place; any other
+    /// row mounts the block its function makes through the record. The
+    /// row's cell is the instance its `m` returns, with `Runtime.RowFields`
+    /// beside the instance's own: no object is made per row but it.
     fn rowObject(g: *Gen, n: m.Node.Index) m.Error!m.Expr {
         const js = g.jsb();
+        const a_ = g.a();
         const f = g.tree.for_(n);
         const row = g.tree.row(f.row);
         var props: std.ArrayList(m.Property) = .empty;
-        if (row.identity_key) |key| try props.append(g.a(), .{ .key = "j", .value = try g.cx.value(key) });
-        try props.append(g.a(), .{ .key = "o", .value = try js.literal(if (f.item_is_primitive) .true else .false) });
-        const input_safe = try g.a().alloc(m.Expr, row.inputs.len);
-        for (input_safe, 0..) |*flag, k| flag.* = try js.literal(if (g.tree.identitySafe(row.inputs.at(@intCast(k)))) .true else .false);
-        try props.append(g.a(), .{ .key = "h", .value = try js.array(input_safe) });
         const item = try g.cx.fresh("item");
+        const key = try g.cx.fresh("key");
         const position = try g.cx.fresh("position");
         const reads: ?m.Name = if (row.arity == 2) position else null;
+        // A function `m` and `p` share is bound once per render, by an arrow
+        // the recipe is made in (`shared`): the patch a row mounts through,
+        // or the block function of a row that is not markup.
+        var shared: ?struct { name: m.Name, value: m.Expr } = null;
+        var live = false;
+        var every = false;
+        var restate: ?m.Expr = null;
         switch (row.kind) {
-            .markup => if (g.direct and g.cx.grouped(row.body)) {
-                const body = g.tree.root(row.body);
-                var b = try g.plan(&.{body.node}, body.site.inst);
-                const cx = try g.cx.fresh("cx");
-                const make_block = try js.block();
-                const made = try g.cx.fresh("block");
-                try js.constant(make_block, made, try g.cx.rowTemplate(make_block, f.row, item, reads));
-                try js.@"return"(make_block, try js.call(try g.member(try g.member(try g.ident(made), "t"), "m"), &.{ try g.member(try g.ident(made), "v"), try g.ident(cx) }));
-                try props.append(g.a(), .{ .key = "m", .value = try js.arrow(&.{ item, position, cx }, make_block) });
-                const i = try g.cx.fresh("i");
-                const patch_block = try js.block();
-                const updated = try g.cx.fresh("block");
-                try js.constant(patch_block, updated, try g.cx.rowTemplate(patch_block, f.row, item, reads));
-                try js.expression(patch_block, try js.call(try g.member(try g.member(try g.ident(updated), "t"), "p"), &.{ try g.ident(i), try g.member(try g.ident(updated), "v") }));
-                try props.append(g.a(), .{ .key = "p", .value = try js.arrow(&.{ i, item, position }, patch_block) });
-                const self = try g.selfLive(&b, true);
-                const slots = for (b.ops.items) |op| {
-                    if (op.slotted()) break true;
-                } else false;
-                if (self or slots) try props.append(g.a(), .{ .key = "l", .value = try js.literal(.true) });
-                if (self) {
-                    try props.append(g.a(), .{ .key = "e", .value = try js.literal(.true) });
-                } else if (slots) {
-                    const root_names = try g.names(body.site.inst, null);
-                    const kind = g.cx.hoisted(root_names.kind).?;
-                    const restate = try js.block();
-                    try js.expression(restate, try g.rt("templateRestate", &.{ try g.ident(i), try g.ident(kind) }));
-                    try props.append(g.a(), .{ .key = "r", .value = try js.arrow(&.{i}, restate) });
-                }
-            } else {
+            .markup => {
                 const body = g.tree.root(row.body);
                 var b = try g.plan(&.{body.node}, body.site.inst);
                 const t = try g.template(&b, try g.print("t{d}", .{body.site.inst}));
@@ -1201,19 +1221,12 @@ pub const Gen = struct {
                 const apart = try g.itemOnlyOps(&b);
                 if (!f.item_is_primitive or (row.inputs.len == 0 and row.arity == 1)) @memset(apart, false);
                 // A row whose `p` writes what `m` would, in the same order,
-                // mounts through it: the runtime calls `p` on the instance
-                // `m` returns (§15.5, *a row mounts through its patch*).
+                // mounts through it: `m` calls `p` on the instance it made
+                // (§15.5, *a row mounts through its patch*).
                 const through = try g.mountsThroughPatch(&b, body, apart);
-
                 const self = try g.selfLive(&b, true);
-                const cx = try g.cx.fresh("cx");
-                var mount: Fn = .{ .block = try js.block(), .v = null, .cx = cx, .through = through, .row = true, .self_live = self };
-                if (!through) _ = try g.cx.rowValues(mount.block, f.row, item, reads, &.{});
-                const instance = try g.writeMount(&b, &mount, t);
-                if (!through) try g.writeMarks(&b, &mount, mount.block, null);
-                try js.@"return"(mount.block, instance);
-                try props.append(g.a(), .{ .key = "m", .value = try js.arrow(&.{ item, position, cx }, mount.block) });
 
+                // `p`: the row patched with its item, the same row returned.
                 const i = try g.cx.fresh("i");
                 const item2 = try g.cx.fresh("item");
                 const position2 = try g.cx.fresh("position");
@@ -1226,33 +1239,54 @@ pub const Gen = struct {
                     patch.block = apart_block;
                     try g.writePatch(&b, &patch, apart, true);
                     patch.block = main;
-                    try js.@"if"(patch.block, try js.binary(.strict_ne, try g.ident(item2), try g.member(try g.ident(i), "x")), apart_block, null);
+                    try js.@"if"(patch.block, try js.binary(.strict_ne, try g.ident(item2), try g.cell(try g.ident(i), "x")), apart_block, null);
                 }
                 try g.writeMarks(&b, &patch, patch.block, null);
                 try g.writeLive(&b, &patch, self);
-                try props.append(g.a(), .{ .key = "p", .value = try js.arrow(&.{ i, item2, position2 }, patch.block) });
-                if (through) try props.append(g.a(), .{ .key = "w", .value = try js.literal(.true) });
+                try js.@"return"(patch.block, try g.ident(i));
+                const p_arrow = try js.arrow(&.{ i, item2, position2 }, patch.block);
+
+                // `m`: the clone, the row's cell, and — mounting through
+                // `p` — the patch, then the item it now shows.
+                const cx = try g.cx.fresh("cx");
+                var mount: Fn = .{ .block = try js.block(), .v = null, .cx = cx, .through = through, .row = true, .self_live = self, .row_cell = .{ .item = item, .key = key, .position = position, .through = through } };
+                if (!through) _ = try g.cx.rowValues(mount.block, f.row, item, reads, &.{});
+                const instance = try g.writeMount(&b, &mount, t);
+                if (through) {
+                    const pn = try g.cx.fresh("patch");
+                    const inst = try g.cx.fresh("i");
+                    try js.constant(mount.block, inst, instance);
+                    try js.expression(mount.block, try js.call(try g.ident(pn), &.{ try g.ident(inst), try g.ident(item), try g.ident(position) }));
+                    try js.assign(mount.block, try g.cell(try g.ident(inst), "x"), try g.ident(item));
+                    try js.@"return"(mount.block, try g.ident(inst));
+                    shared = .{ .name = pn, .value = p_arrow };
+                } else {
+                    try g.writeMarks(&b, &mount, mount.block, null);
+                    try js.@"return"(mount.block, instance);
+                }
+                try props.append(a_, .{ .key = "m", .value = try js.arrow(&.{ item, key, position, cx }, mount.block), .source = true });
+                try props.append(a_, .{ .key = "p", .value = if (shared) |s| try g.ident(s.name) else p_arrow, .source = true });
                 // How a live row a render skips is patched again (backend.md
                 // §15.4, as amended after the third review): by `p` with
                 // the item it shows when it has a value evaluated on every
                 // render (`e`), else by `r`, which evaluates nothing.
-                var every = false;
                 for (b.ops.items) |op| if (try g.everyValue(&b, op)) {
                     every = true;
                 };
-                // `l`: a row of it can be live, so a list keeps whether one
-                // is (`Rt.passed`).
-                if (every or try g.liveOf(&b, self, &patch, false) != null) try props.append(g.a(), .{ .key = "l", .value = try js.literal(.true) });
-                if (every) {
-                    try props.append(g.a(), .{ .key = "e", .value = try js.literal(.true) });
-                } else if (try g.liveOf(&b, self, &patch, false) != null) {
+                const slotted = try g.liveOf(&b, self, &patch, false) != null;
+                live = every or slotted;
+                if (!every and slotted) {
                     const ri = try g.cx.fresh("i");
-                    var restate: Fn = .{ .block = try js.block(), .v = null, .i = ri, .row = true };
-                    try g.writeRestate(&b, &restate);
-                    try props.append(g.a(), .{ .key = "r", .value = try js.arrow(&.{ri}, restate.block) });
+                    var again: Fn = .{ .block = try js.block(), .v = null, .i = ri, .row = true };
+                    try g.writeRestate(&b, &again);
+                    restate = try js.arrow(&.{ri}, again.block);
                 }
             },
             .lambda, .function => {
+                // The block function, made once per render: `m` mounts its
+                // block through the record, `p` patches with it, in the
+                // mount context the row keeps (`rc`).
+                const bf = try g.cx.fresh("block");
                 const body = try js.block();
                 const result = if (row.kind == .lambda)
                     (try g.cx.rowValues(body, f.row, item, reads, &.{})).?
@@ -1261,21 +1295,233 @@ pub const Gen = struct {
                 else
                     try g.cx.call(try g.cx.value(row.function.?), &.{try g.ident(item)});
                 try js.@"return"(body, result);
-                const producer = try js.arrow(&.{ item, position }, body);
-                try props.append(g.a(), .{ .key = "b", .value = if (g.direct) try g.rt("templateRow", &.{producer}) else producer });
+                shared = .{ .name = bf, .value = try js.arrow(&.{ item, position }, body) };
+
+                const mitem = try g.cx.fresh("item");
+                const mkey = try g.cx.fresh("key");
+                const mposition = try g.cx.fresh("position");
+                const cx = try g.cx.fresh("cx");
+                const inst = try g.cx.fresh("i");
+                const mount = try js.block();
+                try js.constant(mount, inst, try js.call(try g.cell(try g.proto(), "unit"), &.{ try js.call(try g.ident(bf), &.{ try g.ident(mitem), try g.ident(mposition) }), try g.ident(cx) }));
+                try js.assign(mount, try g.member(try g.ident(inst), "$rc"), try g.ident(cx));
+                try g.rowCellWrites(mount, inst, mitem, mposition);
+                try js.assign(mount, try g.cell(try g.ident(inst), "k"), try g.ident(mkey));
+                try js.assign(mount, try g.cell(try g.ident(inst), "kv"), try js.number("0"));
+                try js.assign(mount, try g.cell(try g.ident(inst), "n"), try g.empty());
+                try js.assign(mount, try g.cell(try g.ident(inst), "kc"), try g.empty());
+                try js.assign(mount, try g.cell(try g.ident(inst), "kt"), try g.empty());
+                try js.@"return"(mount, try g.ident(inst));
+                try props.append(a_, .{ .key = "m", .value = try js.arrow(&.{ mitem, mkey, mposition, cx }, mount), .source = true });
+
+                // A new instance when the block's kind changed: its row
+                // fields the list's to write but these (`Rt.Rows.patchRow`).
+                const pi = try g.cx.fresh("i");
+                const pitem = try g.cx.fresh("item");
+                const pposition = try g.cx.fresh("position");
+                const next = try g.cx.fresh("next");
+                const patch = try js.block();
+                try js.constant(patch, next, try js.call(try g.cell(try g.proto(), "patch"), &.{ try g.ident(pi), try js.call(try g.ident(bf), &.{ try g.ident(pitem), try g.ident(pposition) }), try g.member(try g.ident(pi), "$rc") }));
+                const replaced = try js.block();
+                try js.assign(replaced, try g.member(try g.ident(next), "$rc"), try g.member(try g.ident(pi), "$rc"));
+                try g.rowCellWrites(replaced, next, pitem, pposition);
+                try js.@"if"(patch, try js.binary(.strict_ne, try g.ident(next), try g.ident(pi)), replaced, null);
+                try js.@"return"(patch, try g.ident(next));
+                try props.append(a_, .{ .key = "p", .value = try js.arrow(&.{ pi, pitem, pposition }, patch), .source = true });
+                live = true;
+                restate = try g.hoistedArrow("domAgainRow", 1, struct {
+                    fn write(gen: *Gen, into: m.Block, params: []const m.Name) m.Error!void {
+                        try gen.jsb().expression(into, try gen.jsb().call(try gen.cell(try gen.proto(), "again"), &.{try gen.ident(params[0])}));
+                    }
+                }.write);
             },
             else => unreachable,
         }
-        try props.append(g.a(), .{ .key = "i", .value = try js.literal(if (row.arity == 2) .true else .false) });
-        try props.append(g.a(), .{ .key = "f", .value = if (f.fallback) |fb| try g.cx.value(fb) else try g.nul() });
-        // A selector (backend.md §15.5): which input it is, and this
-        // render's probe, which `forKeyed` looks up in its key map when
-        // the selection is all that changed.
-        if (row.kind == .markup and f.mode != .position) if (row.selector) |sel| {
-            try props.append(g.a(), .{ .key = "g", .value = try g.num(sel.input) });
-            try props.append(g.a(), .{ .key = "z", .value = try g.cx.value(sel.probe) });
+        try props.append(a_, .{ .key = "r", .value = restate orelse try g.hoistedArrow("domNoRestate", 1, struct {
+            fn write(_: *Gen, _: m.Block, _: []const m.Name) m.Error!void {}
+        }.write), .source = true });
+        try props.append(a_, .{ .key = "view", .value = try g.hoistedArrow("domRowView", 1, struct {
+            fn write(gen: *Gen, into: m.Block, params: []const m.Name) m.Error!void {
+                try gen.jsb().@"return"(into, try gen.ident(params[0]));
+            }
+        }.write), .source = true });
+        try props.append(a_, .{ .key = "item", .value = try g.hoistedArrow("domRowItem", 1, struct {
+            fn write(gen: *Gen, into: m.Block, params: []const m.Name) m.Error!void {
+                try gen.jsb().@"return"(into, try gen.cell(try gen.ident(params[0]), "x"));
+            }
+        }.write), .source = true });
+        try props.append(a_, .{ .key = "sameItem", .value = try g.hoistedArrow("domRowSameItem", 2, struct {
+            fn write(gen: *Gen, into: m.Block, params: []const m.Name) m.Error!void {
+                try gen.jsb().@"return"(into, try gen.jsb().binary(.strict_eq, try gen.cell(try gen.ident(params[0]), "x"), try gen.ident(params[1])));
+            }
+        }.write), .source = true });
+        try props.append(a_, .{ .key = "setItem", .value = try g.hoistedArrow("domRowSetItem", 2, struct {
+            fn write(gen: *Gen, into: m.Block, params: []const m.Name) m.Error!void {
+                try gen.jsb().assign(into, try gen.cell(try gen.ident(params[0]), "x"), try gen.ident(params[1]));
+            }
+        }.write), .source = true });
+        try props.append(a_, .{ .key = "o", .value = try js.literal(if (f.item_is_primitive) .true else .false), .source = true });
+        try props.append(a_, .{ .key = "i", .value = try js.literal(if (row.arity == 2) .true else .false), .source = true });
+        try props.append(a_, .{ .key = "l", .value = try js.literal(if (live) .true else .false), .source = true });
+        try props.append(a_, .{ .key = "e", .value = try js.literal(if (every) .true else .false), .source = true });
+        try props.append(a_, .{ .key = "f", .value = if (f.fallback) |fb| try g.cx.value(fb) else try g.empty(), .source = true });
+        try props.append(a_, .{ .key = "j", .value = if (row.identity_key) |id| try g.cx.value(id) else try g.empty(), .source = true });
+        try g.inputRecipe(n, &props);
+        const object = try js.object(props.items);
+        const s = shared orelse return object;
+        const made = try js.block();
+        try js.@"return"(made, object);
+        return js.call(try js.arrow(&.{s.name}, made), &.{s.value});
+    }
+
+    /// A row cell's item, position and stamp, written after the instance is
+    /// made (a row that is not markup).
+    fn rowCellWrites(g: *Gen, into: m.Block, inst: m.Name, item: m.Name, position: m.Name) m.Error!void {
+        const js = g.jsb();
+        try js.assign(into, try g.cell(try g.ident(inst), "x"), try g.ident(item));
+        try js.assign(into, try g.cell(try g.ident(inst), "y"), try g.ident(position));
+        try js.assign(into, try g.cell(try g.ident(inst), "rs"), try js.number("0"));
+    }
+
+    /// A function hoisted once per unit under `hint`, its body written by
+    /// `write` over `arity` fresh parameters.
+    fn hoistedArrow(g: *Gen, hint: []const u8, comptime arity: usize, write: *const fn (*Gen, m.Block, []const m.Name) m.Error!void) m.Error!m.Expr {
+        if (g.cx.hoisted(hint)) |h| return g.ident(h);
+        var params: [arity]m.Name = undefined;
+        for (&params) |*p| p.* = try g.cx.fresh("value");
+        const body = try g.jsb().block();
+        try write(g, body, &params);
+        return g.ident(try g.cx.hoist(hint, try g.jsb().arrow(&params, body)));
+    }
+
+    /// A row's inputs, as its recipe reads them (`same`, `remember`,
+    /// `probe`): written per site, once, from what the checker says of each
+    /// input (backend.md §15.5). The inputs are this render's array, its
+    /// selector's probe last; no inputs is the empty `Js.Opt`.
+    fn inputRecipe(g: *Gen, n: m.Node.Index, props: *std.ArrayList(m.Property)) m.Error!void {
+        const js = g.jsb();
+        const a_ = g.a();
+        const f = g.tree.for_(n);
+        const row = g.tree.row(f.row);
+        const count: u32 = @intCast(row.inputs.len);
+        const selector: ?m.Selector = if (row.kind == .markup and f.mode != .position) row.selector else null;
+        const at = @backingInt(n);
+        // `same`: last render's kept inputs and this render's, entry by
+        // entry, the selector's skipped; an input that may be written in
+        // place is never the same.
+        const same: m.Expr = if (count == 0) try g.hoistedArrow("domSameNone", 2, struct {
+            fn write(gen: *Gen, into: m.Block, _: []const m.Name) m.Error!void {
+                try gen.jsb().@"return"(into, try gen.jsb().literal(.true));
+            }
+        }.write) else same: {
+            var mutable = false;
+            for (0..count) |k| {
+                if (selector != null and selector.?.input == k) continue;
+                if (!g.tree.identitySafe(row.inputs.at(@intCast(k)))) mutable = true;
+            }
+            if (mutable) break :same try g.hoistedArrow("domSameNever", 2, struct {
+                fn write(gen: *Gen, into: m.Block, _: []const m.Name) m.Error!void {
+                    try gen.jsb().@"return"(into, try gen.jsb().literal(.false));
+                }
+            }.write);
+            const hint = try g.print("domSame{d}", .{at});
+            if (g.cx.hoisted(hint)) |h| break :same try g.ident(h);
+            const was = try g.cx.fresh("was");
+            const now = try g.cx.fresh("now");
+            var e = try js.binary(.strict_ne, try g.ident(was), try g.empty());
+            for (0..count) |k| {
+                if (selector != null and selector.?.input == k) continue;
+                const test_ = try js.binary(.strict_eq, try js.index(try g.ident(was), try g.num(@intCast(k))), try js.index(try g.ident(now), try g.num(@intCast(k))));
+                e = try js.binary(.logical_and, e, test_);
+            }
+            const body = try js.block();
+            try js.@"return"(body, e);
+            break :same try g.ident(try g.cx.hoist(hint, try js.arrow(&.{ was, now }, body)));
         };
-        return js.object(props.items);
+        try props.append(a_, .{ .key = "same", .value = same, .source = true });
+        // `remember`: what is kept for the next render's `same` — only an
+        // input that cannot be written in place.
+        var whole = true;
+        for (0..count) |k| {
+            if (!g.tree.identitySafe(row.inputs.at(@intCast(k)))) whole = false;
+        }
+        const remember: m.Expr = if (whole) try g.hoistedArrow("domRememberAll", 1, struct {
+            fn write(gen: *Gen, into: m.Block, params: []const m.Name) m.Error!void {
+                try gen.jsb().@"return"(into, try gen.ident(params[0]));
+            }
+        }.write) else remember: {
+            const hint = try g.print("domRemember{d}", .{at});
+            if (g.cx.hoisted(hint)) |h| break :remember try g.ident(h);
+            const inputs = try g.cx.fresh("inputs");
+            const kept = try a_.alloc(m.Expr, count);
+            for (kept, 0..) |*x, k| x.* = if (g.tree.identitySafe(row.inputs.at(@intCast(k))))
+                try js.index(try g.ident(inputs), try g.num(@intCast(k)))
+            else
+                try js.literal(.undefined);
+            const body = try js.block();
+            try js.@"return"(body, try js.array(kept));
+            break :remember try g.ident(try g.cx.hoist(hint, try js.arrow(&.{inputs}, body)));
+        };
+        try props.append(a_, .{ .key = "remember", .value = remember, .source = true });
+        // `probe`: the selector's probe, kept after the inputs, or none.
+        const probe: m.Expr = if (selector == null) try g.hoistedArrow("domNoProbe", 1, struct {
+            fn write(gen: *Gen, into: m.Block, _: []const m.Name) m.Error!void {
+                try gen.jsb().@"return"(into, try gen.empty());
+            }
+        }.write) else probe: {
+            const hint = try g.print("domProbe{d}", .{count});
+            if (g.cx.hoisted(hint)) |h| break :probe try g.ident(h);
+            const inputs = try g.cx.fresh("inputs");
+            const body = try js.block();
+            try js.@"return"(body, try js.index(try g.ident(inputs), try g.num(count)));
+            break :probe try g.ident(try g.cx.hoist(hint, try js.arrow(&.{inputs}, body)));
+        };
+        try props.append(a_, .{ .key = "probe", .value = probe, .source = true });
+    }
+
+    /// A list's or a `Show`'s site callbacks (`Runtime.SiteProtocol`),
+    /// hoisted once per site: each enters `Rt.Rows` with the site's current
+    /// recipe as its scope and, but for a list by position, its key's
+    /// identity (`ev`).
+    fn siteOps(g: *Gen, n: m.Node.Index, ev: ?m.Evidence) m.Error!m.Expr {
+        const js = g.jsb();
+        const hint = if (ev == null) "domPositionSite" else try g.print("domSite{d}", .{@backingInt(n)});
+        if (g.cx.hoisted(hint)) |h| return g.ident(h);
+        const callbacks = [_]struct { field: []const u8, rows: []const u8, position: []const u8, stamped: bool }{
+            .{ .field = "head", .rows = "rowsHead", .position = "positionHead", .stamped = false },
+            .{ .field = "tail", .rows = "rowsTail", .position = "positionTail", .stamped = false },
+            .{ .field = "restate", .rows = "rowsRestate", .position = "positionRestate", .stamped = true },
+            .{ .field = "dispose", .rows = "rowsDispose", .position = "positionDispose", .stamped = false },
+        };
+        var props: [callbacks.len]m.Property = undefined;
+        for (callbacks, &props) |which, *prop| {
+            const scope = try g.cx.fresh("scope");
+            const data = try g.cx.fresh("data");
+            const location = try g.cx.fresh("slot");
+            const stamp = try g.cx.fresh("stamp");
+            const callee = if (ev) |e| try g.cx.suppliedRuntime(which.rows, &.{e}) else try js.name(try g.cx.runtime(which.position));
+            const all = [_]m.Expr{ try g.ident(scope), try g.ident(data), try g.ident(location), try g.ident(stamp) };
+            const args = all[0..if (which.stamped) 4 else 3];
+            const body = try js.block();
+            try js.@"return"(body, try js.call(callee, args));
+            const params = [_]m.Name{ scope, data, location, stamp };
+            prop.* = .{ .key = which.field, .value = try js.arrow(params[0..if (which.stamped) 4 else 3], body), .source = true };
+        }
+        return g.ident(try g.cx.hoist(hint, try js.object(&props)));
+    }
+
+    /// The identity of a `Show`'s key: its key function's result, or the
+    /// value it shows.
+    fn showEvidence(g: *Gen, n: m.Node.Index) m.Error!m.Evidence {
+        const s = g.tree.show(n);
+        if (s.key) |key| return g.cx.evidence(key, &.{.function_result}, .identity);
+        return g.cx.evidence(s.when, &.{.{ .type_argument = 0 }}, .identity);
+    }
+
+    /// `show(slot, key, block, tag, site, scope)`, the key's identity first.
+    fn showCall(g: *Gen, n: m.Node.Index, s: m.Expr, key: m.Expr, block_: m.Expr) m.Error!m.Expr {
+        const ev = try g.showEvidence(n);
+        return g.jsb().call(try g.cx.suppliedRuntime("show", &.{ev}), &.{ s, key, block_, try g.empty(), try g.siteOps(n, ev), try g.empty() });
     }
 
     /// A `Show`'s body, `(value) => block`: always a block (§15.5).
@@ -1818,7 +2064,7 @@ pub const Gen = struct {
                 };
                 const value = try b.operand(a_, .{ .value = h.value });
                 break :blk switch (h.kind) {
-                    .text_string, .text_number, .text_char, .text_bool => .{ .text = .{ .at = at, .value = value } },
+                    .text_string, .text_number, .text_char, .text_bool => .{ .text = .{ .at = at, .value = value, .string = h.kind == .text_string } },
                     else => .{ .html = .{ .at = at, .kind = h.kind, .value = value } },
                 };
             },
@@ -1839,7 +2085,8 @@ pub const Gen = struct {
                 const each = try b.operand(a_, .{ .value = f.each });
                 const key: ?u32 = if (f.mode == .key) try b.operand(a_, .{ .value = f.key.? }) else null;
                 const r = try b.operand(a_, .{ .row = n });
-                const inputs: ?u32 = if (row.inputs.len != 0) try b.operand(a_, .{ .inputs = row.inputs }) else null;
+                const probe: ?m.Value.Index = if (row.kind == .markup and f.mode != .position) (if (row.selector) |sel| sel.probe else null) else null;
+                const inputs: ?u32 = if (row.inputs.len != 0) try b.operand(a_, .{ .inputs = .{ .range = row.inputs, .probe = probe } }) else null;
                 break :blk .{ .for_ = .{ .at = at, .mode = f.mode, .each = each, .key = key, .row = r, .inputs = inputs } };
             },
             .show => blk: {
@@ -1957,19 +2204,31 @@ pub const Gen = struct {
             else
                 try g.mountOp(b, f, op, @intCast(k), &fields);
         }
-        // Not yet shown with any item: `p`'s test of the item holds.
-        if (f.through and !f.grouped) try fields.append(a_, .{ .key = "x", .value = try js.literal(.undefined) });
         try fields.appendSlice(a_, f.group_fields);
 
         var props: std.ArrayList(m.Property) = .empty;
         const first: m.Expr, const q: m.Expr = switch (b.first.?) {
-            .node => |x| .{ try g.ident(f.walks[x].?), try g.nul() },
-            .text => |k| .{ try g.ident(f.texts[k].?), try g.nul() },
-            .slot => |k| .{ try g.nul(), try g.ident(f.slots[k].?) },
+            .node => |x| .{ try g.ident(f.walks[x].?), try g.empty() },
+            .text => |k| .{ try g.ident(f.texts[k].?), try g.empty() },
+            .slot => |k| .{ try g.empty(), try g.ident(f.slots[k].?) },
         };
-        try props.append(a_, .{ .key = "s", .value = first });
-        try props.append(a_, .{ .key = "q", .value = q });
-        try props.append(a_, .{ .key = "e", .value = try g.ident(f.walks[b.last].?) });
+        // The instance prefix (`Runtime.InstanceFields`).
+        try props.append(a_, .{ .key = "s", .value = first, .source = true });
+        try props.append(a_, .{ .key = "q", .value = q, .source = true });
+        try props.append(a_, .{ .key = "e", .value = try g.ident(f.walks[b.last].?), .source = true });
+        // A row's cell (`Runtime.RowFields`): its item — `undefined` until
+        // a row that mounts through its patch has been patched, so `p`'s
+        // test of the item holds — position and key, and links none yet.
+        if (f.row_cell) |rc| {
+            try props.append(a_, .{ .key = "x", .value = if (rc.through) try js.literal(.undefined) else try g.ident(rc.item), .source = true });
+            try props.append(a_, .{ .key = "y", .value = try g.ident(rc.position), .source = true });
+            try props.append(a_, .{ .key = "k", .value = try g.ident(rc.key), .source = true });
+            try props.append(a_, .{ .key = "kv", .value = try js.number("0"), .source = true });
+            try props.append(a_, .{ .key = "rs", .value = try js.number("0"), .source = true });
+            try props.append(a_, .{ .key = "n", .value = try g.empty(), .source = true });
+            try props.append(a_, .{ .key = "kc", .value = try g.empty(), .source = true });
+            try props.append(a_, .{ .key = "kt", .value = try g.empty(), .source = true });
+        }
         for (b.tnodes.items, 0..) |tn, i| {
             if (tn.stored) try props.append(a_, .{ .key = try g.print("w{d}", .{i}), .value = try g.ident(f.walks[i].?) });
         }
@@ -1982,8 +2241,8 @@ pub const Gen = struct {
         // writes to `p`, only when it is for its own sake, as `p` says the
         // rest; else from the slots `m` has just filled.
         if (f.grouped or f.through) {
-            if (f.self_live) try props.append(a_, .{ .key = "l", .value = try js.literal(.true) });
-        } else if (try g.liveOf(b, f.self_live, f, true)) |e| try props.append(a_, .{ .key = "l", .value = e });
+            if (f.self_live) try props.append(a_, .{ .key = "$l", .value = try js.literal(.true) });
+        } else if (try g.liveOf(b, f.self_live, f, true)) |e| try props.append(a_, .{ .key = "$l", .value = e });
         return js.object(props.items);
     }
 
@@ -1992,13 +2251,13 @@ pub const Gen = struct {
     fn parentOf(g: *Gen, f: *const Fn, at: Place, text: bool) !m.Expr {
         if (at.parent) |p| return g.ident(f.walks[p].?);
         if (text) return g.ident(f.r.?);
-        return g.nul();
+        return g.empty();
     }
 
     fn markerOf(g: *Gen, f: *const Fn, at: Place) !m.Expr {
         return switch (at.marker) {
             .node => |t| g.ident(f.walks[t].?),
-            else => g.nul(),
+            else => g.empty(),
         };
     }
 
@@ -2013,7 +2272,8 @@ pub const Gen = struct {
             },
             .text => |x| {
                 const n = try g.cx.fresh("x");
-                try js.constant(f.block, n, try g.rt("insertText", &.{ try g.parentOf(f, x.at, true), try g.markerOf(f, x.at), try g.read(b, f, x.value) }));
+                const shown = if (x.string) try g.read(b, f, x.value) else try js.binary(.add, try g.str(""), try g.read(b, f, x.value));
+                try js.constant(f.block, n, try g.rt("insertText", &.{ try g.parentOf(f, x.at, true), try g.markerOf(f, x.at), shown }));
                 f.texts[k] = n;
                 try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = try g.read(b, f, x.value) });
             },
@@ -2063,7 +2323,7 @@ pub const Gen = struct {
                 if (x.children) |ch| try fields.append(a_, .{ .key = try g.print("a{d}c", .{k}), .value = if (g.identityOperand(b, ch)) try g.read(b, f, ch) else try js.literal(.undefined) });
                 try js.expression(f.block, try g.placement(op.node, try g.rt("childHtml", &.{ try g.ident(f.slots[k].?), try g.componentCall(b, f, op.node, x.thunk, x.children) })));
             },
-            .for_ => |x| try js.expression(f.block, try g.forCall(b, f, x.mode, try g.ident(f.slots[k].?), x.each, x.key, x.row, x.inputs)),
+            .for_ => |x| try js.expression(f.block, try g.forCall(b, f, op.node, x.mode, try g.ident(f.slots[k].?), x.each, x.key, x.row, x.inputs)),
             .show => |x| {
                 const c = f.slots[k].?;
                 const key = try g.cx.fresh("key");
@@ -2075,9 +2335,9 @@ pub const Gen = struct {
                 try js.constant(then, it, try g.cx.maybe(try g.read(b, f, x.when)));
                 try js.assign(then, try g.ident(key), try g.showKey(b, f, x.key, it));
                 try js.assign(then, try g.ident(shown), try g.ident(it));
-                try js.expression(then, try g.rt("show", &.{ try g.ident(c), try g.ident(key), try js.call(try g.read(b, f, x.body), &.{try g.ident(it)}) }));
+                try js.expression(then, try g.showCall(op.node, try g.ident(c), try g.ident(key), try js.call(try g.read(b, f, x.body), &.{try g.ident(it)})));
                 const otherwise = try js.block();
-                try js.expression(otherwise, try g.rt("hide", &.{ try g.ident(c), if (x.fallback) |fb| try g.read(b, f, fb) else try g.nul() }));
+                try js.expression(otherwise, try g.rt("hide", &.{ try g.ident(c), if (x.fallback) |fb| try g.read(b, f, fb) else try g.empty() }));
                 try js.@"if"(f.block, try g.cx.isJust(try g.read(b, f, x.when)), then, otherwise);
                 try fields.append(a_, .{ .key = try g.print("a{d}k", .{k}), .value = try g.ident(key) });
                 try fields.append(a_, .{ .key = try g.print("a{d}v", .{k}), .value = if (g.tree.show(op.node).value_is_primitive) try g.ident(shown) else try js.literal(.undefined) });
@@ -2264,7 +2524,7 @@ pub const Gen = struct {
         if (under.len == 0) return;
         const then = try js.block();
         for (under) |t| try js.expression(then, try g.rt("edited", &.{try g.node(f, t)}));
-        try js.@"if"(into, try js.binary(.logical_or, try g.member(s, "l"), try g.member(s, "w")), then, null);
+        try js.@"if"(into, try js.binary(.logical_or, try g.cell(s, "l"), try g.cell(s, "w")), then, null);
     }
 
     /// `Rt.edited(el)` for each controlled element of the template that a
@@ -2403,7 +2663,7 @@ pub const Gen = struct {
                     try js.expression(then, try g.placement(op.node, try g.rt("childHtml", &.{ try g.fieldOf(f, "c{d}", .{k}), try g.componentCall(b, f, op.node, x.thunk, x.children) })));
                     if (g.direct) try js.nested(f.block, then) else try g.callOrRestate(f, k, changed, then, x.impure);
                 },
-                .for_ => |x| try js.expression(f.block, try g.forCall(b, f, x.mode, try g.fieldOf(f, "c{d}", .{k}), x.each, x.key, x.row, x.inputs)),
+                .for_ => |x| try js.expression(f.block, try g.forCall(b, f, op.node, x.mode, try g.fieldOf(f, "c{d}", .{k}), x.each, x.key, x.row, x.inputs)),
                 .show => |x| {
                     const then = try js.block();
                     const it = try g.cx.fresh("value");
@@ -2418,7 +2678,7 @@ pub const Gen = struct {
                         changed = try js.binary(.logical_or, changed, try g.identityChanged(b, f, in, try g.fieldOf(f, "a{d}i{d}", .{ k, j })));
                         if (g.identityOperand(b, in)) try js.assign(again, try g.fieldOf(f, "a{d}i{d}", .{ k, j }), try g.read(b, f, in));
                     }
-                    try js.expression(again, try g.rt("show", &.{ try g.fieldOf(f, "c{d}", .{k}), try g.ident(key), try js.call(try g.read(b, f, x.body), &.{try g.ident(it)}) }));
+                    try js.expression(again, try g.showCall(op.node, try g.fieldOf(f, "c{d}", .{k}), try g.ident(key), try js.call(try g.read(b, f, x.body), &.{try g.ident(it)})));
                     // The body unchanged and skipped: what it shows kept
                     // current all the same (`Rt.restate`).
                     const same = try js.block();
@@ -2427,7 +2687,7 @@ pub const Gen = struct {
                     const otherwise = try js.block();
                     // The slot stands for "nothing shown": no key is it.
                     try js.assign(otherwise, try g.fieldOf(f, "a{d}k", .{k}), try g.fieldOf(f, "c{d}", .{k}));
-                    try js.expression(otherwise, try g.rt("hide", &.{ try g.fieldOf(f, "c{d}", .{k}), if (x.fallback) |fb| try g.read(b, f, fb) else try g.nul() }));
+                    try js.expression(otherwise, try g.rt("hide", &.{ try g.fieldOf(f, "c{d}", .{k}), if (x.fallback) |fb| try g.read(b, f, fb) else try g.empty() }));
                     try js.@"if"(f.block, try g.cx.isJust(try g.read(b, f, x.when)), then, otherwise);
                 },
             }
@@ -2605,7 +2865,7 @@ pub const Gen = struct {
     fn slotWrite(g: *Gen, b: *const Body, f: *Fn, site_node: m.Node.Index, kind: m.HoleKind, s: m.Expr, v: u32) m.Error!m.Expr {
         const placed = try switch (kind) {
             .html => g.rt("childHtml", &.{ s, try g.read(b, f, v) }),
-            .maybe_html => g.rt("childMaybe", &.{ s, try g.cx.maybe(try g.read(b, f, v)) }),
+            .maybe_html => g.rt("childMaybe", &.{ s, try g.jsb().cond(try g.cx.isJust(try g.read(b, f, v)), try g.cx.maybe(try g.read(b, f, v)), try g.empty()) }),
             .list_html => g.rt("childList", &.{ s, try g.read(b, f, v) }),
             else => unreachable,
         };
@@ -2657,12 +2917,22 @@ pub const Gen = struct {
         return if (g.direct) g.cx.templateValue(call_node, called, false) else called;
     }
 
-    fn forCall(g: *Gen, b: *const Body, f: *Fn, mode: m.For.Mode, s: m.Expr, each: u32, key: ?u32, row: u32, inputs: ?u32) m.Error!m.Expr {
-        const in = if (inputs) |x| try g.read(b, f, x) else try g.nul();
-        return switch (mode) {
-            .position => g.rt("forPosition", &.{ s, try g.read(b, f, each), try g.read(b, f, row), in }),
-            else => g.rt("forKeyed", &.{ s, try g.read(b, f, each), if (key) |x| try g.read(b, f, x) else try g.nul(), try g.read(b, f, row), in }),
-        };
+    /// `forKeyed(slot, items, keyOf, recipe, inputs, site, scope)`, the
+    /// key's identity first, or `forPosition` without the key. The scope a
+    /// site's callbacks open is this render's recipe.
+    fn forCall(g: *Gen, b: *const Body, f: *Fn, n: m.Node.Index, mode: m.For.Mode, s: m.Expr, each: u32, key: ?u32, row: u32, inputs: ?u32) m.Error!m.Expr {
+        const js = g.jsb();
+        const in = if (inputs) |x| try g.read(b, f, x) else try g.empty();
+        const recipe = try g.read(b, f, row);
+        if (mode == .position) return g.rt("forPosition", &.{ s, try g.read(b, f, each), recipe, in, try g.siteOps(n, null), try g.read(b, f, row) });
+        const list = g.tree.for_(n);
+        const ev = if (list.key) |k| try g.cx.evidence(k, &.{.function_result}, .identity) else try g.cx.evidence(list.each, &.{.list_item}, .identity);
+        const keyOf = if (key) |x| try g.read(b, f, x) else try g.hoistedArrow("domKeyIdentity", 1, struct {
+            fn write(gen: *Gen, into: m.Block, params: []const m.Name) m.Error!void {
+                try gen.jsb().@"return"(into, try gen.ident(params[0]));
+            }
+        }.write);
+        return js.call(try g.cx.suppliedRuntime("forKeyed", &.{ev}), &.{ s, try g.read(b, f, each), keyOf, recipe, in, try g.siteOps(n, ev), try g.read(b, f, row) });
     }
 
     fn showKey(g: *Gen, b: *const Body, f: *Fn, key: ?u32, it: m.Name) m.Error!m.Expr {

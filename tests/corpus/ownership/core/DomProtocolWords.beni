@@ -1,0 +1,135 @@
+-- §24.8: the actual supplied Rt.protocol fields, projected as values and
+-- called directly. The native-handle-only readers have no observable
+-- borrowed→unused flip, as for NativeRenderer.
+import Js
+import Rt
+
+
+pub unit a0 a1 = Rt.protocol.unit a0 a1
+
+
+pub patch a0 a1 a2 = Rt.protocol.patch a0 a1 a2
+
+
+pub again a0 = Rt.protocol.again a0
+
+
+pub live a0 = Rt.protocol.live a0
+
+
+pub eventPayload a0 a1 a2 a3 = Rt.protocol.eventPayload a0 a1 a2 a3
+
+
+pub nodeContext a0 = Rt.protocol.nodeContext a0
+
+
+pub contextPresent a0 = Rt.protocol.contextPresent a0
+
+
+pub contextParent a0 = Rt.protocol.contextParent a0
+
+
+pub contextApply a0 a1 = Rt.protocol.contextApply a0 a1
+
+
+pub sendRoot a0 a1 = Rt.protocol.sendRoot a0 a1
+
+
+pub controls a0 = Rt.protocol.controls a0
+
+
+pub setControls a0 a1 = Rt.protocol.setControls a0 a1
+
+
+pub hasRoot a0 = Rt.protocol.hasRoot a0
+
+
+pub hasHandler a0 a1 = Rt.protocol.hasHandler a0 a1
+
+
+pub handlerFlags a0 a1 = Rt.protocol.handlerFlags a0 a1
+
+
+pub first a0 = Rt.protocol.first a0
+
+
+pub last a0 = Rt.protocol.last a0
+
+
+pub put a0 a1 a2 = Rt.protocol.put a0 a1 a2
+
+
+pub drop a0 = Rt.protocol.drop a0
+
+
+pub swap a0 a1 = Rt.protocol.swap a0 a1
+
+
+pub parentOf a0 = Rt.protocol.parentOf a0
+
+
+pub childMaybe a0 a1 = Rt.protocol.childMaybe a0 a1
+
+
+pub restate a0 = Rt.protocol.restate a0
+
+
+pub turn a0 a1 = Rt.protocol.turn a0 a1
+
+
+pub dead a0 = Rt.protocol.dead a0
+
+
+pub stop a0 = Rt.protocol.stop a0
+
+
+pub makeSite a0 a1 a2 = Rt.protocol.makeSite a0 a1 a2
+
+
+pub siteScope a0 = Rt.protocol.siteScope a0
+
+
+pub setSiteScope a0 a1 a2 = Rt.protocol.setSiteScope a0 a1 a2
+
+
+pub siteData a0 = Rt.protocol.siteData a0
+
+
+pub siteHead a0 a1 = Rt.protocol.siteHead a0 a1
+
+
+pub siteTail a0 a1 = Rt.protocol.siteTail a0 a1
+
+
+pub siteRestate a0 a1 a2 = Rt.protocol.siteRestate a0 a1 a2
+
+
+pub siteDispose a0 a1 = Rt.protocol.siteDispose a0 a1
+
+
+-- Retaining the SiteProtocol record retains its closure's captured list.
+pub retainedSite values scope data location =
+    read = λ_ _ _ → if List.length values > 0 then Js.none ⊤ else Js.none ⊤
+    operations =
+        { head = read
+        , tail = read
+        , restate = λ_ _ _ _ → ⊤
+        , dispose = λ_ _ _ → ⊤
+        }
+    site = Rt.protocol.makeSite operations scope data
+    next = [ …values, 1 ]
+    found = Rt.protocol.siteHead site location
+    ( List.length next, found )
+
+
+pub escapedSite values site scope =
+    read = λ_ _ _ → if List.length values > 0 then Js.none ⊤ else Js.none ⊤
+    operations =
+        { head = read
+        , tail = read
+        , restate = λ_ _ _ _ → ⊤
+        , dispose = λ_ _ _ → ⊤
+        }
+    Rt.protocol.setSiteScope site operations scope
+    next = [ …values, 1 ]
+    List.length next

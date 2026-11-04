@@ -1,4 +1,4 @@
-import { Rt$templateOf, Rt$childHtml, Rt$restate, Rt$template, Rt$slot } from "./_platform/Rt.mjs";
+import { Rt$templateOf, Rt$empty, Rt$childHtml, Rt$restate, Rt$template, Rt$slot } from "./_platform/Rt.mjs";
 import { Card$view } from "./Card.mjs";
 import { Js$Any$pack } from "./_core/Js/Any.mjs";
 const DomComponents$t14n4 = Rt$templateOf("Welcome, <b> </b>!", 4);
@@ -9,7 +9,7 @@ const DomComponents$k14n4 = { m: ($v$8, $cx$9) => {
   const $w$13 = $w$12.firstChild;
   const $w$14 = $w$12.nextSibling;
   $w$13.data = $v$8[0];
-  return { s: $w$11, q: null, e: $w$14, w2: $w$13, a0: $v$8[0] };
+  return { s: $w$11, q: Rt$empty, e: $w$14, w2: $w$13, a0: $v$8[0] };
 }, p: ($i$15, $v$16) => {
   if ($v$16[0] !== $i$15.a0) {
     $i$15.a0 = $v$16[0];
@@ -19,7 +19,7 @@ const DomComponents$k14n4 = { m: ($v$8, $cx$9) => {
 const DomComponents$t14n6 = Rt$template("no values");
 const DomComponents$k14n6 = { m: ($v$19, $cx$20) => {
   const $r$21 = DomComponents$t14n6();
-  return { s: $r$21, q: null, e: $r$21 };
+  return { s: $r$21, q: Rt$empty, e: $r$21 };
 }, p: ($i$22, $v$23) => {
 } };
 const DomComponents$b14n6 = { t: DomComponents$k14n6, v: null };
@@ -54,7 +54,7 @@ const DomComponents$p14 = ($i$1, $v$2) => {
   } else {
     Rt$restate($i$1.c1);
   }
-  $i$1.l = $i$1.c0.l || $i$1.c1.l;
+  $i$1.$l = $i$1.c0.l || $i$1.c1.l;
 };
 const DomComponents$t14 = Rt$template("<main><!><!>");
 const DomComponents$k14 = { m: ($v$24, $cx$25) => {
@@ -63,7 +63,7 @@ const DomComponents$k14 = { m: ($v$24, $cx$25) => {
   const $w$28 = $w$27.nextSibling;
   const $c$29 = Rt$slot($r$26, $w$27, $cx$25);
   const $c$30 = Rt$slot($r$26, $w$28, $cx$25);
-  const $i$31 = { s: $r$26, q: null, e: $r$26, c0: $c$29, c1: $c$30, a0_0: undefined, a0c: undefined, a1c: undefined, g0_0: NaN, g0_1: NaN, g0_2: NaN, g1_0: NaN };
+  const $i$31 = { s: $r$26, q: Rt$empty, e: $r$26, c0: $c$29, c1: $c$30, a0_0: undefined, a0c: undefined, a1c: undefined, g0_0: NaN, g0_1: NaN, g0_2: NaN, g1_0: NaN };
   DomComponents$p14($i$31, $v$24);
   return $i$31;
 }, p: DomComponents$p14, l: true };

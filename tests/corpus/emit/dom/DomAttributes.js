@@ -1,4 +1,4 @@
-import { Rt$template, Rt$classes, Rt$styles, Rt$safeUrl, Rt$control } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$empty, Rt$classes, Rt$styles, Rt$safeUrl, Rt$control } from "./_platform/Rt.mjs";
 import { Js$Any$pack } from "./_core/Js/Any.mjs";
 const DomAttributes$p27 = ($i$1, $v$2) => {
   const $input$3 = $v$2.a;
@@ -20,7 +20,7 @@ const DomAttributes$p27 = ($i$1, $v$2) => {
 const DomAttributes$t27 = Rt$template("<tr class=row style=font-size:12px><td>x");
 const DomAttributes$k27 = { m: ($v$7, $cx$8) => {
   const $r$9 = DomAttributes$t27();
-  const $i$10 = { s: $r$9, q: null, e: $r$9, w0: $r$9, a0: false, g0_0: NaN, g1_0: NaN };
+  const $i$10 = { s: $r$9, q: Rt$empty, e: $r$9, w0: $r$9, a0: false, g0_0: NaN, g1_0: NaN };
   DomAttributes$p27($i$10, $v$7);
   return $i$10;
 }, p: DomAttributes$p27 };
@@ -38,7 +38,7 @@ const DomAttributes$p48 = ($i$1, $v$2) => {
 const DomAttributes$t48 = Rt$template("<p>x");
 const DomAttributes$k48 = { m: ($v$6, $cx$7) => {
   const $r$8 = DomAttributes$t48();
-  const $i$9 = { s: $r$8, q: null, e: $r$8, w0: $r$8, a0: null, a1: null };
+  const $i$9 = { s: $r$8, q: Rt$empty, e: $r$8, w0: $r$8, a0: null, a1: null };
   DomAttributes$p48($i$9, $v$6);
   return $i$9;
 }, p: DomAttributes$p48 };
@@ -70,7 +70,7 @@ const DomAttributes$k68 = { m: ($v$9, $cx$10) => {
   const $w$12 = $r$11.firstChild;
   const $w$13 = $w$12.nextSibling;
   const $w$14 = $w$13.nextSibling;
-  const $i$15 = { s: $r$11, q: null, e: $r$11, w0: $r$11, w1: $w$12, w2: $w$13, w4: $w$14, g0_0: NaN, g1_0: NaN, g2_0: NaN };
+  const $i$15 = { s: $r$11, q: Rt$empty, e: $r$11, w0: $r$11, w1: $w$12, w2: $w$13, w4: $w$14, g0_0: NaN, g1_0: NaN, g2_0: NaN };
   DomAttributes$p68($i$15, $v$9);
   return $i$15;
 }, p: DomAttributes$p68 };

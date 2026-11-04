@@ -1,79 +1,91 @@
-//! The private existential half of the DOM producer ABI (interface 1.28).
-//! Source owns ranges, slots, rows and scheduling. These ordinary helpers
-//! open only a block's paired kind/payload or its paired map context.
+// ownership pin begin: protocol
+// ownership pin begin: unit
+// ownership pin begin: patch
+// ownership pin begin: again
+// ownership pin begin: live
+// ownership pin begin: eventPayload
+// ownership pin begin: nodeContext
+// ownership pin begin: contextPresent
+// ownership pin begin: contextParent
+// ownership pin begin: contextApply
+// ownership pin begin: sendRoot
+// ownership pin begin: controls
+// ownership pin begin: setControls
+// ownership pin begin: hasRoot
+// ownership pin begin: hasHandler
+// ownership pin begin: handlerFlags
+// ownership pin begin: first
+// ownership pin begin: last
+// ownership pin begin: put
+// ownership pin begin: drop
+// ownership pin begin: swap
+// ownership pin begin: parentOf
+// ownership pin begin: childMaybe
+// ownership pin begin: restate
+// ownership pin begin: turn
+// ownership pin begin: dead
+// ownership pin begin: stop
+// ownership pin begin: makeSite
+// ownership pin begin: siteScope
+// ownership pin begin: setSiteScope
+// ownership pin begin: siteData
+// ownership pin begin: siteHead
+// ownership pin begin: siteTail
+// ownership pin begin: siteRestate
+// ownership pin begin: siteDispose
+//! The private existential half of the DOM producer ABI (interface 1.30,
+//! boundary.md §9.4.6). Source owns ranges, slots, rows and scheduling.
+//! These ordinary helpers open only a block's paired kind/payload or its
+//! paired map context. The lowering supplies them as values of the runtime
+//! module `Rt`, once per build, in Rt's own emit unit: the record
+//! `protocol` and the two markup primitives `text` and `map`, each its own
+//! value so that a build that never maps ships no map kind.
 const std = @import("std");
 const m = @import("beni_markup");
 
-pub const Core = struct {
-    unit: m.Name,
-    patch: m.Name,
-    again: m.Name,
-    live: m.Name,
-    text: m.Name,
-    map: m.Name,
-    event_payload: m.Name,
-    node_context: m.Name,
-    context_present: m.Name,
-    context_parent: m.Name,
-    context_apply: m.Name,
-    send_root: m.Name,
-    controls: m.Name,
-    set_controls: m.Name,
-    has_root: m.Name,
-    has_handler: m.Name,
-    handler_flags: m.Name,
-    make_site: m.Name,
-    site_scope: m.Name,
-    set_site_scope: m.Name,
-    site_data: m.Name,
-    site_head: m.Name,
-    site_tail: m.Name,
-    site_restate: m.Name,
-    site_dispose: m.Name,
+/// The values of `Rt` this lowering supplies (`Lowering.runtime_protocol`).
+pub const values = [_][]const u8{ "protocol", "text", "map" };
+
+/// The names of `runtime`, which a supplied value reaches.
+pub const uses = blk: {
+    var names: [runtime.len][]const u8 = undefined;
+    for (runtime, &names) |r, *n| n.* = r.name;
+    const out = names;
+    break :blk out;
+};
+
+/// The runtime exports the supplied values' expressions name.
+pub const runtime = [_]m.RuntimeExport{
+    .{ .name = "protocol", .arity = 0 },
+    .{ .name = "empty", .arity = 0 },
+    .{ .name = "protocolTextNode", .arity = 1 },
+    .{ .name = "protocolSlot", .arity = 3 },
+    .{ .name = "protocolFirst", .arity = 1 },
+    .{ .name = "protocolLast", .arity = 1 },
+    .{ .name = "protocolPut", .arity = 3 },
+    .{ .name = "protocolDrop", .arity = 1 },
+    .{ .name = "protocolSwap", .arity = 2 },
+    .{ .name = "protocolParentOf", .arity = 1 },
+    .{ .name = "protocolChildMaybe", .arity = 2 },
+    .{ .name = "protocolRestate", .arity = 1 },
+    .{ .name = "protocolTurn", .arity = 2 },
+    .{ .name = "protocolDead", .arity = 0 },
+    .{ .name = "protocolStop", .arity = 0 },
 };
 
 // ownership pin begin: domProtocol
-/// One set per independent emit/cache unit; no per-view helper factory.
-/// Runtime exports used below are typed Source algorithms, never Js.Value
-/// adapters. Native DOM work remains in the reviewed catalogue.
-pub fn emit(cx: *m.Context, protocol: m.Name, into: m.Block) m.Error!Core {
-    const b: Builder = .{ .cx = cx, .protocol = protocol, .into = into };
-    const unit = try b.unit();
-    const patch = try b.patch(unit);
-    const live = try b.project("domLive", "l", true);
-    return .{
-        .unit = unit,
-        .patch = patch,
-        .again = try b.again(),
-        .live = live,
-        .text = try b.text(),
-        .map = try b.map(unit, patch, live),
-        .event_payload = try b.eventPayload(),
-        .node_context = try b.nodeContext(),
-        .context_present = try b.contextPresent(),
-        .context_parent = try b.project("domContextParent", "up", false),
-        .context_apply = try b.contextApply(),
-        .send_root = try b.sendRoot(),
-        .controls = try b.controls(),
-        .set_controls = try b.setControls(),
-        .has_root = try b.hasRoot(),
-        .has_handler = try b.hasHandler(),
-        .handler_flags = try b.handlerFlags(),
-        .make_site = try b.makeSite(),
-        .site_scope = try b.project("domSiteScope", "scope", false),
-        .set_site_scope = try b.setSiteScope(),
-        .site_data = try b.project("domSiteData", "data", false),
-        .site_head = try b.siteCall("domSiteHead", "head", false),
-        .site_tail = try b.siteCall("domSiteTail", "tail", false),
-        .site_restate = try b.siteCall("domSiteRestate", "restate", true),
-        .site_dispose = try b.siteCall("domSiteDispose", "dispose", false),
-    };
+/// The expression of supplied value `name`, written into Rt's unit. Every
+/// helper is hoisted once in that unit; no factory runs per view or row.
+pub fn supply(cx: *m.Context, name: []const u8) m.Error!m.Expr {
+    const b: Builder = .{ .cx = cx };
+    if (std.mem.eql(u8, name, "text")) return b.text();
+    if (std.mem.eql(u8, name, "map")) return b.map();
+    if (std.mem.eql(u8, name, "protocol")) return b.record();
+    unreachable;
 }
 
 const Builder = struct {
     cx: *m.Context,
-    protocol: m.Name,
-    into: m.Block,
 
     fn js(b: Builder) m.Js {
         return b.cx.js;
@@ -91,13 +103,17 @@ const Builder = struct {
         return b.js().member(try b.read(name_), field);
     }
 
+    fn rt(b: Builder, export_name: []const u8) m.Error!m.Expr {
+        return b.js().name(try b.cx.runtime(export_name));
+    }
+
     fn function(b: Builder, hint: []const u8, params: []const m.Name, body: m.Block) m.Error!m.Name {
-        const result = try b.cx.fresh(hint);
-        try b.js().constant(b.into, result, try b.js().arrow(params, body));
-        return result;
+        if (b.cx.hoisted(hint)) |existing| return existing;
+        return b.cx.hoistFunction(hint, params, body);
     }
 
     fn project(b: Builder, hint: []const u8, field: []const u8, truth: bool) m.Error!m.Name {
+        if (b.cx.hoisted(hint)) |existing| return existing;
         const value = try b.name("value");
         const body = try b.js().block();
         const read_ = try b.member(value, field);
@@ -109,19 +125,22 @@ const Builder = struct {
     }
 
     fn unit(b: Builder) m.Error!m.Name {
+        if (b.cx.hoisted("domUnit")) |existing| return existing;
         const block = try b.name("block");
         const context = try b.name("context");
         const instance = try b.name("instance");
         const body = try b.js().block();
         const kind = try b.member(block, "t");
         try b.js().constant(body, instance, try b.js().call(try b.js().member(kind, "m"), &.{ try b.member(block, "v"), try b.read(context) }));
-        try b.js().assign(body, try b.member(instance, "t"), kind);
-        try b.js().assign(body, try b.member(instance, "b"), try b.read(block));
+        try b.js().assign(body, try b.member(instance, "$t"), kind);
+        try b.js().assign(body, try b.member(instance, "$b"), try b.read(block));
         try b.js().@"return"(body, try b.read(instance));
         return b.function("domUnit", &.{ block, context }, body);
     }
 
-    fn patch(b: Builder, unit_: m.Name) m.Error!m.Name {
+    fn patch(b: Builder) m.Error!m.Name {
+        if (b.cx.hoisted("domPatch")) |existing| return existing;
+        const unit_ = try b.unit();
         const instance = try b.name("instance");
         const block = try b.name("block");
         const context = try b.name("context");
@@ -130,61 +149,69 @@ const Builder = struct {
         const same = try b.js().block();
         const kind = try b.member(block, "t");
         try b.js().expression(same, try b.js().call(try b.js().member(kind, "p"), &.{ try b.read(instance), try b.member(block, "v") }));
-        try b.js().assign(same, try b.member(instance, "b"), try b.read(block));
+        try b.js().assign(same, try b.member(instance, "$b"), try b.read(block));
         try b.js().@"return"(same, try b.read(instance));
-        try b.js().@"if"(body, try b.js().binary(.strict_eq, kind, try b.member(instance, "t")), same, null);
+        try b.js().@"if"(body, try b.js().binary(.strict_eq, kind, try b.member(instance, "$t")), same, null);
         try b.js().constant(body, replacement, try b.js().call(try b.read(unit_), &.{ try b.read(block), try b.read(context) }));
-        try b.js().expression(body, try b.js().call(try b.js().name(try b.cx.runtime("protocolSwap")), &.{ try b.read(b.protocol), try b.read(instance), try b.read(replacement) }));
+        try b.js().expression(body, try b.js().call(try b.rt("protocolSwap"), &.{ try b.read(instance), try b.read(replacement) }));
         try b.js().@"return"(body, try b.read(replacement));
         return b.function("domPatch", &.{ instance, block, context }, body);
     }
 
+    fn live(b: Builder) m.Error!m.Name {
+        return b.project("domLive", "$l", true);
+    }
+
     fn again(b: Builder) m.Error!m.Name {
+        if (b.cx.hoisted("domAgain")) |existing| return existing;
         const instance = try b.name("instance");
         const body = try b.js().block();
-        const block = try b.member(instance, "b");
-        const kind = try b.member(instance, "t");
+        const block = try b.member(instance, "$b");
+        const kind = try b.member(instance, "$t");
         try b.js().expression(body, try b.js().call(try b.js().member(kind, "p"), &.{ try b.read(instance), try b.js().member(block, "v") }));
         return b.function("domAgain", &.{instance}, body);
     }
 
-    fn empty(b: Builder) m.Error!m.Expr {
-        return b.js().name(try b.cx.runtime("protocolEmpty"));
-    }
-
-    fn text(b: Builder) m.Error!m.Name {
+    /// `Html.text`: a block of the text kind, hoisted once per build.
+    fn text(b: Builder) m.Error!m.Expr {
         const value = try b.name("value");
         const node = try b.name("node");
         const mount = try b.js().block();
-        try b.js().constant(mount, node, try b.js().call(try b.js().name(try b.cx.runtime("protocolTextNode")), &.{try b.read(value)}));
+        try b.js().constant(mount, node, try b.js().call(try b.rt("protocolTextNode"), &.{try b.read(value)}));
         try b.js().@"return"(mount, try b.js().object(&.{
             .{ .key = "s", .value = try b.read(node), .source = true },
-            .{ .key = "q", .value = try b.empty(), .source = true },
+            .{ .key = "q", .value = try b.rt("empty"), .source = true },
             .{ .key = "e", .value = try b.read(node), .source = true },
-            .{ .key = "d", .value = try b.read(value) },
+            .{ .key = "$d", .value = try b.read(value) },
         }));
         const make = try b.function("domTextMount", &.{value}, mount);
         const instance = try b.name("instance");
+        const fresh = try b.name("value");
         const patch_body = try b.js().block();
         const changed = try b.js().block();
-        try b.js().assign(changed, try b.member(instance, "d"), try b.read(value));
-        try b.js().assign(changed, try b.js().member(try b.js().field(try b.read(instance), "s"), "data"), try b.read(value));
-        try b.js().@"if"(patch_body, try b.js().binary(.strict_ne, try b.read(value), try b.member(instance, "d")), changed, null);
-        const update = try b.function("domTextPatch", &.{ instance, value }, patch_body);
-        const kind = try b.name("textKind");
-        try b.js().constant(b.into, kind, try b.js().object(&.{
+        try b.js().assign(changed, try b.member(instance, "$d"), try b.read(fresh));
+        try b.js().assign(changed, try b.js().member(try b.js().field(try b.read(instance), "s"), "data"), try b.read(fresh));
+        try b.js().@"if"(patch_body, try b.js().binary(.strict_ne, try b.read(fresh), try b.member(instance, "$d")), changed, null);
+        const update = try b.function("domTextPatch", &.{ instance, fresh }, patch_body);
+        const kind = try b.cx.hoist("textKind", try b.js().object(&.{
             .{ .key = "m", .value = try b.read(make) },
             .{ .key = "p", .value = try b.read(update) },
         }));
+        const shown = try b.name("value");
         const body = try b.js().block();
         try b.js().@"return"(body, try b.js().object(&.{
             .{ .key = "t", .value = try b.read(kind) },
-            .{ .key = "v", .value = try b.read(value) },
+            .{ .key = "v", .value = try b.read(shown) },
         }));
-        return b.function("domText", &.{value}, body);
+        return b.js().arrow(&.{shown}, body);
     }
 
-    fn map(b: Builder, unit_: m.Name, patch_: m.Name, live_: m.Name) m.Error!m.Name {
+    /// `Html.map`: a block of the map kind, hoisted once per build. Its
+    /// instance keeps a context that sends through the mapper, then up.
+    fn map(b: Builder) m.Error!m.Expr {
+        const unit_ = try b.unit();
+        const patch_ = try b.patch();
+        const live_ = try b.live();
         const value = try b.name("value");
         const context = try b.name("context");
         const own = try b.name("mapContext");
@@ -197,31 +224,36 @@ const Builder = struct {
             .{ .key = "f", .value = mapper },
             .{ .key = "up", .value = try b.read(context) },
         }));
-        try b.js().constant(mount, location, try b.js().call(try b.js().name(try b.cx.runtime("protocolSlot")), &.{ try b.empty(), try b.empty(), try b.read(own) }));
+        try b.js().constant(mount, location, try b.js().call(try b.rt("protocolSlot"), &.{ try b.rt("empty"), try b.rt("empty"), try b.read(own) }));
         try b.js().constant(mount, child, try b.js().call(try b.read(unit_), &.{ html, try b.read(own) }));
         try b.js().assign(mount, try b.js().field(try b.read(location), "i"), try b.read(child));
-        const live = try b.js().call(try b.read(live_), &.{try b.read(child)});
-        try b.js().assign(mount, try b.js().field(try b.read(location), "l"), live);
+        const alive = try b.js().call(try b.read(live_), &.{try b.read(child)});
+        try b.js().assign(mount, try b.js().field(try b.read(location), "l"), alive);
         try b.js().@"return"(mount, try b.js().object(&.{
-            .{ .key = "s", .value = try b.empty(), .source = true },
+            .{ .key = "s", .value = try b.rt("empty"), .source = true },
             .{ .key = "q", .value = try b.read(location), .source = true },
-            .{ .key = "e", .value = try b.empty(), .source = true },
-            .{ .key = "c", .value = try b.read(own) },
-            .{ .key = "l", .value = live },
+            .{ .key = "e", .value = try b.rt("empty"), .source = true },
+            .{ .key = "$c", .value = try b.read(own) },
+            .{ .key = "$l", .value = alive },
         }));
         const make = try b.function("domMapMount", &.{ value, context }, mount);
         const instance = try b.name("instance");
+        const fresh = try b.name("value");
+        const html2 = try b.js().index(try b.read(fresh), try b.js().number("0"));
+        const mapper2 = try b.js().index(try b.read(fresh), try b.js().number("1"));
+        const place = try b.name("mapSlot");
+        const replaced = try b.name("mapped");
         const update = try b.js().block();
-        const current = try b.member(instance, "c");
-        try b.js().assign(update, try b.js().member(current, "f"), mapper);
-        try b.js().constant(update, location, try b.js().field(try b.read(instance), "q"));
-        try b.js().constant(update, child, try b.js().call(try b.read(patch_), &.{ try b.js().field(try b.read(location), "i"), html, current }));
-        try b.js().assign(update, try b.js().field(try b.read(location), "i"), try b.read(child));
-        try b.js().assign(update, try b.js().field(try b.read(location), "l"), live);
-        try b.js().assign(update, try b.member(instance, "l"), live);
-        const patch_fn = try b.function("domMapPatch", &.{ instance, value }, update);
-        const kind = try b.name("mapKind");
-        try b.js().constant(b.into, kind, try b.js().object(&.{
+        const current = try b.member(instance, "$c");
+        try b.js().assign(update, try b.js().member(current, "f"), mapper2);
+        try b.js().constant(update, place, try b.js().field(try b.read(instance), "q"));
+        try b.js().constant(update, replaced, try b.js().call(try b.read(patch_), &.{ try b.js().field(try b.read(place), "i"), html2, current }));
+        try b.js().assign(update, try b.js().field(try b.read(place), "i"), try b.read(replaced));
+        const live2 = try b.js().call(try b.read(live_), &.{try b.read(replaced)});
+        try b.js().assign(update, try b.js().field(try b.read(place), "l"), live2);
+        try b.js().assign(update, try b.member(instance, "$l"), try b.js().field(try b.read(place), "l"));
+        const patch_fn = try b.function("domMapPatch", &.{ instance, fresh }, update);
+        const kind = try b.cx.hoist("mapKind", try b.js().object(&.{
             .{ .key = "l", .value = try b.js().literal(.true) },
             .{ .key = "m", .value = try b.read(make) },
             .{ .key = "p", .value = try b.read(patch_fn) },
@@ -233,7 +265,7 @@ const Builder = struct {
             .{ .key = "t", .value = try b.read(kind) },
             .{ .key = "v", .value = try b.js().array(&.{ try b.read(block), try b.read(mapper_) }) },
         }));
-        return b.function("domMap", &.{ block, mapper_ }, body);
+        return b.js().arrow(&.{ block, mapper_ }, body);
     }
 
     fn eventPayload(b: Builder) m.Error!m.Name {
@@ -290,7 +322,7 @@ const Builder = struct {
         try b.js().constant(body, value, try b.member(node, "$$s"));
         try b.js().@"return"(body, try b.js().cond(
             try b.js().binary(.strict_eq, try b.read(value), try b.js().literal(.undefined)),
-            try b.js().name(try b.cx.runtime("protocolEmpty")),
+            try b.rt("empty"),
             try b.read(value),
         ));
         return b.function("domControls", &.{node}, body);
@@ -364,6 +396,66 @@ const Builder = struct {
         const params = [_]m.Name{ site, slot, stamp orelse slot };
         return b.function(hint, params[0..if (stamped) @as(usize, 3) else 2], body);
     }
+
+    /// The private record, one per build. Its fields are the hoisted
+    /// helpers and arrows into Rt's own algorithms.
+    fn record(b: Builder) m.Error!m.Expr {
+        var fields: std.ArrayList(m.Property) = .empty;
+        try fields.append(b.cx.arena, .{ .key = "none", .value = try b.js().literal(.null), .source = true });
+        const direct = [_]struct { []const u8, m.Name }{
+            .{ "unit", try b.unit() },
+            .{ "patch", try b.patch() },
+            .{ "again", try b.again() },
+            .{ "live", try b.live() },
+            .{ "eventPayload", try b.eventPayload() },
+            .{ "nodeContext", try b.nodeContext() },
+            .{ "contextPresent", try b.contextPresent() },
+            .{ "contextParent", try b.project("domContextParent", "up", false) },
+            .{ "contextApply", try b.contextApply() },
+            .{ "sendRoot", try b.sendRoot() },
+            .{ "controls", try b.controls() },
+            .{ "setControls", try b.setControls() },
+            .{ "hasRoot", try b.hasRoot() },
+            .{ "hasHandler", try b.hasHandler() },
+            .{ "handlerFlags", try b.handlerFlags() },
+            .{ "makeSite", try b.makeSite() },
+            .{ "siteScope", try b.project("domSiteScope", "scope", false) },
+            .{ "setSiteScope", try b.setSiteScope() },
+            .{ "siteData", try b.project("domSiteData", "data", false) },
+            .{ "siteHead", try b.siteCall("domSiteHead", "head", false) },
+            .{ "siteTail", try b.siteCall("domSiteTail", "tail", false) },
+            .{ "siteRestate", try b.siteCall("domSiteRestate", "restate", true) },
+            .{ "siteDispose", try b.siteCall("domSiteDispose", "dispose", false) },
+        };
+        for (direct) |field| try fields.append(b.cx.arena, .{ .key = field[0], .value = try b.read(field[1]), .source = true });
+        // Rt's algorithms, reached through an arrow so the record is made
+        // whatever order Rt's declarations are written in.
+        const forwards = [_]struct { field: []const u8, target: []const u8, arity: u8 }{
+            .{ .field = "first", .target = "protocolFirst", .arity = 1 },
+            .{ .field = "last", .target = "protocolLast", .arity = 1 },
+            .{ .field = "put", .target = "protocolPut", .arity = 3 },
+            .{ .field = "drop", .target = "protocolDrop", .arity = 1 },
+            .{ .field = "swap", .target = "protocolSwap", .arity = 2 },
+            .{ .field = "parentOf", .target = "protocolParentOf", .arity = 1 },
+            .{ .field = "childMaybe", .target = "protocolChildMaybe", .arity = 2 },
+            .{ .field = "restate", .target = "protocolRestate", .arity = 1 },
+            .{ .field = "turn", .target = "protocolTurn", .arity = 2 },
+            .{ .field = "dead", .target = "protocolDead", .arity = 0 },
+            .{ .field = "stop", .target = "protocolStop", .arity = 0 },
+        };
+        for (forwards) |forward| {
+            const params = try b.cx.arena.alloc(m.Name, forward.arity);
+            const args = try b.cx.arena.alloc(m.Expr, forward.arity);
+            for (params, args) |*param, *arg| {
+                param.* = try b.cx.fresh("argument");
+                arg.* = try b.js().name(param.*);
+            }
+            const body = try b.js().block();
+            try b.js().@"return"(body, try b.js().call(try b.rt(forward.target), args));
+            try fields.append(b.cx.arena, .{ .key = forward.field, .value = try b.js().arrow(params, body), .source = true });
+        }
+        return b.js().object(fields.items);
+    }
 };
 /// A checked vocabulary member, not a runtime string inspector. The type
 /// class belongs to the cache key; the caller supplies only its checked raw
@@ -395,61 +487,40 @@ pub fn property(cx: *m.Context, native_name: []const u8, class: m.Class, immutab
         .{ .key = "set", .value = try cx.js.name(set), .source = true },
     }));
 }
-/// Initialize one private record per independent emit/cache unit. The
-/// initializer runs only at module evaluation. Its local functions share
-/// the completed record; no factory executes during a view, row or event.
-pub fn record(cx: *m.Context) m.Error!m.Name {
-    if (cx.hoisted("domProtocol")) |existing| return existing;
-    const into = try cx.js.block();
-    const self = try cx.fresh("protocol");
-    const core = try emit(cx, self, into);
-    var fields: std.ArrayList(m.Property) = .empty;
-    try fields.append(cx.arena, .{ .key = "none", .value = try cx.js.literal(.null), .source = true });
-    const direct = .{
-        .{ "unit", core.unit },                      .{ "patch", core.patch },
-        .{ "again", core.again },                    .{ "live", core.live },
-        .{ "text", core.text },                      .{ "map", core.map },
-        .{ "eventPayload", core.event_payload },     .{ "nodeContext", core.node_context },
-        .{ "contextPresent", core.context_present }, .{ "contextParent", core.context_parent },
-        .{ "contextApply", core.context_apply },     .{ "sendRoot", core.send_root },
-        .{ "controls", core.controls },              .{ "setControls", core.set_controls },
-        .{ "hasRoot", core.has_root },               .{ "hasHandler", core.has_handler },
-        .{ "handlerFlags", core.handler_flags },     .{ "makeSite", core.make_site },
-        .{ "siteScope", core.site_scope },           .{ "setSiteScope", core.set_site_scope },
-        .{ "siteData", core.site_data },             .{ "siteHead", core.site_head },
-        .{ "siteTail", core.site_tail },             .{ "siteRestate", core.site_restate },
-        .{ "siteDispose", core.site_dispose },
-    };
-    inline for (direct) |field| try fields.append(cx.arena, .{ .key = field[0], .value = try cx.js.name(field[1]), .source = true });
-    const forwards = [_]struct { field: []const u8, target: []const u8, arity: u8, paired: bool = true }{
-        .{ .field = "fire", .target = "protocolFire", .arity = 5 },
-        .{ .field = "first", .target = "protocolFirst", .arity = 1 },
-        .{ .field = "last", .target = "protocolLast", .arity = 1 },
-        .{ .field = "put", .target = "protocolPut", .arity = 3 },
-        .{ .field = "drop", .target = "protocolDrop", .arity = 1 },
-        .{ .field = "swap", .target = "protocolSwap", .arity = 2 },
-        .{ .field = "parentOf", .target = "protocolParentOf", .arity = 1, .paired = false },
-        .{ .field = "childMaybe", .target = "protocolChildMaybe", .arity = 2 },
-        .{ .field = "restate", .target = "protocolRestate", .arity = 1 },
-        .{ .field = "turn", .target = "protocolTurn", .arity = 2, .paired = false },
-        .{ .field = "dead", .target = "protocolDead", .arity = 0, .paired = false },
-        .{ .field = "stop", .target = "protocolStop", .arity = 0, .paired = false },
-    };
-    for (forwards) |forward| {
-        const params = try cx.arena.alloc(m.Name, forward.arity);
-        const args = try cx.arena.alloc(m.Expr, params.len + @intFromBool(forward.paired));
-        if (forward.paired) args[0] = try cx.js.name(self);
-        for (params, 0..) |*param, i| {
-            param.* = try cx.fresh("argument");
-            args[i + @intFromBool(forward.paired)] = try cx.js.name(param.*);
-        }
-        const body = try cx.js.block();
-        try cx.js.@"return"(body, try cx.js.call(try cx.js.name(try cx.runtime(forward.target)), args));
-        try fields.append(cx.arena, .{ .key = forward.field, .value = try cx.js.arrow(params, body), .source = true });
-    }
-    try cx.js.constant(into, self, try cx.js.object(fields.items));
-    try cx.js.@"return"(into, try cx.js.name(self));
-    const initialize = try cx.hoistFunction("domProtocolInit", &.{}, into);
-    return cx.hoist("domProtocol", try cx.js.call(try cx.js.name(initialize), &.{}));
-}
 // ownership pin end: domProtocol
+
+// ownership pin end: siteDispose
+// ownership pin end: siteRestate
+// ownership pin end: siteTail
+// ownership pin end: siteHead
+// ownership pin end: siteData
+// ownership pin end: setSiteScope
+// ownership pin end: siteScope
+// ownership pin end: makeSite
+// ownership pin end: stop
+// ownership pin end: dead
+// ownership pin end: turn
+// ownership pin end: restate
+// ownership pin end: childMaybe
+// ownership pin end: parentOf
+// ownership pin end: swap
+// ownership pin end: drop
+// ownership pin end: put
+// ownership pin end: last
+// ownership pin end: first
+// ownership pin end: handlerFlags
+// ownership pin end: hasHandler
+// ownership pin end: hasRoot
+// ownership pin end: setControls
+// ownership pin end: controls
+// ownership pin end: sendRoot
+// ownership pin end: contextApply
+// ownership pin end: contextParent
+// ownership pin end: contextPresent
+// ownership pin end: nodeContext
+// ownership pin end: eventPayload
+// ownership pin end: live
+// ownership pin end: again
+// ownership pin end: patch
+// ownership pin end: unit
+// ownership pin end: protocol

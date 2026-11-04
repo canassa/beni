@@ -6458,7 +6458,10 @@ test "a release page build lowers each module once" {
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     // One file, and each module in it lowered once: none is lowered two
-    // times, and none is lowered that the file does not hold.
+    // times, and none is lowered that the file does not hold but one:
+    // `Browser.Host.Element`, whose one value the runtime reads, the
+    // identity upcast `toNode` that finds the mount node (interface 1.30),
+    // is written where it is called, so the file holds nothing of it.
     var files: u64 = 0;
     for (try w.listFiles("out")) |path| {
         if (std.mem.endsWith(u8, path, ".mjs")) files += 1;
@@ -6466,7 +6469,7 @@ test "a release page build lowers each module once" {
     try testing.expectEqual(1, files);
     try testing.expectEqual(2, counters.reach_walks);
     try testing.expect(counters.modules_printed > 1);
-    try testing.expectEqual(counters.modules_printed, counters.modules_lowered);
+    try testing.expectEqual(counters.modules_printed + 1, counters.modules_lowered);
 }
 
 test "a program builds the same with the edge lists the binary carries as with lists it builds" {

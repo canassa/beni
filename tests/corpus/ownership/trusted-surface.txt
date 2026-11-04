@@ -308,3 +308,42 @@ core Browser.Host.Rejection.display ownership/core/RendererSupportWords.beni - R
 # #1831: v1 cannot observe unsafe Opt result flips; the explicit v2 fixture
 # refuses its unknown payload, and the pre-existing v1 hole is pending.
 core Js.Any.unpackOpt ownership/core/AnyUnpackOpt.beni - Any.unpackOpt
+
+# Supplied record: each field body is pinned. Native/existential handles expose
+# no owned sequence on which a weaker reader or stronger result word can act.
+# makeSite and setSiteScope carry Source callbacks, whose capture misuse is observable.
+browser Rt.protocol ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.unit ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.patch ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.again ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.live ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.eventPayload ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.nodeContext ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.contextPresent ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.contextParent ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.contextApply ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.sendRoot ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.controls ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.setControls ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.hasRoot ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.hasHandler ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.handlerFlags ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.first ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.last ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.put ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.drop ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.swap ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.parentOf ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.childMaybe ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.restate ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.turn ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.dead ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.stop ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.makeSite ownership/core/DomProtocolWords.beni 1:aliased>borrowed
+browser Rt.protocol.siteScope ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.setSiteScope ownership/core/DomProtocolWords.beni 2:escaped>borrowed
+browser Rt.protocol.siteData ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.siteHead ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.siteTail ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.siteRestate ownership/core/DomProtocolWords.beni -
+browser Rt.protocol.siteDispose ownership/core/DomProtocolWords.beni -

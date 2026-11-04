@@ -2380,6 +2380,7 @@ const Emitter = struct {
     // ---- boundary.md §4, checks 2, 3 and 4 --------------------------------
 
     fn compilerOwnedJs(e: *Emitter, m: Graph.Index, d: Bir.Decl) bool {
+        if (e.loweringSupplied(m, d)) return true;
         if (e.graph().modulePackage(m) == .core) {
             if (@import("../native/Operations.zig").lookup(e.session.interner.slice(e.graph().moduleName(m)), e.session.interner.slice(e.bir(m).symbol(d.name)))) |row| {
                 if (@import("../native/Operations.zig").renderer(row.recipe)) return true;
@@ -3383,10 +3384,69 @@ const Emitter = struct {
     fn moduleValue(e: *Emitter, module: Graph.Index, name: []const u8) ?u32 {
         const b = e.bir(module);
         for (b.decls, 0..) |d, index| {
-            if (d.kind != .value or !d.is_pub or d.body == .none) continue;
+            if (!d.is_pub) continue;
+            if (d.kind == .value and d.body != .none) {} else if (!e.loweringSupplied(module, d)) continue;
             if (std.mem.eql(u8, e.session.interner.slice(b.symbol(d.name)), name)) return @intCast(index);
         }
         return null;
+    }
+
+    /// Per module, whether it is a platform module that only the runtime
+    /// module reaches: every module that imports it is the runtime module or
+    /// another such module.
+    fn runtimeOnlyModules(e: *Emitter) ![]const bool {
+        const count = e.graph().count();
+        const only = try e.scratch.alloc(bool, count);
+        @memset(only, false);
+        const runtime = e.runtime_module orelse return only;
+        only[runtime.int()] = true;
+        var changed = true;
+        while (changed) {
+            changed = false;
+            for (0..count) |i| {
+                const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
+                if (only[i] or e.graph().modulePackage(m) != .platform) continue;
+                var imported = false;
+                var all = true;
+                for (0..count) |j| {
+                    const from: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(j))));
+                    if (std.mem.indexOfScalar(Graph.Index, e.graph().dependencies(from), m) == null) continue;
+                    imported = true;
+                    if (!only[j]) all = false;
+                }
+                if (imported and all) {
+                    only[i] = true;
+                    changed = true;
+                }
+            }
+        }
+        return only;
+    }
+
+    /// The runtime module's values the build's lowering supplies, for the
+    /// reachability walk (`boundary.md` §9.4.6, version 1.30).
+    fn loweringSuppliedValues(e: *Emitter) !?Reach.Input.LoweringSupplied {
+        const lowering_name = e.options.platform.lowering orelse return null;
+        const lowering = findLowering(lowering_name) orelse return null;
+        const supplied = lowering.runtime_protocol orelse return null;
+        const module = try e.markupModule() orelse return null;
+        return .{ .module = module, .values = supplied.values, .uses = supplied.uses };
+    }
+
+    /// Whether `d` is a value of the runtime module that the build's markup
+    /// lowering supplies (`Lowering.runtime_protocol`, `boundary.md`
+    /// §9.4.6, version 1.30): compiler-owned, with no sibling export.
+    fn loweringSupplied(e: *Emitter, module: Graph.Index, d: Bir.Decl) bool {
+        if (d.kind != .foreign_value) return false;
+        const lowering_name = e.options.platform.lowering orelse return false;
+        const lowering = findLowering(lowering_name) orelse return false;
+        const supplied = lowering.runtime_protocol orelse return false;
+        const runtime_name = e.options.platform.markup_module orelse return false;
+        if (e.graph().modulePackage(module) != .platform) return false;
+        if (!std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(module)), runtime_name)) return false;
+        const name = e.session.interner.slice(e.bir(module).symbol(d.name));
+        for (supplied.values) |v| if (std.mem.eql(u8, v, name)) return true;
+        return false;
     }
 
     /// Match each hidden identity to a checked Schema argument. A schema's
@@ -6457,6 +6517,7 @@ const Emitter = struct {
             .forwarding_foreigns = e.forwarding_foreigns,
             .cuts = e.cuts,
             .pinned = e.lift_roots,
+            .lowering_supplied = try e.loweringSuppliedValues(),
         };
         // What each lifted piece reaches (`browser-inline.md` §7).
         if (e.lifts.len != 0) {
@@ -6881,6 +6942,11 @@ const Emitter = struct {
         // takes its lowering as it is (`reusableLowerings`, #608).
         var first_slots: []ModuleSlot = &.{};
         var reused: []const bool = &.{};
+        // The platform modules only the runtime module reaches (its own
+        // `Rt.Slots`, `Rt.Rows`, `Html.Runtime`) are left to the second
+        // lowering with it: what they keep depends on what the program uses
+        // of the runtime module, as the module's own does.
+        const runtime_only = try e.runtimeOnlyModules();
         while (true) {
             // What each worker needs of the shared arena is made here, first:
             // the arena is the calling thread's alone.
@@ -6895,7 +6961,7 @@ const Emitter = struct {
                 // and nothing imports it, because imports are use-driven and a
                 // use is an edge.
                 if (!e.live.of(m).any() or e.onlyPrimitivesLive(m)) continue;
-                if (!refined and e.runtime_module != null and (m == e.runtime_module.? or e.graph().modulePackage(m) == .core)) {
+                if (!refined and e.runtime_module != null and (m == e.runtime_module.? or e.graph().modulePackage(m) == .core or runtime_only[i])) {
                     skipped = true;
                     continue;
                 }

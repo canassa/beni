@@ -258,7 +258,11 @@ pub const Flip = struct {
     pub fn parse(gpa: Allocator, text: []const u8) Allocator.Error!?Flip {
         const colon = std.mem.indexOfScalar(u8, text, ':') orelse return null;
         const name = text[0..colon];
-        const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return null;
+        // Modules have upper-case segments; a declaration and its field
+        // have lower-case segments. Keep the field with the declaration.
+        const dot = for (name, 0..) |c, i| {
+            if (c == '.' and i + 1 < name.len and std.ascii.isLower(name[i + 1])) break i;
+        } else return null;
         var edits: std.ArrayList(Edit) = .empty;
         var parts = std.mem.splitScalar(u8, text[colon + 1 ..], '+');
         while (parts.next()) |part| {
@@ -1292,6 +1296,20 @@ pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleRe
                 try lines.append(arena, .{ .text = try std.fmt.allocPrint(arena, "entry {s} (words)", .{o.in.interner.slice(bir.symbol(d.name))}) });
                 break;
             }
+            if (o.in.format_summaries and bir.ownFields(d).len != 0) {
+                if (try o.ensureSummary(m, @intCast(di))) |s| {
+                    try lines.append(arena, .{ .text = try o.summaryText(m, @intCast(di), s) });
+                    for (s.res) |field| {
+                        if (field.prov.kind != .klass or field.prov.a >= s.klasses.len) continue;
+                        const cls = s.klasses[field.prov.a].sum;
+                        if (!cls.words) continue;
+                        const step = o.firstStep(field.path) orelse continue;
+                        const text = try o.summaryText(m, @intCast(di), cls);
+                        const colon = std.mem.indexOfScalar(u8, text, ':').?;
+                        try lines.append(arena, .{ .text = try std.fmt.allocPrint(arena, "{s}.{s}{s}", .{ text[0..colon], o.in.interner.slice(@fromBackingInt(step.arg)), text[colon..] }) });
+                    }
+                }
+            }
             if (d.params == 0) continue;
             if (d.kind != .value and d.kind != .foreign_value) continue;
             if (!o.in.format_summaries) continue;
@@ -1794,7 +1812,7 @@ fn ensureWalked(o: *Ownership, m: u32, d: u32) Allocator.Error!?*const Summary {
     const decl = bir.decls[d];
     // A top-level value with no parameters has one too: the cells its
     // definition makes, which are what is shared (thesis §3.10).
-    if (decl.params == 0 and (decl.kind != .value or decl.body == .none)) return null;
+    if (decl.params == 0 and (decl.kind != .value or decl.body == .none) and bir.ownFields(decl).len == 0) return null;
     if (decl.kind != .value and decl.kind != .foreign_value) return null;
     const slots = try o.slotsOf(m);
     const slot = &slots[d];
@@ -4599,14 +4617,51 @@ fn schemaMemberRow(o: *Ownership, m: u32, decl: u32, kind: Interface.SchemaMembe
 fn wordsRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
     const bir = o.in.birs[m];
     const decl = bir.decls[d];
+    const fields = bir.ownFields(decl);
+    if (fields.len != 0) return try o.foreignRecordRow(m, d, fields);
     const slots = try o.flipped(m, d, bir.ownSlots(decl));
+    return o.wordsSignature(m, decl.annotation, decl.params, slots, decl.kind == .foreign_value);
+}
+
+/// Each function field carries its own class. Unknown data fields remain
+/// unknown at their own path, never at the entire record's root.
+fn foreignRecordRow(o: *Ownership, m: u32, d: u32, fields: []const Bir.OwnField) Allocator.Error!Summary {
+    const bir = o.in.birs[m];
+    const keep = o.keep.allocator();
+    var res: std.ArrayList(ResEntry) = .empty;
+    var classes: std.ArrayList(Carried) = .empty;
+    for (fields) |field| {
+        const path = try o.child(eps, .field, @backingInt(bir.symbol(@fromBackingInt(field.name))));
+        const ann: Inst.Index = @fromBackingInt(field.type_inst);
+        if (bir.instTag(ann) == .type_fn) {
+            const name = try std.fmt.allocPrint(keep, "{s}.{s}", .{ o.in.interner.slice(bir.symbol(bir.decls[d].name)), o.in.interner.slice(bir.symbol(@fromBackingInt(field.name))) });
+            var words = try o.flippedName(m, name, bir.extraSlice(.{ .start = @fromBackingInt(field.start), .end = @fromBackingInt(field.end) }, [2]u32));
+            // As for an outer signature, v2-only words never narrow v1's
+            // default. Their complete bit sets remain in the frontend artifact.
+            for (words) |slot| if (slot[1] & ~Ast.OwnWord.v1_mask != 0) {
+                words = &.{};
+                break;
+            };
+            const n: u32 = @intCast(bir.extraSlice(bir.subRange(@fromBackingInt(bir.instData(ann).lhs)), Inst.Index).len);
+            const sum = try keep.create(Summary);
+            sum.* = (try o.wordsSignature(m, ann.toOptional(), n, words, true)).?;
+            try res.append(keep, .{ .path = path, .prov = .{ .kind = .klass, .a = @intCast(classes.items.len) } });
+            try classes.append(keep, .{ .sum = sum, .binds = &.{} });
+        } else {
+            try res.append(keep, .{ .path = path, .prov = .{ .kind = .top } });
+        }
+    }
+    return o.normalize(.{ .params = 0, .res = res.items, .klasses = classes.items, .words = true, .asserted = true });
+}
+
+fn wordsSignature(o: *Ownership, m: u32, annotation: Inst.OptionalIndex, n: u32, slots: []const [2]u32, foreign: bool) Allocator.Error!?Summary {
+    const bir = o.in.birs[m];
     const entry_word = @import("../parse/Ast.zig").OwnWord.entry.bit();
     const ordinary = for (slots) |slot| {
         if (slot[1] & ~entry_word != 0) break true;
     } else false;
-    if (decl.kind != .foreign_value and !ordinary) return null;
-    if (slots.len == 0 and decl.kind != .foreign_value) return null;
-    const n = decl.params;
+    if (!foreign and !ordinary) return null;
+    if (slots.len == 0 and !foreign) return null;
     const keep = o.keep.allocator();
     const W = @import("../parse/Ast.zig").OwnWord;
     // The annotation's parameter types: which are functions written out,
@@ -4617,7 +4672,7 @@ fn wordsRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
     // element, a function slot at the parameter's `[*]`.
     var elem_arity = try keep.alloc(?u32, n);
     @memset(elem_arity, null);
-    if (decl.annotation.unwrap()) |ann| if (bir.instTag(ann) == .type_fn) {
+    if (annotation.unwrap()) |ann| if (bir.instTag(ann) == .type_fn) {
         const ps = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(ann).lhs))), Inst.Index);
         const graph_m: Graph.Index = @fromBackingInt(@intCast(m));
         for (ps, 0..) |p, i| {
@@ -4743,10 +4798,14 @@ fn wordsRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
 /// The words of declaration `d` of module `m`, with `--ownership-flips`'s
 /// edits applied when it names the declaration (§24.6).
 fn flipped(o: *Ownership, m: u32, d: u32, slots: []const [2]u32) Allocator.Error![]const [2]u32 {
-    const flip = o.in.flip orelse return slots;
     const bir = o.in.birs[m];
+    return o.flippedName(m, o.in.interner.slice(bir.symbol(bir.decls[d].name)), slots);
+}
+
+fn flippedName(o: *Ownership, m: u32, name: []const u8, slots: []const [2]u32) Allocator.Error![]const [2]u32 {
+    const flip = o.in.flip orelse return slots;
     if (!std.mem.eql(u8, o.in.module_names[m], flip.module)) return slots;
-    if (!std.mem.eql(u8, o.in.interner.slice(bir.symbol(bir.decls[d].name)), flip.decl)) return slots;
+    if (!std.mem.eql(u8, name, flip.decl)) return slots;
     var out: std.ArrayList([2]u32) = .empty;
     try out.appendSlice(o.keep.allocator(), slots);
     var met = true;
@@ -12829,7 +12888,12 @@ const Walker = struct {
                 // its summary to where it is called (§16.5).
                 if (decl.params > 0) return w.single(.{ .kind = .func, .a = t.m, .b = t.d });
                 if (!try w.isTracked(inst)) return &.{};
-                if (decl.kind == .foreign_value) return w.single(.{ .kind = .top, .a = 0 });
+                if (decl.kind == .foreign_value) {
+                    if (w.o.in.birs[t.m].ownFields(decl).len != 0) {
+                        if (try w.o.ensureSummary(t.m, t.d)) |s| return w.sharedOf(s, t, inst);
+                    }
+                    return w.single(.{ .kind = .top, .a = 0 });
+                }
                 // What is shared is the cells the definition makes, and
                 // nothing else (thesis §3.10): `Dict.empty` makes none (T51).
                 if (try w.o.ensureSummary(t.m, t.d)) |s| {

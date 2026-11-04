@@ -1,0 +1,2 @@
+-- §24.4: the exception is one record level, directly on a foreign value.
+pub foreign pure callbacks : { nested : { read : (borrowed List Int → Int) } }

@@ -2324,3 +2324,24 @@ test "ownership words: compiler intrinsic pins cover the reply scan fixture" {
     // the traversal. Both independently pinned regions must remain covered.
     try testing.expectEqual(@as(usize, 2), try expectPinBodies("tests/platforms/reply-scan", "Worker.Object.replyIds"));
 }
+
+test "ownership words: supplied DOM record callback captures notice unsafe alias and escape flips" {
+    try expectFlips("ownership/core/DomProtocolWords.beni", &.{ "--core", "--platform=browser" });
+}
+
+test "ownership words: foreign record fields retain returned and callback-result classes" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const r = try w.runWith(&.{
+        "dump",                                                                                                                                                                                                "--stage=ownership",                                    "--core",
+        "--ownership-flips=SuppliedRecordWords.callbacks.echo:1:returned>-+res:->fresh|SuppliedRecordWords.callbacks.retain:1:escaped>borrowed|SuppliedRecordWords.callbacks.invoke:1:returned>-+res:->fresh", "tests/corpus/ownership/core/SuppliedRecordWords.beni",
+    }, .{ .raw_diagnostics = true, .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+    try testing.expectEqualStrings(
+        "flip SuppliedRecordWords.callbacks.echo:1:returned>-+res:->fresh: changes\n" ++
+            "flip SuppliedRecordWords.callbacks.retain:1:escaped>borrowed: changes\n" ++
+            "flip SuppliedRecordWords.callbacks.invoke:1:returned>-+res:->fresh: changes\n",
+        r.stdout,
+    );
+}

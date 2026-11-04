@@ -972,10 +972,21 @@ pub const OwnSlot = struct { slot: u32, words: u32 };
 pub const own_result: u32 = std.math.maxInt(u32);
 /// `OwnSlot.slot` of a `foreign type`'s own words: `crossing`.
 pub const own_type: u32 = std.math.maxInt(u32) - 1;
+/// Header for a supplied foreign record's field signatures (§24.4).
+pub const own_fields: u32 = std.math.maxInt(u32) - 2;
+/// Field symbol, type instruction, and the range of ordinary OwnSlot pairs.
+pub const OwnField = extern struct { name: u32, type_inst: u32, start: u32, end: u32 };
+
+pub fn ownFields(b: *const Bir, d: Decl) []const OwnField {
+    const words = b.extra[d.own_start..d.own_end];
+    if (words.len < 2 or words[0] != own_fields) return &.{};
+    return @as([*]const OwnField, @ptrCast(words[2..].ptr))[0 .. (words.len - 2) / 4];
+}
 
 /// The ownership words of declaration `d`, in position order.
 pub fn ownSlots(b: *const Bir, d: Decl) []const [2]u32 {
     const words = b.extra[d.own_start..d.own_end];
+    if (words.len >= 2 and words[0] == own_fields) return &.{};
     return @as([*]const [2]u32, @ptrCast(words.ptr))[0 .. words.len / 2];
 }
 
@@ -1386,6 +1397,30 @@ pub fn verify(bir: *const Bir, token_count: u32) bool {
         // declaration.
         if (!inRange(d.own_start, d.own_end, bir.extra.len) or (d.own_end - d.own_start) % 2 != 0) return false;
         if (!inRange(d.own2_start, d.own2_end, bir.extra.len) or (d.own2_end - d.own2_start) % 2 != 0) return false;
+        const own = bir.extra[d.own_start..d.own_end];
+        if (own.len >= 2 and own[0] == own_fields) {
+            if (d.kind != .foreign_value or d.params != 0 or own[1] != 0 or (own.len - 2) % 4 != 0) return false;
+            const ann = d.annotation.unwrap() orelse return false;
+            if (ann.int() >= insts_len or bir.instTag(ann) != .type_record) return false;
+            const record = bir.instData(ann);
+            if (!inRange(record.lhs, record.rhs, bir.extra.len) or (record.rhs - record.lhs) % 2 != 0) return false;
+            const fields = bir.ownFields(d);
+            if (fields.len != (record.rhs - record.lhs) / 2) return false;
+            for (fields, 0..) |field, k| {
+                if (field.name >= symbols_len or field.type_inst >= insts_len) return false;
+                if (bir.extra[record.lhs + k * 2] != field.name or bir.extra[record.lhs + k * 2 + 1] != field.type_inst) return false;
+                if (!inRange(field.start, field.end, d.own_start) or (field.end - field.start) % 2 != 0) return false;
+                if (field.start != field.end and bir.instTag(@fromBackingInt(field.type_inst)) != .type_fn) return false;
+                if (bir.instTag(@fromBackingInt(field.type_inst)) == .type_fn) {
+                    const arrow = bir.instData(@fromBackingInt(field.type_inst));
+                    if (arrow.lhs >= bir.extra.len or bir.extra.len - arrow.lhs < 2 or arrow.rhs >= insts_len) return false;
+                    const start = bir.extra[arrow.lhs];
+                    const end = bir.extra[arrow.lhs + 1];
+                    if (!inRange(start, end, bir.extra.len)) return false;
+                    for (bir.extra[start..end]) |param| if (param >= insts_len) return false;
+                }
+            }
+        }
         if (!inRange(d.spreads_start, d.spreads_end, bir.extra.len) or (d.spreads_end - d.spreads_start) % 3 != 0) return false;
         for (bir.spreads(d)) |s| {
             if (s.root < d.inst_start.int() or s.root >= d.inst_end.int()) return false;

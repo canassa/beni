@@ -1,0 +1,51 @@
+-- §24.4: a supplied foreign record preserves each function field's class.
+-- Wrong returned→fresh and escaped→borrowed words would accept the two
+-- alias and retained-input misuses below. Passing the record through an
+-- identity must preserve the classes as well as a direct field projection.
+pub foreign pure callbacks :
+    { echo : (returned List Int → List Int)
+    , retain : (escaped List Int → ⊤)
+    , read : (borrowed List Int → Int)
+    , create : (⊤ → fresh List Int)
+    , invoke : (once returned (⊤ → List Int) → List Int)
+    }
+
+
+pub returnedAlias xs =
+    held = callbacks.echo xs
+    next = [ …held, 1 ]
+    List.length xs + List.length next
+
+
+pub escapedInput xs =
+    callbacks.retain xs
+    next = [ …xs, 1 ]
+    List.length next
+
+
+pub borrowedInput xs =
+    n = callbacks.read xs
+    next = [ …xs, n ]
+    List.length next
+
+
+pub freshResult ⊤ =
+    values = callbacks.create ⊤
+    next = [ …values, 1 ]
+    List.length next
+
+
+pass record = record
+
+
+pub passedRecord xs =
+    record = pass callbacks
+    held = record.echo xs
+    next = [ …held, 1 ]
+    List.length xs + List.length next
+
+
+pub callbackAlias xs =
+    held = callbacks.invoke λ⊤ → xs
+    next = [ …held, 1 ]
+    List.length xs + List.length next

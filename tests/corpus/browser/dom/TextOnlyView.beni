@@ -1,0 +1,16 @@
+-- A page whose view writes no markup root at all, only the markup
+-- primitives `Html.text` and `Html.map` (boundary.md §9.4.6, interface
+-- 1.30): no module of the build holds a markup root, so the runtime's own
+-- record, which the lowering supplies to `Rt` once per build, is the one
+-- that mounts it. A click on the page sends nothing; the text it shows is
+-- the model's.
+import Browser
+import Html exposing (Html)
+
+
+view : Int → Html Int
+view count = Html.map (Html.text "count ${String.fromInt count}") λn → n + 1
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → 0, update = λn _ → n, view = view }

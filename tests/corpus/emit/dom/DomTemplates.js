@@ -1,9 +1,9 @@
-import { Rt$template, Rt$insertText, Rt$attr } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$empty, Rt$insertText, Rt$attr } from "./_platform/Rt.mjs";
 import { Js$Any$pack } from "./_core/Js/Any.mjs";
 const DomTemplates$t3 = Rt$template("<div class=\"a b\"id=x><span>hi</span><br><p>there <b>you &amp; me");
 const DomTemplates$k3 = { m: ($v$1, $cx$2) => {
   const $r$3 = DomTemplates$t3();
-  return { s: $r$3, q: null, e: $r$3 };
+  return { s: $r$3, q: Rt$empty, e: $r$3 };
 }, p: ($i$4, $v$5) => {
 } };
 const DomTemplates$b3 = { t: DomTemplates$k3, v: null };
@@ -34,7 +34,7 @@ const DomTemplates$k19 = { m: ($v$7, $cx$8) => {
   const $x$13 = Rt$insertText($r$9, $w$10, "");
   const $x$14 = Rt$insertText($r$9, $w$11, "");
   const $x$15 = Rt$insertText($r$9, $w$12, "");
-  const $i$16 = { s: $r$9, q: null, e: $r$9, x0: $x$13, x1: $x$14, x2: $x$15, g0_0: NaN, g1_0: NaN, g2_0: NaN };
+  const $i$16 = { s: $r$9, q: Rt$empty, e: $r$9, x0: $x$13, x1: $x$14, x2: $x$15, g0_0: NaN, g1_0: NaN, g2_0: NaN };
   DomTemplates$p19($i$16, $v$7);
   return $i$16;
 }, p: DomTemplates$p19 };
@@ -59,7 +59,7 @@ const DomTemplates$k32 = { m: ($v$6, $cx$7) => {
   const $w$11 = $w$9.nextSibling;
   const $w$12 = $w$11.firstChild;
   const $w$13 = $w$12.firstChild;
-  const $i$14 = { s: $r$8, q: null, e: $r$8, w2: $w$10, w5: $w$13, g0_0: NaN, g1_0: NaN };
+  const $i$14 = { s: $r$8, q: Rt$empty, e: $r$8, w2: $w$10, w5: $w$13, g0_0: NaN, g1_0: NaN };
   DomTemplates$p32($i$14, $v$6);
   return $i$14;
 }, p: DomTemplates$p32 };
@@ -89,14 +89,14 @@ const DomTemplates$p51 = ($i$1, $v$2) => {
 const DomTemplates$t51 = Rt$template("<div aria-label=static><input disabled type=text>");
 const DomTemplates$k51 = { m: ($v$8, $cx$9) => {
   const $r$10 = DomTemplates$t51();
-  const $i$11 = { s: $r$10, q: null, e: $r$10, w0: $r$10, g0_0: NaN, g1_0: NaN, g2_0: NaN, g3_0: NaN };
+  const $i$11 = { s: $r$10, q: Rt$empty, e: $r$10, w0: $r$10, g0_0: NaN, g1_0: NaN, g2_0: NaN, g3_0: NaN };
   DomTemplates$p51($i$11, $v$8);
   return $i$11;
 }, p: DomTemplates$p51 };
 const DomTemplates$t55 = Rt$template("<!>");
 const DomTemplates$k55 = { m: ($v$1, $cx$2) => {
   const $r$3 = DomTemplates$t55();
-  return { s: $r$3, q: null, e: $r$3 };
+  return { s: $r$3, q: Rt$empty, e: $r$3 };
 }, p: ($i$4, $v$5) => {
 } };
 const DomTemplates$b55 = { t: DomTemplates$k55, v: null };

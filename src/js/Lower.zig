@@ -3566,6 +3566,25 @@ pub const Lowerer = struct {
             .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => return,
             // Bound by the sibling import, not by a declaration here.
             .foreign_value => {
+                // A value the markup lowering supplies (`boundary.md`
+                // §9.4.6, version 1.30): its expression, in this unit.
+                if (l.loweringSupplied(d)) |name_| {
+                    if (!l.liveDecl(index)) return;
+                    const st = l.mk orelse return;
+                    const hook = st.lowering.runtime_protocol.?.supply;
+                    records.direct = try l.recBegin(Funnel.Selector.declarationPart(index, Funnel.Selector.direct));
+                    l.restartNames();
+                    const saved = st.pos;
+                    st.pos = l.pos(d.inst_start);
+                    defer st.pos = saved;
+                    const value_ = hook(&st.cx, name_) catch |err| switch (err) {
+                        error.OutOfMemory => return error.OutOfMemory,
+                        error.Reported => return,
+                    };
+                    try l.constDecl(out, try l.topName(index), @fromBackingInt(@intCast(@backingInt(value_))), l.pos(d.inst_start));
+                    try l.recEnd(records.direct, index);
+                    return;
+                }
                 if (l.rendererDecl(d)) |row| {
                     if (!l.liveDecl(index)) return;
                     records.direct = try l.recBegin(Funnel.Selector.declarationPart(index, Funnel.Selector.direct));
@@ -4056,7 +4075,7 @@ pub const Lowerer = struct {
         // Foreign values first: `import { add as Basics$add } from "./Basics.js"`.
         var siblings: std.ArrayList(JsIr.Specifier) = .empty;
         for (l.bir.decls, 0..) |d, index| {
-            if (d.kind != .foreign_value or l.typedIntrinsicDecl(d) != null or l.rendererDecl(d) != null) continue;
+            if (d.kind != .foreign_value or l.typedIntrinsicDecl(d) != null or l.rendererDecl(d) != null or l.loweringSupplied(d) != null) continue;
             // §5: the one import leg that is not use-driven. Every other
             // `import` shrinks for free with the declaration that wanted
             // it; this loop walks `bir.decls` and would otherwise import
@@ -20400,7 +20419,9 @@ pub const Lowerer = struct {
         }) orelse blk: {
             // A module with no markup of its own may still call a program
             // constructor: the hook runs with an empty tree (§9.4.6, 1.6).
-            if (l.program_calls.len == 0) return;
+            // The runtime module whose values the lowering supplies holds
+            // their hoists likewise (1.30).
+            if (l.program_calls.len == 0 and !l.suppliesValues()) return;
             break :blk MarkupTree.empty;
         };
         const st = try l.scratch.create(MarkupState);
@@ -21034,6 +21055,26 @@ pub const Lowerer = struct {
         return n;
     }
 
+    /// Whether this module declares a value its lowering supplies.
+    fn suppliesValues(l: *Lowerer) bool {
+        for (l.bir.decls) |d| if (l.loweringSupplied(d) != null) return true;
+        return false;
+    }
+
+    /// The name of a value of the markup runtime module that its lowering
+    /// supplies (`Lowering.runtime_protocol`, `boundary.md` §9.4.6, 1.30),
+    /// or null.
+    fn loweringSupplied(l: *Lowerer, d: Bir.Decl) ?[]const u8 {
+        if (d.kind != .foreign_value) return null;
+        const mk = l.in.markup orelse return null;
+        const module = mk.module orelse return null;
+        if (module != l.in.module) return null;
+        const supplied = mk.lowering.runtime_protocol orelse return null;
+        const name_ = l.text(l.bir.symbol(d.name));
+        for (supplied.values) |v| if (std.mem.eql(u8, v, name_)) return v;
+        return null;
+    }
+
     /// The runtime module's value that supplies the runtime export
     /// `export_name`, recorded as used, or null when the file supplies it
     /// (`backend.md` §15.1, *The runtime module*).
@@ -21361,6 +21402,7 @@ const MarkupContext = struct {
                 .function_param => |index_| if (shape.kind == .function and children.len > index_ + 1) children[index_] else return null,
                 .function_result => if (shape.kind == .function and children.len != 0) children[children.len - 1] else return null,
                 .tuple_field => |index_| if (shape.kind == .tuple and children.len > index_) children[index_] else return null,
+                .type_argument => |index_| if (shape.kind == .named and children.len > index_) children[index_] else return null,
                 .record_field => |field| field: {
                     if (shape.kind != .record) return null;
                     for (children) |child| {
@@ -21402,7 +21444,6 @@ const MarkupContext = struct {
             const entry = l.in.types.entry(id);
             const text = try std.fmt.allocPrint(l.scratch, "core:{s}.{s}", .{
                 l.interner.slice(entry.module_name), l.interner.slice(entry.name),
-                .type_argument => |index_| if (shape.kind == .named and children.len > index_) children[index_] else return null,
             });
             return keepEvidence(l, try l.identityString(text, pos(l)), .identity);
         }

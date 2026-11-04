@@ -4172,6 +4172,29 @@ lowers as written):
 `crossing` is read only directly in front of `foreign` (or `equatable foreign`) and is refused outside a
 platform with the same code.
 
+**Supplied foreign record fields (2026-11-04, manager decision; #1825).**
+Existing ownership words may also describe the parameters and result of a
+function field of a top-level `foreign` record **written out in that
+foreign declaration**. Each field arrow is its own signature: its words
+have the same meanings, defaults, companion checks and package wall as
+§24.2. The record itself is a shared value, never fresh per read. The
+summary retains the field's callable class at its named field path, in a
+deterministic order; passing or projecting the record preserves those
+classes. No runtime record, wrapper or callback is added by these facts.
+
+This exception does not extend to a non-foreign record declaration, a
+record nested inside another record or function, a record type alias, or
+an alias used by the foreign declaration. Words in those positions remain
+`misplaced_ownership_word`. A function field's own callback parameter may
+carry the existing callback words; words nested inside that callback's
+arrow remain refused. Html.Runtime's frozen 1.30 API is unchanged: the
+supplied Rt declaration writes out its structural record when it needs
+these facts. Every asserted field is part of §24.6's trusted surface,
+with a pin of the lowering-written body and a direct misuse fixture whose
+verdict changes when its word is moved unsafely. A body whose behaviour
+cannot be stated with the existing words requires a manager decision,
+never an exemption or a new primitive.
+
 ### 24.5 How the checker reads them
 
 - **A declaration with words** has the summary its words give (§24.2), marked asserted, printed with `(words)`
@@ -4383,6 +4406,59 @@ pinned together in `word-bodies.txt`. The native-handle calls in
 `ownership/core/NativeRenderer.beni` justify the trusted-surface rows. No unsafe
 sequence verdict can distinguish a weaker word on these handle-only arguments,
 so their flip column is `-`, as for the existing native handle readers.
+
+**Supplied DOM protocol audit (2026-11-04; #1825).** The Rt declaration
+writes out its foreign record under §24.4's exception. Each function is
+read against platforms/browser/zig/protocol.zig and its cold Source
+adapters. Each field has its own body pin; these deliberately cover the
+whole producer helper span, so a change to a shared lowering helper forces
+all affected assertions to be reviewed. The protocol is shared; this
+asserts no per-read record freshness and emits no runtime code.
+
+The native/existential-handle-only fields are listed by name below. They
+expose no owned sequence on which a borrowed→unused or unknown→fresh flip
+can change a verdict, as for the private renderer natives. The observable
+callback capture aliases of makeSite and escapes of setSiteScope have
+direct misuse flips in ownership/core/DomProtocolWords.beni. Generic
+returned, escape, fresh and callback-result facts, including passing the
+record through a function, are pinned by SuppliedRecordWords.beni.
+
+| Field of Rt.protocol | Words | Body reading | Flip boundary |
+|---|---|---|---|
+| `unit` | `(aliased escaped Runtime.Block, aliased escaped Runtime.Context → fresh Runtime.Instance)` | Calls the paired mount, then stores the block and kind on its new instance; block/context may reach DOM handlers. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `patch` | `(aliased Runtime.Instance , aliased escaped Runtime.Block , aliased escaped Runtime.Context → unknown Runtime.Instance )` | Updates and returns the existing instance for the same kind; otherwise mounts and swaps a new instance. No unconditional fresh claim. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `again` | `(borrowed Runtime.Instance → ⊤)` | Runs the paired patch on the stored block; mutates only renderer instance and host state. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `live` | `(borrowed Runtime.Instance → Bool)` | Reads $l and compares it to true. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `eventPayload` | `(borrowed HostNode.Node, escaped HostEvent.Event, String, String → unknown Runtime.Payload)` | Reads the installed handler/extractor; an extractor may retain the native event and returns an unknown message. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `nodeContext` | `(aliased HostNode.Node → Runtime.Context)` | Reads $cx or returns null. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `contextPresent` | `(unused Runtime.Context → Bool)` | Compares the context identity with null. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `contextParent` | `(aliased Runtime.Context → Runtime.Context)` | Reads the up field. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `contextApply` | `(borrowed Runtime.Context, escaped Runtime.Payload → unknown Runtime.Payload)` | Calls the stored mapper with the payload; the mapper may retain it and returns unknown. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `sendRoot` | `(borrowed HostNode.Node, escaped Runtime.Payload → ⊤)` | Calls the installed root sender, which retains the message for dispatch. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `controls` | `(aliased HostNode.Node → Js.Opt Runtime.Control)` | Reads $s or returns the empty sentinel. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `setControls` | `(borrowed HostNode.Node, escaped Runtime.Control → ⊤)` | Stores the typed control chain on $s. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `hasRoot` | `(borrowed HostNode.Node → Bool)` | Tests $root for undefined. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `hasHandler` | `(borrowed HostNode.Node, String → Bool)` | Tests the named handler for undefined. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `handlerFlags` | `(borrowed HostNode.Node, String → Int)` | Reads the named integer flag or returns zero. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `first` | `(aliased Runtime.Instance → HostNode.Node)` | Forwards to Slots.first, which traverses native instance/slot node links. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `last` | `(aliased Runtime.Instance → HostNode.Node)` | Forwards to Slots.last, which traverses native instance/slot node links. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `put` | `(borrowed HostNode.Node, borrowed Runtime.Instance, borrowed Js.Opt HostNode.Node → ⊤)` | Forwards to Slots.put, which moves the native node range. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `drop` | `(borrowed Runtime.Instance → ⊤)` | Forwards to Slots.drop, which removes the native node range. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `swap` | `(borrowed Runtime.Instance, borrowed Runtime.Instance → ⊤)` | Forwards to Slots.swap, which inserts the new native range and removes the old one. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `parentOf` | `(aliased Runtime.Slot → HostNode.Node)` | Forwards to Slots.parentOf, which reads the native parent link. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `childMaybe` | `(borrowed Runtime.Slot, escaped Js.Opt Runtime.Block → ⊤)` | Forwards to Slots.childMaybe; the block may install native event handlers. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `restate` | `(borrowed Runtime.Slot → ⊤)` | Forwards to Slots.restate, patching renderer/native state. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `turn` | `(Bool, once (⊤ → ⊤) → ⊤)` | Forwards to turn; exactly one branch invokes the supplied callback once, with a unit argument. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `dead` | `(unused ⊤ → Bool)` | Reads the runtime dead flag; the unit argument is ignored. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `stop` | `(unused ⊤ → ⊤)` | Runs runtime teardown; the unit argument is ignored. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `makeSite` | `(aliased Runtime.SiteProtocol , aliased Runtime.Payload , aliased Any.Any → fresh Runtime.RowSite )` | Makes a new shallow record containing ops, scope and data; no factory or row allocation is introduced. | Captured list retained through ops; aliased→borrowed changes the refusal. |
+| `siteScope` | `(aliased Runtime.RowSite → Runtime.Payload)` | Reads scope from the retained site. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `setSiteScope` | `(borrowed Runtime.RowSite, escaped Runtime.SiteProtocol, escaped Runtime.Payload → ⊤)` | Stores new operations and scope into an existing site, so both escape. | Captured list stored through ops; escaped→borrowed changes the refusal. |
+| `siteData` | `(aliased Runtime.RowSite → Any.Any)` | Reads data from the retained site. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `siteHead` | `(aliased Runtime.RowSite, aliased Runtime.Slot → Js.Opt HostNode.Node)` | Calls the paired Rows.head callback with stored scope/data and the slot; it reads native handles. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `siteTail` | `(aliased Runtime.RowSite, aliased Runtime.Slot → Js.Opt HostNode.Node)` | Calls the paired Rows.tail callback with stored scope/data and the slot; it reads native handles. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `siteRestate` | `(borrowed Runtime.RowSite, borrowed Runtime.Slot, Int → ⊤)` | Calls the paired Rows.restate callback, editing renderer/native state. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+| `siteDispose` | `(borrowed Runtime.RowSite, borrowed Runtime.Slot → ⊤)` | Calls the paired Rows.dispose callback, removing renderer/native state. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
 
 ### 24.9 The decoder in `Expect`
 
