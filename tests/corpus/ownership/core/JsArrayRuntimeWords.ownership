@@ -1,0 +1,11 @@
+module JsArrayRuntimeWords
+  9:15 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  19:15 construction retained: rejected unknown: the list came from JavaScript (approx)
+  27:15 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  summary storedAlias: π1 REW
+  summary readAlias: π1 RE
+  summary storedCallback: π1 REW
+  demands 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause unknown 1
+cause escaped 2

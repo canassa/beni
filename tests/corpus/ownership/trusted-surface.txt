@@ -275,3 +275,9 @@ core Browser.Host.Node.rendererInsertBefore ownership/core/NativeRenderer.beni -
 core Browser.Host.Node.rendererAppend ownership/core/NativeRenderer.beni - N.rendererAppend
 core Browser.Host.Node.rendererRemove ownership/core/NativeRenderer.beni - N.rendererRemove
 core Browser.Host.Node.rendererClone ownership/core/NativeRenderer.beni - N.rendererClone
+
+# Core-private runtime capacity operations have conservative shared-storage rows.
+# No native result is promised fresh; borrowed reads observe trusted initialized slots.
+core Js.Array.arrayGet ownership/core/JsArrayRuntimeWords.beni - Array.arrayGet
+core Js.Array.arrayLength ownership/core/JsArrayRuntimeWords.beni - Array.arrayLength
+core Js.Array.arrayWrite ownership/core/JsArrayRuntimeWords.beni 3:escaped>borrowed Array.arrayWrite

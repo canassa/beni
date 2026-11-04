@@ -1,0 +1,88 @@
+-- Core/platform FIFO. A circular native array releases each removed payload.
+import Js
+import Js.Array as Array
+import Js.Protocol as Protocol
+
+
+pub opaque type Fifo a
+    = Fifo (Js.Cell (Fields a))
+
+
+type alias Fields a =
+    values : Js.Builder (Js.Opt a)
+    head : Int
+    count : Int
+    capacity : Int
+
+
+pub make : ⊤ → Fifo a
+make ⊤ = Fifo (Js.cell { values = Array.arrayAllocate 0, head = 0, count = 0, capacity = 0 })
+
+
+pub empty : Fifo a → Bool
+empty (Fifo q) = Js.cellRead q .count == 0
+
+
+pub size : Fifo a → Int
+size (Fifo q) = Js.cellRead q .count
+
+
+room : Js.Cell (Fields a) → ⊤
+room q =
+    count = Js.cellRead q .count
+    capacity = Js.cellRead q .capacity
+    if count == capacity then
+        grown = if capacity == 0 then 8 else capacity * 2
+        values = Array.arrayAllocate grown
+        copy (Js.cellRead q .values) values (Js.cellRead q .head) capacity count 0
+        Js.cellWrite q values .values
+        Js.cellWrite q grown .capacity
+        Js.cellWrite q 0 .head
+
+
+pub push : Fifo a, a → ⊤
+push (Fifo q) value =
+    room q
+    count = Js.cellRead q .count
+    index = Js.rem (Js.cellRead q .head + count) (Js.cellRead q .capacity)
+    Array.arrayWrite (Js.cellRead q .values) index (Js.some value)
+    Js.cellWrite q (count + 1) .count
+
+
+-- Return cancelled Queue hand-offs to the front without making removal tokens.
+pub unshift : Fifo a, a → ⊤
+unshift (Fifo q) value =
+    room q
+    capacity = Js.cellRead q .capacity
+    head = Js.rem (Js.cellRead q .head + capacity - 1) capacity
+    Array.arrayWrite (Js.cellRead q .values) head (Js.some value)
+    Js.cellWrite q head .head
+    Js.cellWrite q (Js.cellRead q .count + 1) .count
+
+
+copy : Js.Builder (Js.Opt a), Js.Builder (Js.Opt a), Int, Int, Int, Int → ⊤
+copy from into head capacity count index =
+    if index < count then
+        Array.arrayWrite into index (Array.arrayGet from (Js.rem (head + index) capacity))
+        copy from into head capacity count (index + 1)
+
+
+-- Callers test empty before shifting. Clearing precedes any callback invocation.
+pub shift : Fifo a → a
+shift (Fifo q) =
+    head = Js.cellRead q .head
+    values = Js.cellRead q .values
+    value = Array.arrayGet values head
+    Array.arrayWrite values head (Js.none ⊤)
+    count = Js.cellRead q .count - 1
+    Js.cellWrite q count .count
+    Js.cellWrite q (if count == 0 then 0 else Js.rem (head + 1) (Js.cellRead q .capacity)) .head
+    Js.optMatch value (λ⊤ → Protocol.defect "an empty FIFO was shifted") identity
+
+
+pub clear : Fifo a → ⊤
+clear (Fifo q) =
+    Js.cellWrite q (Array.arrayAllocate 0) .values
+    Js.cellWrite q 0 .head
+    Js.cellWrite q 0 .count
+    Js.cellWrite q 0 .capacity

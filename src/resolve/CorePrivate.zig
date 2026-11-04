@@ -77,6 +77,8 @@ const entries = [_]Entry{
     .{ .module = "Js.Any", .name = null, .access = .platform },
     .{ .module = "Js.Key", .name = null, .access = .platform },
     .{ .module = "Js.Chain", .name = null, .access = .platform },
+    .{ .module = "Js.TaskHooks", .name = null, .access = .platform },
+    .{ .module = "Js.Fifo", .name = null, .access = .platform },
     .{ .module = "List", .name = "isView", .access = .platform },
     .{ .module = "List", .name = "wrapTree" },
     .{ .module = "List", .name = "treeOf" },

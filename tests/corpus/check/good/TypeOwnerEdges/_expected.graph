@@ -32,6 +32,11 @@ core:Js.Chain -> core:Js.Protocol
 core:Js.Chain -> core:List
 core:Js.Chain -> core:Maybe
 core:Js.Chain -> core:String
+core:Js.Fifo -> core:Basics
+core:Js.Fifo -> core:Js
+core:Js.Fifo -> core:Js.Array
+core:Js.Fifo -> core:Js.Protocol
+core:Js.Fifo -> core:String
 core:Js.Inspect -> core:Basics
 core:Js.Inspect -> core:List
 core:Js.Inspect -> core:String
@@ -39,6 +44,13 @@ core:Js.Protocol -> core:Js
 core:Js.Protocol -> core:Js.Runtime
 core:Js.Protocol -> core:String
 core:Js.Runtime -> core:String
+core:Js.TaskHooks -> core:Basics
+core:Js.TaskHooks -> core:Browser.Host.Timers
+core:Js.TaskHooks -> core:Js
+core:Js.TaskHooks -> core:Js.Fifo
+core:Js.TaskHooks -> core:Js.Protocol
+core:Js.TaskHooks -> core:Maybe
+core:Js.TaskHooks -> core:String
 core:List -> core:Basics
 core:List -> core:Js
 core:List -> core:Maybe
@@ -63,7 +75,9 @@ core:Task -> core:Browser.Host.Timers
 core:Task -> core:Duration
 core:Task -> core:Js
 core:Task -> core:Js.Chain
+core:Task -> core:Js.Fifo
 core:Task -> core:Js.Runtime
+core:Task -> core:Js.TaskHooks
 core:Task -> core:List
 core:Task -> core:Maybe
 core:Task -> core:Record

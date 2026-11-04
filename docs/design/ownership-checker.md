@@ -8379,3 +8379,17 @@ packet; only an ordinary Box uses the old type/value fields. Unpack retains no
 input and constructs its own Maybe result, with the same payload alias as
 before. These helper and lowering bodies are pinned with the existing body
 hash mechanism.
+
+**Core runtime array rows (manager, 2026-11-04; #1857).** These Js.Array
+operations are fencedToCore. No application or platform can call the writer
+directly; core FIFO writers retain the element's real callback summary.
+
+| declaration | ownership contract |
+|---|---|
+| `arrayGet` | `borrowed Js.Builder a, borrowed Int → unknown a`; shared indexed read, no edit permission |
+| `arrayLength` | `borrowed Js.Builder a → Int`; reads capacity length |
+| `arrayWrite` | `escaped Js.Builder a, unused Int, escaped a → ⊤`; impure shared store, payload escapes, no edit permission |
+
+These rows reuse List's native capacity read/write representation. The core
+writer fence is the writer-rule justification; this is not an ownership
+fallback for application List writes.

@@ -1,11 +1,11 @@
 -- Platform-only synchronous dispatch. Nested sends retain closed typed jobs.
 import Js
-import Js.Chain as Chain
+import Js.Fifo as Fifo
 import Js.Protocol as Protocol
 
 
-pending : Js.Ref (Chain.Chain (⊤ → ⊤))
-pending = Js.ref (Chain.make ⊤)
+pending : Js.Ref (Fifo.Fifo (⊤ → ⊤))
+pending = Js.ref (Fifo.make ⊤)
 
 
 dead : Js.Ref Bool
@@ -35,7 +35,7 @@ stopped ⊤ = Js.read dead
 pub stop : ⊤ → ⊤
 stop ⊤ =
     Js.write dead True
-    Chain.clear (Js.read pending)
+    Fifo.clear (Js.read pending)
 
 
 pub send : sync (a → ⊤), a → ⊤
@@ -53,8 +53,7 @@ read callback raw project =
             (λ⊤ →
                 value = project raw
                 if nested then
-                    _ = Chain.append (Js.read pending) λ⊤ → callback value
-                    ⊤
+                    Fifo.push (Js.read pending) λ⊤ → callback value
                 else
                     callback value
                     drain ⊤
@@ -70,9 +69,8 @@ read callback raw project =
 drain : ⊤ → ⊤
 drain ⊤ =
     if not (Js.read dead) then
-        case Chain.shift (Js.read pending) of
-            Just work →
-                Protocol.call work ⊤
-                drain ⊤
-            Nothing →
-                ⊤
+        queue = Js.read pending
+        if not (Fifo.empty queue) then
+            work = Fifo.shift queue
+            Protocol.call work ⊤
+            drain ⊤

@@ -8815,3 +8815,11 @@ the part of the section it settles keeps its text.
 inside core/Js.beni as well as imported calls. A non-literal selector is
 invalid_cell_selector in check and build; lowering reports that diagnostic
 instead of asserting if an invalid selector reaches it.
+
+**Core-private runtime array access (manager, 2026-11-04; #1857).**
+Js.Array's `arrayGet`, `arrayLength` and `arrayWrite` reuse the compiler's
+native typed capacity representation. They are fenced to core and emit an
+indexed read, length read or indexed store. Their element types and stored
+callback summaries survive; no native value or callable is erased. These
+are unchecked core operations: runtime containers prove initialization and
+bounds before reading. The exact ownership rows are in ownership-checker.md.

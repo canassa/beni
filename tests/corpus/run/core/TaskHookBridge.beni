@@ -1,0 +1,36 @@
+-- #1858: the bridge works without importing Task, retains typed results,
+-- composes defect hooks and schedules shutdown releases once in FIFO order.
+import Browser.Host.NodeProcess as Output
+import Js.TaskHooks as Hooks
+import Node
+
+
+main : Node.Program
+main =
+    before = Hooks.cleansUp ⊤
+    contextual = Hooks.hasLogContext ⊤
+    plain = Hooks.withoutLogContext λ⊤ → "plain"
+    Hooks.onTurn λdrain →
+        Output.writeOut "before\n"
+        drain ⊤
+        Output.writeOut "after\n"
+    Hooks.around λ⊤ → Output.writeOut "drain\n"
+    Hooks.onDefect λ⊤ → Output.writeOut "one\n"
+    Hooks.chainDefect λ⊤ → Output.writeOut "two\n"
+    Hooks.failed ⊤
+    Hooks.install
+        (λdeadline done →
+            Output.writeOut "stop ${deadline}\n"
+            done 3
+        )
+        λ⊤ → True
+    Hooks.installContext (λ⊤ → True) λwork →
+        Output.writeOut "context\n"
+        work ⊤
+    typed = Hooks.withoutLogContext λ⊤ → "result"
+    Hooks.onShutdown λ⊤ → Output.writeOut "first\n"
+    Hooks.onShutdown λ⊤ → Output.writeOut "second\n"
+    Hooks.shutdown 20 λcut → Output.writeOut "done ${cut}\n"
+    Hooks.shutdown 90 λ_ → Output.writeOut "repeated\n"
+    Node.print
+        "${before},${contextual},${plain},${typed},${Hooks.cleansUp ⊤},${Hooks.hasLogContext ⊤},${Hooks.stopped ⊤}"

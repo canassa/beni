@@ -1,0 +1,68 @@
+-- #1857: wrap, grow a wrapped queue, clear, and retain nested-none/undefined payloads.
+import Js
+import Js.Array as Array
+import Js.Fifo as Fifo
+import Node
+
+
+fill : Fifo.Fifo Int, Int, Int → ⊤
+fill queue value end =
+    if value < end then
+        Fifo.push queue value
+        fill queue (value + 1) end
+
+
+consume : Fifo.Fifo Int, Int, Int → Int
+consume queue left sum =
+    if left > 0 then
+        value = Fifo.shift queue
+        consume queue (left - 1) (sum + value)
+    else
+        sum
+
+
+drain : Fifo.Fifo Int, Int → Int
+drain queue sum =
+    if Fifo.empty queue then
+        sum
+    else
+        value = Fifo.shift queue
+        drain queue (sum + value)
+
+
+main : Node.Program
+main =
+    queue = Fifo.make ⊤
+    fill queue 0 16
+    first = consume queue 12 0
+    Fifo.unshift queue 99
+    returned = Fifo.shift queue
+    fill queue 16 40
+    rest = drain queue 0
+    Fifo.push queue 99
+    Fifo.clear queue
+    Fifo.push queue 42
+    reused = Fifo.shift queue
+    opts = Fifo.make ⊤
+    Fifo.push opts (Js.none ⊤)
+    Fifo.push opts (Js.some 7)
+    absent = Fifo.shift opts
+    present = Fifo.shift opts
+    raw = Fifo.make ⊤
+    Fifo.push raw Js.undefined
+    value = Fifo.shift raw
+    front = Fifo.make ⊤
+    fill front 0 8
+    Fifo.unshift front (-1)
+    grownFront = Fifo.shift front
+    frontRest = drain front 0
+    native = Array.arrayAllocate 2
+    writeSlot = Array.arrayWrite
+    readSlot = Array.arrayGet
+    nativeLength = Array.arrayLength
+    writeSlot native 0 5
+    writeSlot native 1 6
+    nativeTotal = readSlot native 0 + readSlot native 1
+    nativeSize = nativeLength native
+    Node.print
+        "${first},${rest},${reused},${Js.optWithDefault absent (-1)},${Js.optWithDefault present (-1)},${Js.isUndefined value && True},${Fifo.empty queue},${returned},${grownFront},${frontRest},${nativeTotal},${nativeSize}"

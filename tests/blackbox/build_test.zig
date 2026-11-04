@@ -3887,8 +3887,8 @@ test "a release page ships the hosted program's loop only when it mounts one" {
     // own three latches, the dispatcher's, the render's and the
     // after-render phase's.
     try testing.expectEqual(@as(usize, 2), std.mem.count(u8, plain_js, "finally"));
-    // Typed Task storage adds five guarded runtime transitions.
-    try testing.expectEqual(@as(usize, 10), std.mem.count(u8, hosted_js, "finally"));
+    // Lazy registration leaves the unused Task runtime unreachable.
+    try testing.expectEqual(@as(usize, 5), std.mem.count(u8, hosted_js, "finally"));
 }
 
 test "a page with no delegated event calls no start and ships no listener" {
