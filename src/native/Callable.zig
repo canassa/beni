@@ -16,10 +16,12 @@ pub fn validate(c: anytype) bool {
             std.debug.print("native owner missing: {s}\n", .{row.owner});
             return false;
         };
-        if (row.recipe == .identity) {
+        if (row.recipe == .identity or row.recipe == .renderer_from_node) {
             var found = false;
             for (c.upcasts) |edge| {
-                if (c.native_types[edge.from].declaration == declaration and std.mem.eql(u8, c.native_types[edge.to].idl_name, "Node")) found = true;
+                if (row.recipe == .renderer_from_node) {
+                    if (c.native_types[edge.from].declaration == declaration and std.mem.eql(u8, c.native_types[edge.to].idl_name, "EventTarget")) found = true;
+                } else if (c.native_types[edge.from].declaration == declaration and std.mem.eql(u8, c.native_types[edge.to].idl_name, "Node")) found = true;
             }
             if (!found) return false;
             continue;
@@ -63,12 +65,12 @@ pub fn source(arena: Allocator, module: []const u8, type_name: ?[]const u8) ![]c
     const w = &out.writer;
     try w.writeAll(if (std.mem.eql(u8, module, "Browser.Host.Map")) "-- Generated from ECMA-262, 16th edition (2025), §24.1; reviewed adapters in native/Map.zig.\n" else if (std.mem.eql(u8, module, "Browser.Host.Cloudflare")) "-- Generated from @cloudflare/workers-types 5.20261102.1; reviewed native supplement.\n" else "-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.\n");
     if (std.mem.eql(u8, module, "Browser.Host.Events")) try w.writeAll("import Browser.Host.Event as Event\nimport Browser.Host.EventTarget as EventTarget\n\n\n");
-    if (std.mem.eql(u8, module, "Browser.Host.EventTarget")) try w.writeAll("import Browser.Host.HTMLAnchorElement as HTMLAnchorElement\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.EventTarget")) try w.writeAll("import Browser.Host.HTMLAnchorElement as HTMLAnchorElement\nimport Browser.Host.Node as Node\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Event")) try w.writeAll("import Browser.Host.EventTarget as EventTarget\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Event")) try w.writeAll("import Browser.Host.DOMRect as DOMRect\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Window") or std.mem.eql(u8, module, "Browser.Host.Document")) try w.writeAll("import Browser.Host.Event as Event\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Window")) try w.writeAll("import Browser.Host.Document as Document\n\n\n");
-    if (std.mem.eql(u8, module, "Browser.Host.Document")) try w.writeAll("import Browser.Host.Element as Element\nimport Browser.Host.Promise as Promise\n\n\npub type QueryError\n    = SyntaxError\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Document")) try w.writeAll("import Browser.Host.Element as Element\nimport Browser.Host.Node as Node\nimport Browser.Host.Promise as Promise\n\n\npub type QueryError\n    = SyntaxError\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Element")) try w.writeAll("import Browser.Host.Node as Node\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.TextEncoder")) try w.writeAll("import Browser.Host.Uint8Array as Uint8Array\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.MessageChannel")) try w.writeAll("import Browser.Host.MessagePort as MessagePort\n\n\n");
@@ -95,6 +97,7 @@ pub fn source(arena: Allocator, module: []const u8, type_name: ?[]const u8) ![]c
     if (std.mem.eql(u8, module, "Browser.Host.Console") or std.mem.eql(u8, module, "Browser.Host.Rejection")) try w.writeAll("import Js\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Cloudflare")) try w.writeAll(@import("Cloudflare.zig").declarations);
     if (std.mem.eql(u8, module, "Browser.Host.Promise")) try w.writeAll("pub foreign type Resolvers a\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Node")) try w.writeAll("import Js\n\n\n");
     if (type_name) |name| try w.print("pub foreign type {s}\n", .{name});
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
@@ -108,7 +111,9 @@ pub fn sibling(arena: Allocator, module: []const u8) ![]const u8 {
     const w = &out.writer;
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
+        if (Operations.renderer(row.recipe)) continue; // Both call forms are compiler-emitted.
         const body = switch (row.recipe) {
+            .renderer_first_child, .renderer_next_sibling, .renderer_parent, .renderer_insert, .renderer_append, .renderer_remove, .renderer_clone, .renderer_fragment, .renderer_import, .renderer_template, .renderer_body, .renderer_text, .renderer_from_node => unreachable,
             .worker_close_self => "(ignored) => { globalThis.close(); return null; }",
             .global_is_page => "(ignored) => { return typeof globalThis.window !== \"undefined\"; }",
             .event_error_message => "(event) => { return typeof globalThis.ErrorEvent === \"function\" && event instanceof globalThis.ErrorEvent ? { $: \"Just\", a: event.message } : { $: \"Nothing\", a: null }; }",
@@ -390,7 +395,7 @@ pub fn bindings(arena: Allocator, c: anytype) Allocator.Error![]const Binding {
         if (row.recipe == .byte_length or row.source != .webidl) continue;
         for (c.declarations) |d| {
             if (d.partial or d.kind == .includes or !std.mem.eql(u8, d.name, row.owner)) continue;
-            if (row.recipe == .identity) {
+            if (row.recipe == .identity or row.recipe == .renderer_from_node) {
                 binding.file = d.file;
                 binding.start = d.source_span.start;
                 binding.end = d.source_span.end;
@@ -413,6 +418,7 @@ pub fn bindings(arena: Allocator, c: anytype) Allocator.Error![]const Binding {
 }
 
 fn hasMember(text: []const u8, member: []const u8) bool {
+    if (member.len == 0) return false; // Identity upcasts link the declaration, not a member.
     var at: usize = 0;
     while (std.mem.findPos(u8, text, at, member)) |pos| {
         const end = pos + member.len;

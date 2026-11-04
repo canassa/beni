@@ -1,0 +1,111 @@
+-- Exercise native null/NONE and native nodeIdentity, direct and first-class entries.
+import Browser.Host.Document as D
+import Browser.Host.EventTarget as T
+import Browser.Host.Node as N
+import Js
+import Maybe
+
+
+node : Js.Opt N.Node → N.Node
+node slot = Js.optMatch slot (λ⊤ → D.rendererText "missing") λvalue → value
+
+
+missing : Js.Opt N.Node → Bool
+missing slot = Js.optMatch slot (λ⊤ → True) λ_ → False
+
+
+text : N.Node → String
+text value = Maybe.withDefault (N.textContent value) "null"
+
+
+-- Keep first-class uses in a record; the native declarations own their arrows.
+ops =
+    { first = N.rendererFirstChild
+    , next = N.rendererNextSibling
+    , parent = N.rendererParent
+    , insert = N.rendererInsertBefore
+    , append = N.rendererAppend
+    , remove = N.rendererRemove
+    , clone = N.rendererClone
+    , fragment = D.rendererFragment
+    , importNode = D.rendererImport
+    , template = D.rendererTemplate
+    , body = D.rendererBody
+    , text = D.rendererText
+    , target = T.rendererFromNode
+    }
+
+
+step : Js.Cell { count : Int }, a → a
+step counter value =
+    Js.cellWrite counter (Js.cellRead counter .count + 1) .count
+    value
+
+
+unitStep : Js.Cell { count : Int } → ⊤
+unitStep counter = Js.cellWrite counter (Js.cellRead counter .count + 1) .count
+
+
+pub run : ⊤ → String
+run ⊤ =
+    body = D.rendererBody ⊤
+    parsed = D.rendererTemplate "<i>A</i><b>B</b>"
+    a = node (N.rendererFirstChild parsed)
+    b = node (N.rendererNextSibling a)
+    nodeIdentity = Js.same a (node (N.rendererFirstChild parsed))
+    parent = Js.same parsed (node (N.rendererParent a))
+    absent = missing (N.rendererNextSibling b) && missing (N.rendererParent parsed)
+    target = Js.same a (T.rendererFromNode a)
+    moved = D.rendererFragment ⊤
+    N.rendererInsertBefore moved b (Js.none ⊤)
+    N.rendererInsertBefore moved a (Js.some b)
+    cloned = N.rendererClone moved
+    imported = D.rendererImport moved
+    N.rendererRemove a
+    N.rendererRemove a
+    N.rendererAppend moved (D.rendererText "C")
+    direct =
+        nodeIdentity
+            && parent
+            && absent
+            && target
+            && text moved == "BC"
+            && text cloned == "AB"
+            && text imported == "AB"
+    f = ops.template "<em>X</em><strong>Y</strong>"
+    x = node (ops.first f)
+    y = node (ops.next x)
+    firstIdentity = Js.same x (node (ops.first f))
+    firstParent = Js.same f (node (ops.parent x))
+    firstAbsent = missing (ops.next y) && missing (ops.parent f)
+    firstTarget = Js.same x (ops.target x) && Js.same body (ops.body ⊤)
+    g = ops.fragment ⊤
+    ops.insert g y (Js.none ⊤)
+    ops.insert g x (Js.some y)
+    c = ops.clone g
+    i = ops.importNode g
+    ops.remove x
+    ops.remove x
+    ops.append g (ops.text "Z")
+    first =
+        firstIdentity
+            && firstParent
+            && firstAbsent
+            && firstTarget
+            && text g == "YZ"
+            && text c == "XY"
+            && text i == "XY"
+    counter = Js.cell { count = 0 }
+    N.rendererRemove (step counter (D.rendererText "detached"))
+    N.rendererInsertBefore g (D.rendererText "Q") (step counter (Js.some y))
+    auditBody = D.rendererBody (unitStep counter)
+    auditFragment = D.rendererFragment (unitStep counter)
+    evaluation =
+        Js.cellRead counter .count == 4
+            && text g == "QYZ"
+            && Js.same body auditBody
+            && missing (N.rendererFirstChild auditFragment)
+    if direct && first && evaluation then
+        "native adapters: ok"
+    else
+        "native adapters: FAILED"

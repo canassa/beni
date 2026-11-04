@@ -39,11 +39,23 @@ fn mapItem(cx: *const Context, v: Var) ?Var {
     if (!named(cx, key, "String", "String")) return null;
     return argument(cx, v, "Browser.Host.Map", "Map", 1);
 }
+fn optNode(cx: *const Context, v: Var) bool {
+    const item = argument(cx, v, "Js", "Opt", 0) orelse return false;
+    return native(cx, item, "Node");
+}
 pub fn valid(cx: *const Context, row: Operations.Row, v: Var) bool {
     const f = Walk.function(cx.store, v) orelse return false;
     const a = f.params;
     const r = f.result;
     return switch (row.recipe) {
+        .renderer_first_child, .renderer_next_sibling, .renderer_parent => a.len == 1 and native(cx, a[0], "Node") and optNode(cx, r),
+        .renderer_insert => a.len == 3 and native(cx, a[0], "Node") and native(cx, a[1], "Node") and optNode(cx, a[2]) and unit(cx, r),
+        .renderer_append => a.len == 2 and native(cx, a[0], "Node") and native(cx, a[1], "Node") and unit(cx, r),
+        .renderer_remove => a.len == 1 and native(cx, a[0], "Node") and unit(cx, r),
+        .renderer_clone, .renderer_import => a.len == 1 and native(cx, a[0], "Node") and native(cx, r, "Node"),
+        .renderer_fragment, .renderer_body => a.len == 1 and unit(cx, a[0]) and native(cx, r, "Node"),
+        .renderer_template, .renderer_text => a.len == 1 and named(cx, a[0], "String", "String") and native(cx, r, "Node"),
+        .renderer_from_node => a.len == 1 and native(cx, a[0], "Node") and native(cx, r, "EventTarget"),
         .worker_close_self => a.len == 1 and unit(cx, a[0]) and unit(cx, r),
         .global_is_page => a.len == 1 and unit(cx, a[0]) and named(cx, r, "Basics", "Bool"),
         .event_error_message => a.len == 1 and native(cx, a[0], "Event") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |text| named(cx, text, "String", "String") else false),

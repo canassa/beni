@@ -1,0 +1,61 @@
+-- Private native recipes: saturated host operations and shared first-class arrows.
+import Browser.Host.Document as D
+import Browser.Host.EventTarget as T
+import Browser.Host.Node as N
+import Js
+
+
+pub first node = N.rendererFirstChild node
+
+
+pub next node = N.rendererNextSibling node
+
+
+pub parent node = N.rendererParent node
+
+
+pub insert container node before = N.rendererInsertBefore container node before
+
+
+pub append container node = N.rendererAppend container node
+
+
+pub remove node = N.rendererRemove node
+
+
+pub clone node = N.rendererClone node
+
+
+pub fragment ⊤ = D.rendererFragment ⊤
+
+
+pub importNode node = D.rendererImport node
+
+
+pub template html = D.rendererTemplate html
+
+
+pub body ⊤ = D.rendererBody ⊤
+
+
+pub text value = D.rendererText value
+
+
+pub target node = T.rendererFromNode node
+
+
+pub functions =
+    { first = N.rendererFirstChild
+    , next = N.rendererNextSibling
+    , parent = N.rendererParent
+    , insert = N.rendererInsertBefore
+    , append = N.rendererAppend
+    , remove = N.rendererRemove
+    , clone = N.rendererClone
+    , fragment = D.rendererFragment
+    , importNode = D.rendererImport
+    , template = D.rendererTemplate
+    , body = D.rendererBody
+    , text = D.rendererText
+    , target = T.rendererFromNode
+    }

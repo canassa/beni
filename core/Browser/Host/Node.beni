@@ -1,5 +1,29 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Js
+
+
 pub foreign type Node
+
+
+pub foreign impure rendererFirstChild : borrowed Node → Js.Opt Node
+
+
+pub foreign impure rendererNextSibling : borrowed Node → Js.Opt Node
+
+
+pub foreign impure rendererParent : borrowed Node → Js.Opt Node
+
+
+pub foreign impure rendererInsertBefore : borrowed Node, borrowed Node, borrowed Js.Opt Node → ⊤
+
+
+pub foreign impure rendererAppend : borrowed Node, borrowed Node → ⊤
+
+
+pub foreign impure rendererRemove : borrowed Node → ⊤
+
+
+pub foreign impure rendererClone : borrowed Node → Node
 
 
 pub foreign impure textContent : Node → Maybe String

@@ -1009,6 +1009,13 @@ pub const Builder = struct {
                 // instructions like a value's body (`schema.md` §6).
                 .value, .schema => {},
                 .foreign_value => {
+                    if (b.in.interner) |interner| if (b.in.graph.modulePackage(m) == .core) {
+                        if (@import("../native/Operations.zig").lookup(interner.slice(b.in.graph.moduleName(m)), interner.slice(bir.symbol(d.name)))) |row| {
+                            if (@import("../native/Operations.zig").rendererNeedsOpt(row.recipe)) {
+                                if (b.opt_none) |sentinel| try decl_targets.append(b.scratch, .{ .node = sentinel });
+                            }
+                        }
+                    };
                     if (b.opt_none) |sentinel| if (sentinel.module == m) {
                         const interner = b.in.interner.?;
                         if (std.meta.stringToEnum(JsIntrinsic.Which, interner.slice(bir.symbol(d.name)))) |which| {
@@ -1237,6 +1244,8 @@ pub const Builder = struct {
                     // Any packing and unpacking call their shared sibling.
                     marks[d.lhs] = which != .any_pack and which != .any_unpack and
                         (which != .some or dispatch.optPlain(@fromBackingInt(@intCast(d.lhs))));
+                } else if (@import("NativeIntrinsic.zig").of(b.in.graph, b.in.interfaces, bir, m, @fromBackingInt(@intCast(d.lhs)), interner)) |native| {
+                    marks[d.lhs] = @import("../native/Operations.zig").renderer(native.recipe);
                 } else if (SchemaGraph.jsonCall(b.in.graph, b.in.interfaces, bir, dispatch, interner, @fromBackingInt(@intCast(i))) != null) {
                     // A derived codec's own `parse` or `print` (schema.md
                     // §12.10): `Json`'s function is not called.
@@ -1315,6 +1324,11 @@ pub const Builder = struct {
             if (tag == .ext_value) {
                 if (b.in.interner) |interner| if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, at, interner)) |which| {
                     opt_none = opt_none or JsIntrinsic.needsOptNone(which);
+                };
+            }
+            if (tag == .ext_value or tag == .top) {
+                if (b.in.interner) |interner| if (@import("NativeIntrinsic.zig").of(b.in.graph, b.in.interfaces, bir, m, at, interner)) |native| {
+                    opt_none = opt_none or @import("../native/Operations.zig").rendererNeedsOpt(native.recipe);
                 };
             }
             if (tag == .pat_list) {
