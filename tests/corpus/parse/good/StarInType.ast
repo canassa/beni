@@ -1,0 +1,12 @@
+(module
+  (annotation pair
+    (type_tuple
+      (type_con Int)
+      (type_con String)
+      (type_con Bool)))
+  (definition pair
+    (tuple
+      (int 1)
+      (string
+        (chunk "a"))
+      (ctor True))))

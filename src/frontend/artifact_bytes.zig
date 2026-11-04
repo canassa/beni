@@ -135,7 +135,8 @@ pub const magic = "BENIFE\x00\x00";
 /// `prepended` and the stored callback (ownership-v2.md §2.13.6) — three new
 /// word bits in a declaration's v2 column, and `misplaced_ownership_word`
 /// has two new readings, which shifted the later ones.
-pub const format_version: u32 = 27;
+/// 28 (2026-11-04): ASCII synonyms no longer produce spelling diagnostics.
+pub const format_version: u32 = 28;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///

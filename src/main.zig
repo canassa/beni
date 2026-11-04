@@ -150,8 +150,7 @@ fn run(init: std.process.Init) u8 {
         .fmt => |fmt| {
             var options = sessionOptions(fmt.common);
             options.migrate_cons = fmt.migrate_cons;
-            options.migrate_lambda = fmt.migrate_lambda;
-            options.migrate_unicode = fmt.migrate_unicode;
+            options.to_unicode = fmt.to_unicode;
             options.migrate_top = fmt.migrate_top;
             options.migrate_init = fmt.migrate_init;
             options.migrate_names = fmt.migrate_names;

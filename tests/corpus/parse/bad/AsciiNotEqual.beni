@@ -1,8 +1,0 @@
--- `/=` left the language for `≠` (language.md §12.7): ascii_symbol_removed in
--- an expression and as a function, and both parse on as `≠` (4:7, 8:6).
-differ a b =
-    a /= b
-
-
-asFunction =
-    (/=)

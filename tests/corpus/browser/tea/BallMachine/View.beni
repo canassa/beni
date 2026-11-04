@@ -59,40 +59,40 @@ dim = "rgba(143, 135, 161, 0.3)"
 
 
 -- A number for an attribute, to a tenth.
-n1 : Float → String
+n1 : Float -> String
 n1 x = String.fromFloat (toFloat (round (x * 10)) / 10)
 
 
-score : World → String
+score : World -> String
 score w =
     span = min w.t 10
     if span > 1 then
-        tenths = round (toFloat (List.length (List.filter w.events λev → ev.1)) / span * 10)
+        tenths = round (toFloat (List.length (List.filter w.events \ev -> ev.1)) / span * 10)
         "${tenths // 10}.${Int.mod tenths 10}"
     else
         "–"
 
 
-tally : World → Html Msg
+tally : World -> Html Msg
 tally w =
     span = round (min w.t 10)
-    done = List.length (List.filter w.events λev → ev.1)
-    failed = List.length (List.filter w.events λev → not ev.1)
+    done = List.length (List.filter w.events \ev -> ev.1)
+    failed = List.length (List.filter w.events \ev -> not ev.1)
     <p class="tally"><b>{score w}</b> balls/s · last {span} s: {done} done · {failed} failed</p>
 
 
-pub view : Model → Html Msg
+pub view : Model -> Html Msg
 view model =
     w = model.world
     free = w.atOnce - held w
     sleeper =
         Maybe.map
             (List.head
-                (List.sortBy (List.filter w.balls λb → b.stage == Returning && b.sensed) λb →
+                (List.sortBy (List.filter w.balls \b -> b.stage == Returning && b.sensed) \b ->
                     b.arrivedAt
                 )
             )
-            λb → b.id
+            \b -> b.id
     <main class="machine">
         <section class="controls" aria-label="Machine controls">
             <div class="knobs">
@@ -119,7 +119,7 @@ view model =
                     />
                 </label>
             </div>
-            <p id="cap-note" class="cap-note" hidden={model.perBatch ≤ model.atOnce}>
+            <p id="cap-note" class="cap-note" hidden={model.perBatch <= model.atOnce}>
                 The bucket can't hold more balls than are allowed in at once: raise “At once” to fill it.
             </p>
             <div class="machine-status">
@@ -265,15 +265,15 @@ view model =
                     cx="150"
                     cy="94"
                     r="34"
-                    fill={if free ≤ 0 then "url(#poolRed)" else "url(#poolViolet)"}
-                    opacity={if w.entry ≤ 0 then "0.16" else "0"}
+                    fill={if free <= 0 then "url(#poolRed)" else "url(#poolViolet)"}
+                    opacity={if w.entry <= 0 then "0.16" else "0"}
                 />
                 <circle
                     cx="150"
                     cy="172"
                     r="28"
                     fill="url(#poolOrange)"
-                    opacity={if w.bucketDoor ≤ 0 then "0.1" else "0"}
+                    opacity={if w.bucketDoor <= 0 then "0.1" else "0"}
                 />
                 <circle
                     cx="150"
@@ -287,7 +287,7 @@ view model =
                     cy="126"
                     r="24"
                     fill="url(#poolRed)"
-                    opacity={if w.bayDoor ≤ 0 then "0.12" else "0"}
+                    opacity={if w.bayDoor <= 0 then "0.12" else "0"}
                 />
             </g>
             {
@@ -313,7 +313,7 @@ view model =
             }
             <g>
                 <For each={List.range 0 (w.perBatch - 1)} keyed={False}>
-                    {λk →
+                    {\k ->
                         <circle
                             cx="193"
                             cy={n1 (trap + 18 + toFloat k * 5.5)}
@@ -339,12 +339,12 @@ view model =
                     gateA
                     (cx + half)
                     gateA
-                    (w.entry ≤ 0)
-                    (if free ≤ 0 then red else violet)
+                    (w.entry <= 0)
+                    (if free <= 0 then red else violet)
                 }
-                {viewGate (cx - half) gateB (cx + half) gateB (w.bucketDoor ≤ 0) orange}
+                {viewGate (cx - half) gateB (cx + half) gateB (w.bucketDoor <= 0) orange}
                 {viewGate (cx - door) trap (cx + door) trap (not w.trapOpen) orange}
-                {viewGate (cx - half - 3) bayTop (cx - half - 3) bayBottom (w.bayDoor ≤ 0) red}
+                {viewGate (cx - half - 3) bayTop (cx - half - 3) bayBottom (w.bayDoor <= 0) red}
             </g>
             <g stroke={steelHi} stroke-width="2.2" stroke-linecap="round">
                 <line
@@ -368,7 +368,7 @@ view model =
             {plate (cx + 17) (gateA - 15) (toFloat w.atOnce * 8.5 + 3) 2.6 1.3}
             <g>
                 <For each={List.range 0 (w.atOnce - 1)} keyed={False}>
-                    {λk → viewChip (cx + 22 + toFloat k * 8.5) (gateA - 7) (k < free)}
+                    {\k -> viewChip (cx + 22 + toFloat k * 8.5) (gateA - 7) (k < free)}
                 </For>
             </g>
             <rect
@@ -381,18 +381,18 @@ view model =
                 opacity={n1 (0.18 + 0.3 * max 0 (1 - (w.t - w.passAt) / 0.4))}
             />
             <g class="trails" stroke={ink} stroke-linecap="round">
-                <For each={List.filter w.balls λb → b.stage == Done} keyed={.id}>
+                <For each={List.filter w.balls \b -> b.stage == Done} keyed={.id}>
                     {viewTrail}
                 </For>
             </g>
             <g>
                 <For each={w.balls} keyed={.id}>
-                    {λb → viewBall w sleeper b}
+                    {\b -> viewBall w sleeper b}
                 </For>
             </g>
             <g fill={orange} style="mix-blend-mode: screen">
                 <For each={w.sparks} keyed={False}>
-                    {λs →
+                    {\s ->
                         <circle
                             cx={n1 s.x}
                             cy={n1 s.y}
@@ -402,7 +402,7 @@ view model =
                     }
                 </For>
             </g>
-            {viewLabel "IN THE MACHINE" "${w.atOnce - free} of ${w.atOnce}" (gateA + 6) (free ≤ 0)}
+            {viewLabel "IN THE MACHINE" "${w.atOnce - free} of ${w.atOnce}" (gateA + 6) (free <= 0)}
             {viewLabel
                 "PER BATCH"
                 "bucket ${inBucket w} of ${w.perBatch}"
@@ -424,7 +424,7 @@ cabinet =
         {inset 186 226 14 202}
         {inset 100 438 100 60}
         <For each={List.range 0 3} keyed={False}>
-            {λk →
+            {\k ->
                 <g>
                     <rect
                         x="95"
@@ -473,7 +473,7 @@ cabinet =
     </g>
 
 
-inset : Float, Float, Float, Float → Html Msg
+inset : Float, Float, Float, Float -> Html Msg
 inset x y width height =
     <g fill="none" stroke-width="0.8">
         <rect
@@ -495,14 +495,14 @@ inset x y width height =
     </g>
 
 
-viewTrail : Ball → Html Msg
+viewTrail : Ball -> Html Msg
 viewTrail b =
     segments =
-        List.indexedMap (List.map2 b.trail (List.drop b.trail 1) λp q → ( p, q )) λk ( p, q ) →
+        List.indexedMap (List.map2 b.trail (List.drop b.trail 1) \p q -> ( p, q )) \k ( p, q ) ->
             { p = p, q = q, k = k + 1 }
     <g opacity={n1 (max 0 b.alpha)}>
         <For each={segments} keyed={False}>
-            {λs →
+            {\s ->
                 <line
                     x1={n1 s.p.0}
                     y1={n1 s.p.1}
@@ -520,7 +520,7 @@ tubePath : String
 tubePath = "M141.5 483 L14 483 L14 126 L136 126"
 
 
-viewBall : World, Maybe Int, Ball → Html Msg
+viewBall : World, Maybe Int, Ball -> Html Msg
 viewBall w sleeper b =
     fillUrl =
         if b.stage == Done then
@@ -570,7 +570,7 @@ viewBall w sleeper b =
     </g>
 
 
-viewGate : Float, Float, Float, Float, Bool, String → Html Msg
+viewGate : Float, Float, Float, Float, Bool, String -> Html Msg
 viewGate ax ay bx by shut colour =
     <line
         x1={n1 ax}
@@ -584,7 +584,7 @@ viewGate ax ay bx by shut colour =
     />
 
 
-viewChip : Float, Float, Bool → Html Msg
+viewChip : Float, Float, Bool -> Html Msg
 viewChip x y lit =
     <g>
         <rect
@@ -619,7 +619,7 @@ viewChip x y lit =
     </g>
 
 
-viewLabel : String, String, Float, Bool → Html Msg
+viewLabel : String, String, Float, Bool -> Html Msg
 viewLabel title value y warn =
     <g>
         <text
@@ -659,7 +659,7 @@ viewLabel title value y warn =
 
 
 -- A metal plate: a soft shadow under it, shaded top to bottom, a bright top edge.
-plate : Float, Float, Float, Float, Float → Html Msg
+plate : Float, Float, Float, Float, Float -> Html Msg
 plate x y width height radius =
     <g>
         <rect
@@ -693,7 +693,7 @@ plate x y width height radius =
 
 
 -- A flange where two parts join: a collar with a bolt at each end.
-flange : Float, Float, Float → Html Msg
+flange : Float, Float, Float -> Html Msg
 flange x y width =
     <g>
         {plate (x - width / 2) (y - 2.6) width 5.2 1.8}
@@ -703,7 +703,7 @@ flange x y width =
 
 
 -- Glass: bright edges, a darker core, a specular band down the left.
-glass : Float, Float, Float, Float → Html Msg
+glass : Float, Float, Float, Float -> Html Msg
 glass x y width height =
     <g>
         <rect x={n1 x} y={n1 y} width={n1 width} height={n1 height} fill="url(#glass)" />
@@ -720,16 +720,16 @@ glass x y width height =
 -- The walls: rounded metal rods with a highlight along their tops.
 rods : Html Msg
 rods =
-    fixed = List.filter walls λwl → wl.part == Fixed
+    fixed = List.filter walls \wl -> wl.part == Fixed
     <g stroke-linecap="round">
         <g stroke={steel} stroke-width="3.4" filter="url(#rodShadow)">
             <For each={fixed} keyed={False}>
-                {λwl → <line x1={n1 wl.ax} y1={n1 wl.ay} x2={n1 wl.bx} y2={n1 wl.by} />}
+                {\wl -> <line x1={n1 wl.ax} y1={n1 wl.ay} x2={n1 wl.bx} y2={n1 wl.by} />}
             </For>
         </g>
         <g stroke="rgba(255, 255, 255, 0.14)" stroke-width="0.7">
             <For each={fixed} keyed={False}>
-                {λwl →
+                {\wl ->
                     <line x1={n1 wl.ax} y1={n1 (wl.ay - 0.9)} x2={n1 wl.bx} y2={n1 (wl.by - 0.9)} />
                 }
             </For>

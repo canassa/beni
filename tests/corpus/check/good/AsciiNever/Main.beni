@@ -1,0 +1,14 @@
+-- Prelude and qualified Never are accepted; Other.Never is a distinct type.
+import Other
+
+
+a : Never → Int
+a v = never v
+
+
+b : Basics.Never → Int
+b v = never v
+
+
+c : Other.Never → Other.Never
+c v = v

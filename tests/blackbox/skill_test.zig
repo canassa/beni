@@ -32,9 +32,7 @@ const packages = [_][]const u8{ "core", "node", "browser", "browser-tea", "brows
 /// must still be accepted by `beni fmt`.
 const hidden_flags = [_][]const u8{
     "--migrate-cons",
-    "--migrate-unicode",
     "--migrate-top",
-    "--migrate-lambda",
     "--migrate-let",
     "--migrate-names",
     "--migrate-init",

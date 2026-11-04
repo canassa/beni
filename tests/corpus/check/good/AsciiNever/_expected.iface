@@ -1,0 +1,4 @@
+module Main
+module Other
+  type Never
+    Never/1
