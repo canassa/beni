@@ -197,7 +197,10 @@ const ImportReader = struct {
     fn read(ctx: *anyopaque, mod: *Groups.Module, m: u32) Groups.Error!?[]Groups.ClassId {
         const r: *ImportReader = @ptrCast(@alignCast(ctx));
         if (m >= r.interfaces.len) return null;
-        const bytes = if (r.blocks) |b| (b[m] orelse &.{}) else r.interfaces[m].ownership;
+        // A v1 interface block is never input to the v2 decoder.
+        const local = if (r.blocks) |b| b[m] else null;
+        const packed_block = if (r.session.pack.find(.ownership2, r.session.keys.of(@fromBackingInt(m)))) |row| @import("Packed.zig").read(row) else null;
+        const bytes = local orelse packed_block orelse return null;
         if (bytes.len == 0 or bytes.len % 4 != 0) return null;
         const gpa = mod.gpa;
         const words = try gpa.alloc(u32, bytes.len / 4);
@@ -433,7 +436,7 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
     const session = ctx.session;
     const gpa = d.gpa;
     var mi = moduleInput(gpa, session, ctx.ins, .{ .modules = d.kept, .types = d.types, .dispatch = d.dispatch }, m.int()) orelse return;
-    var reader: ImportReader = .{ .session = session, .ins = ctx.ins, .types = d.types, .interfaces = d.interfaces };
+    var reader: ImportReader = .{ .session = session, .ins = ctx.ins, .types = d.types, .interfaces = d.interfaces, .blocks = session.ownership2_blocks };
     mi.imports = reader.imports();
     const token = session.profile.begin();
     defer session.profile.end(tid, token, .ownership2_module, @backingInt(session.graph.moduleFile(m)), 0);
@@ -457,11 +460,12 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
     // by the worker that checked it.
     if (kept != null and m.int() < session.ownership2_reports.len) session.ownership2_reports[m.int()] = try Report.Kept.of(gpa, reports[0]);
     // §3.7: the block in the interface, hashed with it, for importers.
-    if (reports[0].block) |b| {
+    if (reports[0].block) |b| session.ownership2_blocks[m.int()] = try gpa.dupe(u8, b);
+    if (session.options.ownership_v2) if (reports[0].block) |b| {
         const iface = &d.interfaces[m.int()];
         gpa.free(iface.ownership);
         iface.ownership = try gpa.dupe(u8, b);
-    }
+    };
     // A v2 word on a place without its kind (#1056 item 4): an error in
     // the core or platform module that wrote it, enforcing or not.
     for (reports[0].word_errors) |e| {
@@ -472,7 +476,7 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
         try d.per_module[m.int()].append(gpa, .{ .code = .misplaced_ownership_word, .module = m, .region = @fromBackingInt(0), .token = d_.name_token, .message = message });
     }
     const package = session.graph.modulePackage(m);
-    if (package != .app or !session.enforce_ownership) return;
+    if (!session.options.ownership_v2 or package != .app or !session.enforce_ownership) return;
     try diagnostics(gpa, arena, reports, &d.per_module[m.int()]);
 }
 

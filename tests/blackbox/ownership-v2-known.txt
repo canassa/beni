@@ -2913,3 +2913,13 @@ tests/corpus/ownership/core/ChainSnapshot.beni [node] ChainSnapshot 24:52 #0 :: 
 
 # #1831: pre-existing v1 Opt projection; v2 refusal is the contract.
 tests/corpus/ownership/core/AnyUnpackOpt.beni [node] AnyUnpackOpt 10:5 #0 :: List.push items :: accepted :: rejected  #1831: v1 drops the unknown Opt payload; v2 refuses it. Correct refusal remains in tests/pending/build/bad/OptDefaultAlias.
+
+# Packed v2 summaries recover these checked callbacks (#1854).
+tests/corpus/run/HttpServerBasics.beni HttpServerBasics 32:17 #0 :: Deferred.complete stop◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row; the pack now supplies the callback's v2 callees (#1854)
+tests/corpus/run/HttpServerInvalidResponse.beni HttpServerInvalidResponse 48:17 #0 :: Deferred.complete stop◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row; the pack now supplies the callback's v2 callees (#1854)
+tests/corpus/run/WebSocketBackPressure.beni WebSocketBackPressure 29:17 #0 :: Deferred.complete gates.hold◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row; the pack now supplies the callback's v2 callees (#1854)
+tests/corpus/run/WebSocketDrain.beni WebSocketDrain 28:17 #0 :: Deferred.complete gates.holdClose◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row; the pack now supplies the callback's v2 callees (#1854)
+tests/corpus/run/WebSocketEcho.beni WebSocketEcho 24:17 #0 :: Deferred.complete stop◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row; the pack now supplies the callback's v2 callees (#1854)
+tests/corpus/run/WebSocketLifetime.beni WebSocketLifetime 27:17 #0 :: Deferred.complete gates.closed◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row; the pack now supplies the callback's v2 callees (#1854)
+tests/corpus/run/WebSocketNetworkFault.beni WebSocketNetworkFault 18:9 #0 :: Deferred.complete gate◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row; the pack now supplies the callback's v2 callees (#1854)
+tests/corpus/run/WebSocketOwnerEnds.beni WebSocketOwnerEnds 16:9 #0 :: Deferred.complete stop◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row; the pack now supplies the callback's v2 callees (#1854)

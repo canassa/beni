@@ -122,7 +122,11 @@ pub fn claim(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void {
     // embedded*): the same key, the same validation, the same install — the
     // bytes are in the binary instead of in a file.
     if (cutoff.pack.count != 0 and m.int() < cutoff.packable.len and cutoff.packable[m.int()]) {
-        if (cutoff.pack.find(.entry, cutoff.keys.of(m))) |bytes| {
+        const v2_ready = if (d.options.ownership2 != null) ready: {
+            const row = cutoff.pack.find(.ownership2, cutoff.keys.of(m)) orelse break :ready false;
+            break :ready @import("../own2/Packed.zig").read(row) != null;
+        } else true;
+        if (v2_ready) if (cutoff.pack.find(.entry, cutoff.keys.of(m))) |bytes| {
             d.options.cached[m.int()] = try CacheEntry.loadFindingBytes(
                 d.gpa,
                 bytes,
@@ -137,7 +141,7 @@ pub fn claim(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void {
                 if (m.int() < cutoff.embedded.len) cutoff.embedded[m.int()] = true;
                 return;
             }
-        }
+        };
     }
     const dir = cutoff.dir orelse return;
     d.options.cached[m.int()] = try CacheEntry.loadFinding(

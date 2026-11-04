@@ -1,5 +1,3 @@
 KeyEvents update: lines 24-34 (not built: record_update)
-KeyEvents describe: lines 50-56 (not built: call)
-KeyEvents pressed: lines 37-43 (not built: call)
 KeyEvents view: lines 59-65 (not built: ctor)
 KeyEvents main: lines 69-71 (not built: lambda)
