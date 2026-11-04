@@ -14,6 +14,7 @@ import Js
 import Js.Chain as Chain
 import Js.Host as TypedHost
 import Js.Protocol as Protocol
+import Js.TaskHooks as TaskHooks
 import Task
 import Url exposing (Url)
 
@@ -309,7 +310,7 @@ host p root flushing phase stop =
     -- program (`boundary.md` §9.8.14). The after-render work not yet run is
     -- dropped with no help: only a flush runs it, and none runs once the
     -- page has stopped.
-    Task.onDefect stop
+    TaskHooks.onDefect stop
     Js.write setPhase (Just phase)
     _ = phase afterRender
 

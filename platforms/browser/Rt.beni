@@ -34,10 +34,10 @@ import Js
 import Js.Any as Any
 import Js.Chain as Chain
 import Js.Protocol as Protocol
+import Js.TaskHooks as TaskHooks
 import Rt.Events as Events
 import Rt.Rows as Rows
 import Rt.Slots as Slots
-import Task
 
 
 type alias V =
@@ -388,7 +388,7 @@ stop ⊤ =
         Nothing →
             ⊤
         Just _ →
-            Task.shutdown deadline stopped
+            TaskHooks.shutdown deadline stopped
     Js.write dead True
 
 
@@ -454,7 +454,7 @@ crashScreen ⊤ =
             shown = Maybe.withDefault (HostNode.textContent native) ""
             HostNode.setTextContent native (shown ++ more)
     seen = Js.ref 0
-    cleanup = Task.cleansUp ⊤
+    cleanup = TaskHooks.cleansUp ⊤
     remove = Js.ref λ⊤ → ⊤
     report =
         λevent →
@@ -566,7 +566,7 @@ startOne m =
         -- Only a hosted program runs fibers: each drain of core's
         -- scheduler is a turn, so what its fibers send renders when it
         -- ends.
-        Task.onTurn λf → turn True f
+        TaskHooks.onTurn λf → turn True f
         mount
             (Js.apply (Js.get m "h")
                 [ root
@@ -627,10 +627,11 @@ mount program root node =
                 -- the message (`boundary.md` §9.8.16 (b), amended
                 -- 2026-10-23). The call is written twice, so that a build
                 -- in which nothing sets a slot keeps only the second.
-                if Task.hasLogContext ⊤ then
+                if TaskHooks.hasLogContext ⊤ then
                     Js.write
                         model
-                        (Task.withoutLogContext λ⊤ → Js.call program "update" [ msg, Js.read model ]
+                        (TaskHooks.withoutLogContext λ⊤ →
+                            Js.call program "update" [ msg, Js.read model ]
                         )
                 else
                     Js.write model (Js.call program "update" [ msg, Js.read model ])
