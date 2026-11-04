@@ -1,0 +1,6 @@
+pub opaque type Program
+    = Program (⊤ → String)
+
+
+pub program : sync (⊤ → String) → Program
+program callback = Program callback
