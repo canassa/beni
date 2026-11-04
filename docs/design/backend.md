@@ -337,7 +337,11 @@ static, the same in both builds, where a test of the runtime's exports would fol
 and differ between them. `stop` is not refused: only a runtime module supplies it, and the exports
 mode refuses a runtime module. A chain whose runtime is a module (`boundary.md` Â§9.2) may not
 declare the key yet: the same `unknown_exports_mode`, found from the chain alone, so `check`, a
-development build and a release build refuse it alike. A listed name is ASCII only â letters,
+development build and a release build refuse it alike. *Amended 2026-11-04:* that refusal is the
+markup runtime module's. A runtime module without markup (`boundary.md` §5.2, the manifest's
+top-level `"module"`) supplies `run` alone, so the key takes it: the entry file imports `run` from
+the module's output and the rest of the file is as above, and the hoisted release file spells
+`run` as the module's declaration, as it does for every runtime module. A listed name is ASCII only â letters,
 digits, `_` and `$` â although an export name may be any identifier name, a reserved word
 included: the name is printed into the entry file without escaping, as the entry file's name is,
 and the ASCII rule is what makes the print safe.
@@ -7607,7 +7611,12 @@ its read field kept), `run/PayloadReassign`, `emit/release/split/EmptyPage`.
 
 **The entry's call is a call** (*added 2026-10-02*, `plans/runtime-in-beni.md` step 3). The entry
 file is the compiler's own output, and when the runtime module supplies `run` what it does is
-known: `run(main)`, once, its result unread. So `run` and `main` no longer escape (`Input.escaping`
+known: `run(main)`, once, its result unread. *Amended 2026-11-04 (`plans/runtime-in-beni.md`
+step 16):* under `"exports": "program"` (`boundary.md` §9.12 (c)) the entry file reads the
+result — its `default`, and `exports(name)` per listed name — which the pass cannot see, so both
+names escape, as at any unknown call; a release build of such a chain does not specialise `run`
+on `main` (the first such program, `run/ProgramModuleExports`, is the measure for any later form
+that hands the call over with its result read). So `run` and `main` no longer escape (`Input.escaping`
 lists what the entry reads it cannot say more about â `start`, `flush`, and what the markup runtime
 imports); the pass is handed the call instead (`Input.entry`: the callee's and the arguments'
 whole-program names), and each fact reads it as the call it is:
@@ -11570,7 +11579,10 @@ text (Â§15.3, Â§15.6) are compiled; and the differential oracle has a harnes
   brotli**. *Amended 2026-09-29: whole in a development build; under `--release`, like a sibling, it
   is compacted and cut to the exports the build imports (Â§9, *Hand-written JavaScript under
   `--release`*), and the empty page is 1 393 bytes brotli.*
-- **The runtime module** (*added 2026-10-02*; `boundary.md` Â§9.2's `"module"`). An export the
+- **The runtime module** (*added 2026-10-02*; `boundary.md` Â§9.2's `"module"`; *amended
+  2026-11-04*: a runtime module without markup, `boundary.md` §5.2's top-level `"module"`, is the
+  same module whose one supplied export is `run` — the entry file, the hoisting and the roots
+  below read it as they read the markup one, and no lowering is asked for a list). An export the
   module supplies is a declaration of an emitted module: `cx.runtime(name)` answers the name of
   that declaration, imported from the module's file as any other module's value is (`Rt$template`,
   a short name under `--release`), and the build records it as used. A use of a markup primitive
