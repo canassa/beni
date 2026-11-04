@@ -1,0 +1,13 @@
+-- check/bad (core): `Js.module`'s specifier names a `node:` or `cloudflare:`
+-- built-in (`boundary.md` §4.2): a package could run anything when it is
+-- evaluated, and a path would name a file the output tree does not hold.
+-- `invalid_js_module`, at the argument.
+import Js
+
+
+pkg : Js.Value
+pkg = Js.module "lodash"
+
+
+file : Js.Value
+file = Js.module "./helpers.mjs"
