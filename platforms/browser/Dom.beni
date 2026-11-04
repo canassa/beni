@@ -113,6 +113,58 @@ scrollIntoView id = found id λn →
     ⊤
 
 
+--| Where `scrollIntoViewWith` puts a node in one direction of each box
+--| that scrolls it: its start edge at the box's start edge, its centre at
+--| the box's centre, its end edge at the box's end edge, or `Nearest`:
+--| only as far as it takes to show the node, and not at all when it is in
+--| view.
+pub type Align
+    = Start
+    | Center
+    | End
+    | Nearest
+
+
+--| Where `scrollIntoViewWith` puts a node: `block` across the lines of
+--| text (up and down, in a page of horizontal text), `inline` along them.
+pub type alias Alignment =
+    block : Align
+    inline : Align
+
+
+--| Scroll the page, and each box that scrolls the element with this id,
+--| until the element is where `alignment` says. `scrollIntoView id` is
+--| `scrollIntoViewWith id { block = Start, inline = Nearest }`. `Nearest`
+--| in both directions shows a tab in a row of tabs that scrolls sideways,
+--| and moves the page up or down only when the tab is not in view:
+--|
+--|     Dom.scrollIntoViewWith "tab-3" { block = Dom.Nearest, inline = Dom.Nearest }
+pub scrollIntoViewWith : String, Alignment → Result Error ⊤
+scrollIntoViewWith id alignment = found id λn →
+    options =
+        Js.object
+            [ ( "block", alignName alignment.block ), ( "inline", alignName alignment.inline ) ]
+    _ = Js.call n "scrollIntoView" [ options ]
+    ⊤
+
+
+-- The name `ScrollIntoViewOptions` gives an alignment (CSSOM View).
+alignName : Align → String
+alignName align =
+    case align of
+        Start →
+            "start"
+
+        Center →
+            "center"
+
+        End →
+            "end"
+
+        Nearest →
+            "nearest"
+
+
 --| The viewport now.
 pub viewport : ⊤ → Viewport
 viewport ⊤ =

@@ -3237,6 +3237,33 @@ sends `fullscreenElement ⊤`: the id of the element in full screen (`Just ""` f
 or `Nothing`. Only the unprefixed API is used; a host that has only `webkitRequestFullscreen` is
 `Unsupported`.
 
+*Amended 2026-11-04 (issue #1896, a gap of #142, `playground.md` §10.6): where a node scrolls to.*
+`Dom.scrollIntoView id` gives the host no options, so the node goes to the start of each box
+that scrolls it, the page included. A row of tabs that scrolls sideways then moves the whole page.
+`Dom` adds the options of CSSOM View's `ScrollIntoViewOptions`:
+
+```text
+pub type Align = Start | Center | End | Nearest
+pub type alias Alignment = { block : Align, inline : Align }
+pub scrollIntoViewWith : String, Alignment → Result Error ⊤   -- impure
+```
+
+- `block` aligns the node across the lines of text, and `inline` along them. `Start`, `Center` and
+  `End` put the node's start edge, centre or end edge at the same place of each box that scrolls
+  it. `Nearest` scrolls only as far as it takes to show the node, and not at all when the node is
+  in view.
+- `scrollIntoView id` is `scrollIntoViewWith id { block = Start, inline = Nearest }`, the host's
+  default for a call with no options. It does not change.
+- There is no `behavior`: the scroll is instant, or smooth where the page's `scroll-behavior`
+  says so, as for a call with no options.
+- Failures: `Err (NotFound id)` for a node that is not in the page, as for every capability of
+  this section. `scrollIntoView` documents no other failure for an element in the document, so
+  nothing is caught (CLAUDE.md rule 9).
+- Pinned by `tests/corpus/browser/tea/DomScrollIntoViewWith`: in Chrome (`test-browser`),
+  `Nearest` both ways scrolls a row of tabs and leaves the page where it is, and `Start` across
+  the lines also scrolls the page. happy-dom lays nothing out, so there the fixture pins the calls
+  and the `NotFound` answer only.
+
 #### 9.8.7 The low-level form: `Browser.hosted` and `Hosted`
 
 ```elm

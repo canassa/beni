@@ -1,0 +1,30 @@
+-- load
+<body>
+  <main>
+    <button id="nearest">"nearest"</button>
+    <button id="start">"start"</button>
+    <button id="missing">"missing"</button>
+    <div id="tabs" style="margin-top:100px;width:200px;height:40px;overflow-x:auto;white-space:nowrap">
+      <span id="tab-1" style="display:inline-block;width:100px;height:30px">"1"</span>
+      <span id="tab-2" style="display:inline-block;width:100px;height:30px">"2"</span>
+      <span id="tab-3" style="display:inline-block;width:100px;height:30px">"3"</span>
+      <span id="tab-4" style="display:inline-block;width:100px;height:30px">"4"</span>
+      <span id="tab-5" style="display:inline-block;width:100px;height:30px">"5"</span>
+      <span id="tab-6" style="display:inline-block;width:100px;height:30px">"6"</span>
+      <span id="tab-7" style="display:inline-block;width:100px;height:30px">"7"</span>
+      <span id="tab-8" style="display:inline-block;width:100px;height:30px">"8"</span>
+    </div>
+    <div style="height:3000px"></div>
+  </main>
+</body>
+-- click #nearest
+console.log: nearest: tab moved: True
+console.log: nearest: page moved: False
+(the DOM did not change)
+-- click #start
+console.log: start: tab moved: False
+console.log: start: page moved: True
+(the DOM did not change)
+-- click #missing
+console.log: missing: not found: "nowhere"
+(the DOM did not change)
