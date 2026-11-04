@@ -1,0 +1,22 @@
+pub render n =
+    producer = λv → n + v
+    { mount = λv → producer v + 1
+    , patch = λv → producer v + 2
+    }
+
+
+pub nested n =
+    if n > 0 then
+        producer = λv → n + v
+        inside =
+            λm →
+                innerProducer = λv → m * v
+                innerProducer 3 + innerProducer 4
+        producer 2 + inside 5
+    else
+        producer = λv → n - v
+        producer 3 + producer 4
+
+
+pub captureRows values = List.map values λvalue →
+    (λcaptured → { get = λextra → captured + extra }) (value * 10)

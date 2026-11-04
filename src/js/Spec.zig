@@ -530,6 +530,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Stats {
     var pass: u32 = 0;
     while (pass < max_passes) : (pass += 1) {
         var changed = false;
+        if (try s.inlineProjections()) changed = true;
         if (try s.inlineSmall()) changed = true;
         if (try s.inlineOnce()) changed = true;
         if (try s.fuseCalls()) changed = true;
@@ -632,7 +633,6 @@ const Lat = packed struct(u32) {
     const nonnull: Lat = .{ .state = .nonnull, .truth = .unknown };
     /// An object, an array or a function: never `null`, always truthy.
     const object: Lat = .{ .state = .nonnull, .truth = .yes };
-
     fn of(id: u32) Lat {
         return .{ .state = .lit, .lit = @intCast(id) };
     }
@@ -6229,11 +6229,25 @@ const Spec = struct {
         const args = try s.arena.dupe(Index, ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(ir.data(call).rhs))), Index));
         if (params.len != args.len) return false;
         const body = try s.arena.dupe(Index, ir.extraSlice(f.body(), Index));
-        // A body that is one `return e` is `inlineIifesIn`'s, written as `e`
-        // where its arguments allow; as statements it is bindings and a
-        // block, larger than the call it replaces.
-        if (body.len < 2 or ir.tag(body[body.len - 1]) != .return_stmt) return false;
+        // A single expression normally uses inlineIifesIn. When it makes
+        // closures that pass refuses it; ordered block-scoped bindings here
+        // preserve a fresh capture on each execution, including in loops.
+        if (body.len == 0 or ir.tag(body[body.len - 1]) != .return_stmt) return false;
         const value = (@as(Node.OptionalIndex, @fromBackingInt(@intCast(ir.data(body[body.len - 1]).lhs)))).unwrap() orelse return false;
+        if (body.len == 1) {
+            var stack = try s.takeStack();
+            defer s.giveStack(&stack);
+            try JsIr.pushOperand(s.arena, &stack, value);
+            var closure = false;
+            while (JsIr.popOperand(&stack)) |part| {
+                if (ir.tag(part) == .arrow) {
+                    closure = true;
+                    break;
+                }
+                try ir.pushOperands(s.arena, &stack, part);
+            }
+            if (!closure) return false;
+        }
         for (params) |p| {
             if (p == .none or m.globalOf(p) != null) return false;
             if (try declCount(s, m, top, p) != 1) return false;
@@ -6452,6 +6466,265 @@ const Spec = struct {
     }
 
     // ---- Slice 8: a small function, wherever it is called ------------------
+
+    /// A small guarded projection, interpreted against one call's facts.
+    /// No IR is changed until every decision in the batch has been made.
+    const Projection = struct {
+        s: *Spec,
+        module: u32,
+        held: []const u32,
+        env: []Ref,
+        env_stamp: []u32,
+        stamp: u32,
+        failed: bool = false,
+        fuel: u32 = 64,
+
+        const Ref = struct {
+            val: Pts.Val = .{},
+            truth: ?bool = null,
+            held: ?u32 = null,
+            parameter: bool = false,
+            path: [8]NameIndex = undefined,
+            len: usize = 0,
+        };
+
+        fn get(p: *Projection, name: u32) ?Ref {
+            return if (p.env_stamp[name] == p.stamp) p.env[name] else null;
+        }
+
+        fn put(p: *Projection, name: u32, value: Ref) void {
+            p.env[name] = value;
+            p.env_stamp[name] = p.stamp;
+        }
+
+        fn heldOf(p: *Projection, v: Pts.Val) ?u32 {
+            if (v.top or v.prim or v.nullish() or v.sites.len != 1) return null;
+            const site = v.sites[0];
+            if (!p.s.pts.sites.items[site].once or site >= p.held.len) return null;
+            return if (p.held[site] < p.s.globals) p.held[site] else null;
+        }
+
+        fn projectionTruth(v: Pts.Val) ?bool {
+            if (!v.top and !v.prim and !v.nullish() and v.sites.len != 0) return true;
+            if (!v.top and !v.prim and v.sites.len == 0 and v.nullish()) return false;
+            return null;
+        }
+
+        fn against(p: *Projection, g: u32, other: Ref) Allocator.Error!?bool {
+            if (other.held) |h| return p.s.heldGlobalsSame(g, h);
+            const v = other.val;
+            if (v.top) return null;
+            var result: ?bool = if (v.prim or v.nullish()) false else null;
+            const decl = p.s.decl[g].?;
+            const gm = &p.s.mods[decl.module];
+            const value: Index = @fromBackingInt(@intCast(gm.ir.data(decl.stmt).rhs));
+            for (v.sites) |site| {
+                // A site shared by multiple held declarations is ambiguous.
+                if (site < p.held.len and p.held[site] == none - 1) return null;
+                const st = p.s.pts.sites.items[site];
+                const eq = if (site < p.held.len and p.held[site] < p.s.globals)
+                    try p.s.heldGlobalsSame(g, p.held[site])
+                else
+                    heldVerdict(.{ .same_binding = false, .same_base = false, .same_code = try p.s.sameCode(gm, value, &p.s.mods[st.module], st.node) });
+                const yes = eq orelse return null;
+                if (result) |old| {
+                    if (old != yes) return null;
+                } else result = yes;
+            }
+            return result;
+        }
+
+        fn expr(p: *Projection, node: Index) Allocator.Error!?Ref {
+            if (p.fuel == 0) return null;
+            p.fuel -= 1;
+            const m = &p.s.mods[p.module];
+            const ir = m.ir;
+            const d = ir.data(node);
+            switch (ir.tag(node)) {
+                .ident => {
+                    if (p.get(d.lhs)) |v| return v;
+                    const g = m.globalOf(@fromBackingInt(@intCast(d.lhs))) orelse return null;
+                    if (p.s.assigned[g]) return null;
+                    const v = try p.s.pts.view(p.s.pts.globals[g]);
+                    return .{ .val = v, .held = p.s.heldGlobal(g), .truth = projectionTruth(v) };
+                },
+                .true_lit => return .{ .val = .prim_val, .truth = true },
+                .false_lit => return .{ .val = .prim_val, .truth = false },
+                .null_lit => return .{ .val = .nul_val, .truth = false },
+                .undefined_lit => return .{ .val = .undef_val, .truth = false },
+                .number, .string => return .{ .val = .prim_val },
+                .member => {
+                    var base = try p.expr(@fromBackingInt(@intCast(d.lhs))) orelse return null;
+                    if (!p.s.pts.known(base.val)) return null;
+                    const key: NameIndex = @fromBackingInt(@intCast(d.rhs));
+                    const id = p.s.pts.propId(p.module, key);
+                    const v = try p.s.pts.read(base.val, id, false);
+                    if (base.parameter) {
+                        if (base.len == base.path.len) return null;
+                        base.path[base.len] = key;
+                        base.len += 1;
+                    }
+                    base.val = v;
+                    base.truth = projectionTruth(v);
+                    base.held = p.heldOf(v);
+                    return base;
+                },
+                .cond => {
+                    const yes = (try p.expr(@fromBackingInt(@intCast(d.lhs))) orelse return null).truth orelse return null;
+                    const c = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond);
+                    return p.expr(if (yes) c.consequent else c.alternate);
+                },
+                .binary => {
+                    const b = ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Binary);
+                    const left = try p.expr(b.left) orelse return null;
+                    const op: JsIr.BinaryOp = @fromBackingInt(@intCast(d.rhs));
+                    if (op == .logical_and or op == .logical_or) {
+                        const yes = left.truth orelse return null;
+                        if (yes == (op == .logical_or)) return left;
+                        return p.expr(b.right);
+                    }
+                    if (op != .strict_eq and op != .strict_ne) return null;
+                    const right = try p.expr(b.right) orelse return null;
+                    const eq = if (left.held) |g| try p.against(g, right) else if (right.held) |g| try p.against(g, left) else null;
+                    return .{ .val = .prim_val, .truth = if (eq) |yes| yes == (op == .strict_eq) else null };
+                },
+                .unary => {
+                    if (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs))) != .not) return null;
+                    const v = try p.expr(@fromBackingInt(@intCast(d.lhs))) orelse return null;
+                    return .{ .val = .prim_val, .truth = if (v.truth) |yes| !yes else null };
+                },
+                else => return null,
+            }
+        }
+
+        fn list(p: *Projection, body: []const Index) Allocator.Error!?Ref {
+            const ir = p.s.mods[p.module].ir;
+            for (body) |node| {
+                if (p.fuel == 0) break;
+                p.fuel -= 1;
+                const d = ir.data(node);
+                switch (ir.tag(node)) {
+                    .const_decl, .let_decl => {
+                        const initial = (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs)))).unwrap();
+                        const v: Ref = if (initial) |e| try p.expr(e) orelse break else .{};
+                        p.put(d.lhs, v);
+                    },
+                    .assign_stmt => {
+                        const target: Index = @fromBackingInt(@intCast(d.lhs));
+                        if (ir.tag(target) != .ident or p.get(ir.data(target).lhs) == null) break;
+                        const v = try p.expr(@fromBackingInt(@intCast(d.rhs))) orelse break;
+                        p.put(ir.data(target).lhs, v);
+                    },
+                    .return_stmt => {
+                        const value = (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs)))).unwrap() orelse break;
+                        return try p.expr(value) orelse break;
+                    },
+                    .if_stmt => {
+                        const yes = (try p.expr(@fromBackingInt(@intCast(d.lhs))) orelse break).truth orelse break;
+                        const b = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
+                        if (try p.list(ir.extraSlice(if (yes) b.thenBody() else b.elseBody(), Index))) |v| return v;
+                        if (p.failed) return null;
+                    },
+                    else => break,
+                }
+            } else return null;
+            p.failed = true;
+            return null;
+        }
+    };
+
+    fn inlineProjections(s: *Spec) Allocator.Error!bool {
+        if (!s.pts.ok or s.in.fresh == .none) return false;
+        const Candidate = struct { module: u32, param: NameIndex, body: []const Index };
+        const candidates = try s.arena.alloc(?Candidate, s.globals);
+        @memset(candidates, null);
+        var max_names: usize = 0;
+        // The same held-object definition as #1850, indexed by allocation.
+        const held = try s.arena.alloc(u32, s.pts.sites.items.len);
+        @memset(held, none);
+        for (s.decl, 0..) |maybe, gi| {
+            const g: u32 = @intCast(gi);
+            const decl = maybe orelse continue;
+            const m = &s.mods[decl.module];
+            const ir = m.ir;
+            if (s.heldGlobal(g) != null) {
+                if (s.pts.siteAt(decl.module, @fromBackingInt(@intCast(ir.data(decl.stmt).rhs)))) |site| {
+                    held[site] = if (held[site] == none) g else none - 1;
+                }
+            }
+            if (s.assigned[g] or ir.tag(decl.stmt) != .const_decl) continue;
+            const value: Index = @fromBackingInt(@intCast(ir.data(decl.stmt).rhs));
+            if (ir.tag(value) != .arrow or ir.data(value).rhs != Node.arrow_plain) continue;
+            const f = ir.extraData(@fromBackingInt(@intCast(ir.data(value).lhs)), JsIr.Func);
+            const params = ir.extraSlice(f.params(), NameIndex);
+            if (params.len != 1 or params[0] == .none) continue;
+            const nodes = try s.preorder(m, decl.stmt);
+            if (nodes.len > 64) continue;
+            var guard = false;
+            for (nodes) |part| if (nullTest(ir, part)) |guarded| if (guarded.held.unwrap()) |other| {
+                if (s.heldObject(m, other) != null) guard = true;
+            };
+            if (guard) {
+                candidates[g] = .{ .module = decl.module, .param = params[0], .body = try s.arena.dupe(Index, ir.extraSlice(f.body(), Index)) };
+                max_names = @max(max_names, m.names.items.len);
+            }
+        }
+        if (max_names == 0) return false;
+        const env = try s.arena.alloc(Projection.Ref, max_names);
+        const env_stamp = try s.arena.alloc(u32, max_names);
+        @memset(env_stamp, 0);
+        var stamp: u32 = 0;
+        const Edit = struct { module: u32, top: Index, call: Index, arg: Index, owner: u32, projection: Projection.Ref };
+        var edits: std.ArrayList(Edit) = .empty;
+        for (s.mods, 0..) |*m, mi| for (m.ir.extraSlice(m.ir.body, Index)) |top| {
+            for (try s.preorder(m, top)) |node| {
+                const ir = m.ir;
+                if (ir.tag(node) != .call) continue;
+                const callee: Index = @fromBackingInt(@intCast(ir.data(node).lhs));
+                if (ir.tag(callee) != .ident) continue;
+                const g = m.globalOf(@fromBackingInt(@intCast(ir.data(callee).lhs))) orelse continue;
+                const projected = candidates[g] orelse continue;
+                const args = ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(ir.data(node).rhs))), Index);
+                if (args.len != 1 or args[0].int() >= s.pts.vals[mi].len) continue;
+                const v = s.pts.vals[mi][args[0].int()];
+                stamp +%= 1;
+                if (stamp == 0) {
+                    @memset(env_stamp, 0);
+                    stamp = 1;
+                }
+                var interp: Projection = .{ .s = s, .module = projected.module, .held = held, .env = env, .env_stamp = env_stamp, .stamp = stamp };
+                const arg: Projection.Ref = .{ .val = v, .truth = Projection.projectionTruth(v), .held = s.heldObject(m, args[0]) orelse interp.heldOf(v), .parameter = true };
+                interp.put(projected.param.int(), arg);
+                const result = try interp.list(projected.body) orelse continue;
+                if (interp.failed or !result.parameter) continue;
+                var size = nodeCount(ir, args[0], &s.pts, @intCast(mi));
+                for (result.path[0..result.len]) |key| {
+                    const id = s.pts.propId(projected.module, key);
+                    size += 1 + if (id < s.in.prop_len.len) @as(u32, s.in.prop_len[id]) else 5;
+                }
+                if (size > nodeCount(ir, node, &s.pts, @intCast(mi))) continue;
+                try edits.append(s.arena, .{ .module = @intCast(mi), .top = top, .call = node, .arg = args[0], .owner = g, .projection = result });
+            }
+        };
+        for (edits.items) |edit| {
+            const m = &s.mods[edit.module];
+            if (m.ir.tag(edit.call) != .call) continue;
+            within(m, edit.top);
+            errdefer m.scope = null;
+            var value = edit.arg;
+            for (edit.projection.path[0..edit.projection.len]) |key| {
+                const from = s.decl[edit.owner].?.module;
+                const name = try m.addName(s.gpa, s.mods[from].ir.name(key));
+                value = try m.addNode(s.gpa, .member, m.ir.pos(edit.call), value.int(), name.int());
+            }
+            s.noteCopy(s.decl[edit.owner].?.module, edit.owner);
+            const delta = try s.retractCall(m, edit.top, edit.call, value);
+            try m.copyNode(s.gpa, edit.call, value);
+            if (delta) |r| try s.extend(m, edit.top, r, &.{edit.call.int()});
+            try s.leave(m);
+        }
+        return edits.items.len != 0;
+    }
 
     /// A top-level function whose body is one `return e`, as slice 8 sees it.
     const Small = struct {
@@ -6903,14 +7176,53 @@ const Spec = struct {
         for (s.mods, 0..) |*m, mi| {
             const ir = m.ir;
             var calls: std.ArrayList(struct { top: Index, call: Index, small: Small }) = .empty;
-            for (ir.extraSlice(ir.body, Index)) |top| {
-                for (try s.preorder(m, top)) |node| {
+            // smallOf may append a conditional to extra while collecting locals.
+            // Keep the module body across that reallocation (#1825).
+            const tops = try s.arena.dupe(Index, ir.extraSlice(ir.body, Index));
+            const locals = try s.arena.alloc(Small, m.names.items.len);
+            const local_stamp = try s.arena.alloc(u32, m.names.items.len);
+            @memset(local_stamp, none);
+            for (tops) |top| {
+                // Local names are distinct within one top-level declaration,
+                // but reused by the next. Only direct identifier calls use
+                // this table: a points-to alias could carry another invocation's
+                // captures. A valid IR identifier denotes its lexical binding.
+                const nodes = try s.preorder(m, top);
+                for (nodes) |node| {
+                    if (ir.tag(node) != .const_decl) continue;
+                    const name: NameIndex = @fromBackingInt(@intCast(ir.data(node).lhs));
+                    if (m.globalOf(name) != null) continue;
+                    const value: Index = @fromBackingInt(@intCast(ir.data(node).rhs));
+                    if (try s.smallOf(@intCast(mi), value, null, true)) |small| {
+                        var recursive = false;
+                        var stack = try s.takeStack();
+                        defer s.giveStack(&stack);
+                        try JsIr.pushOperand(s.arena, &stack, small.ret);
+                        while (JsIr.popOperand(&stack)) |part| {
+                            if (ir.tag(part) == .this_lit or
+                                (ir.tag(part) == .ident and ir.data(part).lhs == name.int()))
+                            {
+                                recursive = true;
+                                break;
+                            }
+                            try ir.pushOperands(s.arena, &stack, part);
+                        }
+                        if (!recursive) {
+                            locals[name.int()] = small;
+                            local_stamp[name.int()] = top.int();
+                        }
+                    }
+                }
+                for (nodes) |node| {
                     if (ir.tag(node) == .call) {
                         const callee: Index = @fromBackingInt(@intCast(ir.data(node).lhs));
                         if (ir.tag(callee) == .ident) {
-                            if (m.globalOf(@fromBackingInt(@intCast(ir.data(callee).lhs)))) |g| if (smalls[g]) |small| {
-                                try calls.append(s.arena, .{ .top = top, .call = node, .small = small });
-                            };
+                            const name: NameIndex = @fromBackingInt(@intCast(ir.data(callee).lhs));
+                            if (m.globalOf(name)) |g| {
+                                if (smalls[g]) |small| try calls.append(s.arena, .{ .top = top, .call = node, .small = small });
+                            } else if (local_stamp[name.int()] == top.int()) {
+                                try calls.append(s.arena, .{ .top = top, .call = node, .small = locals[name.int()] });
+                            }
                         } else if (resolve and ir.tag(callee) == .member and callee.int() < s.pts.vals[mi].len) {
                             const v = s.pts.vals[mi][callee.int()];
                             if (!v.top and !v.prim and !v.nullish() and v.sites.len == 1) {
@@ -10230,6 +10542,10 @@ const Spec = struct {
         const yg = s.heldObject(ym, y) orelse return null;
         if (primitiveLit(pm.ir, p)) return false;
         const pg = s.heldObject(pm, p) orelse return null;
+        return s.heldGlobalsSame(yg, pg);
+    }
+
+    fn heldGlobalsSame(s: *Spec, yg: u32, pg: u32) Allocator.Error!?bool {
         if (yg == pg) return heldVerdict(.{ .same_binding = true, .same_base = true, .same_code = true });
         const yd = s.decl[yg].?;
         const pd = s.decl[pg].?;
@@ -10257,6 +10573,10 @@ const Spec = struct {
         const ir = m.ir;
         if (ir.tag(ident) != .ident) return null;
         const g = m.globalOf(@fromBackingInt(@intCast(ir.data(ident).lhs))) orelse return null;
+        return s.heldGlobal(g);
+    }
+
+    fn heldGlobal(s: *Spec, g: u32) ?u32 {
         if (g >= s.assigned.len or s.assigned[g]) return null;
         const decl = s.decl[g] orelse return null;
         const dm = &s.mods[decl.module];
@@ -12537,7 +12857,7 @@ const PtsExtract = struct {
             std.mem.eql(u32, x.kills, y.kills) and std.mem.eql(u32, x.constants, y.constants) and
             x.narrows.len == y.narrows.len and x.script.len == y.script.len and x.decl_calls.len == y.decl_calls.len;
         if (!same) std.debug.panic("specialisation: module {d}'s fact-3 constraints kept from its last extraction are not what a walk makes", .{mi});
-        for (x.narrows, y.narrows) |a, b| if (a.nul != b.nul or a.undef != b.undef or a.start != b.start or a.end != b.end) std.debug.panic("specialisation: module {d}'s kept guards differ", .{mi});
+        for (x.narrows, y.narrows) |a, b| if (a.nul != b.nul or a.undef != b.undef or a.held != b.held or a.start != b.start or a.end != b.end) std.debug.panic("specialisation: module {d}'s kept guards differ", .{mi});
         for (x.script, y.script) |a, b| if (a.op != b.op or a.a != b.a) std.debug.panic("specialisation: module {d}'s kept steps differ", .{mi});
         for (x.decl_calls, y.decl_calls) |a, b| if (a.call != b.call or a.start != b.start or a.end != b.end or a.index != b.index) std.debug.panic("specialisation: module {d}'s kept calls differ", .{mi});
     }
@@ -12550,7 +12870,7 @@ const PtsExtract = struct {
 
 const PtsRead = struct { node: u32, cons: u32 };
 const PtsStmt = struct { node: u32, cons: u32, inputs: u32, narrows: u32, kills: u32, script: u32, constants: u32, decl_calls: u32, epoch: u64 };
-const PtsNarrow = struct { nul: bool, undef: bool, start: u32, end: u32 };
+const PtsNarrow = struct { nul: bool, undef: bool, held: Node.OptionalIndex = .none, start: u32, end: u32 };
 const PtsDeclCall = struct { call: u32, start: u32, end: u32, index: u32 };
 
 /// One step of `Pts.replay`, as the first walk took it.
@@ -12609,8 +12929,9 @@ const PtsExtractor = struct {
     constants: std.ArrayList(u32) = .empty,
     decl_calls: std.ArrayList(PtsDeclCall) = .empty,
     cur_top: Index = undefined,
+    expr_depth: u32 = 0,
 
-    const Guard = struct { chain: Index, nul: bool, undef: bool, dead: bool = false, reads: u32 };
+    const Guard = struct { chain: Index, nul: bool, undef: bool, held: Node.OptionalIndex = .none, dead: bool = false, reads: u32 };
 
     /// Extract module `m` into `into`, which it replaces: a statement whose
     /// nodes are what they were when `into` took it (`Mod.keptNodes`) is
@@ -12697,7 +13018,7 @@ const PtsExtractor = struct {
             if (!x.ir.tag(@fromBackingInt(@intCast(node))).isStatement()) x.last[node] = @intCast(c);
         }
         for (from.inputs[prev.inputs..st.inputs]) |in| try x.inputs.append(s, .{ .node = in.node, .cons = in.cons - prev.cons + cons_at });
-        for (from.narrows[prev.narrows..st.narrows]) |n| try x.narrows.append(s, .{ .nul = n.nul, .undef = n.undef, .start = n.start - prev.kills + kills_at, .end = n.end - prev.kills + kills_at });
+        for (from.narrows[prev.narrows..st.narrows]) |n| try x.narrows.append(s, .{ .nul = n.nul, .undef = n.undef, .held = n.held, .start = n.start - prev.kills + kills_at, .end = n.end - prev.kills + kills_at });
         for (from.kills[prev.kills..st.kills]) |c| try x.kills.append(s, c - prev.cons + cons_at);
         for (from.script[prev.script..st.script]) |step_| try x.script.append(s, if (step_.op == .eval) .{ .op = .eval, .a = step_.a - prev.cons + cons_at } else step_);
         try x.constants.appendSlice(s, from.constants[prev.constants..st.constants]);
@@ -12758,7 +13079,7 @@ const PtsExtractor = struct {
             if (!sameChain(x.ir, g.chain, node) or g.dead) continue;
             const start: u32 = @intCast(x.kills.items.len);
             try x.kills.appendSlice(x.scratch, x.reads.items[g.reads..]);
-            try x.narrows.append(x.scratch, .{ .nul = g.nul, .undef = g.undef, .start = start, .end = @intCast(x.kills.items.len) });
+            try x.narrows.append(x.scratch, .{ .nul = g.nul, .undef = g.undef, .held = g.held, .start = start, .end = @intCast(x.kills.items.len) });
         }
         x.narrows_end.items[c] = @intCast(x.narrows.items.len);
     }
@@ -12893,8 +13214,15 @@ const PtsExtractor = struct {
     fn branch(x: *PtsExtractor, range: JsIr.SubRange, guard: ?NullTest) Allocator.Error!void {
         const base = x.guards.items.len;
         defer x.guards.shrinkRetainingCapacity(base);
-        if (guard) |g| try x.guards.append(x.scratch, .{ .chain = g.chain, .nul = true, .undef = g.loose, .reads = @intCast(x.reads.items.len) });
+        if (guard) |g| try x.guards.append(x.scratch, .{ .chain = g.chain, .nul = g.held == .none, .undef = g.loose, .held = g.held, .reads = @intCast(x.reads.items.len) });
         try x.list(range);
+    }
+
+    fn branchExpr(x: *PtsExtractor, node: Index, guarded: ?NullTest) Allocator.Error!void {
+        const base = x.guards.items.len;
+        defer x.guards.shrinkRetainingCapacity(base);
+        if (guarded) |g| try x.guards.append(x.scratch, .{ .chain = g.chain, .nul = false, .undef = false, .held = g.held, .reads = @intCast(x.reads.items.len) });
+        try x.expr(node);
     }
 
     /// `Pts.body`: the steps around a function's statements, which see no
@@ -12911,6 +13239,8 @@ const PtsExtractor = struct {
 
     /// `Pts.expr`.
     fn expr(x: *PtsExtractor, root: Index) Allocator.Error!void {
+        x.expr_depth += 1;
+        defer x.expr_depth -= 1;
         const ir = x.ir;
         if (isValueLeaf(ir.tag(root))) {
             if (ir.tag(root) == .ident) {
@@ -12944,6 +13274,22 @@ const PtsExtractor = struct {
                         x.end(c, node);
                     }
                     continue;
+                }
+                // A conditional expression has the same held-object guard
+                // as an if statement. At depth the ordinary iterative walk
+                // stays conservative instead of recursing further.
+                if (t == .cond and x.expr_depth < 64) {
+                    const nd = ir.data(node);
+                    if (nullTest(ir, @fromBackingInt(@intCast(nd.lhs)))) |g| if (g.held != .none) {
+                        try x.expr(@fromBackingInt(@intCast(nd.lhs)));
+                        const branches = ir.extraData(@fromBackingInt(@intCast(nd.rhs)), JsIr.Cond);
+                        try x.branchExpr(branches.consequent, if (g.null_in_then) null else g);
+                        try x.branchExpr(branches.alternate, if (g.null_in_then) g else null);
+                        const c = try x.begin(node);
+                        try x.combine(c, node);
+                        x.end(c, node);
+                        continue;
+                    };
                 }
                 try JsIr.pushOperand(x.scratch, stack, @fromBackingInt(@intCast(raw | post_bit)));
                 try ir.pushOperands(x.scratch, stack, node);
@@ -13026,6 +13372,8 @@ const Pts = struct {
     alias_src: [][]u32 = &.{},
     alias_depth: u32 = 0,
     locals: KeyMap(LocalKey, VarId) = .empty,
+    /// A held literal initializer shared by multiple bindings is not a singleton.
+    held_sources: KeyMap(NodeKey, u32) = .empty,
     globals: []VarId = &.{},
     /// Each module's per-node value of the sweep in progress.
     vals: [][]Val = &.{},
@@ -13184,7 +13532,7 @@ const Pts = struct {
     /// (`narrowed`): what it says, and the reads after its push, before the
     /// read, each of which kills it once its object is `top` — their object
     /// nodes, `kills[start..end]`. The next of the read's guards is `next`.
-    const Narrow = struct { nul: bool, undef: bool, start: u32, end: u32, next: u32 };
+    const Narrow = struct { nul: bool, undef: bool, held: Node.OptionalIndex = .none, start: u32, end: u32, next: u32 };
 
     /// A constraint: the node it evaluates, in module `module`; the
     /// top-level statement the walk was in (locals are keyed by it); for a
@@ -16173,6 +16521,15 @@ const Pts = struct {
         p.sites = .empty;
         p.origins = .empty;
         p.locals = .empty;
+        p.held_sources = .empty;
+        for (s.decl, 0..) |maybe, gi| {
+            const g: u32 = @intCast(gi);
+            if (s.heldGlobal(g) == null) continue;
+            const decl = maybe.?;
+            const key: NodeKey = .{ .module = decl.module, .node = s.mods[decl.module].ir.data(decl.stmt).rhs };
+            const entry = try p.held_sources.getOrPut(a, key);
+            entry.value_ptr.* = if (entry.found_existing) none else g;
+        }
         p.decl_call = .empty;
         p.unknown_props = .empty;
         p.unknown_any = false;
@@ -16359,7 +16716,7 @@ const Pts = struct {
                 for (x.narrows[nar_from..nar_end]) |n| {
                     const k_start: u32 = @intCast(p.kills.items.len);
                     for (x.kills[n.start..n.end]) |killer| try p.kills.append(a, b + killer);
-                    try p.narrows.append(a, .{ .nul = n.nul, .undef = n.undef, .start = k_start, .end = @intCast(p.kills.items.len), .next = narrow });
+                    try p.narrows.append(a, .{ .nul = n.nul, .undef = n.undef, .held = n.held, .start = k_start, .end = @intCast(p.kills.items.len), .next = narrow });
                     narrow = @intCast(p.narrows.items.len - 1);
                 }
                 p.cons.appendAssumeCapacity(.{
@@ -16760,6 +17117,22 @@ const Pts = struct {
                 for (p.kills.items[n.start..n.end]) |killer| if (p.cons.items[killer].val.top) continue :each;
                 if (n.nul) out.nul = false;
                 if (n.undef) out.undef = false;
+                if (n.held.unwrap()) |held| {
+                    // Only the actual singleton held binding is excluded.
+                    // Other sites, including equal-code/base constants, stay.
+                    const g = p.s.heldObject(&p.s.mods[mi], held) orelse continue;
+                    const decl = p.s.decl[g].?;
+                    const key: NodeKey = .{ .module = decl.module, .node = p.s.mods[decl.module].ir.data(decl.stmt).rhs };
+                    if (p.held_sources.get(key) != g) continue;
+                    const hv = try p.view(p.globals[g]);
+                    if (!hv.top and !hv.prim and !hv.nullish() and hv.sites.len == 0) return .{};
+                    if (hv.top or hv.prim or hv.nullish() or hv.sites.len != 1) continue;
+                    if (!p.sites.items[hv.sites[0]].once) continue;
+                    if (heldVerdict(.{ .same_binding = true, .same_base = true, .same_code = true }) != true) continue;
+                    const set = try p.difference(try p.setOf(out), try p.setOf(hv));
+                    out.sites = p.setSites(set);
+                    out.set = set;
+                }
             }
             return out;
         }
@@ -17430,6 +17803,8 @@ fn isBits(ir: *const JsIr, node: Index) bool {
 /// (`!=`), either way round, where `X` is a name or properties of one.
 const NullTest = struct {
     chain: Index,
+    /// A possible held-object operand, validated by heldObject at solve time.
+    held: Node.OptionalIndex = .none,
     /// The branch where the test is true is the one where `X` is null.
     null_in_then: bool,
     /// `==`: `undefined` too.
@@ -17444,8 +17819,10 @@ fn nullTest(ir: *const JsIr, node: Index) ?NullTest {
     if (ir.tag(node) != .binary) return null;
     const op: JsIr.BinaryOp = @fromBackingInt(@intCast(ir.data(node).rhs));
     const b = ir.extraData(@fromBackingInt(@intCast(ir.data(node).lhs)), JsIr.Binary);
-    const chain, const other = if (ir.tag(b.right) == .null_lit) .{ b.left, b.right } else .{ b.right, b.left };
-    if (ir.tag(other) != .null_lit) return null;
+    const right_held = ir.tag(b.right) == .ident and ir.name(@fromBackingInt(@intCast(ir.data(b.right).lhs))).module != .none;
+    const left_held = ir.tag(b.left) == .ident and ir.name(@fromBackingInt(@intCast(ir.data(b.left).lhs))).module != .none;
+    const chain, const other = if (ir.tag(b.right) == .null_lit) .{ b.left, b.right } else if (ir.tag(b.left) == .null_lit) .{ b.right, b.left } else if (right_held) .{ b.left, b.right } else if (left_held) .{ b.right, b.left } else return null;
+    const held = ir.tag(other) != .null_lit;
     switch (ir.tag(chain)) {
         .ident, .member => {},
         else => return null,
@@ -17454,9 +17831,9 @@ fn nullTest(ir: *const JsIr, node: Index) ?NullTest {
     while (ir.tag(x) == .member) x = @fromBackingInt(@intCast(ir.data(x).lhs));
     if (ir.tag(x) != .ident) return null;
     return switch (op) {
-        .strict_eq => .{ .chain = chain, .null_in_then = true, .loose = false },
-        .strict_ne => .{ .chain = chain, .null_in_then = false, .loose = false },
-        .loose_eq => .{ .chain = chain, .null_in_then = true, .loose = true },
+        .strict_eq => .{ .chain = chain, .null_in_then = true, .loose = false, .held = if (held) other.toOptional() else .none },
+        .strict_ne => .{ .chain = chain, .null_in_then = false, .loose = false, .held = if (held) other.toOptional() else .none },
+        .loose_eq => if (!held) .{ .chain = chain, .null_in_then = true, .loose = true } else null,
         else => null,
     };
 }
@@ -18005,6 +18382,7 @@ test "a second fixpoint takes no new column and no new chunk" {
     var chunks: std.testing.FailingAllocator = .init(gpa, .{});
     const modules = [_]Module{.{ .ir = &ir, .global = &.{ none, none } }};
     var s = try Spec.init(chunks.allocator(), compilation.allocator(), .{ .modules = &modules, .globals = 2, .escaping = &.{} });
+    try s.declTable();
     s.pts = .init(&s);
     defer s.pts.deinit();
     const p = &s.pts;

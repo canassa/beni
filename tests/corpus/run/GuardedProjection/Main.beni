@@ -1,0 +1,16 @@
+import Node
+import Probe
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ String.fromInt (Probe.known 42)
+        , String.fromInt (Probe.joined True 7)
+        , String.fromInt (Probe.joined False 7)
+        , if Probe.narrowed True then "same" else "different"
+        , if Probe.narrowed False then "same" else "empty"
+        , if Probe.presence True then "same" else "different"
+        , if Probe.presence False then "same" else "empty"
+        , String.fromInt (Probe.effect ⊤)
+        ]

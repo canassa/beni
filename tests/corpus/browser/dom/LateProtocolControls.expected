@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <input id="value" .value="a">
+    <button id="change">"Change"</button>
+  </main>
+</body>
+-- click #change
+<body>
+  <main>
+    <input id="value" .value="b">
+    <button id="change">"Change"</button>
+  </main>
+</body>

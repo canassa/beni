@@ -6259,6 +6259,14 @@ receiver) whose `Func` has parameters `p₁ … pₙ` (n ≥ 0, all distinct) an
 default, a parameter read anywhere else and an argument that is anything but the matching parameter
 all fail the shape; so does a body of two statements.
 
+*Amended 2026-11-04 (Part of #1826): top-level initialisation.* An
+immutable top-level callee must also be bound when the forwarding arrow is
+created. A later same-file `const` is in scope but still in its temporal
+dead zone; replacing a delayed call by that name would introduce a throw
+while a supplied protocol record is constructed. As for local `const`s,
+item 6 declines until its declaration has been planned. Hoisted function
+declarations remain available. This guard is release-only.
+
 **The callee.** `f` must denote the same function at every call of the arrow as at the arrow's
 evaluation, which is true of a name JavaScript never rebinds after its binding:
 
@@ -7955,6 +7963,45 @@ at one call; a function called from many places paid a call at each, an identity
   operators their text, brackets and commas) â an identity, a function returning a name, a wrapper
   of another call. A function every call of which is replaced is then unreferenced and goes.
 
+*Amended 2026-11-04 (Part of #1825): a direct local call.* Slice 8 also accepts a
+plain local `const` arrow at a direct identifier call inside the binding's lexical
+scope. It never follows an alias to obtain a captured body from another invocation.
+Beni bindings are immutable: a captured binding reads the same value at that direct
+call, and creating the closure has no effect. Lowering gives every local binding
+within a top-level declaration a distinct name; the table is rebuilt for each such
+declaration, so nested shadowing and separate invocations cannot exchange captures.
+A body reading lexical `this` is refused: a nested method call could change its receiver.
+The existing small-body, argument-order and size checks still apply. A function
+containing a suspension point is not a small expression; copying an ordinary small
+body inside a suspendable form preserves its calls and their suspension marks.
+This is a release optimiser rule only; development emission is unchanged.
+
+**Guarded projections at a direct call** (*added 2026-11-04, Part of #1861*).
+A bounded release-only extension evaluates a small, unassigned top-level plain
+arrow's guards using the actual argument's facts. The helper has one parameter,
+at most 64 IR nodes, and a strict identity guard against a held object. Only a
+selected path consisting of local bindings, assignments to those locals,
+conditionals and a return of the parameter or its data-field projection is
+eligible. Every discarded guard/read is proved effect-free; a property read
+requires fact 3's existing non-escaped plain-object proof. Unknown guards,
+calls, suspension, loops and unproved reads leave the call alone. Arguments are
+evaluated once in their original order. The remaining projection is accepted
+only when its bytes in slice 8's size model do not exceed the original call;
+there is no speculative code growth or copying fallback. Development emission
+is unchanged.
+
+**Held-object guards in fact 3** (*added 2026-11-04, Part of #1861*). In the
+unequal arm of `chain !== held` (or the else arm of `chain === held`), fact 3
+may exclude the one held allocation from the chain's set. The existing
+`heldObject`/`heldVerdict` definition is reused: an unassigned top-level
+`const` object/array literal is one object for the run. An exclusion requires
+a singleton allocation made once; it never discards another constant merely
+because it has a different site. Same-base or same-code held objects remain
+undecided. Only a proven different object can force an unequal guard. The
+existing chain, alias, getter and guard-kill checks stay; host values remain
+unknown, and a join that may contain the held value keeps its guard. This is a
+fact of the release optimiser, not a new source word or a representation change.
+
 The facts are then asked again (`Spec.grow` sizes their tables to the copied nodes): a constant
 now passed, a field of a literal now read, folds â `scale 1 n` written in is `n`, `measure 3` is
 `10`. With them, **`x.p = x.p`** on program objects â an identity written in place, `a.i =
@@ -8450,6 +8497,19 @@ null})(d)` in `callback` once `suspend` was written there, on a page whose only 
   (`declCount`) and by no `catch`, no `return` but the last leaves the body, and the body holds no
   label, which the list could already hold. A body of one `return e` is the first way's: as
   statements it is bindings and a block, larger than the call.
+
+*Amended 2026-11-04 (Part of #1825): one return that makes closures.* The
+statement form also accepts one `return e` when `e` contains a closure, which the
+expression form refuses. The original guard is from `cf2fa397eb` (2026-10-02):
+"as statements it is bindings and a block, larger than the call." It is a size
+heuristic, not a permission to share captured bindings. Removing the transient
+IIFE now enables direct local-call optimisation. Every argument still becomes a
+block-scoped `const` (`let` only for a written parameter) at the original call's
+statement, inside the original loop, branch or function invocation. It is never
+hoisted above that loop or repeat. Each execution therefore gives the closures
+fresh bindings, just as each IIFE invocation did. All existing distinct-binding,
+catch, label and final-return guards stay. A one-return body without a closure
+still uses the expression form. This remains release-only.
 
 A call whose body reads a parameter twice and whose argument is not a name stays: writing the body
 would evaluate the argument twice, or move it. Measured (release, brotli, the whole bundle,

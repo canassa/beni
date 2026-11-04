@@ -1,0 +1,58 @@
+import Io
+import Node
+
+
+render n =
+    producer = λv → n + v
+    { mount = λv → producer v + 1
+    , patch = λv → producer v + 2
+    , escaped = producer
+    }
+
+
+nested n =
+    if n > 0 then
+        producer = λv → n + v
+        inside =
+            λm →
+                innerProducer = λv → m * v
+                innerProducer 3 + innerProducer 4
+        producer 2 + inside 5
+    else
+        producer = λv → n - v
+        producer 3 + producer 4
+
+
+parked n =
+    producer = λv → n + v
+    Io.sleep 0
+    producer 3 + producer 4
+
+
+suspending n =
+    producer =
+        λv →
+            Io.sleep 0
+            n + v
+    producer 3 + producer 4
+
+
+mapped values = List.map values λvalue →
+    (λcaptured → { get = λextra → captured + extra }) (value * 10)
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    closures = mapped [ 1, 2, 3 ]
+    first = render 10
+    second = render 100
+    Node.printLines
+        [ String.join (List.map closures λclosure → String.fromInt (closure.get 1)) ","
+        , String.fromInt (first.mount 1)
+        , String.fromInt (second.patch 1)
+        , String.fromInt (first.escaped 2)
+        , String.fromInt (second.escaped 2)
+        , String.fromInt (nested 10)
+        , String.fromInt (parked 10)
+        , String.fromInt (suspending 10)
+        ]

@@ -180,6 +180,7 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
         .value_of = try arena.alloc(Node.OptionalIndex, ir.names.len),
         .top_stable = try arena.alloc(bool, ir.names.len),
         .top_value = try arena.alloc(Node.OptionalIndex, ir.names.len),
+        .top_ready = try arena.alloc(bool, ir.names.len),
         .imported = try arena.alloc(bool, ir.names.len),
         .stamp = try arena.alloc(u32, ir.names.len),
         .dropped = try arena.alloc(u32, (ir.nodes.len + 31) / 32),
@@ -195,6 +196,7 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
     @memset(o.inlined, .none);
     @memset(o.top_stable, false);
     @memset(o.top_value, .none);
+    @memset(o.top_ready, false);
     @memset(o.imported, false);
     // Item 6's callee may be a name this file binds at the top level by a
     // `const` or a function, which nothing emitted assigns. A top-level
@@ -225,6 +227,12 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
             if (i < o.binds.len and o.readOf(i, "binds") > 1) o.repeated[stmt.int() / 32] |= @as(u32, 1) << @intCast(stmt.int() % 32);
         }
         try o.planStmt(top);
+        if (ir.tag(top) == .const_decl) {
+            const name: NameIndex = @fromBackingInt(@intCast(ir.data(top).lhs));
+            if (name.unwrap()) |i| if (i < o.top_ready.len) {
+                o.top_ready[i] = true;
+            };
+        }
     }
     return .{ .dropped = o.dropped, .inlined = o.inlined, .repeated = o.repeated };
 }
@@ -300,6 +308,9 @@ const Opt = struct {
     /// The value of a top-level `const_decl` of this file, or `none`:
     /// `value_of` for the module's own level.
     top_value: []Node.OptionalIndex,
+    /// A same-file top-level const has finished initialising. Stability
+    /// alone does not let eta introduce a read in its temporal dead zone.
+    top_ready: []bool,
     /// One slot per name, for the whole module: bound by a specifier of an
     /// `import_stmt` — a sibling's export, the runtime's, or under
     /// `--release` another beni module's emitted function. Item 6 never
@@ -756,6 +767,7 @@ const Opt = struct {
         if (i >= o.uses.len) return;
         for (o.mutable) |m| if (m == name) return;
         if (o.flagOf(i, "assigned")) return;
+        if (o.top_value[i] != .none and !o.top_ready[i]) return;
         const bound_here = o.readOf(i, "binds");
         if (bound_here == 0) {
             // Not a binding of this declaration: a top-level `const` or
