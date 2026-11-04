@@ -439,6 +439,14 @@ This boundary applies with or without managed worker entries, and remains when
 specialization refines field names. A runtime written in beni uses the ordinary
 typed calls and casts to establish its boundary.
 
+A `browser-inline` route row that holds a shape (`browser-inline.md` §8.4,
+amended 2026-10-24) hands core's `Schema.ShapePlan` to the markup runtime as
+data the lowering writes, with no `Js.from`, and the runtime tells it from a
+row's loader function by `typeof`. When any row of the build holds a shape,
+that type is visible too and keeps its object (*added 2026-11-04*, #1848: a
+release build had made it its function, and a push the shape refuses was
+applied).
+
 **Release-only exception: private Browser.Worker objects** *(added 2026-11-02)*.
 The compiler may prescribe short field names and control labels for the known
 embedded Browser.Worker implementation's private protocol and storage objects,
