@@ -11312,14 +11312,16 @@ printing (`src/js/Print.zig`), and `Emitter.linkHoisted` (`src/js/Emit.zig`).
 
 - **The multi-file layout** (`--library`, and an application that Â§9 does not hoist): each `.mjs`
   lowered from a `.beni` module gets `<path>.mjs.map` beside it, exactly as Â§11.1 says. One source
-  per map.
+  per map. *Amended 2026-11-04:* and one more for each module that a body copied into it came from
+  (*Copied bodies*, below).
 - **The one scope-hoisted file** (Â§9, *One scope-hoisted file under `--release`*): one map,
   `<entry>.map` beside the entry file (`_main.mjs.map`). Its `sources` has one entry for each
   emitted module that the file holds, in the order of the file. The modules that the file does not
   hold have no entry. A module that records no mark has no entry either, and its bytes are an
   unmapped stretch. Its text would only add to the map: a
   body copied out of `core/Debug` maps to its call, so `Debug.beni` often has nothing that maps to
-  it.
+  it. *Amended 2026-11-04:* a copied body maps to the module it came from, so a module has an
+  entry when a mark maps to it, its own or a copy's (*Copied bodies*, below).
 - **No map:** the entry file of the multi-file layout and `_core/_derived.mjs`, for Â§11.1's reason
   (no beni line wrote them), and each hand-written file that the build writes as a file of its own
   (below). *Amended 2026-11-04:* a compacted hand-written file gets a map; one that the build
@@ -11431,7 +11433,8 @@ order. Each release pass changes the printed bytes, and each has a rule.
    that call, and the stack frame points at the line that the development build names (Â§11.1).
    Before this rule the copy had no position, and the mark before it covered it: the `throw`
    mapped to the `case` scrutinee. A map that names the other module's own line is item 2 of
-   *Deferred*.
+   *Deferred*. *Amended 2026-11-04:* it is built (*Copied bodies*, below). The copy keeps the
+   positions of the module it came from, and `Spec.Copy.site` is gone.
 3. **Compact printing** (Â§9 item 3): the adjacency guard can put a space between a mark and the
    token that the mark is for. The guard moves the mark past the space, so the mark is on the
    token. A lookup of the token finds the same segment either way, but a tool that reads `names`
@@ -11456,6 +11459,77 @@ order. Each release pass changes the printed bytes, and each has a rule.
    (item 2). Before this rule, `if n > 100 then Aid.boom n` with `n` known to be 500 mapped the
    copied `Aid.boom` to the `>`, and the crash frame named the test's line. A node that an inline
    writes in place of a call keeps the call's position: the call is where the inlined code runs.
+   *Amended 2026-11-04:* a copy into a kept call no longer takes the call's position (*Copied
+   bodies*), so this rule now shows on a kept node that is not copied.
+
+*Amended 2026-11-04 (issue #141, part 2): **copied bodies** map to the module that they came from.*
+The owner chose the representation (Cesar, 2026-11-04, of two: a source column on every node, or
+a table for the copies only). A position stays four bytes. A node that whole-program
+specialisation copies from another module gets a `pos` that names a row of a per-module table,
+`JsIr.far`, and a row is a module and a byte offset into its source. Only the copies pay. The
+rules:
+
+- **The table.** A `pos` with the top bit set (`Node.far_bit`) is row `pos & ~far_bit` of the
+  module's `JsIr.far`. Every other `pos` is an offset into the module's own source, as before. The
+  builder gives a node at 2 GiB or more into its source no position, so no offset reads as a row.
+  `no_pos` keeps its value.
+- **The copy** (`Spec.Copy.posOf`). A node that a copy writes in the same module keeps its `pos`.
+  A node that a copy writes into another module gets its position in the module where it was
+  written: its offset there, or its row there when it is itself a copy. That is the destination's
+  own offset when the body comes back to the module it was written in, and a new row of the
+  destination's table otherwise. A node with no position gets none, and the mark before it covers
+  it, as in §11.1.
+- **The printer** records a row in a mark as it is. **The map** turns each row that a mark names
+  into its module's entry of `sources` and the offset (`SourceMap.Stretch.far`). A row that no mark
+  names adds nothing.
+- **`sources`.** A module map of the multi-file layout has the module's own source first, then one
+  entry for each module that a row of its marks names, in the order of first use. In the hoisted
+  file, a module has an entry when a mark maps to it, its own mark or a row of another module's,
+  in the order of first use in the file. So `Debug.beni` is an entry when the copied `throw` of
+  `Debug.todo` maps to it.
+- **What a frame shows.** `Debug.todo "…"` copied into `describe` maps its `throw` to `Debug.beni`,
+  and under `--enable-source-maps` the crash frame is `at describe (…/Debug.beni:43:15)`: the
+  function that runs, and the line that throws. A copy has no frame of its own, so the line of
+  the call (`Main.beni:17:13`, which this section mapped the copy to before) is not in the trace.
+  A map cannot hold both, because ECMA-426 has no record of a copy.
+
+**Memory**, measured 2026-11-04 with the ReleaseSafe beni, master `af5ac04778` against this
+amendment. A node stays 14 bytes (tag, `pos`, two data words, `host`). A row is 8 bytes.
+
+| Build | Nodes at print | Rows of `far` (bytes) | Modules with rows | Peak RSS, median of 5 |
+|---|---|---|---|---|
+| `bench/corpus`, `--release --library` | 31 549 | 53 (424) | 6 of 30 | 94 804 → 95 304 KB |
+| `examples/conduit`, `--release` | 63 978 | 1 102 (8 816) | 17 of 42 | 141 012 → 140 952 KB |
+| `examples/sternhalma`, `--release` | 18 113 | 265 (2 120) | 8 of 20 | 89 568 → 89 572 KB |
+
+The peak RSS moves within its noise. A module that nothing is copied into has an empty table and
+pays nothing. A build with no copy across modules has no row at all: a development build runs no
+specialisation, and a `--release --library` build of one module with no call into another (2
+modules, 36 nodes) has 0 rows.
+
+**Cost**, measured as the table under *Cost*, below, master `af5ac04778` against this amendment:
+
+| Build | Instructions without maps | Instructions with maps | Map bytes | Entries of `sources` |
+|---|---|---|---|---|
+| `bench/corpus`, `--release --library` | 2 686.86 M → 2 687.43 M | 2 738.52 M → 2 745.93 M | 316 216 → 400 364 | 31 → 37 |
+| `examples/conduit`, `--release` | 5 040.73 M → 5 041.82 M | 5 150.81 M → 5 154.42 M | 874 857 → 876 763 | 39 → 39 |
+| `examples/sternhalma`, `--release` | 1 490.50 M → 1 490.74 M | 1 529.10 M → 1 539.28 M | 372 563 → 505 581 | 18 → 19 |
+
+The code bytes are the same in every build, with and without the flag. Without maps, the
+instructions grow by 0.24 M to 1.09 M, at most +0.02%: the rows, `posOf`, and the builder's test of
+each position. The five runs of master and of this amendment do not overlap, so the growth is
+real. With maps, most of the cost is the text of the new sources: `sourcesContent` grows by 80 505
+bytes on `bench/corpus` and by 127 991 on Sternhalma. Conduit already named every module that its copies come from, and it gains 297
+segments, the copies' own.
+
+**Tests.** `build_test`: *a release build maps the one hoisted file back to each module's beni
+source* (the copied `throw` maps to `Debug.beni:43:5`, the frame to `Debug.beni:43:15`, and
+`Debug.beni` is a source); *a branch that specialisation decides maps to the code it keeps* (the
+copied `Aid.boom` maps to `Aid.beni`, the frame too; the copied `Aid.twice` maps its argument to
+`Main.beni` and its `2` to `Aid.beni`; and `and/` keeps item 6 with a kept call that is not a
+copy); *a release library map names the module a copied body came from* (the multi-file layout:
+`Lib.mjs.map` has `Aid.beni` as its second source). `SourceMap`'s unit test *a far mark maps to
+its row's source* holds the encoder. Each test fails when the copy gives its nodes no position.
 
 **The join.** The printer prints each module of the hoisted file on its own, with marks relative
 to the module's own bytes (Â§9). The link step joins the pieces, and the map follows the join:
@@ -11557,7 +11631,8 @@ without `--release`, as in development.
    2026-11-04:* built (issue #141, part 1); *Hand-written JavaScript* above has the rules.
 2. **The other module's line for a body copied across modules.** `JsIr` positions are offsets
    into one source. A copy from another module maps to its call (item 2 above); to map it to the
-   lines it came from, a position needs a source index with its offset.
+   lines it came from, a position needs a source index with its offset. *Amended 2026-11-04:*
+   built (issue #141, part 2); *Copied bodies* above.
 3. **Parameter names.** A parameter is a `NameIndex` with no node in `JsIr`, so it has no position
    to mark, and `names` gives it no beni name. A debugger shows its short name.
 4. **A map without the comment line** ("hidden" maps, for an error-reporting service that reads
