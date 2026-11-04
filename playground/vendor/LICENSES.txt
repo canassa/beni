@@ -323,6 +323,8 @@ its source.
 
 == codemirror-legacy-modes-elm.js: @codemirror/legacy-modes 6.5.4 (MIT)
    from https://registry.npmjs.org/@codemirror/legacy-modes/-/legacy-modes-6.5.4.tgz, package/mode/elm.js
+   Its rules are also translated into playground/src/Syntax.beni, the
+   playground's beni grammar, which this notice covers too.
 
    MIT License
 

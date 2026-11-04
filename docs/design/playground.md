@@ -261,6 +261,9 @@ diagnostics come from `--diagnostics=json` and show at their positions in the ed
   are attributes, `--` starts a comment and `{…}` is a hole. Between an element's tags, text
   is text, a `<` before a letter or `>` always opens a tag, and `{…}` is a hole. It
   highlights and decides nothing else: the compiler's diagnostics say what is wrong.
+  *Amended 2026-11-04 (§10.7, step 2):* the grammar is `playground/src/Syntax.beni`, with the
+  Elm mode's rules translated into it, and a few lines of `editor.js` run it in
+  `StreamLanguage`. It names every piece as `syntax.js` and the Elm mode did.
 - **The emitted JavaScript** (*added 2026-10-15*, at Jayson Reis's request) is a read-only
   CodeMirror view with CodeMirror's JavaScript grammar (`@codemirror/lang-javascript`, on
   `@lezer/javascript` and `@lezer/lr`, vendored). One highlight style colours both views.
@@ -970,6 +973,19 @@ landed. After each pull request the page works and every test of §6 passes.
    `StreamLanguage`: they keep the beni state in the stream's state object and move the stream's
    position. Those lines are JavaScript, and they go with `editor.js` in step 7. The vendored Elm
    mode is then used by nothing.
+
+   *As built, 2026-11-04:* `playground/src/Syntax.beni`. `line` takes a state and one line and
+   gives the line's pieces, each a text and a name (`""` for none), and the state after the
+   line; the pieces of a line together are the line. The Elm mode's file stays in `vendor/`
+   until step 7, because `vendor/LICENSES.txt` holds the MIT notice that its translation
+   needs; step 7 moves that notice into the site's other licence file. Checked against
+   `syntax.js` with the Elm mode in Node 24.19: the same named pieces on every `.beni` file of
+   the repository (4 428 files, 319 194 lines, 1 327 812 pieces) and on 30 000 random lines of
+   the grammar's hard cases. It takes about twice as long: 2.9 ms against 1.4 ms for TodoMVC
+   (298 lines), and 32 ms against 18 ms for `core/Schema.beni` (4 251 lines). The page loads
+   `Syntax.mjs` and four modules of `_core/` from the development library build, 30 821 bytes
+   raw and 6 243 at brotli quality 11, in place of `syntax.js` and the Elm mode, 14 071 and
+   3 841. A release build of the same would be 10 090 and 3 543 (§10.8, #1901).
 3. `share.js`: #1278, #1884, #1885, #1886.
 4. `frame.js` and `srcdoc.js`: #1890 (`sandbox` only), #1891, #1894: the frame from a URL, with
    the messages of §10.3's `q6` amendment.
@@ -990,7 +1006,10 @@ page's view, so the editor and the page move in one pull request.
   imports the beni modules from a development `--library` build of `playground/src/`
   (`backend.md` §2), which keeps the source field names of what it exports (`boundary.md` §4,
   *What JavaScript may read of a beni value*). `zig build playground` writes that build into the
-  site.
+  site. *Amended 2026-11-04:* a `--release --library` build is about a third of the size (§10.7,
+  step 2, *As built*), but it renames its exports, so no hand-written file can import them
+  (#1901). The library build also writes `_core/Task.mjs` and `_platform/_browser/Rt.mjs`, which
+  no module of the page imports and the page never loads.
 - **Defects.** In beni, a failure that no wrapper foresaw is a defect of the program
   (`boundary.md` §9.8.14). When `page.js` goes, its `error` and `unhandledrejection` listeners
   (`page.js:33-38`) go with it, and the platform's defect screen shows such a failure. A crash of
@@ -1115,7 +1134,9 @@ entries. Drop execCommand. Add a two-file undo test." So:
 `LICENSES.txt`, 1 371 215 bytes raw and 294 035 at brotli quality 11, measured on 2026-11-04 one
 file at a time), `vendor.sh`, the import map, the page's link to `vendor/LICENSES.txt`, and the
 checks of §6 item 2 and item 3 that read the vendored files and their notice. The note keeps its
-link to `samples/LICENSES.txt`.
+link to `samples/LICENSES.txt`. The MIT notice of `@codemirror/legacy-modes` moves into
+`samples/LICENSES.txt`, or a licence file of its own, because `playground/src/Syntax.beni`
+translates the Elm mode's rules (§10.7, step 2, *As built*).
 
 **Tests.** §6 item 2's `syntax` check runs on the beni tokenizer, with its list of lines and names.
 The Chrome test (§6 item 3) keeps every check of what the editor does: an error marked on its

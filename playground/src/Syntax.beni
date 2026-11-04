@@ -1,0 +1,698 @@
+--! The beni grammar of the playground's editor (`docs/design/playground.md`
+--! §4.2, §10.10): one line at a time, with the state carried from line to
+--! line. It names pieces for the highlighting only: the compiler's
+--! diagnostics, not this module, say what is wrong.
+--!
+--! It gives the names that `syntax.js` and CodeMirror's Elm mode gave
+--! together, and holds the Elm mode's rules itself. The Elm mode reads
+--! names, a name at the start of a line as a definition, types and
+--! constructors, numbers, character literals, the ASCII operators and the
+--! brackets. In front of it, beni's rules (`language.md` §2) take what Elm
+--! does not know or reads otherwise:
+--!
+--! - strings with `${…}` interpolation and escapes, and `\\` lines;
+--! - line comments, and `--|` and `--!` as doc comments;
+--! - the Unicode notation (§12.7–§12.10) as operators, `⊤` and `⊥` as atoms,
+--!   `True` and `False` as booleans;
+--! - beni's keywords: `pub`, `opaque` and `foreign` are keywords, `module`
+--!   and `port` are names, `schema` is a keyword before a type name and
+--!   `where` before a `name.method`;
+--! - markup, after `frontend.md` §9.1 and §9.3, in three modes. In code, a
+--!   `<` before a letter or `>` opens a tag where an operand may start, and
+--!   is a comparison after a token that ends one; `</` always closes one.
+--!   In a tag, names are attributes, `{…}` is a hole of code, and `>` or
+--!   `/>` ends it. Between an element's tags, text is text, a `<` before a
+--!   letter, `/` or `>` is a tag, and `{…}` is a hole of code.
+--!
+--! Positions count code points, as `String` does.
+--!
+--! The Elm mode's rules here (`normal`, `number`, `character`, `glsl` and
+--! the names they give) are a translation of `mode/elm.js` of
+--! `@codemirror/legacy-modes` 6.5.4, MIT License, Copyright (C) 2018-2021 by
+--! Marijn Haverbeke <marijn@haverbeke.berlin> and others. The licence's text
+--! is in `playground/vendor/LICENSES.txt`, which the site ships.
+
+import Char
+import List
+import String
+
+
+--| A piece of a line, and its name for the highlighting: `""` for none
+--| (spaces, and a stray character in a tag).
+pub type alias Piece =
+    text : String
+    name : String
+
+
+--| A line's pieces, in order, and the state after the line.
+pub type alias Line =
+    pieces : List Piece
+    state : State
+
+
+--| What the grammar is inside, from line to line.
+pub type alias State =
+    stack : List Frame
+    endsOperand : Bool
+    glsl : Bool
+
+
+--| One level of what the grammar is inside, innermost last.
+pub type Frame
+    = InString
+    | InCode Int
+    | InTag Bool
+    | InChildren
+
+
+--| The state at the start of a file.
+pub start : State
+start = { stack = [], endsOperand = False, glsl = False }
+
+
+--| The pieces of `text`, one line, from `state`.
+pub line : State, String → Line
+line state text =
+    chars = String.toList text
+    go chars (List.length chars) 0 state []
+
+
+-- The pieces from `at` to the end of the line.
+go : List Char, Int, Int, State, List Piece → Line
+go chars size at state pieces =
+    if at ≥ size then
+        { pieces = pieces, state = state }
+    else
+        step = token chars size at state
+        -- Every rule moves on; this keeps a line finite if one did not.
+        next = max step.at (at + 1)
+        piece = { text = String.fromList (List.slice chars at next), name = step.name }
+        go chars size next step.state [ …pieces, piece ]
+
+
+-- One token: its name, where it ends, and the state after it.
+type alias Step =
+    name : String
+    at : Int
+    state : State
+
+
+-- The code point at `i`, or -1 past either end.
+code : List Char, Int → Int
+code chars i =
+    case List.get chars i of
+        Just c →
+            Char.toCode c
+
+        Nothing →
+            -1
+
+
+token : List Char, Int, Int, State → Step
+token chars size at state =
+    case List.last state.stack of
+        Just InString →
+            stringPart chars size at state
+
+        Just InChildren →
+            childrenPart chars size at state
+
+        frame →
+            spaces = eatWhile chars size at isSpace
+            if spaces > at then
+                { name = "", at = spaces, state = state }
+            else
+                case frame of
+                    Just (InTag closing) →
+                        tagPart chars size at state closing
+
+                    _ →
+                        codePart chars size at state frame
+
+
+codePart : List Char, Int, Int, State, Maybe Frame → Step
+codePart chars size at state frame =
+    c = code chars at
+    if c == 0x5C && code chars (at + 1) == 0x5C && onlySpacesBefore chars at then
+        -- A multiline string line: `\\` first on its line.
+        { name = "string", at = size, state = { state | endsOperand = True } }
+    else if c == 0x2D && code chars (at + 1) == 0x2D then
+        comment chars size at state
+    else if c == 0x22 then
+        { name = "string", at = at + 1, state = push state InString }
+    else
+        case frame of
+            Just (InCode depth) →
+                if c == 0x7B then
+                    { name = "brace"
+                    , at = at + 1
+                    , state = { (replace state (InCode (depth + 1))) | endsOperand = False }
+                    }
+                else if c == 0x7D then
+                    closeCode chars size at state depth
+                else
+                    afterBraces chars size at state
+
+            _ →
+                afterBraces chars size at state
+
+
+-- A `}` in a hole of code: it closes a brace of the hole, or the hole.
+closeCode : List Char, Int, Int, State, Int → Step
+closeCode chars size at state depth =
+    if depth ≠ 1 then
+        { name = "brace"
+        , at = at + 1
+        , state = { (replace state (InCode (depth - 1))) | endsOperand = True }
+        }
+    else
+        popped = pop state
+        -- The `}` that closes an interpolation goes back into its string.
+        case List.last popped.stack of
+            Just InString →
+                { name = "meta", at = at + 1, state = popped }
+
+            _ →
+                { name = "brace", at = at + 1, state = { popped | endsOperand = False } }
+
+
+afterBraces : List Char, Int, Int, State → Step
+afterBraces chars size at state =
+    c = code chars at
+    tag = openTag chars size at state (not state.endsOperand)
+    case tag of
+        Just opened →
+            opened
+
+        Nothing →
+            if isNotation c then
+                { name = "operator", at = at + 1, state = { state | endsOperand = False } }
+            else if c == 0x22A4 || c == 0x22A5 then
+                { name = "atom", at = at + 1, state = { state | endsOperand = True } }
+            else if boolEnd chars at > at then
+                { name = "bool", at = boolEnd chars at, state = { state | endsOperand = True } }
+            else if word chars at "schema" && spacesThen chars size (at + 6) upperAt then
+                { name = "keyword", at = at + 6, state = { state | endsOperand = False } }
+            else if word chars at "where" && spacesThen chars size (at + 5) startsMethod then
+                { name = "keyword", at = at + 5, state = { state | endsOperand = False } }
+            else
+                names chars size at state
+
+
+-- Where a whole word `True` or `False` that starts at `at` ends, or `at`
+-- when none starts there.
+boolEnd : List Char, Int → Int
+boolEnd chars at =
+    length = if word chars at "True" then 4 else if word chars at "False" then 5 else 0
+    if length > 0 && not (isWord (code chars (at + length))) then at + length else at
+
+
+-- A lower-case word that beni names, a `.field`, a brace, or else Elm's
+-- token.
+names : List Char, Int, Int, State → Step
+names chars size at state =
+    c = code chars at
+    if isLower c then
+        end = eatWhile chars size (at + 1) isWord
+        text = String.fromList (List.slice chars at end)
+        if List.member keywords text then
+            { name = "keyword", at = end, state = { state | endsOperand = False } }
+        else if List.member elmOnlyKeywords text then
+            { name = if at == 0 then "def" else "variable"
+            , at = end
+            , state = { state | endsOperand = True }
+            }
+        else
+            elmToken chars size at state
+    else if c == 0x2E && isLower (code chars (at + 1)) then
+        { name = "propertyName"
+        , at = eatWhile chars size (at + 2) isWord
+        , state = { state | endsOperand = True }
+        }
+    else if c == 0x7B then
+        -- No `{-` block comment in beni: the Elm mode would start one.
+        { name = "brace", at = at + 1, state = { state | endsOperand = False } }
+    else
+        elmToken chars size at state
+
+
+--| beni's keywords.
+keywords : List String
+keywords =
+    [ "if"
+    , "then"
+    , "else"
+    , "case"
+    , "of"
+    , "let"
+    , "in"
+    , "type"
+    , "alias"
+    , "pub"
+    , "opaque"
+    , "import"
+    , "as"
+    , "exposing"
+    , "foreign"
+    ]
+
+
+--| Elm's keywords that are names in beni.
+elmOnlyKeywords : List String
+elmOnlyKeywords = [ "module", "port", "where" ]
+
+
+--| The Elm mode's keywords: a token with one of these texts is a keyword.
+elmKeywords : List String
+elmKeywords =
+    [ "case"
+    , "of"
+    , "as"
+    , "if"
+    , "then"
+    , "else"
+    , "let"
+    , "in"
+    , "type"
+    , "alias"
+    , "module"
+    , "where"
+    , "import"
+    , "exposing"
+    , "port"
+    ]
+
+
+-- The Elm mode's token, named as beni's grammar names it.
+elmToken : List Char, Int, Int, State → Step
+elmToken chars size at state =
+    elm = if state.glsl then glsl chars size at else normal chars size at
+    text = String.fromList (List.slice chars at elm.at)
+    raw = if List.member elmKeywords text then "keyword" else elm.name
+    named = { state | glsl = elm.glsl }
+    if raw == "builtin" then
+        { name = bracketName text
+        , at = elm.at
+        , state = { named | endsOperand = text == ")" || text == "]" || text == "}" }
+        }
+    else if raw == "keyword" then
+        -- A run of Elm's symbol characters, or `_`.
+        { name = if text == "_" then "keyword" else "operator"
+        , at = elm.at
+        , state = { named | endsOperand = text == "?" }
+        }
+    else
+        { name = raw, at = elm.at, state = { named | endsOperand = List.member operandNames raw } }
+
+
+--| The names of a token that ends an operand.
+operandNames : List String
+operandNames = [ "variable", "def", "type", "number", "string" ]
+
+
+bracketName : String → String
+bracketName text =
+    if text == "(" || text == ")" then
+        "paren"
+    else if text == "[" || text == "]" then
+        "squareBracket"
+    else if text == "{" || text == "}" then
+        "brace"
+    else
+        "punctuation"
+
+
+-- What the Elm mode reads: its name, where it ends, and whether a
+-- `[glsl|` block goes on past it.
+type alias ElmStep =
+    name : String
+    at : Int
+    glsl : Bool
+
+
+-- The Elm mode's `normal` state.
+normal : List Char, Int, Int → ElmStep
+normal chars size at =
+    c = code chars at
+    next = at + 1
+    if c == 0x28 || c == 0x29 || c == 0x2C || c == 0x5B || c == 0x5D || c == 0x7B || c == 0x7D then
+        if c == 0x5B && word chars next "glsl|" then
+            glsl chars size (next + 5)
+        else
+            { name = "builtin", at = next, glsl = False }
+    else if c == 0x27 then
+        character chars size next
+    else if isUpperCode c then
+        { name = "type", at = eatWhile chars size next isWord, glsl = False }
+    else if isLower c then
+        { name = if at == 0 then "def" else "variable"
+        , at = eatWhile chars size next isWord
+        , glsl = False
+        }
+    else if isDigit c then
+        { name = "number", at = number chars size at c, glsl = False }
+    else if isSymbol c then
+        { name = "keyword", at = eatWhile chars size next isSymbol, glsl = False }
+    else if c == 0x5F then
+        { name = "keyword", at = next, glsl = False }
+    else
+        { name = "error", at = next, glsl = False }
+
+
+-- Where a number that starts at `at` with digit `c` ends: `0x` and hex
+-- digits, or digits (none more after a first `0`), then a fraction and an
+-- exponent, each optional.
+number : List Char, Int, Int, Int → Int
+number chars size at c =
+    next = at + 1
+    if c == 0x30 && (code chars next == 0x78 || code chars next == 0x58) then
+        eatWhile chars size (next + 1) isHex
+    else
+        whole = if c == 0x30 then next else eatWhile chars size next isDigit
+        fraction =
+            if code chars whole == 0x2E then eatWhile chars size (whole + 1) isDigit else whole
+        exponent = code chars fraction
+        if exponent == 0x65 || exponent == 0x45 then
+            sign = code chars (fraction + 1)
+            digits = if sign == 0x2D || sign == 0x2B then fraction + 2 else fraction + 1
+            eatWhile chars size digits isDigit
+        else
+            fraction
+
+
+-- A character literal after its `'`, as the Elm mode reads one: past each
+-- `\'` ahead on the line, to the next `'`, or an error to the end of the
+-- line.
+character : List Char, Int, Int → ElmStep
+character chars size at =
+    past = pastEscapedQuotes chars size at
+    case find chars size past 0x27 of
+        Just close →
+            { name = "string", at = close + 1, glsl = False }
+
+        Nothing →
+            { name = "error", at = size, glsl = False }
+
+
+pastEscapedQuotes : List Char, Int, Int → Int
+pastEscapedQuotes chars size at =
+    case findPair chars size at 0x5C 0x27 of
+        Just escaped →
+            pastEscapedQuotes chars size (escaped + 2)
+
+        Nothing →
+            at
+
+
+-- A `[glsl|` block, to its `|]` or the end of the line.
+glsl : List Char, Int, Int → ElmStep
+glsl chars size at =
+    case findPair chars size at 0x7C 0x5D of
+        Just close →
+            { name = "string", at = close + 2, glsl = False }
+
+        Nothing →
+            { name = "string", at = size, glsl = True }
+
+
+-- A line comment from its `--` to the end of the line.
+comment : List Char, Int, Int, State → Step
+comment chars size at state =
+    doc = code chars (at + 2)
+    { name = if doc == 0x7C || doc == 0x21 then "docComment" else "lineComment"
+    , at = size
+    , state = state
+    }
+
+
+-- The inside of a string: up to its closing `"`, an interpolation's `${`,
+-- or the end of the line (a string is one line; the lexer reports the
+-- rest).
+stringPart : List Char, Int, Int, State → Step
+stringPart chars size at state =
+    if code chars at == 0x24 && code chars (at + 1) == 0x7B then
+        { name = "meta", at = at + 2, state = { (push state (InCode 1)) | endsOperand = False } }
+    else
+        stringRun chars size at at state
+
+
+stringRun : List Char, Int, Int, Int, State → Step
+stringRun chars size from at state =
+    c = code chars at
+    if at ≥ size then
+        -- A string does not go on to the next line.
+        { name = "string", at = size, state = { (pop state) | endsOperand = True } }
+    else if c == 0x22 then
+        { name = "string", at = at + 1, state = { (pop state) | endsOperand = True } }
+    else if c == 0x24 && code chars (at + 1) == 0x7B then
+        { name = "string", at = at, state = state }
+    else if c == 0x5C then
+        if at > from then
+            { name = "string", at = at, state = state }
+        else
+            { name = "escape", at = escapeEnd chars size (at + 1), state = state }
+    else
+        stringRun chars size from (at + 1) state
+
+
+-- Where an escape ends that starts after its `\`: a `u{…}`, or one
+-- character.
+escapeEnd : List Char, Int, Int → Int
+escapeEnd chars size at =
+    if code chars at == 0x75 && code chars (at + 1) == 0x7B then
+        hex = eatWhile chars size (at + 2) isHex
+        if code chars hex == 0x7D then hex + 1 else hex
+    else
+        min size (at + 1)
+
+
+-- The inside of a tag: comments, attribute names, `=`, values, holes, and
+-- the `>` or `/>` that ends it. An opening tag's `>` starts its children;
+-- a closing tag's `>` and a `/>` end an operand.
+tagPart : List Char, Int, Int, State, Bool → Step
+tagPart chars size at state closing =
+    c = code chars at
+    if c == 0x2F && code chars (at + 1) == 0x3E then
+        { name = "tagName", at = at + 2, state = { (pop state) | endsOperand = True } }
+    else if c == 0x3E then
+        if closing then
+            { name = "tagName", at = at + 1, state = { (pop state) | endsOperand = True } }
+        else
+            { name = "tagName", at = at + 1, state = push (pop state) InChildren }
+    else if c == 0x2D && code chars (at + 1) == 0x2D then
+        comment chars size at state
+    else if isAlpha c || c == 0x5F then
+        { name = "attributeName", at = eatWhile chars size (at + 1) isAttribute, state = state }
+    else if c == 0x3D then
+        { name = "operator", at = at + 1, state = state }
+    else if c == 0x22 then
+        { name = "string", at = at + 1, state = push state InString }
+    else if c == 0x7B then
+        { name = "brace", at = at + 1, state = { (push state (InCode 1)) | endsOperand = False } }
+    else
+        { name = "", at = at + 1, state = state }
+
+
+-- An element's children: text up to a tag or a hole.
+childrenPart : List Char, Int, Int, State → Step
+childrenPart chars size at state =
+    case openTag chars size at state True of
+        Just opened →
+            opened
+
+        Nothing →
+            if code chars at == 0x7B then
+                { name = "brace"
+                , at = at + 1
+                , state = { (push state (InCode 1)) | endsOperand = False }
+                }
+            else
+                { name = "content", at = textEnd chars size at, state = state }
+
+
+textEnd : List Char, Int, Int → Int
+textEnd chars size at =
+    c = code chars at
+    n = code chars (at + 1)
+    if at ≥ size || c == 0x7B || (c == 0x3C && (isAlpha n || n == 0x2F || n == 0x3E)) then
+        at
+    else
+        textEnd chars size (at + 1)
+
+
+-- A tag's start, when the line is at one: `</name` or `</>` always, and
+-- `<name` or `<>` when `opens` says a tag may open here. It pushes the
+-- tag's frame; a closing tag first leaves the children it closes.
+openTag : List Char, Int, Int, State, Bool → Maybe Step
+openTag chars size at state opens =
+    if code chars at ≠ 0x3C then
+        Nothing
+    else if code chars (at + 1) == 0x2F then
+        end = tagNameEnd chars size (at + 2)
+        left = if List.last state.stack == Just InChildren then pop state else state
+        Just { name = "tagName", at = end, state = push left (InTag True) }
+    else if opens && (isAlpha (code chars (at + 1)) || code chars (at + 1) == 0x3E) then
+        Just
+            { name = "tagName"
+            , at = tagNameEnd chars size (at + 1)
+            , state = push state (InTag False)
+            }
+    else
+        Nothing
+
+
+-- Where an optional tag name that starts at `at` ends: a letter, then
+-- word characters and dots.
+tagNameEnd : List Char, Int, Int → Int
+tagNameEnd chars size at =
+    if isAlpha (code chars at) then eatWhile chars size (at + 1) isTagName else at
+
+
+push : State, Frame → State
+push state frame = { state | stack = [ …state.stack, frame ] }
+
+
+pop : State → State
+pop state = { state | stack = List.slice state.stack 0 (List.length state.stack - 1) }
+
+
+replace : State, Frame → State
+replace state frame = push (pop state) frame
+
+
+-- The first position from `at` whose characters do not all pass `test`.
+eatWhile : List Char, Int, Int, (Int → Bool) → Int
+eatWhile chars size at test =
+    if at < size && test (code chars at) then eatWhile chars size (at + 1) test else at
+
+
+-- The position of the next `c` from `at`, if any.
+find : List Char, Int, Int, Int → Maybe Int
+find chars size at c =
+    if at ≥ size then
+        Nothing
+    else if code chars at == c then
+        Just at
+    else
+        find chars size (at + 1) c
+
+
+-- The position of the next `a` followed by `b` from `at`, if any.
+findPair : List Char, Int, Int, Int, Int → Maybe Int
+findPair chars size at a b =
+    case find chars size at a of
+        Just found →
+            if code chars (found + 1) == b then Just found else findPair chars size (found + 1) a b
+
+        Nothing →
+            Nothing
+
+
+-- Whether `text` is at `at`.
+word : List Char, Int, String → Bool
+word chars at text = String.fromList (List.slice chars at (at + String.length text)) == text
+
+
+-- Whether only spaces are before `at` on the line.
+onlySpacesBefore : List Char, Int → Bool
+onlySpacesBefore chars at = List.all (List.slice chars 0 at) λc → isSpace (Char.toCode c)
+
+
+-- Whether spaces, at least one, start at `at`, and the first character
+-- after them passes `test`.
+spacesThen : List Char, Int, Int, (List Char, Int → Bool) → Bool
+spacesThen chars size at test =
+    after = eatWhile chars size at isSpace
+    after > at && test chars after
+
+
+upperAt : List Char, Int → Bool
+upperAt chars at = isUpperCode (code chars at)
+
+
+-- A `name.` at `at`: a lower-case letter, word characters, then a dot.
+startsMethod : List Char, Int → Bool
+startsMethod chars at =
+    isLower (code chars at)
+        && code chars (eatWhile chars (List.length chars) (at + 1) isWord) == 0x2E
+
+
+isSpace : Int → Bool
+isSpace c =
+    c == 0x20
+        || (c ≥ 0x09 && c ≤ 0x0D)
+        || c == 0xA0
+        || c == 0x1680
+        || (c ≥ 0x2000 && c ≤ 0x200A)
+        || c == 0x2028
+        || c == 0x2029
+        || c == 0x202F
+        || c == 0x205F
+        || c == 0x3000
+        || c == 0xFEFF
+
+
+isUpperCode : Int → Bool
+isUpperCode c = c ≥ 0x41 && c ≤ 0x5A
+
+
+isLower : Int → Bool
+isLower c = c ≥ 0x61 && c ≤ 0x7A
+
+
+isAlpha : Int → Bool
+isAlpha c = isUpperCode c || isLower c
+
+
+isDigit : Int → Bool
+isDigit c = c ≥ 0x30 && c ≤ 0x39
+
+
+isHex : Int → Bool
+isHex c = isDigit c || (c ≥ 0x41 && c ≤ 0x46) || (c ≥ 0x61 && c ≤ 0x66)
+
+
+isWord : Int → Bool
+isWord c = isAlpha c || isDigit c || c == 0x5F
+
+
+isTagName : Int → Bool
+isTagName c = isWord c || c == 0x2E
+
+
+isAttribute : Int → Bool
+isAttribute c = isWord c || c == 0x2D
+
+
+-- The Elm mode's symbol characters: `- & * + . \ / < > = ? ^ | :`.
+isSymbol : Int → Bool
+isSymbol c =
+    c == 0x2D
+        || c == 0x26
+        || c == 0x2A
+        || c == 0x2B
+        || c == 0x2E
+        || c == 0x5C
+        || c == 0x2F
+        || c == 0x3C
+        || c == 0x3E
+        || c == 0x3D
+        || c == 0x3F
+        || c == 0x5E
+        || c == 0x7C
+        || c == 0x3A
+
+
+-- The Unicode notation that is an operator: `→ ← ≠ ≤ ≥ ▷ ◁ … × λ`.
+isNotation : Int → Bool
+isNotation c =
+    c == 0x2192
+        || c == 0x2190
+        || c == 0x2260
+        || c == 0x2264
+        || c == 0x2265
+        || c == 0x25B7
+        || c == 0x25C1
+        || c == 0x2026
+        || c == 0xD7
+        || c == 0x3BB

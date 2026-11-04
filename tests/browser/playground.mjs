@@ -59,7 +59,7 @@ function findChrome() {
   process.exit(2);
 }
 
-const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".wasm": "application/wasm", ".json": "application/json", ".beni": "text/plain; charset=utf-8" };
+const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".wasm": "application/wasm", ".json": "application/json", ".beni": "text/plain; charset=utf-8" };
 const root = resolve(site);
 const server = createServer((req, res) => {
   const path = normalize(join(root, req.url === "/" ? "index.html" : decodeURIComponent(req.url.split("?")[0])));
@@ -464,7 +464,8 @@ await wrong.evaluate(showCss);
 await wrong.evaluate(`document.querySelector(".diagnostic").click()`);
 check(await wrong.evaluate(`!document.getElementById("editor").hidden && document.getElementById("css-editor").hidden`), "a click on a diagnostic shows the source's tab");
 
-// beni's grammar in the editor: the Elm mode with beni's tokens (§4.2).
+// beni's grammar in the editor: `src/Syntax.beni`, which holds the Elm
+// mode's rules and beni's own (§4.2, §10.7).
 const notation = "-- every token of beni's own\nimport Html exposing (Html)\n\n\npub schema Person =\n    name : String\n\n\nf : Int, Int → Int × Int\nf a b = ( a, b )\n\n\nview : ⊤ → Html msg\nview _ = <p class=\"x\">{\"a ≠ b ≤ c ≥ d ▷ e ◁ f … g ← h λ ⊥\"}</p>\n";
 const highlighted = await pageWith("browser-tea", notation);
 await highlighted.until(`document.querySelector(".cm-editor") !== null && document.querySelector(".cm-content")?.textContent.includes("schema")`, 20_000);
