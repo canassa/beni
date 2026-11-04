@@ -1,10 +1,11 @@
 import Writer
 
 
-pub readonly ⊤ = Writer.wrapped (λxs → ( xs, 1 )) Writer.callbacks.turn λxs → xs
+pub readonly ⊤ = Writer.fieldWrapped (λxs → ( xs, 1 )) Writer.callbacks.turn { work = λxs → xs }
 
 
-pub writes ⊤ = Writer.wrapped (λxs → ( xs, 1 )) Writer.callbacks.turn λxs → List.push xs 9
+pub writes ⊤ =
+    Writer.fieldWrapped (λxs → ( xs, 1 )) Writer.callbacks.turn { work = λxs → List.push xs 9 }
 
 
-pub unknownEffect turn = Writer.wrapped (λxs → ( xs, 1 )) turn λxs → xs
+pub unknownEffect turn = Writer.fieldWrapped (λxs → ( xs, 1 )) turn { work = λxs → xs }

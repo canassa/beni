@@ -117,8 +117,8 @@ pub const magic = "BENIOWN\x00";
 /// 36 invalidates template-row reports: every entry word uses the direct protocol.
 /// 37 removes the path cut (§16.7 (c), #286): a path's length is a u32.
 /// 38 escapes only what a callback keeps of its supply, in the caller's cells (#749).
-// Version 39: portable callback argument effects (2026-11-04, #1825).
-pub const version: u32 = 39;
+// Version 40: effect-only field projections; no ordinary slots (39 added callback argument effects) (2026-11-04, #1825).
+pub const version: u32 = 40;
 
 /// A cache hit may skip enforcement only if its previous report was clean.
 /// Other platforms also compute reports, but can cache a rejected module.
@@ -318,6 +318,7 @@ fn writeRows(o: *Ownership, gpa: Allocator, rows: []const Row, public_module: ?u
             };
             for ([_][]const XAtom{ s.xreq, s.rxreq }) |atoms| for (atoms) |a| try c.atom(a);
             for (s.slots) |sl| try c.path(sl[1]);
+            for (s.funs) |f| for (f.effects) |e| for (e.fields) |field| try c.path(field[1]);
             for (s.klasses) |k| {
                 try c.summary(k.sum);
                 for (k.binds) |b| {
@@ -978,6 +979,17 @@ fn writeSummary(w: *Writer, arena: Allocator, s: *const Summary) Allocator.Error
             try w.byte(@as(u8, @intFromBool(e.unknown)) | @as(u8, @intFromBool(e.writes)) << 1);
             try w.int(@intCast(e.callees.len));
             for (e.callees) |dep| try w.int(dep);
+            const fields = try arena.dupe([2]u32, e.fields);
+            std.mem.sort([2]u32, fields, w, struct {
+                fn less(writer: *Writer, x: [2]u32, y: [2]u32) bool {
+                    return if (x[0] != y[0]) x[0] < y[0] else writer.path_index.get(x[1]).? < writer.path_index.get(y[1]).?;
+                }
+            }.less);
+            try w.int(@intCast(fields.len));
+            for (fields) |field| {
+                try w.int(field[0]);
+                try w.int(w.path_index.get(field[1]).?);
+            }
         }
     }
 
@@ -1509,14 +1521,16 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
         const guards = try r.arena.alloc(u32, try r.count(4));
         for (guards) |*writer| writer.* = try r.int();
         f.need_if = guards;
-        const effects = try r.arena.alloc(Ownership.EffectArg, try r.count(9));
+        const effects = try r.arena.alloc(Ownership.EffectArg, try r.count(13));
         for (effects) |*e| {
             const arg = try r.int();
             const effect_flags = try r.byte();
             if (effect_flags > 3) return error.Bad;
             const deps = try r.arena.alloc(u32, try r.count(4));
             for (deps) |*dep| dep.* = try r.int();
-            e.* = .{ .arg = arg, .unknown = effect_flags & 1 != 0, .writes = effect_flags & 2 != 0, .callees = deps };
+            const fields = try r.arena.alloc([2]u32, try r.count(8));
+            for (fields) |*field| field.* = .{ try r.int(), try r.path() };
+            e.* = .{ .arg = arg, .unknown = effect_flags & 1 != 0, .writes = effect_flags & 2 != 0, .callees = deps, .fields = fields };
         }
         f.effects = effects;
     }
@@ -1605,14 +1619,20 @@ test "a block naming a constructor field past the constructor's arity is refused
     defer arena.deinit();
     // Effect-only facts survive the same summary codec as ownership facts.
     // A malformed flags byte or dependency count is a miss, never a proof.
+    const eps = Ownership.eps;
     const effect_sum: Summary = .{ .params = 3, .funs = &.{.{
         .param = 0,
         .calls = .once,
-        .effects = &.{.{ .arg = 0, .unknown = true, .writes = true, .callees = &.{ 1, 2 } }},
+        .effects = &.{.{ .arg = 0, .unknown = true, .writes = true, .callees = &.{ 1, 2 }, .fields = &.{.{ 1, eps }} }},
     }} };
     var ew: Writer = .{ .o = &o, .gpa = arena.allocator() };
+    try ew.path_index.put(arena.allocator(), eps, 0);
     try writeSummary(&ew, arena.allocator(), &effect_sum);
-    var unused: Block = undefined; // This summary has no path/table references.
+    var unused: Block = undefined;
+    var path_ids = [_]u32{eps};
+    unused.path_id = &path_ids;
+    var path_offsets = [_]u32{0};
+    unused.path_at = &path_offsets;
     var er: Reader = .{ .o = &o, .arena = arena.allocator(), .bytes = ew.out.items, .block = &unused };
     const decoded = try readSummary(&er, 0);
     try std.testing.expectEqual(ew.out.items.len, er.at);
@@ -1621,7 +1641,10 @@ test "a block naming a constructor field past the constructor's arity is refused
     try std.testing.expect(effect.unknown and effect.writes);
     try std.testing.expectEqual(@as(u32, 0), effect.arg);
     try std.testing.expectEqualSlices(u32, &.{ 1, 2 }, effect.callees);
-    const flag_at = ew.out.items.len - 29;
+    try std.testing.expectEqual(@as(usize, 1), effect.fields.len);
+    try std.testing.expectEqual(@as(u32, 1), effect.fields[0][0]);
+    try std.testing.expectEqual(eps, effect.fields[0][1]);
+    const flag_at = ew.out.items.len - 41;
     try std.testing.expectEqual(@as(u8, 3), ew.out.items[flag_at]);
     ew.out.items[flag_at] = 4;
     er.at = 0;

@@ -5586,7 +5586,7 @@ fn hoistCache(corrupt: enum { version, placement }) !void {
     // Entry header(32), then seven {offset,len} rows. Hoists is section 6.
     // Entry format 14: embedded interfaces publish declaration totality.
     try testing.expect(good.len >= 88);
-    try testing.expectEqual(@as(u32, 14), std.mem.readInt(u32, good[8..12], .little));
+    try testing.expectEqual(@as(u32, 16), std.mem.readInt(u32, good[8..12], .little));
     try testing.expectEqual(@as(u32, 7), std.mem.readInt(u32, good[12..16], .little));
     const base = std.mem.readInt(u32, good[80..84], .little);
     const len = std.mem.readInt(u32, good[84..88], .little);
@@ -6034,13 +6034,13 @@ test "cached higher-order writer effects preserve read-only acceptance and writi
     const readonly =
         \\import Writer
         \\
-        \\pub run ⊤ = Writer.wrapped (λxs → ( xs, 1 )) Writer.callbacks.turn λxs → xs
+        \\pub run ⊤ = Writer.fieldWrapped (λxs → ( xs, 1 )) Writer.callbacks.turn { work = λxs → xs }
         \\
     ;
     const writing =
         \\import Writer
         \\
-        \\pub run ⊤ = Writer.wrapped (λxs → ( xs, 1 )) Writer.callbacks.turn λxs → List.push xs 9
+        \\pub run ⊤ = Writer.fieldWrapped (λxs → ( xs, 1 )) Writer.callbacks.turn { work = λxs → List.push xs 9 }
         \\
     ;
     const args = [_][]const u8{ "check", "--core", "--ownership-everywhere", "--platform=node", "--diagnostics=json", "--cache-dir=cache", "--root=.", "." };

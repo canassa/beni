@@ -13,3 +13,8 @@ keepThenCall actions value work =
 
 
 pub wrapped keep call work = keepThenCall { keep = keep, call = call } [] work
+
+
+-- The callback is stored in a record but never called here: its effect
+-- projection must not register an ordinary function slot.
+pub fieldWrapped keep call work = keepThenCall { keep = keep, call = call } [] work.work

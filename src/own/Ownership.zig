@@ -836,6 +836,8 @@ pub const EffectArg = struct {
     unknown: bool = false,
     writes: bool = false,
     callees: []const u32 = &.{},
+    /// Effect-only record projections (parameter, path), never ordinary slots.
+    fields: []const [2]u32 = &.{},
 };
 
 pub const FunFacts = struct {
@@ -2781,7 +2783,8 @@ pub fn cloneSummary(o: *Ownership, s: *const Summary) Allocator.Error!*const Sum
 
 fn effectsEql(x: []const EffectArg, y: []const EffectArg) bool {
     if (x.len != y.len) return false;
-    for (x, y) |a, b| if (a.arg != b.arg or a.unknown != b.unknown or a.writes != b.writes or !std.mem.eql(u32, a.callees, b.callees)) return false;
+    for (x, y) |a, b| if (a.arg != b.arg or a.unknown != b.unknown or a.writes != b.writes or !std.mem.eql(u32, a.callees, b.callees) or a.fields.len != b.fields.len) return false;
+    for (x, y) |a, b| for (a.fields, b.fields) |p, q| if (!std.meta.eql(p, q)) return false;
     return true;
 }
 
@@ -2797,6 +2800,24 @@ fn joinEffects(a: Allocator, x: []const EffectArg, xc: Calls, y: []const EffectA
         } else true) e.unknown = true;
     }
     return copy;
+}
+
+fn unionEffectFields(a: Allocator, x: []const [2]u32, y: []const [2]u32) Allocator.Error![]const [2]u32 {
+    const all = try a.alloc([2]u32, x.len + y.len);
+    @memcpy(all[0..x.len], x);
+    @memcpy(all[x.len..], y);
+    std.mem.sort([2]u32, all, {}, struct {
+        fn less(_: void, p: [2]u32, q: [2]u32) bool {
+            return if (p[0] != q[0]) p[0] < q[0] else p[1] < q[1];
+        }
+    }.less);
+    var n: usize = 0;
+    for (all) |e| {
+        if (n > 0 and std.meta.eql(all[n - 1], e)) continue;
+        all[n] = e;
+        n += 1;
+    }
+    return all[0..n];
 }
 
 fn mergeEffects(a: Allocator, x: []const EffectArg, y: []const EffectArg) Allocator.Error![]const EffectArg {
@@ -2815,9 +2836,11 @@ fn mergeEffects(a: Allocator, x: []const EffectArg, y: []const EffectArg) Alloca
             p.unknown = p.unknown or e.unknown;
             p.writes = p.writes or e.writes;
             p.callees = try unionGuards(a, p.callees, e.callees);
+            p.fields = try unionEffectFields(a, p.fields, e.fields);
         } else {
             all[n] = e;
             all[n].callees = try unionGuards(a, e.callees, &.{});
+            all[n].fields = try unionEffectFields(a, e.fields, &.{});
             n += 1;
         }
     }
@@ -18722,6 +18745,37 @@ const Walker = struct {
     /// the path: the slot is the declaration's, called or handed on wherever
     /// the lambda runs.
     fn slotOf(w: *Walker, av: AV) Allocator.Error!?u32 {
+        return w.slotOfMode(av, true);
+    }
+
+    fn effectFieldOf(w: *Walker, av: AV) Allocator.Error!?[2]u32 {
+        var found: ?Cell = null;
+        for (av) |e| {
+            if (w.cells.items[e.cell].condition_only) continue;
+            if (w.o.firstStep(e.path)) |s| if (s.kind == .env) continue;
+            if (e.path != eps or found != null) return null;
+            found = w.cells.items[try w.takenBase(e.cell)];
+        }
+        var c = found orelse return null;
+        if (w.frame != 0) {
+            // A capture of a local of the declaration's own frame that holds
+            // exactly one of its parameters.
+            if (c.kind != .env or c.a >= w.local_frame.len or w.local_frame[c.a] != 0) return null;
+            const held = w.local_av[c.a] orelse return null;
+            const value_held = w.onlyValue(held) orelse return null;
+            if (value_held.path != eps) return null;
+            const hc = w.cells.items[try w.takenBase(value_held.cell)];
+            if (hc.kind != .param or hc.b != 0) return null;
+            const path = try w.o.concat(hc.path, c.path);
+            c = hc;
+            c.path = path;
+        }
+        if (c.kind != .param or c.b != 0 or c.path == eps) return null;
+        const pi = w.paramIndex(c, 0, w.params) orelse return null;
+        return .{ pi, c.path };
+    }
+
+    fn slotOfMode(w: *Walker, av: AV, create: bool) Allocator.Error!?u32 {
         var found: ?Cell = null;
         for (av) |e| {
             if (w.cells.items[e.cell].condition_only) continue;
@@ -18746,6 +18800,7 @@ const Walker = struct {
         if (c.kind != .param or c.b != 0 or c.path == eps) return null;
         const pi = w.paramIndex(c, 0, w.params) orelse return null;
         for (w.slot_keys.items, 0..) |key, k| if (key[0] == pi and key[1] == c.path) return @intCast(w.params.len + k);
+        if (!create) return null;
         try w.slot_keys.append(w.a, .{ pi, c.path });
         try w.fn_state.append(w.a, .{ .is_fn = true });
         return @intCast(w.fn_state.items.len - 1);
@@ -19042,8 +19097,9 @@ const Walker = struct {
 
     /// Only conditional writer need resolution consumes these facts.
     fn effectOf(w: *Walker, arg: u32, actual: AV) Allocator.Error!EffectArg {
-        if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |j|
+        if (w.fnParamOf(actual) orelse try w.slotOfMode(actual, false)) |j|
             return .{ .arg = arg, .callees = try w.a.dupe(u32, &.{j}) };
+        if (try w.effectFieldOf(actual)) |field| return .{ .arg = arg, .fields = try w.a.dupe([2]u32, &.{field}) };
         var out: EffectArg = .{ .arg = arg };
         const classes = try w.classesOf(actual);
         if (classes.len == 0) out.unknown = true;
@@ -19075,7 +19131,7 @@ const Walker = struct {
 
     fn noteEffect(w: *Walker, j: u32, arg: u32, actual: AV) Allocator.Error!void {
         const fact = try w.effectOf(arg, actual);
-        // slotOf may grow fn_state: acquire its pointer afterwards.
+        // Effect collection never creates an ordinary function slot.
         try w.fn_state.items[j].effects.append(w.a, fact);
     }
 
@@ -19098,6 +19154,14 @@ const Walker = struct {
                 } else return true;
                 if (effect.unknown or effect.writes) return true;
                 for (effect.callees) |dep| if (try w.mayWrite(s, avs, dep, depth + 1)) return true;
+                for (effect.fields) |field| {
+                    if (field[0] >= avs.len) return true;
+                    const value = try w.projPath(avs[field[0]], field[1], null);
+                    const e = try w.effectOf(0, value);
+                    // A field without an ordinary call protocol can prove a
+                    // leaf effect only. Higher-order or symbolic effects refuse.
+                    if (e.unknown or e.writes or e.callees.len != 0 or e.fields.len != 0) return true;
+                }
             }
         }
         return false;
@@ -19155,6 +19219,7 @@ const Walker = struct {
         for (facts.effects) |e| {
             var mapped = e;
             var callees: std.ArrayList(u32) = .empty;
+            var fields: std.ArrayList([2]u32) = .empty;
             for (e.callees) |dep| {
                 const actual = (try w.actualOf(s, avs, dep)) orelse {
                     mapped.unknown = true;
@@ -19164,7 +19229,21 @@ const Walker = struct {
                 mapped.unknown = mapped.unknown or ef.unknown;
                 mapped.writes = mapped.writes or ef.writes;
                 try callees.appendSlice(w.a, ef.callees);
+                try fields.appendSlice(w.a, ef.fields);
             }
+            for (e.fields) |field| {
+                if (field[0] >= avs.len) {
+                    mapped.unknown = true;
+                    continue;
+                }
+                const actual = try w.projPath(avs[field[0]], field[1], null);
+                const ef = try w.effectOf(e.arg, actual);
+                mapped.unknown = mapped.unknown or ef.unknown;
+                mapped.writes = mapped.writes or ef.writes;
+                try callees.appendSlice(w.a, ef.callees);
+                try fields.appendSlice(w.a, ef.fields);
+            }
+            mapped.fields = try unionEffectFields(w.a, fields.items, &.{});
             mapped.callees = try unionGuards(w.a, callees.items, &.{});
             try effects.append(w.a, mapped);
         }

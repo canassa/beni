@@ -101,7 +101,7 @@ pub const magic = "BENIIFC\x00";
 /// 20: native realm classes, evaluated realm masks and HostFree quantifiers.
 /// 21: realm-only dependencies may name unresolved scheme variables.
 /// 22: effect paths may end with a length-prefixed Any key (kind 7).
-pub const format_version: u32 = 24;
+pub const format_version: u32 = 25;
 
 /// The columns, in this order and no other (`hidden_types` since
 /// format 4, the vocabulary tables since format 8, `checker-v2.md` §14.2,

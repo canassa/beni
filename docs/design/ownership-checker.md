@@ -4511,8 +4511,11 @@ built, for the declaration's own frame:
   freshness or escape fact. Alternatives join by union, with unknown dominant.
   Missing facts, cycles and a 32-step resolution bound keep the need. Facts
   and their dependencies are sorted and deduplicated. Summary block version
-  39, cache entry version 15 and interface version 24 invalidate old bytes,
+  40, cache entry version 16 and interface version 25 invalidate old bytes,
   including imported cache hits; the frontend artifact layout is unchanged.
+  Collection reads existing function slots only; other field dependencies live
+  solely in the effect fact as parameter/path projections. They never create
+  ordinary function slots or grant any other summary fact.
 - **Carried lambdas.** A lambda the result holds keeps its class in the summary, with what each capture held in the
   declaration's vocabulary, when calling it needs nothing but its result and its reads: its class writes nothing,
   escapes nothing, relies on nothing (§18.4) and is not once, and no capture holds a function value. Where the call
