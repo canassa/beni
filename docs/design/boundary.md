@@ -1173,6 +1173,10 @@ conspicuously lacks, and its sanctioned workaround demonstrably reintroduces cra
 virtual-DOM patch. It also establishes the validated-newtype pattern that every later capability
 reuses.
 
+*Amended 2026-11-04:* the time half has its first part, §9.8.21: moments, zones by name (correct
+across DST), the calendar's parts and ISO 8601. Locale formatting (`Intl.DateTimeFormat`,
+`NumberFormat`, `Collator`) is still open.
+
 Then, in rough order of how well the typing is understood: typed arrays and binary data; `fetch` and
 streaming; `localStorage` and structured storage; Web Workers; direct DOM access beyond the virtual
 DOM. Each needs its own analysis of what its failure modes are and whether they are all constructors;
@@ -4867,7 +4871,8 @@ calling fiber's clock; `Time.now` reads `Clock.now`. `Http`'s `timeout : Maybe D
 page's signatures are unchanged, and a page that never calls `Clock.run` still runs on the host's
 `setTimeout` and `Date`, so the test driver's virtual clock governs it as before. `node`'s
 `Io.sleep : Int → ()` keeps its signature as `Task.sleep (Duration.millis ms)`, and `Io.js`'s
-`startTimer` is deleted.
+`startTimer` is deleted. *Amended 2026-11-04 (§9.8.21 (a)):* `Time.Posix` is an alias of core's
+`Date.Posix`, and `Time.toMillis`, `Time.fromMillis` and `Time.now` call `Date`'s.
 
 **(b) The log moves into core** (§17.11). `platforms/browser/Log.beni` is removed; core's `Log`
 keeps `info`, `warn` and `error : String → ()` with the same output on a page (the default sink is
@@ -5838,6 +5843,121 @@ specified, with these findings:
   `sternhalma` 7 428 → 7 474). `examples/steer` delegated no event before, so its build had
   `listen` and no walk. Now it has the walk and `delegate`: 405 bytes raw more, and 4 321 → 4 449
   brotli. A page that delegates no event is the same bytes.
+
+#### 9.8.21 Dates: the calendar, time zones and ISO 8601 (2026-11-04)
+
+*Added 2026-11-04, #1912, for #239; built the same day (`core/Date.beni`,
+`run/DateCalendar`). Where it lives is the owner's decision (dashboard `conduit-fixes-q1`): (a)
+is the recommendation and what is built. Nothing else here depends on that answer.*
+
+A program can print a moment as a date only if it can parse the text that a server sends, know the
+reader's time zone, and get the year, the month and the day of the moment in that zone. Core and the
+platforms gave none of the three. Elm gives the second and the third in `elm/time`, and
+`rtfeldman/elm-iso8601-date-strings` gives the first. Only a platform can write `foreign`
+(CLAUDE.md rule 6), so the gap is filled here, inside the wall (rule 7).
+
+**(a) Core's `Date`** holds it, for every platform. `Posix` moves into it from the browser's `Time`,
+and `Time.Posix` becomes an alias, as `Time.Duration` became an alias of `Duration.Duration`
+(§9.8.15 (a)). `Time.toMillis`, `Time.fromMillis`, `Time.now` and `Time.every` keep their
+signatures. A core module cannot be named `Time`, because the browser's `Time` shadows a core module
+of its name (§9.8.11 (a)).
+
+```text
+-- core/Date.beni
+pub type Posix = Posix Int                         -- milliseconds since the Unix epoch
+pub toMillis : Posix → Int
+pub fromMillis : Int → Posix
+pub now : ⊤ → Posix                                -- impure: Clock.now
+
+pub opaque type Zone                               -- `Utc` or a name; `==` compares names
+pub utc : Zone
+pub here : ⊤ → Zone                                -- impure: the host's zone
+pub named : String → Maybe Zone                    -- an IANA name that the host knows
+pub name : Zone → String                           -- "UTC", or the IANA name
+
+pub type Month = Jan | Feb | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov | Dec
+pub type Weekday = Mon | Tue | Wed | Thu | Fri | Sat | Sun
+pub type alias Parts =
+    year : Int
+    month : Month
+    day : Int                                      -- 1 to 31
+    weekday : Weekday
+    hour : Int                                     -- 0 to 23
+    minute : Int
+    second : Int
+    millis : Int
+    offset : Int                                   -- minutes east of UTC, in this zone at this moment
+pub toParts : Posix, Zone → Parts
+
+pub fromIso8601 : String → Maybe Posix
+pub toIso8601 : Posix → String                     -- UTC, `2016-02-18T03:22:56.637Z`
+```
+
+**(b) A zone is a name, never a fixed offset.** Elm's `Time.here` builds a zone from
+`getTimezoneOffset()` with no eras, so a moment on the other side of a DST change is one hour wrong
+(research 13 §5): a silent wrong answer. Here a zone is `utc` or a host-known IANA name, and the host's
+time zone database gives the offset for each moment.
+
+- `here ⊤` is `named` of the name that `Intl.DateTimeFormat().resolvedOptions().timeZone`
+  gives. A host that gives no name, or a name it does not know, gives `utc`.
+- `named "UTC"` is `utc`. `named s` makes the host's formatter for `s` once, with `timeZone: s`
+  and `timeZoneName: "longOffset"`. ECMA-402 throws a `RangeError` for a name it does not know;
+  that one error is `Nothing`, and every other error is thrown again (rule 9). `Date` keeps one
+  formatter per name, made on the first `named` of it, so `toParts` makes none. A `Zone` is plain
+  data (`Utc` or a name), so `eq` and `compare` derive: two zones are `==` when their names are. A
+  `pub eq` for `Zone` is not possible, because a module's `pub eq` is the `eq` of every type it
+  declares (`static-dispatch-spike.md` §11), here `Posix`, `Month` and `Weekday` too.
+- `toParts t utc` is arithmetic in beni (Howard Hinnant's `civil_from_days`). `toParts t z` for a
+  named zone asks the zone's formatter for one part, the offset at `t` (`GMT`, `GMT+01:00`, or with
+  seconds, `GMT+00:53:28`, for a local mean time), through `Js.pure`, and then does the same
+  arithmetic on `t` plus the offset. The answer depends only on `t`, the name and the host's
+  database. The offset is asked of the host because only the host has the database; the
+  calendar is not, so the parts of every moment come from one piece of code.
+- **The host's range.** A JavaScript `Date` holds ±8.64 × 10¹⁵ ms (ECMA-262 §21.4.1.1). Outside
+  it, a formatter throws. `toParts` of a moment outside the range uses the zone's offset at the
+  nearer end of the range, so it is total.
+
+**(c) `fromIso8601` is one pattern and range checks, never `Date.parse`.** `Date.parse` gives
+`NaN` or an implementation-defined answer for text outside ECMAScript's own format (ECMA-262
+§21.4.3.2). `fromIso8601` matches the text with one `RegExp` (`Js.regExp`, whose `\d` is ASCII's
+ten digits), and beni checks each field's range. The pattern is 359 bytes of brotli smaller in
+Conduit's release build than the same parser written over `String` (29,110 against 29,469), and
+it gives the same answers on `run/DateCalendar`. It accepts exactly:
+
+- a date, `YYYY-MM-DD`, which is that day's midnight UTC; the year is four digits, or a sign
+  and six digits (`+275760`, never `-000000`), the form `toIso8601` writes outside 0 to 9999;
+- a date, `T` (or `t`, or one space), and a time `HH:MM`, `HH:MM:SS` or `HH:MM:SS.f…` with one to
+  nine digits of fraction, truncated to milliseconds; a fraction needs the seconds, and its mark
+  is `.`;
+- after a time, `Z` (or `z`), `±HH:MM`, `±HHMM` or `±HH`. A time with no offset is UTC.
+
+Each field must be in range: month 1–12, the day valid for its month and year (leap years by the
+Gregorian rule), hour 0–23, minute 0–59, second 0–59 (a leap second, `60`, is refused), an offset
+hour 0–23 and minute 0–59; and the moment must be inside the host's range. Anything else is
+`Nothing`: there is no partial answer. These are the
+forms of RFC 3339 §5.6 and of `elm-iso8601-date-strings`' `toTime`, which elm-spa-example decodes
+dates with.
+
+`toIso8601 t` is `t`'s UTC parts as `YYYY-MM-DDTHH:MM:SS.sssZ`, as `Date.prototype.toISOString`
+writes them; a year outside 0–9999 is written `±YYYYYY`, as that method writes it. So
+`fromIso8601 (toIso8601 t) == Just t` for every `t` in the host's range.
+
+**(d) No names, no locale.** `Date` gives `Month` and `Weekday` as types, not as English words.
+A program writes its own names (elm-spa-example's `Timestamp.format` does), and formatting by
+locale is the `Intl` capability of §6, specified on its own.
+
+**(e) The test harness pins `TZ=UTC`.** The harness started every program with an empty
+environment (`tests/blackbox/world.zig`), and Chrome with its own, so a program read the
+machine's zone: Europe/Berlin on one machine, UTC on CI. A program that calls `here` printed a
+different date on each. Every child of the harness, Chrome included, now gets `TZ=UTC`
+(`world.time_zone`). A DST case is tested with `named`, not with `here`.
+
+*Tests:* `run/DateCalendar` parses and print each accepted form and refuse each malformed one (a day
+31 of April, 29 February of 2100, hour 24, a leap second, an offset of `+24:00`, trailing text);
+round-trips moments at both ends of the host's range; gives the parts of moments on each side of the
+2026 DST changes in `America/New_York` (8 March) and `Europe/Berlin` (29 March, 25 October); and
+refuses an unknown zone name. Its last line is `here`, which is `UTC` under (e). The
+Conduit pages show their dates through it (`Article.timestamp`).
 
 ### 9.9 SVG in the `html` vocabulary (2026-10-12)
 
