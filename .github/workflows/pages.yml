@@ -2,7 +2,9 @@
 # Every pull request builds the site and does not deploy it. The build has
 # no paths filter: it reads the compiler, core/, the platforms, the flake,
 # build.zig and build.zig.zon, the playground and the examples, and a list
-# of those paths would miss the next input that is added.
+# of those paths would miss the next input that is added. This workflow
+# loads no page: ci.yml's `browser` job builds the site again and loads it
+# in Chrome with Pages' 404 rule (`zig build test-pages`, issue #244).
 #
 # Pages takes its site from GitHub Actions (Settings, Pages, Source), so the
 # site is this workflow's artifact, served as it is: no branch, and no
