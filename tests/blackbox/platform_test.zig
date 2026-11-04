@@ -2847,3 +2847,45 @@ test "builtin worker typed storage emits identical cold and warm entries at jobs
         }
     }
 }
+
+test "a platform consumer cannot splice a property descriptor's native accessors" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("platform/beni.json",
+        \\{"platform":true,"name":"property-forge","program":"Probe.Program","platforms":["html"]}
+    );
+    try w.write("platform/Probe.beni",
+        \\import Html.Runtime as Runtime
+        \\
+        \\
+        \\pub foreign type Program
+        \\
+        \\
+        \\pub forge : Runtime.Property, Runtime.Property → Runtime.Property
+        \\forge left right =
+        \\    { name = Runtime.propertyName left
+        \\    , immutable = Runtime.propertyImmutable left
+        \\    , get = λnode → Runtime.propertyGet left node
+        \\    , set = λnode value → Runtime.propertySet right node value
+        \\    }
+    );
+    try w.write("Main.beni",
+        \\import Probe
+        \\
+        \\
+        \\pub answer = 1
+    );
+    const checked = try w.run(&.{ "check", "--platform=platform", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), checked.exit_code);
+    try testing.expectEqual(@as(usize, 1), checked.diagnostics.len);
+    try testing.expectEqualDeep(diagnostic.Diagnostic{
+        .code = .type_mismatch,
+        .severity = .@"error",
+        .span = .{ .file = "platform/Probe.beni", .start = .{ .line = 9, .col = 5 }, .end = .{ .line = 9, .col = 6 } },
+        .title = "TYPE MISMATCH",
+        .message = "Something is off with the body of this definition:\n\n" ++
+            "The body is:\n\n" ++
+            "    { get : Node → Payload, immutable : Bool, name : String, set : Node, Payload → ⊤ }\n\n" ++
+            "But the type annotation says it should be:\n\n    Property\n",
+    }, checked.diagnostics[0]);
+}

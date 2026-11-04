@@ -22235,6 +22235,11 @@ const MarkupContext = struct {
         return expr(try l.member(node(target), try symbolOf(l, field), pos(l)));
     }
 
+    fn fieldMember(impl: *anyopaque, target: M.Expr, field: []const u8) E!M.Expr {
+        const l = lowerer(impl);
+        return expr(try l.fieldMember(node(target), try symbolOf(l, field), pos(l)));
+    }
+
     fn index(impl: *anyopaque, target: M.Expr, at_: M.Expr) E!M.Expr {
         const l = lowerer(impl);
         return expr(try l.add(.index_get, pos(l), node(target).int(), node(at_).int()));
@@ -22244,7 +22249,13 @@ const MarkupContext = struct {
         const l = lowerer(impl);
         const p = pos(l);
         var nodes: std.ArrayList(Node.Index) = .empty;
-        for (properties) |prop| try nodes.append(l.scratch, try l.property(try symbolOf(l, prop.key), node(prop.value), p));
+        for (properties) |prop| {
+            const key = try symbolOf(l, prop.key);
+            try nodes.append(l.scratch, if (prop.source)
+                try l.fieldProperty(key, node(prop.value), p)
+            else
+                try l.property(key, node(prop.value), p));
+        }
         return expr(try l.object(nodes.items, p));
     }
 
@@ -22436,6 +22447,7 @@ const MarkupContext = struct {
         .name = name,
         .call = call,
         .member = member,
+        .field_member = fieldMember,
         .index = index,
         .object = object,
         .array = array,

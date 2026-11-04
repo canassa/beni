@@ -2925,6 +2925,14 @@ builder and hands their references to the Beni runtime in a **private typed
 protocol record**. Slots, row algorithms, controls and the scheduler remain in
 Beni. This does not add a `Js` primitive or change `Any.js`.
 
+The generated private protocol and instance-prefix properties use the same linked
+record-field namespace as their Beni consumers. Interface 1.27 provides
+`Js.field` for such a member and `Property.source = true` for such a property;
+ordinary `Js.member`/properties still name literal native ABI keys. Thus release
+field numbering agrees across Source and generated code without pinning public
+type-name strings or introducing a wrapper. These are JsIr builders, not source
+primitives.
+
 `Lowering.runtime_protocol`, when present, names that record's source module,
 record type and opaque carrier types. Its default is absent. A lowering that
 uses the contract targets at least 1.27; existing lowerings and their source

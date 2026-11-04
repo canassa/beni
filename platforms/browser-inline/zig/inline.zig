@@ -45,6 +45,8 @@ pub const lowering: m.Lowering = .{
         // code goes through; `read`, an event's `via` extractor, is called
         // first, even when the send waits (boundary.md §9.8.20 (d), #559).
         .{ .name = "send", .arity = 3 },
+        .{ .name = "guarded", .arity = 3 },
+        .{ .name = "unchanged", .arity = 1 },
         // `(f)`: what undoes the mount, run once by `stop`.
         .{ .name = "own", .arity = 1 },
         // `(id)`: the element a program mounts at.
@@ -434,7 +436,7 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         }
         const node = try pg.ref(ev.target);
         if (!facts.prevent_default and !facts.stop_propagation) {
-            try js.expression(body, try pg.onCall(node, listener, kind, ev.ctx, read));
+            try js.expression(body, try pg.onCall(body, node, listener, kind, ev.ctx, read));
             continue;
         }
         const active = try pg.armActivity(ev.ctx);
@@ -452,7 +454,7 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         }
         if (facts.prevent_default) try js.expression(dom_blk, try js.call(try js.member(try js.name(evn), "preventDefault"), &.{}));
         if (facts.stop_propagation) try js.expression(dom_blk, try js.call(try js.member(try js.name(evn), "stopPropagation"), &.{}));
-        try js.expression(dom_blk, try js.call(try js.name(try cx.runtime("send")), if (read) |rd| &.{ listener, try js.name(evn), rd } else &.{ listener, try js.name(evn) }));
+        try js.expression(dom_blk, try js.call(try js.name(try cx.runtime("guarded")), &.{ listener, try js.name(evn), read orelse try js.name(try cx.runtime("unchanged")) }));
         try js.expression(body, try pg.addListener(node, kind orelse "click", try js.arrow(&.{evn}, dom_blk)));
     }
     const out_handlers = try a.alloc(PieceHandler, handlers.items.len);
@@ -1687,7 +1689,7 @@ const Page = struct {
         for (plans.items, listeners, pg.events.items) |pl, f, evinfo| {
             const node = try pg.ref(pl.target);
             if (evinfo.captures.len == 0 and !pl.flags.prevent_default and !pl.flags.stop_propagation) {
-                try js.expression(body, try pg.onCall(node, f, pl.kind, evinfo.ctx, pl.read));
+                try js.expression(body, try pg.onCall(body, node, f, pl.kind, evinfo.ctx, pl.read));
                 continue;
             }
             const active = if (evinfo.captures.len != 0) try pg.eventBindingFor(evinfo) else try pg.armActivity(evinfo.ctx);
@@ -1709,7 +1711,7 @@ const Page = struct {
             }
             if (pl.flags.prevent_default) try js.expression(dom, try js.call(try js.member(try js.name(ev), "preventDefault"), &.{}));
             if (pl.flags.stop_propagation) try js.expression(dom, try js.call(try js.member(try js.name(ev), "stopPropagation"), &.{}));
-            try js.expression(dom, try js.call(try js.name(try cx.runtime("send")), if (pl.read) |rd| &.{ try js.name(listener), try js.name(ev), rd } else &.{ try js.name(listener), try js.name(ev) }));
+            try js.expression(dom, try js.call(try js.name(try cx.runtime("guarded")), &.{ try js.name(listener), try js.name(ev), pl.read orelse try js.name(try cx.runtime("unchanged")) }));
             try js.expression(body, try pg.addListener(node, pl.kind orelse "click", try js.arrow(&.{ev}, dom)));
         }
 
@@ -1814,10 +1816,10 @@ const Page = struct {
                 // A value that reaches its key as a message is the message,
                 // sent to the dispatcher (§10.3).
                 const call = if (t.message)
-                    try js.call(try js.name(try cx.runtime("send")), &.{ try js.name(pg.dispatch.?), try cx.programSubscriptionMessage(@intCast(j), try js.name(v)) })
+                    try js.call(try js.name(try cx.runtime("guarded")), &.{ try js.name(pg.dispatch.?), try cx.programSubscriptionMessage(@intCast(j), try js.name(v)), try js.name(try cx.runtime("unchanged")) })
                 else blk: {
                     const handler_ = try js.name(try pg.handler(t.handler));
-                    break :blk try js.call(try js.name(try cx.runtime("send")), if (t.fields == 0) &.{handler_} else &.{ handler_, try js.name(v) });
+                    break :blk try js.call(try js.name(try cx.runtime("guarded")), &.{ handler_, if (t.fields == 0) try js.literal(.null) else try js.name(v), try js.name(try cx.runtime("unchanged")) });
                 };
                 // One declaration's send is the runtime's `send` itself, whose
                 // result is `undefined` and which no start reads (§3, amended
@@ -2176,36 +2178,25 @@ const Page = struct {
         return active;
     }
 
-    /// The runtime's `on` for a listener with neither flag and no captured
-    /// arguments: `on(node, f)`, the event's name left out for a click; or,
-    /// inside eager arms, `onArm(node, f, kind, arms)` with the arms'
-    /// elements outermost first, which `onArm` asks before the event enters
-    /// the guard (§8.2, #466; the same test `armActivity` writes in place).
-    /// A page with no handler in an arm never names `onArm` (#874).
-    fn onCall(pg: *Page, node: m.Expr, f: m.Expr, kind: ?[]const u8, ctx: u32, read: ?m.Expr) m.Error!m.Expr {
-        const js = pg.cx.js;
-        const arms = try pg.armElements(ctx);
-        if (!pg.taking) {
-            const reader = read orelse identity_reader: {
-                const event = try pg.cx.fresh("event");
-                const body = try js.block();
-                try js.@"return"(body, try js.name(event));
-                break :identity_reader try js.arrow(&.{event}, body);
-            };
-            if (arms.len == 0) return js.call(try js.name(try pg.cx.runtime("on")), &.{ node, f, try js.string(kind orelse "click"), reader });
-            const which = if (arms.len == 1) arms[0] else try js.array(arms);
-            return js.call(try js.name(try pg.cx.runtime("onArm")), &.{ node, f, try js.string(kind orelse "click"), which, reader });
+    /// The same single native listener as the Source on/onTaken adapters,
+    /// with the checked callback, reader and arm test kept in producer IR.
+    /// The guard projects immediately even when the mapped send is queued.
+    fn onCall(pg: *Page, into: m.Block, node: m.Expr, f: m.Expr, kind: ?[]const u8, ctx: u32, read: ?m.Expr) m.Error!m.Expr {
+        const cx = pg.cx;
+        const js = cx.js;
+        const callback = try cx.fresh("listener");
+        try js.constant(into, callback, f);
+        const project = try cx.fresh("reader");
+        try js.constant(into, project, read orelse try js.name(try cx.runtime("unchanged")));
+        const event = try cx.fresh("event");
+        const body = try js.block();
+        if (try pg.armActivity(ctx)) |active| {
+            const inactive = try js.block();
+            try js.@"return"(inactive, null);
+            try js.@"if"(body, try js.unary(.not, active), inactive, null);
         }
-        if (arms.len == 0) {
-            const on = try js.name(try pg.cx.runtime(if (pg.taking) "onTaken" else "on"));
-            if (read) |rd| return js.call(on, &.{ node, f, if (kind) |k| try js.string(k) else try js.literal(.undefined), rd });
-            if (kind) |k| return js.call(on, &.{ node, f, try js.string(k) });
-            return js.call(on, &.{ node, f });
-        }
-        const on_arm = try js.name(try pg.cx.runtime(if (pg.taking) "onArmTaken" else "onArm"));
-        const which = if (arms.len == 1) arms[0] else try js.array(arms);
-        if (read) |rd| return js.call(on_arm, &.{ node, f, try js.string(kind orelse "click"), which, rd });
-        return js.call(on_arm, &.{ node, f, try js.string(kind orelse "click"), which });
+        try js.expression(body, try js.call(try js.name(try cx.runtime("guarded")), &.{ try js.name(callback), try js.name(event), try js.name(project) }));
+        return pg.addListener(node, kind orelse "click", try js.arrow(&.{event}, body));
     }
 
     /// A listener written in place: `node.addEventListener(kind, f)`, or in

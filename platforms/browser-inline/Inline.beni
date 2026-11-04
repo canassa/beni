@@ -37,6 +37,19 @@ send callback value project =
         if Js.isUndefined project then raw else Js.apply project [ raw ]
 
 
+-- The compiler's typed event bridge. Projection happens inside the guard
+-- immediately, even for nested sends; only the mapped payload is queued.
+pub guarded : sync (a → ⊤), b, sync (b → a) → ⊤
+guarded callback value project =
+    Dispatch.onDefect λ⊤ → if Js.development ⊤ then crashScreen ⊤
+    Dispatch.read callback value project
+
+
+-- Shared by generated sites without an extractor, with no adapter closure.
+pub unchanged : a → a
+unchanged value = value
+
+
 -- An overlay above the page, which it leaves in place to inspect: the
 -- error's text arrives with the host's report of the throw, which reaches
 -- the window after the guard's `finally`.
@@ -78,8 +91,8 @@ crashScreen ⊤ =
 --| a function of the id of the element it mounts at — mounted inside one
 --| dispatch, so a throw while it mounts, a missing element included,
 --| stops the page as any defect does.
-pub run : V → ⊤
-run program = send program Js.undefined Js.undefined
+pub run : sync (Js.Value → ⊤) → ⊤
+run program = guarded program Js.undefined unchanged
 
 
 --| `(id)`: the element a program mounts at, the one `id` names or

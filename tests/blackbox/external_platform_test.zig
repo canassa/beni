@@ -283,3 +283,46 @@ test "a shared generated call is rewritten once when its replacement is a call" 
         try w.expectProgram("out/_main.mjs", .{ .stdout = "rightleft/rightleft\n" });
     }
 }
+
+test "generated Source fields share the runtime record namespace in dev and release" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("platform/beni.json",
+        \\{"platform":true,"name":"fields","platforms":["html"],"reexports":["Html"],"program":"Probe.Program","runtime":"runtime.js","markup":{"lowering":"source-fields-toy","module":"Probe","runtime":"runtime.js"}}
+    );
+    try w.write("platform/runtime.js",
+        \\export const run = program => console.log(program.t);
+        \\export const text = value => ({t: value});
+        \\export const map = (value, tagger) => value;
+    );
+    try w.write("platform/Probe.js", "export const show = value => value;\n");
+    try w.write("platform/Probe.beni",
+        \\import Html exposing (Html)
+        \\pub foreign type Program
+        \\pub foreign pure show : Html msg → Program
+        \\pub read : { producerValue : String } → String
+        \\read record = record.producerValue
+        \\pub make : String → { consumerValue : String }
+        \\make value = { consumerValue = value }
+    );
+    try w.write("Main.beni",
+        \\import Probe
+        \\main : Probe.Program
+        \\main = Probe.show (<p>namespace</p>)
+    );
+    for ([_][]const []const u8{
+        &.{ "build", "--platform=platform", "--out=out", "Main.beni" },
+        &.{ "build", "--platform=platform", "--out=out", "--release", "Main.beni" },
+    }) |args| {
+        const built = try w.runWith(args, .{ .raw_diagnostics = true });
+        if (built.exit_code != 0) std.debug.print("{s}\n", .{built.stderr});
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqualStrings("", built.stderr);
+        if (args.len == 5) {
+            const emitted = try w.read("out/_main.mjs");
+            try testing.expect(std.mem.indexOf(u8, emitted, "producerValue") == null);
+            try testing.expect(std.mem.indexOf(u8, emitted, "consumerValue") == null);
+        }
+        try w.expectProgram("out/_main.mjs", .{ .stdout = "left/native/right\n" });
+    }
+}

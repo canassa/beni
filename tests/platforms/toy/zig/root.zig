@@ -19,7 +19,7 @@ pub const lowerings = [_]m.Lowering{ .{
     },
     .module = module,
     .root = root,
-}, @import("typed.zig").lowering, @import("shared.zig").lowering, @import("typed.zig").packet_nonfresh, @import("typed.zig").packet_call, @import("typed.zig").packet_data, @import("typed.zig").packet_forged, @import("typed.zig").packet_only };
+}, @import("typed.zig").lowering, @import("shared.zig").lowering, @import("typed.zig").packet_nonfresh, @import("typed.zig").packet_call, @import("typed.zig").packet_data, @import("typed.zig").packet_forged, @import("typed.zig").packet_only, @import("fields.zig").lowering };
 
 /// `wrap`, hoisted once per module: `(tag, inner) => tag + "[" + inner + "]"`.
 fn module(cx: *m.Context, tree: *const m.Tree) m.Error!void {

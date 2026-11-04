@@ -83,7 +83,9 @@ const std = @import("std");
 /// Version 1.27 records the owner-approved producer/runtime boundary
 /// (2026-11-04, boundary.md §9.4–9.5). runtime_protocol names private typed
 /// Source carriers/record; the lowering emits block/context/message dispatch
-/// with existing builders. Slots, rows, controls and scheduling stay in Beni.
+/// with existing builders. Js.field and Property.source select the linked
+/// Source record namespace; native keys remain literal. Slots, rows, controls
+/// and scheduling stay in Beni.
 /// Native/callable facts, CorePrivate authority and an ordinary body pin apply;
 /// no new Js primitive, Any.js change, refusal, exemption or hot-path factory.
 /// Version 1.28 amends the private DOM record (2026-11-04): setSiteScope
@@ -1999,8 +2001,14 @@ pub const Js = struct {
     }
 
     /// `object.field`, the field a constant name.
-    pub fn member(js: Js, target: Expr, field: []const u8) Error!Expr {
-        return js.vtable.member(js.impl, target, field);
+    pub fn member(js: Js, target: Expr, key: []const u8) Error!Expr {
+        return js.vtable.member(js.impl, target, key);
+    }
+
+    /// 1.27: a Beni record/cell field, using its linked release spelling.
+    /// Native ABI members continue to use `member` and literal native keys.
+    pub fn field(js: Js, target: Expr, key: []const u8) Error!Expr {
+        return js.vtable.field_member(js.impl, target, key);
     }
 
     /// `object[index]`.
@@ -2077,7 +2085,12 @@ pub const TemplatePart = union(enum) {
     expr: Expr,
 };
 
-pub const Property = struct { key: []const u8, value: Expr };
+pub const Property = struct {
+    key: []const u8,
+    value: Expr,
+    /// 1.27: use the linked Beni record/cell field namespace.
+    source: bool = false,
+};
 
 pub const BinaryOp = enum(u8) { strict_eq, strict_ne, logical_and, logical_or, add, _ };
 pub const UnaryOp = enum(u8) { not, type_of, _ };
@@ -2202,6 +2215,7 @@ pub const VTable = struct {
     name: *const fn (impl: *anyopaque, n: Name) Error!Expr,
     call: *const fn (impl: *anyopaque, callee: Expr, args: []const Expr) Error!Expr,
     member: *const fn (impl: *anyopaque, target: Expr, field: []const u8) Error!Expr,
+    field_member: *const fn (impl: *anyopaque, target: Expr, field: []const u8) Error!Expr,
     index: *const fn (impl: *anyopaque, target: Expr, at: Expr) Error!Expr,
     object: *const fn (impl: *anyopaque, properties: []const Property) Error!Expr,
     array: *const fn (impl: *anyopaque, elements: []const Expr) Error!Expr,
