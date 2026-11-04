@@ -1,4 +1,4 @@
-import { Inline$root, Inline$caught, Inline$take, Inline$when, Inline$entry, Inline$pass, Inline$onTaken, Inline$first, Inline$deliver } from "./_platform/Inline.mjs";
+import { Inline$root, Inline$caught, Inline$take, Inline$bucket, Inline$when, Inline$entry, Inline$pass, Inline$unchanged, Inline$guarded, Inline$listen, Inline$first, Inline$deliver } from "./_platform/Inline.mjs";
 import { Widget$view$$html$0, Widget$view$$root$0 } from "./Widget.mjs";
 const HydratedPiece$main = ($id$1) => {
   const $root$2 = Inline$root(undefined);
@@ -7,16 +7,20 @@ const HydratedPiece$main = ($id$1) => {
   Inline$caught($root$2);
   const $elements$5 = Inline$take($root$2, `<main><button>Toggle</button><p>Open</p>${Widget$view$$html$0}`, [2, 1, 0, 5, 1, 3], "main button p section button strong");
   const $elements$6 = $elements$5.slice(4, 6);
-  const $table$7 = [[[]], [[]]];
+  const $table$7 = [[Inline$bucket(null)], [Inline$bucket(null)]];
   Inline$entry(() => {
     const $t$9 = $model$4.open ? 0 : 1;
     const $arm$8 = $t$9;
     Inline$when($elements$5[2], $arm$8);
-  }, $table$7[0][0]);
-  Inline$onTaken($elements$5[1], () => {
+  }, [$table$7[0][0]]);
+  const $listener$11 = () => {
     const $before$10 = $model$4;
     $before$10.open = !$before$10.open;
     Inline$pass($table$7[0][0]);
+  };
+  const $reader$12 = Inline$unchanged;
+  Inline$listen($elements$5[1], "click", ($event$13) => {
+    Inline$guarded($listener$11, $event$13, $reader$12);
   });
   Widget$view$$root$0($elements$6, $model$4.w, $table$7[1]);
   Inline$first();
