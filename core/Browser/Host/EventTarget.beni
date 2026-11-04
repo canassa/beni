@@ -1,12 +1,42 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Browser.Host.Element as Element
 import Browser.Host.HTMLAnchorElement as HTMLAnchorElement
+import Browser.Host.HTMLFormElement as HTMLFormElement
+import Browser.Host.HTMLInputElement as HTMLInputElement
+import Browser.Host.HTMLOptionElement as HTMLOptionElement
+import Browser.Host.HTMLSelectElement as HTMLSelectElement
+import Browser.Host.HTMLTextAreaElement as HTMLTextAreaElement
 import Browser.Host.Node as Node
 
 
 pub foreign type EventTarget
 
 
+pub foreign impure asNode : aliased EventTarget → Maybe Node.Node
+
+
+pub foreign impure asElement : aliased EventTarget → Maybe Element.Element
+
+
+pub foreign impure asInput : aliased EventTarget → Maybe HTMLInputElement.HTMLInputElement
+
+
+pub foreign impure asTextArea : aliased EventTarget → Maybe HTMLTextAreaElement.HTMLTextAreaElement
+
+
+pub foreign impure asSelect : aliased EventTarget → Maybe HTMLSelectElement.HTMLSelectElement
+
+
+pub foreign impure asOption : aliased EventTarget → Maybe HTMLOptionElement.HTMLOptionElement
+
+
+pub foreign impure asForm : aliased EventTarget → Maybe HTMLFormElement.HTMLFormElement
+
+
 pub foreign pure rendererFromNode : Node.Node → EventTarget
+
+
+pub foreign impure rendererDocument : ⊤ → EventTarget
 
 
 pub foreign impure isPage : ⊤ → Bool

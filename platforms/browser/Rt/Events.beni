@@ -1,0 +1,398 @@
+--! Events and controlled inputs of the browser platform's runtime
+--! (`backend.md` §15.3; `boundary.md` §9.4–9.5, interface 1.29): delegated
+--! listeners and their walk up the tree, an element's own listener, the
+--! handler's message sent through its `Html.map`s to its program, and the
+--! controls a render writes and puts back. All of it is beni over typed
+--! `Node`/`Event` values and the producer's `Protocol`; no native value or
+--! callback is converted to `Js.Value`. The producer owns the metadata
+--! (`hasRoot`, `hasHandler`, `handlerFlags`) and the opaque payload and
+--! context operations.
+
+import Browser.Host.Array as Array
+import Browser.Host.Document as Document
+import Browser.Host.Event as Event
+import Browser.Host.EventTarget as EventTarget
+import Browser.Host.Events as Events
+import Browser.Host.Node as Node
+import Browser.Host.Set as Set
+import Browser.Host.Timers as Timers
+import Browser.Host.Window as Window
+import Html.Runtime as Runtime
+import Js
+
+
+-- ---- Events (backend.md §15.3) --------------------------------------------
+
+-- An event node holds its handler under `$$<name>`, a payload extractor
+-- under `$$<name>X` when the handler takes a payload, and its declaration's
+-- `preventDefault` (1) and `stopPropagation` (2) under `$$<name>F`; the
+-- producer reads them (`hasHandler`, `handlerFlags`, `eventPayload`).
+
+--| Send the message `node`'s handler makes of `event` to the program whose
+--| mount node is nearest above it, through every `Html.map` it is inside,
+--| innermost first. The search starts at the node's parent: a program
+--| renders only inside its mount node, so a mount node's own handler is
+--| the program's around it. A stopped page calls no handler, and a handler
+--| or an `update` that throws stops it.
+pub fire : Runtime.Protocol, Node.Node, Event.Event, String, String, Int → ⊤
+fire p node event key payload flags =
+    if p.dead ⊤ then
+        ⊤
+    else
+        if Js.bitAnd flags 1 ≠ 0 then
+            Event.preventDefault event
+
+        ok = Js.ref False
+
+        Js.finally
+            (λ⊤ →
+                msg = through p (p.nodeContext node) (p.eventPayload node event key payload)
+                Js.optMatch (mountAbove p (Node.rendererParent node)) (λ⊤ → ⊤) λroot →
+                    p.sendRoot root msg
+                Js.write ok True
+            )
+            λ⊤ → if Js.read ok then ⊤ else p.stop ⊤
+        if Js.bitAnd flags 2 ≠ 0 then
+            Event.stopPropagation event
+
+
+-- `msg` through each context from `c` out.
+through : Runtime.Protocol, Runtime.Context, Runtime.Payload → Runtime.Payload
+through p c msg =
+    if p.contextPresent c then
+        through p (p.contextParent c) (p.contextApply c msg)
+    else
+        msg
+
+
+-- The nearest mount node from `at` up, or none.
+mountAbove : Runtime.Protocol, Js.Opt Node.Node → Js.Opt Node.Node
+mountAbove p at = Js.optMatch at (λ⊤ → Js.none ⊤) λnode →
+    if p.hasRoot node then
+        Js.some node
+    else
+        mountAbove p (Node.rendererParent node)
+
+
+-- The one listener per delegated event name: from the target up, every
+-- node with a handler for the event, until one stops it. An event inside a
+-- program mounted in another's markup goes on into the outer one, as the
+-- DOM's own bubbling does, and each handler's message goes to the program
+-- that rendered it. An event the browser dispatched is a turn: every
+-- handler of the walk is one render, when the walk ends. While a handler
+-- and its extractor run, the event's `currentTarget` is the handler's node:
+-- the walk's first handler defines it, once, as a getter over `at`, and the
+-- walk removes it when it ends, however it ends; a walk that met no handler
+-- defined nothing and removes nothing (`boundary.md` §9.8.20 (d)).
+delegated : Runtime.Protocol, String, String, String, Event.Event → ⊤
+delegated p key flagged payload event = p.turn (Event.isTrusted event) λ⊤ →
+    at = Js.ref (Js.none ⊤)
+    Js.finally (λ⊤ → bubble p event key flagged payload at (Event.rendererTarget event)) λ⊤ →
+        Js.optMatch (Js.read at) (λ⊤ → ⊤) λ_ → Event.rendererClearCurrentTarget event
+
+
+bubble :
+      Runtime.Protocol
+    , Event.Event
+    , String
+    , String
+    , String
+    , Js.Ref (Js.Opt Node.Node)
+    , Js.Opt Node.Node
+    → ⊤
+bubble p event key flagged payload at current = Js.optMatch current (λ⊤ → ⊤) λnode →
+    if p.hasHandler node key && not (Node.rendererDisabled node) then
+        flags = p.handlerFlags node flagged
+        Js.optMatch (Js.read at) (λ⊤ → Event.rendererCurrentTarget event at) λ_ → ⊤
+        Js.write at (Js.some node)
+        fire p node event key payload flags
+        if Js.bitAnd flags 2 ≠ 0 then
+            ⊤
+        else
+            bubble p event key flagged payload at (Node.rendererParent node)
+    else
+        bubble p event key flagged payload at (Node.rendererParent node)
+
+
+-- The delegated names listened for so far.
+registered : Set.Set String
+registered = Set.make ⊤
+
+
+--| Listen for the delegated event `name` once. The three property names an
+--| event's handler is read by are built once per name, here, and handed to
+--| the listener: a name concatenated per event is a new string.
+pub delegate : Runtime.Protocol, String → ⊤
+delegate p name =
+    if Set.has registered name then
+        ⊤
+    else
+        Set.add registered name
+        key = "$$${name}"
+        flagged = "${key}F"
+        payload = "${key}X"
+        _ = Document.listen name λevent → delegated p key flagged payload event
+        ⊤
+
+
+--| A listener of the element's own for an event that is not delegated; it
+--| reads the handler the node holds when it fires.
+pub listen : Runtime.Protocol, Node.Node, String, Int → ⊤
+listen p node name flags =
+    key = "$$${name}"
+    payload = "${key}X"
+    _ = Events.listen (EventTarget.rendererFromNode node) name λevent →
+        if p.hasHandler node key then
+            p.turn (Event.isTrusted event) λ⊤ → fire p node event key payload flags
+    ⊤
+
+
+-- ---- Controlled inputs (backend.md §15.3, *Controlled inputs*) ----------
+--
+-- A control keeps its model value in a chain of typed entries under the
+-- node (`Protocol.controls`), one per property in the order installed,
+-- each entry its descriptor and value. User events mark controls in the
+-- program's edit set; runtime DOM writes mark `touched`. Those marks
+-- reconcile at render end.
+
+-- The protocol, kept by the first `control`: the edit listeners and the
+-- after-render work read the chain through it.
+stored : Js.Ref (Js.Opt Runtime.Protocol)
+stored = Js.ref (Js.none ⊤)
+
+
+-- What runs when a render ends: set by the first `control`, so a page
+-- with no controlled element ships none of it.
+afterRender : Js.Ref (Js.Opt (Node.Node → ⊤))
+afterRender = Js.ref (Js.none ⊤)
+
+
+--| `(p, node, d, v)`: the property `d` of `node` controlled by the model's
+--| value `v`. A property that is not proven immutable is always written.
+--| Only a proven immutable value may compare with the previous value or the
+--| live DOM: an unchanged one leaves unmarked external edits alone. The
+--| first entry of a node is made once and later calls update it in place.
+pub control : Runtime.Protocol, Node.Node, Runtime.Property, Runtime.Payload → ⊤
+control p node d v =
+    immutable = Runtime.propertyImmutable d
+    Js.optMatch (p.controls node)
+        (λ⊤ →
+            p.setControls node (entry d v)
+            watch p
+            apply node d v immutable True
+        )
+        λhead → place node head d v immutable
+
+
+entry : Runtime.Property, Runtime.Payload → Runtime.Control
+entry d v = Runtime.control (Js.cell { d = d, v = v, next = Js.none ⊤ })
+
+
+-- The entry of `d`'s property from `at` on updated, or one appended.
+place : Node.Node, Runtime.Control, Runtime.Property, Runtime.Payload, Bool → ⊤
+place node at d v immutable =
+    fields = Runtime.controlCell at
+    if Runtime.propertyName (Js.cellRead fields .d) == Runtime.propertyName d then
+        previous = Js.cellRead fields .v
+        Js.cellWrite fields d .d
+        Js.cellWrite fields v .v
+        apply node d v immutable (not (Js.same previous v))
+    else
+        Js.optMatch (Js.cellRead fields .next)
+            (λ⊤ →
+                Js.cellWrite fields (Js.some (entry d v)) .next
+                apply node d v immutable True
+            )
+            λnext → place node next d v immutable
+
+
+apply : Node.Node, Runtime.Property, Runtime.Payload, Bool, Bool → ⊤
+apply node d v immutable changed =
+    if not immutable then
+        writeProp node d v
+    else if changed && not (Js.same (Runtime.propertyGet d node) v) then
+        writeProp node d v
+
+
+-- A control's property written with the model's value. A text control the
+-- user is editing keeps its selection across a write that changes its
+-- value (the owner, 2026-10-25): the offsets and direction read before,
+-- set again after, each clamped to the new value's length. A control with
+-- no selection (its `selectionStart` is null, or undefined on a `select`)
+-- and one without the focus are written and left alone. A `value` the
+-- control already shows is not written, and its selection is not touched.
+writeProp : Node.Node, Runtime.Property, Runtime.Payload → ⊤
+writeProp node d v =
+    if Runtime.propertyName d ≠ "value" then
+        Runtime.propertySet d node v
+    else if Js.same (Runtime.propertyGet d node) v then
+        ⊤
+    else
+        Js.optMatch (Node.rendererSelectionStart node) (λ⊤ → Runtime.propertySet d node v) λstart →
+            if Node.rendererFocused node then
+                end = Js.optWithDefault (Node.rendererSelectionEnd node) start
+                direction = Node.rendererSelectionDirection node
+                Runtime.propertySet d node v
+                length = units (Node.rendererValue node)
+                Node.rendererSetSelectionRange node (min start length) (min end length) direction
+            else
+                Runtime.propertySet d node v
+
+
+-- A string's length in UTF-16 code units, the unit of a selection offset.
+units : String → Int
+units s = Js.to (Js.get (Js.from s) "length")
+
+
+-- The controls a write of the render under way may have changed.
+touched : Set.Set Node.Node
+touched = Set.make ⊤
+
+
+--| `(node)`: a controlled element a write of this render's may have
+--| changed — another of its attributes, or something inside it.
+pub edited : Node.Node → ⊤
+edited node = Set.add touched node
+
+
+--| A render of the program mounted at `root` has ended: what it and the
+--| user marked put back to the model, when a control was ever made.
+pub renderEnded : Node.Node → ⊤
+renderEnded root = Js.optMatch (Js.read afterRender) (λ⊤ → ⊤) λrun → run root
+
+
+putBackMarked : Node.Node → ⊤
+putBackMarked root =
+    if Set.size touched ≠ 0 then
+        Set.each touched putBackOne
+        Set.clear touched
+    Js.optMatch (Node.rendererEdits root) (λ⊤ → ⊤) λmarked →
+        if Set.size marked ≠ 0 then
+            Set.each marked putBackOne
+            Set.clear marked
+
+
+putBackOne : Node.Node → ⊤
+putBackOne node = Js.optMatch (Js.read stored) (λ⊤ → ⊤) λp → putBack p node
+
+
+-- Each property a control keeps written back where the page's differs.
+putBack : Runtime.Protocol, Node.Node → ⊤
+putBack p node = Js.optMatch (p.controls node) (λ⊤ → ⊤) λhead → restore node head
+
+
+restore : Node.Node, Runtime.Control → ⊤
+restore node at =
+    fields = Runtime.controlCell at
+    d = Js.cellRead fields .d
+    v = Js.cellRead fields .v
+    if not (Runtime.propertyImmutable d) then
+        writeProp node d v
+    else if not (Js.same (Runtime.propertyGet d node) v) then
+        writeProp node d v
+    Js.optMatch (Js.cellRead fields .next) (λ⊤ → ⊤) λnext → restore node next
+
+
+-- `node` and what changes with it with no event of its own, each handed to
+-- `f`: every radio named as it is — a superset of its group — and every
+-- option of a select.
+affected : Node.Node, sync (Node.Node → ⊤) → ⊤
+affected node f =
+    f node
+    tag = Node.rendererTag node
+    if tag == "select" then
+        Array.eachView (Node.rendererOptions node) f
+    else if tag == "input" && Node.rendererKind node == "radio" && Node.rendererName node ≠ "" then
+        Array.eachView (Document.rendererNamed (Node.rendererName node)) f
+
+
+-- A control the user may have changed, marked for the program whose mount
+-- node is nearest above it.
+markEdit : Node.Node → ⊤
+markEdit node = Js.optMatch (Js.read stored) (λ⊤ → ⊤) λp →
+    Js.optMatch (p.controls node) (λ⊤ → ⊤) λ_ →
+        Js.optMatch (mountAbove p (Node.rendererParent node)) (λ⊤ → ⊤) λroot →
+            Js.optMatch (Node.rendererEdits root)
+                (λ⊤ →
+                    marked = Set.make ⊤
+                    Set.add marked node
+                    Node.rendererSetEdits root marked
+                )
+                λmarked → Set.add marked node
+
+
+-- Controls changed after the dispatch of the event that marked them — a
+-- `reset` resets them then, a click whose default was prevented puts a box
+-- back then — put back in a task after it.
+heldBack : Set.Set Node.Node
+heldBack = Set.make ⊤
+
+
+holdEdit : Node.Node → ⊤
+holdEdit node =
+    if Set.size heldBack == 0 then
+        _ = Timers.start putBackHeld 0
+        ⊤
+    Set.add heldBack node
+
+
+putBackHeld : ⊤ → ⊤
+putBackHeld ⊤ =
+    Js.optMatch (Js.read stored) (λ⊤ → ⊤) λp →
+        if not (p.dead ⊤) then
+            Set.each heldBack putBackOne
+    Set.clear heldBack
+
+
+markAndHold : Node.Node → ⊤
+markAndHold node =
+    markEdit node
+    holdEdit node
+
+
+watching : Js.Ref Bool
+watching = Js.ref False
+
+
+-- The listeners, in the capture phase so that a control is marked before
+-- any handler's message renders, and whether or not it has a handler.
+watch : Runtime.Protocol → ⊤
+watch p =
+    if not (Js.read watching) then
+        Js.write watching True
+        Js.write stored (Js.some p)
+        Js.write afterRender (Js.some putBackMarked)
+        page = EventTarget.rendererDocument ⊤
+        _ = Events.capture page "input" edits
+        _ = Events.capture page "change" edits
+        _ = Events.capture page "click" edits
+        _ = Events.capture page "reset" edits
+        _ = Window.listen "pageshow" pageShown
+        ⊤
+
+
+-- What an event says may have changed without the model: its control, for
+-- `input` and `change`; a checkbox or radio, for `click`, which changed
+-- before the click was dispatched and may be put back after it; every
+-- control of the form, for `reset`, which resets them after it. A target
+-- that is not a node (the document or the window) marks nothing.
+edits : Event.Event → ⊤
+edits event = Js.optMatch (Event.rendererTarget event) (λ⊤ → ⊤) λtarget →
+    name = Event.kind event
+    if name == "reset" then
+        if Node.rendererTag target == "form" then
+            Array.eachView (Node.rendererElements target) λnode → affected node markAndHold
+    else if name ≠ "click" then
+        affected target markEdit
+    else
+        kind = Node.rendererKind target
+        if kind == "checkbox" || kind == "radio" then
+            affected target markAndHold
+
+
+-- The page is shown, after the browser restored what its form controls held
+-- on a reload or a history step: every control put back.
+pageShown : Event.Event → ⊤
+pageShown _ = Js.optMatch (Js.read stored) (λ⊤ → ⊤) λp →
+    if not (p.dead ⊤) then
+        Array.eachView (Document.rendererControls ⊤) putBackOne

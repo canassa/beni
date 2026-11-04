@@ -4459,6 +4459,26 @@ record through a function, are pinned by SuppliedRecordWords.beni.
 | `siteTail` | `(aliased Runtime.RowSite, aliased Runtime.Slot → Js.Opt HostNode.Node)` | Calls the paired Rows.tail callback with stored scope/data and the slot; it reads native handles. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
 | `siteRestate` | `(borrowed Runtime.RowSite, borrowed Runtime.Slot, Int → ⊤)` | Calls the paired Rows.restate callback, editing renderer/native state. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
 | `siteDispose` | `(borrowed Runtime.RowSite, borrowed Runtime.Slot → ⊤)` | Calls the paired Rows.dispose callback, removing renderer/native state. | Native/existential handles only; no sequence verdict distinguishes the weaker word. |
+**Typed event and control native handles** (2026-11-04; #1826). The new
+Node/Event/control projections borrow native identities and change only native
+DOM state. They retain no Beni sequence. Capture tuples keep the original native
+event and data snapshots; listener tables keep raw alternating strings and
+callbacks. The latter are a host sequence over the handler type, fixed by each
+operation to `Event → ⊤`. Like `Array.push`, append borrows its receiver, a
+host container that no beni value reads, and escapes its callback; indexed reads
+are borrowed and check logical pair bounds. A `written` receiver was tried and
+refused the one use the table exists for, an append to a table read from its
+`KeyMap` (v2: `unknown`), and an append to a new table before it is stored (v2:
+`later-use`). Its retained callback case matches `NativeEscapes`, including the existing
+lambda-under-v2 limitation. Native Set handles are mutable host identities;
+adding an item escapes it, and the retained-list fixture notices an unsafe flip.
+Array/view iteration reads its receiver and invokes the supplied synchronous
+visitor without retaining it. The native recipes and ordinary siblings are pinned
+at their actual bodies, and the platform-private names share the existing fence.
+`EventTarget.rendererDocument` (#1826) adds one arm to the shared renderer region,
+returning `document`, and takes no list: it has no words. Every entry pinned in
+that region was re-read for it; their bodies are unchanged and their words
+stand.
 
 ### 24.9 The decoder in `Expect`
 

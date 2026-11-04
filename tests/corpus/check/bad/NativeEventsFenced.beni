@@ -1,0 +1,57 @@
+-- Applications cannot access renderer event/control machinery.
+import Browser.Host.Array as M0
+import Browser.Host.Document as M1
+import Browser.Host.Element as M2
+import Browser.Host.Event as M3
+import Browser.Host.EventTarget as M4
+import Browser.Host.Events as M5
+import Browser.Host.HTMLFormElement as M6
+import Browser.Host.HTMLInputElement as M7
+import Browser.Host.HTMLOptionElement as M8
+import Browser.Host.HTMLSelectElement as M9
+import Browser.Host.HTMLTextAreaElement as M10
+import Browser.Host.Node as M11
+import Browser.Host.Set as M12
+
+
+pub forbidden =
+    { rendererEarlyListeners = M3.rendererEarlyListeners
+    , rendererEarlyAppend = M3.rendererEarlyAppend
+    , rendererEarlySize = M3.rendererEarlySize
+    , rendererEarlyKindAt = M3.rendererEarlyKindAt
+    , rendererEarlyHandlerAt = M3.rendererEarlyHandlerAt
+    , rendererTarget = M3.rendererTarget
+    , rendererDisabled = M11.rendererDisabled
+    , rendererTag = M11.rendererTag
+    , rendererKind = M11.rendererKind
+    , rendererName = M11.rendererName
+    , rendererFocused = M11.rendererFocused
+    , rendererValue = M11.rendererValue
+    , rendererSetValue = M11.rendererSetValue
+    , rendererChecked = M11.rendererChecked
+    , rendererSetChecked = M11.rendererSetChecked
+    , rendererSelected = M11.rendererSelected
+    , rendererSetSelected = M11.rendererSetSelected
+    , rendererSelectedIndex = M11.rendererSelectedIndex
+    , rendererSetSelectedIndex = M11.rendererSetSelectedIndex
+    , rendererSelectionStart = M11.rendererSelectionStart
+    , rendererSelectionEnd = M11.rendererSelectionEnd
+    , rendererSelectionDirection = M11.rendererSelectionDirection
+    , rendererSetSelectionRange = M11.rendererSetSelectionRange
+    , rendererOptions = M11.rendererOptions
+    , rendererElements = M11.rendererElements
+    , rendererNamed = M1.rendererNamed
+    , rendererControls = M1.rendererControls
+    , rendererEdits = M11.rendererEdits
+    , rendererSetEdits = M11.rendererSetEdits
+    , rendererCurrentTarget = M3.rendererCurrentTarget
+    , rendererClearCurrentTarget = M3.rendererClearCurrentTarget
+    , rendererTakeEarly = M3.rendererTakeEarly
+    , rendererEarlyEvent = M3.rendererEarlyEvent
+    , rendererEarlyTarget = M3.rendererEarlyTarget
+    , rendererEarlyRemember = M3.rendererEarlyRemember
+    , rendererEarlyValue = M3.rendererEarlyValue
+    , rendererEarlyChecked = M3.rendererEarlyChecked
+    , rendererEarlySelectedIndex = M3.rendererEarlySelectedIndex
+    , rendererDocument = M4.rendererDocument
+    }

@@ -828,6 +828,10 @@ upcast `EventTarget.rendererFromNode`, which is pure. In these signatures
 - `Browser.Host.EventTarget.rendererFromNode : Node → EventTarget` is the
   allocation-free native identity upcast. The existing `Element.toNode`
   remains the Element identity upcast.
+- `Browser.Host.EventTarget.rendererDocument : ⊤ → EventTarget` is the page's
+  document as an event target, for the controlled-input edit listeners, which
+  go on the document in the capture phase (#1826). It names no `Document`:
+  `Event` imports `EventTarget`, so `EventTarget` cannot import `Document`.
 
 **Manager approval, 2026-11-04; #1825:** `Browser.Host.Array.rendererTruncate : written Array a, borrowed Int → ⊤`
 writes the existing array's length directly, after the caller reads and disposes
@@ -860,6 +864,90 @@ identity and retain a present node as itself; insertion maps that identity
 back to native null. Saturated calls and first-class arrows are compiler-emitted,
 sharing the same sentinel with `Js.Opt`, without per-call wrappers or a second
 sentinel. Unused bridges add no emitted code to an ordinary mounted page.
+
+
+**Typed events and control adapters** (manager approval, 2026-11-04; #1826,
+Part of #1612). Public `Browser.Host.Event` members read the event kind,
+trust, bubbling, cancellation and native target, and stop propagation.
+`Browser.Host.Events.capture` registers and removes the same typed callback in
+the capture phase. EventTarget downcasts check native identity before returning
+an Element or a specific form control. Input, textarea, select, option and form
+bindings expose their real IDL properties, selection and collections. Input
+value writes and input selection changes return `InvalidStateError` precisely;
+a different exception, including an Error with that name but a different class,
+propagates unchanged. These ordinary typed bindings retain native values.
+
+The following additions use the private renderer authority above:
+
+- `Event.rendererCurrentTarget : borrowed Event, Js.Ref (Opt Node) → ⊤`
+  defines the existing configurable getter, reading the current node reference;
+  `rendererClearCurrentTarget : borrowed Event → ⊤` deletes it. Source owns the
+  walk and its finally cleanup. Defining a getter or deleting it can fail only
+  when the owned event violates that renderer contract; such failures are defects.
+- `Event.EarlyCapture` is an opaque nominal native carrier of the capture
+  script's existing raw tuple, not an object wrapped around that tuple.
+  `rendererTakeEarly : ⊤ → Array.Array EarlyCapture` clears the page's `$beni`
+  before calling it to remove capture listeners and take its records; absent
+  capture yields an empty array. `rendererEarlyEvent` and
+  `rendererEarlyTarget` read its event and native target.
+  `rendererEarlyRemember` appends the target's value, checked and selectedIndex
+  once, in source's `caught` walk. `rendererEarlyValue`,
+  `rendererEarlyChecked` and `rendererEarlySelectedIndex` read String, Bool and
+  Int as Opt, at offset 1 (capture) or 4 (takeover); undefined is NONE.
+  The source filters, traverses and replays records; the native recipes do none
+  of those algorithms. The bridge's EarlyProtocol aliases these checked entries.
+
+All private calls and first-class arrows share the existing Opt sentinel.
+Applications cannot name these carriers, aliases or operations. Unused adapters
+emit no code in an ordinary page. The delegated getter has the same one closure
+per delegated event that reaches a handler as before; no callback is made per
+handler. User callback failures still reach the page's existing defect guard.
+
+
+The event walk uses `Event.rendererTarget : borrowed Event → Opt Node`,
+which returns NONE for a non-node target. Additional platform-private Node
+projections read disabled (`Bool`), tag/kind/name (`String`) and focused
+(`Bool`) without a Maybe allocation. Typed control entries are separate:
+`rendererValue`/`rendererSetValue` use String,
+`rendererChecked`/`rendererSetChecked` and
+`rendererSelected`/`rendererSetSelected` use Bool, and
+`rendererSelectedIndex`/`rendererSetSelectedIndex` use Int.
+There is no native entry that receives a property name.
+`rendererSelectionStart` and `rendererSelectionEnd` return Opt Int;
+`rendererSelectionDirection` reads String only after a present caret, and
+`rendererSetSelectionRange` writes a valid text control. InvalidStateError
+from those renderer-only writes violates the checked node/property contract
+and is a defect; public input writes keep their typed error result.
+
+`Node.rendererOptions` and `rendererElements`, and
+`Document.rendererNamed` and `rendererControls`, expose the existing DOM
+collections as read-only `Array.View Node`, without copying them. `Array.eachView`
+walks that collection by index; a view is never writable through this interface.
+`Node.rendererEdits` and `rendererSetEdits` retain the existing per-root Set
+of edited native nodes as `Opt (Set Node)`, with no wrapper. Set operations use
+native Set identity and call the supplied synchronous visitor directly.
+Source owns event classification, traversal, radio/select expansion and all
+control reconciliation.
+
+The projections remove Maybe boxing from the private dispatch/control path.
+Each delegated event that meets a handler retains the existing mutable current-node
+reference and getter closure, with no per-handler closure. A marked program root
+holds at most one native Set. Native reads allocate no optional wrapper, and DOM
+collections retain their original identity. Control descriptors and their persistent
+state belong to the typed producer/source protocol.
+
+
+`Event.EarlyListeners handler` is a platform-private owned sequence whose representation
+is the existing alternating `[kind, callback, …]` array. Every operation fixes
+its retained handler parameter to `Event → ⊤`. `rendererEarlyListeners`
+creates the empty array; `rendererEarlyAppend` is its only write, appending a
+String and a synchronous Event callback to its written carrier. `rendererEarlySize`
+returns the number of pairs. `rendererEarlyKindAt` and `rendererEarlyHandlerAt`
+take a logical pair index, check its nonnegative integral bounds before doubling
+it, and return respectively the string at `2i` and callback at `2i+1`. An invalid
+index throws RangeError as a defect, never returns undefined or reads a kind as
+a callback. Append retains the callback; the existing source loops choose and
+invoke handlers in order. No pair record, Any box or callback wrapper is made.
 
 **Cloudflare reply discovery** (owner, 2026-11-03; #1612) is a
 platform-private rule-6 extension. `Worker.Object.replyIds : borrowed msg → fresh List String`

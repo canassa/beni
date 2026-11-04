@@ -1,3 +1,10 @@
+export const asNode = (target) => { return target instanceof globalThis.Node ? { $: "Just", a: target } : { $: "Nothing", a: null }; };
+export const asElement = (node) => { return node instanceof globalThis.Element ? { $: "Just", a: node } : { $: "Nothing", a: null }; };
+export const asInput = (element) => { return element instanceof globalThis.HTMLInputElement ? { $: "Just", a: element } : { $: "Nothing", a: null }; };
+export const asTextArea = (element) => { return element instanceof globalThis.HTMLTextAreaElement ? { $: "Just", a: element } : { $: "Nothing", a: null }; };
+export const asSelect = (element) => { return element instanceof globalThis.HTMLSelectElement ? { $: "Just", a: element } : { $: "Nothing", a: null }; };
+export const asOption = (element) => { return element instanceof globalThis.HTMLOptionElement ? { $: "Just", a: element } : { $: "Nothing", a: null }; };
+export const asForm = (element) => { return element instanceof globalThis.HTMLFormElement ? { $: "Just", a: element } : { $: "Nothing", a: null }; };
 export const isPage = (ignored) => { return typeof globalThis.window !== "undefined"; };
 export const current = (ignored) => { return globalThis; };
 export const asAnchor = (target) => { return target instanceof globalThis.HTMLAnchorElement ? { $: "Just", a: target } : { $: "Nothing", a: null }; };

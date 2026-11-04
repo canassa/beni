@@ -25,4 +25,6 @@ pub foreign impure headers : aliased Response → Headers.Headers
 pub foreign impure text : escaped Response → Promise.Promise String
 
 
-pub foreign impure reader : aliased Response → Maybe ReadableStreamDefaultReader.ReadableStreamDefaultReader
+pub foreign impure reader :
+      aliased Response
+    → Maybe ReadableStreamDefaultReader.ReadableStreamDefaultReader

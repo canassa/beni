@@ -1,0 +1,128 @@
+import Browser.Host.Array as Array
+import Browser.Host.Event as Event
+import Browser.Host.EventTarget as Target
+import Browser.Host.Events as Events
+import Browser.Host.HTMLInputElement as Input
+import Browser.Host.Node as Node
+import Js
+import Js.Protocol as Call
+
+
+pub opaque type Program
+    = Program
+        (Event.Event, Node.Node → String)
+        (Node.Node → Bool)
+        (⊤ → String)
+        (Input.HTMLInputElement → String)
+        (Target.EventTarget → (⊤ → ⊤))
+        (⊤ → Event.EarlyListeners (Event.Event → ⊤))
+        (Event.EarlyListeners (Event.Event → ⊤), Event.Event → String)
+        (Event.EarlyListeners (Event.Event → ⊤), Int → String)
+        (Event.EarlyListeners (Event.Event → ⊤), Int → (Event.Event → ⊤))
+
+
+pub program event_ controls_ early_ write_ capture_ make_ listeners_ kind_ handler_ =
+    Program event_ controls_ early_ write_ capture_ make_ listeners_ kind_ handler_
+
+
+pub event : Event.Event, Node.Node → String
+event incoming node =
+    at = Js.ref (Js.none ⊤)
+    before = Event.kind incoming
+    Js.finally
+        (λ⊤ →
+            Event.rendererCurrentTarget incoming at
+            Js.write at (Js.some node)
+            same = Js.same (Event.currentBox incoming) (Event.currentBox incoming)
+            Event.preventDefault incoming
+            Event.stopPropagation incoming
+            if
+                same
+                    && Event.bubbles incoming
+                    && Event.cancelBubble incoming
+                    && Event.defaultPrevented incoming
+            then
+                before
+            else
+                "failed"
+        )
+        λ⊤ → Event.rendererClearCurrentTarget incoming
+
+
+pub controls : Node.Node → Bool
+controls node =
+    Node.rendererSetValue node "model"
+    Node.rendererSetChecked node True
+    Node.rendererSetSelected node False
+    Node.rendererSetSelectedIndex node 2
+    Node.rendererValue node == "model"
+        && Node.rendererChecked node
+        && not (Node.rendererSelected node)
+        && Node.rendererSelectedIndex node == 2
+
+
+pub early : ⊤ → String
+early ⊤ =
+    records = Event.rendererTakeEarly ⊤
+    result = Js.ref ""
+    Array.each records λrecord →
+        value = Event.rendererEarlyValue record 1
+        checked = Event.rendererEarlyChecked record 1
+        index = Event.rendererEarlySelectedIndex record 1
+        Event.rendererEarlyRemember record
+        takeover = Event.rendererEarlyValue record 4
+        text = Js.optMatch value (λ⊤ → "none") λv → v
+        check = Js.optMatch checked (λ⊤ → "none") λv → if v then "true" else "false"
+        selected = Js.optMatch index (λ⊤ → "none") String.fromInt
+        now = Js.optMatch takeover (λ⊤ → "none") λv → v
+        Js.write
+            result
+            (Js.read result
+                ++ "${Event.kind (Event.rendererEarlyEvent record)}:${text}:${check}:${selected}:${now};"
+            )
+    Js.read result
+
+
+pub write : Input.HTMLInputElement → String
+write input =
+    result = Input.setValue input "new"
+    case result of
+        Ok ⊤ →
+            "ok"
+        Err Input.InvalidStateError →
+            if result == Err Input.InvalidStateError then
+                "invalid state"
+            else
+                "wrong error representation"
+
+
+pub capture : Target.EventTarget → (⊤ → ⊤)
+capture target = Events.capture target "click" λevent_ → Event.preventDefault event_
+
+
+pub makeListeners : ⊤ → fresh Event.EarlyListeners (Event.Event → ⊤)
+makeListeners ⊤ = Event.rendererEarlyListeners ⊤
+
+
+pub listeners : written Event.EarlyListeners (Event.Event → ⊤), Event.Event → String
+listeners noted event_ =
+    log = Js.ref ""
+    Event.rendererEarlyAppend noted "input" λ_ → Js.write log (Js.read log ++ "first;")
+    Event.rendererEarlyAppend noted "change" λ_ → Js.write log (Js.read log ++ "wrong;")
+    Event.rendererEarlyAppend noted "input" λ_ → Js.write log (Js.read log ++ "second;")
+    replay noted event_ 0
+    Js.read log
+
+
+replay : Event.EarlyListeners (Event.Event → ⊤), Event.Event, Int → ⊤
+replay noted event_ index =
+    if index < Event.rendererEarlySize noted then
+        if Event.rendererEarlyKindAt noted index == Event.kind event_ then
+            Call.call (Event.rendererEarlyHandlerAt noted index) event_
+        replay noted event_ (index + 1)
+
+
+pub kindAt noted index = Event.rendererEarlyKindAt noted index
+
+
+pub handlerAt noted index = Event.rendererEarlyHandlerAt noted index

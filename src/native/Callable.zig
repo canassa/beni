@@ -63,14 +63,14 @@ pub fn validate(c: anytype) bool {
 pub fn source(arena: Allocator, module: []const u8, type_name: ?[]const u8) ![]const u8 {
     var out: std.Io.Writer.Allocating = .init(arena);
     const w = &out.writer;
-    try w.writeAll(if (std.mem.eql(u8, module, "Browser.Host.Map")) "-- Generated from ECMA-262, 16th edition (2025), §24.1; reviewed adapters in native/Map.zig.\n" else if (std.mem.eql(u8, module, "Browser.Host.Cloudflare")) "-- Generated from @cloudflare/workers-types 5.20261102.1; reviewed native supplement.\n" else "-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.\n");
+    try w.writeAll(if (std.mem.eql(u8, module, "Browser.Host.Map")) "-- Generated from ECMA-262, 16th edition (2025), §24.1; reviewed adapters in native/Map.zig.\n" else if (std.mem.eql(u8, module, "Browser.Host.Set")) "-- Generated from ECMA-262, 16th edition (2025), §24.2; reviewed adapters in native/Operations.zig.\n" else if (std.mem.eql(u8, module, "Browser.Host.Cloudflare")) "-- Generated from @cloudflare/workers-types 5.20261102.1; reviewed native supplement.\n" else "-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.\n");
     if (std.mem.eql(u8, module, "Browser.Host.Events")) try w.writeAll("import Browser.Host.Event as Event\nimport Browser.Host.EventTarget as EventTarget\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.EventTarget")) try w.writeAll("import Browser.Host.HTMLAnchorElement as HTMLAnchorElement\nimport Browser.Host.Node as Node\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Event")) try w.writeAll("import Browser.Host.EventTarget as EventTarget\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Event")) try w.writeAll("import Browser.Host.DOMRect as DOMRect\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Window")) try w.writeAll("import Browser.Host.Event as Event\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Window")) try w.writeAll("import Browser.Host.Document as Document\n\n\n");
-    if (std.mem.eql(u8, module, "Browser.Host.Document")) try w.writeAll("import Browser.Host.Element as Element\nimport Browser.Host.Event as Event\nimport Browser.Host.Node as Node\nimport Browser.Host.Promise as Promise\n\n\npub type QueryError\n    = SyntaxError\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Document")) try w.writeAll("import Browser.Host.Array as Array\nimport Browser.Host.Element as Element\nimport Browser.Host.Event as Event\nimport Browser.Host.Node as Node\nimport Browser.Host.Promise as Promise\n\n\npub type QueryError\n    = SyntaxError\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Element")) try w.writeAll("import Browser.Host.Node as Node\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.TextEncoder")) try w.writeAll("import Browser.Host.Uint8Array as Uint8Array\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.MessageChannel")) try w.writeAll("import Browser.Host.MessagePort as MessagePort\n\n\n");
@@ -98,14 +98,24 @@ pub fn source(arena: Allocator, module: []const u8, type_name: ?[]const u8) ![]c
     if (std.mem.eql(u8, module, "Browser.Host.Cloudflare")) try w.writeAll(@import("Cloudflare.zig").declarations);
     if (std.mem.eql(u8, module, "Browser.Host.Promise")) try w.writeAll("pub foreign type Resolvers a\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Node")) try w.writeAll("import Js\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Node")) try w.writeAll("import Browser.Host.Array as Array\nimport Browser.Host.Set as Set\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Node")) try w.writeAll("pub type MoveError\n    = HierarchyRequestError\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Array")) try w.writeAll("pub foreign type View a\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Event")) try w.writeAll("import Browser.Host.Node as Node\nimport Browser.Host.Array as Array\n\n\npub foreign type EarlyCapture\n\n\npub sequence foreign type EarlyListeners handler\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.EventTarget")) try w.writeAll("import Browser.Host.Element as Element\nimport Browser.Host.HTMLInputElement as HTMLInputElement\nimport Browser.Host.HTMLTextAreaElement as HTMLTextAreaElement\nimport Browser.Host.HTMLSelectElement as HTMLSelectElement\nimport Browser.Host.HTMLOptionElement as HTMLOptionElement\nimport Browser.Host.HTMLFormElement as HTMLFormElement\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.HTMLInputElement")) try w.writeAll("import Browser.Host.Node as Node\n\n\npub type WriteError\n    = InvalidStateError\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.HTMLTextAreaElement")) try w.writeAll("import Browser.Host.Node as Node\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.HTMLSelectElement")) try w.writeAll("import Browser.Host.Node as Node\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.HTMLOptionElement")) try w.writeAll("import Browser.Host.Node as Node\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.HTMLFormElement")) try w.writeAll("import Browser.Host.Node as Node\n\n\n");
     if (type_name) |name| try w.print("pub {s}foreign type {s}\n", .{ if (std.mem.eql(u8, module, "Browser.Host.Array")) "sequence " else "", name });
+    var wrote_declaration = false;
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
-        try w.print("{s}pub foreign {s} {s} :{s}{s}\n", .{ if (type_name == null and !std.mem.eql(u8, module, "Browser.Host.Cloudflare")) "\n" else "\n\n", @tagName(row.effect), row.name, if (std.mem.startsWith(u8, row.signature, "\n")) "" else " ", row.signature });
+        try w.print("{s}pub foreign {s} {s} :{s}{s}\n", .{ if (!wrote_declaration and std.mem.eql(u8, module, "Browser.Host.Json")) "" else if (!wrote_declaration and type_name == null and !std.mem.eql(u8, module, "Browser.Host.Cloudflare")) "\n" else "\n\n", @tagName(row.effect), row.name, if (std.mem.startsWith(u8, row.signature, "\n")) "" else " ", row.signature });
+        wrote_declaration = true;
     }
-    return out.toOwnedSlice();
+    return canonicalImports(arena, try out.toOwnedSlice());
 }
 
 pub fn sibling(arena: Allocator, module: []const u8) ![]const u8 {
@@ -115,7 +125,69 @@ pub fn sibling(arena: Allocator, module: []const u8) ![]const u8 {
         if (!std.mem.eql(u8, row.module, module)) continue;
         if (Operations.renderer(row.recipe)) continue; // Both call forms are compiler-emitted.
         const body = switch (row.recipe) {
-            .renderer_has, .renderer_truncate, .renderer_at, .renderer_first_child, .renderer_next_sibling, .renderer_parent, .renderer_insert, .renderer_append, .renderer_remove, .renderer_clone, .renderer_fragment, .renderer_import, .renderer_template, .renderer_body, .renderer_text, .renderer_from_node => unreachable,
+            .renderer_early_listeners, .renderer_early_append, .renderer_early_size, .renderer_early_kind_at, .renderer_early_handler_at => unreachable,
+            .renderer_has, .renderer_truncate, .renderer_at, .renderer_first_child, .renderer_next_sibling, .renderer_parent, .renderer_insert, .renderer_append, .renderer_remove, .renderer_clone, .renderer_fragment, .renderer_import, .renderer_template, .renderer_document_target, .renderer_body, .renderer_text, .renderer_from_node => unreachable,
+            .set_make => "(ignored) => new globalThis.Set()",
+            .set_add => "(set, value) => { set.add(value); return null; }",
+            .set_has => "(set, value) => set.has(value)",
+            .set_size => "(set) => set.size",
+            .set_clear => "(set) => { set.clear(); return null; }",
+            .set_each => "(set, callback) => { set.forEach(callback); return null; }",
+            .array_each_view => "(view, callback) => { for (let i = 0; i < view.length; i++) callback(view[i]); return null; }",
+            .renderer_event_target, .renderer_node_disabled, .renderer_node_tag, .renderer_node_kind, .renderer_node_name, .renderer_node_focused, .renderer_control_value, .renderer_control_value_set, .renderer_control_checked, .renderer_control_checked_set, .renderer_control_selected, .renderer_control_selected_set, .renderer_control_selectedIndex, .renderer_control_selectedIndex_set, .renderer_selectionStart, .renderer_selectionEnd, .renderer_selectionDirection, .renderer_selection_set, .renderer_node_options, .renderer_node_elements, .renderer_document_named, .renderer_document_controls, .renderer_node_edits, .renderer_node_edits_set => unreachable,
+            .array_each => "(array, callback) => { array.forEach(callback); return null; }",
+            .renderer_current, .renderer_current_clear, .renderer_early_take, .renderer_early_event, .renderer_early_target, .renderer_early_remember, .renderer_early_value, .renderer_early_checked, .renderer_early_selectedindex => unreachable,
+            .event_type => "(event) => { return event.type; }",
+            .event_isTrusted => "(event) => { return event.isTrusted; }",
+            .event_bubbles => "(event) => { return event.bubbles; }",
+            .event_cancelBubble => "(event) => { return event.cancelBubble; }",
+            .event_stop => "(event) => { event.stopPropagation(); return null; }",
+            .event_target => "(event) => { return event.target === null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: event.target }; }",
+            .target_node => "(target) => { return target instanceof globalThis.Node ? { $: \"Just\", a: target } : { $: \"Nothing\", a: null }; }",
+            .node_element => "(node) => { return node instanceof globalThis.Element ? { $: \"Just\", a: node } : { $: \"Nothing\", a: null }; }",
+            .node_contains => "(node, other) => { return node.contains(other); }",
+            .element_local => "(element) => { return element.localName; }",
+            .element_as_input => "(element) => { return element instanceof globalThis.HTMLInputElement ? { $: \"Just\", a: element } : { $: \"Nothing\", a: null }; }",
+            .input_value => "(control) => { return control.value; }",
+            .input_value_set => "(control, value) => { try { control.value = value; return { $: \"Ok\", a: null }; } catch (error) { if (!(error instanceof globalThis.DOMException) || error.name !== \"InvalidStateError\") throw error; return { $: \"Err\", a: \"InvalidStateError\" }; } }",
+            .input_checked => "(control) => { return control.checked; }",
+            .input_checked_set => "(control, value) => { control.checked = value; return null; }",
+            .input_disabled => "(control) => { return control.disabled; }",
+            .input_type => "(control) => { return control.type; }",
+            .input_name => "(control) => { return control.name; }",
+            .input_selectionStart => "(control) => { const value = control.selectionStart; return value === null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: value }; }",
+            .input_selectionEnd => "(control) => { const value = control.selectionEnd; return value === null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: value }; }",
+            .input_selectionDirection => "(control) => { const value = control.selectionDirection; return value === null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: value }; }",
+            .input_selection_set => "(control, start, end, direction) => { try { control.setSelectionRange(start, end, direction); return { $: \"Ok\", a: null }; } catch (error) { if (!(error instanceof globalThis.DOMException) || error.name !== \"InvalidStateError\") throw error; return { $: \"Err\", a: \"InvalidStateError\" }; } }",
+            .input_node => "(control) => control",
+            .element_as_textarea => "(element) => { return element instanceof globalThis.HTMLTextAreaElement ? { $: \"Just\", a: element } : { $: \"Nothing\", a: null }; }",
+            .textarea_value => "(control) => { return control.value; }",
+            .textarea_value_set => "(control, value) => { control.value = value; return null; }",
+            .textarea_disabled => "(control) => { return control.disabled; }",
+            .textarea_selectionStart => "(control) => { return control.selectionStart; }",
+            .textarea_selectionEnd => "(control) => { return control.selectionEnd; }",
+            .textarea_selectionDirection => "(control) => { return control.selectionDirection; }",
+            .textarea_selection_set => "(control, start, end, direction) => { control.setSelectionRange(start, end, direction); return null; }",
+            .textarea_node => "(control) => control",
+            .element_as_select => "(element) => { return element instanceof globalThis.HTMLSelectElement ? { $: \"Just\", a: element } : { $: \"Nothing\", a: null }; }",
+            .select_value => "(control) => { return control.value; }",
+            .select_value_set => "(control, value) => { control.value = value; return null; }",
+            .select_selectedIndex => "(control) => { return control.selectedIndex; }",
+            .select_selectedIndex_set => "(control, value) => { control.selectedIndex = value; return null; }",
+            .select_disabled => "(control) => { return control.disabled; }",
+            .select_node => "(control) => control",
+            .element_as_option => "(element) => { return element instanceof globalThis.HTMLOptionElement ? { $: \"Just\", a: element } : { $: \"Nothing\", a: null }; }",
+            .option_selected => "(control) => { return control.selected; }",
+            .option_selected_set => "(control, value) => { control.selected = value; return null; }",
+            .option_node => "(control) => control",
+            .element_as_form => "(element) => { return element instanceof globalThis.HTMLFormElement ? { $: \"Just\", a: element } : { $: \"Nothing\", a: null }; }",
+            .form_node => "(control) => control",
+            .select_options => "(control) => Array.from(control.options)",
+            .form_elements => "(form) => Array.from(form.elements)",
+            .document_named => "(name) => Array.from(globalThis.document.getElementsByName(name))",
+            .document_active => "(ignored) => { const value = globalThis.document.activeElement; return value === null ? { $: \"Nothing\", a: null } : { $: \"Just\", a: value }; }",
+            .document_controls => "(ignored) => Array.from(globalThis.document.querySelectorAll(\"input,select,textarea,option\"))",
+            .event_capture => "(target, name, handler) => { target.addEventListener(name, handler, true); return (_) => { target.removeEventListener(name, handler, true); return null; }; }",
             .worker_close_self => "(ignored) => { globalThis.close(); return null; }",
             .global_is_page => "(ignored) => { return typeof globalThis.window !== \"undefined\"; }",
             .event_error_message => "(event) => { return typeof globalThis.ErrorEvent === \"function\" && event instanceof globalThis.ErrorEvent ? { $: \"Just\", a: event.message } : { $: \"Nothing\", a: null }; }",
@@ -455,4 +527,34 @@ fn hasMember(text: []const u8, member: []const u8) bool {
 
 fn identifierByte(byte: u8) bool {
     return std.ascii.isAlphanumeric(byte) or byte == '_' or byte == '-';
+}
+
+// Import groups are assembled by independent reviewed adapters. Emit the
+// formatter's single sorted preamble so generated files are byte-exact.
+fn canonicalImports(arena: Allocator, raw: []const u8) ![]const u8 {
+    const header_end = (std.mem.findScalar(u8, raw, '\n') orelse return raw) + 1;
+    var imports: std.ArrayList([]const u8) = .empty;
+    var at = header_end;
+    while (at < raw.len) {
+        const end = std.mem.findPos(u8, raw, at, "\n") orelse raw.len;
+        const line = raw[at..end];
+        if (line.len != 0 and !std.mem.startsWith(u8, line, "import ")) break;
+        if (line.len != 0) try imports.append(arena, line);
+        at = @min(end + 1, raw.len);
+    }
+    if (imports.items.len == 0) return raw;
+    std.mem.sort([]const u8, imports.items, {}, struct {
+        fn less(_: void, first: []const u8, second: []const u8) bool {
+            return std.mem.order(u8, first, second) == .lt;
+        }
+    }.less);
+    var normalized: std.Io.Writer.Allocating = .init(arena);
+    try normalized.writer.writeAll(raw[0..header_end]);
+    for (imports.items) |line| {
+        try normalized.writer.writeAll(line);
+        try normalized.writer.writeByte('\n');
+    }
+    try normalized.writer.writeAll("\n\n");
+    try normalized.writer.writeAll(raw[at..]);
+    return normalized.toOwnedSlice();
 }

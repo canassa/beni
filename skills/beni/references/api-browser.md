@@ -277,6 +277,13 @@ module Rt
   value templateOf : String, Int → (⊤ → V)  -- impure
   value text : V → V
   value unit : V, V → V  -- impure
+module Rt.Events
+  value control : Protocol, Node, (Property), Payload → ⊤  -- impure
+  value delegate : Protocol, String → ⊤  -- impure
+  value edited : Node → ⊤  -- impure
+  value fire : Protocol, Node, Event, String, String, Int → ⊤  -- impure
+  value listen : Protocol, Node, String, Int → ⊤  -- impure
+  value renderEnded : Node → ⊤  -- impure
 module Storage
   type Area
     Local

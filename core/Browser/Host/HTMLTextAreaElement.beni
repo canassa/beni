@@ -1,0 +1,29 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Browser.Host.Node as Node
+
+
+pub foreign type HTMLTextAreaElement
+
+
+pub foreign impure value : borrowed HTMLTextAreaElement → String
+
+
+pub foreign impure setValue : borrowed HTMLTextAreaElement, String → ⊤
+
+
+pub foreign impure disabled : borrowed HTMLTextAreaElement → Bool
+
+
+pub foreign impure selectionStart : borrowed HTMLTextAreaElement → Int
+
+
+pub foreign impure selectionEnd : borrowed HTMLTextAreaElement → Int
+
+
+pub foreign impure selectionDirection : borrowed HTMLTextAreaElement → String
+
+
+pub foreign impure setSelectionRange : borrowed HTMLTextAreaElement, Int, Int, String → ⊤
+
+
+pub foreign impure toNode : HTMLTextAreaElement → Node.Node

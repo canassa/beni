@@ -50,20 +50,23 @@ module Cmd
   value none : Cmd msg
   value perform : ((Send msg) → ⊤) → (Cmd msg)
 module Inline
+  opaque type Bucket
+  opaque type Entry
   opaque type NavigationKey
   value address : ⊤ → Url  -- impure
   value arrived : Url → ⊤  -- impure
+  value bucket : ⊤ → Bucket  -- impure
   value busy : ⊤ → Bool  -- impure
-  value caught : V → ⊤  -- impure
-  value commands : (Cmd V), V → ⊤  -- impure
+  value caught : Node → ⊤  -- impure
+  value commands : (Cmd msg), (msg → ⊤) → ⊤  -- impure
   value decoded : (Schema e d), V → V  -- impure
-  value deliver : V → ⊤  -- impure
-  value entry : V, V → V  -- impure
+  value deliver : Node → ⊤  -- impure
+  value entry : (⊤ → ⊤), List (Bucket) → (Entry)  -- impure
   value escape : V → V  -- impure
   value escapeAttribute : V → V  -- impure
   value escapePre : V → V  -- impure
   value first : ⊤ → ⊤  -- impure
-  value listen : V, V, V → ⊤  -- impure
+  value listen : Node, String, (Event → ⊤) → ⊤  -- impure
   value load : V, V, V, V → ⊤  -- impure
   value loadAll : V, V, V → ⊤  -- impure
   value loadAllPlanned : V, V, V → ⊤  -- impure
@@ -79,19 +82,19 @@ module Inline
   value navigationKey : ⊤ → NavigationKey
   value on : EventTarget, (a → ⊤), String, (Event → a) → ⊤  -- impure
   value onArm : EventTarget, (a → ⊤), String, V, (Event → a) → ⊤  -- impure
-  value onArmTaken : V, V, V, V, V → ⊤  -- impure
-  value onTaken : V, V, V, V → ⊤  -- impure
+  value onArmTaken : Node, (a → ⊤), String, V, (Event → a) → ⊤  -- impure
+  value onTaken : Node, (a → ⊤), String, (Event → a) → ⊤  -- impure
   value own : (⊤ → ⊤) → ⊤  -- impure
   value pageData : (Schema e d), V → V  -- impure
   value pageUrl : String → Url  -- impure
   value part : V → V  -- impure
-  value pass : V → ⊤  -- impure
-  value passes : V → ⊤  -- impure
+  value pass : Bucket → ⊤  -- impure
+  value passes : List Bucket → ⊤  -- impure
   value prop : V, V, V → ⊤  -- impure
   value root : V → V  -- impure
-  value roots : V, V, Int, V, Int → ⊤  -- impure
+  value roots : List (⊤ → ⊤) → ⊤  -- impure
   value routeUrl : String, String → Url  -- impure
-  value run : V → ⊤  -- impure
+  value run : (Value → ⊤) → ⊤  -- impure
   value send : V, V, V → ⊤  -- impure
   value stop : ⊤ → ⊤  -- impure
   value stopped : ⊤ → Bool  -- impure

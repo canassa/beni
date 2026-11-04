@@ -14,6 +14,12 @@ pub foreign impure rendererTruncate : borrowed Array a, borrowed Int → ⊤
 pub foreign impure rendererAt : borrowed Array a, borrowed Int → a
 
 
+pub foreign impure eachView : borrowed View a, sync (a → ⊤) → ⊤
+
+
+pub foreign impure each : borrowed Array a, sync (a → ⊤) → ⊤
+
+
 pub foreign impure make : ⊤ → fresh Array a
 
 

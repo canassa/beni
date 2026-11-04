@@ -1,0 +1,16 @@
+-- Native event/control adapters retain identity and rethrow unknown host failures.
+import Test
+
+
+main : Test.Program
+main =
+    Test.program
+        Test.event
+        Test.controls
+        Test.early
+        Test.write
+        Test.capture
+        Test.makeListeners
+        Test.listeners
+        Test.kindAt
+        Test.handlerAt

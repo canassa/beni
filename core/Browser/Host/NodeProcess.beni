@@ -2,8 +2,11 @@
 
 pub foreign impure writeOut : String → ⊤
 
+
 pub foreign impure writeError : String → ⊤
 
+
 pub foreign impure setExitCode : Int → ⊤
+
 
 pub foreign impure beforeExit : escaped sync (⊤ → ⊤) → ⊤
