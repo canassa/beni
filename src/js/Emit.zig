@@ -203,6 +203,13 @@ pub const Platform = struct {
     /// module*): a module of the runtime's package whose `pub` values supply
     /// runtime exports in the file's place.
     markup_module: ?[]const u8 = null,
+    /// The chain's top-level `"module"` (`boundary.md` §5.2, *A runtime
+    /// module without markup*, 2026-11-04): a module of the package that
+    /// declares it, which supplies `run` and nothing else, since the chain
+    /// has no lowering. `platform.resolveChain` has refused it beside a
+    /// `"runtime"` of its package and beside a lowering of the chain.
+    program_module: ?[]const u8 = null,
+    program_module_root: []const u8 = "",
     /// The page shell (§2, *The page shell*): a template relative to
     /// `html_root` whose `{{entry}}` becomes the entry file, written as
     /// `index.html`. The chain's `"html"`, or the app manifest's, which
@@ -2054,8 +2061,28 @@ const Emitter = struct {
     /// (`boundary.md` §5.2 and §9.2, amended 2026-10-02).
     fn moduleIsRuntime(e: *const Emitter) bool {
         const p = e.options.platform;
-        if (p.runtime != null or p.markup_runtime != null or p.markup_module == null) return false;
+        if (p.runtime != null or p.markup_runtime != null) return false;
+        // A runtime module without markup (`boundary.md` §5.2, amended
+        // 2026-11-03): the chain has no lowering, and the module is the
+        // whole runtime, `run` its one export.
+        if (p.program_module != null) return true;
+        if (p.markup_module == null) return false;
         return findLowering(p.lowering orelse return false) != null;
+    }
+
+    /// The runtime module the chain names, under `"markup"` or at the top
+    /// level, or null.
+    fn runtimeModuleName(e: *const Emitter) ?[]const u8 {
+        const p = e.options.platform;
+        return p.markup_module orelse p.program_module;
+    }
+
+    /// The manifest that named the runtime module: the lowering package's,
+    /// or the package's that declares the top-level `"module"`.
+    fn runtimeModuleManifest(e: *Emitter) ![]const u8 {
+        const p = e.options.platform;
+        const root = if (p.markup_module != null) p.lowering_root else p.program_module_root;
+        return std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ root, Manifest.file_name });
     }
 
     /// Whether the markup runtime is also the program runtime (§9.2): one
@@ -2085,9 +2112,12 @@ const Emitter = struct {
     fn checkMarkupRuntime(e: *Emitter) !void {
         const runtime_file = try e.markupRuntimePath();
         if (runtime_file == null and !e.moduleIsRuntime()) return;
-        const lowering = findLowering(e.options.platform.lowering.?).?;
+        // A runtime module without markup (§5.2, amended 2026-11-03) has no
+        // lowering to ask for a list: `run` is its one export.
+        const lowering: ?*const beni_markup.Lowering = if (e.options.platform.lowering) |name| findLowering(name) else null;
+        const lowering_name = if (lowering) |l| l.name else "";
         var expected: std.ArrayList(Expected) = .empty;
-        for (lowering.runtime) |r| try expected.append(e.scratch, .{ .name = r.name, .arity = r.arity });
+        if (lowering) |l| for (l.runtime) |r| try expected.append(e.scratch, .{ .name = r.name, .arity = r.arity });
         // With no runtime file, `run` is asked of the module only when the
         // chain declares a `program` for it to run.
         const runs = e.markupRuntimeIsProgramRuntime() and (!e.moduleIsRuntime() or e.options.platform.program != null);
@@ -2095,7 +2125,7 @@ const Emitter = struct {
         // A lowering with no run-time value of the markup type refuses
         // every use of a primitive (§9.4.6, version 1.6), so its runtime
         // implements none.
-        if (e.graph().markup.vocabulary) |vocabulary| if (lowering.no_markup_values == null) {
+        if (e.graph().markup.vocabulary) |vocabulary| if (lowering != null and lowering.?.no_markup_values == null) {
             const b = e.bir(vocabulary);
             const file = e.graph().moduleFile(vocabulary);
             const dispatch = e.dispatchOf(vocabulary);
@@ -2108,7 +2138,7 @@ const Emitter = struct {
                 // A primitive named like one of the lowering's own exports
                 // would be two exports of one name.
                 var clash = false;
-                for (lowering.runtime) |r| clash = clash or std.mem.eql(u8, r.name, name);
+                for (lowering.?.runtime) |r| clash = clash or std.mem.eql(u8, r.name, name);
                 if (clash) {
                     try e.report(
                         .duplicate_declaration,
@@ -2121,7 +2151,7 @@ const Emitter = struct {
                         \\lowering's own exports (`docs/design/boundary.md` §9.4.5), so the two would be
                         \\one export. Rename the primitive.
                     ,
-                        .{ name, lowering.name },
+                        .{ name, lowering_name },
                     );
                     continue;
                 }
@@ -2140,9 +2170,9 @@ const Emitter = struct {
             }
         };
         // The runtime module supplies what it declares; the file, the rest.
-        try e.takeSupplied(&expected, lowering.name);
+        try e.takeSupplied(&expected, lowering_name);
 
-        const path = runtime_file orelse return e.reportUnsupplied(expected.items, lowering.name);
+        const path = runtime_file orelse return e.reportUnsupplied(expected.items, lowering_name);
         const bytes = e.readAsset(path) orelse {
             try e.reportInFile(
                 .foreign_sibling_missing,
@@ -2184,7 +2214,7 @@ const Emitter = struct {
                     \\(`docs/design/boundary.md` §9.4.5). Add `export const {s} = …;` taking {d}
                     \\parameter{s}.
                 ,
-                    .{ want.name, lowering.name, want.name, want.arity, plural(want.arity) },
+                    .{ want.name, lowering_name, want.name, want.arity, plural(want.arity) },
                 );
                 continue;
             };
@@ -2210,7 +2240,7 @@ const Emitter = struct {
                 .{
                     want.name,
                     if (written) |n| try std.fmt.allocPrint(e.scratch, "with {d} parameter{s}", .{ n, plural(n) }) else "so that its parameters cannot be counted",
-                    lowering.name,
+                    lowering_name,
                     want.arity,
                     plural(want.arity),
                     want.arity,
@@ -2232,7 +2262,7 @@ const Emitter = struct {
                 \\markup primitive (`docs/design/boundary.md` §9.4.5), so that every export is a
                 \\node elimination can see. Stop exporting it, or declare the primitive.
             ,
-                .{ got.name, lowering.name },
+                .{ got.name, lowering_name },
             );
         }
         for (found.unbound) |reference| {
@@ -2269,7 +2299,7 @@ const Emitter = struct {
     fn reportUnsupplied(e: *Emitter, unsupplied: []const Expected, lowering_name: []const u8) !void {
         // A module that is not there was reported by `takeSupplied`.
         if (e.runtime_module == null) return;
-        const module_name = e.options.platform.markup_module.?;
+        const module_name = e.runtimeModuleName().?;
         for (unsupplied) |want| {
             if (want.primitive) |p| {
                 try e.report(
@@ -2289,7 +2319,7 @@ const Emitter = struct {
             }
             try e.reportInFile(
                 .foreign_export_mismatch,
-                .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.lowering_root, Manifest.file_name }) },
+                .{ .path = try e.runtimeModuleManifest() },
                 \\The runtime module `{s}` declares no `pub` value `{s}`, which {s}, and this
                 \\platform names no runtime file to supply it.
                 \\
@@ -2317,13 +2347,13 @@ const Emitter = struct {
     /// The runtime module the chain names, or null (`boundary.md` §9.2, *A
     /// runtime module*).
     fn markupModule(e: *Emitter) !?Graph.Index {
-        const name = e.options.platform.markup_module orelse return null;
+        const name = e.runtimeModuleName() orelse return null;
         return e.graph().find(.platform, try e.session.interner.getOrPut(e.gpa, name));
     }
 
     /// `beni:<Module>`, the specifier the markup runtime imports it by.
     fn programSpecifier(e: *Emitter) !?[]const u8 {
-        const name = e.options.platform.markup_module orelse return null;
+        const name = e.runtimeModuleName() orelse return null;
         return try std.fmt.allocPrint(e.scratch, "beni:{s}", .{name});
     }
 
@@ -2344,16 +2374,26 @@ const Emitter = struct {
     /// 4 counts a sibling's. A markup primitive is supplied likewise, and
     /// its uses then read the module's value (`Lower.primitiveName`).
     fn takeSupplied(e: *Emitter, expected: *std.ArrayList(Expected), lowering_name: []const u8) !void {
-        const name = e.options.platform.markup_module orelse return;
+        const name = e.runtimeModuleName() orelse return;
         const module = try e.markupModule() orelse {
-            try e.reportInFile(
+            if (e.options.platform.markup_module != null) try e.reportInFile(
                 .foreign_sibling_missing,
-                .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.lowering_root, Manifest.file_name }) },
+                .{ .path = try e.runtimeModuleManifest() },
                 \\I cannot find the runtime module `{s}`.
                 \\
                 \\A platform's manifest may name, in `"markup"` `"module"`, a beni module of its
                 \\own whose `pub` values stand in for markup runtime exports
                 \\(`docs/design/boundary.md` §9.2), and this platform has no module of that name.
+            ,
+                .{name},
+            ) else try e.reportInFile(
+                .foreign_sibling_missing,
+                .{ .path = try e.runtimeModuleManifest() },
+                \\I cannot find the runtime module `{s}`.
+                \\
+                \\A platform's manifest may name, in a top-level `"module"`, a beni module of its
+                \\own whose `pub` value `run` the entry file hands `main` to
+                \\(`docs/design/boundary.md` §5.2), and this platform has no module of that name.
             ,
                 .{name},
             );
@@ -6462,7 +6502,11 @@ const Emitter = struct {
             }
         }
         var entry_call: ?Spec.Entry = null;
-        if (run_id != null and main_id != null) {
+        // Under `"exports": "program"` the entry file reads `run`'s result
+        // (`boundary.md` §9.12 (c)), which the pass cannot see, so both
+        // names escape as at any unknown call (backend.md §9, *The entry's
+        // call is a call*, amended 2026-11-04).
+        if (run_id != null and main_id != null and !e.exportsProgram()) {
             entry_call = .{ .callee = run_id.?, .args = try e.scratch.dupe(u32, &.{main_id.?}) };
         } else {
             if (run_id) |g| try escaping.append(e.scratch, g);
@@ -7711,9 +7755,10 @@ const Emitter = struct {
                 try out.print(scratch, "export{{{s} as flush}};", .{spelled});
         };
         // The page's unmount (`boundary.md` §9.4.5, amended 2026-10-17),
-        // the runtime module's, exported as `flush` is. Only a runtime
-        // module supplies `stop`, and the exports mode refuses a runtime
-        // module, so no listed name can meet it: `stop` stays listable.
+        // the runtime module's, exported as `flush` is. Only a markup
+        // runtime module supplies `stop`, and the exports mode refuses a
+        // markup runtime module, so no listed name can meet it: `stop`
+        // stays listable.
         if (e.suppliedAs("stop") != null) {
             if (e.globals.lookup(try e.moduleName(e.runtime_module.?, "stop"))) |ordinal| {
                 var buf: [8]u8 = undefined;
@@ -8260,7 +8305,8 @@ const Emitter = struct {
         if (e.options.prerender == .tree) return e.emitPrerenderEntry(module_path, imported);
         const start = try e.startData();
         // `checkEntryExports` has refused the one chain this cannot serve,
-        // a runtime module, so `exportsProgram` here means a runtime file.
+        // a markup runtime module, so `exportsProgram` here means a runtime
+        // file or a runtime module without markup (§5.2, 2026-11-04).
         if (e.exportsProgram()) return e.emitEntryExporting(entry, runtime_path, module_path, imported, start);
         if (e.runtime_module) |module| return e.emitEntryWithModule(entry, module, imported, start);
 
@@ -8389,7 +8435,23 @@ const Emitter = struct {
             \\// the platform's output shape asks for.
             \\
         );
-        if (start) |s| if (std.mem.eql(u8, s.path, runtime_path)) {
+        // A runtime module without markup (`boundary.md` §5.2, amended
+        // 2026-11-04) supplies `run`, and nothing else the entry calls.
+        if (e.runtime_module != null and e.suppliedAs("run") != null) {
+            const module = e.runtime_module.?;
+            const spelled = try e.moduleSpelling(module, "run");
+            const from = try e.outputPath(module);
+            if (release)
+                try text.print(e.scratch, "import{{{s} as $run}}from\"./{s}\";\n", .{ spelled, from })
+            else
+                try text.print(e.scratch, "import {{ {s} as $run }} from \"./{s}\";\n", .{ spelled, from });
+            if (start) |s| {
+                if (release)
+                    try text.print(e.scratch, "import{{start as $start}}from\"./{s}\";\n", .{s.path})
+                else
+                    try text.print(e.scratch, "import {{ start as $start }} from \"./{s}\";\n", .{s.path});
+            }
+        } else if (start) |s| if (std.mem.eql(u8, s.path, runtime_path)) {
             // The program runtime's own `start`: one import names both.
             if (release)
                 try text.print(e.scratch, "import{{run as $run,start as $start}}from\"./{s}\";\n", .{runtime_path})
@@ -9127,11 +9189,13 @@ const Emitter = struct {
                 );
                 return;
             } else if (p.lowering != null and p.markup_module != null) {
-                // A chain whose runtime is a module (`boundary.md` §9.2,
-                // amended 2026-10-02) has no `run` result the entry file could
-                // hold: not in this slice. Known from the chain alone, so
-                // `check`, a development build and a release build refuse it
-                // alike, before anything is built.
+                // A chain whose runtime is a markup module (`boundary.md`
+                // §9.2, amended 2026-10-02) has no `run` result the entry
+                // file could hold: not in this slice. Known from the chain
+                // alone, so `check`, a development build and a release build
+                // refuse it alike, before anything is built. A runtime
+                // module without markup (§5.2, amended 2026-11-04) supplies
+                // `run` alone, and the key takes it.
                 try e.reportInFile(
                     .unknown_exports_mode,
                     .{ .path = platform_manifest },
