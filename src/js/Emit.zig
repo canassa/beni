@@ -89,6 +89,7 @@ const Opt = @import("Opt.zig");
 const Print = @import("Print.zig");
 const SourceMap = @import("SourceMap.zig");
 const Rename = @import("Rename.zig");
+const JsIntrinsic = @import("JsIntrinsic.zig");
 const Fields = @import("Fields.zig");
 const DebugShape = @import("DebugShape.zig");
 const Arena = @import("../Arena.zig");
@@ -7202,6 +7203,13 @@ const Emitter = struct {
         start: ?struct { file: ?u32, data: []const u8 },
         /// Spellings no whole-program name may take (`Rename.Globals.skip`).
         skip: Rename.Globals.Spellings = .empty,
+        /// Per module slot, the host built-ins its `Js.module` calls import
+        /// (`boundary.md` §4.2): the specifier and the binding's whole-program
+        /// name, written at the top of the one file (`backend.md` §9, *Host
+        /// imports*). Empty for a module with none.
+        host_imports: []const []const HostImport = &.{},
+
+        const HostImport = struct { specifier: []const u8, name: JsIr.Name };
     };
 
     /// Read every hand-written file the build writes and decide whether the
@@ -7269,14 +7277,27 @@ const Emitter = struct {
         // which is the order ES evaluates what they name.
         const module_edges = try scratch.alloc([]const Piece, slots.len);
         @memset(module_edges, &.{});
+        const module_hosts = try scratch.alloc([]const Hoist.HostImport, slots.len);
+        @memset(module_hosts, &.{});
         for (todo) |i| {
             const slot = &slots[i];
             const ir = &slot.lowered.?.ir;
             var edges: std.ArrayList(Piece) = .empty;
+            var hosts: std.ArrayList(Hoist.HostImport) = .empty;
             for (ir.extraSlice(ir.body, JsIr.Node.Index)) |stmt| {
                 if (ir.tag(stmt) != .import_stmt or slot.plan.isDropped(stmt)) continue;
                 const imp = ir.extraData(@fromBackingInt(@intCast(ir.data(stmt).lhs)), JsIr.Import);
                 const source = ir.string_bytes[imp.source_start..][0..imp.source_len];
+                // A host built-in `Js.module` imports (`boundary.md` §4.2)
+                // is no piece: the one file writes it at its top, by the
+                // binding's whole-program name (`backend.md` §9, *Host
+                // imports*).
+                if (JsIntrinsic.isHostBuiltin(source)) {
+                    for (ir.extraSlice(imp.specs(), JsIr.Specifier)) |spec| {
+                        try hosts.append(scratch, .{ .specifier = try scratch.dupe(u8, source), .name = try e.poolName(slot, spec.local) });
+                    }
+                    continue;
+                }
                 const target: ?u32 = if (std.mem.eql(u8, source, slot.sibling))
                     sibling_of[i]
                 else if (std.mem.eql(u8, source, slot.derived_runtime))
@@ -7304,6 +7325,7 @@ const Emitter = struct {
                 try edges.append(scratch, .{ .module = m });
             }
             module_edges[i] = edges.items;
+            module_hosts[i] = hosts.items;
         }
 
         // The entry file's own imports, in `emitEntry`'s order.
@@ -7455,6 +7477,7 @@ const Emitter = struct {
             .runtime = runtime_index,
             .start = start,
             .skip = skip,
+            .host_imports = module_hosts,
         };
     }
 
@@ -7660,7 +7683,15 @@ const Emitter = struct {
                 if ((try seen.getOrPut(scratch, text)).found_existing) continue;
                 try appendJoined(scratch, &out, text, false);
             },
-            .module => {},
+            // An emitted module's `Js.module` imports (`boundary.md` §4.2),
+            // spelled as the one scope spells the binding.
+            .module => |i| for (h.host_imports[i]) |imp| {
+                const ordinal = e.globals.lookup(imp.name) orelse unreachable;
+                var short: [8]u8 = undefined;
+                const text = try std.fmt.allocPrint(scratch, "import*as {s} from\"{s}\";", .{ Rename.spell(ordinal, &short), imp.specifier });
+                if ((try seen.getOrPut(scratch, text)).found_existing) continue;
+                try appendJoined(scratch, &out, text, false);
+            },
         };
         for (h.order) |p| switch (p) {
             .file => |x| if (h.files[x].declined) try e.importDeclined(&out, h, x),

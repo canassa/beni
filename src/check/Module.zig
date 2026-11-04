@@ -221,6 +221,7 @@ pub fn check(in: Input) Error!Check.Counters {
     for (schemas.errors.items) |e| try report.emitText(e.code, e.region, null, e.message);
     try reportMarkup(&report, bir, in.graph);
     try reportJsObjects(&report, &cx);
+    try reportJsModules(&report, &cx);
 
     // P2: every annotated value's scheme, before any body is checked.
     var syncs: std.ArrayList(Types.Builder.SyncMark) = .empty;
@@ -663,6 +664,41 @@ fn reportJsObjects(report: *Report, cx: *const Context) Error!void {
         };
         report.at(null);
         try report.emitText(.invalid_js_object, fault.at, null, text);
+    }
+}
+
+/// Every call of core's `Js.module` whose specifier is not a string literal
+/// naming a `node:` or `cloudflare:` built-in (`boundary.md` §4.2):
+/// `invalid_js_module`, at the argument. The backend writes the specifier
+/// as a static import's, so nothing else could be written, and any other
+/// module could run anything when evaluated.
+fn reportJsModules(report: *Report, cx: *const Context) Error!void {
+    const bir = cx.bir;
+    const tags = bir.insts.items(.tag);
+    for (tags, 0..) |tag, i| {
+        if (tag != .call) continue;
+        const d = bir.instData(@fromBackingInt(@intCast(i)));
+        const callee: Bir.Inst.Index = @fromBackingInt(@intCast(d.lhs));
+        if (callee.int() >= tags.len or tags[callee.int()] != .ext_value) continue;
+        if (JsIntrinsic.of(cx.graph, cx.interfaces, bir, callee, cx.interner) != .module) continue;
+        const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Inst.Index);
+        if (args.len != 1) continue;
+        const at = JsIntrinsic.moduleFault(bir, args[0]) orelse continue;
+        const text: []const u8 = if (bir.instTag(at) != .string)
+            \\`Js.module` writes its specifier as a static import's, so it must be a string
+            \\literal written in place: `Js.module "node:path"`.
+            \\
+            \\This argument is not a string literal.
+        else
+            \\`Js.module` imports a host built-in, a `node:` or `cloudflare:` module, whose
+            \\evaluation the program cannot observe (`docs/design/backend.md` §9, *Host
+            \\imports*).
+            \\
+            \\This specifier names something else. A package could run anything when it is
+            \\evaluated, and a path would name a file the output tree does not hold.
+        ;
+        report.at(null);
+        try report.emitText(.invalid_js_module, at, null, text);
     }
 }
 

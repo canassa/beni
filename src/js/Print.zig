@@ -1296,8 +1296,19 @@ const Printer = struct {
         switch (p.ir.tag(node)) {
             .import_stmt => {
                 const imp = p.ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Import);
-                try p.tok("import { ", "import{");
                 const specs = p.ir.extraSlice(imp.specs(), JsIr.Specifier);
+                // A namespace import of a host built-in (`Js.module`,
+                // boundary.md §4.2): `import * as local from "…"`.
+                if (specs.len == 1 and specs[0].imported == .none) {
+                    try p.tok("import * as ", "import*as ");
+                    try p.name(specs[0].local, .binding);
+                    try p.tok(" from \"", "from\"");
+                    try p.push(p.ir.string_bytes[imp.source_start..][0..imp.source_len]);
+                    try p.push("\";");
+                    try p.endLine(level);
+                    return;
+                }
+                try p.tok("import { ", "import{");
                 for (specs, 0..) |spec, i| {
                     if (i != 0) try p.tok(", ", ",");
                     // The two halves differ exactly for a SIBLING binding —

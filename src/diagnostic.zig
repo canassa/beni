@@ -510,6 +510,10 @@ pub const Code = enum {
     /// changes a value it is handed, or calls a function that does, at the
     /// write. A language rule; the ownership checker v2's, an error.
     comparison_changes_value,
+    /// Appended on 2026-11-04 with `Js.module` (`boundary.md` §4.2): its
+    /// specifier is not a string literal naming a `node:` or `cloudflare:`
+    /// built-in. The checker's, at the argument.
+    invalid_js_module,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -719,6 +723,7 @@ pub fn title(code: Code) []const u8 {
         .unknown_exports_mode => "UNKNOWN EXPORTS MODE",
         .invalid_entry_export => "INVALID ENTRY EXPORT",
         .exports_ignored => "EXPORTS IGNORED",
+        .invalid_js_module => "INVALID HOST MODULE",
     };
 }
 
