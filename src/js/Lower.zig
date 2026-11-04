@@ -6365,6 +6365,14 @@ pub const Lowerer = struct {
             const p = l.pos(inst);
             const n = try l.fresh(l.well.temp);
             try l.constDecl(out, n, values[i], p);
+            // Read by nothing or not, a pinned value that may have an
+            // effect is evaluated, where it was written: the release
+            // optimiser keeps it, and does not fold it into a read in the
+            // caller's order (`enterInline` lists its arguments the same
+            // way). Unlisted, a record key nothing reads went with its
+            // temporary (`Spec.dropKeys`), and two pinned getters were
+            // folded back into the sorted keys.
+            if (l.mayHaveEffect(inst)) try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
             values[i] = try l.ident(n, p);
         }
         return values;
