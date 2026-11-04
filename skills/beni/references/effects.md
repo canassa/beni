@@ -104,7 +104,8 @@ type.
 - `Date.toIso8601 t` writes the moment in UTC, as `Date.prototype.toISOString` writes it.
 - A zone is `Date.utc` or a name of the host's time zone database: `Date.named "Europe/Berlin"`
   is a `Maybe Zone`, and `Date.here ⊤` is the reader's zone (impure). A zone is never a fixed
-  offset, so a date on either side of a daylight saving change is correct.
+  offset, so a date on either side of a daylight saving change is correct. A name in any case and
+  an old link give one zone, by the host's canonical name; an offset as `"+01:00"` is `Nothing`.
 - `Date.toParts t zone` gives `year`, `month` (a `Month`: `Jan` … `Dec`), `day`, `weekday`
   (`Mon` … `Sun`), `hour`, `minute`, `second`, `millis` and `offset` (minutes east of UTC).
 - There are no month names. Write the words of your language for `Month` yourself.

@@ -59,7 +59,8 @@ utc = Utc
 
 
 --| The zone of the host, by the name its time zone database gives it;
---| `utc` when the host gives no name.
+--| `utc` when the host gives no name, or a name that `named` refuses
+--| (an offset, as `+01:00`).
 pub here : ⊤ → Zone
 here ⊤ =
     options =
@@ -72,9 +73,16 @@ here ⊤ =
 
 
 --| The zone of this name in the host's time zone database, as
---| `"Europe/Berlin"`; `Nothing` for a name the host does not know.
+--| `"Europe/Berlin"`, by its canonical name: the host reads a name in
+--| any case and an old link by its zone, so `named "us/eastern"` is
+--| `America/New_York`, and `named "Etc/UTC"` is `utc`. `Nothing` for a
+--| name the host does not know, and for an offset (`"+01:00"`), which
+--| is not a name of the database.
 --|
 --|     named "Not/AZone" == Nothing
+--|     named "+01:00" == Nothing
+--|     named "Etc/UTC" == Just utc
+--|     named "europe/berlin" == named "Europe/Berlin"
 pub named : String → Maybe Zone
 named zoneName =
     if zoneName == "UTC" then
@@ -83,11 +91,22 @@ named zoneName =
         -- Total: the one error the formatter can throw is caught here.
         Js.pure λ⊤ →
             Js.catchIf
-                (λ⊤ →
-                    if Js.isUndefined (formatterOf zoneName) then Nothing else Just (Named zoneName)
-                )
+                (λ⊤ → canonical (formatterOf zoneName))
                 (λerror → Js.instanceOf error (Js.global "RangeError"))
                 λ_ → Nothing
+
+
+-- The zone by the name that the host resolved the formatter's name to.
+canonical : Js.Value → Maybe Zone
+canonical format =
+    resolved : String
+    resolved = Js.to (Js.get (Js.call format "resolvedOptions" []) "timeZone")
+    if resolved == "UTC" then
+        Just Utc
+    else if String.startsWith resolved "+" || String.startsWith resolved "-" then
+        Nothing
+    else
+        Just (Named resolved)
 
 
 -- The host's formatter of each zone that `named` has made, by name. A
@@ -100,7 +119,10 @@ formatters = Js.pure λ⊤ → Js.construct (Js.global "Map") []
 -- The zone's formatter, asked for its offset only, made on the first
 -- call for the name. ECMA-402 throws a `RangeError` for a time zone it
 -- does not know: `named` catches that one and nothing else (CLAUDE.md
--- rule 9), so a `Named` zone always has its formatter here.
+-- rule 9), so the canonical name of a `Named` zone is one the host
+-- knows. The cache is only a saving: writing a name twice writes the
+-- same formatter, and a build that left the write out would make a new
+-- formatter on each call and give the same answers.
 formatterOf : String → Js.Value
 formatterOf zoneName =
     known = Js.call formatters "get" [ Js.from zoneName ]
@@ -209,20 +231,26 @@ offsetMillis format ms =
 
 
 -- `GMT`, `GMT+01:00`, `GMT-05:30` or `GMT+00:53:28` in milliseconds. The
--- formatter writes no other form for `longOffset` (ECMA-402 §11.5.5).
+-- formatter writes no other form for `longOffset` in `en-US` (ECMA-402
+-- §11.5.5); some locales write U+2212 for the minus, which the pattern
+-- takes too. A text it does not read is a defect of the host or of this
+-- module, never an offset of 0 (CLAUDE.md rule 9).
 gmtOffset : String → Int
 gmtOffset text =
     found = Js.call gmtPattern "exec" [ Js.from text ]
     if Js.isNull found then
-        0
+        Js.throw
+            (Js.construct (Js.global "Error")
+                [ Js.from "Date: the host wrote a zone offset that Date cannot read: ${text}" ]
+            )
     else
         field i = number (Js.at found i)
-        (if Js.same (Js.at found 1) (Js.from "-") then -1 else 1)
+        (if Js.same (Js.at found 1) (Js.from "+") then 1 else -1)
             * (field 2 * 3600000 + field 3 * 60000 + field 4 * 1000)
 
 
 gmtPattern : Js.Value
-gmtPattern = Js.regExp "^GMT(?:([+-])(\\d{2}):(\\d{2})(?::(\\d{2}))?)?$" ""
+gmtPattern = Js.regExp "^GMT(?:([+\\-\\u2212])(\\d{2}):(\\d{2})(?::(\\d{2}))?)?$" ""
 
 
 dayMillis : Int
@@ -403,7 +431,8 @@ daysIn year month =
 --| of fraction, cut to milliseconds), then `Z`, `z`, `+01:00`, `+0100`
 --| or `+01`, or nothing (UTC). A year is four digits, or a sign and six
 --| (`+275760`), as `toIso8601` writes years outside 0 to 9999. Any other
---| text, and a field out of its range, is `Nothing`.
+--| text, and a field out of its range, is `Nothing`. A leap second,
+--| `23:59:60`, is out of range: a `Posix` counts no leap seconds.
 --|
 --|     fromIso8601 "1970-01-02" == Just (fromMillis 86400000)
 --|     fromIso8601 "2016-02-30" == Nothing

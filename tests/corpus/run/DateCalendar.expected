@@ -60,14 +60,20 @@
 2026-03-29T01:00:00Z in Europe/Berlin: Sun 29 Mar 2026 03:00:00.000 offset 120
 2026-10-25T00:59:59Z in Europe/Berlin: Sun 25 Oct 2026 02:59:59.000 offset 120
 2026-10-25T01:00:00Z in Europe/Berlin: Sun 25 Oct 2026 02:00:00.000 offset 60
-2016-02-18T23:00:00Z in Asia/Kolkata: Fri 19 Feb 2016 04:30:00.000 offset 330
+2016-02-18T23:00:00Z in Asia/Calcutta: Fri 19 Feb 2016 04:30:00.000 offset 330
 2016-02-18T23:00:00Z in Pacific/Kiritimati: Fri 19 Feb 2016 13:00:00.000 offset 840
 +275760-09-13T00:00:00.000Z in Europe/Berlin: Sat 13 Sep 275760 02:00:00.000 offset 120
 2016-02-18T03:22:56.637Z in UTC: Thu 18 Feb 2016 03:22:56.637 offset 0
+2016-02-18T23:00:00Z in Europe/Berlin: Fri 19 Feb 2016 00:00:00.000 offset 60
+2016-02-18T23:00:00Z in America/New_York: Thu 18 Feb 2016 18:00:00.000 offset -300
+2016-02-18T23:00:00Z in UTC: Thu 18 Feb 2016 23:00:00.000 offset 0
++01:00: no such zone
 Not/AZone: no such zone
 : no such zone
 -- equality
 one zone
 UTC is utc
+a name in any case is one zone
+Etc/UTC is utc
 -- here
 UTC
