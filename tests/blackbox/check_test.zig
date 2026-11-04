@@ -2132,9 +2132,11 @@ test "growing full cast types settle on the composed path" {
 }
 
 // A `pub` core function that writes a parameter must be one of `List`'s eight
-// writers: `Totality` keys its exemption of core's own callers on those names
-// (`writes/Core.zig` `listWriter`), so a new wrapper that edits its argument
-// would be total, and browser-inline would run it ahead of its branch.
+// writers, or live where `fencedToCore` proves no platform or app can call it
+// (`Js.Array`'s builder stores): `Totality` keys its exemption of core's own
+// callers on the eight names (`writes/Core.zig` `listWriter`), so a new wrapper
+// that edits its argument and that code outside core can reach would be total,
+// and browser-inline would run it ahead of its branch.
 /// The eight, as `writes/Core.zig` `listWriter` names them; a black-box test does not import the compiler.
 fn isListWriter(name: []const u8) bool {
     for ([_][]const u8{ "set", "update", "push", "pop", "swap", "insertAt", "removeAt", "append" }) |x| if (std.mem.eql(u8, x, name)) return true;
@@ -2162,7 +2164,7 @@ fn fencedToCore(w: *World, module: []const u8, name: []const u8) !bool {
     return true;
 }
 
-test "ownership: only List's eight writers are pub core functions that write a parameter" {
+test "ownership: a pub core function that writes a parameter is one of List's eight writers or fenced to core" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const arena = w.arena.allocator();
