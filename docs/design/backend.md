@@ -9181,6 +9181,32 @@ state through shape tables; they move only by a typed number input's parse, fuse
 validator as in `inline/FormLocal`: N = 64 15 217 / 15 222 / 15 121 → 15 177 / 15 170 / 15 117,
 N = 256 45 409 / 45 791 / 47 041 → 45 464 / 45 703 / 47 020 (seed 1 grows after brotli only).
 
+*Amended 2026-11-04 (#1817): a failure that is one object of the program.* A schema worker's
+failure is Opt's absence sentinel (*Typed cells and optional slots*): a top-level `const m =
+{…}` of core that every worker returns and every caller compares with, `x === m`. The rule above
+decided a comparison only against a local stable chain, so a copy at `return m` kept `m === m`,
+and one at `return {$: "Set", …}` read on through a test it could not decide; the copies were
+over the function, and every worker stayed shared, making a constructor per successful read
+for its caller to test. One more decision takes the site, exact as the others: a name of a
+top-level `const` of an object or array literal that the program never assigns (`heldObject`)
+is one object for the whole run, never `NaN`, whatever its properties are later written to. So
+`x === y` (`!==`), `y` such a name, is `true` (`false`) at a `return` of the same name; `false`
+(`true`) at a primitive literal; and `false` (`true`) at another such name, unless a later pass
+may make the two one object (`heldVerdict`): two names of one base in two modules — the
+constant of one imported nullary constructor, which `Emit.shareNullaries` shares by its name —
+or two literals of the same code (`sameCode`) are left undecided. The two constants
+`shareNullaries` makes one need not be the same literal: a module that reads no field of its
+constant may hold it as `{}`, and the kept one may be that `{}` (#1856).
+Pinned by `emit/release/app/SchemaWorkerFusion` (a tagged worker fused into its `case`: its
+`return`s are `7`, `c`, `7+d` and `0`, and no `Set`, `Bump` or `Calm` is built; the declared
+`Calm` decides the different-literal `false`), `run/SchemaWorkerFusion` (every arm, both builds)
+and `Spec`'s unit test *a held object is itself, and another only when no pass may share them*.
+Measured (release, brotli 11, this branch's output before and after; the goldens of these
+programs are stale on this branch for other reasons and are left to #1848 §D):
+`app/SchemaDeadTags` 942 → 881, `app/ValidatorRun` 892 → 841, `app/CaseAcrossClosure` 2 211 →
+2 146, `inline/CaseLoader` 1 735 → 1 673, `inline/TickFresh` 1 597 → 1 507; sixteen release
+outputs move, every one smaller. `SchemaDeadTags`'s `step` on valid reads: 9.4 → 4.0 ns a call.
+
 **Identical functions are one** (*added 2026-10-24*, #934; `Spec.mergeSame`). In a release build,
 `Maybe.withDefault` and `Result.withDefault` are the same code once `Just` and `Ok` are both tag 0
 (`(a,b)=>a.$===0?a.a:b`), and the one-file build printed both. Now, once the passes above are done

@@ -10068,6 +10068,52 @@ const Spec = struct {
         }
         return null;
     }
+    /// `y === p`, `y` a name of module `ym` and `p` a node of `pm`, when `y`
+    /// names a held object (`heldObject`): true when `p` names the same
+    /// binding; false when `p` is a primitive literal, or names another
+    /// held object (`heldVerdict`). Null otherwise.
+    fn heldSame(s: *Spec, ym: *Mod, y: Index, pm: *Mod, p: Index) Allocator.Error!?bool {
+        const yg = s.heldObject(ym, y) orelse return null;
+        if (primitiveLit(pm.ir, p)) return false;
+        const pg = s.heldObject(pm, p) orelse return null;
+        if (yg == pg) return heldVerdict(.{ .same_binding = true, .same_base = true, .same_code = true });
+        const yd = s.decl[yg].?;
+        const pd = s.decl[pg].?;
+        const ydm = &s.mods[yd.module];
+        const pdm = &s.mods[pd.module];
+        const yi: Index = @fromBackingInt(@intCast(ydm.ir.data(yd.stmt).rhs));
+        const pi: Index = @fromBackingInt(@intCast(pdm.ir.data(pd.stmt).rhs));
+        const yn = ydm.ir.name(@fromBackingInt(@intCast(ydm.ir.data(yd.stmt).lhs)));
+        const pn = pdm.ir.name(@fromBackingInt(@intCast(pdm.ir.data(pd.stmt).lhs)));
+        return heldVerdict(.{
+            .same_binding = false,
+            .same_base = yn.base == pn.base,
+            .same_code = try s.sameCode(ydm, yi, pdm, pi),
+        });
+    }
+
+    /// The program's binding `ident` names when it is a top-level `const`
+    /// of an object or array literal that nothing assigns: one object for
+    /// the whole run, never `NaN`, so a comparison of it with itself is
+    /// true. A write of its properties does not change which object it is.
+    /// Opt's absence sentinel, a schema worker's failure, is one
+    /// (`backend.md` §9, *Slice 9 across a call*, amended 2026-11-04,
+    /// #1817).
+    fn heldObject(s: *Spec, m: *Mod, ident: Index) ?u32 {
+        const ir = m.ir;
+        if (ir.tag(ident) != .ident) return null;
+        const g = m.globalOf(@fromBackingInt(@intCast(ir.data(ident).lhs))) orelse return null;
+        if (g >= s.assigned.len or s.assigned[g]) return null;
+        const decl = s.decl[g] orelse return null;
+        const dm = &s.mods[decl.module];
+        if (dm.ir.tag(decl.stmt) != .const_decl) return null;
+        const value: Index = @fromBackingInt(@intCast(dm.ir.data(decl.stmt).rhs));
+        return switch (dm.ir.tag(value)) {
+            .object, .array => g,
+            else => null,
+        };
+    }
+
     /// The initialiser of local `n`, declared once in `top` by a `const`
     /// (or a `let` nothing assigns); null otherwise.
     fn soleInit(s: *Spec, m: *Mod, top: Index, n: NameIndex) Allocator.Error!?Index {
@@ -10289,8 +10335,11 @@ const Spec = struct {
                             if (left_x == right_x) return null;
                             const other = if (left_x) b.right else b.left;
                             const p_ir = c.dst.ir;
+                            const held = try c.s.heldSame(c.src, other, c.dst, kn.p);
                             const same: ?bool = if (p_ir.tag(kn.p) == .object and pureRead(ir, other))
                                 false
+                            else if (held != null)
+                                held
                             else if ((primitiveLit(p_ir, kn.p) or try c.s.declaredTag(c.dst, kn.p) != null) and try c.s.stableChain(c.dst, kn.cont, other))
                                 false
                             else if (sameChain(ir, other, kn.p) and try c.s.stableChain(c.dst, kn.cont, kn.p))
@@ -17246,6 +17295,41 @@ fn nullTest(ir: *const JsIr, node: Index) ?NullTest {
         .loose_eq => .{ .chain = chain, .null_in_then = true, .loose = true },
         else => null,
     };
+}
+
+/// Two held objects compared (`Spec.heldSame`): what is known of them.
+const HeldPair = struct {
+    /// One binding.
+    same_binding: bool,
+    /// Two bindings of one base name in two modules: the constant of one
+    /// imported nullary constructor, which `Emit.shareNullaries` makes one
+    /// object of, by its name.
+    same_base: bool,
+    /// Two literals of the same code (`Spec.sameCode`), which a pass may
+    /// share as one object.
+    same_code: bool,
+};
+
+/// `y === p` of two held objects (`backend.md` §9, *Slice 9 across a
+/// call*, amended 2026-11-04, #1817): true of one binding; undecided when
+/// a later pass may make the two one object — one base name, or the same
+/// code; false otherwise: two literals of different code, each made once,
+/// are two objects.
+fn heldVerdict(p: HeldPair) ?bool {
+    if (p.same_binding) return true;
+    if (p.same_base or p.same_code) return null;
+    return false;
+}
+
+test "a held object is itself, and another only when no pass may share them" {
+    try testing.expectEqual(@as(?bool, true), heldVerdict(.{ .same_binding = true, .same_base = true, .same_code = true }));
+    // Opt's sentinel against a declared constructor: different code.
+    try testing.expectEqual(@as(?bool, false), heldVerdict(.{ .same_binding = false, .same_base = false, .same_code = false }));
+    // Equal literals: one object may stand for both.
+    try testing.expectEqual(@as(?bool, null), heldVerdict(.{ .same_binding = false, .same_base = false, .same_code = true }));
+    // One imported nullary constructor's constant in two modules, shared
+    // by name, whatever its code looks like here.
+    try testing.expectEqual(@as(?bool, null), heldVerdict(.{ .same_binding = false, .same_base = true, .same_code = false }));
 }
 
 /// Whether two chains — a name, or properties of one — are the same one.

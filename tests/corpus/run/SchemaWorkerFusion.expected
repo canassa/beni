@@ -1,0 +1,7 @@
+{"type": "set", "value": 3} 3
+{"type": "bump", "by": 2} 9
+{"type": "calm"} 0
+{"type": "set", "value": "x"} 7
+{"type": "other"} 7
+5 7
+null 7
