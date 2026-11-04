@@ -1702,11 +1702,13 @@ Parsing and lowering emit no spelling refusals; comma tuple types remain errors.
 The formatter preserves spelling. Public `fmt --to-unicode` converts code tokens
 and type nodes, then formats; `--check --to-unicode` reports either change.
 Literal and comment bytes stay untouched; `Never` conversion honors
-`topNeverShadowed`, and unit conversion retains interior comments.
+the rule that a declared type, alias, schema or foreign type named `Never`,
+or an explicit import of `Never` from a non-Basics module, keeps that name.
+Unit conversion retains interior comments.
 `--migrate-unicode` and `--migrate-lambda` are retired; `--migrate-top` keeps only
 structural rewrites. `--migrate-cons` is unchanged. A rejected bind's
 `unexpected_token`, `expected_token` or numeric `bind_rhs_not_application`
-message suggests `x < -1` for comparison.
+message suggests `x < -1` for comparison only when the next token is a number literal.
 The artifact version is bumped to invalidate cached spelling diagnostics.
 
 
@@ -1766,8 +1768,8 @@ The measure and cursor count code points (§3.7).
 It replaces ASCII symbol tokens and backslash lambda heads; product separators
 are identified through type nodes, leaving multiplication alone. Unit nodes lose
 their parentheses and gain `⊤`, with interior comments retained. Type references
-`Never` become `⊥` unless `topNeverShadowed` finds a declaration or a non-Basics
-import. Qualified names resolve explicit module aliases before the prelude, so
+`Never` become `⊥` unless the file declares a type, alias, schema or foreign
+type named `Never`, or explicitly imports `Never` from a module other than `Basics`. Qualified names resolve explicit module aliases before the prelude, so
 `import Basics as B` permits converting `B.Never`, while `import Other as Basics`
 keeps that module's `Basics.Never`. Literal text, characters,
 multiline strings, comments, markup text and quoted attributes keep their bytes.
@@ -1775,6 +1777,10 @@ Interpolation and markup holes remain code. The formatter first normalizes
 layout so shortening arrows cannot misalign same-line case branches, then
 converts tokens, reparses, and formats the result. `--check --to-unicode` checks
 both spelling and layout. Invalid files are reported and left untouched.
+Both intermediate and converted text are checked for lexical and parse diagnostics.
+A failed rewrite reports the first code as a file-level diagnostic in the original
+file, leaves that file untouched, and allows other files in the command to finish.
+It must not escape as an internal Zig error.
 
 The hidden `--migrate-unicode` and `--migrate-lambda` flags are retired.
 The following *As built* notes record the historical implementation, superseded
@@ -1847,11 +1853,13 @@ Parsing and lowering emit no spelling refusals; comma tuple types remain errors.
 The formatter preserves spelling. Public `fmt --to-unicode` converts code tokens
 and type nodes, then formats; `--check --to-unicode` reports either change.
 Literal and comment bytes stay untouched; `Never` conversion honors
-`topNeverShadowed`, and unit conversion retains interior comments.
+the rule that a declared type, alias, schema or foreign type named `Never`,
+or an explicit import of `Never` from a non-Basics module, keeps that name.
+Unit conversion retains interior comments.
 `--migrate-unicode` and `--migrate-lambda` are retired; `--migrate-top` keeps only
 structural rewrites. `--migrate-cons` is unchanged. A rejected bind's
 `unexpected_token`, `expected_token` or numeric `bind_rhs_not_application`
-message suggests `x < -1` for comparison.
+message suggests `x < -1` for comparison only when the next token is a number literal.
 The artifact version is bumped to invalidate cached spelling diagnostics.
 
 

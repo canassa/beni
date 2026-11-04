@@ -336,6 +336,7 @@ pub const Code = enum {
     invalid_html_shell,
     /// Appended with `λ` (language.md §12.1): a lambda written with the
     /// removed `\`, whose message is the head written `λ`.
+    /// Retired 2026-11-04: ASCII spelling accepted; retain this append-only code.
     backslash_lambda_removed,
     /// Appended with the names that read right subject first (language.md
     /// §12.4): a use of `modBy`, `remainderBy` or `logBase`, whose
@@ -360,6 +361,7 @@ pub const Code = enum {
     /// `...` — reported at every occurrence, its message naming the symbol;
     /// and a tuple type written `( a, b )`, whose message is the type
     /// written with `×`.
+    /// Retired 2026-11-04: ASCII spelling accepted; retain this append-only code.
     ascii_symbol_removed,
     tuple_type_removed,
     /// Appended on 2026-10-02 (`backend.md` §4, *The emitter's imports of
@@ -389,7 +391,9 @@ pub const Code = enum {
     /// the enforce step); the `then` branch of an `if` without `else` whose
     /// type is not `⊤` (the checker's); and a `_ =` in front of a `⊤`, a
     /// `warning` (the checker's, checker-v2.md §34).
+    /// Retired 2026-11-04: ASCII spelling accepted; retain this append-only code.
     unit_spelling_removed,
+    /// Retired 2026-11-04: ASCII spelling accepted; retain this append-only code.
     never_spelling_removed,
     if_without_else_not_unit,
     unit_discarded,

@@ -391,10 +391,9 @@ pub fn migrateCons(
     try w.writeAll(source[at..]);
 }
 
-/// Why a structural migration left a file alone: its rewrite does not parse
-/// cleanly. `code` is the re-parse's first diagnostic and `start` its
-/// offset in the ORIGINAL source (the rewrite moves no line, so the line is
-/// the same).
+/// Why a rewrite left a file alone: its first lexical or parse diagnostic.
+/// `start` is an offset in the original source. A conversion that formats
+/// before rewriting reports the file start, since formatting moves lines.
 pub const RewriteProblem = struct {
     code: diagnostic.Code,
     start: u32,
@@ -740,15 +739,22 @@ pub fn toUnicode(
     source: [:0]const u8,
     line_starts: []const u32,
     w: *Io.Writer,
-) Error!void {
+) Error!?RewriteProblem {
     var canonical: Io.Writer.Allocating = .init(scratch);
     try format(scratch, tree, tokens, comments, source, line_starts, &canonical.writer);
     const text = try scratch.dupeSentinel(u8, canonical.written(), 0);
     var interner: InternPool.Local = .empty;
     var lexed: Tokenizer.Output = .empty;
     try Tokenizer.tokenize(scratch, text, &interner, &lexed);
+    if (lexed.diagnostics.items().len != 0) {
+        try w.writeAll(source);
+        return .{ .code = lexed.diagnostics.items()[0].code, .start = 0 };
+    }
     const parsed = try Parse.parse(scratch, scratch, text, lexed.tokens.slice(), lexed.comments.items, lexed.line_starts.items, lexed.diagnostics.items());
-    if (parsed.errors.len != 0) return error.SyntaxErrors;
+    if (parsed.errors.len != 0) {
+        try w.writeAll(source);
+        return .{ .code = parsed.errors[0].code, .start = 0 };
+    }
     var m: Measurer = .{
         .tree = &parsed,
         .tags = lexed.tokens.items(.tag),
@@ -805,8 +811,17 @@ pub fn toUnicode(
     var final_interner: InternPool.Local = .empty;
     var final_lexed: Tokenizer.Output = .empty;
     try Tokenizer.tokenize(scratch, converted, &final_interner, &final_lexed);
+    if (final_lexed.diagnostics.items().len != 0) {
+        try w.writeAll(source);
+        return .{ .code = final_lexed.diagnostics.items()[0].code, .start = 0 };
+    }
     const final_tree = try Parse.parse(scratch, scratch, converted, final_lexed.tokens.slice(), final_lexed.comments.items, final_lexed.line_starts.items, final_lexed.diagnostics.items());
+    if (final_tree.errors.len != 0) {
+        try w.writeAll(source);
+        return .{ .code = final_tree.errors[0].code, .start = 0 };
+    }
     try format(scratch, &final_tree, &final_lexed.tokens, final_lexed.comments.items, converted, final_lexed.line_starts.items, w);
+    return null;
 }
 
 /// Why `migrateTop` left a file alone, at `start` in the source.

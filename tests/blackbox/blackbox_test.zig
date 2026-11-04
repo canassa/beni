@@ -1950,6 +1950,43 @@ test "fmt preserves ASCII and --to-unicode converts code only and reaches a fixe
     try testing.expectEqualStrings(expected, try w.read("Main.beni"));
 }
 
+test "fmt --to-unicode leaves a failed rewrite alone and continues with other files" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The original unit's closing parenthesis keeps `.0` on its line.
+    // Deleting it after the comment makes the selector start a new line.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const source = "f = ( -- unit\n    ).0\n";
+    try w.write("Bad.beni", source);
+    try w.write("Good.beni", "f : Int -> Int\nf x = x\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const result = try w.run(&.{ "fmt", "--to-unicode", "--jobs=1", "Bad.beni", "Good.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 1), result.exit_code);
+    try testing.expectEqualStrings("", result.stdout);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .unexpected_token,
+        .severity = .@"error",
+        .span = .{ .file = "Bad.beni", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 1 } },
+        .title = "UNEXPECTED TOKEN",
+        .message = "`beni fmt --to-unicode` left this file alone: the rewritten text does not parse\n(unexpected_token). Convert it by hand.",
+    }}), result.diagnostics);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(source, try w.read("Bad.beni"));
+    try testing.expectEqualStrings("f : Int → Int\nf x = x\n", try w.read("Good.beni"));
+}
+
 test "fmt --to-unicode preserves shadowed Never and unit comments" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();

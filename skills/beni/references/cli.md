@@ -88,6 +88,8 @@ to `⋆`; the surrounding type stays complete and the first crossing stays exact
 
 `beni fmt --to-unicode <file>` converts ASCII code spellings to Unicode and formats.
 Plain `fmt` preserves spelling. `fmt --check --to-unicode` checks both.
+If conversion produces invalid syntax, the file stays unchanged and gets a diagnostic.
+The command continues to format the other files.
 
 ## Migration flags that a diagnostic names
 
