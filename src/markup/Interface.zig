@@ -94,7 +94,10 @@ const std = @import("std");
 /// Version 1.29 adds cold checked property descriptors and typed control
 /// chains. The producer owns raw property/value pairing; Source retains the
 /// control algorithm and updates the existing entries in place.
-pub const version: Version = .{ .major = 1, .minor = 29 };
+/// Version 1.30 (manager, 2026-11-04) makes the private record and the
+/// markup primitives values of the runtime module the lowering supplies,
+/// once per build, in that module's own unit (`RuntimeProtocol`).
+pub const version: Version = .{ .major = 1, .minor = 30 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -147,10 +150,8 @@ pub const Lowering = struct {
     /// The evidence needed to close typed capture packets. Only a lowering
     /// that consumes this evidence requests it; other modules keep their ABI.
     operand_evidence: EvidenceKinds = .{},
-    /// 1.27: private Source ABI for compiler-emitted operations which open
-    /// this lowering's existential producer representation. No runtime helper
-    /// factory is implied: use existing hoists/builders and pass one typed
-    /// record. Carriers retain native/callable facts and platform authority.
+    /// 1.30: the values of the runtime module this lowering supplies, such
+    /// as its private typed record (boundary.md §9.4.6). Null: none.
     runtime_protocol: ?RuntimeProtocol = null,
     /// Runs once per module that has a surviving markup root, before any of
     /// its roots: hoists what the module needs.
@@ -702,14 +703,18 @@ pub const RuntimeExport = struct {
     arity: u8,
 };
 
-/// The private Source record and carriers of the owner-approved 1.27 ABI.
-/// These are declarations, not new Js primitives. The lowering emits the
-/// ordinary pinned bridge once per independent emit unit. CorePrivate fences
-/// the module; HostFree retains native/callable facts for its carriers.
+/// 1.30: values of the markup runtime module the lowering supplies
+/// (boundary.md §9.4.6). The runtime module declares each as a body-less
+/// `foreign` value with its typed annotation; the compiler binds it to the
+/// expression `supply` returns, a `const` of that module's own unit whose
+/// hoists belong to the same unit. It has no sibling export. Not a new Js
+/// primitive: the expression is built with the ordinary builder.
 pub const RuntimeProtocol = struct {
-    module: []const u8,
-    record: []const u8,
-    carriers: []const []const u8,
+    /// The supplied values' names, each a `foreign` of the runtime module.
+    values: []const []const u8,
+    /// The expression of one of `values`, called when the runtime module
+    /// lowers that declaration, at most once per build.
+    supply: *const fn (cx: *Context, name: []const u8) Error!Expr,
 };
 
 /// The compile-time half of §9.4.6's check: a lowering written against a
@@ -717,8 +722,8 @@ pub const RuntimeProtocol = struct {
 /// into beni. The registry `build.zig` generates calls it for every
 /// lowering it lists.
 pub fn checkTargets(comptime l: Lowering) void {
-    if (l.runtime_protocol != null and l.targets.minor < 27) {
-        @compileError("a private markup runtime protocol requires interface 1.27");
+    if (l.runtime_protocol != null and l.targets.minor < 30) {
+        @compileError("a supplied markup runtime value requires interface 1.30");
     }
     if (l.targets.major != version.major or l.targets.minor > version.minor) {
         @compileError(std.fmt.comptimePrint(

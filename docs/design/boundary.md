@@ -3096,6 +3096,52 @@ private Protocol adds `controls : Node → Opt Control` and
 `setControls : Node, Control → ⊤`. Source retains every control algorithm;
 there is no allocation per render for an existing entry and no helper factory.
 
+**Version 1.30** (*manager decision, 2026-11-04, carrying the owner's "the
+compiler opens the existentials" through*; #1612): the private record and the
+two markup primitives are **values of the markup runtime module the lowering
+supplies**, once per build, in that module's own emit unit. 1.27–1.29 emitted
+one record per independent emit unit, which left the runtime module itself
+without one: `run` and `start` are called by the entry file, `Html.text` and
+`Html.map` resolve to the runtime module's exports with the vocabulary's fixed
+types, and a view written only with `Html.text` has no markup root, so no unit
+of the build held a record at all.
+
+- `Lowering.runtime_protocol` is `{ values, supply }`: the names of the runtime
+  module's values the lowering supplies, and the hook that writes each one's
+  expression. Its 1.27 fields `module`, `record` and `carriers` are withdrawn;
+  nothing read them, and the carriers' facts come from their Beni declarations.
+- The runtime module declares each supplied value as a body-less `foreign`
+  value with its ordinary typed annotation. The compiler binds it to the
+  expression `supply(cx, name)` returns, as a `const` of that module, built
+  with the existing builder; its hoists belong to the same unit. It has no
+  sibling export and §4's sibling checks do not apply to it. Runtime source
+  reads it as any typed value; another module reads it through the lowering's
+  declared runtime exports. A supplied value is dropped like any declaration
+  nothing reaches, and the runtime exports its expression names are roots of
+  the reachability pass only while it lives.
+- The `dom` lowering supplies `protocol : Html.Runtime.Protocol`, and the two
+  primitives `text` and `map`, whose kinds are hoisted beside them. Each is a
+  separate value, so a build that never calls `Html.map` ships no map kind.
+  The record loses `text`, `map` and `fire`, which no Source consumer used.
+- **One record per build, not per program.** The record holds functions and
+  two kinds and no state of any program, so every program of a page
+  (`Browser.programs`) shares it, and there is one text kind and one map kind
+  per build, as there was one `textKind` before: an `Html.text` block made in
+  one module patches a text instance another module mounted. A `--library`
+  build is one build too: its record lives in `_platform/Rt.mjs`, which every
+  module that writes markup imports. The record's construction is a pure
+  module-level initialiser, so the record is the same object at `--jobs=1`
+  and `--jobs=8` and does not depend on module completion order.
+- Emitted code reaches the record through the runtime export `protocol` and
+  passes it to the runtime's slot, row and `Show` operations. An empty node or
+  block link is the existing `Js.Opt` empty value, never `null`. A text hole
+  of a non-`String` value is converted by the producer with JavaScript's own
+  `ToString` (`"" + v`), which is what the DOM's coercion printed before.
+
+No new `Js` primitive, `Any.js` change, HostFree exemption, refusal or per-view
+or per-row factory is introduced. The 1.29 Property descriptors and control
+chains are unchanged.
+
 ### 9.5 How a lowering is compiled into beni
 
 **No dynamic loading, ever**: a lowering is Zig linked into the binary, and a platform is trusted
@@ -3175,6 +3221,12 @@ key-typed Any state is retained; §9.4.6 defines the three-argument operation.
 opaque cold descriptor and linked control cells of §9.4.6. Producer-owned
 get/set/value pairing applies to every checked vocabulary property, including
 custom names; Source owns all control traversal and restoration.
+
+*Manager decision, 2026-11-04 (interface 1.30):* a compiled-in lowering may
+supply values of its markup runtime module (`Lowering.runtime_protocol`,
+§9.4.6). The `dom` lowering supplies one private record per build, `protocol`,
+and the primitives `text` and `map`, in `Rt`'s own emit unit; emitted code
+imports the record as a runtime export.
 
 ### 9.6 Determinism, and what the cache must know
 
