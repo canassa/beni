@@ -758,13 +758,13 @@ oracle models it in slices, each a pull request that is part of #316 and of
    is a one-slot array whose element is the record, at all three levels, so
    every list rule and every heap relation applies to it unchanged. The new
    rule is the update's Dead per field. No theorem changes.
-2. The objects in the flat fragment: `FlatType.object`, `FlatAbstract` and
+2. The objects in the flat fragment (#1871): `FlatType.object`, `FlatAbstract` and
    `AllocatedFlatValue` for an object, the four forms in `FlatANF0`, and their
    cases in `flat_preserved`. The new proof step is the heap frame of a write
    through an object whose kept fields stay live: a live path goes through the
    written array (`live_path_apart` does not hold there), and the frame must
    show that the value at a kept field is the same before and after.
-3. The summaries and the bridge: `W{F}` and per-field reads through calls
+3. The summaries and the bridge (#1872): `W{F}` and per-field reads through calls
    (§31.7), the bridge's spelling of an object as a beni record, and record
    verdicts in the comparison; the generator, the targeted enumerator and
    mutation controls for the record rules.
