@@ -2,8 +2,8 @@ import Js
 import Rt
 
 
--- The fourth argument is deliberately passed through Js.apply: the same
--- reduction runs against the old, three-argument runtime as a red test.
+-- The platform probe supplies the cold descriptor ABI that the producer
+-- supplies for markup. The mutable payload must be written on every call.
 pub verify : ⊤ → String
 verify ⊤ =
     seen = Js.ref ""
@@ -23,7 +23,14 @@ verify ⊤ =
                 }
             ]
         )
-    Js.to (Js.apply (Js.from Rt.control) [ el, Js.from "payload", value, Js.from False ])
+    descriptor =
+        Js.from
+            { name = "payload"
+            , immutable = False
+            , get = λnode → Js.get node "payload"
+            , set = λnode next → Js.set node "payload" next
+            }
+    Js.to (Js.apply (Js.from Rt.control) [ el, descriptor, value ])
     Js.set value "count" (Js.from 2)
-    Js.to (Js.apply (Js.from Rt.control) [ el, Js.from "payload", value, Js.from False ])
+    Js.to (Js.apply (Js.from Rt.control) [ el, descriptor, value ])
     Js.read seen

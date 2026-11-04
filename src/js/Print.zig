@@ -2241,6 +2241,7 @@ const Printer = struct {
     const Piece = enum(u8) {
         close_paren,
         close_bracket,
+        computed_separator,
         open_bracket,
         close_interpolation,
         open_interpolation,
@@ -2252,6 +2253,7 @@ const Printer = struct {
             return switch (piece) {
                 .close_paren => ")",
                 .close_bracket => "]",
+                .computed_separator => if (compact) "]:" else "]: ",
                 .open_bracket => "[",
                 .close_interpolation => "}",
                 .open_interpolation => "${",
@@ -2580,6 +2582,12 @@ const Printer = struct {
                 try p.tok(": ", ":");
                 try p.expression(@fromBackingInt(@intCast(d.rhs)), prec_arrow, level);
             },
+            .computed_property => {
+                try p.push("[");
+                try p.expression(@fromBackingInt(@intCast(d.lhs)), prec_arrow, level);
+                try p.tok("]: ", "]:");
+                try p.expression(@fromBackingInt(@intCast(d.rhs)), prec_arrow, level);
+            },
             .spread_property => {
                 try p.push("...");
                 try p.expression(@fromBackingInt(@intCast(d.lhs)), prec_arrow, level);
@@ -2763,6 +2771,12 @@ const Printer = struct {
                 try p.name(@fromBackingInt(@intCast(d.lhs)), .fixed);
                 try p.tok(": ", ":");
                 return .expr(@fromBackingInt(@intCast(d.rhs)), prec_arrow);
+            },
+            .computed_property => {
+                try p.push("[");
+                try p.later(.expr(@fromBackingInt(@intCast(d.rhs)), prec_arrow));
+                try p.later(.piece(.computed_separator));
+                return .expr(@fromBackingInt(@intCast(d.lhs)), prec_arrow);
             },
             .spread_property => {
                 try p.push("...");
@@ -4360,7 +4374,12 @@ test "the recursive and the iterative printer write the same bytes" {
     // Objects with a spread, and an empty one.
     const spread = try f.node(.spread_property, (try f.ident("base")).int(), 0);
     const property = try f.node(.property, @backingInt(try f.name("a")), (try f.number("1")).int());
-    const properties = try f.b.addRange(&.{ spread, property });
+    // A computed key is an AssignmentExpression: a comma sequence needs
+    // parentheses even though index_get permits it without them.
+    const key_parts = try f.b.addRange(&.{ g, try f.ident("key") });
+    const key_sequence = try f.node(.sequence, @backingInt(key_parts.start), @backingInt(key_parts.end));
+    const computed = try f.node(.computed_property, key_sequence.int(), (try f.number("2")).int());
+    const properties = try f.b.addRange(&.{ spread, property, computed });
     const object = try f.node(.object, @backingInt(properties.start), @backingInt(properties.end));
     try f.constDecl(&out, "o", object);
     const nothing = try f.b.addRange(&.{});
@@ -4414,6 +4433,8 @@ test "the recursive and the iterative printer write the same bytes" {
         const iterative = try printAlone(gpa, &ir, .fromLocal(&f.interner), .{ .compact = compact, .recursion_limit = 0 });
         defer gpa.free(iterative);
         try testing.expectEqualStrings(recursive, iterative);
+        const computed_key = if (compact) "[(g(x),key)]:2" else "[(g(x), key)]: 2";
+        try testing.expect(std.mem.indexOf(u8, recursive, computed_key) != null);
     }
 }
 

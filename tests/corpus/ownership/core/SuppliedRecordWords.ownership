@@ -1,0 +1,24 @@
+module SuppliedRecordWords
+  16:14 construction held: rejected alias: xs holds it and is read at 17:5
+  22:14 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  28:14 construction xs: accepted param
+  34:14 construction values: accepted call
+  44:14 construction held: rejected alias: xs holds it and is read at 45:5
+  50:14 construction held: rejected alias: xs holds it and is read at 51:5
+  summary callbacks: res .create λr{lost}, .echo λr{lost}, .invoke λr{lost}, .read λr{lost}, .retain λr{lost} (words)
+  summary callbacks.echo: π1 RA; res π1 (words)
+  summary callbacks.retain: π1 RE; res ⊤{lost}r{lost} (words)
+  summary callbacks.read: π1 R; res ⊤{lost}r{lost} (words)
+  summary callbacks.create: π1 RE; res fresh1{lost}r{lost} (words)
+  summary callbacks.invoke: π1 R; res cb1; π1 calls ≤1, supply 1 ⊤ borrowed (words)
+  summary returnedAlias: π1 RW
+  summary escapedInput: π1 REW
+  summary borrowedInput: π1 RW
+  summary freshResult: unused
+  summary pass: π1 RA; res π1
+  summary passedRecord: π1 RW
+  summary callbackAlias: π1 RW
+  demands 6: accepted 2 (fresh 0, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 6: accepted 2 (fresh 0, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause escaped 1
+cause alias 3

@@ -1,0 +1,13 @@
+-- A `--library` module that uses only the markup primitives (boundary.md
+-- §9.4.6, interface 1.30): `Html.text` and `Html.map` are values of `Rt`
+-- the lowering supplies once per build, imported like any runtime export;
+-- this module holds no markup root and hoists nothing of its own.
+import Html exposing (Html)
+
+
+pub greeting : String → Html msg
+greeting name = Html.text "hello ${name}"
+
+
+pub tagged : Html Int → Html String
+tagged html = Html.map html String.fromInt

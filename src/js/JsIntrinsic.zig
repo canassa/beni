@@ -122,6 +122,7 @@ pub const Which = enum {
     fingerprint,
     any_pack,
     any_unpack,
+    any_unpack_opt,
     schemaIdentity,
 };
 
@@ -273,6 +274,7 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
     if (same(module_name, "Js.Any")) {
         if (same(name, "pack")) return .any_pack;
         if (same(name, "unpack")) return .any_unpack;
+        if (same(name, "unpackOpt")) return .any_unpack_opt;
         return null;
     }
     if (same(module_name, "Js.Kernel")) {
@@ -297,11 +299,11 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
 /// does not change the sibling copied by an existing development program.
 pub fn compilerOnly(which: Which) bool {
     return switch (which) {
-        .kernelPack, .kernelRead, .schemaIdentity, .arrayAllocate, .arraySet, .arrayDone, .arrayGet, .arrayLength, .arrayWrite, .arraySort, .optNone, .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
+        .any_unpack_opt, .kernelPack, .kernelRead, .schemaIdentity, .arrayAllocate, .arraySet, .arrayDone, .arrayGet, .arrayLength, .arrayWrite, .arraySort, .optNone, .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
         else => false,
     };
 }
 
 pub fn needsOptNone(which: Which) bool {
-    return which == .none or which == .some or which == .optMatch or which == .optWithDefault;
+    return which == .any_unpack_opt or which == .none or which == .some or which == .optMatch or which == .optWithDefault;
 }

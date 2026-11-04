@@ -1,0 +1,66 @@
+import Js
+
+
+type Instance
+    = Instance (Js.Cell { child : Js.Opt Slot, value : Int })
+
+
+type alias Slot =
+    Js.Cell { shown : Js.Opt Instance }
+
+
+type alias CellAlias r =
+    Js.Cell r
+
+
+type AliasInstance
+    = AliasInstance (CellAlias { value : Int })
+
+
+type RefWrapper
+    = RefWrapper (Js.Ref Int)
+
+
+type RecordWrapper
+    = RecordWrapper { value : Int }
+
+
+type TwoFields
+    = TwoFields (Js.Cell { value : Int }) Int
+
+
+type TwoConstructors
+    = First (Js.Cell { value : Int })
+    | Second
+
+
+pub instance : Int → Instance
+instance value = Instance (Js.cell { child = Js.none ⊤, value = value })
+
+
+pub slot : Instance → Slot
+slot value = Js.cell { shown = Js.some value }
+
+
+pub read : Instance → Int
+read (Instance cell) = Js.cellRead cell .value
+
+
+pub aliased : Int → AliasInstance
+aliased value = AliasInstance (Js.cell { value = value })
+
+
+pub ref : Int → RefWrapper
+ref value = RefWrapper (Js.ref value)
+
+
+pub record : Int → RecordWrapper
+record value = RecordWrapper { value = value }
+
+
+pub severalFields : Int → TwoFields
+severalFields value = TwoFields (Js.cell { value = value }) value
+
+
+pub severalConstructors : Int → TwoConstructors
+severalConstructors value = First (Js.cell { value = value })

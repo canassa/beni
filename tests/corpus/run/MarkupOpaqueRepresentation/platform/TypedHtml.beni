@@ -1,0 +1,24 @@
+pub opaque type Program
+    = Program String String
+
+
+pub opaque type Html msg
+    = Html { t : String }
+
+
+pub element "p"
+
+
+pub element "b"
+
+
+pub literal : String → Html msg
+literal text = Html { t = text }
+
+
+pub render : Html msg → String
+render (Html payload) = payload.t
+
+
+pub program : Html msg → Program
+program html = Program "markup" (render html)

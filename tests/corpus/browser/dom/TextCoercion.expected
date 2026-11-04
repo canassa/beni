@@ -1,0 +1,90 @@
+-- load
+<body>
+  <main>
+    <button id="swap">"swap"</button>
+    <p>
+      "zero "
+      "0"
+      <!---->
+      " big "
+      "1e+21"
+      <!---->
+    </p>
+    <p>
+      "nan "
+      "NaN"
+      <!---->
+      " sum "
+      "0.30000000000000004"
+      <!---->
+    </p>
+    <p>
+      "count "
+      "7"
+      <!---->
+      " flag "
+      "true"
+      <!---->
+    </p>
+  </main>
+</body>
+-- click #swap
+<body>
+  <main>
+    <button id="swap">"swap"</button>
+    <p>
+      "zero "
+      "0.30000000000000004"
+      <!---->
+      " big "
+      "0"
+      <!---->
+    </p>
+    <p>
+      "nan "
+      "1e+21"
+      <!---->
+      " sum "
+      "NaN"
+      <!---->
+    </p>
+    <p>
+      "count "
+      "8"
+      <!---->
+      " flag "
+      "false"
+      <!---->
+    </p>
+  </main>
+</body>
+-- click #swap
+<body>
+  <main>
+    <button id="swap">"swap"</button>
+    <p>
+      "zero "
+      "NaN"
+      <!---->
+      " big "
+      "0.30000000000000004"
+      <!---->
+    </p>
+    <p>
+      "nan "
+      "0"
+      <!---->
+      " sum "
+      "1e+21"
+      <!---->
+    </p>
+    <p>
+      "count "
+      "9"
+      <!---->
+      " flag "
+      "true"
+      <!---->
+    </p>
+  </main>
+</body>

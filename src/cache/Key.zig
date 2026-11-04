@@ -585,7 +585,7 @@ fn ownTermsOf(
     // vocabulary, and which type is the markup type. Every other module's
     // option string is unchanged, so its key is too.
     const markup = graph.markup;
-    const markup_text = if (artifacts.bir(file).uses_markup or markup.vocabulary == m)
+    const markup_text = if (artifacts.bir(file).uses_markup or markup.vocabulary == m or (if (markup.opaque_type) |declared| declared.module == m else false))
         try std.fmt.allocPrint(scratch, "{s};markup={t},{s}.{s};operands={d}", .{
             reply_context,
             markup.status,

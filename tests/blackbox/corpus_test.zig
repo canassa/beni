@@ -774,7 +774,7 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
         if (kind == .emit) {
             const release_dom = try std.fs.path.join(arena, &.{ kind_dir, "release", "dom" });
             const release_start = fixtures.items.len;
-            try collect(arena, release_dom, false, false, &fixtures, false);
+            try collect(arena, release_dom, false, false, &fixtures, true);
             for (fixtures.items[release_start..]) |*fixture| {
                 fixture.platform = "browser";
                 fixture.release = true;

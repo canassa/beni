@@ -1,0 +1,18 @@
+-- Truncation checks whole, non-growing bounds before the length store.
+import Browser.Host.Array as Array
+
+
+pub shrink : Array.Array a, Int → ⊤
+shrink array length = Array.rendererTruncate array length
+
+
+pub read : Array.Array a, Int → a
+read array index = Array.rendererAt array index
+
+
+pub present : Array.Array a, Int → Bool
+present array index = Array.rendererHas array index
+
+
+pub functions =
+    { at = Array.rendererAt, truncate = Array.rendererTruncate, has = Array.rendererHas }

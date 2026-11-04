@@ -19,6 +19,7 @@ pub fn seed(e: *Effects, cx: *const Context, schemes: []const TypeStore.Var.Opti
             const primitive = cx.interner.slice(cx.bir.symbol(d.name));
             if (std.mem.eql(u8, primitive, "pack")) e.storage_pack = @intCast(i);
             if (std.mem.eql(u8, primitive, "unpack")) e.storage_unpack = @intCast(i);
+            if (std.mem.eql(u8, primitive, "unpackOpt")) e.storage_unpack_opt = @intCast(i);
         }
         return;
     }

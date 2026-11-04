@@ -1,0 +1,5 @@
+import Cells
+
+
+main : Cells.Program
+main = Cells.program ⊤

@@ -1,0 +1,23 @@
+click #create
+input #keyed>li:nth-child(3)>input "keyed two"
+input #position>li:nth-child(3)>input "position two"
+click #append
+click #relabel
+click #swap
+click #rotate
+click #reverse
+click #remove
+click #replace
+click #clear
+click #duplicate
+click #reverse
+click #remove
+click #clear
+click #append
+input #show-node "body node"
+click #toggle
+click #toggle
+input #show-node "new body"
+click #change-key
+click #toggle
+click #clear

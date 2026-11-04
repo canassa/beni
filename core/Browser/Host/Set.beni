@@ -1,0 +1,20 @@
+-- Generated from ECMA-262, 16th edition (2025), §24.2; reviewed adapters in native/Operations.zig.
+pub foreign type Set a
+
+
+pub foreign impure make : ⊤ → fresh Set a
+
+
+pub foreign impure add : borrowed Set a, escaped a → ⊤
+
+
+pub foreign impure has : borrowed Set a, borrowed a → Bool
+
+
+pub foreign impure size : borrowed Set a → Int
+
+
+pub foreign impure clear : borrowed Set a → ⊤
+
+
+pub foreign impure each : borrowed Set a, sync (a → ⊤) → ⊤

@@ -10,8 +10,8 @@ key #8 #3 → #7
 key #9 #6, #7 → #7 is #10
 key #10 #0, #7 → #7
 key #11 Basics.Bool wild
-key #12 #3 → #3 wild
-key #13 String.String wild
+key #12 String.String wild
+key #13 #3 → #3 wild
 key #14 Browser.Host.Json.ParseError wild
 key #15 { listProtocol : #3 } wild
 module Counter

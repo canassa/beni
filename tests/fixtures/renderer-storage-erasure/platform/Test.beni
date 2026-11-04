@@ -1,0 +1,45 @@
+import Browser.Host.Array as Array
+import Browser.Host.KeyMap as Map
+import Js
+import Js.Any as Any
+import Library
+
+
+type Packet a
+    = Packet (List a)
+
+
+pub badArray : ⊤ → Js.Value
+badArray ⊤ = Library.erase { values = Packet [ Array.fromList [ 1, 2 ] ] }
+
+
+pub badMap : ⊤ → Js.Value
+badMap ⊤ =
+    values = Map.make ⊤
+    Map.set values 1 2
+    Library.erase values
+
+
+pub badCallback : ⊤ → Js.Value
+badCallback ⊤ = Library.erase (Packet [ { callback = λ⊤ → ⊤ } ])
+
+
+pub safe : ⊤ → Js.Value
+safe ⊤ = Library.erase { numbers = [ 1, 2 ] }
+
+
+pub badPacket : ⊤ → Js.Value
+badPacket ⊤ = Library.erase (Any.pack { answer = 42 })
+
+
+-- Checked opening retains native and callable facts under the optional carrier.
+pub badNativeOpt box =
+    value : Js.Opt (Array.Array Int)
+    value = Any.unpackOpt box
+    Library.erase value
+
+
+pub badCallbackOpt box =
+    value : Js.Opt (Int → Int)
+    value = Any.unpackOpt box
+    Library.erase value

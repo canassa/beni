@@ -1,0 +1,47 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+pub foreign type View a
+
+
+pub sequence foreign type Array a
+
+
+pub foreign pure rendererHas : borrowed Array a, Int → Bool
+
+
+pub foreign impure rendererTruncate : borrowed Array a, borrowed Int → ⊤
+
+
+pub foreign impure rendererAt : borrowed Array a, borrowed Int → a
+
+
+pub foreign impure eachView : borrowed View a, sync (a → ⊤) → ⊤
+
+
+pub foreign impure each : borrowed Array a, sync (a → ⊤) → ⊤
+
+
+pub foreign impure make : ⊤ → fresh Array a
+
+
+pub foreign impure getOr : borrowed Array a, Int, returned a → a
+
+
+pub foreign impure set : borrowed Array a, Int, escaped a → Bool
+
+
+pub foreign impure push : borrowed Array a, escaped a → ⊤
+
+
+pub foreign impure size : borrowed Array a → Int
+
+
+pub foreign impure fromList : returned List a → View a
+
+
+pub foreign impure atOr : borrowed View a, Int, returned a → a
+
+
+pub foreign impure length : borrowed View a → Int
+
+
+pub foreign impure slice : borrowed View a, Int → fresh View a

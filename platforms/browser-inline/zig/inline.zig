@@ -45,6 +45,8 @@ pub const lowering: m.Lowering = .{
         // code goes through; `read`, an event's `via` extractor, is called
         // first, even when the send waits (boundary.md §9.8.20 (d), #559).
         .{ .name = "send", .arity = 3 },
+        .{ .name = "guarded", .arity = 3 },
+        .{ .name = "unchanged", .arity = 1 },
         // `(f)`: what undoes the mount, run once by `stop`.
         .{ .name = "own", .arity = 1 },
         // `(id)`: the element a program mounts at.
@@ -71,12 +73,13 @@ pub const lowering: m.Lowering = .{
         // binding entry, `(bucket)` and `(buckets)` run a write pass, and
         // `(⊤)` the first pass.
         .{ .name = "entry", .arity = 2 },
+        .{ .name = "bucket", .arity = 1 },
         .{ .name = "pass", .arity = 1 },
         .{ .name = "passes", .arity = 1 },
         .{ .name = "first", .arity = 1 },
         // `(rows, elements, from, table, at)`: a run of roots mounted
         // through one table (§8.4, amended 2026-10-24).
-        .{ .name = "roots", .arity = 5 },
+        .{ .name = "roots", .arity = 1 },
         // The pushed-state loader (§8.4, amended 2026-10-22 and 2026-10-24):
         // `(model, table, key, raw)` a keyed route, `(model, rows, raws)`
         // routes in turn; the `…Planned` pair for rows with copy plans, and
@@ -112,8 +115,6 @@ pub const lowering: m.Lowering = .{
         // listeners noted.
         .{ .name = "caught", .arity = 1 },
         .{ .name = "listen", .arity = 3 },
-        .{ .name = "onTaken", .arity = 4 },
-        .{ .name = "onArmTaken", .arity = 5 },
         .{ .name = "deliver", .arity = 1 },
         // `(⊤)`, `(⊤)` and `(title)`: an application's address and key, and
         // a document's title written (§10).
@@ -433,7 +434,7 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         }
         const node = try pg.ref(ev.target);
         if (!facts.prevent_default and !facts.stop_propagation) {
-            try js.expression(body, try pg.onCall(node, listener, kind, ev.ctx, read));
+            try js.expression(body, try pg.onCall(body, node, listener, kind, ev.ctx, read));
             continue;
         }
         const active = try pg.armActivity(ev.ctx);
@@ -451,7 +452,7 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         }
         if (facts.prevent_default) try js.expression(dom_blk, try js.call(try js.member(try js.name(evn), "preventDefault"), &.{}));
         if (facts.stop_propagation) try js.expression(dom_blk, try js.call(try js.member(try js.name(evn), "stopPropagation"), &.{}));
-        try js.expression(dom_blk, try js.call(try js.name(try cx.runtime("send")), if (read) |rd| &.{ listener, try js.name(evn), rd } else &.{ listener, try js.name(evn) }));
+        try js.expression(dom_blk, try js.call(try js.name(try cx.runtime("guarded")), &.{ listener, try js.name(evn), read orelse try js.name(try cx.runtime("unchanged")) }));
         try js.expression(body, try pg.addListener(node, kind orelse "click", try js.arrow(&.{evn}, dom_blk)));
     }
     const out_handlers = try a.alloc(PieceHandler, handlers.items.len);
@@ -1562,7 +1563,7 @@ const Page = struct {
             const row_exprs = try pg.a().alloc(m.Expr, rows.len);
             for (rows, row_exprs) |n, *re| {
                 const buckets = try pg.a().alloc(m.Expr, n);
-                for (buckets) |*b| b.* = try js.array(&.{});
+                for (buckets) |*b| b.* = try js.call(try js.name(try cx.runtime("bucket")), &.{try js.literal(.null)});
                 re.* = try js.array(buckets);
             }
             try js.constant(body, pg.table.?, try js.array(row_exprs));
@@ -1686,7 +1687,7 @@ const Page = struct {
         for (plans.items, listeners, pg.events.items) |pl, f, evinfo| {
             const node = try pg.ref(pl.target);
             if (evinfo.captures.len == 0 and !pl.flags.prevent_default and !pl.flags.stop_propagation) {
-                try js.expression(body, try pg.onCall(node, f, pl.kind, evinfo.ctx, pl.read));
+                try js.expression(body, try pg.onCall(body, node, f, pl.kind, evinfo.ctx, pl.read));
                 continue;
             }
             const active = if (evinfo.captures.len != 0) try pg.eventBindingFor(evinfo) else try pg.armActivity(evinfo.ctx);
@@ -1708,7 +1709,7 @@ const Page = struct {
             }
             if (pl.flags.prevent_default) try js.expression(dom, try js.call(try js.member(try js.name(ev), "preventDefault"), &.{}));
             if (pl.flags.stop_propagation) try js.expression(dom, try js.call(try js.member(try js.name(ev), "stopPropagation"), &.{}));
-            try js.expression(dom, try js.call(try js.name(try cx.runtime("send")), if (pl.read) |rd| &.{ try js.name(listener), try js.name(ev), rd } else &.{ try js.name(listener), try js.name(ev) }));
+            try js.expression(dom, try js.call(try js.name(try cx.runtime("guarded")), &.{ try js.name(listener), try js.name(ev), pl.read orelse try js.name(try cx.runtime("unchanged")) }));
             try js.expression(body, try pg.addListener(node, pl.kind orelse "click", try js.arrow(&.{ev}, dom)));
         }
 
@@ -1718,36 +1719,41 @@ const Page = struct {
         if (pg.pieces.items.len != 0) try cx.programViewEnter(body, try pg.modelRef());
         var next_run: usize = 0;
         for (pg.pieces.items, piece_keys, 0..) |u, ks, i| {
-            // A run is mounted where its first root stands: one row per
-            // root, `[factory, holder…]`, and one call of the runtime's
-            // `roots`, which calls each factory in turn with the root's
-            // elements, its holders, its own row and the table.
+            // A run is mounted where its first root stands. Each closed
+            // job retains its factory arguments; the runtime invokes the
+            // jobs in placement order without erasing their types.
             if (next_run < root_runs.len and root_runs[next_run].start <= i) {
                 const r = root_runs[next_run];
                 if (i + 1 == r.start + r.len) next_run += 1;
                 if (i != r.start) continue;
-                const run_rows = try pg.a().alloc(m.Expr, r.len);
+                const jobs = try pg.a().alloc(m.Expr, r.len);
                 const tops = try pg.a().alloc(m.Expr, r.len);
-                for (run_rows, tops, pg.pieces.items[r.start..][0..r.len]) |*rr, *top, w| {
+                const elements_name = try cx.fresh("elements");
+                for (jobs, tops, pg.pieces.items[r.start..][0..r.len], 0..) |*job, *top, w, offset| {
                     const hs = try cx.programRootArgs(body, w.node, pg.model, pg.cell);
                     std.debug.assert(hs.len == w.data.arity);
-                    const row_items = try pg.a().alloc(m.Expr, 1 + hs.len);
-                    row_items[0] = try js.name(try cx.programPieceName(w.node, w.data.root.?));
-                    @memcpy(row_items[1..], hs);
-                    rr.* = try js.array(row_items);
+                    var args: std.ArrayList(m.Expr) = .empty;
+                    const from = if (r.elements == .children) r.elements.children.from else 0;
+                    const root_element = try js.index(try js.name(elements_name), try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{from + offset})));
+                    try args.append(pg.a(), try js.call(try js.name(try cx.runtime("part")), &.{root_element}));
+                    for (hs) |holder| {
+                        const captured = try cx.fresh("holder");
+                        try js.constant(body, captured, holder);
+                        try args.append(pg.a(), try js.name(captured));
+                    }
+                    try args.append(pg.a(), try js.index(try js.name(pg.table.?), try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{r.row + offset}))));
+                    try args.append(pg.a(), try js.name(pg.table.?));
+                    const job_body = try js.block();
+                    try js.expression(job_body, try js.call(try js.name(try cx.programPieceName(w.node, w.data.root.?)), args.items));
+                    job.* = try js.arrow(&.{}, job_body);
                     if (r.elements == .places) top.* = try pg.ref(w.target);
                 }
-                const elements, const from = switch (r.elements) {
-                    .children => |c| .{ try js.member(try pg.ref(c.parent), "children"), c.from },
-                    .places => .{ try js.array(tops), 0 },
+                const elements = switch (r.elements) {
+                    .children => |c| try js.member(try pg.ref(c.parent), "children"),
+                    .places => try js.array(tops),
                 };
-                try js.expression(body, try js.call(try js.name(try cx.runtime("roots")), &.{
-                    try js.array(run_rows),
-                    elements,
-                    try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{from})),
-                    try js.name(pg.table.?),
-                    try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{r.row})),
-                }));
+                try js.constant(body, elements_name, elements);
+                try js.expression(body, try js.call(try js.name(try cx.runtime("roots")), &.{try js.array(jobs)}));
                 continue;
             }
             const factory = u.data.root orelse continue;
@@ -1808,10 +1814,10 @@ const Page = struct {
                 // A value that reaches its key as a message is the message,
                 // sent to the dispatcher (§10.3).
                 const call = if (t.message)
-                    try js.call(try js.name(try cx.runtime("send")), &.{ try js.name(pg.dispatch.?), try cx.programSubscriptionMessage(@intCast(j), try js.name(v)) })
+                    try js.call(try js.name(try cx.runtime("guarded")), &.{ try js.name(pg.dispatch.?), try cx.programSubscriptionMessage(@intCast(j), try js.name(v)), try js.name(try cx.runtime("unchanged")) })
                 else blk: {
                     const handler_ = try js.name(try pg.handler(t.handler));
-                    break :blk try js.call(try js.name(try cx.runtime("send")), if (t.fields == 0) &.{handler_} else &.{ handler_, try js.name(v) });
+                    break :blk try js.call(try js.name(try cx.runtime("guarded")), &.{ handler_, if (t.fields == 0) try js.literal(.null) else try js.name(v), try js.name(try cx.runtime("unchanged")) });
                 };
                 // One declaration's send is the runtime's `send` itself, whose
                 // result is `undefined` and which no start reads (§3, amended
@@ -2170,36 +2176,25 @@ const Page = struct {
         return active;
     }
 
-    /// The runtime's `on` for a listener with neither flag and no captured
-    /// arguments: `on(node, f)`, the event's name left out for a click; or,
-    /// inside eager arms, `onArm(node, f, kind, arms)` with the arms'
-    /// elements outermost first, which `onArm` asks before the event enters
-    /// the guard (§8.2, #466; the same test `armActivity` writes in place).
-    /// A page with no handler in an arm never names `onArm` (#874).
-    fn onCall(pg: *Page, node: m.Expr, f: m.Expr, kind: ?[]const u8, ctx: u32, read: ?m.Expr) m.Error!m.Expr {
-        const js = pg.cx.js;
-        const arms = try pg.armElements(ctx);
-        if (!pg.taking) {
-            const reader = read orelse identity_reader: {
-                const event = try pg.cx.fresh("event");
-                const body = try js.block();
-                try js.@"return"(body, try js.name(event));
-                break :identity_reader try js.arrow(&.{event}, body);
-            };
-            if (arms.len == 0) return js.call(try js.name(try pg.cx.runtime("on")), &.{ node, f, try js.string(kind orelse "click"), reader });
-            const which = if (arms.len == 1) arms[0] else try js.array(arms);
-            return js.call(try js.name(try pg.cx.runtime("onArm")), &.{ node, f, try js.string(kind orelse "click"), which, reader });
+    /// The same single native listener as the Source on/listen adapters,
+    /// with the checked callback, reader and arm test kept in producer IR.
+    /// The guard projects immediately even when the mapped send is queued.
+    fn onCall(pg: *Page, into: m.Block, node: m.Expr, f: m.Expr, kind: ?[]const u8, ctx: u32, read: ?m.Expr) m.Error!m.Expr {
+        const cx = pg.cx;
+        const js = cx.js;
+        const callback = try cx.fresh("listener");
+        try js.constant(into, callback, f);
+        const project = try cx.fresh("reader");
+        try js.constant(into, project, read orelse try js.name(try cx.runtime("unchanged")));
+        const event = try cx.fresh("event");
+        const body = try js.block();
+        if (try pg.armActivity(ctx)) |active| {
+            const inactive = try js.block();
+            try js.@"return"(inactive, null);
+            try js.@"if"(body, try js.unary(.not, active), inactive, null);
         }
-        if (arms.len == 0) {
-            const on = try js.name(try pg.cx.runtime(if (pg.taking) "onTaken" else "on"));
-            if (read) |rd| return js.call(on, &.{ node, f, if (kind) |k| try js.string(k) else try js.literal(.undefined), rd });
-            if (kind) |k| return js.call(on, &.{ node, f, try js.string(k) });
-            return js.call(on, &.{ node, f });
-        }
-        const on_arm = try js.name(try pg.cx.runtime(if (pg.taking) "onArmTaken" else "onArm"));
-        const which = if (arms.len == 1) arms[0] else try js.array(arms);
-        if (read) |rd| return js.call(on_arm, &.{ node, f, try js.string(kind orelse "click"), which, rd });
-        return js.call(on_arm, &.{ node, f, try js.string(kind orelse "click"), which });
+        try js.expression(body, try js.call(try js.name(try cx.runtime("guarded")), &.{ try js.name(callback), try js.name(event), try js.name(project) }));
+        return pg.addListener(node, kind orelse "click", try js.arrow(&.{event}, body));
     }
 
     /// A listener written in place: `node.addEventListener(kind, f)`, or in
@@ -2576,8 +2571,8 @@ const Page = struct {
         const fbody = try js.block();
         try pg.writeFunction(fbody, f);
         const refs = try pg.functionBuckets(f);
-        // One bucket, or an array of the buckets: `entry` adds `f` to each.
-        const buckets = if (refs.len == 0) try js.array(&.{}) else if (refs.len == 1) try pg.bucketExpr(refs[0]) else array: {
+        // A typed list of buckets: `entry` adds its closed job to each.
+        const buckets = if (refs.len == 0) try js.array(&.{}) else array: {
             const list = try pg.a().alloc(m.Expr, refs.len);
             for (list, refs) |*x, b| x.* = try pg.bucketExpr(b);
             break :array try js.array(list);

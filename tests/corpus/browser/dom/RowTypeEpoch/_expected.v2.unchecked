@@ -1,0 +1,6 @@
+Main itemRows: lines 19-23 (not built: lambda)
+Main environmentRows: lines 28-32 (not built: ext_value)
+Main showEnvironment: lines 37-41 (not built: call)
+Main view: lines 54-61 (not built: call)
+Main update: lines 65-71 (not built: record_update)
+Main main: lines 74-75 (not built: lambda)

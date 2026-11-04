@@ -95,6 +95,7 @@ const Writer = struct {
         if (id == wk.list) return .{ .builtin = "[\"l\"" };
         const e = types.entries[id.int()];
         if (e.schema_endpoint) return .{ .code = "\"?\"" };
+        if (e.cell_wrapper) return .{ .code = "\"x\"" };
         if (e.package == .core) {
             const module = w.cx.interner.slice(e.module_name);
             const name = w.cx.interner.slice(e.name);

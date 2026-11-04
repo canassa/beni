@@ -10,6 +10,10 @@ pub const lowerings = [_]beni_markup.Lowering{@import("dom.zig").lowering};
 /// lowering writes its static sites with (`dom.staticTemplate`).
 pub const dom = @import("dom.zig");
 
+/// The private typed producer/runtime bridge.
+pub const protocol = @import("protocol.zig");
+
 test {
     _ = @import("dom.zig");
+    @import("std").testing.refAllDecls(protocol);
 }

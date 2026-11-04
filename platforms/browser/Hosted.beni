@@ -10,6 +10,7 @@ import Js.Chain as Chain
 import Js.Host as TypedHost
 import Js.Key as TypedKey
 import Js.Protocol as Protocol
+import Js.TaskHooks as TaskHooks
 import Listen
 import Task
 
@@ -296,7 +297,7 @@ hear live =
                 if Js.read state.open then
                     if not (Js.read released) then
                         Js.write released True
-                        Task.onShutdown releaseAll
+                        TaskHooks.onShutdown releaseAll
                     Js.write state.heard (Just (Chain.append (Js.read heard) λ⊤ → unhear live))
                     Js.write
                         state.remove

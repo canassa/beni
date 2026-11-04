@@ -1,3 +1,8 @@
+export const getElementsByName = (name) => Array.from(globalThis.document.getElementsByName(name));
+export const activeElement = (ignored) => { const value = globalThis.document.activeElement; return value === null ? { $: "Nothing", a: null } : { $: "Just", a: value }; };
+export const controls = (ignored) => Array.from(globalThis.document.querySelectorAll("input,select,textarea,option"));
+export const body = (unit) => { const body = globalThis.document.body; return body === null ? { $: "Nothing", a: null } : { $: "Just", a: body }; };
+export const div = (unit) => { return globalThis.document.createElement("div"); };
 export const byId = (documentId) => { const element = globalThis.document.getElementById(documentId); return element === null ? { $: "Nothing", a: null } : { $: "Just", a: element }; };
 export const fullscreenEnabled = (_) => { return globalThis.document.fullscreenEnabled === true; };
 export const fullscreenElementId = (_) => { const element = globalThis.document.fullscreenElement; return element == null ? { $: "Nothing", a: null } : { $: "Just", a: element.id }; };

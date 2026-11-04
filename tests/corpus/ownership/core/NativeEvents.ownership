@@ -1,0 +1,108 @@
+module NativeEvents
+  417:5 List.push xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  423:13 List.push xs: rejected later-use: xs is read again at 425:5
+  425:5 List.push xs: rejected escaped: a function value that Browser.Host.Event.rendererEarlyAppend hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  summary rendererearlylisteners: res fresh1{lost}r{lost}
+  summary rendererearlyappend: π1 R, π3 RJ; π3 calls many, unseen, supply 1 ⊤ borrowed
+  summary rendererearlysize: π1 R
+  summary rendererearlykindat: π1 R
+  summary rendererearlyhandlerat: π1 R; res ⊤{lost}r{lost}
+  summary setmake: res fresh1{lost}r{lost}
+  summary setadd: π1 R, π2 RE
+  summary sethas: π1 R, π2 R
+  summary setsize: π1 R
+  summary setclear: π1 R
+  summary seteach: π1 R, π2 RJ; π2 calls many, unseen, supply 1 ⊤ borrowed
+  summary arrayeachview: π1 R, π2 RJ; π2 calls many, unseen, supply 1 ⊤ borrowed
+  summary renderereventtarget: π1 R; res ⊤{lost}r{lost}
+  summary renderernodedisabled: π1 R
+  summary renderernodetag: π1 R
+  summary renderernodekind: π1 R
+  summary renderernodename: π1 R
+  summary renderernodefocused: π1 R
+  summary renderercontrolvalue: π1 R
+  summary renderercontrolvalueset: π1 R
+  summary renderercontrolchecked: π1 R
+  summary renderercontrolcheckedset: π1 R
+  summary renderercontrolselected: π1 R
+  summary renderercontrolselectedset: π1 R
+  summary renderercontrolselectedIndex: π1 R
+  summary renderercontrolselectedIndexset: π1 R
+  summary rendererselectionStart: π1 R; res ⊤{lost}r{lost}
+  summary rendererselectionEnd: π1 R; res ⊤{lost}r{lost}
+  summary rendererselectionDirection: π1 R
+  summary rendererselectionset: π1 R
+  summary renderernodeoptions: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary renderernodeelements: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary rendererdocumentnamed: res ⊤{lost}r{lost}
+  summary rendererdocumentcontrols: res ⊤{lost}r{lost}
+  summary renderernodeedits: π1 R; res ⊤{lost}r{lost}
+  summary renderernodeeditsset: π1 R, π2 RE
+  summary arrayeach: π1 R, π2 RJ; π2 calls many, unseen, supply 1 ⊤ borrowed
+  summary eventtype: π1 R
+  summary eventisTrusted: π1 R
+  summary eventbubbles: π1 R
+  summary eventcancelBubble: π1 R
+  summary eventstop: π1 R
+  summary eventtarget: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary rendererdocument: res ⊤{lost}r{lost}
+  summary targetnode: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary nodeelement: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary nodecontains: π1 R, π2 R
+  summary elementlocal: π1 R
+  summary elementasinput: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary inputvalue: π1 R
+  summary inputvalueset: π1 R
+  summary inputchecked: π1 R
+  summary inputcheckedset: π1 R
+  summary inputdisabled: π1 R
+  summary inputtype: π1 R
+  summary inputname: π1 R
+  summary inputselectionStart: π1 R
+  summary inputselectionEnd: π1 R
+  summary inputselectionDirection: π1 R
+  summary inputselectionset: π1 R
+  summary inputnode: π1 RE; res ⊤{lost}r{lost}
+  summary elementastextarea: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary textareavalue: π1 R
+  summary textareavalueset: π1 R
+  summary textareadisabled: π1 R
+  summary textareaselectionStart: π1 R
+  summary textareaselectionEnd: π1 R
+  summary textareaselectionDirection: π1 R
+  summary textareaselectionset: π1 R
+  summary textareanode: π1 RE; res ⊤{lost}r{lost}
+  summary elementasselect: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary selectvalue: π1 R
+  summary selectvalueset: π1 R
+  summary selectselectedIndex: π1 R
+  summary selectselectedIndexset: π1 R
+  summary selectdisabled: π1 R
+  summary selectnode: π1 RE; res ⊤{lost}r{lost}
+  summary elementasoption: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary optionselected: π1 R
+  summary optionselectedset: π1 R
+  summary optionnode: π1 RE; res ⊤{lost}r{lost}
+  summary elementasform: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary formnode: π1 RE; res ⊤{lost}r{lost}
+  summary selectoptions: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary formelements: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
+  summary documentnamed: res ⊤{lost}r{lost}
+  summary documentactive: res ⊤{lost}r{lost}
+  summary documentcontrols: res ⊤{lost}r{lost}
+  summary eventcapture: π1 RA, π3 RJ; res ⊤{lost}r{lost}, ⋆ ~π1; π3 calls many, unseen, supply 1 ⊤ borrowed
+  summary renderercurrent: π1 R, π2 RE
+  summary renderercurrentclear: π1 R
+  summary rendererearlytake: res ⊤{lost}r{lost}
+  summary rendererearlyevent: π1 R; res ⊤{lost}r{lost}
+  summary rendererearlytarget: π1 R; res ⊤{lost}r{lost}
+  summary rendererearlyremember: π1 R
+  summary rendererearlyvalue: π1 R; res ⊤{lost}r{lost}
+  summary rendererearlychecked: π1 R; res ⊤{lost}r{lost}
+  summary rendererearlyselectedindex: π1 R; res ⊤{lost}r{lost}
+  summary retainedBySet: π1 RAEW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary retainedListener: π1 RAJW[storage], π1[*] A; res [*] ~π1[*], π1
+  demands 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause escaped 2
+cause later-use 1

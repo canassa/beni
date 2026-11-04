@@ -1,0 +1,35 @@
+import Packet
+import Page
+import Worker
+
+
+worker : Worker.Program (Int × String) (Int × String) ((Int → Int))
+worker =
+    Worker.program
+        { init = λ_ _ → λnumber → number + 1
+        , start = λ_ _ → ⊤
+        , handle = λ( number, label ) state _ → ( state number, label ++ "!" )
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+show : Int × String → ⊤
+show ( number, label ) = Page.text (String.fromInt number ++ ":" ++ label)
+
+
+launch : ⊤ → ⊤
+launch _ =
+    case Worker.open worker of
+        Ok handle →
+            Worker.receive handle show
+            case Packet.pair 41 "packet" of
+                Just value →
+                    Worker.send handle value
+                Nothing →
+                    Page.text "packet identity mismatch"
+        Err _ →
+            Page.text "open failed"
+
+
+main : Page.Program
+main = Page.program λ_ → Page.button launch

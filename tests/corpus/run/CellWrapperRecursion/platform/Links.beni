@@ -1,0 +1,31 @@
+import Js
+
+
+pub type Instance
+    = Instance (Js.Cell { child : Js.Opt Slot, value : Int })
+
+
+pub type alias Slot =
+    Js.Cell { shown : Js.Opt Instance }
+
+
+pub make : Int → Instance
+make value = Instance (Js.cell { child = Js.none ⊤, value = value })
+
+
+pub connect : Instance, Instance → Slot
+connect (Instance from) into =
+    slot = Js.cell { shown = Js.some into }
+    Js.cellWrite from (Js.some slot) .child
+    slot
+
+
+pub walk : Int, Instance, Int → Int
+walk count (Instance cell) total =
+    if count == 0 then
+        total
+    else
+        nextTotal = total + Js.cellRead cell .value
+        Js.optMatch (Js.cellRead cell .child) (λ⊤ → nextTotal) λslot →
+            Js.optMatch (Js.cellRead slot .shown) (λ⊤ → nextTotal) λnext →
+                walk (count - 1) next nextTotal

@@ -1,0 +1,8 @@
+-- Compile the real private runtime signatures from a platform consumer.
+-- The prototype functions are typechecked, not executed as a fake renderer.
+import Node
+import Test
+
+
+main : Node.Program
+main = Node.print (Test.result ⊤)

@@ -1,0 +1,410 @@
+-- Typed native event/control calls and their first-class entry points.
+import Browser.Host.Array as M0
+import Browser.Host.Document as M1
+import Browser.Host.Element as M2
+import Browser.Host.Event as M3
+import Browser.Host.EventTarget as M4
+import Browser.Host.Events as M5
+import Browser.Host.HTMLFormElement as M6
+import Browser.Host.HTMLInputElement as M7
+import Browser.Host.HTMLOptionElement as M8
+import Browser.Host.HTMLSelectElement as M9
+import Browser.Host.HTMLTextAreaElement as M10
+import Browser.Host.Node as M11
+import Browser.Host.Set as M12
+
+
+pub rendererearlylisteners p0 = M3.rendererEarlyListeners p0
+
+
+pub rendererearlyappend p0 p1 p2 = M3.rendererEarlyAppend p0 p1 p2
+
+
+pub rendererearlysize p0 = M3.rendererEarlySize p0
+
+
+pub rendererearlykindat p0 p1 = M3.rendererEarlyKindAt p0 p1
+
+
+pub rendererearlyhandlerat p0 p1 = M3.rendererEarlyHandlerAt p0 p1
+
+
+pub setmake p0 = M12.make p0
+
+
+pub setadd p0 p1 = M12.add p0 p1
+
+
+pub sethas p0 p1 = M12.has p0 p1
+
+
+pub setsize p0 = M12.size p0
+
+
+pub setclear p0 = M12.clear p0
+
+
+pub seteach p0 p1 = M12.each p0 p1
+
+
+pub arrayeachview p0 p1 = M0.eachView p0 p1
+
+
+pub renderereventtarget p0 = M3.rendererTarget p0
+
+
+pub renderernodedisabled p0 = M11.rendererDisabled p0
+
+
+pub renderernodetag p0 = M11.rendererTag p0
+
+
+pub renderernodekind p0 = M11.rendererKind p0
+
+
+pub renderernodename p0 = M11.rendererName p0
+
+
+pub renderernodefocused p0 = M11.rendererFocused p0
+
+
+pub renderercontrolvalue p0 = M11.rendererValue p0
+
+
+pub renderercontrolvalueset p0 p1 = M11.rendererSetValue p0 p1
+
+
+pub renderercontrolchecked p0 = M11.rendererChecked p0
+
+
+pub renderercontrolcheckedset p0 p1 = M11.rendererSetChecked p0 p1
+
+
+pub renderercontrolselected p0 = M11.rendererSelected p0
+
+
+pub renderercontrolselectedset p0 p1 = M11.rendererSetSelected p0 p1
+
+
+pub renderercontrolselectedIndex p0 = M11.rendererSelectedIndex p0
+
+
+pub renderercontrolselectedIndexset p0 p1 = M11.rendererSetSelectedIndex p0 p1
+
+
+pub rendererselectionStart p0 = M11.rendererSelectionStart p0
+
+
+pub rendererselectionEnd p0 = M11.rendererSelectionEnd p0
+
+
+pub rendererselectionDirection p0 = M11.rendererSelectionDirection p0
+
+
+pub rendererselectionset p0 p1 p2 p3 = M11.rendererSetSelectionRange p0 p1 p2 p3
+
+
+pub renderernodeoptions p0 = M11.rendererOptions p0
+
+
+pub renderernodeelements p0 = M11.rendererElements p0
+
+
+pub rendererdocumentnamed p0 = M1.rendererNamed p0
+
+
+pub rendererdocumentcontrols p0 = M1.rendererControls p0
+
+
+pub renderernodeedits p0 = M11.rendererEdits p0
+
+
+pub renderernodeeditsset p0 p1 = M11.rendererSetEdits p0 p1
+
+
+pub arrayeach p0 p1 = M0.each p0 p1
+
+
+pub eventtype p0 = M3.kind p0
+
+
+pub eventisTrusted p0 = M3.isTrusted p0
+
+
+pub eventbubbles p0 = M3.bubbles p0
+
+
+pub eventcancelBubble p0 = M3.cancelBubble p0
+
+
+pub eventstop p0 = M3.stopPropagation p0
+
+
+pub eventtarget p0 = M3.target p0
+
+
+pub rendererdocument p0 = M4.rendererDocument p0
+
+
+pub targetnode p0 = M4.asNode p0
+
+
+pub nodeelement p0 = M4.asElement p0
+
+
+pub nodecontains p0 p1 = M11.contains p0 p1
+
+
+pub elementlocal p0 = M2.localName p0
+
+
+pub elementasinput p0 = M4.asInput p0
+
+
+pub inputvalue p0 = M7.value p0
+
+
+pub inputvalueset p0 p1 = M7.setValue p0 p1
+
+
+pub inputchecked p0 = M7.checked p0
+
+
+pub inputcheckedset p0 p1 = M7.setChecked p0 p1
+
+
+pub inputdisabled p0 = M7.disabled p0
+
+
+pub inputtype p0 = M7.kind p0
+
+
+pub inputname p0 = M7.name p0
+
+
+pub inputselectionStart p0 = M7.selectionStart p0
+
+
+pub inputselectionEnd p0 = M7.selectionEnd p0
+
+
+pub inputselectionDirection p0 = M7.selectionDirection p0
+
+
+pub inputselectionset p0 p1 p2 p3 = M7.setSelectionRange p0 p1 p2 p3
+
+
+pub inputnode p0 = M7.toNode p0
+
+
+pub elementastextarea p0 = M4.asTextArea p0
+
+
+pub textareavalue p0 = M10.value p0
+
+
+pub textareavalueset p0 p1 = M10.setValue p0 p1
+
+
+pub textareadisabled p0 = M10.disabled p0
+
+
+pub textareaselectionStart p0 = M10.selectionStart p0
+
+
+pub textareaselectionEnd p0 = M10.selectionEnd p0
+
+
+pub textareaselectionDirection p0 = M10.selectionDirection p0
+
+
+pub textareaselectionset p0 p1 p2 p3 = M10.setSelectionRange p0 p1 p2 p3
+
+
+pub textareanode p0 = M10.toNode p0
+
+
+pub elementasselect p0 = M4.asSelect p0
+
+
+pub selectvalue p0 = M9.value p0
+
+
+pub selectvalueset p0 p1 = M9.setValue p0 p1
+
+
+pub selectselectedIndex p0 = M9.selectedIndex p0
+
+
+pub selectselectedIndexset p0 p1 = M9.setSelectedIndex p0 p1
+
+
+pub selectdisabled p0 = M9.disabled p0
+
+
+pub selectnode p0 = M9.toNode p0
+
+
+pub elementasoption p0 = M4.asOption p0
+
+
+pub optionselected p0 = M8.selected p0
+
+
+pub optionselectedset p0 p1 = M8.setSelected p0 p1
+
+
+pub optionnode p0 = M8.toNode p0
+
+
+pub elementasform p0 = M4.asForm p0
+
+
+pub formnode p0 = M6.toNode p0
+
+
+pub selectoptions p0 = M9.options p0
+
+
+pub formelements p0 = M6.elements p0
+
+
+pub documentnamed p0 = M1.getElementsByName p0
+
+
+pub documentactive p0 = M1.activeElement p0
+
+
+pub documentcontrols p0 = M1.controls p0
+
+
+pub eventcapture p0 p1 p2 = M5.capture p0 p1 p2
+
+
+pub renderercurrent p0 p1 = M3.rendererCurrentTarget p0 p1
+
+
+pub renderercurrentclear p0 = M3.rendererClearCurrentTarget p0
+
+
+pub rendererearlytake p0 = M3.rendererTakeEarly p0
+
+
+pub rendererearlyevent p0 = M3.rendererEarlyEvent p0
+
+
+pub rendererearlytarget p0 = M3.rendererEarlyTarget p0
+
+
+pub rendererearlyremember p0 = M3.rendererEarlyRemember p0
+
+
+pub rendererearlyvalue p0 p1 = M3.rendererEarlyValue p0 p1
+
+
+pub rendererearlychecked p0 p1 = M3.rendererEarlyChecked p0 p1
+
+
+pub rendererearlyselectedindex p0 p1 = M3.rendererEarlySelectedIndex p0 p1
+
+
+pub functions =
+    { rendererearlylisteners = M3.rendererEarlyListeners
+    , rendererearlyappend = M3.rendererEarlyAppend
+    , rendererearlysize = M3.rendererEarlySize
+    , rendererearlykindat = M3.rendererEarlyKindAt
+    , rendererearlyhandlerat = M3.rendererEarlyHandlerAt
+    , setmake = M12.make
+    , setadd = M12.add
+    , sethas = M12.has
+    , setsize = M12.size
+    , setclear = M12.clear
+    , seteach = M12.each
+    , arrayeachview = M0.eachView
+    , renderereventtarget = M3.rendererTarget
+    , renderernodedisabled = M11.rendererDisabled
+    , renderernodetag = M11.rendererTag
+    , renderernodekind = M11.rendererKind
+    , renderernodename = M11.rendererName
+    , renderernodefocused = M11.rendererFocused
+    , renderercontrolvalue = M11.rendererValue
+    , renderercontrolvalueset = M11.rendererSetValue
+    , renderercontrolchecked = M11.rendererChecked
+    , renderercontrolcheckedset = M11.rendererSetChecked
+    , renderercontrolselected = M11.rendererSelected
+    , renderercontrolselectedset = M11.rendererSetSelected
+    , renderercontrolselectedIndex = M11.rendererSelectedIndex
+    , renderercontrolselectedIndexset = M11.rendererSetSelectedIndex
+    , rendererselectionStart = M11.rendererSelectionStart
+    , rendererselectionEnd = M11.rendererSelectionEnd
+    , rendererselectionDirection = M11.rendererSelectionDirection
+    , rendererselectionset = M11.rendererSetSelectionRange
+    , renderernodeoptions = M11.rendererOptions
+    , renderernodeelements = M11.rendererElements
+    , rendererdocumentnamed = M1.rendererNamed
+    , rendererdocumentcontrols = M1.rendererControls
+    , renderernodeedits = M11.rendererEdits
+    , renderernodeeditsset = M11.rendererSetEdits
+    , arrayeach = M0.each
+    , eventtype = M3.kind
+    , eventisTrusted = M3.isTrusted
+    , eventbubbles = M3.bubbles
+    , eventcancelBubble = M3.cancelBubble
+    , eventstop = M3.stopPropagation
+    , eventtarget = M3.target
+    , rendererdocument = M4.rendererDocument
+    , targetnode = M4.asNode
+    , nodeelement = M4.asElement
+    , nodecontains = M11.contains
+    , elementlocal = M2.localName
+    , elementasinput = M4.asInput
+    , inputvalue = M7.value
+    , inputvalueset = M7.setValue
+    , inputchecked = M7.checked
+    , inputcheckedset = M7.setChecked
+    , inputdisabled = M7.disabled
+    , inputtype = M7.kind
+    , inputname = M7.name
+    , inputselectionStart = M7.selectionStart
+    , inputselectionEnd = M7.selectionEnd
+    , inputselectionDirection = M7.selectionDirection
+    , inputselectionset = M7.setSelectionRange
+    , inputnode = M7.toNode
+    , elementastextarea = M4.asTextArea
+    , textareavalue = M10.value
+    , textareavalueset = M10.setValue
+    , textareadisabled = M10.disabled
+    , textareaselectionStart = M10.selectionStart
+    , textareaselectionEnd = M10.selectionEnd
+    , textareaselectionDirection = M10.selectionDirection
+    , textareaselectionset = M10.setSelectionRange
+    , textareanode = M10.toNode
+    , elementasselect = M4.asSelect
+    , selectvalue = M9.value
+    , selectvalueset = M9.setValue
+    , selectselectedIndex = M9.selectedIndex
+    , selectselectedIndexset = M9.setSelectedIndex
+    , selectdisabled = M9.disabled
+    , selectnode = M9.toNode
+    , elementasoption = M4.asOption
+    , optionselected = M8.selected
+    , optionselectedset = M8.setSelected
+    , optionnode = M8.toNode
+    , elementasform = M4.asForm
+    , formnode = M6.toNode
+    , selectoptions = M9.options
+    , formelements = M6.elements
+    , documentnamed = M1.getElementsByName
+    , documentactive = M1.activeElement
+    , documentcontrols = M1.controls
+    , eventcapture = M5.capture
+    , renderercurrent = M3.rendererCurrentTarget
+    , renderercurrentclear = M3.rendererClearCurrentTarget
+    , rendererearlytake = M3.rendererTakeEarly
+    , rendererearlyevent = M3.rendererEarlyEvent
+    , rendererearlytarget = M3.rendererEarlyTarget
+    , rendererearlyremember = M3.rendererEarlyRemember
+    , rendererearlyvalue = M3.rendererEarlyValue
+    , rendererearlychecked = M3.rendererEarlyChecked
+    , rendererearlyselectedindex = M3.rendererEarlySelectedIndex
+    }

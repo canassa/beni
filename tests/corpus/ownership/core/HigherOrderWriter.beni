@@ -1,0 +1,38 @@
+-- The writer calls work with the list retained by the reader.
+pub foreign pure callbacks : { turn : (once (List Int → List Int), borrowed List Int → List Int) }
+
+
+keepThenCall :
+      { keep : List Int → a, call : (List Int → List Int), List Int → List Int }
+    , List Int
+    , (List Int → List Int)
+    → a × List Int
+keepThenCall actions value work =
+    kept = (actions.keep) value
+    ( kept, (actions.call) work value )
+
+
+pub wrapped keep call work = keepThenCall { keep = keep, call = call } [] work
+
+
+pub readonly ⊤ = wrapped (λxs → ( xs, 1 )) callbacks.turn λxs → xs
+
+
+pub writes ⊤ = wrapped (λxs → ( xs, 1 )) callbacks.turn λxs → List.push xs 9
+
+
+pub unknownEffect turn = wrapped (λxs → ( xs, 1 )) turn λxs → xs
+
+
+-- No write bit alone is insufficient: handing a callback to a callee whose
+-- calls are unseen must flag that argument and retain the writer need.
+pub foreign pure hideCallback : (List Int → List Int) → ⊤
+
+
+pub unseenWriter : (List Int → List Int), List Int → List Int
+unseenWriter work xs =
+    hideCallback work
+    xs
+
+
+pub unseen ⊤ = wrapped (λxs → ( xs, 1 )) unseenWriter λxs → xs

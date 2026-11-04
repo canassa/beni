@@ -1,0 +1,23 @@
+-- Direct guards emit inline. Generic payloads reuse Opt's existing escape.
+import Js
+import Js.Any as Any
+
+
+pub integer : Any.Any → Js.Opt Int
+integer value = Any.unpackOpt value
+
+
+pub generic : Any.Any → Js.Opt a
+generic value = Any.unpackOpt value
+
+
+pub nested : Any.Any → Js.Opt (Js.Opt Int)
+nested value = Any.unpackOpt value
+
+
+pub firstClass : Any.Any → Js.Opt Int
+firstClass = Any.unpackOpt
+
+
+pub packet : Int → Js.Opt { value : Int }
+packet number = Any.unpackOpt (Any.pack { value = number })

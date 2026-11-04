@@ -1,0 +1,17 @@
+import Js.Any as Any
+
+
+-- One polymorphic binding is the same JavaScript function at both types.
+pub identity : a → a
+identity value = value
+
+
+pub describe : (a → a) → String
+describe value =
+    restored : Maybe (Int → Int)
+    restored = Any.unpack (Any.pack value)
+    case restored of
+        Just _ →
+            "Int"
+        Nothing →
+            "Float"

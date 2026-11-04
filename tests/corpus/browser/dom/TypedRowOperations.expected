@@ -1,0 +1,1375 @@
+-- load
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed"></ol>
+    <ol id="position"></ol>
+    <aside>
+      <em>
+        "1"
+        <input id="show-node" .value="">
+      </em>
+    </aside>
+  </main>
+</body>
+-- click #create
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed">
+      <li>
+        "row 0"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 2"
+        <input .value="">
+      </li>
+      <li>
+        "row 3"
+        <input .value="">
+      </li>
+      <li>
+        "row 4"
+        <input .value="">
+      </li>
+      <li>
+        "row 5"
+        <input .value="">
+      </li>
+    </ol>
+    <ol id="position">
+      <li>
+        "row 0"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 2"
+        <input .value="">
+      </li>
+      <li>
+        "row 3"
+        <input .value="">
+      </li>
+      <li>
+        "row 4"
+        <input .value="">
+      </li>
+      <li>
+        "row 5"
+        <input .value="">
+      </li>
+    </ol>
+    <aside>
+      <em>
+        "1"
+        <input id="show-node" .value="">
+      </em>
+    </aside>
+  </main>
+</body>
+-- input #keyed>li:nth-child(3)>input "keyed two"
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed">
+      <li>
+        "row 0"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 2"
+        <input .value="keyed two">
+      </li>
+      <li>
+        "row 3"
+        <input .value="">
+      </li>
+      <li>
+        "row 4"
+        <input .value="">
+      </li>
+      <li>
+        "row 5"
+        <input .value="">
+      </li>
+    </ol>
+    <ol id="position">
+      <li>
+        "row 0"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 2"
+        <input .value="">
+      </li>
+      <li>
+        "row 3"
+        <input .value="">
+      </li>
+      <li>
+        "row 4"
+        <input .value="">
+      </li>
+      <li>
+        "row 5"
+        <input .value="">
+      </li>
+    </ol>
+    <aside>
+      <em>
+        "1"
+        <input id="show-node" .value="">
+      </em>
+    </aside>
+  </main>
+</body>
+-- input #position>li:nth-child(3)>input "position two"
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed">
+      <li>
+        "row 0"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 2"
+        <input .value="keyed two">
+      </li>
+      <li>
+        "row 3"
+        <input .value="">
+      </li>
+      <li>
+        "row 4"
+        <input .value="">
+      </li>
+      <li>
+        "row 5"
+        <input .value="">
+      </li>
+    </ol>
+    <ol id="position">
+      <li>
+        "row 0"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 2"
+        <input .value="position two">
+      </li>
+      <li>
+        "row 3"
+        <input .value="">
+      </li>
+      <li>
+        "row 4"
+        <input .value="">
+      </li>
+      <li>
+        "row 5"
+        <input .value="">
+      </li>
+    </ol>
+    <aside>
+      <em>
+        "1"
+        <input id="show-node" .value="">
+      </em>
+    </aside>
+  </main>
+</body>
+-- click #append
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed">
+      <li>
+        "row 0"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 2"
+        <input .value="keyed two">
+      </li>
+      <li>
+        "row 3"
+        <input .value="">
+      </li>
+      <li>
+        "row 4"
+        <input .value="">
+      </li>
+      <li>
+        "row 5"
+        <input .value="">
+      </li>
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+    </ol>
+    <ol id="position">
+      <li>
+        "row 0"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 2"
+        <input .value="position two">
+      </li>
+      <li>
+        "row 3"
+        <input .value="">
+      </li>
+      <li>
+        "row 4"
+        <input .value="">
+      </li>
+      <li>
+        "row 5"
+        <input .value="">
+      </li>
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+    </ol>
+    <aside>
+      <em>
+        "1"
+        <input id="show-node" .value="">
+      </em>
+    </aside>
+  </main>
+</body>
+-- click #relabel
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed">
+      <li>
+        "edited"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 2"
+        <input .value="keyed two">
+      </li>
+      <li>
+        "row 3"
+        <input .value="">
+      </li>
+      <li>
+        "row 4"
+        <input .value="">
+      </li>
+      <li>
+        "row 5"
+        <input .value="">
+      </li>
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+    </ol>
+    <ol id="position">
+      <li>
+        "edited"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 2"
+        <input .value="position two">
+      </li>
+      <li>
+        "row 3"
+        <input .value="">
+      </li>
+      <li>
+        "row 4"
+        <input .value="">
+      </li>
+      <li>
+        "row 5"
+        <input .value="">
+      </li>
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+    </ol>
+    <aside>
+      <em>
+        "1"
+        <input id="show-node" .value="">
+      </em>
+    </aside>
+  </main>
+</body>
+-- click #swap
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed">
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 2"
+        <input .value="keyed two">
+      </li>
+      <li>
+        "row 3"
+        <input .value="">
+      </li>
+      <li>
+        "row 4"
+        <input .value="">
+      </li>
+      <li>
+        "row 5"
+        <input .value="">
+      </li>
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "edited"
+        <input .value="">
+      </li>
+    </ol>
+    <ol id="position">
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 2"
+        <input .value="position two">
+      </li>
+      <li>
+        "row 3"
+        <input .value="">
+      </li>
+      <li>
+        "row 4"
+        <input .value="">
+      </li>
+      <li>
+        "row 5"
+        <input .value="">
+      </li>
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "edited"
+        <input .value="">
+      </li>
+    </ol>
+    <aside>
+      <em>
+        "1"
+        <input id="show-node" .value="">
+      </em>
+    </aside>
+  </main>
+</body>
+-- click #rotate
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed">
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 2"
+        <input .value="keyed two">
+      </li>
+      <li>
+        "row 3"
+        <input .value="">
+      </li>
+      <li>
+        "row 4"
+        <input .value="">
+      </li>
+      <li>
+        "row 5"
+        <input .value="">
+      </li>
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "edited"
+        <input .value="">
+      </li>
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+    </ol>
+    <ol id="position">
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 2"
+        <input .value="">
+      </li>
+      <li>
+        "row 3"
+        <input .value="position two">
+      </li>
+      <li>
+        "row 4"
+        <input .value="">
+      </li>
+      <li>
+        "row 5"
+        <input .value="">
+      </li>
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "edited"
+        <input .value="">
+      </li>
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+    </ol>
+    <aside>
+      <em>
+        "1"
+        <input id="show-node" .value="">
+      </em>
+    </aside>
+  </main>
+</body>
+-- click #reverse
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed">
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+      <li>
+        "edited"
+        <input .value="">
+      </li>
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "row 5"
+        <input .value="">
+      </li>
+      <li>
+        "row 4"
+        <input .value="">
+      </li>
+      <li>
+        "row 3"
+        <input .value="">
+      </li>
+      <li>
+        "row 2"
+        <input .value="keyed two">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+    </ol>
+    <ol id="position">
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+      <li>
+        "edited"
+        <input .value="">
+      </li>
+      <li>
+        "row 6"
+        <input .value="position two">
+      </li>
+      <li>
+        "row 5"
+        <input .value="">
+      </li>
+      <li>
+        "row 4"
+        <input .value="">
+      </li>
+      <li>
+        "row 3"
+        <input .value="">
+      </li>
+      <li>
+        "row 2"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+    </ol>
+    <aside>
+      <em>
+        "1"
+        <input id="show-node" .value="">
+      </em>
+    </aside>
+  </main>
+</body>
+-- click #remove
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed">
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+      <li>
+        "edited"
+        <input .value="">
+      </li>
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "row 5"
+        <input .value="">
+      </li>
+      <li>
+        "row 4"
+        <input .value="">
+      </li>
+      <li>
+        "row 3"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+    </ol>
+    <ol id="position">
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+      <li>
+        "edited"
+        <input .value="">
+      </li>
+      <li>
+        "row 6"
+        <input .value="position two">
+      </li>
+      <li>
+        "row 5"
+        <input .value="">
+      </li>
+      <li>
+        "row 4"
+        <input .value="">
+      </li>
+      <li>
+        "row 3"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+    </ol>
+    <aside>
+      <em>
+        "1"
+        <input id="show-node" .value="">
+      </em>
+    </aside>
+  </main>
+</body>
+-- click #replace
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed">
+      <li>
+        "row 10"
+        <input .value="">
+      </li>
+      <li>
+        "row 11"
+        <input .value="">
+      </li>
+      <li>
+        "row 12"
+        <input .value="">
+      </li>
+    </ol>
+    <ol id="position">
+      <li>
+        "row 10"
+        <input .value="">
+      </li>
+      <li>
+        "row 11"
+        <input .value="">
+      </li>
+      <li>
+        "row 12"
+        <input .value="position two">
+      </li>
+    </ol>
+    <aside>
+      <em>
+        "1"
+        <input id="show-node" .value="">
+      </em>
+    </aside>
+  </main>
+</body>
+-- click #clear
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed"></ol>
+    <ol id="position"></ol>
+    <aside>
+      <em>
+        "1"
+        <input id="show-node" .value="">
+      </em>
+    </aside>
+  </main>
+</body>
+-- click #duplicate
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed">
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 2"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+    </ol>
+    <ol id="position">
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 2"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+    </ol>
+    <aside>
+      <em>
+        "1"
+        <input id="show-node" .value="">
+      </em>
+    </aside>
+  </main>
+</body>
+-- click #reverse
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed">
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 2"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+    </ol>
+    <ol id="position">
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 2"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+    </ol>
+    <aside>
+      <em>
+        "1"
+        <input id="show-node" .value="">
+      </em>
+    </aside>
+  </main>
+</body>
+-- click #remove
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed">
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+    </ol>
+    <ol id="position">
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+      <li>
+        "row 1"
+        <input .value="">
+      </li>
+    </ol>
+    <aside>
+      <em>
+        "1"
+        <input id="show-node" .value="">
+      </em>
+    </aside>
+  </main>
+</body>
+-- click #clear
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed"></ol>
+    <ol id="position"></ol>
+    <aside>
+      <em>
+        "1"
+        <input id="show-node" .value="">
+      </em>
+    </aside>
+  </main>
+</body>
+-- click #append
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed">
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+    </ol>
+    <ol id="position">
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+    </ol>
+    <aside>
+      <em>
+        "1"
+        <input id="show-node" .value="">
+      </em>
+    </aside>
+  </main>
+</body>
+-- input #show-node "body node"
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed">
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+    </ol>
+    <ol id="position">
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+    </ol>
+    <aside>
+      <em>
+        "1"
+        <input id="show-node" .value="body node">
+      </em>
+    </aside>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed">
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+    </ol>
+    <ol id="position">
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+    </ol>
+    <aside>
+      <b>"hidden"</b>
+    </aside>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed">
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+    </ol>
+    <ol id="position">
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+    </ol>
+    <aside>
+      <em>
+        "1"
+        <input id="show-node" .value="">
+      </em>
+    </aside>
+  </main>
+</body>
+-- input #show-node "new body"
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed">
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+    </ol>
+    <ol id="position">
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+    </ol>
+    <aside>
+      <em>
+        "1"
+        <input id="show-node" .value="new body">
+      </em>
+    </aside>
+  </main>
+</body>
+-- click #change-key
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed">
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+    </ol>
+    <ol id="position">
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+    </ol>
+    <aside>
+      <em>
+        "2"
+        <input id="show-node" .value="">
+      </em>
+    </aside>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed">
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+    </ol>
+    <ol id="position">
+      <li>
+        "row 6"
+        <input .value="">
+      </li>
+      <li>
+        "row 7"
+        <input .value="">
+      </li>
+    </ol>
+    <aside>
+      <b>"hidden"</b>
+    </aside>
+  </main>
+</body>
+-- click #clear
+<body>
+  <main>
+    <button id="create">"create"</button>
+    <button id="append">"append"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="swap">"swap"</button>
+    <button id="rotate">"rotate"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="remove">"remove"</button>
+    <button id="clear">"clear"</button>
+    <button id="replace">"replace"</button>
+    <button id="duplicate">"duplicate"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="change-key">"change key"</button>
+    <ol id="keyed"></ol>
+    <ol id="position"></ol>
+    <aside>
+      <b>"hidden"</b>
+    </aside>
+  </main>
+</body>

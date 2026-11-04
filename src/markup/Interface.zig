@@ -1,5 +1,5 @@
 //! The markup lowering interface (docs/design/boundary.md §9.4), version
-//! 1.8: what the compiler hands a platform's markup lowering, and everything
+//! 1.27: what the compiler hands a platform's markup lowering, and everything
 //! the lowering may do with it.
 //!
 //! A lowering imports this module as `beni_markup` and nothing of the
@@ -69,7 +69,35 @@ const std = @import("std");
 /// (`Placement.Places.prerender_data`), the program it makes
 /// (`Program.data`), and the two calls that read the value into the
 /// lambda's parameter (`programDataSchema`, `programDataBind`).
-pub const version: Version = .{ .major = 1, .minor = 24 };
+/// Version 1.24 adds checked operand identity/data evidence and typed runtime
+/// calls (`Evidence`, `TypeStep`, `operand_evidence`, `evidence`,
+/// `tupleEvidence`, `suppliedRuntime`).
+/// Version 1.25 adds `Context.packet` (manager, 2026-11-03): a provably fresh
+/// object and checked identity become a packet through the shared Any.pack
+/// producer's private Symbol and the shared caller-side literal helper.
+/// Invalid inputs are internal lowering errors, with no Box fallback.
+/// Version 1.26 adds checked implicit identity inputs to grouped roots
+/// (manager, 2026-11-03). They share the capture tuple, and identity_reads
+/// makes their changes visible to each dependency guard. Row.identity_key
+/// gives a row site the same checked environment key, compared once per site.
+/// Version 1.27 records the owner-approved producer/runtime boundary
+/// (2026-11-04, boundary.md §9.4–9.5). runtime_protocol names private typed
+/// Source carriers/record; the lowering emits block/context/message dispatch
+/// with existing builders. Js.field and Property.source select the linked
+/// Source record namespace; native keys remain literal. Slots, rows, controls
+/// and scheduling stay in Beni.
+/// Native/callable facts, CorePrivate authority and an ordinary body pin apply;
+/// no new Js primitive, Any.js change, refusal, exemption or hot-path factory.
+/// Version 1.28 amends the private DOM record (2026-11-04): setSiteScope
+/// receives the current SiteProtocol and its paired scope, updating both
+/// without replacing the site or its key-typed Any state.
+/// Version 1.29 adds cold checked property descriptors and typed control
+/// chains. The producer owns raw property/value pairing; Source retains the
+/// control algorithm and updates the existing entries in place.
+/// Version 1.30 (manager, 2026-11-04) makes the private record and the
+/// markup primitives values of the runtime module the lowering supplies,
+/// once per build, in that module's own unit (`RuntimeProtocol`).
+pub const version: Version = .{ .major = 1, .minor = 30 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -90,6 +118,8 @@ pub const TypeStep = union(enum) {
     function_result,
     tuple_field: u32,
     record_field: []const u8,
+    /// 1.30: a named type's argument, by position (`Maybe a`'s `a`).
+    type_argument: u32,
 };
 
 /// A compiler-issued token; it carries no runtime object.
@@ -122,6 +152,9 @@ pub const Lowering = struct {
     /// The evidence needed to close typed capture packets. Only a lowering
     /// that consumes this evidence requests it; other modules keep their ABI.
     operand_evidence: EvidenceKinds = .{},
+    /// 1.30: the values of the runtime module this lowering supplies, such
+    /// as its private typed record (boundary.md §9.4.6). Null: none.
+    runtime_protocol: ?RuntimeProtocol = null,
     /// Runs once per module that has a surviving markup root, before any of
     /// its roots: hoists what the module needs.
     module: *const fn (cx: *Context, tree: *const Tree) Error!void,
@@ -672,11 +705,31 @@ pub const RuntimeExport = struct {
     arity: u8,
 };
 
+/// 1.30: values of the markup runtime module the lowering supplies
+/// (boundary.md §9.4.6). The runtime module declares each as a body-less
+/// `foreign` value with its typed annotation; the compiler binds it to the
+/// expression `supply` returns, a `const` of that module's own unit whose
+/// hoists belong to the same unit. It has no sibling export. Not a new Js
+/// primitive: the expression is built with the ordinary builder.
+pub const RuntimeProtocol = struct {
+    /// The supplied values' names, each a `foreign` of the runtime module.
+    values: []const []const u8,
+    /// The runtime module's values the supplied expressions name: what a
+    /// supplied value reaches while it lives (`backend.md` §9).
+    uses: []const []const u8,
+    /// The expression of one of `values`, called when the runtime module
+    /// lowers that declaration, at most once per build.
+    supply: *const fn (cx: *Context, name: []const u8) Error!Expr,
+};
+
 /// The compile-time half of §9.4.6's check: a lowering written against a
 /// major version this interface is not, or a newer minor, does not compile
 /// into beni. The registry `build.zig` generates calls it for every
 /// lowering it lists.
 pub fn checkTargets(comptime l: Lowering) void {
+    if (l.runtime_protocol != null and l.targets.minor < 30) {
+        @compileError("a supplied markup runtime value requires interface 1.30");
+    }
     if (l.targets.major != version.major or l.targets.minor > version.minor) {
         @compileError(std.fmt.comptimePrint(
             "the markup lowering '{s}' targets interface {d}.{d}, and this beni has interface {d}.{d}",
@@ -874,7 +927,9 @@ pub const Root = struct {
     values: Value.Range,
     /// 1.5, `expression` only: values that each read one local of the
     /// enclosing declaration whole — every local a value reads, bound
-    /// outside the root, in first-use order.
+    /// outside the root, in first-use order. 1.26: followed by the checked
+    /// hidden identity Strings required by calls in the hoisted body.
+    /// They occupy fields in the same capture tuple, with no extra object.
     inputs: Value.Range = .{ .start = 0, .len = 0 },
     /// 1.5, `expression` only: values that each read one path through one
     /// of the inputs — every path a value reads, distinct, in first-use
@@ -884,6 +939,11 @@ pub const Root = struct {
     /// the enclosing declaration only this root's values read, which the
     /// root evaluates (`Context.bindLet`), in source order.
     lets: Value.Range = .{ .start = 0, .len = 0 },
+
+    /// 1.26: positions in `reads` for implicit identity inputs. A grouped
+    /// lowering includes these in every dependency guard, even a group
+    /// whose ordinary source inputs are constant. Empty for older trees.
+    identity_reads: Range = .{ .start = 0, .len = 0 },
 
     pub const Index = enum(u32) { _ };
     pub const Kind = enum(u8) { expression, row_markup, row_lambda, _ };
@@ -908,6 +968,11 @@ pub const Row = struct {
     /// Values of the enclosing root: what a skip compares besides the item
     /// and the position (language.md §11.9); for `function`, the function.
     inputs: Value.Range,
+    /// 1.26: checked identity of the site's captured generic environment.
+    /// Compare once per site per render, invalidating all its rows on change.
+    /// Keep the key on the existing descriptor/slot, without another input
+    /// array or any per-row allocation. Null: no implicit identities.
+    identity_key: ?Value.Index = null,
     /// 1.3: the input that is a selector (language.md §11.9), set only on
     /// the `markup` row of a `For` keyed by a key function or by reference.
     /// Null: none is.
@@ -1215,6 +1280,23 @@ pub const Context = struct {
     /// must be used directly as that call's callee; no closure is allocated.
     pub fn suppliedRuntime(cx: *Context, name: []const u8, evidence_: []const Evidence) Error!Expr {
         return cx.vtable.supplied_runtime(cx.impl, name, evidence_);
+    }
+
+    /// Manager decision, 2026-11-03 (boundary.md §9.4.6, version 1.25):
+    /// tag a fresh generated capture object through the existing Any packet
+    /// producer. Only an object literal with ordinary properties and a
+    /// compiler-issued identity Evidence token is accepted. Other expressions
+    /// and evidence kinds are internal lowering errors; there is no Box
+    /// fallback. Imports and reachability retain the shared Any.pack owner,
+    /// and the existing shared Any.unpack consumes the packet. The shared
+    /// caller-side helper writes pack.$packet.key as a computed Symbol
+    /// property in the SAME literal. Closed checked identities may use cold
+    /// module metadata spread first into it; dynamic evidence stays in scope.
+    /// No helper call or extra object/closure is made per capture. Record.copy
+    /// preserves this enumerable marker; checked-data projection omits it,
+    /// and Wire, Debug and derived equality/ordering ignore it.
+    pub fn packet(cx: *Context, fresh_expr: Expr, identity_evidence: Evidence) Error!Expr {
+        return cx.vtable.packet(cx.impl, fresh_expr, identity_evidence);
     }
 
     /// What value v is bound to: in `root`, a value of that root; inside
@@ -1929,8 +2011,14 @@ pub const Js = struct {
     }
 
     /// `object.field`, the field a constant name.
-    pub fn member(js: Js, target: Expr, field: []const u8) Error!Expr {
-        return js.vtable.member(js.impl, target, field);
+    pub fn member(js: Js, target: Expr, key: []const u8) Error!Expr {
+        return js.vtable.member(js.impl, target, key);
+    }
+
+    /// 1.27: a Beni record/cell field, using its linked release spelling.
+    /// Native ABI members continue to use `member` and literal native keys.
+    pub fn field(js: Js, target: Expr, key: []const u8) Error!Expr {
+        return js.vtable.field_member(js.impl, target, key);
     }
 
     /// `object[index]`.
@@ -2007,7 +2095,12 @@ pub const TemplatePart = union(enum) {
     expr: Expr,
 };
 
-pub const Property = struct { key: []const u8, value: Expr };
+pub const Property = struct {
+    key: []const u8,
+    value: Expr,
+    /// 1.27: use the linked Beni record/cell field namespace.
+    source: bool = false,
+};
 
 pub const BinaryOp = enum(u8) { strict_eq, strict_ne, logical_and, logical_or, add, _ };
 pub const UnaryOp = enum(u8) { not, type_of, _ };
@@ -2034,6 +2127,7 @@ pub const VTable = struct {
     evidence: *const fn (impl: *anyopaque, v: Value.Index, path: []const TypeStep, kind: EvidenceKind) Error!Evidence,
     tuple_evidence: *const fn (impl: *anyopaque, fields: []const Evidence, kind: EvidenceKind) Error!Evidence,
     supplied_runtime: *const fn (impl: *anyopaque, name: []const u8, evidence_: []const Evidence) Error!Expr,
+    packet: *const fn (impl: *anyopaque, fresh_expr: Expr, identity_evidence: Evidence) Error!Expr,
     value: *const fn (impl: *anyopaque, v: Value.Index) Error!Expr,
     row_values: *const fn (impl: *anyopaque, block: Block, row: Row.Index, item: Name, index: ?Name, captures: []const Name) Error!?Expr,
     row_values_apart: *const fn (impl: *anyopaque, block: Block, apart_block: Block, row: Row.Index, item: Name, index: ?Name, captures: []const Name, apart: []const Value.Index) Error!?Expr,
@@ -2131,6 +2225,7 @@ pub const VTable = struct {
     name: *const fn (impl: *anyopaque, n: Name) Error!Expr,
     call: *const fn (impl: *anyopaque, callee: Expr, args: []const Expr) Error!Expr,
     member: *const fn (impl: *anyopaque, target: Expr, field: []const u8) Error!Expr,
+    field_member: *const fn (impl: *anyopaque, target: Expr, field: []const u8) Error!Expr,
     index: *const fn (impl: *anyopaque, target: Expr, at: Expr) Error!Expr,
     object: *const fn (impl: *anyopaque, properties: []const Property) Error!Expr,
     array: *const fn (impl: *anyopaque, elements: []const Expr) Error!Expr,

@@ -1,0 +1,56 @@
+-- load
+console.log: identity patch: "Int/Int"
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <button id="second">"second"</button>
+    <button id="noop">"noop"</button>
+    <p>"Int/Int"</p>
+  </main>
+</body>
+-- click #noop
+(the DOM did not change)
+-- click #flip
+console.log: identity patch: "Float/Int"
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <button id="second">"second"</button>
+    <button id="noop">"noop"</button>
+    <p>"Float/Int"</p>
+  </main>
+</body>
+-- click #noop
+(the DOM did not change)
+-- click #second
+console.log: identity patch: "Float/Float"
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <button id="second">"second"</button>
+    <button id="noop">"noop"</button>
+    <p>"Float/Float"</p>
+  </main>
+</body>
+-- click #noop
+(the DOM did not change)
+-- click #flip
+console.log: identity patch: "Int/Float"
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <button id="second">"second"</button>
+    <button id="noop">"noop"</button>
+    <p>"Int/Float"</p>
+  </main>
+</body>
+-- click #second
+console.log: identity patch: "Int/Int"
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <button id="second">"second"</button>
+    <button id="noop">"noop"</button>
+    <p>"Int/Int"</p>
+  </main>
+</body>

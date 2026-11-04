@@ -1,0 +1,38 @@
+module NativeContainerWords
+  67:5 List.push xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  73:5 List.push xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  79:5 List.push xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  85:5 List.push xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  90:15 List.push selected: rejected alias: xs holds it and is read at 91:27
+  96:15 List.push selected: rejected alias: xs holds it and is read at 97:27
+  102:15 List.push xs: rejected alias: view holds it and is read at 103:27
+  summary arrayMake: res fresh1{lost}r{lost}
+  summary arrayRead: π1 R, π2 RA; res π2
+  summary arraySet: π1 R, π2 RE
+  summary arrayPush: π1 R, π2 RE
+  summary arraySize: π1 R
+  summary arrayView: π1 RA; res π1
+  summary viewRead: π1 R, π2 RA; res π2
+  summary viewLength: π1 R
+  summary viewSlice: π1 R; res fresh1{lost}r{lost}
+  summary mapValues: π1 R; res ⊤{lost}r{lost}
+  summary mapMake: res fresh1{lost}r{lost}
+  summary mapGet: π1 R, π2 R; res ⊤{lost}r{lost}
+  summary mapGetOr: π1 R, π2 R, π3 RA; res π3
+  summary mapSet: π1 R, π2 RE, π3 RE
+  summary mapHas: π1 R, π2 R
+  summary mapRemove: π1 R, π2 R
+  summary mapClear: π1 R
+  summary mapSize: π1 R
+  summary mapEach: π1 R, π2 RJ; π2 calls many, unseen, supply 1 ⊤ borrowed, supply 2 ⊤ borrowed
+  summary retainedByPush: π1 RAEW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary retainedBySet: π1 RAEW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary retainedKey: π1 RAEW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary retainedValue: π1 RAEW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary arrayDefault: π1 R, π2 RW[storage], π2[*] R
+  summary viewDefault: π1 R, π2 RW[storage], π2[*] R
+  summary retainedView: π1 RW[storage], π1[*] R
+  demands 7: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+total 7: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+cause escaped 4
+cause alias 3

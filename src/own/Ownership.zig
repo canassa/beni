@@ -258,7 +258,11 @@ pub const Flip = struct {
     pub fn parse(gpa: Allocator, text: []const u8) Allocator.Error!?Flip {
         const colon = std.mem.indexOfScalar(u8, text, ':') orelse return null;
         const name = text[0..colon];
-        const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return null;
+        // Modules have upper-case segments; a declaration and its field
+        // have lower-case segments. Keep the field with the declaration.
+        const dot = for (name, 0..) |c, i| {
+            if (c == '.' and i + 1 < name.len and std.ascii.isLower(name[i + 1])) break i;
+        } else return null;
         var edits: std.ArrayList(Edit) = .empty;
         var parts = std.mem.splitScalar(u8, text[colon + 1 ..], '+');
         while (parts.next()) |part| {
@@ -825,7 +829,19 @@ pub const SupplyEntry = struct {
 
 pub const Calls = enum(u8) { zero, once, many };
 
+/// Effect-only proof for an argument supplied to this callback.
+/// No ownership or value-flow consumer may read this fact.
+pub const EffectArg = struct {
+    arg: u32,
+    unknown: bool = false,
+    writes: bool = false,
+    callees: []const u32 = &.{},
+    /// Effect-only record projections (parameter, path), never ordinary slots.
+    fields: []const [2]u32 = &.{},
+};
+
 pub const FunFacts = struct {
+    effects: []const EffectArg = &.{},
     param: u32,
     /// Owned result required if any named callback may write a list.
     need_if: []const u32 = &.{},
@@ -1291,6 +1307,20 @@ pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleRe
                 if (slot[1] & @import("../parse/Ast.zig").OwnWord.entry.bit() == 0) continue;
                 try lines.append(arena, .{ .text = try std.fmt.allocPrint(arena, "entry {s} (words)", .{o.in.interner.slice(bir.symbol(d.name))}) });
                 break;
+            }
+            if (o.in.format_summaries and bir.ownFields(d).len != 0) {
+                if (try o.ensureSummary(m, @intCast(di))) |s| {
+                    try lines.append(arena, .{ .text = try o.summaryText(m, @intCast(di), s) });
+                    for (s.res) |field| {
+                        if (field.prov.kind != .klass or field.prov.a >= s.klasses.len) continue;
+                        const cls = s.klasses[field.prov.a].sum;
+                        if (!cls.words) continue;
+                        const step = o.firstStep(field.path) orelse continue;
+                        const text = try o.summaryText(m, @intCast(di), cls);
+                        const colon = std.mem.indexOfScalar(u8, text, ':').?;
+                        try lines.append(arena, .{ .text = try std.fmt.allocPrint(arena, "{s}.{s}{s}", .{ text[0..colon], o.in.interner.slice(@fromBackingInt(step.arg)), text[colon..] }) });
+                    }
+                }
             }
             if (d.params == 0) continue;
             if (d.kind != .value and d.kind != .foreign_value) continue;
@@ -1794,7 +1824,7 @@ fn ensureWalked(o: *Ownership, m: u32, d: u32) Allocator.Error!?*const Summary {
     const decl = bir.decls[d];
     // A top-level value with no parameters has one too: the cells its
     // definition makes, which are what is shared (thesis §3.10).
-    if (decl.params == 0 and (decl.kind != .value or decl.body == .none)) return null;
+    if (decl.params == 0 and (decl.kind != .value or decl.body == .none) and bir.ownFields(decl).len == 0) return null;
     if (decl.kind != .value and decl.kind != .foreign_value) return null;
     const slots = try o.slotsOf(m);
     const slot = &slots[d];
@@ -2418,7 +2448,9 @@ fn summaryDeepEql(o: *Ownership, x_in: Summary, y_in: Summary) Allocator.Error!b
         var bb = b;
         aa.need_if = &.{};
         bb.need_if = &.{};
-        if (!std.meta.eql(aa, bb) or !std.mem.eql(u32, a.need_if, b.need_if)) return false;
+        aa.effects = &.{};
+        bb.effects = &.{};
+        if (!std.meta.eql(aa, bb) or !std.mem.eql(u32, a.need_if, b.need_if) or !effectsEql(a.effects, b.effects)) return false;
     }
     for (x.xreq, y.xreq) |a, b| if (!a.eql(b)) return false;
     if (x.rxreq.len != y.rxreq.len) return false;
@@ -2737,13 +2769,82 @@ pub fn cloneSummary(o: *Ownership, s: *const Summary) Allocator.Error!*const Sum
     out.objs = objs;
     out.rsupply = rsupply;
     const funs = try keep.dupe(FunFacts, s.funs);
-    for (funs) |*f| f.need_if = try keep.dupe(u32, f.need_if);
+    for (funs) |*f| {
+        f.need_if = try keep.dupe(u32, f.need_if);
+        f.effects = try mergeEffects(keep, f.effects, &.{});
+    }
     out.funs = funs;
     out.xreq = try dupeAtoms(keep, s.xreq);
     out.rxreq = try dupeAtoms(keep, s.rxreq);
     out.slots = try keep.dupe([2]u32, s.slots);
     out.klasses = klasses;
     return out;
+}
+
+fn effectsEql(x: []const EffectArg, y: []const EffectArg) bool {
+    if (x.len != y.len) return false;
+    for (x, y) |a, b| if (a.arg != b.arg or a.unknown != b.unknown or a.writes != b.writes or !std.mem.eql(u32, a.callees, b.callees) or a.fields.len != b.fields.len) return false;
+    for (x, y) |a, b| for (a.fields, b.fields) |p, q| if (!std.meta.eql(p, q)) return false;
+    return true;
+}
+
+fn joinEffects(a: Allocator, x: []const EffectArg, xc: Calls, y: []const EffectArg, yc: Calls) Allocator.Error![]const EffectArg {
+    const out = try mergeEffects(a, x, y);
+    const copy = try a.dupe(EffectArg, out);
+    for (copy) |*e| {
+        if (xc != .zero and for (x) |f| {
+            if (f.arg == e.arg) break false;
+        } else true) e.unknown = true;
+        if (yc != .zero and for (y) |f| {
+            if (f.arg == e.arg) break false;
+        } else true) e.unknown = true;
+    }
+    return copy;
+}
+
+fn unionEffectFields(a: Allocator, x: []const [2]u32, y: []const [2]u32) Allocator.Error![]const [2]u32 {
+    const all = try a.alloc([2]u32, x.len + y.len);
+    @memcpy(all[0..x.len], x);
+    @memcpy(all[x.len..], y);
+    std.mem.sort([2]u32, all, {}, struct {
+        fn less(_: void, p: [2]u32, q: [2]u32) bool {
+            return if (p[0] != q[0]) p[0] < q[0] else p[1] < q[1];
+        }
+    }.less);
+    var n: usize = 0;
+    for (all) |e| {
+        if (n > 0 and std.meta.eql(all[n - 1], e)) continue;
+        all[n] = e;
+        n += 1;
+    }
+    return all[0..n];
+}
+
+fn mergeEffects(a: Allocator, x: []const EffectArg, y: []const EffectArg) Allocator.Error![]const EffectArg {
+    const all = try a.alloc(EffectArg, x.len + y.len);
+    @memcpy(all[0..x.len], x);
+    @memcpy(all[x.len..], y);
+    std.mem.sort(EffectArg, all, {}, struct {
+        fn less(_: void, p: EffectArg, q: EffectArg) bool {
+            return p.arg < q.arg;
+        }
+    }.less);
+    var n: usize = 0;
+    for (all) |e| {
+        if (n > 0 and all[n - 1].arg == e.arg) {
+            const p = &all[n - 1];
+            p.unknown = p.unknown or e.unknown;
+            p.writes = p.writes or e.writes;
+            p.callees = try unionGuards(a, p.callees, e.callees);
+            p.fields = try unionEffectFields(a, p.fields, e.fields);
+        } else {
+            all[n] = e;
+            all[n].callees = try unionGuards(a, e.callees, &.{});
+            all[n].fields = try unionEffectFields(a, e.fields, &.{});
+            n += 1;
+        }
+    }
+    return all[0..n];
 }
 
 fn summaryEql(x: Summary, y: Summary) bool {
@@ -2762,7 +2863,9 @@ fn summaryEql(x: Summary, y: Summary) bool {
         var bb = b;
         aa.need_if = &.{};
         bb.need_if = &.{};
-        if (!std.meta.eql(aa, bb) or !std.mem.eql(u32, a.need_if, b.need_if)) return false;
+        aa.effects = &.{};
+        bb.effects = &.{};
+        if (!std.meta.eql(aa, bb) or !std.mem.eql(u32, a.need_if, b.need_if) or !effectsEql(a.effects, b.effects)) return false;
     }
     if (x.xreq.len != y.xreq.len) return false;
     for (x.xreq, y.xreq) |a, b| if (!a.eql(b)) return false;
@@ -3449,6 +3552,7 @@ fn normalizeRaw(o: *Ownership, s_in: Summary) Allocator.Error!Summary {
     for (funs) |f| {
         if (nf > 0 and funs[nf - 1].param == f.param) {
             const p = &funs[nf - 1];
+            p.effects = try joinEffects(keep, p.effects, p.calls, f.effects, f.calls);
             p.calls = @fromBackingInt(@max(@backingInt(p.calls), @backingInt(f.calls)));
             p.sends = (p.need or f.need) and (!p.need or p.sends) and (!f.need or f.sends);
             p.need = p.need or f.need;
@@ -3459,6 +3563,7 @@ fn normalizeRaw(o: *Ownership, s_in: Summary) Allocator.Error!Summary {
         }
         funs[nf] = f;
         funs[nf].need_if = try unionGuards(keep, f.need_if, &.{});
+        funs[nf].effects = try mergeEffects(keep, f.effects, &.{});
         nf += 1;
     }
     for (funs[0..nf]) |*f| if (f.need) {
@@ -4609,14 +4714,51 @@ fn schemaMemberRow(o: *Ownership, m: u32, decl: u32, kind: Interface.SchemaMembe
 fn wordsRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
     const bir = o.in.birs[m];
     const decl = bir.decls[d];
+    const fields = bir.ownFields(decl);
+    if (fields.len != 0) return try o.foreignRecordRow(m, d, fields);
     const slots = try o.flipped(m, d, bir.ownSlots(decl));
+    return o.wordsSignature(m, decl.annotation, decl.params, slots, decl.kind == .foreign_value);
+}
+
+/// Each function field carries its own class. Unknown data fields remain
+/// unknown at their own path, never at the entire record's root.
+fn foreignRecordRow(o: *Ownership, m: u32, d: u32, fields: []const Bir.OwnField) Allocator.Error!Summary {
+    const bir = o.in.birs[m];
+    const keep = o.keep.allocator();
+    var res: std.ArrayList(ResEntry) = .empty;
+    var classes: std.ArrayList(Carried) = .empty;
+    for (fields) |field| {
+        const path = try o.child(eps, .field, @backingInt(bir.symbol(@fromBackingInt(field.name))));
+        const ann: Inst.Index = @fromBackingInt(field.type_inst);
+        if (bir.instTag(ann) == .type_fn) {
+            const name = try std.fmt.allocPrint(keep, "{s}.{s}", .{ o.in.interner.slice(bir.symbol(bir.decls[d].name)), o.in.interner.slice(bir.symbol(@fromBackingInt(field.name))) });
+            var words = try o.flippedName(m, name, bir.extraSlice(.{ .start = @fromBackingInt(field.start), .end = @fromBackingInt(field.end) }, [2]u32));
+            // As for an outer signature, v2-only words never narrow v1's
+            // default. Their complete bit sets remain in the frontend artifact.
+            for (words) |slot| if (slot[1] & ~Ast.OwnWord.v1_mask != 0) {
+                words = &.{};
+                break;
+            };
+            const n: u32 = @intCast(bir.extraSlice(bir.subRange(@fromBackingInt(bir.instData(ann).lhs)), Inst.Index).len);
+            const sum = try keep.create(Summary);
+            sum.* = (try o.wordsSignature(m, ann.toOptional(), n, words, true)).?;
+            try res.append(keep, .{ .path = path, .prov = .{ .kind = .klass, .a = @intCast(classes.items.len) } });
+            try classes.append(keep, .{ .sum = sum, .binds = &.{} });
+        } else {
+            try res.append(keep, .{ .path = path, .prov = .{ .kind = .top } });
+        }
+    }
+    return o.normalize(.{ .params = 0, .res = res.items, .klasses = classes.items, .words = true, .asserted = true });
+}
+
+fn wordsSignature(o: *Ownership, m: u32, annotation: Inst.OptionalIndex, n: u32, slots: []const [2]u32, foreign: bool) Allocator.Error!?Summary {
+    const bir = o.in.birs[m];
     const entry_word = @import("../parse/Ast.zig").OwnWord.entry.bit();
     const ordinary = for (slots) |slot| {
         if (slot[1] & ~entry_word != 0) break true;
     } else false;
-    if (decl.kind != .foreign_value and !ordinary) return null;
-    if (slots.len == 0 and decl.kind != .foreign_value) return null;
-    const n = decl.params;
+    if (!foreign and !ordinary) return null;
+    if (slots.len == 0 and !foreign) return null;
     const keep = o.keep.allocator();
     const W = @import("../parse/Ast.zig").OwnWord;
     // The annotation's parameter types: which are functions written out,
@@ -4627,7 +4769,7 @@ fn wordsRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
     // element, a function slot at the parameter's `[*]`.
     var elem_arity = try keep.alloc(?u32, n);
     @memset(elem_arity, null);
-    if (decl.annotation.unwrap()) |ann| if (bir.instTag(ann) == .type_fn) {
+    if (annotation.unwrap()) |ann| if (bir.instTag(ann) == .type_fn) {
         const ps = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(ann).lhs))), Inst.Index);
         const graph_m: Graph.Index = @fromBackingInt(@intCast(m));
         for (ps, 0..) |p, i| {
@@ -4753,10 +4895,14 @@ fn wordsRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
 /// The words of declaration `d` of module `m`, with `--ownership-flips`'s
 /// edits applied when it names the declaration (§24.6).
 fn flipped(o: *Ownership, m: u32, d: u32, slots: []const [2]u32) Allocator.Error![]const [2]u32 {
-    const flip = o.in.flip orelse return slots;
     const bir = o.in.birs[m];
+    return o.flippedName(m, o.in.interner.slice(bir.symbol(bir.decls[d].name)), slots);
+}
+
+fn flippedName(o: *Ownership, m: u32, name: []const u8, slots: []const [2]u32) Allocator.Error![]const [2]u32 {
+    const flip = o.in.flip orelse return slots;
     if (!std.mem.eql(u8, o.in.module_names[m], flip.module)) return slots;
-    if (!std.mem.eql(u8, o.in.interner.slice(bir.symbol(bir.decls[d].name)), flip.decl)) return slots;
+    if (!std.mem.eql(u8, name, flip.decl)) return slots;
     var out: std.ArrayList([2]u32) = .empty;
     try out.appendSlice(o.keep.allocator(), slots);
     var met = true;
@@ -7970,6 +8116,7 @@ const PatSite = struct { list: Inst.Index, index: u32, spread: bool, scrut: AV =
 
 /// What the walk learns about a function-typed parameter (§16.2).
 const FnState = struct {
+    effects: std.ArrayList(EffectArg) = .empty,
     need_if: std.ArrayList(u32) = .empty,
     is_fn: bool = false,
     calls: Calls = .zero,
@@ -12839,7 +12986,12 @@ const Walker = struct {
                 // its summary to where it is called (§16.5).
                 if (decl.params > 0) return w.single(.{ .kind = .func, .a = t.m, .b = t.d });
                 if (!try w.isTracked(inst)) return &.{};
-                if (decl.kind == .foreign_value) return w.single(.{ .kind = .top, .a = 0 });
+                if (decl.kind == .foreign_value) {
+                    if (w.o.in.birs[t.m].ownFields(decl).len != 0) {
+                        if (try w.o.ensureSummary(t.m, t.d)) |s| return w.sharedOf(s, t, inst);
+                    }
+                    return w.single(.{ .kind = .top, .a = 0 });
+                }
                 // What is shared is the cells the definition makes, and
                 // nothing else (thesis §3.10): `Dict.empty` makes none (T51).
                 if (try w.o.ensureSummary(t.m, t.d)) |s| {
@@ -13043,9 +13195,11 @@ const Walker = struct {
             if (w.frame != 0) return w.single(.{ .kind = .top, .a = 0 });
             w.fn_state.items[j].calls = .many;
             w.cb_args[function.int() - w.decl.inst_start.int()] = try w.unionOf(avs);
-            for (avs, 0..) |av, k| if (av.len != 0) {
+            for (avs, 0..) |av, k| {
+                try w.noteEffect(j, @intCast(k), av);
+                if (av.len == 0) continue;
                 try w.supplies.append(w.a, .{ .fun = j, .k = @intCast(k), .path = eps, .av = av, .probe = none, .owned = false, .cond = try w.deepCond(av), .rcond = try w.rdeepCond(av) });
-            };
+            }
             return w.single(.{ .kind = .cbres, .a = j, .b = function.int() });
         }
         const classes = try w.classesOf(f);
@@ -15716,6 +15870,7 @@ const Walker = struct {
         st.calls = if (w.recursive or st.calls != .zero) .many else .once;
         w.cb_args[inst.int() - w.decl.inst_start.int()] = try w.unionOf(avs);
         for (avs, 0..) |av, k| {
+            try w.noteEffect(j, @intCast(k), av);
             if (av.len == 0) continue;
             var others: std.ArrayList(AV) = .empty;
             for (avs, 0..) |x, i| if (i != k) try others.append(w.a, x);
@@ -15824,7 +15979,10 @@ const Walker = struct {
                 more[k] = if (k < ec.more.len) ec.more[k] else &.{};
                 owneds[k] = k >= ec.owned.len or ec.owned[k];
                 takens[k] = k < ec.taken.len and ec.taken[k];
-                if (av.len == 0) continue;
+                if (av.len == 0) {
+                    if (outer == null) try w.noteEffect(ec.j, @intCast(k), av);
+                    continue;
+                }
                 var owned = owneds[k];
                 var taken = takens[k];
                 var from: std.ArrayList(u32) = .empty;
@@ -15848,6 +16006,7 @@ const Walker = struct {
                     takens[k] = taken;
                     continue;
                 }
+                try w.noteEffect(ec.j, @intCast(k), cells);
                 const rprobe2 = if (owned and cells.len > 0) try w.recordProbe(ctx.inst, cells, others.items) else none;
                 try w.supplies.append(w.a, .{ .fun = ec.j, .k = @intCast(k), .path = eps, .av = cells, .probe = probe, .probe2 = probe2, .more = more[k], .owned = owned, .cond = try w.deepCond(cells), .rcond = try w.rdeepCond(cells), .taken = taken, .rprobe = rprobe2 });
             }
@@ -15855,7 +16014,7 @@ const Walker = struct {
                 try w.env_calls.append(w.a, .{ .closure = oc, .j = ec.j, .inst = ec.inst, .args = args, .probes = probes, .more = more, .owned = owneds, .taken = takens, .many = many });
                 continue;
             }
-            st.calls = if (w.recursive or st.calls != .zero or many) .many else .once;
+            w.fn_state.items[ec.j].calls = if (w.recursive or w.fn_state.items[ec.j].calls != .zero or many) .many else .once;
         }
     }
 
@@ -18596,6 +18755,37 @@ const Walker = struct {
     /// the path: the slot is the declaration's, called or handed on wherever
     /// the lambda runs.
     fn slotOf(w: *Walker, av: AV) Allocator.Error!?u32 {
+        return w.slotOfMode(av, true);
+    }
+
+    fn effectFieldOf(w: *Walker, av: AV) Allocator.Error!?[2]u32 {
+        var found: ?Cell = null;
+        for (av) |e| {
+            if (w.cells.items[e.cell].condition_only) continue;
+            if (w.o.firstStep(e.path)) |s| if (s.kind == .env) continue;
+            if (e.path != eps or found != null) return null;
+            found = w.cells.items[try w.takenBase(e.cell)];
+        }
+        var c = found orelse return null;
+        if (w.frame != 0) {
+            // A capture of a local of the declaration's own frame that holds
+            // exactly one of its parameters.
+            if (c.kind != .env or c.a >= w.local_frame.len or w.local_frame[c.a] != 0) return null;
+            const held = w.local_av[c.a] orelse return null;
+            const value_held = w.onlyValue(held) orelse return null;
+            if (value_held.path != eps) return null;
+            const hc = w.cells.items[try w.takenBase(value_held.cell)];
+            if (hc.kind != .param or hc.b != 0) return null;
+            const path = try w.o.concat(hc.path, c.path);
+            c = hc;
+            c.path = path;
+        }
+        if (c.kind != .param or c.b != 0 or c.path == eps) return null;
+        const pi = w.paramIndex(c, 0, w.params) orelse return null;
+        return .{ pi, c.path };
+    }
+
+    fn slotOfMode(w: *Walker, av: AV, create: bool) Allocator.Error!?u32 {
         var found: ?Cell = null;
         for (av) |e| {
             if (w.cells.items[e.cell].condition_only) continue;
@@ -18620,6 +18810,7 @@ const Walker = struct {
         if (c.kind != .param or c.b != 0 or c.path == eps) return null;
         const pi = w.paramIndex(c, 0, w.params) orelse return null;
         for (w.slot_keys.items, 0..) |key, k| if (key[0] == pi and key[1] == c.path) return @intCast(w.params.len + k);
+        if (!create) return null;
         try w.slot_keys.append(w.a, .{ pi, c.path });
         try w.fn_state.append(w.a, .{ .is_fn = true });
         return @intCast(w.fn_state.items.len - 1);
@@ -18914,17 +19105,78 @@ const Walker = struct {
         });
     }
 
-    /// A callback with no list write cannot be the writer of a keep edge.
-    /// Unknown classes and callbacks called through its own parameters keep
-    /// the conservative requirement.
-    fn mayWrite(w: *Walker, actual: AV) Allocator.Error!bool {
+    /// Only conditional writer need resolution consumes these facts.
+    fn effectOf(w: *Walker, arg: u32, actual: AV) Allocator.Error!EffectArg {
+        if (w.fnParamOf(actual) orelse try w.slotOfMode(actual, false)) |j|
+            return .{ .arg = arg, .callees = try w.a.dupe(u32, &.{j}) };
+        if (try w.effectFieldOf(actual)) |field| return .{ .arg = arg, .fields = try w.a.dupe([2]u32, &.{field}) };
+        var out: EffectArg = .{ .arg = arg };
+        const classes = try w.classesOf(actual);
+        if (classes.len == 0) out.unknown = true;
+        var deps: std.ArrayList(u32) = .empty;
+        for (classes) |cls| {
+            const c = (try w.classSummary(cls)) orelse {
+                out.unknown = true;
+                continue;
+            };
+            out.writes = out.writes or c.writesAny();
+            out.unknown = out.unknown or c.limit != .none;
+            for (c.funs) |f| if (f.calls != .zero or !f.seen) {
+                out.unknown = true;
+            };
+            if (cls == .closure) {
+                const ci = cls.closure;
+                if (w.closures.items[ci].cb_avs.len != 0) out.unknown = true;
+                for (w.env_calls.items) |ec| if (ec.closure == ci) {
+                    try deps.append(w.a, ec.j);
+                };
+                for (w.env_passes.items) |ep| if (ep[0] == ci) {
+                    try deps.append(w.a, ep[1]);
+                };
+            }
+        }
+        out.callees = try unionGuards(w.a, deps.items, &.{});
+        return out;
+    }
+
+    fn noteEffect(w: *Walker, j: u32, arg: u32, actual: AV) Allocator.Error!void {
+        const fact = try w.effectOf(arg, actual);
+        // Effect collection never creates an ordinary function slot.
+        try w.fn_state.items[j].effects.append(w.a, fact);
+    }
+
+    fn mayWrite(w: *Walker, s: *const Summary, avs: []const AV, writer: u32, depth: u32) Allocator.Error!bool {
+        if (depth >= 32) return true;
+        const actual = (try w.actualOf(s, avs, writer)) orelse return true;
         if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |_| return true;
         const classes = try w.classesOf(actual);
         if (classes.len == 0) return true;
         for (classes) |cls| {
             const c = (try w.classSummary(cls)) orelse return true;
             if (c.limit != .none or c.writesAny()) return true;
-            for (c.funs) |f| if (f.calls != .zero or !f.seen) return true;
+            for (c.funs) |f| {
+                // Unseen call paths must also sight their arguments, marking
+                // function parameters unseen (conservativeAV/escapeCall and
+                // sightAt). No W bit alone proves nothing about such a path.
+                // HigherOrderWriter.unseen pins this even with read-only work.
+                if (!f.seen) return true;
+                if (f.calls == .zero) continue;
+                if (f.param >= c.params) return true;
+                const caller = s.funOf(writer) orelse return true;
+                const effect = for (caller.effects) |e| {
+                    if (e.arg == f.param) break e;
+                } else return true;
+                if (effect.unknown or effect.writes) return true;
+                for (effect.callees) |dep| if (try w.mayWrite(s, avs, dep, depth + 1)) return true;
+                for (effect.fields) |field| {
+                    if (field[0] >= avs.len) return true;
+                    const value = try w.projPath(avs[field[0]], field[1], null);
+                    const e = try w.effectOf(0, value);
+                    // A field without an ordinary call protocol can prove a
+                    // leaf effect only. Higher-order or symbolic effects refuse.
+                    if (e.unknown or e.writes or e.callees.len != 0 or e.fields.len != 0) return true;
+                }
+            }
         }
         return false;
     }
@@ -18932,11 +19184,7 @@ const Walker = struct {
     fn resolveNeed(w: *Walker, s: *const Summary, avs: []const AV, facts: FunFacts) Allocator.Error!FunFacts {
         var ff = facts;
         for (facts.need_if) |writer| {
-            const actual = (try w.actualOf(s, avs, writer)) orelse {
-                ff.need = true;
-                break;
-            };
-            if (try w.mayWrite(actual)) {
+            if (try w.mayWrite(s, avs, writer, 0)) {
                 ff.need = true;
                 break;
             }
@@ -18979,10 +19227,45 @@ const Walker = struct {
             };
             if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |mapped| {
                 if (std.mem.indexOfScalar(u32, deps.items, mapped) == null) try deps.append(w.a, mapped);
-            } else if (try w.mayWrite(actual)) ff.need = true;
+            } else if (try w.mayWrite(s, avs, writer, 0)) ff.need = true;
+        }
+        var effects: std.ArrayList(EffectArg) = .empty;
+        for (facts.effects) |e| {
+            var mapped = e;
+            var callees: std.ArrayList(u32) = .empty;
+            var fields: std.ArrayList([2]u32) = .empty;
+            for (e.callees) |dep| {
+                const actual = (try w.actualOf(s, avs, dep)) orelse {
+                    mapped.unknown = true;
+                    continue;
+                };
+                const ef = try w.effectOf(e.arg, actual);
+                mapped.unknown = mapped.unknown or ef.unknown;
+                mapped.writes = mapped.writes or ef.writes;
+                try callees.appendSlice(w.a, ef.callees);
+                try fields.appendSlice(w.a, ef.fields);
+            }
+            for (e.fields) |field| {
+                if (field[0] >= avs.len) {
+                    mapped.unknown = true;
+                    continue;
+                }
+                const actual = try w.projPath(avs[field[0]], field[1], null);
+                const ef = try w.effectOf(e.arg, actual);
+                mapped.unknown = mapped.unknown or ef.unknown;
+                mapped.writes = mapped.writes or ef.writes;
+                try callees.appendSlice(w.a, ef.callees);
+                try fields.appendSlice(w.a, ef.fields);
+            }
+            mapped.fields = try unionEffectFields(w.a, fields.items, &.{});
+            mapped.callees = try unionGuards(w.a, callees.items, &.{});
+            try effects.append(w.a, mapped);
         }
         {
             const st = &w.fn_state.items[jj];
+            const joined = try joinEffects(w.a, st.effects.items, st.calls, effects.items, ff.calls);
+            st.effects = .empty;
+            try st.effects.appendSlice(w.a, joined);
             // §23.3: a function parameter handed on to a send position.
             if (ff.send != none and st.send == none) st.send = ff.send;
             st.calls = @fromBackingInt(@min(2, @as(u8, @backingInt(st.calls)) + @as(u8, @backingInt(ff.calls))));
@@ -22427,7 +22710,7 @@ const Walker = struct {
                         }
                     }
                 }
-                try funs.append(keep, .{ .param = @intCast(j), .calls = st.calls, .need_if = try keep.dupe(u32, st.need_if.items), .need = need, .rneed = rneed, .seen = st.seen, .send = st.send, .sends = need and !edit });
+                try funs.append(keep, .{ .param = @intCast(j), .calls = st.calls, .need_if = try keep.dupe(u32, st.need_if.items), .effects = try mergeEffects(keep, st.effects.items, &.{}), .need = need, .rneed = rneed, .seen = st.seen, .send = st.send, .sends = need and !edit });
             }
         } else {
             // A lambda's own function parameters: its class does not follow

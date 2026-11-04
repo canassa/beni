@@ -48,6 +48,7 @@ pub const Input = struct {
     /// §11.11, made precise 2026-10-04). Null: no call is exempt.
     debug_module: ?u32 = null,
     parameterised_templates: bool = false,
+    capture_identities: bool = false,
 };
 
 /// How an `==` or `/=` compares (language.md §11.9, *a selector*).
@@ -74,6 +75,10 @@ pub const Value = union(enum) {
     inst: Inst.Index,
     /// A captured local, read whole.
     capture: u32,
+    /// A compiler-proven String holding a free checked identity parameter.
+    identity: Dispatch.Term.Param,
+    /// Canonical tuple of checked identity Strings; one part is reused as-is.
+    identity_key: m.Value.Range,
     /// A field path through a captured local: a `Bir.MarkupInput` record.
     input: Bir.ExtraIndex,
     /// A class or style list written in place, as the list: rebuilt from
@@ -263,7 +268,8 @@ pub fn build(arena: Allocator, input: Input) Allocator.Error!?Built {
     for (0..b.roots.len) |i| try b.buildRoot(@intCast(i), @fromBackingInt(@intCast(b.root_insts.items[i])));
     try b.lambdaRoots();
     try b.selectors();
-    const reads = try b.rootReads();
+    var reads = try b.rootReads();
+    if (input.capture_identities) try b.captureIdentities(&reads);
     const item_only = try b.itemOnly();
     const constant = try b.constants();
     const identity_safe = try b.identityFacts();
@@ -491,6 +497,11 @@ const Builder = struct {
             }
         }
         for (b.tree_rows.items) |row| {
+            if (row.identity_key) |key| {
+                facts[@backingInt(key)] = true;
+                const parts = b.values.items[@backingInt(key)].identity_key;
+                for (0..parts.len) |k| facts[parts.start + k] = true;
+            }
             const decl = b.declOf(row.site.inst) orelse continue;
             const base = b.bir().decls[decl].locals_start;
             for (0..row.inputs.len) |k| {
@@ -517,7 +528,7 @@ const Builder = struct {
                 break :blk d.renderStable(true, base + in.local, links[0..in.len]);
             },
             .read => |r| d.renderStable(true, base + r.local, r.links[0..r.len]),
-            .string, .true, .callee => true,
+            .string, .true, .callee, .identity, .identity_key => true,
             else => false,
         };
     }
@@ -1015,6 +1026,93 @@ const Builder = struct {
     // reads it whole. The slots that evaluate nothing read what they spell:
     // a capture its local, an input or a probe its path, a class list and
     // a helper call what their values read.
+
+    /// Extend the existing source-input tuple with the free identity Strings
+    /// used by its hoisted body. Source read positions retain their indexes.
+    fn captureIdentities(b: *Builder, reads: *Reads) Allocator.Error!void {
+        const G = @import("GroupedIdentities.zig");
+        const has_parameters = for (b.in.dispatch.terms) |term| {
+            if (term == .param) break true;
+        } else false;
+        if (!has_parameters) return;
+        var collect = try G.Collector.init(b.arena, b.bir(), b.in.dispatch);
+        const captures = try b.arena.alloc(G.Capture, b.roots.len);
+        const groupable = try b.arena.dupe(bool, reads.groupable);
+        reads.groupable = groupable;
+        for (b.roots, captures, 0..) |root, *capture, ri| {
+            capture.* = .{ .inst = b.root_insts.items[ri], .grouped = groupable[ri] and b.groupedRoot(root.kind) };
+            if (!capture.grouped or reads.root_decls[ri] == none) continue;
+            var terms: std.ArrayList(Dispatch.TermIndex) = .empty;
+            for (0..root.inputs.len) |k| {
+                const input = b.values.items[root.inputs.start + k];
+                if (input == .capture) if (b.captureIdentityRoot(reads.root_decls[ri], input.capture)) |term|
+                    try terms.append(b.arena, term);
+            }
+            const packet = try collect.packet(terms.items, reads.root_decls[ri]);
+            capture.packet = packet.params;
+        }
+        // BIR children precede their parent, so a nested root's constructor
+        // inputs are known before its enclosing root is analysed.
+        for (b.roots, captures, 0..) |*root, *capture, ri| {
+            const decl = reads.root_decls[ri];
+            if (!capture.grouped or decl == none) continue;
+            var moved: std.ArrayList(Inst.Index) = .empty;
+            for (0..root.lets.len) |k|
+                try moved.append(b.arena, b.values.items[root.lets.start + k].let_value.inst);
+            const body = try collect.body(@fromBackingInt(@intCast(capture.inst)), moved.items, decl, captures);
+            capture.body = body.params;
+            if (!body.supported) {
+                groupable[ri] = false;
+                capture.grouped = false;
+                continue;
+            }
+            if (body.params.len == 0) continue;
+            const old_inputs = try b.arena.dupe(Value, b.values.items[root.inputs.start..][0..root.inputs.len]);
+            const old_reads = try b.arena.dupe(Value, b.values.items[root.reads.start..][0..root.reads.len]);
+            const inputs_start: u32 = @intCast(b.values.items.len);
+            try b.values.appendSlice(b.arena, old_inputs);
+            for (body.params) |parameter| _ = try b.value(.{ .identity = parameter });
+            const reads_start: u32 = @intCast(b.values.items.len);
+            try b.values.appendSlice(b.arena, old_reads);
+            for (body.params) |parameter| _ = try b.value(.{ .identity = parameter });
+            root.identity_reads = .{ .start = root.reads.len, .len = @intCast(body.params.len) };
+            root.inputs = .{ .start = inputs_start, .len = @intCast(old_inputs.len + body.params.len) };
+            root.reads = .{ .start = reads_start, .len = @intCast(old_reads.len + body.params.len) };
+        }
+        // A row's item/input skips need the same implicit environment.
+        // Keep one key on its existing descriptor, not another input array.
+        for (b.tree_rows.items, b.row_sources.items) |*row, source| {
+            const decl = b.declOf(row.site.inst) orelse continue;
+            const body = try collect.body(source.function, &.{}, decl, captures);
+            if (body.params.len == 0) continue;
+            const start: u32 = @intCast(b.values.items.len);
+            for (body.params) |parameter| _ = try b.value(.{ .identity = parameter });
+            row.identity_key = try b.value(.{ .identity_key = .{ .start = start, .len = @intCast(body.params.len) } });
+        }
+        reads.value_reads = try b.extendColumn(m.Range, reads.value_reads, .{ .start = 0, .len = 0 });
+        reads.value_paths = try b.extendColumn(u32, reads.value_paths, 0);
+        reads.every_render = try b.extendColumn(bool, reads.every_render, false);
+    }
+
+    fn extendColumn(b: *Builder, comptime T: type, old: []const T, empty_value: T) Allocator.Error![]const T {
+        if (old.len == b.values.items.len) return old;
+        const grown = try b.arena.alloc(T, b.values.items.len);
+        @memset(grown, empty_value);
+        @memcpy(grown[0..old.len], old);
+        return grown;
+    }
+
+    fn captureIdentityRoot(b: *const Builder, decl: u32, local_index: u32) ?Dispatch.TermIndex {
+        const owner = b.bir().decls[decl];
+        var at = owner.inst_start.int();
+        while (at < owner.inst_end.int()) : (at += 1) {
+            const inst: Inst.Index = @fromBackingInt(@intCast(at));
+            if (b.bir().instTag(inst) != .local or b.bir().instData(inst).lhs != local_index) continue;
+            const site = b.in.dispatch.siteOf(inst) orelse continue;
+            if (site.operand_identity.unwrap()) |root| return root;
+        }
+        return null;
+    }
 
     const Reads = struct {
         value_reads: []const m.Range,

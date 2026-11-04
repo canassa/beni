@@ -1,4 +1,11 @@
+export const kind = (event) => { return event.type; };
+export const isTrusted = (event) => { return event.isTrusted; };
+export const bubbles = (event) => { return event.bubbles; };
+export const cancelBubble = (event) => { return event.cancelBubble; };
+export const stopPropagation = (event) => { event.stopPropagation(); return null; };
+export const target = (event) => { return event.target === null ? { $: "Nothing", a: null } : { $: "Just", a: event.target }; };
 export const errorMessage = (event) => { return typeof globalThis.ErrorEvent === "function" && event instanceof globalThis.ErrorEvent ? { $: "Just", a: event.message } : { $: "Nothing", a: null }; };
+export const message = (event) => { return globalThis.String(event.message); };
 export const dataOnly = (event) => { const value = event.data;
   const pending = [value];
   const seen = new Set();

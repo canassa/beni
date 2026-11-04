@@ -1,0 +1,3 @@
+-- §24.4: a non-foreign record cannot assert a field's ownership class.
+pub callbacks : { read : (borrowed List Int → Int) }
+callbacks = { read = List.length }

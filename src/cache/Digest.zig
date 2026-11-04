@@ -124,6 +124,7 @@ pub const Type = struct {
     /// platform module's `markup_type_in_foreign` reads of a type it names.
     holds_markup: bool,
     holds_mutable: bool = false,
+    cell_wrapper: bool = false,
     key_kinds: []const u8 = &.{},
     host_free: []const u8 = &.{},
     /// `type_body.zig`'s encoding of the alias's expansion, or empty.
@@ -204,6 +205,7 @@ fn flags(ty: Type) u8 {
     if (ty.has_function) bits |= 8;
     if (ty.holds_markup) bits |= 16;
     if (ty.holds_mutable) bits |= 32;
+    if (ty.cell_wrapper) bits |= 64;
     return bits;
 }
 
@@ -383,6 +385,7 @@ pub fn collect(
             .has_function = e.has_function,
             .holds_markup = e.holds_markup,
             .holds_mutable = e.holds_mutable,
+            .cell_wrapper = e.cell_wrapper,
             .key_kinds = std.mem.sliceAsBytes(s.types.keyKinds(id)),
             .body = body,
             .host_free = try s.types.host_free.key(scratch, id),
@@ -665,10 +668,10 @@ test "every term of the recipe moves the digest" {
     var base = sampleTerms();
     base.types = &.{sample_type};
     try expectDifferent(sampleTerms(), base);
-    // The six settled bits, one at a time. `equatable` is
+    // The settled bits, one at a time. `equatable` is
     // `plans/m4-3.md` §6.1's demonstrated miscompile and `comparable` and
     // `has_function` are in the record for NO type at all.
-    inline for (.{ "is_opaque", "equatable", "comparable", "has_function", "holds_markup", "holds_mutable" }) |field| {
+    inline for (.{ "is_opaque", "equatable", "comparable", "has_function", "holds_markup", "holds_mutable", "cell_wrapper" }) |field| {
         var moved = sample_type;
         @field(moved, field) = !@field(sample_type, field);
         var t = sampleTerms();

@@ -21,345 +21,277 @@
 --! release build writes where the call is (`backend.md` §9, *A function
 --! called once is written where it is called*).
 
+import Browser.Host.Document as HostDocument
+import Browser.Host.Element as HostElement
+import Browser.Host.Event as HostEvent
+import Browser.Host.EventTarget as HostEventTarget
+import Browser.Host.Events as HostEvents
+import Browser.Host.Node as HostNode
+import Browser.Host.Rejection as HostRejection
 import Browser.Host.Timers as Timers
+import Html.Runtime as Runtime
 import Js
+import Js.Any as Any
 import Js.Chain as Chain
 import Js.Protocol as Protocol
-import Task
+import Js.TaskHooks as TaskHooks
+import Rt.Events as Events
+import Rt.Rows as Rows
+import Rt.Slots as Slots
 
 
 type alias V =
     Js.Value
 
 
--- ---- Instances and their nodes ------------------------------------------
+-- ---- The supplied protocol (`boundary.md` §9.4.6, interface 1.30) ---------
+--
+-- The lowering supplies these three values, once per build, in this
+-- module's own unit: the private record that opens a block's kind and
+-- payload, and the two markup primitives, whose kinds are hoisted beside
+-- them. Slots, rows and scheduling are this module's own (`Rt.Slots`,
+-- `Rt.Rows`), handed the record.
 
-pub first : V → V
-first i =
-    if Js.isNull (Js.get i "s") then
-        head (Js.get i "q")
-    else
-        Js.get i "s"
-
-
-pub last : V → V
-last i =
-    if Js.isNull (Js.get i "e") then
-        tail (Js.get i "q")
-    else
-        Js.get i "e"
-
-
--- A slot's first and last node: what it holds, or its marker when it holds
--- nothing.
-head : V → V
-head s =
-    if Js.isNull (Js.get s "u") || Js.to (Js.get (Js.get s "u") "length") == 0 then
-        if Js.isNull (Js.get s "i") then
-            Js.get s "m"
-        else
-            first (Js.get s "i")
-    else
-        first (Js.at (Js.get s "u") 0)
-
-
-tail : V → V
-tail s =
-    -- (Not `not`, which is a call of `Basics.not`.)
-    if Js.isNull (Js.get s "m") then
-        if Js.isNull (Js.get s "u") || Js.to (Js.get (Js.get s "u") "length") == 0 then
-            last (Js.get s "i")
-        else
-            last (Js.at (Js.get s "u") (Js.to (Js.get (Js.get s "u") "length") - 1))
-    else
-        Js.get s "m"
-
-
--- Move an instance's nodes before `before` in `parent`, in order.
-pub put : V, V, V → ⊤
-put parent i before = putRun parent (first i) (last i) before
-
-
-putRun : V, V, V, V → ⊤
-putRun parent n end before =
-    next = Js.get n "nextSibling"
-    _ = Js.call parent "insertBefore" [ n, before ]
-    if Js.same n end then
-        ⊤
-    else
-        putRun parent next end before
-
-
--- Take an instance's nodes out of the page.
-pub drop : V → ⊤
-drop i = dropRun (first i) (last i)
+pub foreign pure protocol :
+    { none : Runtime.Context
+    , unit :
+        (aliased escaped Runtime.Block, aliased escaped Runtime.Context → fresh Runtime.Instance)
+    , patch :
+        (aliased Runtime.Instance
+         , aliased escaped Runtime.Block
+         , aliased escaped Runtime.Context
+         → unknown Runtime.Instance
+        )
+    , again : (borrowed Runtime.Instance → ⊤)
+    , live : (borrowed Runtime.Instance → Bool)
+    , eventPayload :
+        (borrowed HostNode.Node, escaped HostEvent.Event, String, String → unknown Runtime.Payload)
+    , nodeContext : (aliased HostNode.Node → Runtime.Context)
+    , contextPresent : (unused Runtime.Context → Bool)
+    , contextParent : (aliased Runtime.Context → Runtime.Context)
+    , contextApply : (borrowed Runtime.Context, escaped Runtime.Payload → unknown Runtime.Payload)
+    , sendRoot : (borrowed HostNode.Node, escaped Runtime.Payload → ⊤)
+    , controls : (aliased HostNode.Node → Js.Opt Runtime.Control)
+    , setControls : (borrowed HostNode.Node, escaped Runtime.Control → ⊤)
+    , hasRoot : (borrowed HostNode.Node → Bool)
+    , hasHandler : (borrowed HostNode.Node, String → Bool)
+    , handlerFlags : (borrowed HostNode.Node, String → Int)
+    , first : (aliased Runtime.Instance → HostNode.Node)
+    , last : (aliased Runtime.Instance → HostNode.Node)
+    , put : (borrowed HostNode.Node, borrowed Runtime.Instance, borrowed Js.Opt HostNode.Node → ⊤)
+    , drop : (borrowed Runtime.Instance → ⊤)
+    , swap : (borrowed Runtime.Instance, borrowed Runtime.Instance → ⊤)
+    , parentOf : (aliased Runtime.Slot → HostNode.Node)
+    , childMaybe : (borrowed Runtime.Slot, escaped Js.Opt Runtime.Block → ⊤)
+    , restate : (borrowed Runtime.Slot → ⊤)
+    , turn : (Bool, once (⊤ → ⊤) → ⊤)
+    , dead : (unused ⊤ → Bool)
+    , stop : (unused ⊤ → ⊤)
+    , makeSite :
+        (aliased Runtime.SiteProtocol
+         , aliased Runtime.Payload
+         , aliased Any.Any
+         → fresh Runtime.RowSite
+        )
+    , siteScope : (aliased Runtime.RowSite → Runtime.Payload)
+    , setSiteScope :
+        (borrowed Runtime.RowSite, escaped Runtime.SiteProtocol, escaped Runtime.Payload → ⊤)
+    , siteData : (aliased Runtime.RowSite → Any.Any)
+    , siteHead : (aliased Runtime.RowSite, aliased Runtime.Slot → Js.Opt HostNode.Node)
+    , siteTail : (aliased Runtime.RowSite, aliased Runtime.Slot → Js.Opt HostNode.Node)
+    , siteRestate : (borrowed Runtime.RowSite, borrowed Runtime.Slot, Int → ⊤)
+    , siteDispose : (borrowed Runtime.RowSite, borrowed Runtime.Slot → ⊤)
+    }
 
 
-dropRun : V, V → ⊤
-dropRun n end =
-    next = Js.get n "nextSibling"
-    _ = Js.call n "remove" []
-    if Js.same n end then
-        ⊤
-    else
-        dropRun next end
+--| `Html.text`: the text, as a text hole shows it.
+pub foreign pure text : String → Runtime.Block
 
 
--- Put `i` where `old` is, and take `old` out.
-pub swap : V, V → ⊤
-swap old i =
-    f = first old
-    put (Js.get f "parentNode") i f
-    drop old
+--| `Html.map`: the same markup, its messages passed through the mapper.
+pub foreign pure map : Runtime.Block, Runtime.Payload → Runtime.Block
 
 
--- ---- Templates -----------------------------------------------------------
+--| The empty node, block or row link, as emitted code writes it.
+pub empty : Js.Opt a
+empty = Js.none ⊤
+
+
+-- What the record's own helpers call back into.
+pub protocolTextNode : String → HostNode.Node
+protocolTextNode value = HostDocument.rendererText value
+
+
+pub protocolSlot : Js.Opt HostNode.Node, Js.Opt HostNode.Node, Runtime.Context → Runtime.Slot
+protocolSlot parent marker context = Slots.slot parent marker context
+
+
+pub protocolFirst : Runtime.Instance → HostNode.Node
+protocolFirst value = Slots.first protocol value
+
+
+pub protocolLast : Runtime.Instance → HostNode.Node
+protocolLast value = Slots.last protocol value
+
+
+pub protocolPut : HostNode.Node, Runtime.Instance, Js.Opt HostNode.Node → ⊤
+protocolPut parent value before = Slots.put protocol parent value before
+
+
+pub protocolDrop : Runtime.Instance → ⊤
+protocolDrop value = Slots.drop protocol value
+
+
+pub protocolSwap : Runtime.Instance, Runtime.Instance → ⊤
+protocolSwap old value = Slots.swap protocol old value
+
+
+pub protocolParentOf : Runtime.Slot → HostNode.Node
+protocolParentOf location = Slots.parentOf location
+
+
+pub protocolChildMaybe : Runtime.Slot, Js.Opt Runtime.Block → ⊤
+protocolChildMaybe location block = Slots.childMaybe protocol location block
+
+
+pub protocolRestate : Runtime.Slot → ⊤
+protocolRestate location = Slots.restate protocol location
+
+
+pub protocolTurn : Bool, sync (⊤ → ⊤) → ⊤
+protocolTurn trusted f = turn trusted f
+
+
+pub protocolDead : ⊤ → Bool
+protocolDead ⊤ = Js.read dead
+
+
+pub protocolStop : ⊤ → ⊤
+protocolStop ⊤ = stop ⊤
+
+
+-- ---- Templates and slots (backend.md §15.3–§15.4) ------------------------
 
 -- `(html)`: a cloner that parses `html` on its first call and clones the
--- result after that — the template whose markup is one node of the HTML
--- namespace that cloning makes whole, which is nearly every template. Its
--- own function, apart from `templateOf`'s flags (`backend.md` §15.3,
--- *Amended 2026-10-15*): a page none of whose templates has a flag writes
--- none of their branches, and one whose templates use one flag passes
--- `templateOf` a constant the release build folds.
-pub template : String → (⊤ → V)
-template html =
-    node = Js.ref Js.null
-    λ⊤ →
-        -- Written as `templateOf`'s steps are, so that a page whose
-        -- templates have no flag is the same file it was when `templateOf`
-        -- folded to these.
-        if Js.isNull (Js.read node) then
-            document = Js.global "document"
-            t = Js.call document "createElement" [ Js.from "template" ]
-            Js.set t "innerHTML" (Js.from html)
-            Js.write node (Js.get t "content")
-            Js.write node (Js.get (Js.read node) "firstChild")
-        Js.call (Js.read node) "cloneNode" [ Js.from True ]
+-- result after that (`Rt.Slots.template`); `(html, flags)` for a template
+-- with a flag (backend.md §15.3, *Amended 2026-10-15*).
+pub template : String → (⊤ → HostNode.Node)
+template html = Slots.template html
 
 
--- `(html, flags)`: `template` for a template with a flag. Flag 1: import
--- rather than clone; 2: the markup is wrapped in its namespace's root
--- element, which is taken off; 4: several nodes, returned in a fragment.
--- The parse is in the cloner, on its first call, and the cell it fills is
--- rewritten step by step.
-pub templateOf : String, Int → (⊤ → V)
-templateOf html flags =
-    node = Js.ref Js.null
-    λ⊤ →
-        if Js.isNull (Js.read node) then
-            document = Js.global "document"
-            t = Js.call document "createElement" [ Js.from "template" ]
-            Js.set t "innerHTML" (Js.from html)
-            Js.write node (Js.get t "content")
+pub templateOf : String, Int → (⊤ → HostNode.Node)
+templateOf html flags = Slots.templateOf html flags
 
-            if Js.bitAnd flags 2 ≠ 0 then
-                Js.write node (Js.get (Js.read node) "firstChild")
-            if Js.bitAnd flags 4 ≠ 0 then
-                if Js.bitAnd flags 2 ≠ 0 then
-                    f = Js.call document "createDocumentFragment" []
-                    gather (Js.read node) f
-                    Js.write node f
-                else
-                    ⊤
-            else
-                Js.write node (Js.get (Js.read node) "firstChild")
-        if Js.bitAnd flags 1 ≠ 0 then
-            Js.call (Js.global "document") "importNode" [ Js.read node, Js.from True ]
-        else
-            Js.call (Js.read node) "cloneNode" [ Js.from True ]
-
-
--- Move every child of `from` into `into`, in order.
-gather : V, V → ⊤
-gather from into =
-    if Js.isNull (Js.get from "firstChild") then
-        ⊤
-    else
-        _ = Js.call into "appendChild" [ Js.get from "firstChild" ]
-        gather from into
-
-
--- ---- Slots ---------------------------------------------------------------
 
 -- `(parent, marker, cx)`: a slot, and the mount context what it holds is
 -- mounted with.
-pub slot : V, V, V → V
-slot parent marker cx =
-    Js.from
-        { p = parent
-        , m = marker
-        , cx = cx
-        , i = Js.null
-        , u = Js.null
-        , v = False
-        , x = Js.null
-        , y = Js.null
-        , z = Js.null
-        , d = False
-        , r = Js.null
-        , l = False
-        , w = False
-        , k = 0
-        }
-
-
-pub parentOf : V → V
-parentOf s =
-    if Js.isNull (Js.get s "p") then
-        Js.get (Js.get s "m") "parentNode"
-    else
-        Js.get s "p"
-
-
--- A block mounted on its own: an instance that remembers its kind and the
--- block it shows.
-pub unit : V, V → V
-unit b cx =
-    i = Js.call (Js.get b "t") "m" [ Js.get b "v", cx ]
-    Js.set i "t" (Js.get b "t")
-    Js.set i "b" b
-    i
-
-
--- `b` shown where `i` is: `i` patched when `b` is of its kind, else a new
--- instance in its place. Even the same block is patched: its values may
--- contain a List or record written in place (backend.md §15.5).
-pub patch : V, V, V → V
-patch i b cx =
-    if Js.same (Js.get b "t") (Js.get i "t") then
-        _ = Js.call (Js.get b "t") "p" [ i, Js.get b "v" ]
-        Js.set i "b" b
-        i
-    else
-        n = unit b cx
-        swap i n
-        n
-
-
--- `i` patched again with the block it shows. Its caller asks first
--- whether the instance is live (backend.md §15.4, as amended after the
--- third review): `i.l`, which its kind's `p` and `m` keep, is true when it
--- writes a `stateful` attribute, has a value a render evaluates every
--- time, or holds a slot that is live in turn.
-again : V → ⊤
-again i = Js.to (Js.call (Js.get i "t") "p" [ i, Js.get (Js.get i "b") "v" ])
-
-
--- `(slot)`: what the slot shows patched again where it must be, though a
--- render skipped it — a group that did not run, a helper or a component
--- not called, a `Show` body left as it was. Only what is live is visited:
--- the instance the slot shows when the slot says so (`l`), and a list's
--- live rows when it says so (`w`, which is then `restateRows` itself, so
--- that a page with no list keeps none of it).
-pub restate : V → ⊤
-restate s =
-    w = Js.get s "w"
-    if Js.to w then Js.to (Js.apply w [ s, Js.from 0 ])
-    if Js.to (Js.get s "l") then
-        i = Js.get s "i"
-        again i
-        Js.set s "l" (Js.get i "l")
-
-
--- A list's live rows restated, but those whose stamp (`rs`) is `stamp`:
--- the rows this render's pass mounted or patched. A row compiled in place
--- by the slot's `r` — its row function's `r`, which writes its `stateful`
--- attributes from the values it keeps and restates its slots, or its `p`
--- with the item it shows when it has a value a render evaluates every
--- time — and any other row by `again`. The slot's `w` is then whether a
--- row is still live.
-restateRows : V, Int → ⊤
-restateRows s stamp =
-    r = Js.get s "r"
-    any = Js.ref False
-    Js.each (Js.get s "u") λi →
-        if Js.to (Js.get i "l") then
-            if Js.to (Js.get i "rs") == stamp then
-                ⊤
-            else if Js.isUndefined (Js.get i "t") then
-                Js.to (Js.apply r [ i, Js.get i "x", Js.get i "y" ])
-            else
-                again i
-            if Js.to (Js.get i "l") then Js.write any True
-    Js.set s "w" (if Js.read any then Js.from restateRows else Js.from False)
-
-
--- A list's pass begins, when a row of it can be live (a row function's
--- `l`, or any block row): a new stamp, and the row function's restate.
-startPass : V, V → ⊤
-startPass s row =
-    if Js.to (Js.get row "l") || not (Js.isUndefined (Js.get row "b")) then
-        Js.set s "k" (Js.from (Js.to (Js.get s "k") + 1))
-        if Js.to (Js.get row "e") then
-            Js.set s "r" (Js.get row "p")
-        else if Js.isUndefined (Js.get row "r") then
-            ⊤
-        else
-            Js.set s "r" (Js.get row "r")
-
-
--- A list's pass ends: the live rows it did not reach restated.
-endPass : V → ⊤
-endPass s =
-    w = Js.get s "w"
-    if Js.to w then Js.to (Js.apply w [ s, Js.get s "k" ])
-
-
--- A row mounted or patched by this render's pass, when it is live —
--- which only a row whose row function or kind can be is: stamped, and
--- the slot told. A row that is not live is never restated, so needs
--- neither.
-passed : V, V, V → ⊤
-passed s row i =
-    if
-        (if Js.isUndefined (Js.get row "b") then
-            Js.to (Js.get row "l")
-         else
-            Js.to (Js.get (Js.get i "t") "l")
-        )
-            && Js.to (Js.get i "l")
-    then
-        Js.set i "rs" (Js.get s "k")
-        Js.set s "w" (Js.from restateRows)
-
-
--- The slot told whether the instance it now shows is live, when its kind
--- can be (`l` on the kind: it writes a `stateful` attribute, evaluates a
--- value on every render or has a slot), so a page none of whose kinds can
--- be keeps none of this. A slot left saying so of an instance that is not
--- live costs one `again`, after which `restate` corrects it.
-held : V, V → ⊤
-held s i =
-    if Js.to (Js.get (Js.get i "t") "l") then
-        Js.set s "l" (Js.get i "l")
-
-
--- Put a new instance in the slot, in place of what it held.
-pub place : V, V → ⊤
-place s i =
-    if Js.isNull (Js.get s "i") then
-        put (parentOf s) i (Js.get s "m")
-    else
-        swap (Js.get s "i") i
-    Js.set s "i" i
-    held s i
+pub slot : Js.Opt HostNode.Node, Js.Opt HostNode.Node, Runtime.Context → Runtime.Slot
+slot parent marker context = Slots.slot parent marker context
 
 
 -- `(slot, block)`: an `Html` hole.
-pub childHtml : V, V → ⊤
-childHtml s b =
-    if Js.isNull (Js.get s "i") then
-        -- `place`'s first arm, written here: this branch knows the slot is
-        -- empty, so a page whose only holes are these ships no `swap`
-        -- (`bench/minify/empty-page`, step 01).
-        i = unit b (Js.get s "cx")
-        put (parentOf s) i (Js.get s "m")
-        Js.set s "i" i
-        held s i
-    else
-        Js.set s "i" (patch (Js.get s "i") b (Js.get s "cx"))
-        held s (Js.get s "i")
+pub childHtml : Runtime.Slot, Runtime.Block → ⊤
+childHtml location block = Slots.childHtml protocol location block
+
+
+-- `(slot, block or empty)`: a `Maybe Html` hole; empty empties the slot.
+pub childMaybe : Runtime.Slot, Js.Opt Runtime.Block → ⊤
+childMaybe location block = Slots.childMaybe protocol location block
+
+
+-- `(slot, list)`: a `List Html` hole, its blocks matched by position.
+pub childList : Runtime.Slot, List Runtime.Block → ⊤
+childList location blocks = Slots.childList protocol location blocks
+
+
+-- `(parent, marker, value)`: a text hole's node, inserted before the marker
+-- (or last, for none). The producer hands it a `String`.
+pub insertText : HostNode.Node, Js.Opt HostNode.Node, String → HostNode.Node
+insertText parent marker value = Slots.insertText parent marker value
+
+
+-- `(slot)`: what the slot shows patched again where it must be, though a
+-- render skipped it (`Rt.Slots.restate`).
+pub restate : Runtime.Slot → ⊤
+restate location = Slots.restate protocol location
+
+
+-- ---- Lists and conditionals (backend.md §15.5; `Rt.Rows`) ------------------
+
+pub forKeyed :
+      Runtime.Slot
+    , List item
+    , (item → key)
+    , Runtime.RowRecipe item key
+    , Js.Opt Any.Any
+    , Runtime.SiteProtocol
+    , Runtime.Payload
+    → ⊤
+forKeyed location items keyOf recipe inputs callbacks scope =
+    Rows.forKeyed protocol location items keyOf recipe inputs callbacks scope
+
+
+pub forPosition :
+      Runtime.Slot
+    , List item
+    , Runtime.RowRecipe item ⊤
+    , Js.Opt Any.Any
+    , Runtime.SiteProtocol
+    , Runtime.Payload
+    → ⊤
+forPosition location items recipe inputs callbacks scope =
+    Rows.forPosition protocol location items recipe inputs callbacks scope
+
+
+pub show :
+      Runtime.Slot
+    , key
+    , Runtime.Block
+    , Js.Opt String
+    , Runtime.SiteProtocol
+    , Runtime.Payload
+    → ⊤
+show location key block identityTag callbacks scope =
+    Rows.show protocol location key block identityTag callbacks scope
+
+
+pub hide : Runtime.Slot, Js.Opt Runtime.Block → ⊤
+hide location fallback = Rows.hide protocol location fallback
+
+
+-- A site's callbacks (`Runtime.SiteProtocol`), each called with the site's
+-- current recipe as its scope. `rows…` take the key's identity; a list by
+-- position has the key `⊤`, so `position…` need none.
+pub rowsHead : Runtime.RowRecipe item key, Any.Any, Runtime.Slot → Js.Opt HostNode.Node
+rowsHead recipe data location = Rows.head protocol recipe data location
+
+
+pub rowsTail : Runtime.RowRecipe item key, Any.Any, Runtime.Slot → Js.Opt HostNode.Node
+rowsTail recipe data location = Rows.tail protocol recipe data location
+
+
+pub rowsRestate : Runtime.RowRecipe item key, Any.Any, Runtime.Slot, Int → ⊤
+rowsRestate recipe data location stamp = Rows.restate protocol recipe data location stamp
+
+
+pub rowsDispose : Runtime.RowRecipe item key, Any.Any, Runtime.Slot → ⊤
+rowsDispose recipe data location = Rows.dispose protocol recipe data location
+
+
+pub positionHead : Runtime.RowRecipe item ⊤, Any.Any, Runtime.Slot → Js.Opt HostNode.Node
+positionHead recipe data location = Rows.head protocol recipe data location
+
+
+pub positionTail : Runtime.RowRecipe item ⊤, Any.Any, Runtime.Slot → Js.Opt HostNode.Node
+positionTail recipe data location = Rows.tail protocol recipe data location
+
+
+pub positionRestate : Runtime.RowRecipe item ⊤, Any.Any, Runtime.Slot, Int → ⊤
+positionRestate recipe data location stamp = Rows.restate protocol recipe data location stamp
+
+
+pub positionDispose : Runtime.RowRecipe item ⊤, Any.Any, Runtime.Slot → ⊤
+positionDispose recipe data location = Rows.dispose protocol recipe data location
 
 
 -- ---- The program and its render loop -------------------------------------
@@ -456,7 +388,7 @@ stop ⊤ =
         Nothing →
             ⊤
         Just _ →
-            Task.shutdown deadline stopped
+            TaskHooks.shutdown deadline stopped
     Js.write dead True
 
 
@@ -476,78 +408,65 @@ stopped cut =
         if cut == 0 then
             ⊤
         else
-            Js.to
-                (Js.apply (Js.read screenLine)
-                    [ Js.from
-                        ("\n\n${line} "
-                            ++ Js.to (Js.apply (Js.global "String") [ Js.from cut ])
-                        )
-                    ]
-                )
+            case Js.read screenLine of
+                Nothing →
+                    ⊤
+                Just append →
+                    Protocol.call append ("\n\n" ++ line ++ " " ++ String.fromInt cut)
 
-        Js.to
-            (Js.call (Js.global "window") "removeEventListener"
-                [ Js.from "error", Js.read screenReport ]
-            )
-
-
--- The crash screen's: what adds a line to it, and its `error` listener.
-screenLine : Js.Ref V
-screenLine = Js.ref Js.null
+        case Js.read screenReport of
+            Nothing →
+                ⊤
+            Just cancel →
+                Protocol.call cancel ⊤
+                Js.write screenReport Nothing
 
 
-screenReport : Js.Ref V
-screenReport = Js.ref Js.null
+-- The crash screen retains typed closed jobs and a native listener remover.
+screenLine : Js.Ref (Maybe (String → ⊤))
+screenLine = Js.ref Nothing
 
 
--- An overlay above the page, which it leaves in place to inspect. The
--- error's text arrives with the host's report of the throw, which reaches
--- the window after the cleanup that called `stop`. Each later throw — a
--- cleanup's, while the program's scope closes (`boundary.md` §9.8.14 (g))
--- — is listed beneath it, until the teardown ends; a page with no
--- teardown listens for the first throw only.
+screenReport : Js.Ref (Maybe (⊤ → ⊤))
+screenReport = Js.ref Nothing
+
+
 crashScreen : ⊤ → ⊤
 crashScreen ⊤ =
-    document = Js.global "document"
-    screen = Js.call document "createElement" [ Js.from "div" ]
-
-    _ =
-        Js.call screen "setAttribute"
-            [ Js.from "style"
-            , Js.from
-                "position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap"
-            ]
-
-    Js.set
-        screen
-        "textContent"
-        (Js.from
-            "This program has stopped.\n\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\n\n"
-        )
-
-    _ = Js.call (Js.get document "body") "appendChild" [ screen ]
+    screen = HostDocument.div ⊤
+    native = HostElement.toNode screen
+    HostElement.styleText screen
+        "position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap"
+    HostNode.setTextContent native
+        "This program has stopped.\n\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\n\n"
+    case HostDocument.body ⊤ of
+        Nothing →
+            Protocol.defect "the page has no body for its crash screen"
+        Just body →
+            case HostNode.append (HostElement.toNode body) native of
+                Ok ⊤ →
+                    ⊤
+                Err _ →
+                    Protocol.defect "cannot append the crash screen to the page"
 
     add =
         λmore →
-            shown : String
-            shown = Js.to (Js.get screen "textContent")
-            Js.set screen "textContent" (Js.from (shown ++ more))
-
+            shown = Maybe.withDefault (HostNode.textContent native) ""
+            HostNode.setTextContent native (shown ++ more)
     seen = Js.ref 0
-
+    cleanup = TaskHooks.cleansUp ⊤
+    remove = Js.ref λ⊤ → ⊤
     report =
         λevent →
-            error = Js.get event "error"
-            message : String
+            if cleanup then ⊤ else Protocol.call (Js.read remove) ⊤
             message =
-                Js.to
-                    (Js.apply (Js.global "String")
-                        [ if Js.isNullish error then Js.get event "message" else error ]
-                    )
-
+                case HostEvent.error event of
+                    Nothing →
+                        HostEvent.message event
+                    Just reason →
+                        HostRejection.display reason
             n = Js.read seen
             Js.write seen (n + 1)
-
             add
                 (if n == 0 then
                     message
@@ -556,16 +475,10 @@ crashScreen ⊤ =
                  else
                     "\n" ++ message
                 )
-
-    Js.write screenLine (Js.from add)
-    Js.write screenReport (Js.from report)
-    Js.to
-        (Js.call (Js.global "window") "addEventListener"
-            [ Js.from "error"
-            , Js.from report
-            , Js.from { once = not (Task.cleansUp ⊤) }
-            ]
-        )
+    cancel = HostEvents.listen (HostEventTarget.current ⊤) "error" report
+    Js.write remove cancel
+    Js.write screenLine (Just add)
+    Js.write screenReport (Just cancel)
 
 
 -- Render every program a message is waiting on, then run the after-render
@@ -635,13 +548,25 @@ startOne m =
                     )
                 ]
             )
+    -- The same node, typed, for its slot (a lookup the check above has
+    -- just shown to succeed).
+    node =
+        if Js.isNull (Js.get m "n") then
+            HostDocument.rendererBody ⊤
+        else
+            case HostDocument.byId (Js.to (Js.get m "n")) of
+                Just element →
+                    HostElement.toNode element
+
+                Nothing →
+                    Protocol.defect "the mount node is gone"
     if Js.isUndefined (Js.get m "h") then
-        mount (Js.get m "a") root
+        mount (Js.get m "a") root node
     else
         -- Only a hosted program runs fibers: each drain of core's
         -- scheduler is a turn, so what its fibers send renders when it
         -- ends.
-        Task.onTurn λf → turn True f
+        TaskHooks.onTurn λf → turn True f
         mount
             (Js.apply (Js.get m "h")
                 [ root
@@ -651,6 +576,7 @@ startOne m =
                 ]
             )
             root
+            node
 
 
 setPhase : (⊤ → ⊤) → Bool
@@ -662,16 +588,16 @@ setPhase f =
 -- Render `view (init ⊤)` after the children of `root`, and mark `root` with
 -- the program's `send`. `init` is called here, once per mount
 -- (`boundary.md` §9.8.16).
-mount : V, V → ⊤
-mount program root =
-    s = slot root Js.null Js.null
+mount : V, V, HostNode.Node → ⊤
+mount program root node =
+    s = Slots.slot (Js.some node) (Js.none ⊤) protocol.none
     model = Js.ref (Js.call program "init" [])
     waiting = Js.ref False
 
     render =
         λ⊤ →
             Js.write waiting False
-            childHtml s (Js.call program "view" [ Js.read model ])
+            childHtml s (Js.to (Js.call program "view" [ Js.read model ]))
             renderEnded root
 
     Js.set
@@ -701,15 +627,16 @@ mount program root =
                 -- the message (`boundary.md` §9.8.16 (b), amended
                 -- 2026-10-23). The call is written twice, so that a build
                 -- in which nothing sets a slot keeps only the second.
-                if Task.hasLogContext ⊤ then
+                if TaskHooks.hasLogContext ⊤ then
                     Js.write
                         model
-                        (Task.withoutLogContext λ⊤ → Js.call program "update" [ msg, Js.read model ]
+                        (TaskHooks.withoutLogContext λ⊤ →
+                            Js.call program "update" [ msg, Js.read model ]
                         )
                 else
                     Js.write model (Js.call program "update" [ msg, Js.read model ])
         )
-    childHtml s (Js.call program "view" [ Js.read model ])
+    childHtml s (Js.to (Js.call program "view" [ Js.read model ]))
     renderEnded root
 
 
@@ -719,31 +646,7 @@ microtask ⊤ =
         flush ⊤
 
 
--- ---- Holes (backend.md §15.3–§15.4) --------------------------------------
-
--- `(slot, block or null)`: a `Maybe Html` hole; null empties the slot.
-pub childMaybe : V, V → ⊤
-childMaybe s b =
-    if Js.isNull b then
-        if Js.isNull (Js.get s "i") then
-            ⊤
-        else
-            drop (Js.get s "i")
-            Js.set s "i" Js.null
-            Js.set s "l" (Js.from False)
-    else
-        childHtml s b
-
-
--- `(parent, marker, value)`: a text hole's node, inserted before the marker
--- (or last, for none).
-pub insertText : V, V, V → V
-insertText parent marker value =
-    Js.call parent "insertBefore"
-        [ Js.call (Js.global "document") "createTextNode" [ value ], marker ]
-
-
--- ---- Lists and conditionals (backend.md §15.5) ---------------------------
+-- ---- Class and style lists ----------------------------------------------
 
 -- A list's elements, by backend.md §4's protocol: the array itself, or a
 -- view's or a trie's plain copy (made once per list and cached). Read,
@@ -758,1213 +661,18 @@ elements list =
         Js.call list "$plain" []
 
 
--- `(slot, list)`: a `List Html` hole, its blocks matched by position.
-pub childList : V, V → ⊤
-childList s list =
-    Js.set s "w" (Js.from False)
-    if Js.isNull (Js.get s "u") then
-        Js.set s "u" (Js.array [])
-    u = Js.get s "u"
-    a = elements list
-    childrenFrom s u a 0
-    dropPast u (Js.to (Js.get a "length"))
+-- ---- Controlled inputs (Rt.Events) -------------------------------------
 
+pub control : HostNode.Node, Runtime.Property, Runtime.Payload → ⊤
+control node descriptor value = Events.control protocol node descriptor value
 
--- Block `k` onwards of `a` shown by instance `k` onwards of `u`: patched,
--- or mounted past the end.
-childrenFrom : V, V, V, Int → ⊤
-childrenFrom s u a k =
-    if k < Js.to (Js.get a "length") then
-        if k < Js.to (Js.get u "length") then
-            Js.setAt u k (patch (Js.at u k) (Js.at a k) (Js.get s "cx"))
-        else
-            i = unit (Js.at a k) (Js.get s "cx")
-            put (parentOf s) i (Js.get s "m")
-            Js.to (Js.call u "push" [ i ])
-        -- Every block was patched (`patch` patches a live one it is handed
-        -- again): the list's `w` is exact.
-        if Js.to (Js.get (Js.get (Js.at u k) "t") "l") && Js.to (Js.get (Js.at u k) "l") then
-            Js.set s "w" (Js.from restateRows)
-        childrenFrom s u a (k + 1)
 
-
--- The instances past the first `k`, taken out of the page and the array.
-dropPast : V, Int → ⊤
-dropPast u k =
-    if Js.to (Js.get u "length") > k then
-        drop (Js.call u "pop" [])
-        dropPast u k
-
-
--- A row is `{ m, p, i, f }` for a row compiled in place — `m(item,
--- position, cx)` mounts an instance, `p(inst, item, position)` patches one
--- — or `{ b, i, f }` for any other row, `b(item, position)` its block. `i`
--- says whether the row reads its position; `f` is the fallback's block or
--- null. `o` permits immutable item comparisons; `h` marks immutable inputs.
--- Mutable inputs are visited every render and never kept for comparison.
---
--- A row with `w` mounts through its patch (backend.md §15.5): `m` clones
--- and walks, and `p`, meeting nothing written yet, writes every value — so
--- the code an edit runs is the code every mount ran, as a Solid effect's is.
-mountRow : V, V, Int, V → V
-mountRow row item position s =
-    cx = Js.get s "cx"
-    i =
-        if Js.isUndefined (Js.get row "b") then
-            j = Js.call row "m" [ item, Js.from position, cx ]
-
-            if Js.same (Js.get row "w") (Js.from True) then
-                Js.to (Js.call row "p" [ j, item, Js.from position ])
-            j
-        else
-            unit (Js.call row "b" [ item, Js.from position ]) cx
-
-    Js.set i "x" item
-    Js.set i "y" (Js.from position)
-    Js.set i "k" Js.null
-    Js.set i "n" Js.null
-    Js.set i "kv" (Js.from 0)
-    Js.set i "kc" Js.null
-    Js.set i "kt" Js.null
-    passed s row i
-    i
-
-
--- The row patched with its item; a new instance when a block row's kind
--- changed.
-patchRow : V, V, V, Int, V → V
-patchRow row i item position s =
-    if Js.isUndefined (Js.get row "b") then
-        _ = Js.call row "p" [ i, item, Js.from position ]
-        passed s row i
-        i
-    else
-        n = patch i (Js.call row "b" [ item, Js.from position ]) (Js.get s "cx")
-        passed s row n
-
-        if Js.same n i then
-            ⊤
-        else
-            Js.set n "k" (Js.get i "k")
-            Js.set n "n" Js.null
-            Js.set n "kv" (Js.from 0)
-            Js.set n "kc" (Js.get i "kc")
-            Js.set n "kt" Js.null
-        n
-
-
--- Only immutable inputs are remembered. The array is a runtime-owned
--- snapshot of scalar/function values, never the application's list.
-rememberInputs : V, V → V
-rememberInputs inputs mask =
-    if Js.isNull inputs then
-        Js.null
-    else
-        out = Js.array []
-        rememberFrom inputs mask out 0
-        out
-
-
-rememberFrom : V, V, V, Int → ⊤
-rememberFrom inputs mask out k =
-    if k < Js.to (Js.get inputs "length") then
-        Js.to (Js.call out "push" [ if Js.to (Js.at mask k) then Js.at inputs k else Js.undefined ])
-        rememberFrom inputs mask out (k + 1)
-
-
-sameInputs : V, V, V → Bool
-sameInputs a b mask = sameInputsBut a b mask (-1)
-
-
-sameInputsBut : V, V, V, Int → Bool
-sameInputsBut a b mask g =
-    if Js.isNull a || Js.isNull b then
-        Js.isNull a && Js.isNull b
-    else if not (Js.same (Js.get a "length") (Js.get b "length")) then
-        False
-    else
-        sameFromBut a b mask g 0 == Js.to (Js.get a "length")
-
-
-sameFromBut : V, V, V, Int, Int → Int
-sameFromBut a b mask g k =
-    if
-        k < Js.to (Js.get a "length")
-            && (k == g || (Js.to (Js.at mask k) && Js.same (Js.at a k) (Js.at b k)))
-    then
-        sameFromBut a b mask g (k + 1)
-    else
-        k
-
-
--- What no key is: both of a render's probes when its selection did not
--- change, so no row is patched for it.
-none : V
-none = Js.from {}
-
-
--- The rows whose key is `key` — its first row and the chain of rows that
--- share it — patched with the item and position they show.
-reselect : V, V, V → ⊤
-reselect s row key =
-    reselectFrom row (Js.call (Js.get s "x") "get" [ key ])
-    ⊤
-
-
--- (`isNullish`: the map answers undefined for no row, and a chain ends in
--- null.)
-reselectFrom : V, V → ⊤
-reselectFrom row i =
-    if Js.isNullish i then
-        ⊤
-    else
-        _ = Js.call row "p" [ i, Js.get i "x", Js.get i "y" ]
-        reselectFrom row (Js.get i "n")
-
-
--- A detached run of nodes that moves back into the list later.
-parked : Js.Ref V
-parked = Js.ref Js.null
-
-
-park : V → ⊤
-park i =
-    f = first i
-    if Js.same f (last i) then
-        Js.to (Js.call f "remove" [])
-    else
-        if Js.isNull (Js.read parked) then
-            Js.write parked (Js.call (Js.global "document") "createDocumentFragment" [])
-        put (Js.read parked) i Js.null
-
-
--- The rows `a` were become the rows `b`, moving as few as it can: udomdiff
--- over instances rather than nodes, each instance a run of siblings. Only
--- `a[aStart, aEnd)` and `b[bStart, bEnd)` differ: the rows before the
--- starts are in place and the same in both, and so are the rows after the
--- ranges, which begin at `after` (the node after the list when there are
--- none); `b`'s rows end at `bLength`. `indices`, each row of `b`'s range by
--- its index, is made the first time a row is looked up: null until then.
-reconcile : V, V, V, Int, V, Int, Int, Int, Int, V → ⊤
-reconcile parent a b bLength after aStart aEnd bStart bEnd indices =
-    if not (aStart < aEnd || bStart < bEnd) then
-        ⊤
-    else if Js.same (Js.at a aStart) (Js.at b bStart) then
-        reconcile parent a b bLength after (aStart + 1) aEnd (bStart + 1) bEnd indices
-    else
-        ( aTo, bTo ) = sameEnds a b aStart aEnd bStart bEnd
-        if aTo == aStart then
-            node =
-                if bTo < bLength then
-                    if bStart ≠ 0 then
-                        Js.get (last (Js.at b (bStart - 1))) "nextSibling"
-                    else
-                        first (Js.at b bTo)
-                else
-                    after
-
-            putRange parent b bStart bTo node
-            reconcile parent a b bLength after aStart aTo bTo bTo indices
-        else if bTo == bStart then
-            dropRange a indices aStart aTo
-            reconcile parent a b bLength after aTo aTo bStart bTo indices
-        else if
-            Js.same (Js.at a aStart) (Js.at b (bTo - 1))
-                && Js.same (Js.at b bStart) (Js.at a (aTo - 1))
-        then
-            node = Js.get (last (Js.at a (aTo - 1))) "nextSibling"
-            put parent (Js.at b bStart) (Js.get (last (Js.at a aStart)) "nextSibling")
-            put parent (Js.at b (bTo - 1)) node
-            Js.setAt a (aTo - 1) (Js.at b (bTo - 1))
-            reconcile parent a b bLength after (aStart + 1) (aTo - 1) (bStart + 1) (bTo - 1) indices
-        else
-            positions =
-                if Js.isNull indices then
-                    Js.construct (Js.global "Map") []
-                else
-                    indices
-
-            if Js.isNull indices then
-                indexRange positions b bStart bTo
-
-            found = Js.call positions "get" [ Js.at a aStart ]
-            if Js.isUndefined found then
-                drop (Js.at a aStart)
-                reconcile parent a b bLength after (aStart + 1) aTo bStart bTo positions
-            else
-                index : Int
-                index = Js.to found
-                if bStart < index && index < bTo then
-                    sequence = sameRun positions a aTo bTo index (aStart + 1) 1
-                    if sequence > index - bStart then
-                        putBefore parent b bStart index (first (Js.at a aStart))
-                        reconcile parent a b bLength after aStart aTo index bTo positions
-                    else
-                        old = Js.at a aStart
-                        put parent (Js.at b bStart) (first old)
-                        park old
-                        reconcile
-                            parent
-                            a
-                            b
-                            bLength
-                            after
-                            (aStart + 1)
-                            aTo
-                            (bStart + 1)
-                            bTo
-                            positions
-                else
-                    reconcile parent a b bLength after (aStart + 1) aTo bStart bTo positions
-
-
--- The rows the two ranges end with that are the same, taken off.
-sameEnds : V, V, Int, Int, Int, Int → Int × Int
-sameEnds a b aStart aEnd bStart bEnd =
-    if aEnd > aStart && bEnd > bStart && Js.same (Js.at a (aEnd - 1)) (Js.at b (bEnd - 1)) then
-        sameEnds a b aStart (aEnd - 1) bStart (bEnd - 1)
-    else
-        ( aEnd, bEnd )
-
-
--- `b[from, to)` put before `node`, in order.
-putRange : V, V, Int, Int, V → ⊤
-putRange parent b from to node =
-    if from < to then
-        put parent (Js.at b from) node
-        putRange parent b (from + 1) to node
-
-
-putBefore : V, V, Int, Int, V → ⊤
-putBefore parent b from to node =
-    if from < to then
-        put parent (Js.at b from) node
-        putBefore parent b (from + 1) to node
-
-
--- `a[from, to)` taken out of the page, but for the rows `b` holds, which
--- are parked.
-dropRange : V, V, Int, Int → ⊤
-dropRange a indices from to =
-    if from < to then
-        if Js.isNull indices || not (Js.to (Js.call indices "has" [ Js.at a from ])) then
-            drop (Js.at a from)
-        dropRange a indices (from + 1) to
-
-
-indexRange : V, V, Int, Int → ⊤
-indexRange positions b from to =
-    if from < to then
-        _ = Js.call positions "set" [ Js.at b from, Js.from from ]
-        indexRange positions b (from + 1) to
-
-
--- How many rows of `a` from `aStart - 1` stand in `b` in the same order.
-sameRun : V, V, Int, Int, Int, Int, Int → Int
-sameRun positions a aEnd bEnd index i sequence =
-    if
-        i < aEnd
-            && i < bEnd
-            && Js.same (Js.call positions "get" [ Js.at a i ]) (Js.from (index + sequence))
-    then
-        sameRun positions a aEnd bEnd index (i + 1) (sequence + 1)
-    else
-        sequence
-
-
--- Each render of a keyed list that runs its rows has a stamp of its own.
-stamps : Js.Ref Int
-stamps = Js.ref 0
-
-
--- The keyed list when last render's keys were distinct, matched as Solid's
--- `mapArray` and dom-expressions' `reconcileArrays` match a list: the rows
--- whose keys are where they were at the start, then at the end, then a
--- pair of rows at the two ends that changed places, again until none does.
--- Only what is left between them is looked up in the key map, so a
--- selection, a label edit, a remove, an append and a swap of two rows
--- touch the map for the rows they add or remove and no others. An immutable
--- item identical to its row's last item has that row's key, so its key is not
--- asked for. A mutable item always has its key recomputed. No row past the start is patched or moved until every key is
--- known to be distinct: false, having patched only the rows at the start
--- (which do not move) and mounted rows for new keys, when two items share
--- a key; `forKeyed` then goes through the whole list, where a row already
--- patched is by then as last time and a row mounted is its key's first.
-trimmed : V, V, V, V, Bool, V, V → Bool
-trimmed s items keyOf row same was now =
-    old = Js.get s "u"
-    m : Int
-    m = Js.to (Js.get old "length")
-    -- A list that was empty or is: the full pass mounts it in one walk
-    -- or empties the parent at once.
-    if m == 0 || Js.to (Js.get items "length") == 0 then
-        False
-    else
-        Js.write stamps (Js.read stamps + 1)
-        stamp = Js.read stamps
-        a = elements items
-        p = startRows s a old keyOf row same was now stamp m 0
-        if p == m && p == Js.to (Js.get a "length") then
-            True
-        else
-            -- The rest of the items, each key asked for once and only
-            -- if needed.
-            xs = Js.call a "slice" [ Js.from p ]
-            n = p + Js.to (Js.get xs "length")
-            ks = Js.construct (Js.global "Array") [ Js.get xs "length" ]
-
-            -- The key the item at `b` has, asked for once: `ks` holds
-            -- the keys of the items from `p`.
-            keyAt =
-                λb →
-                    k = Js.at ks (b - p)
-                    if Js.isUndefined k then
-                        item = Js.at xs (b - p)
-
-                        key =
-                            if Js.isNull keyOf then
-                                item
-                            else
-                                Js.apply keyOf [ item ]
-
-                        Js.setAt ks (b - p) key
-                        key
-                    else
-                        k
-
-            -- Row `i` shows item `b`: the same item, or failing that the
-            -- same key.
-            hit =
-                λi b →
-                    (Js.to (Js.get row "o") && Js.same (Js.get i "x") (Js.at xs (b - p)))
-                        || Js.same (Js.get i "k") (keyAt b)
-
-            next = Js.construct (Js.global "Array") [ Js.from n ]
-            copyRows next old p 0
-
-            -- The end, written out: it is most of a remove.
-            ( aOuter, bOuter ) = endRows old xs keyAt next p stamp m n (Js.to (Js.get row "o"))
-            ( aStart, aEnd, bEnd ) = crossRows old hit next stamp p aOuter bOuter
-
-            -- What is left: its keys looked up, a new key's row mounted
-            -- (and marked with the stamp's negation), a key found twice
-            -- handing over. A row mounted here that the full pass is
-            -- handed is its key's first row.
-            byKey = Js.get s "x"
-
-            -- A row mounted this render: the stamp's negation.
-            unseen = 0 - stamp
-            ( found, kept ) = lookUpRows s xs keyAt next row byKey p stamp unseen bEnd aStart 0
-            if found < bEnd then
-                False
-            else
-                patchRows s old xs next row byKey p stamp unseen same was now n p
-                forgetRows old byKey stamp aStart aEnd
-
-                -- No row kept, and the rows all the parent holds: a
-                -- replacement. The parent is emptied at once, as a clear
-                -- is, rather than a thousand rows removed one by one —
-                -- which is what Solid's `reconcileArrays` does — and the
-                -- new rows go in after.
-                parent = parentOf s
-
-                if
-                    kept
-                        == 0
-                        && aStart
-                            == p
-                        && p
-                            == 0
-                        && aOuter
-                            == m
-                        && bOuter
-                            == n
-                        && Js.same (Js.get parent "firstChild") (first (Js.at old 0))
-                        && Js.same (Js.get parent "lastChild") (last (Js.at old (m - 1)))
-                then
-                    Js.set parent "textContent" (Js.from "")
-                    Js.each next λi → put parent i Js.null
-                else if aStart ≠ p || aStart < aEnd || aStart < bEnd then
-                    reconcile
-                        parent
-                        old
-                        next
-                        bOuter
-                        (if bOuter < n then
-                            first (Js.at next bOuter)
-                         else
-                            Js.get (last (Js.at old (m - 1))) "nextSibling"
-                        )
-                        p
-                        aOuter
-                        p
-                        bOuter
-                        Js.null
-                    if Js.isNull (Js.read parked) then
-                        ⊤
-                    else
-                        Js.write parked Js.null
-
-                Js.set s "u" next
-                True
-
-
--- The rows at the start whose items or keys are where they were, patched
--- in passing, up to the first that is not: its position.
-startRows : V, V, V, V, V, Bool, V, V, Int, Int, Int → Int
-startRows s a old keyOf row same was now stamp m p =
-    if p < Js.to (Js.get a "length") && p < m then
-        i = Js.at old p
-        item = Js.at a p
-        hit = Js.to (Js.get row "o") && Js.same (Js.get i "x") item
-        if
-            not hit
-                && not
-                    (Js.same
-                        (Js.get i "k")
-                        (if Js.isNull keyOf then item else Js.apply keyOf [ item ])
-                    )
-        then
-            p
-        else if
-            hit && same && not (Js.same (Js.get i "k") was) && not (Js.same (Js.get i "k") now)
-        then
-            Js.set i "kv" (Js.from stamp)
-            startRows s a old keyOf row same was now stamp m (p + 1)
-        else
-            n = patchRow row i item p s
-
-            if Js.same n i then
-                ⊤
-            else
-                Js.setAt old p n
-                _ = Js.call (Js.get s "x") "set" [ Js.get n "k", n ]
-                Js.set n "y" (Js.from p)
-
-            Js.set n "x" item
-            Js.set n "kv" (Js.from stamp)
-            startRows s a old keyOf row same was now stamp m (p + 1)
-    else
-        p
-
-
--- `next[k]` for `k` below `p`: the rows at the start.
-copyRows : V, V, Int, Int → ⊤
-copyRows next old p k =
-    if k < p then
-        Js.setAt next k (Js.at old k)
-        copyRows next old p (k + 1)
-
-
--- The rows at the end whose items or keys are where they were.
-endRows : V, V, sync (Int → V), V, Int, Int, Int, Int, Bool → Int × Int
-endRows old xs keyAt next p stamp aEnd bEnd immutable =
-    if p < aEnd && p < bEnd then
-        i = Js.at old (aEnd - 1)
-        if
-            not (immutable && Js.same (Js.get i "x") (Js.at xs (bEnd - 1 - p)))
-                && not (Js.same (Js.get i "k") (keyAt (bEnd - 1)))
-        then
-            ( aEnd, bEnd )
-        else
-            Js.set i "kv" (Js.from stamp)
-            Js.setAt next (bEnd - 1) i
-            endRows old xs keyAt next p stamp (aEnd - 1) (bEnd - 1) immutable
-    else
-        ( aEnd, bEnd )
-
-
--- Pairs of rows at the two ends that changed places, each followed by the
--- rows then in place at the start and at the end, until no pair is left.
--- The two starts move together, so one is both.
-crossRows : V, sync (V, Int → Bool), V, Int, Int, Int, Int → Int × Int × Int
-crossRows old hit next stamp aStart aEnd bEnd =
-    if
-        aEnd - aStart > 1
-            && bEnd - aStart > 1
-            && hit (Js.at old aStart) (bEnd - 1)
-            && hit (Js.at old (aEnd - 1)) aStart
-    then
-        i = Js.at old aStart
-        j = Js.at old (aEnd - 1)
-        Js.set i "kv" (Js.from stamp)
-        Js.set j "kv" (Js.from stamp)
-        Js.setAt next (bEnd - 1) i
-        Js.setAt next aStart j
-        inner = crossStart old hit next stamp (aStart + 1) (aEnd - 1) (bEnd - 1)
-        ( aTo, bTo ) = crossEnd old hit next stamp inner (aEnd - 1) (bEnd - 1)
-        crossRows old hit next stamp inner aTo bTo
-    else
-        ( aStart, aEnd, bEnd )
-
-
-crossStart : V, sync (V, Int → Bool), V, Int, Int, Int, Int → Int
-crossStart old hit next stamp aStart aEnd bEnd =
-    if aStart < aEnd && aStart < bEnd then
-        k = Js.at old aStart
-        if not (hit k aStart) then
-            aStart
-        else
-            Js.set k "kv" (Js.from stamp)
-            Js.setAt next aStart k
-            crossStart old hit next stamp (aStart + 1) aEnd bEnd
-    else
-        aStart
-
-
-crossEnd : V, sync (V, Int → Bool), V, Int, Int, Int, Int → Int × Int
-crossEnd old hit next stamp aStart aEnd bEnd =
-    if aStart < aEnd && aStart < bEnd && hit (Js.at old (aEnd - 1)) (bEnd - 1) then
-        k = Js.at old (aEnd - 1)
-        Js.set k "kv" (Js.from stamp)
-        Js.setAt next (bEnd - 1) k
-        crossEnd old hit next stamp aStart (aEnd - 1) (bEnd - 1)
-    else
-        ( aEnd, bEnd )
-
-
--- Rows `b` to `bEnd` found by key or mounted, and how many were found; it
--- stops where a key is found twice.
-lookUpRows : V, V, sync (Int → V), V, V, V, Int, Int, Int, Int, Int, Int → Int × Int
-lookUpRows s xs keyAt next row byKey p stamp unseen bEnd b kept =
-    if b < bEnd then
-        key = keyAt b
-        h = Js.call byKey "get" [ key ]
-        if Js.isUndefined h then
-            i = mountRow row (Js.at xs (b - p)) b s
-            Js.set i "k" key
-            Js.set i "kv" (Js.from unseen)
-            _ = Js.call byKey "set" [ key, i ]
-            Js.setAt next b i
-            lookUpRows s xs keyAt next row byKey p stamp unseen bEnd (b + 1) kept
-        else if Js.to (Js.get h "kv") == stamp || Js.to (Js.get h "kv") == unseen then
-            ( b, kept )
-        else
-            Js.set h "kv" (Js.from stamp)
-            Js.setAt next b h
-            lookUpRows s xs keyAt next row byKey p stamp unseen bEnd (b + 1) (kept + 1)
-    else
-        ( b, kept )
-
-
--- Each row from `b` patched with its item and position, unless it was
--- mounted this render or is as last time; `next[b]` is the row shown.
-patchRows : V, V, V, V, V, V, Int, Int, Int, Bool, V, V, Int, Int → ⊤
-patchRows s old xs next row byKey p stamp unseen same was now n b =
-    if b < n then
-        item = Js.at xs (b - p)
-        i = Js.at next b
-
-        if Js.to (Js.get i "kv") == unseen then
-            Js.set i "kv" (Js.from stamp)
-        else if
-            not same
-                || not (Js.to (Js.get row "o"))
-                || not (Js.same (Js.get i "x") item)
-                || (Js.to (Js.get row "i") && Js.to (Js.get i "y") ≠ b)
-                || Js.same (Js.get i "k") was
-                || Js.same (Js.get i "k") now
-        then
-            r = patchRow row i item b s
-            if Js.same r i then
-                ⊤
-            else
-                Js.setAt old (Js.to (Js.get i "y")) r
-                Js.set r "kv" (Js.from stamp)
-                _ = Js.call byKey "set" [ Js.get r "k", r ]
-                Js.setAt next b r
-
-        shown = Js.at next b
-        Js.set shown "x" item
-        Js.set shown "y" (Js.from b)
-        patchRows s old xs next row byKey p stamp unseen same was now n (b + 1)
-
-
--- The keys of the rows `old[a, aEnd)` no longer shown, out of the map.
-forgetRows : V, V, Int, Int, Int → ⊤
-forgetRows old byKey stamp a aEnd =
-    if a < aEnd then
-        if Js.to (Js.get (Js.at old a) "kv") ≠ stamp then
-            Js.to (Js.call byKey "delete" [ Js.get (Js.at old a) "k" ])
-        forgetRows old byKey stamp (a + 1) aEnd
-
-
--- `(slot, items, keyOf, row, inputs)`: the keyed list. `keyOf` is null to
--- key by the item itself. A row keeps its nodes while its key is in the
--- list; items that share a key are matched by their rank among them, so
--- every item renders once. A row whose item, position (when it reads it)
--- and inputs are all as last time is not run at all, and the rows move
--- only when the order of keys changed. `s.d` says last render's keys were
--- distinct, which is what lets `trimmed` run.
---
--- **The key map `s.x` is kept from render to render**: it maps a key to the
--- first row that has it, and the rows after it that share it are a chain,
--- in list order, through `n`. A render stamps each row it keeps (`kv`), so
--- a surviving row costs one lookup and a few field writes, and the rows
--- left unstamped are dropped from the map afterwards. The chain is rebuilt
--- as the render goes: a key's first item takes the first row of its old
--- chain, its `k`th item the old chain's `k`th row — `kc` is where the old
--- chain is up to, `kt` the new chain's last row, both kept on the first —
--- and a key with more items than rows mounts the rest, with fewer leaves
--- the rest unstamped.
---
--- **A selector** (backend.md §15.5): a row compiled in place may name one
--- input, `row.g`, that its body reads only to compare with the row's own
--- key, and carry `row.z`, that input's probe — the one key the comparison
--- can hold for, or a value no key is. A row whose item and other inputs
--- are as last time is then patched only when its key is the old probe or
--- the new one; when that is all that changed, those rows are found in the
--- key map, and no other row is visited. A `For`'s fallback is shown while
--- the list is empty.
-pub forKeyed : V, V, V, V, V → ⊤
-forKeyed s items keyOf row inputs =
-    startPass s row
-    g = Js.get row "g"
-    rendered = Js.to (Js.get s "v")
-
-    same =
-        rendered
-            && (if Js.isUndefined g then
-                   sameInputs (Js.get s "y") inputs (Js.get row "h")
-                else
-                   sameInputsBut (Js.get s "y") inputs (Js.get row "h") (Js.to g)
-               )
-
-    moving = not (Js.isUndefined g) && rendered && not (Js.same (Js.get s "z") (Js.get row "z"))
-
-    was =
-        if moving then
-            Js.get s "z"
-        else
-            none
-
-    now =
-        if moving then
-            Js.get row "z"
-        else
-            none
-
-    if Js.isUndefined g then
-        ⊤
-    else
-        Js.set s "z" (Js.get row "z")
-
-    Js.set s "v" (Js.from True)
-    Js.set s "y" (rememberInputs inputs (Js.get row "h"))
-    if Js.to (Js.get s "d") && trimmed s items keyOf row same was now then
-        ⊤
-    else
-        keyedPass s items keyOf row same was now
-    -- A live row function's rows are each patched again, whether this
-    -- render ran them or not: a row may hold a controlled input.
-    endPass s
-    childMaybe
-        s
-        (if Js.to (Js.get items "length") == 0 then
-            Js.get row "f"
-         else
-            Js.null
-        )
-
-
--- The full pass: every item's row found by its key's rank, patched or
--- mounted, and the rows moved when their order changed.
-keyedPass : V, V, V, V, Bool, V, V → ⊤
-keyedPass s items keyOf row same was now =
-    Js.write stamps (Js.read stamps + 1)
-    stamp = Js.read stamps
-
-    old =
-        if Js.isNull (Js.get s "u") then
-            Js.array []
-        else
-            Js.get s "u"
-
-    if Js.isNull (Js.get s "x") then
-        Js.set s "x" (Js.construct (Js.global "Map") [])
-
-    byKey = Js.get s "x"
-    next = Js.array []
-
-    ( distinct, shifted ) =
-        keyedRows s (elements items) keyOf row same was now stamp old byKey next 0 True False
-
-    Js.each old λo →
-        if
-            Js.to (Js.get o "kv") ≠ stamp
-                && Js.same (Js.call byKey "get" [ Js.get o "k" ]) o
-        then
-            Js.to (Js.call byKey "delete" [ Js.get o "k" ])
-
-    if shifted || not (Js.same (Js.get next "length") (Js.get old "length")) then
-        parent = parentOf s
-
-        if Js.to (Js.get old "length") == 0 then
-            -- Each row straight into the page, as Solid's
-            -- `appendNodes` puts them: a fragment first moved
-            -- every node twice.
-            before =
-                if Js.isNull (Js.get s "i") then
-                    Js.get s "m"
-                else
-                    first (Js.get s "i")
-            Js.each next λi → put parent i before
-        else if
-            Js.to (Js.get next "length")
-                == 0
-                && Js.same (Js.get parent "firstChild") (first (Js.at old 0))
-                && Js.same
-                    (Js.get parent "lastChild")
-                    (last (Js.at old (Js.to (Js.get old "length") - 1)))
-        then
-            -- The rows are all the parent holds: empty it at
-            -- once, as Solid does, rather than remove a
-            -- thousand rows one by one.
-            Js.set parent "textContent" (Js.from "")
-        else
-            reconcile
-                parent
-                old
-                next
-                (Js.to (Js.get next "length"))
-                (Js.get
-                    (last (Js.at old (Js.to (Js.get old "length") - 1)))
-                    "nextSibling"
-                )
-                0
-                (Js.to (Js.get old "length"))
-                0
-                (Js.to (Js.get next "length"))
-                Js.null
-        if Js.isNull (Js.read parked) then
-            ⊤
-        else
-            Js.write parked Js.null
-
-    Js.set s "u" next
-    Js.set s "d" (Js.from distinct)
-
-
--- Item `position` onwards: each row found by its key's rank among the items
--- that share it, patched when anything it shows changed, or mounted.
--- Whether the keys were distinct, and whether a row moved.
-keyedRows : V, V, V, V, Bool, V, V, Int, V, V, V, Int, Bool, Bool → Bool × Bool
-keyedRows s a keyOf row same was now stamp old byKey next position distinct moved =
-    if position < Js.to (Js.get a "length") then
-        item = Js.at a position
-
-        key =
-            if Js.isNull keyOf then
-                item
-            else
-                Js.apply keyOf [ item ]
-
-        h = Js.call byKey "get" [ key ]
-
-        -- The key's first item in this render: the chain starts again.
-        starts = Js.isUndefined h || Js.to (Js.get h "kv") ≠ stamp
-
-        found =
-            if Js.isUndefined h then
-                Js.undefined
-            else if starts then
-                Js.set h "kc" (Js.get h "n")
-                h
-            else
-                c = Js.get h "kc"
-
-                if Js.isNullish c then
-                    ⊤
-                else
-                    Js.set h "kc" (Js.get c "n")
-                c
-
-        i =
-            if Js.isNullish found then
-                j = mountRow row item position s
-                Js.set j "k" key
-
-                if starts then
-                    Js.to (Js.call byKey "set" [ key, j ])
-                j
-            else if
-                not same
-                    || not (Js.to (Js.get row "o"))
-                    || not (Js.same (Js.get found "x") item)
-                    || (Js.to (Js.get row "i") && Js.to (Js.get found "y") ≠ position)
-                    || Js.same (Js.get found "k") was
-                    || Js.same (Js.get found "k") now
-            then
-                y = Js.get found "y"
-                n = patchRow row found item position s
-
-                if Js.same n found then
-                    ⊤
-                else
-                    Js.setAt old (Js.to y) n
-                    if starts then
-                        Js.to (Js.call byKey "set" [ key, n ])
-                n
-            else
-                found
-
-        shifted = moved || Js.isNullish found || not (Js.same (Js.at old position) i)
-        Js.set i "kv" (Js.from stamp)
-        Js.set i "x" item
-        Js.set i "y" (Js.from position)
-
-        if Js.isNull (Js.get i "n") then
-            ⊤
-        else
-            Js.set i "n" Js.null
-
-        if starts then
-            Js.set i "kt" i
-        else
-            Js.set (Js.get h "kt") "n" i
-            Js.set h "kt" i
-
-        _ = Js.call next "push" [ i ]
-        keyedRows
-            s
-            a
-            keyOf
-            row
-            same
-            was
-            now
-            stamp
-            old
-            byKey
-            next
-            (position + 1)
-            (distinct && starts)
-            shifted
-    else
-        ( distinct, moved )
-
-
--- `(slot, items, row, inputs)`: the list matched by position; row `k`
--- shows item `k`, and rows past the end are removed.
-pub forPosition : V, V, V, V → ⊤
-forPosition s items row inputs =
-    startPass s row
-    same = Js.to (Js.get s "v") && sameInputs (Js.get s "y") inputs (Js.get row "h")
-    Js.set s "v" (Js.from True)
-    Js.set s "y" (rememberInputs inputs (Js.get row "h"))
-    if Js.isNull (Js.get s "u") then
-        Js.set s "u" (Js.array [])
-    u = Js.get s "u"
-    a = elements items
-    positionsFrom s u a row same 0
-    dropPast u (Js.to (Js.get a "length"))
-    endPass s
-    childMaybe
-        s
-        (if Js.to (Js.get items "length") == 0 then
-            Js.get row "f"
-         else
-            Js.null
-        )
-
-
--- Item `k` onwards shown by row `k` onwards: patched unless its item is
--- the same, or mounted past the end, before the fallback's nodes.
-positionsFrom : V, V, V, V, Bool, Int → ⊤
-positionsFrom s u a row same k =
-    if k < Js.to (Js.get a "length") then
-        item = Js.at a k
-
-        if k < Js.to (Js.get u "length") then
-            i = Js.at u k
-            if not same || not (Js.to (Js.get row "o")) || not (Js.same (Js.get i "x") item) then
-                n = patchRow row i item k s
-                Js.setAt u k n
-                Js.set n "x" item
-            else
-                ⊤
-        else
-            i = mountRow row item k s
-
-            put
-                (parentOf s)
-                i
-                (if Js.isNull (Js.get s "i") then
-                    Js.get s "m"
-                 else
-                    first (Js.get s "i")
-                )
-            Js.to (Js.call u "push" [ i ])
-        positionsFrom s u a row same (k + 1)
-
-
--- `(slot, key, block)`: a keyed `Show` showing its body. A new key, or a
--- slot that showed the fallback, remounts; the same key patches.
-pub show : V, V, V → ⊤
-show s key b =
-    if
-        not (Js.isNull (Js.get s "i"))
-            && not (Js.same (Js.get s "y") (Js.from True))
-            && Js.same (Js.get s "x") key
-    then
-        Js.set s "i" (patch (Js.get s "i") b (Js.get s "cx"))
-        held s (Js.get s "i")
-    else
-        place s (unit b (Js.get s "cx"))
-
-    Js.set s "x" key
-    Js.set s "y" (Js.from False)
-
-
--- `(slot, fallback or null)`: a keyed `Show` on `Nothing`.
-pub hide : V, V → ⊤
-hide s f =
-    if Js.isNull f then
-        childMaybe s f
-    else if Js.same (Js.get s "y") (Js.from True) && not (Js.isNull (Js.get s "i")) then
-        Js.set s "i" (patch (Js.get s "i") f (Js.get s "cx"))
-        held s (Js.get s "i")
-    else
-        place s (unit f (Js.get s "cx"))
-
-    Js.set s "x" Js.null
-    Js.set s "y" (Js.from True)
-
-
--- ---- Controlled inputs (backend.md §15.3, *Controlled inputs*) ----------
---
--- A control keeps its current model value and checked identity permission
--- in `$$s[prop]`. User events mark controls in the program's `$$e` set;
--- runtime DOM writes mark `touched`. Those marks reconcile at render end.
-
--- A control's property written with the model's value. A text control the
--- user is editing keeps its selection across a write that changes its
--- value (the owner, 2026-10-25): the offsets and direction read before,
--- set again after, each clamped to the new value's length. A control with
--- no selection (its `selectionStart` is null, or undefined on a `select`)
--- and one without the focus are written and left alone. A `value` the
--- control already shows is not written, and its selection is not touched.
-writeProp : V, String, V → ⊤
-writeProp el prop v =
-    caret = if prop == "value" then Js.get el "selectionStart" else Js.undefined
-    if prop == "value" && Js.same (Js.get el prop) v then
-        ⊤
-    else if
-        Js.isNullish caret || not (Js.same (Js.get (Js.global "document") "activeElement") el)
-    then
-        Js.set el prop v
-    else
-        caretEnd = Js.get el "selectionEnd"
-        direction = Js.get el "selectionDirection"
-        Js.set el prop v
-        length = Js.get (Js.get el "value") "length"
-        math = Js.global "Math"
-        _ =
-            Js.call el "setSelectionRange"
-                [ Js.call math "min" [ caret, length ]
-                , Js.call math "min" [ caretEnd, length ]
-                , direction
-                ]
-        ⊤
-
-
--- `(el, prop, v, immutable)`: aggregates are always assigned. Only a proven
--- immutable value may compare with the previous value or the live DOM.
--- An unchanged scalar leaves unmarked external edits alone, including
--- when a record row is visited. The first call installs the edit watcher.
-pub control : V, String, V, Bool → ⊤
-control el prop v immutable =
-    previous =
-        if Js.isUndefined (Js.get el "$$s") then
-            Js.undefined
-        else
-            Js.get (Js.get el "$$s") prop
-    changed = not immutable || Js.isUndefined previous || not (Js.same (Js.get previous "v") v)
-    if Js.isUndefined (Js.get el "$$s") then
-        Js.set el "$$s" (Js.object [])
-        if Js.read watching then ⊤ else watchEdits ⊤
-    Js.set (Js.get el "$$s") prop (Js.from { v = v, immutable = immutable })
-    if not immutable then
-        writeProp el prop v
-    else if changed && not (Js.same (Js.get el prop) v) then
-        writeProp el prop v
-
-
--- The controls a write of the render under way may have changed.
-touched : V
-touched = Js.array []
-
-
--- `(el)`: a controlled element a write of this render's may have changed
--- — another of its attributes, or something inside it.
-pub edited : V → ⊤
-edited el = Js.to (Js.call touched "push" [ el ])
-
-
--- A render of the program mounted at `root` has ended. What runs then is
--- set by the first `control` (`putBackMarked`), so a page with no
--- controlled element ships none of it, as a page with no hosted program
--- ships no after-render phase.
-afterRender : Js.Ref V
-afterRender = Js.ref Js.null
+pub edited : HostNode.Node → ⊤
+edited node = Events.edited node
 
 
 renderEnded : V → ⊤
-renderEnded root =
-    if Js.isNullish (Js.read afterRender) then
-        ⊤
-    else
-        Js.to (Js.apply (Js.read afterRender) [ root ])
-
-
--- What it and the user marked put back to the model, and the marks
--- cleared.
-putBackMarked : V → ⊤
-putBackMarked root =
-    if Js.to (Js.get touched "length") ≠ 0 then
-        Js.each touched λel → putBack el
-        Js.set touched "length" (Js.from 0)
-    marked = Js.get root "$$e"
-    if Js.isUndefined marked then
-        ⊤
-    else if Js.to (Js.get marked "size") ≠ 0 then
-        Js.each marked λel → putBack el
-        Js.to (Js.call marked "clear" [])
-
-
--- Each property a control keeps written back where the page's differs.
-putBack : V → ⊤
-putBack el =
-    s = Js.get el "$$s"
-    if Js.isUndefined s then
-        ⊤
-    else
-        Js.each (Js.call (Js.global "Object") "keys" [ s ]) λk →
-            key : String
-            key = Js.to k
-            entry = Js.get s key
-            v = Js.get entry "v"
-            if not (Js.to (Js.get entry "immutable")) then
-                writeProp el key v
-            else if not (Js.same (Js.get el key) v) then
-                writeProp el key v
-
-
--- `el` and what changes with it with no event of its own, each handed to
--- `f`: every radio named as it is — a superset of its group — and every
--- option of a select.
-affected : V, (V → ⊤) → ⊤
-affected el f =
-    f el
-    tag : String
-    tag = Js.to (Js.get el "localName")
-    if tag == "select" then
-        Js.each (Js.get el "options") f
-    else if
-        tag == "input" && Js.to (Js.get el "type") == "radio" && Js.to (Js.get el "name") ≠ ""
-    then
-        Js.each (Js.call (Js.global "document") "getElementsByName" [ Js.get el "name" ]) f
-
-
--- A control the user may have changed, marked for the program whose mount
--- node is nearest above it.
-markEdit : V → ⊤
-markEdit el =
-    if Js.isUndefined (Js.get el "$$s") then
-        ⊤
-    else
-        root = mountAbove (Js.get el "parentNode")
-        if Js.isNull root then
-            ⊤
-        else if Js.isUndefined (Js.get root "$$e") then
-            Js.set root "$$e" (Js.construct (Js.global "Set") [ Js.array [ el ] ])
-        else
-            Js.to (Js.call (Js.get root "$$e") "add" [ el ])
-
-
--- Controls changed after the dispatch of the event that marked them — a
--- `reset` resets them then, a click whose default was prevented puts a
--- box back then — put back in a task after it.
-heldBack : V
-heldBack = Js.array []
-
-
-holdEdit : V → ⊤
-holdEdit el =
-    if Js.to (Js.get heldBack "length") == 0 then
-        Js.to (Js.apply (Js.global "setTimeout") [ Js.from λ⊤ → putBackHeld ⊤, Js.from 0 ])
-    Js.to (Js.call heldBack "push" [ el ])
-
-
-putBackHeld : ⊤ → ⊤
-putBackHeld ⊤ =
-    held_ = Js.call heldBack "splice" [ Js.from 0 ]
-    if Js.read dead then ⊤ else Js.each held_ λel → putBack el
-
-
-watching : Js.Ref Bool
-watching = Js.ref False
-
-
--- The listeners, in the capture phase so that a control is marked before
--- any handler's message renders, and whether or not it has a handler.
-watchEdits : ⊤ → ⊤
-watchEdits ⊤ =
-    Js.write watching True
-    Js.write afterRender (Js.from putBackMarked)
-    document = Js.global "document"
-    Js.each (Js.array [ Js.from "input", Js.from "change", Js.from "click", Js.from "reset" ]) λname →
-        Js.to (Js.call document "addEventListener" [ name, Js.from edits, Js.from True ])
-    Js.to
-        (Js.call (Js.global "window") "addEventListener"
-            [ Js.from "pageshow", Js.from λ_ → pageShown ⊤ ]
-        )
-
-
--- What an event says may have changed without the model: its control,
--- for `input` and `change`; a checkbox or radio, for `click`, which
--- changed before the click was dispatched and may be put back after it;
--- every control of the form, for `reset`, which resets them after it.
-edits : V → ⊤
-edits event =
-    target = Js.get event "target"
-    type_ : String
-    type_ = Js.to (Js.get event "type")
-    -- (Only an `input` has the `type` `checkbox` or `radio`, and only a
-    -- controlled element is marked or put back. The target may be any
-    -- element, the document or the window, since any script can dispatch
-    -- these names: each branch reads only what is `undefined`, not a
-    -- throw, where it is missing — but for `reset`, only a form has the
-    -- `elements` iterated.)
-    kind : String
-    kind = Js.to (Js.get target "type")
-    if type_ == "reset" then
-        if Js.to (Js.get target "localName") == "form" then
-            Js.each (Js.get target "elements") λel → affected el markAndHold
-    else if type_ ≠ "click" then
-        affected target markEdit
-    else if kind == "checkbox" || kind == "radio" then
-        affected target markAndHold
-
-
-markAndHold : V → ⊤
-markAndHold el =
-    markEdit el
-    holdEdit el
-
-
--- The page is shown, after the browser restored what its form controls
--- held on a reload or a history step: every control put back.
-pageShown : ⊤ → ⊤
-pageShown ⊤ =
-    if Js.read dead then
-        ⊤
-    else
-        Js.each
-            (Js.call (Js.global "document") "querySelectorAll"
-                [ Js.from "input,select,textarea,option" ]
-            )
-            λel → putBack el
+renderEnded root = Events.renderEnded (Js.to root)
 
 
 -- ---- Attributes (backend.md §15.3, §15.6) --------------------------------
@@ -2095,218 +803,22 @@ styleMap list =
     values
 
 
--- ---- The markup primitives (language.md §11.13) --------------------------
+-- ---- Events (Rt.Events) ------------------------------------------------
 
--- A text instance: its node, and the text it shows.
-textKind : V
-textKind =
-    Js.from
-        { m =
-            λv →
-                n = Js.call (Js.global "document") "createTextNode" [ v ]
-                Js.from { s = n, q = Js.null, e = n, d = v }
-        , p =
-            λi v →
-                if Js.same v (Js.get i "d") then
-                    ⊤
-                else
-                    Js.set i "d" v
-                    Js.set (Js.get i "s") "data" v
-        }
-
-
--- `Html.text`: the text, as a text hole shows it.
-pub text : V → V
-text s = Js.from { t = textKind, v = s }
-
-
--- A map's instance is its markup's, mounted with a context that sends
--- through `f` and then through the contexts it was mounted in. A new `f`
--- is written into the context, so no handler inside changes.
-mapKind : V
-mapKind =
-    Js.from
-        { l = True
-        , m =
-            λv cx →
-                c = Js.from { f = Js.at v 1, up = cx }
-                h = slot Js.null Js.null c
-                n = unit (Js.at v 0) c
-                Js.set h "i" n
-                Js.set h "l" (Js.get n "l")
-                Js.from { s = Js.null, q = h, e = Js.null, c = c, l = Js.get n "l" }
-        , p =
-            λi v →
-                Js.set (Js.get i "c") "f" (Js.at v 1)
-                -- The markup it maps, patched again when it is the same
-                -- and live (`patch`): the instance is as live as it.
-                h = Js.get i "q"
-                n = patch (Js.get h "i") (Js.at v 0) (Js.get i "c")
-                Js.set h "i" n
-                Js.set h "l" (Js.get n "l")
-                Js.set i "l" (Js.get n "l")
-        }
-
-
--- `Html.map`: the same markup, its messages passed through `f`.
-pub map : V, V → V
-map html f = Js.from { t = mapKind, v = Js.array [ html, f ] }
-
-
--- ---- Events (backend.md §15.3) --------------------------------------------
-
--- An event node holds its handler as `$$<name>`, a payload extractor as
--- `$$<name>X` when the handler takes a payload, its declaration's
--- `preventDefault` (1) and `stopPropagation` (2) as `$$<name>F`, and the
--- mount context of the `Html.map`s it is inside as `$$cx`. A program's
--- mount node holds its `send` as `$$root`.
-
--- The payload of an event whose handler takes the event itself.
+-- The payload extractor of a handler taking the event itself.
 pub identity : V → V
 identity event = event
 
 
--- Send the message `node`'s handler makes of `event` to the program whose
--- mount node is nearest above it, through every `Html.map` it is inside,
--- innermost first. The search starts at the node's parent: a program
--- renders only inside its mount node, so a mount node's own handler is
--- the program's around it. `flags` may be `undefined`, a node that
--- declared neither: its bits are then 0. A stopped page calls no handler,
--- and a handler or an `update` that throws stops it.
-fire : V, V, String, String, Int → ⊤
-fire node event key payload flags =
-    if Js.read dead then
-        ⊤
-    else
-        if Js.bitAnd flags 1 ≠ 0 then
-            Js.to (Js.call event "preventDefault" [])
-
-        ok = Js.ref False
-
-        Js.finally
-            (λ⊤ →
-                x = Js.get node payload
-
-                msg =
-                    through
-                        (Js.get node "$$cx")
-                        (if Js.isUndefined x then
-                            Js.get node key
-                         else
-                            Js.call node key [ Js.apply x [ event ] ]
-                        )
-
-                root = mountAbove (Js.get node "parentNode")
-
-                if Js.isNull root then
-                    ⊤
-                else
-                    Js.to (Js.call root "$$root" [ msg ])
-                Js.write ok True
-            )
-            λ⊤ → if Js.read ok then ⊤ else stop ⊤
-        if Js.bitAnd flags 2 ≠ 0 then
-            Js.to (Js.call event "stopPropagation" [])
+pub protocolFire : HostNode.Node, HostEvent.Event, String, String, Int → ⊤
+protocolFire node event key payload flags = Events.fire protocol node event key payload flags
 
 
--- `msg` through each context from `c` out. (`isNullish`: a node outside
--- every `Html.map` has no `$$cx`, and the outermost context's `up` is null.)
-through : V, V → V
-through c msg =
-    if Js.isNullish c then
-        msg
-    else
-        through (Js.get c "up") (Js.call c "f" [ msg ])
-
-
--- The nearest mount node from `n` up, or null.
-mountAbove : V → V
-mountAbove n =
-    if Js.isNull n || not (Js.isUndefined (Js.get n "$$root")) then
-        n
-    else
-        mountAbove (Js.get n "parentNode")
-
-
--- The one listener per delegated event name: from the target up, every
--- node with a handler for the event, until one stops it. An event inside
--- a program mounted in another's markup goes on into the outer one, as
--- the DOM's own bubbling does, and each handler's message goes to the
--- program that rendered it. An event the browser dispatched is a turn:
--- every handler of the walk is one render, when the walk ends. While a
--- handler and its extractor run, the event's `currentTarget` is the
--- handler's node, as a listener of the node's own would see it: a pointer
--- event's extractor reads that node's box (`boundary.md` §9.8.20 (d)). The
--- walk's first handler defines it, once, as a getter over `at`, the node
--- whose handler runs, as Solid's walk does. The walk removes it when it
--- ends, however it ends, so a listener after it reads the host's
--- `currentTarget`; a walk that met no handler defined nothing and removes
--- nothing.
---
--- The three property names an event's handler is read by are built once
--- per name, when its listener is registered, and handed to the listener:
--- a name concatenated per event is a new string, which a property lookup
--- must first find in V8's string table.
-delegated : String, String, String, V → ⊤
-delegated key flagged payload event = turn (Js.to (Js.get event "isTrusted")) λ⊤ →
-    at = Js.ref Js.null
-    Js.finally (λ⊤ → bubble event key flagged payload at (Js.get event "target")) λ⊤ →
-        if Js.isNull (Js.read at) then
-            ⊤
-        else
-            Js.to
-                (Js.call (Js.global "Reflect") "deleteProperty" [ event, Js.from "currentTarget" ])
-
-
-bubble : V, String, String, String, Js.Ref V, V → ⊤
-bubble event key flagged payload at node =
-    if Js.isNull node then
-        ⊤
-    else if not (Js.isUndefined (Js.get node key)) && not (Js.to (Js.get node "disabled")) then
-        flags = Js.to (Js.get node flagged)
-        if Js.isNull (Js.read at) then
-            Js.to
-                (Js.call (Js.global "Object") "defineProperty"
-                    [ event
-                    , Js.from "currentTarget"
-                    , Js.object [ ( "configurable", True ), ( "get", Js.from λ⊤ → Js.read at ) ]
-                    ]
-                )
-        Js.write at node
-        fire node event key payload flags
-        if Js.bitAnd flags 2 ≠ 0 then
-            ⊤
-        else
-            bubble event key flagged payload at (Js.get node "parentNode")
-    else
-        bubble event key flagged payload at (Js.get node "parentNode")
-
-
--- The delegated names listened for so far.
-registered : V
-registered = Js.construct (Js.global "Set") []
-
-
--- `(names)`: listen for each delegated event name once.
+-- Names are supplied by the lowering once per program.
 pub delegate : V → ⊤
-delegate names = Js.each names λname →
-    if Js.to (Js.call registered "has" [ name ]) then
-        ⊤
-    else
-        _ = Js.call registered "add" [ name ]
-        typed : String
-        typed = Js.to name
-        key = "$$${typed}"
-        flagged = "${key}F"
-        payload = "${key}X"
-        Js.to
-            (Js.call (Js.global "document") "addEventListener"
-                [ name, Js.from λevent → delegated key flagged payload event ]
-            )
+delegate names = Js.each names λname → Events.delegate protocol (Js.to name)
 
 
--- `(data)`: the program's start data — the delegated names of every
--- module the build wrote.
 pub start : V → ⊤
 start data =
     if Js.isUndefined (Js.get data "delegate") then
@@ -2315,22 +827,8 @@ start data =
         delegate (Js.get data "delegate")
 
 
--- `(el, name, flags)`: a listener of the element's own for an event that
--- is not delegated; it reads the handler the node holds when it fires.
-pub listen : V, String, Int → ⊤
-listen el name flags =
-    key = "$$${name}"
-    payload = "${key}X"
-    Js.to
-        (Js.call el "addEventListener"
-            [ Js.from name
-            , Js.from λevent →
-                if Js.isUndefined (Js.get el key) then
-                    ⊤
-                else
-                    turn (Js.to (Js.get event "isTrusted")) λ⊤ → fire el event key payload flags
-            ]
-        )
+pub listen : HostNode.Node, String, Int → ⊤
+listen node name flags = Events.listen protocol node name flags
 
 
 -- ---- `--fuzz` (browser-direct.md §8.3) ----------------------------------

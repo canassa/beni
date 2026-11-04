@@ -584,6 +584,14 @@ The qualified call remains available only to core/platform code, so a value
 returned by a platform cannot bypass the name fence. Wire refuses both Cell
 and Opt. All other foreigns retain exact sibling coverage.
 
+*Manager decision, 2026-11-03:* a nominal with one constructor whose only
+field is a `Js.Cell` uses the cell's own representation in development and
+release (`backend.md` §4, *Unboxed cell wrappers*). The constructor pattern is
+total; there is no tag to test and the cell already has identity. No object or
+payload indirection is added, and Debug shows `<internals>`. This breaks
+recursive cell aliases without allocation. It changes no public type or API,
+and does not extend to `Js.Ref` or arbitrary payloads.
+
 *Owner amendment, 2026-11-02:* Opt's absence is one unique private core
 sentinel constant per program, explicitly stored in empty fields. Some is
 identity, and presence tests compare with that sentinel. Payloads may include
@@ -820,6 +828,27 @@ upcast `EventTarget.rendererFromNode`, which is pure. In these signatures
 - `Browser.Host.EventTarget.rendererFromNode : Node → EventTarget` is the
   allocation-free native identity upcast. The existing `Element.toNode`
   remains the Element identity upcast.
+- `Browser.Host.EventTarget.rendererDocument : ⊤ → EventTarget` is the page's
+  document as an event target, for the controlled-input edit listeners, which
+  go on the document in the capture phase (#1826). It names no `Document`:
+  `Event` imports `EventTarget`, so `EventTarget` cannot import `Document`.
+
+**Manager approval, 2026-11-04; #1825:** `Browser.Host.Array.rendererTruncate : written Array a, borrowed Int → ⊤`
+writes the existing array's length directly, after the caller reads and disposes
+removed elements; `0 ≤ n ≤ length` is its source invariant and a violation
+is a defect. `rendererAt : borrowed Array a, borrowed Int → a` checks that
+the index is an unsigned integer less than the length, defects otherwise,
+and then reads the initialized element, without a fallback or wrapper.
+Both are reviewed ECMAScript native entries available in every host realm,
+reserved by the same core/platform fence above. Browser.Host.Array.Array is
+a `sequence` type, so its storage writes require unique ownership under v2.
+
+*Corrected 2026-11-04 (manager, #1825):* `rendererTruncate` takes a `borrowed Array a`, like `push` and `set`; `written` was an error, because only `make` creates an Array and none shares storage with a List or View.
+
+`rendererHas : borrowed Array a, Int → Bool` is a pure, allocation-free
+`Object.hasOwn` presence test with an unsigned in-range index guard; it
+returns false for a hole or out-of-range index and preserves a present
+`undefined` or private `NONE` key as a raw array element.
 
 The caller of `Document.rendererBody` must wait until `document.body` exists;
 an earlier call violates the renderer contract and is a defect.
@@ -835,6 +864,90 @@ identity and retain a present node as itself; insertion maps that identity
 back to native null. Saturated calls and first-class arrows are compiler-emitted,
 sharing the same sentinel with `Js.Opt`, without per-call wrappers or a second
 sentinel. Unused bridges add no emitted code to an ordinary mounted page.
+
+
+**Typed events and control adapters** (manager approval, 2026-11-04; #1826,
+Part of #1612). Public `Browser.Host.Event` members read the event kind,
+trust, bubbling, cancellation and native target, and stop propagation.
+`Browser.Host.Events.capture` registers and removes the same typed callback in
+the capture phase. EventTarget downcasts check native identity before returning
+an Element or a specific form control. Input, textarea, select, option and form
+bindings expose their real IDL properties, selection and collections. Input
+value writes and input selection changes return `InvalidStateError` precisely;
+a different exception, including an Error with that name but a different class,
+propagates unchanged. These ordinary typed bindings retain native values.
+
+The following additions use the private renderer authority above:
+
+- `Event.rendererCurrentTarget : borrowed Event, Js.Ref (Opt Node) → ⊤`
+  defines the existing configurable getter, reading the current node reference;
+  `rendererClearCurrentTarget : borrowed Event → ⊤` deletes it. Source owns the
+  walk and its finally cleanup. Defining a getter or deleting it can fail only
+  when the owned event violates that renderer contract; such failures are defects.
+- `Event.EarlyCapture` is an opaque nominal native carrier of the capture
+  script's existing raw tuple, not an object wrapped around that tuple.
+  `rendererTakeEarly : ⊤ → Array.Array EarlyCapture` clears the page's `$beni`
+  before calling it to remove capture listeners and take its records; absent
+  capture yields an empty array. `rendererEarlyEvent` and
+  `rendererEarlyTarget` read its event and native target.
+  `rendererEarlyRemember` appends the target's value, checked and selectedIndex
+  once, in source's `caught` walk. `rendererEarlyValue`,
+  `rendererEarlyChecked` and `rendererEarlySelectedIndex` read String, Bool and
+  Int as Opt, at offset 1 (capture) or 4 (takeover); undefined is NONE.
+  The source filters, traverses and replays records; the native recipes do none
+  of those algorithms. The bridge's EarlyProtocol aliases these checked entries.
+
+All private calls and first-class arrows share the existing Opt sentinel.
+Applications cannot name these carriers, aliases or operations. Unused adapters
+emit no code in an ordinary page. The delegated getter has the same one closure
+per delegated event that reaches a handler as before; no callback is made per
+handler. User callback failures still reach the page's existing defect guard.
+
+
+The event walk uses `Event.rendererTarget : borrowed Event → Opt Node`,
+which returns NONE for a non-node target. Additional platform-private Node
+projections read disabled (`Bool`), tag/kind/name (`String`) and focused
+(`Bool`) without a Maybe allocation. Typed control entries are separate:
+`rendererValue`/`rendererSetValue` use String,
+`rendererChecked`/`rendererSetChecked` and
+`rendererSelected`/`rendererSetSelected` use Bool, and
+`rendererSelectedIndex`/`rendererSetSelectedIndex` use Int.
+There is no native entry that receives a property name.
+`rendererSelectionStart` and `rendererSelectionEnd` return Opt Int;
+`rendererSelectionDirection` reads String only after a present caret, and
+`rendererSetSelectionRange` writes a valid text control. InvalidStateError
+from those renderer-only writes violates the checked node/property contract
+and is a defect; public input writes keep their typed error result.
+
+`Node.rendererOptions` and `rendererElements`, and
+`Document.rendererNamed` and `rendererControls`, expose the existing DOM
+collections as read-only `Array.View Node`, without copying them. `Array.eachView`
+walks that collection by index; a view is never writable through this interface.
+`Node.rendererEdits` and `rendererSetEdits` retain the existing per-root Set
+of edited native nodes as `Opt (Set Node)`, with no wrapper. Set operations use
+native Set identity and call the supplied synchronous visitor directly.
+Source owns event classification, traversal, radio/select expansion and all
+control reconciliation.
+
+The projections remove Maybe boxing from the private dispatch/control path.
+Each delegated event that meets a handler retains the existing mutable current-node
+reference and getter closure, with no per-handler closure. A marked program root
+holds at most one native Set. Native reads allocate no optional wrapper, and DOM
+collections retain their original identity. Control descriptors and their persistent
+state belong to the typed producer/source protocol.
+
+
+`Event.EarlyListeners handler` is a platform-private owned sequence whose representation
+is the existing alternating `[kind, callback, …]` array. Every operation fixes
+its retained handler parameter to `Event → ⊤`. `rendererEarlyListeners`
+creates the empty array; `rendererEarlyAppend` is its only write, appending a
+String and a synchronous Event callback to its written carrier. `rendererEarlySize`
+returns the number of pairs. `rendererEarlyKindAt` and `rendererEarlyHandlerAt`
+take a logical pair index, check its nonnegative integral bounds before doubling
+it, and return respectively the string at `2i` and callback at `2i+1`. An invalid
+index throws RangeError as a defect, never returns undefined or reads a kind as
+a callback. Append retains the callback; the existing source loops choose and
+invoke handlers in order. No pair record, Any box or callback wrapper is made.
 
 **Cloudflare reply discovery** (owner, 2026-11-03; #1612) is a
 platform-private rule-6 extension. `Worker.Object.replyIds : borrowed msg → fresh List String`
@@ -1648,10 +1761,21 @@ back under its budget: 4 264 M instructions, where the whole platform made it 4 
 |---|---|---|
 | `lowering` | the name of a markup lowering compiled into this beni binary (§9.5) | when the platform is loaded: an unknown name is **`unknown_markup_lowering`**, reported against `<platform root>/beni.json` at `1:1` with no excerpt, the shape `invalid_entry_file` uses, and the message lists the lowerings this binary has. A `build` in which a markup root or a markup primitive survives and whose chain names **no** lowering is the same code, against the top platform's manifest, saying none is named |
 | `vocabulary` | the module of the chain that holds the `pub element`, `pub attribute`, `pub event` and `pub markup` declarations | when a module uses markup: a name that is no module of the chain is `no_markup_vocabulary`, whose message names this key |
-| `type` | the markup type: a `pub foreign type` of one parameter, in any module of the chain | likewise |
+| `type` | the markup type: a `pub foreign type`, or a public opaque nominal type with one constructor and one field; either has exactly one parameter and belongs to a module of the chain | likewise |
 | `runtime` | the **markup runtime**, a JavaScript file of the package that declares this field, whose exports are the lowering's well-known entry points and the vocabulary's primitives (§9.4.5) | by §4's checks 2, 3 and 4, exactly as a sibling (§9.7), whenever `lowering` is checked |
 
-Each field is inherited on its own (§9.1): `browser`'s build has `html`'s `vocabulary` and `type` and
+*Amended by the owner, 2026-11-03.* The opaque form lets HostFree retain typed native
+handles and closed jobs inside `Html`. Its one constructor is unboxed in development
+and release: a markup value is its payload, with no constructor object or extra
+indirection. The markup syntax, public API and opacity do not change. A lowering
+and its runtime must use that payload ABI; the browser and Node SSR producers and
+readers must agree. The payload obeys `Opt`'s existing non-nesting requirement:
+an optional renderer slot must distinguish it from the absence sentinel without
+adding a box. A payload parameter inherits that requirement; a normal wrapper
+around an `Opt` stays boxed. The foreign form remains accepted.
+
+Each field is inherited on its own (§9.1):
+ `browser`'s build has `html`'s `vocabulary` and `type` and
 its own `lowering` and `runtime`. A chain with no `vocabulary` has no markup: a program that writes
 some is `no_markup_vocabulary`. Two platforms of a chain may both declare `lowering` — `node` and
 `browser` do, over one `html` — and the first found wins, which is how one vocabulary is lowered two
@@ -1830,7 +1954,7 @@ The smallest readings, and what waits for the lowering interface:
   order. A surviving markup ROOT cannot occur yet: a module that writes markup does not check
   (`frontend.md` §9.7's stop, amended there).
 - **The vocabulary module and the markup type** are looked up among the chain's modules when the
-  graph is built: `"vocabulary"` names a module, `"type"` a `pub foreign type` of one parameter as
+  graph is built: `"vocabulary"` names a module, `"type"` a public unary foreign or opaque type (§9.2) as
   `Module.Name`. Either failing leaves the build without a vocabulary, and a module that writes
   markup gets `no_markup_vocabulary` naming the key; its message says "this build's platform", not
   the platform's name, which the checker is not given.
@@ -2829,6 +2953,138 @@ cannot derive an identity from a host value or invent a checked-data witness.
 The existing Schema endpoint adapter remains valid for ordinary runtime calls;
 its identities and checkers come from the actual Schema carrier.
 
+**Version 1.25** (*manager decision, 2026-11-03*, additive, gated on nothing;
+#1612): Context.packet(freshExpr, identityEvidence) emits the existing
+allocation-neutral Any packet path for a compiler-generated capture object.
+The expression must be a provably fresh JsIr object literal with ordinary
+properties; names, call results, spreads and other expressions are refused.
+The identity must be a compiler-issued, identity-kind Evidence token. Invalid
+arguments produce a clear internal lowering error, with no copying or Box
+fallback. The compiler roots and imports the existing core Any.pack owner.
+The shared caller-side fresh-packet IR helper writes its private Symbol as a
+computed property in that same literal, reading `pack.$packet.key`; it shares
+this path with an ordinary `Any.pack` on an eligible fresh record or tuple.
+The existing `$packet` helper and the one shared `Any.unpack` remain unchanged.
+A closed checked identity may be held in a private metadata object at module
+initialisation and spread FIRST into the fresh payload. This moves the Symbol
+property definition out of render without another object or closure per capture.
+Development metadata also predefines the literal's named fields as undefined;
+the one fresh payload overwrites every such field with its original expression,
+in its original order. Release keeps the Symbol-only template. This measured
+choice changes neither final fields nor payload evaluation or allocation count.
+Development templates are keyed by the checked identity AND property-name
+layout; Symbol-only release templates need only the identity. Both belong to
+the declaration's independent emit-cache unit: never shared across units a
+build may eliminate separately. Dynamic identities
+stay in the literal and cannot be hoisted out of their evidence scope.
+The marker is enumerable: `Record.copy` preserves it, while checked-data
+projection strips it; Wire, Debug and derived equality/ordering ignore it.
+Ordinary aliases, updates and call results keep the generic Box fallback;
+Context.packet still refuses them. A coarse graph walk retains this
+possible producer only for a lowering that requested identity evidence; the
+precise walk retains it only when a lowering actually emitted a packet. The module loader and graph retain the matching core dependency for a
+markup file using such a lowering, even when no source import names Any.
+The one shared Any.unpack path accepts the result. This adds no source primitive and uses no fingerprint.
+
+**Version 1.26** (*manager decision, 2026-11-03*, additive, gated on nothing;
+#1612): a grouped root's `inputs` may end with the checked hidden identity
+Strings its hoisted body needs. They are extra fields in the **same** tuple
+packet as the source inputs. The compiler follows the actual scoped Dispatch
+dependencies, including local generic binders; it never guesses an identity,
+and a packet-only identity remains at its constructor when the body does not
+need it. `bindInputs` temporarily binds these parameters to the input names,
+then restores their original scope. Their String type is compiler-proven;
+`evidence` supplies its ordinary checked identity when composing the capture
+tuple. Release uses the same compact private linker identities as source Any
+calls; development may retain readable identity text.
+
+`Root.identity_reads` names their positions in `reads`. A grouped lowering
+includes those reads in each dependency guard, including a static component's
+otherwise empty read set: a changed identity re-runs the patch, and an unchanged
+one preserves the static component's single evaluation. No object, closure or
+row allocation is added. Method and checked-data witness parameters retain
+their existing grouping restrictions. DomComponents' original grouping and the
+changed/unchanged identity fixtures pin the contract in both build modes.
+
+The same amendment covers `Row.identity_key`: one compiler-supplied checked
+identity key for the site's captured generic environment. A homogeneous row
+site has one such environment per render, so the runtime compares the key
+**once per site**, with a cached field in its existing slot. A changed key
+invalidates all that site's rows; an unchanged key preserves the existing
+item, input and selector skips. The DOM lowering puts the key on its existing
+row descriptor. Show includes it in its existing body-input guard. Neither
+path adds an input array when there were no captures, an object, closure or
+Any per row, nor a key wrapper: keyed rows retain their raw keys. One identity
+uses the existing String directly; several use the canonical checked tuple
+identity grammar. Release uses the same compact ids as every other packet.
+
+
+**Version 1.27** (*owner decision, 2026-11-04*, additive, gated on nothing;
+#1612): the `dom` lowering owns the producer/runtime operations that open its
+existential ABI: dispatching a block's paired kind and payload at mount/patch,
+constructing text/map kinds, and sending a handler's message through its map
+contexts to its root. The lowering emits these operations with the existing
+builder and hands their references to the Beni runtime in a **private typed
+protocol record**. Slots, row algorithms, controls and the scheduler remain in
+Beni. This does not add a `Js` primitive or change `Any.js`.
+
+The generated private protocol and instance-prefix properties use the same linked
+record-field namespace as their Beni consumers. Interface 1.27 provides
+`Js.field` for such a member and `Property.source = true` for such a property;
+ordinary `Js.member`/properties still name literal native ABI keys. Thus release
+field numbering agrees across Source and generated code without pinning public
+type-name strings or introducing a wrapper. These are JsIr builders, not source
+primitives.
+
+`Lowering.runtime_protocol`, when present, names that record's source module,
+record type and opaque carrier types. Its default is absent. A lowering that
+uses the contract targets at least 1.27; existing lowerings and their source
+programs retain their behavior. The record is built with existing `Context`
+hoists and expression builders, not a factory evaluated by a view or a row.
+All helpers and constants belong to their independent emit/cache unit. No
+per-view or per-row helper factory, closure, wrapper, or extra input array is
+introduced. Existing fresh capture packets, checked identities and the shared
+`Any.unpack` path retain versions 1.24–1.26's proofs and refusals.
+
+The private `Html.Runtime` protocol distinguishes opaque `Payload`, `Context`,
+`Kind`, `Block` and `RowSite` carriers. They retain native/callable state and
+HostFree must recognize that fact, including through nominal/container paths;
+none is plain data or a `Js.Value` escape hatch. Source may pass a carrier only
+through the typed protocol. It cannot manufacture its representation, erase it,
+or cast a raw function to an `Any → Any` function. The compiler-generated
+bridge alone opens the checked producer's paired block/context representation.
+A carrier may represent its existing protocol's empty value; that is not a new
+sentinel. Native DOM nullable links still use the existing `Js.Opt` NONE adapter.
+
+`Instance` and `Slot` use the already specified nominal-over-`Js.Cell`
+representation. An instance's Source-visible prefix is exactly its start node,
+end node and primary slot; kind/payload, liveness and site-specific fields stay
+behind the producer protocol. An inline row keeps its real item and raw key in
+its existing row cell. A compiler-produced row-to-instance view proves that
+same cell has the instance prefix; it allocates no wrapper and does not erase a
+key. Row state is hidden at most once per site, never by packing individual
+rows. Row callbacks and arrays/maps remain typed. Captured row inputs travel as an optional existing checked packet;
+no captures is the existing NONE, with no extra array. Persistent row state is
+key-typed, so a change to an item's or callback's identity keeps the keyed nodes
+and invalidates their skips once per site. The last item's raw value stays in
+the same row cell behind `Payload`; the checked descriptor compares and updates
+it without a wrapper, and all rows are updated before restating them through
+the current descriptor. A key-type mismatch disposes through the previous
+site's typed callbacks before a new state is viewed. A site compares its checked
+item/environment identity once per render as in 1.26, including Show and
+positional rows.
+
+`CorePrivate`'s platform authority fences the carrier module and protocol. The
+bridge has an ordinary audited/pinned body; neither it nor the carriers receive
+an intrinsic ownership or HostFree exemption. Native host operations remain
+reviewed catalogue operations. The bridge preserves existing evaluation order,
+exception/defect behavior, static component grouping, and first-class program
+constructor behavior. It introduces no new refusal. Development/release emit
+and behavior fixtures pin the actual ABI before parallel runtime consumers are
+handed its frozen source signatures. The accepted helper timing debt remains
+#1819 and is not a waiver for another representation change.
+
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source
@@ -2901,11 +3157,115 @@ be written against it; they are 1.0's contract:
   `Html.text` and nothing else of it — is not written: its primitives are the runtime's exports and
   nothing imports the module.
 
+**Version 1.28** (*owner amendment, 2026-11-04*): the private DOM protocol's
+`setSiteScope` takes `RowSite, SiteProtocol, Payload → ⊤`. It replaces the
+callback table and its paired checked scope together, synchronously, on the
+same site. The key-typed Any state and wrapper are retained. Every later
+head/tail/restate/dispose reads the current table; no callback may open a new
+scope under its old evidence. On an item/environment epoch change, rows update
+all item payloads before restating through the current recipe. A changed key
+type still disposes through the OLD site's paired table/scope before replacing
+state. This adds no per-row work or per-render replacement.
+
+**Version 1.29** (*owner decision, 2026-11-04*): every stateful property
+allowed by language.md §11.5 has a cold checked descriptor, cached once per
+(native property name, value class) in its independent emit unit. The existing
+String/Int/Float/Bool/Maybe String cases remain accepted. `Property` is an opaque
+single-Cell wrapper over the SAME `{ name, immutable, get, set }` record;
+its constructor/fields are private and only producer IR constructs it. Typed
+ordinary `propertyName`, `propertyImmutable`, `propertyGet` and `propertySet`
+readers/invokers expose its operations without allowing Source to splice a
+getter and setter. No wrapper is emitted by the general Cell unboxing rule.
+
+The checked vocabulary chooses the exact native member and raw conversion.
+Both descriptor operations and the input Payload come from that checked
+attribute site. Maybe String keeps the existing null/String normalization.
+Payload remains opaque to Source, including when a live property contains a
+host-coerced value; strict identity comparison does not reinterpret its type.
+No guessed type id, new primitive, Just, Any or per-node/event descriptor is
+introduced. The native read/write bodies are pinned compiler-owned producer
+code. Four built-ins may use their reviewed native projections as bodies.
+
+The single runtime control path takes `Protocol, Node, Property, Payload`.
+Per-node state is a linked chain of typed cells with fields
+`{ d : Property, v : Payload, next : Opt Control }`; `Control` is an opaque
+single-Cell wrapper. Its head is stored directly in `$$s`, with no separate
+packet/map. Existing entries update d and v together; restoration uses only
+that entry's descriptor and payload. Links preserve installation order. The
+private Protocol adds `controls : Node → Opt Control` and
+`setControls : Node, Control → ⊤`. Source retains every control algorithm;
+there is no allocation per render for an existing entry and no helper factory.
+
+**Version 1.30** (*manager decision, 2026-11-04, carrying the owner's "the
+compiler opens the existentials" through*; #1612): the private record and the
+two markup primitives are **values of the markup runtime module the lowering
+supplies**, once per build, in that module's own emit unit. 1.27–1.29 emitted
+one record per independent emit unit, which left the runtime module itself
+without one: `run` and `start` are called by the entry file, `Html.text` and
+`Html.map` resolve to the runtime module's exports with the vocabulary's fixed
+types, and a view written only with `Html.text` has no markup root, so no unit
+of the build held a record at all.
+
+- `Lowering.runtime_protocol` is `{ values, uses, supply }`: the names of the
+  runtime module's values the lowering supplies, the names of the runtime
+  module's values their expressions read, and the hook that writes each one's
+  expression. Its 1.27 fields `module`, `record` and `carriers` are withdrawn;
+  nothing read them, and the carriers' facts come from their Beni declarations.
+  The reachability pass treats each supplied value as an edge to every one of
+  `uses`, followed while the supplied value is live: the expression is the
+  lowering's, so no declaration's own edges can say what it reads.
+- The runtime module declares each supplied value as a body-less `foreign`
+  value with its ordinary typed annotation. The compiler binds it to the
+  expression `supply(cx, name)` returns, as a `const` of that module, built
+  with the existing builder; its hoists belong to the same unit. It has no
+  sibling export and §4's sibling checks do not apply to it. Runtime source
+  reads it as any typed value; another module reads it through the lowering's
+  declared runtime exports. A supplied value is dropped like any declaration
+  nothing reaches, and the runtime exports its expression names are roots of
+  the reachability pass only while it lives.
+- The `dom` lowering supplies `protocol : Html.Runtime.Protocol`, and the two
+  primitives `text` and `map`, whose kinds are hoisted beside them. Each is a
+  separate value, so a build that never calls `Html.map` ships no map kind.
+  The record loses `text`, `map` and `fire`, which no Source consumer used.
+- **One record per build, not per program.** The record holds functions and
+  two kinds and no state of any program, so every program of a page
+  (`Browser.programs`) shares it, and there is one text kind and one map kind
+  per build, as there was one `textKind` before: an `Html.text` block made in
+  one module patches a text instance another module mounted. A `--library`
+  build is one build too: its record lives in `_platform/Rt.mjs`, which every
+  module that writes markup imports. The record's construction is a pure
+  module-level initialiser, so the record is the same object at `--jobs=1`
+  and `--jobs=8` and does not depend on module completion order.
+- The runtime's slot, row and `Show` exports read the record themselves, so
+  emitted code calls them as before, without it; emitted code names the
+  record (`protocol`, a runtime export) only where a row that is not markup
+  mounts or patches its block. A keyed list's and a `Show`'s key identity is
+  the compiler's evidence (`cx.evidence`, `cx.suppliedRuntime`); a `Show` on
+  its value reads it through the new type step `type_argument`, a named
+  type's argument by position (`Maybe a`'s `a`). An empty node or
+  block link is the existing `Js.Opt` empty value, never `null`. A text hole
+  of a non-`String` value is converted by the producer with JavaScript's own
+  `ToString` (`"" + v`), which is what the DOM's coercion printed before.
+
+No new `Js` primitive, `Any.js` change, HostFree exemption, refusal or per-view
+or per-row factory is introduced. The 1.29 Property descriptors and control
+chains are unchanged.
+
 ### 9.5 How a lowering is compiled into beni
 
 **No dynamic loading, ever**: a lowering is Zig linked into the binary, and a platform is trusted
 code by design (the owner's decision), so the security argument is §2's — a distribution fact — and
 not a sandbox.
+
+The manager's 2026-11-03 packet and grouped-identity decisions (§9.4.6, versions 1.25–1.26) apply to
+external lowerings too. The compiler-owned Symbol-property adapter and cold
+metadata optimisation are shared by external and built-in lowerings; they add
+no source operation. Context.packet is the checked bridge to the existing
+core Any packet producer; a lowering does not write a sibling helper, choose
+an identity string, or substitute a Box when freshness is unproved.
+Grouped external lowerings also preserve the implicit input and row-key
+checks of version 1.26: row keys describe the site's captured identity
+environment, and are compared once at the site rather than once per item.
 
 - **A platform's Zig is one Zig module**, whose root file the manifest's optional **`"zig"`** key
   names — `platforms/browser/zig/root.zig`, say. The module's `pub const lowerings` lists the
@@ -2950,6 +3310,32 @@ not a sandbox.
   `tests/blackbox/external_platform_test.zig` builds and runs a program for it. The toy lowering,
   written against 1.0, hoists a function in `module`, reads it back in `root` with `cx.hoisted`,
   imports `platform_html`, and contributes start data; its runtime is also the program runtime.
+
+*Owner decision, 2026-11-04 (interface 1.27):* a compiled-in `dom` lowering
+may emit the private producer/runtime bridge of §9.4.6 with the existing
+builder. Its opaque carriers and typed protocol are Beni declarations, fenced
+by the existing CorePrivate platform authority. The bridge opens only the
+existential producer ABI; slots, rows, controls and scheduler behavior remain
+Beni. The bridge is ordinary pinned compiler/lowering code, covered by the
+build id and independent emit-unit cache keys, with no new `Js` primitive,
+`Any.js` change, HostFree exemption or per-view/per-row factory or closure.
+This is additive: another lowering need not declare a runtime protocol, and
+existing constructor and first-class uses gain no new refusal.
+
+*Owner amendment, 2026-11-04 (interface 1.28):* a retained row site's callback
+table and its paired scope are retargeted together on the same carrier. Its
+key-typed Any state is retained; §9.4.6 defines the three-argument operation.
+
+*Owner amendment, 2026-11-04 (interface 1.29):* stateful properties use the
+opaque cold descriptor and linked control cells of §9.4.6. Producer-owned
+get/set/value pairing applies to every checked vocabulary property, including
+custom names; Source owns all control traversal and restoration.
+
+*Manager decision, 2026-11-04 (interface 1.30):* a compiled-in lowering may
+supply values of its markup runtime module (`Lowering.runtime_protocol`,
+§9.4.6). The `dom` lowering supplies one private record per build, `protocol`,
+and the primitives `text` and `map`, in `Rt`'s own emit unit; emitted code
+imports the record as a runtime export.
 
 ### 9.6 Determinism, and what the cache must know
 

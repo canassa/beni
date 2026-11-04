@@ -1,0 +1,141 @@
+-- load
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <button id="noop">"noop"</button>
+    <section id="item-type">
+      <p>
+        "Int"
+        <input id="item-input" .value="">
+      </p>
+    </section>
+    <!---->
+    <section id="environment-type">
+      <p>"1:Int"</p>
+      <p>"2:Int"</p>
+      <p>"3:Int"</p>
+    </section>
+    <!---->
+    <section id="show-type">
+      <p>
+        "Int"
+        <input id="show-input" .value="">
+      </p>
+    </section>
+    <!---->
+  </main>
+</body>
+-- input #item-input "item node"
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <button id="noop">"noop"</button>
+    <section id="item-type">
+      <p>
+        "Int"
+        <input id="item-input" .value="item node">
+      </p>
+    </section>
+    <!---->
+    <section id="environment-type">
+      <p>"1:Int"</p>
+      <p>"2:Int"</p>
+      <p>"3:Int"</p>
+    </section>
+    <!---->
+    <section id="show-type">
+      <p>
+        "Int"
+        <input id="show-input" .value="">
+      </p>
+    </section>
+    <!---->
+  </main>
+</body>
+-- input #show-input "show node"
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <button id="noop">"noop"</button>
+    <section id="item-type">
+      <p>
+        "Int"
+        <input id="item-input" .value="item node">
+      </p>
+    </section>
+    <!---->
+    <section id="environment-type">
+      <p>"1:Int"</p>
+      <p>"2:Int"</p>
+      <p>"3:Int"</p>
+    </section>
+    <!---->
+    <section id="show-type">
+      <p>
+        "Int"
+        <input id="show-input" .value="show node">
+      </p>
+    </section>
+    <!---->
+  </main>
+</body>
+-- click #noop
+(the DOM did not change)
+-- click #flip
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <button id="noop">"noop"</button>
+    <section id="item-type">
+      <p>
+        "Float"
+        <input id="item-input" .value="item node">
+      </p>
+    </section>
+    <!---->
+    <section id="environment-type">
+      <p>"1:Float"</p>
+      <p>"2:Float"</p>
+      <p>"3:Float"</p>
+    </section>
+    <!---->
+    <section id="show-type">
+      <p>
+        "Float"
+        <input id="show-input" .value="show node">
+      </p>
+    </section>
+    <!---->
+  </main>
+</body>
+-- click #noop
+(the DOM did not change)
+-- click #flip
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <button id="noop">"noop"</button>
+    <section id="item-type">
+      <p>
+        "Int"
+        <input id="item-input" .value="item node">
+      </p>
+    </section>
+    <!---->
+    <section id="environment-type">
+      <p>"1:Int"</p>
+      <p>"2:Int"</p>
+      <p>"3:Int"</p>
+    </section>
+    <!---->
+    <section id="show-type">
+      <p>
+        "Int"
+        <input id="show-input" .value="show node">
+      </p>
+    </section>
+    <!---->
+  </main>
+</body>
+-- click #noop
+(the DOM did not change)

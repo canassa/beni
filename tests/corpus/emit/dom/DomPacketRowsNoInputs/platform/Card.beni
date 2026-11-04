@@ -1,0 +1,15 @@
+import Html exposing (Html)
+import Js.Any as Any
+
+
+pub view : { children : Html msg } → Html msg
+view props =
+    restored : Maybe (Html Int)
+    restored = Any.unpack (Any.pack props.children)
+    label =
+        case restored of
+            Just _ →
+                "Int"
+            Nothing →
+                "other"
+    <p>{label}</p>

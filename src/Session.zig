@@ -1014,6 +1014,10 @@ fn nextWave(session: *Session, done: []const SourceStore.Index, out: *std.ArrayL
                 try session.lowerNext(waiting.items, kind.runtime, out);
             }
         };
+        // A lowering-generated packet has no source import of Any.
+        // Other lowerings retain their existing lazy module surface.
+        if (bir.uses_markup and session.markupOperandEvidence() & 1 != 0)
+            try session.lowerNext(waiting.items, "Js.Any", out);
         // A minted type is an edge with no import (`Graph.mintedNames`).
         var buffer: [Graph.minted_count]InternPool.WellKnown = undefined;
         for (Graph.mintedNames(bir, &buffer)) |w| try session.lowerNext(waiting.items, @tagName(w), out);
@@ -1023,6 +1027,15 @@ fn nextWave(session: *Session, done: []const SourceStore.Index, out: *std.ArrayL
             return a.int() < b.int();
         }
     }.lessThan);
+}
+
+/// The selected lowering's declared evidence kinds are available before
+/// lazy source discovery, so its generated packet dependency is a graph edge.
+fn markupOperandEvidence(session: *const Session) u8 {
+    const chain = session.options.chain orelse return 0;
+    const selected = chain.firstMarkup("lowering") orelse return 0;
+    const lowering = @import("js/Emit.zig").findLowering(selected.value) orelse return 0;
+    return @bitCast(lowering.operand_evidence);
 }
 
 fn isImplicitCoreName(name: []const u8) bool {
@@ -2117,11 +2130,6 @@ fn resolveModules(session: *Session) RunError!void {
         session.graph = .empty;
         session.graph = try Graph.build(gpa, worker.arena.allocator(), &session.store, &session.artifacts, &session.interner, platforms, keep);
     }
-    if (session.graph.markup.lowering.unwrap()) |name| {
-        if (@import("js/Emit.zig").findLowering(session.interner.slice(name))) |lowering| {
-            session.graph.markup.operand_evidence = @bitCast(lowering.operand_evidence);
-        }
-    }
     session.profile.end(0, graph_token, .graph, Profile.Event.no_file, 0);
     session.profile.addCounter(.modules, session.graph.count());
     session.profile.addCounter(.edges, session.graph.edgeCount());
@@ -2169,6 +2177,7 @@ fn graphPlatforms(session: *const Session, scratch: Allocator) Allocator.Error!G
         .vocabulary = if (chain.firstMarkup("vocabulary")) |f| f.value else null,
         .markup_type = if (chain.firstMarkup("type")) |f| f.value else null,
         .lowerings = lowerings,
+        .operand_evidence = session.markupOperandEvidence(),
         .app_privileged = privileged,
     };
 }

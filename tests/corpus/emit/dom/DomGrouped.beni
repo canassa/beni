@@ -14,7 +14,7 @@
 -- round on a mount, so the two groups merge: an element's attributes are
 -- written in source order. In `shouted`, `loud` is used only inside the
 -- root, so the root computes it (the `let` rule): first in `p`, under
--- the test of `model.name`, kept in `d0`, and read from there by both
+-- the test of `model.name`, kept in `$d0`, and read from there by both
 -- writes, whose group tests the same field.
 import Html exposing (Html)
 

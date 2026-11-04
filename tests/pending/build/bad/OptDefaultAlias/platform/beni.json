@@ -1,0 +1,8 @@
+{
+  "platform": true,
+  "name": "opt-projection",
+  "program": "Node.Program",
+  "platforms": ["node"],
+  "reexports": ["Node"],
+  "lists": "in-place"
+}

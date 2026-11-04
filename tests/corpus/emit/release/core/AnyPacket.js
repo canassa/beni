@@ -1,1 +1,1 @@
-import{a}from"./_core/Js/Any.mjs";const b=(c,d,e,f)=>({t:0,v:a.$packet("("+c+",("+c+"->"+d+"))",{a:e,b:f})}),c=b=>a("{a=c,b=d}",b),d=b=>a.$packet("{a=c,b=d}",{a:b,b:"capture"});export{b,c,d};
+import{a}from"./_core/Js/Any.mjs";const b=(c,d,e,f)=>({t:0,v:{a:e,b:f,[a.$packet.key]:"("+c+",("+c+"->"+d+"))"}}),c=b=>a("{a=c,b=d}",b),d={[a.$packet.key]:"{a=c,b=d}"},e=a=>({...d,a:a,b:"capture"}),f=(b,c)=>a("{a=c,b=d}",{...b,a:c}),g=b=>a("{a=c,b=d}",{a:b,b:"capture"});export{b,c,e,f,g};

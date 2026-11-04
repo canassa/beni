@@ -169,6 +169,25 @@ stores and prefix completion. Chain snapshots call them without importing
 List.mjs. No Js.Value conversion or extra storage representation is involved.
 No `Js.Buffer` is needed.
 
+**Manager approval, 2026-11-04:** core and platforms may truncate a typed
+native array through `Browser.Host.Array.rendererTruncate : Array a, Int → ⊤`.
+The operation lowers directly to `array.length = n`, retaining the element
+type and allocating nothing. Its precondition is `0 ≤ n ≤ array.length`;
+violating it is a runtime defect. The array write requires unique ownership,
+like the other typed array writes, and the name is fenced from applications
+in `resolve/CorePrivate.zig`. A row algorithm reads and disposes every removed
+row before truncating the existing row array. No removed value, optional
+wrapper or `Js.Value` conversion is involved. This is a reviewed native
+catalogue entry on the same array type as slots and rows.
+
+`Browser.Host.Array.rendererAt : Array a, Int → a` reads an initialized
+in-range element without an eager fallback, wrapper or allocation. A checked
+index must be an unsigned integer less than the array length; an invalid
+index raises a runtime defect rather than returning `undefined` as `a`.
+The private renderer owns these dense arrays and initializes every slot
+before reading it. This operation is fenced from applications alongside
+`rendererTruncate`.
+
 List keeps its persistent radix tree and a claimable 32-element tail until
 the ownership-backed representation can replace both together. The tree and
 tail protocol are beni over typed builders and Cell; native wrappers retain
@@ -194,6 +213,17 @@ The compiler carries identity evidence for unconstrained quantifiers through
 generic imports, helpers and local functions, only where Any is reached.
 Existing constrained identities retain their ordering; quantifier-only slots
 use the canonical scheme quantifier order. No method requirement is invented.
+
+**Manager approval, 2026-11-04 — allocation-free checked opening.**
+`Js.Any.unpackOpt : Any → Js.Opt a` is private to core and platforms.
+It checks the same compiler-supplied identity as `unpack`, for both boxes
+and fresh packets, then returns the raw payload or the existing NONE sentinel.
+The compiler emits the check in place, without a sibling call or a Maybe
+object, and emits a shared cold function for a first-class reference. At an
+unknown or nested Opt payload it uses the existing Opt escape rule; an empty
+payload remains distinguishable from a mismatch. It does not claim fresh
+ownership of the payload, and retains its callable and native facts. Ordinary
+builds that do not reach this operation emit no new runtime code.
 
 **Manager decision, 2026-11-03 — allocation-neutral packets.** If the argument
 of `Any.pack` is a record or tuple freshly allocated by the compiler at that
@@ -468,8 +498,11 @@ runs its sync body directly until Task installs a handler. The handler's
 closed unit callback retains any generic result in its own typed local Ref,
 so no polymorphic callable or result is erased. A stopped bridge remains
 stopped if Task is first used afterwards: lazy runtime registration also
-marks the program scheduler stopped before it can drain queued work. Platform edits are supplied as a
-separate integration patch until the DOM lane is ready.
+marks the program scheduler stopped before it can drain queued work. *Platform integration, 2026-11-04 (#1858):* Browser and Rt register turn and
+defect hooks and query shutdown/log-context state through Js.TaskHooks; Hosted
+registers synchronous releases there. They do not import Task merely for these
+bridge operations. Reachable command/fiber work still uses Task and installs its
+runtime hooks lazily under the contract above.
 
 
 **Scheduler facility pruning, 2026-11-04 (#1719).** The approved module-flag

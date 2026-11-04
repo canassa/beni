@@ -1,7 +1,5 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
 import Browser.Host.AbortSignal as AbortSignal
-
-
 import Browser.Host.DOMException as DOMException
 
 

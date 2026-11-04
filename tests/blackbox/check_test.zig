@@ -1038,6 +1038,10 @@ test "ownership words: native retained callbacks preserve captured aliases" {
     try expectFlips("ownership/core/NativeEscapes.beni", &.{"--core"});
 }
 
+test "ownership words: native containers retain elements and returned defaults" {
+    try expectFlips("ownership/core/NativeContainerWords.beni", &.{"--core"});
+}
+
 test "ownership words: existential storage and checked data preserve aliases" {
     try expectFlips("ownership/core/AnyDataWords.beni", &.{"--core"});
 }
@@ -2290,14 +2294,14 @@ test "ownership words: compiler intrinsic pins retain their defining package and
     try testing.expectError(error.InvalidIntrinsicPin, Pins.parse(arena.allocator(), "src/js/Lower.zig Js.Any.pack hash intrinsic:\n"));
 }
 
-fn expectScopedPinBodies(owner: []const u8, declaration: []const u8) !usize {
+fn expectPinBodies(owner: ?[]const u8, declaration: []const u8) !usize {
     var arena: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
     const list = try std.Io.Dir.cwd().readFileAlloc(testing.io, bodies_list, a, .limited(1 << 20));
     const pins = try Pins.parse(a, list);
-    try testing.expect(pins.hasForDecl(owner, declaration, true));
-    const wanted_scope = try std.fmt.allocPrint(a, "intrinsic:{s}", .{owner});
+    if (owner) |package| try testing.expect(pins.hasForDecl(package, declaration, true));
+    const wanted_scope = if (owner) |package| try std.fmt.allocPrint(a, "intrinsic:{s}", .{package}) else null;
     const name = declaration[(std.mem.lastIndexOfScalar(u8, declaration, '.') orelse return error.BodyRowName) + 1 ..];
     var count: usize = 0;
     var rows = std.mem.splitScalar(u8, list, '\n');
@@ -2307,8 +2311,11 @@ fn expectScopedPinBodies(owner: []const u8, declaration: []const u8) !usize {
         const file = fields.next() orelse continue;
         const decl = fields.next() orelse continue;
         const expected = fields.next() orelse continue;
-        const scope = fields.next() orelse continue;
-        if (!std.mem.eql(u8, decl, declaration) or !std.mem.eql(u8, scope, wanted_scope)) continue;
+        const scope = fields.next();
+        if (!std.mem.eql(u8, decl, declaration)) continue;
+        if (wanted_scope) |wanted| {
+            if (scope == null or !std.mem.eql(u8, scope.?, wanted)) continue;
+        } else if (scope != null) continue;
         const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, file, a, .limited(1 << 24));
         const body = (try bodyOf(a, source, file, name)) orelse return error.IntrinsicBodyMissing;
         var digest: [32]u8 = undefined;
@@ -2321,7 +2328,10 @@ fn expectScopedPinBodies(owner: []const u8, declaration: []const u8) !usize {
 }
 
 test "ownership words: compiler intrinsic pins hash the real Any lowering" {
-    _ = try expectScopedPinBodies("core", "Js.Any.pack");
+    _ = try expectPinBodies("core", "Js.Any.pack");
+    // Compiler helpers grant no source declaration authority; their ordinary
+    // pin still guards the actual freshness proof and literal emitter.
+    try testing.expectEqual(@as(usize, 1), try expectPinBodies(null, "Js.Any.freshPackets"));
 }
 
 test "ownership words: compiler intrinsic pins cover the reply scan fixture" {
@@ -2340,7 +2350,32 @@ test "ownership words: compiler intrinsic pins cover the reply scan fixture" {
     try testing.expect(found);
     // Lowering also owns the fresh empty-result path, while ReplyScan owns
     // the traversal. Both independently pinned regions must remain covered.
-    try testing.expectEqual(@as(usize, 2), try expectScopedPinBodies("tests/platforms/reply-scan", "Worker.Object.replyIds"));
+    try testing.expectEqual(@as(usize, 2), try expectPinBodies("tests/platforms/reply-scan", "Worker.Object.replyIds"));
+}
+
+test "ownership words: supplied DOM record callback captures notice unsafe alias and escape flips" {
+    try expectFlips("ownership/core/DomProtocolWords.beni", &.{ "--core", "--platform=browser" });
+}
+
+test "ownership words: foreign record fields retain returned and callback-result classes" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const r = try w.runWith(&.{
+        "dump",                                                                                                                                                                                                "--stage=ownership",                                    "--core",
+        "--ownership-flips=SuppliedRecordWords.callbacks.echo:1:returned>-+res:->fresh|SuppliedRecordWords.callbacks.retain:1:escaped>borrowed|SuppliedRecordWords.callbacks.invoke:1:returned>-+res:->fresh", "tests/corpus/ownership/core/SuppliedRecordWords.beni",
+    }, .{ .raw_diagnostics = true, .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqualStrings("", r.stderr);
+    try testing.expectEqualStrings(
+        "flip SuppliedRecordWords.callbacks.echo:1:returned>-+res:->fresh: changes\n" ++
+            "flip SuppliedRecordWords.callbacks.retain:1:escaped>borrowed: changes\n" ++
+            "flip SuppliedRecordWords.callbacks.invoke:1:returned>-+res:->fresh: changes\n",
+        r.stdout,
+    );
+}
+
+test "ownership words: native event containers retain element aliases" {
+    try expectFlips("ownership/core/NativeEvents.beni", &.{"--core"});
 }
 
 test "ownership words: runtime array stores retain captured aliases" {

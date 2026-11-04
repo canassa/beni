@@ -124,6 +124,8 @@ pub const Result = struct {
     /// The runtime exports the module took from the runtime module instead
     /// (`boundary.md` §9.2), by name, in the caller's scratch arena.
     markup_module_uses: []const []const u8 = &.{},
+    /// A generated capture packet imports the existing core Any producer.
+    markup_packets: bool = false,
     /// The program start data the markup lowering contributed, in the
     /// caller's scratch arena.
     start: []const StartPair = &.{},
@@ -1036,6 +1038,7 @@ pub fn lower(
         .uses_markup_runtime = l.markup_imports.items.len != 0,
         .markup_exports = l.markup_exports.items,
         .markup_module_uses = l.markup_module_uses.items,
+        .markup_packets = l.markup_packets,
         .start = if (l.mk) |st| st.start.items else &.{},
         .effect_keep = l.effect_keep.items,
         .pure_discards = l.pure_discards.items,
@@ -1608,6 +1611,15 @@ pub const Lowerer = struct {
     /// The runtime exports this module took from the runtime module
     /// (`markupRuntime`), by name, in first-use order.
     markup_module_uses: std.ArrayList([]const u8) = .empty,
+    markup_packets: bool = false,
+    /// Cold packet metadata belongs to its emitting declaration's cache unit.
+    /// No cross-unit dependency: a reused direct body or twin carries its own.
+    packet_constants: ?*StmtList = null,
+    packet_owner: JsIr.NameIndex = .none,
+    packet_ids: std.StringHashMapUnmanaged(JsIr.NameIndex) = .empty,
+    /// A saturated call owns its callee reference's hidden arguments.
+    direct_callee: Inst.OptionalIndex = .none,
+    identity_aliases: std.ArrayList(struct { parameter: Dispatch.Term.Param, name: JsIr.NameIndex }) = .empty,
 
     /// A constructor, this module's (`ext` false: a `Bir.ctors` index) or
     /// another's (an interface constructor row of `module`).
@@ -3525,6 +3537,7 @@ pub const Lowerer = struct {
             if (std.mem.eql(u8, kernel_name, "slotPack")) return .kernelPack;
             if (std.mem.eql(u8, kernel_name, "slotRead")) return .kernelRead;
         }
+        if (l.in.graph.modulePackage(l.in.module) == .core and std.mem.eql(u8, l.text(l.module_name), "Js.Any") and std.mem.eql(u8, l.text(l.bir.symbol(decl.name)), "unpackOpt")) return .any_unpack_opt;
         if (l.in.graph.modulePackage(l.in.module) != .core or (!std.mem.eql(u8, l.text(l.module_name), "Js") and !std.mem.eql(u8, l.text(l.module_name), "Js.Array"))) return null;
         const which = std.meta.stringToEnum(JsIntrinsic.Which, l.text(l.bir.symbol(decl.name))) orelse return null;
         return if (JsIntrinsic.compilerOnly(which)) which else null;
@@ -3558,6 +3571,25 @@ pub const Lowerer = struct {
             .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => return,
             // Bound by the sibling import, not by a declaration here.
             .foreign_value => {
+                // A value the markup lowering supplies (`boundary.md`
+                // §9.4.6, version 1.30): its expression, in this unit.
+                if (l.loweringSupplied(d)) |name_| {
+                    if (!l.liveDecl(index)) return;
+                    const st = l.mk orelse return;
+                    const hook = st.lowering.runtime_protocol.?.supply;
+                    records.direct = try l.recBegin(Funnel.Selector.declarationPart(index, Funnel.Selector.direct));
+                    l.restartNames();
+                    const saved = st.pos;
+                    st.pos = l.pos(d.inst_start);
+                    defer st.pos = saved;
+                    const value_ = hook(&st.cx, name_) catch |err| switch (err) {
+                        error.OutOfMemory => return error.OutOfMemory,
+                        error.Reported => return,
+                    };
+                    try l.constDecl(out, try l.topName(index), @fromBackingInt(@intCast(@backingInt(value_))), l.pos(d.inst_start));
+                    try l.recEnd(records.direct, index);
+                    return;
+                }
                 if (l.rendererDecl(d)) |row| {
                     if (!l.liveDecl(index)) return;
                     records.direct = try l.recBegin(Funnel.Selector.declarationPart(index, Funnel.Selector.direct));
@@ -3659,6 +3691,17 @@ pub const Lowerer = struct {
             }),
             .twin => try l.twinName(l.module_name, l.bir.symbol(d.name)),
         };
+        const packet_constants = l.packet_constants;
+        const packet_owner = l.packet_owner;
+        const packet_ids = l.packet_ids;
+        l.packet_constants = out;
+        l.packet_owner = n;
+        l.packet_ids = .empty;
+        defer {
+            l.packet_constants = packet_constants;
+            l.packet_owner = packet_owner;
+            l.packet_ids = packet_ids;
+        }
         const p = l.pos(body);
         // The binding itself is where the definition's name is written,
         // which is what a source map names it by (§11); its value keeps the
@@ -4037,7 +4080,7 @@ pub const Lowerer = struct {
         // Foreign values first: `import { add as Basics$add } from "./Basics.js"`.
         var siblings: std.ArrayList(JsIr.Specifier) = .empty;
         for (l.bir.decls, 0..) |d, index| {
-            if (d.kind != .foreign_value or l.typedIntrinsicDecl(d) != null or l.rendererDecl(d) != null) continue;
+            if (d.kind != .foreign_value or l.typedIntrinsicDecl(d) != null or l.rendererDecl(d) != null or l.loweringSupplied(d) != null) continue;
             // §5: the one import leg that is not use-driven. Every other
             // `import` shrinks for free with the declaration that wanted
             // it; this loop walks `bir.decls` and would otherwise import
@@ -6133,8 +6176,10 @@ pub const Lowerer = struct {
     }
 
     /// Whether `id`'s constructors have integer tags in this build
-    /// (`backend.md` §9, *Item 4, taken up*): never in a development build.
+    /// (`backend.md` §9, *Item 4, taken up*). Configured opaque markup also
+    /// uses this path in development: its single field is the platform ABI.
     fn integerTags(l: *const Lowerer, id: Dispatch.TypeId) bool {
+        if (l.in.types.isCellWrapper(id) or l.in.types.isUnboxedMarkup(l.in.graph, id)) return true;
         const b = l.in.boundary orelse return false;
         return b.integerTags(id);
     }
@@ -6395,6 +6440,106 @@ pub const Lowerer = struct {
         }
         return out;
     }
+
+    // ownership pin begin: freshPackets
+    /// Constructed only from a checked Dispatch identity root or an identity
+    /// token validated by Context.packet. Never source text or data evidence.
+    const PacketIdentity = struct { value: Node.Index };
+
+    fn freshPacketObject(l: *Lowerer, value: Node.Index) bool {
+        if (value.int() >= l.b.nodes.len or l.b.tagOf(value) != .object) return false;
+        const d = l.b.nodes.items(.data)[value.int()];
+        for (l.b.extra.items[d.lhs..d.rhs]) |property_| {
+            if (l.b.nodes.items(.tag)[property_] != .property) return false;
+        }
+        return true;
+    }
+
+    /// A closed identity can move to module initialisation. Inspect only
+    /// strings and their concatenation, never evaluate or guess a parameter.
+    /// Keep the original nodes: private identity atoms are numbered at link.
+    fn closedPacketIdentity(l: *Lowerer, value: Node.Index) !?[]const u8 {
+        var stack: std.ArrayList(Node.Index) = .empty;
+        var text_: std.ArrayList(u8) = .empty;
+        try stack.append(l.scratch, value);
+        while (stack.pop()) |at| {
+            const d = l.b.nodes.items(.data)[at.int()];
+            switch (l.b.tagOf(at)) {
+                .string => try text_.appendSlice(l.scratch, l.b.string_bytes.items[d.lhs..][0..d.rhs]),
+                .binary => {
+                    if (@as(JsIr.BinaryOp, @fromBackingInt(@intCast(d.rhs))) != .add) return null;
+                    const pair = l.b.record(d.lhs, JsIr.Binary);
+                    try stack.appendSlice(l.scratch, &.{ pair.right, pair.left });
+                },
+                else => return null,
+            }
+        }
+        return text_.items;
+    }
+
+    /// Cold templates may predefine payload slots. Key their complete name
+    /// list as well as the checked identity: Context.packet does not prescribe
+    /// one object's property order. Cache bytes are never emitted as an id.
+    fn packetShapeKey(l: *Lowerer, identity_text: []const u8, value: Node.Index) ![]const u8 {
+        var key: std.ArrayList(u8) = .empty;
+        var length: [8]u8 = undefined;
+        std.mem.writeInt(u64, &length, @intCast(identity_text.len), .little);
+        try key.appendSlice(l.scratch, &length);
+        try key.appendSlice(l.scratch, identity_text);
+        const d = l.b.nodes.items(.data)[value.int()];
+        for (l.b.extra.items[d.lhs..d.rhs]) |property_| {
+            var field_bytes: [4]u8 = undefined;
+            std.mem.writeInt(u32, &field_bytes, l.b.nodes.items(.data)[property_].lhs, .little);
+            try key.appendSlice(l.scratch, &field_bytes);
+        }
+        return key.items;
+    }
+
+    /// Caller-side fresh packets share Any's existing Symbol and unpack.
+    /// A closed identity's Symbol definition is cold metadata; spreading it
+    /// first lets the engine clone it into this ONE fresh payload. A dynamic
+    /// checked identity stays in the literal, after its ordinary properties.
+    /// No helper call, Box, closure or second object is made per packet.
+    fn freshPacket(l: *Lowerer, pack: Node.Index, identity: PacketIdentity, value: Node.Index, p: u32) !Node.Index {
+        std.debug.assert(l.freshPacketObject(value));
+        const producer = try l.member(pack, try l.interner.getOrPut(l.gpa, "$packet"), p);
+        const key = try l.member(producer, try l.interner.getOrPut(l.gpa, "key"), p);
+        const marker = try l.add(.computed_property, p, key.int(), identity.value.int());
+        var properties: StmtList = .empty;
+        if (l.packet_constants) |out| {
+            if (try l.closedPacketIdentity(identity.value)) |text_| {
+                // Pricing keeps release's Symbol-only template. Development
+                // predefines named slots so each clone need only overwrite them.
+                const cache_key = if (l.in.development) try l.packetShapeKey(text_, value) else text_;
+                const entry = try l.packet_ids.getOrPut(l.scratch, cache_key);
+                if (!entry.found_existing) {
+                    const owner = l.b.names.items[l.packet_owner.int()];
+                    const base = try std.fmt.allocPrint(l.scratch, "{s}$$packet${d}", .{ l.text(owner.base), l.packet_ids.count() });
+                    entry.value_ptr.* = try l.name(.{ .module = owner.module, .base = try l.interner.getOrPut(l.gpa, base), .tag = JsIr.Name.no_tag });
+                    var template: StmtList = .empty;
+                    try template.append(l.scratch, marker);
+                    if (l.in.development) {
+                        const empty = try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+                        const data = l.b.nodes.items(.data)[value.int()];
+                        for (l.b.extra.items[data.lhs..data.rhs]) |property_| {
+                            const field_name = l.b.nodes.items(.data)[property_].lhs;
+                            try template.append(l.scratch, try l.add(.property, p, field_name, empty.int()));
+                        }
+                    }
+                    try l.constDecl(out, entry.value_ptr.*, try l.object(template.items, p), p);
+                }
+                try properties.append(l.scratch, try l.add(.spread_property, p, (try l.ident(entry.value_ptr.*, p)).int(), Node.Data.unused));
+            }
+        }
+        const cold = properties.items.len != 0;
+        const d = l.b.nodes.items(.data)[value.int()];
+        // Copy the range before object() can grow the extra-data array.
+        for (l.b.extra.items[d.lhs..d.rhs]) |property_| try properties.append(l.scratch, @fromBackingInt(@intCast(property_)));
+        if (!cold) try properties.append(l.scratch, marker);
+        return l.object(properties.items, p);
+    }
+
+    // ownership pin end: freshPackets
 
     // ---- Lists ------------------------------------------------------------
     //
@@ -7795,6 +7940,11 @@ pub const Lowerer = struct {
         if (try l.debugTyped(inst, p)) |typed| return l.etaExpand(typed.callee, &.{typed.descriptor}, typed.arity, p);
         const value = try l.referenceName(inst);
         const site = l.in.dispatch.siteOf(inst) orelse return value;
+        // A synthetic operand site on a direct callee carries its checked
+        // type, while callExpr has already checked the call's ordinary
+        // evidence. It is a binding here, not a value eta-expansion.
+        if (l.direct_callee == inst.toOptional() and site.evidence.len == 0 and
+            (site.operand_identity != .none or site.operand_data != .none)) return value;
         const roots = l.in.dispatch.argsAt(site.evidence);
         const expected = l.in.dispatch.referenceCount(l.bir, l.in.interfaces, l.decl_index, inst);
         if (roots.len == 0 and expected == 0) return value;
@@ -7972,9 +8122,17 @@ pub const Lowerer = struct {
             // A declaration's `$m$k` and a derived function's are spelled
             // alike: each is the parameter list of the function the term
             // sits in (§8.1, §9).
-            .param => |param| switch (param.binder) {
-                .let => |at| try l.ident(try l.letEvidenceName(at, param.k), p),
-                else => try l.ownEvidence(param.k, p),
+            .param => |param| alias: {
+                var index = l.identity_aliases.items.len;
+                while (index != 0) {
+                    index -= 1;
+                    const bound = l.identity_aliases.items[index];
+                    if (std.meta.eql(bound.parameter, param)) break :alias try l.ident(bound.name, p);
+                }
+                break :alias switch (param.binder) {
+                    .let => |at| try l.ident(try l.letEvidenceName(at, param.k), p),
+                    else => try l.ownEvidence(param.k, p),
+                };
             },
             .primitive => |prim| try l.primitiveValue(prim, p),
             // Unreachable: `field` cannot be evidence (§8.2), `undetermined`
@@ -10934,6 +11092,44 @@ pub const Lowerer = struct {
         return .{ .c = c, .x = x };
     }
 
+    // ownership pin begin: rendererCurrentTarget
+    // ownership pin begin: rendererClearCurrentTarget
+    // ownership pin begin: rendererTakeEarly
+    // ownership pin begin: rendererEarlyEvent
+    // ownership pin begin: rendererEarlyTarget
+    // ownership pin begin: rendererEarlyRemember
+    // ownership pin begin: rendererEarlyValue
+    // ownership pin begin: rendererEarlyChecked
+    // ownership pin begin: rendererEarlySelectedIndex
+    // ownership pin begin: rendererTarget
+    // ownership pin begin: rendererDisabled
+    // ownership pin begin: rendererTag
+    // ownership pin begin: rendererKind
+    // ownership pin begin: rendererName
+    // ownership pin begin: rendererFocused
+    // ownership pin begin: rendererValue
+    // ownership pin begin: rendererSetValue
+    // ownership pin begin: rendererChecked
+    // ownership pin begin: rendererSetChecked
+    // ownership pin begin: rendererSelected
+    // ownership pin begin: rendererSetSelected
+    // ownership pin begin: rendererSelectedIndex
+    // ownership pin begin: rendererSetSelectedIndex
+    // ownership pin begin: rendererSelectionStart
+    // ownership pin begin: rendererSelectionEnd
+    // ownership pin begin: rendererSelectionDirection
+    // ownership pin begin: rendererSetSelectionRange
+    // ownership pin begin: rendererOptions
+    // ownership pin begin: rendererElements
+    // ownership pin begin: rendererNamed
+    // ownership pin begin: rendererControls
+    // ownership pin begin: rendererEdits
+    // ownership pin begin: rendererSetEdits
+    // ownership pin begin: rendererEarlyListeners
+    // ownership pin begin: rendererEarlyAppend
+    // ownership pin begin: rendererEarlySize
+    // ownership pin begin: rendererEarlyKindAt
+    // ownership pin begin: rendererEarlyHandlerAt
     // ownership pin begin: rendererImport
     // ownership pin begin: rendererFirstChild
     // ownership pin begin: rendererNextSibling
@@ -10949,8 +11145,8 @@ pub const Lowerer = struct {
     }
 
     fn rendererArrow(l: *Lowerer, row: @import("../native/Operations.zig").Row, p: u32) Allocator.Error!Node.Index {
-        var names: [3]JsIr.NameIndex = undefined;
-        var values: [3]Node.Index = undefined;
+        var names: [4]JsIr.NameIndex = undefined;
+        var values: [4]Node.Index = undefined;
         const arity = @import("../native/Operations.zig").rendererArity(row.recipe);
         for (0..arity) |i| {
             names[i] = try l.fresh(l.well.temp);
@@ -10962,12 +11158,241 @@ pub const Lowerer = struct {
         return l.arrowOf(names[0..arity], body.items, p);
     }
 
+    // ownership pin begin: rendererTruncate
+    fn rendererTruncate(l: *Lowerer, out: *StmtList, values: []const Node.Index, p: u32) Allocator.Error!Node.Index {
+        const size = try l.member(values[0], try l.interner.getOrPut(l.gpa, "length"), p);
+        const length = values[1];
+        const unsigned = try l.binary(.shr, length, try l.intNode(0, p), p);
+        const invalid = try l.binary(.logical_or, try l.binary(.strict_ne, length, unsigned, p), try l.binary(.gt, length, size, p), p);
+        const global = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
+        const err = try l.member(global, try l.interner.getOrPut(l.gpa, "RangeError"), p);
+        const message = try l.stringNode("beni: renderer array length out of bounds", p);
+        const made = try l.add(.new_call, p, err.int(), @backingInt(try l.b.addRecord(try l.b.addRange(&.{message}))));
+        try l.ifStatement(out, invalid, &.{try l.add(.throw_stmt, p, made.int(), Node.Data.unused)}, p);
+        try out.append(l.scratch, try l.add(.assign_stmt, p, size.int(), length.int()));
+        return l.nullNode(p);
+    }
+    // ownership pin end: rendererTruncate
+
+    // ownership pin begin: rendererHas
+    fn rendererHas(l: *Lowerer, values: []const Node.Index, p: u32) Allocator.Error!Node.Index {
+        const index = values[1];
+        const unsigned = try l.binary(.shr, index, try l.intNode(0, p), p);
+        const size = try l.member(values[0], try l.interner.getOrPut(l.gpa, "length"), p);
+        const valid = try l.binary(.logical_and, try l.binary(.strict_eq, index, unsigned, p), try l.binary(.lt, index, size, p), p);
+        const global = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
+        const object_ctor = try l.member(global, try l.interner.getOrPut(l.gpa, "Object"), p);
+        const has = try l.member(object_ctor, try l.interner.getOrPut(l.gpa, "hasOwn"), p);
+        return l.binary(.logical_and, valid, try l.call(has, values, p), p);
+    }
+    // ownership pin end: rendererHas
+
+    // ownership pin begin: rendererAt
+    fn rendererAt(l: *Lowerer, out: *StmtList, values: []const Node.Index, p: u32) Allocator.Error!Node.Index {
+        const index = values[1];
+        const size = try l.member(values[0], try l.interner.getOrPut(l.gpa, "length"), p);
+        const unsigned = try l.binary(.shr, index, try l.intNode(0, p), p);
+        const invalid = try l.binary(.logical_or, try l.binary(.strict_ne, index, unsigned, p), try l.binary(.ge, index, size, p), p);
+        const global = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
+        const err = try l.member(global, try l.interner.getOrPut(l.gpa, "RangeError"), p);
+        const message = try l.stringNode("beni: renderer array index out of bounds", p);
+        const made = try l.add(.new_call, p, err.int(), @backingInt(try l.b.addRecord(try l.b.addRange(&.{message}))));
+        try l.ifStatement(out, invalid, &.{try l.add(.throw_stmt, p, made.int(), Node.Data.unused)}, p);
+        return l.add(.index_get, p, values[0].int(), index.int());
+    }
+    // ownership pin end: rendererAt
+
     // Private renderer-owned nodes. Native structural failures are defects;
     // preserve identity, use the existing Opt sentinel, and allocate no adapter.
     fn rendererExpr(l: *Lowerer, out: *StmtList, row: @import("../native/Operations.zig").Row, values: []const Node.Index, p: u32) Allocator.Error!Node.Index {
         const global = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
         const document = try l.member(global, try l.interner.getOrPut(l.gpa, "document"), p);
         switch (row.recipe) {
+            .renderer_has => return l.rendererHas(values, p),
+            .renderer_truncate => return l.rendererTruncate(out, values, p),
+            .renderer_at => return l.rendererAt(out, values, p),
+            .renderer_early_listeners => return l.arrayNode(&.{}, p),
+            .renderer_early_append => {
+                const invoked = try l.call(try l.member(values[0], try l.interner.getOrPut(l.gpa, "push"), p), values[1..], p);
+                try out.append(l.scratch, try l.add(.expr_stmt, p, invoked.int(), Node.Data.unused));
+                return l.nullNode(p);
+            },
+            .renderer_early_size => return l.binary(.div, try l.member(values[0], try l.interner.getOrPut(l.gpa, "length"), p), try l.intNode(2, p), p),
+            .renderer_early_kind_at, .renderer_early_handler_at => {
+                // Validate the logical pair index before doubling it: 0.5
+                // must never turn a kind read into a callback read.
+                const logical = values[1];
+                const unsigned = try l.binary(.shr, logical, try l.intNode(0, p), p);
+                const offset = try l.binary(.mul, logical, try l.intNode(2, p), p);
+                const index = if (row.recipe == .renderer_early_handler_at) try l.binary(.add, offset, try l.intNode(1, p), p) else offset;
+                const size = try l.member(values[0], try l.interner.getOrPut(l.gpa, "length"), p);
+                const invalid = try l.binary(.logical_or, try l.binary(.strict_ne, logical, unsigned, p), try l.binary(.ge, index, size, p), p);
+                const err = try l.member(global, try l.interner.getOrPut(l.gpa, "RangeError"), p);
+                const message = try l.stringNode("beni: early listener index out of bounds", p);
+                const made = try l.add(.new_call, p, err.int(), @backingInt(try l.b.addRecord(try l.b.addRange(&.{message}))));
+                try l.ifStatement(out, invalid, &.{try l.add(.throw_stmt, p, made.int(), Node.Data.unused)}, p);
+                return l.add(.index_get, p, values[0].int(), index.int());
+            },
+            .renderer_event_target => {
+                const saved = try l.fresh(l.well.temp);
+                try l.constDecl(out, saved, try l.member(values[0], try l.interner.getOrPut(l.gpa, "target"), p), p);
+                const value = try l.ident(saved, p);
+                return l.condOf(try l.binary(.instance_of, value, try l.member(global, try l.interner.getOrPut(l.gpa, "Node"), p), p), value, try l.optNone(p), p);
+            },
+            .renderer_node_disabled => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "disabled"), p);
+                return l.unary(.not, try l.unary(.not, value, p), p);
+            },
+            .renderer_node_tag => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "localName"), p);
+                return l.binary(.logical_or, value, try l.stringNode("", p), p);
+            },
+            .renderer_node_kind => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "type"), p);
+                return l.binary(.logical_or, value, try l.stringNode("", p), p);
+            },
+            .renderer_node_name => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "name"), p);
+                return l.binary(.logical_or, value, try l.stringNode("", p), p);
+            },
+            .renderer_node_focused => {
+                return l.binary(.strict_eq, values[0], try l.member(document, try l.interner.getOrPut(l.gpa, "activeElement"), p), p);
+            },
+            .renderer_control_value => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "value"), p);
+                return value;
+            },
+            .renderer_control_value_set => {
+                const target = try l.member(values[0], try l.interner.getOrPut(l.gpa, "value"), p);
+                try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), values[1].int()));
+                return l.nullNode(p);
+            },
+            .renderer_control_checked => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "checked"), p);
+                return value;
+            },
+            .renderer_control_checked_set => {
+                const target = try l.member(values[0], try l.interner.getOrPut(l.gpa, "checked"), p);
+                try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), values[1].int()));
+                return l.nullNode(p);
+            },
+            .renderer_control_selected => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "selected"), p);
+                return value;
+            },
+            .renderer_control_selected_set => {
+                const target = try l.member(values[0], try l.interner.getOrPut(l.gpa, "selected"), p);
+                try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), values[1].int()));
+                return l.nullNode(p);
+            },
+            .renderer_control_selectedIndex => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "selectedIndex"), p);
+                return value;
+            },
+            .renderer_control_selectedIndex_set => {
+                const target = try l.member(values[0], try l.interner.getOrPut(l.gpa, "selectedIndex"), p);
+                try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), values[1].int()));
+                return l.nullNode(p);
+            },
+            .renderer_selectionStart => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "selectionStart"), p);
+                const saved = try l.fresh(l.well.temp);
+                try l.constDecl(out, saved, value, p);
+                const present = try l.ident(saved, p);
+                return l.condOf(try l.binary(.logical_or, try l.binary(.strict_eq, present, try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p), try l.binary(.strict_eq, present, try l.nullNode(p), p), p), try l.optNone(p), present, p);
+            },
+            .renderer_selectionEnd => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "selectionEnd"), p);
+                const saved = try l.fresh(l.well.temp);
+                try l.constDecl(out, saved, value, p);
+                const present = try l.ident(saved, p);
+                return l.condOf(try l.binary(.logical_or, try l.binary(.strict_eq, present, try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p), try l.binary(.strict_eq, present, try l.nullNode(p), p), p), try l.optNone(p), present, p);
+            },
+            .renderer_selectionDirection => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "selectionDirection"), p);
+                return value;
+            },
+            .renderer_selection_set => {
+                const invoked = try l.call(try l.member(values[0], try l.interner.getOrPut(l.gpa, "setSelectionRange"), p), values[1..], p);
+                try out.append(l.scratch, try l.add(.expr_stmt, p, invoked.int(), Node.Data.unused));
+                return l.nullNode(p);
+            },
+            .renderer_node_options => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "options"), p);
+                return value;
+            },
+            .renderer_node_elements => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "elements"), p);
+                return value;
+            },
+            .renderer_document_named => {
+                return l.call(try l.member(document, try l.interner.getOrPut(l.gpa, "getElementsByName"), p), &.{values[0]}, p);
+            },
+            .renderer_document_controls => {
+                return l.call(try l.member(document, try l.interner.getOrPut(l.gpa, "querySelectorAll"), p), &.{try l.stringNode("input,select,textarea,option", p)}, p);
+            },
+            .renderer_node_edits => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "$$e"), p);
+                const saved = try l.fresh(l.well.temp);
+                try l.constDecl(out, saved, value, p);
+                const present = try l.ident(saved, p);
+                return l.condOf(try l.binary(.strict_eq, present, try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p), try l.optNone(p), present, p);
+            },
+            .renderer_node_edits_set => {
+                const target = try l.member(values[0], try l.interner.getOrPut(l.gpa, "$$e"), p);
+                try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), values[1].int()));
+                return l.nullNode(p);
+            },
+            .renderer_current => {
+                const at = try l.member(values[1], try l.interner.getOrPut(l.gpa, "v"), p);
+                const current = try l.condOf(try l.binary(.strict_eq, at, try l.optNone(p), p), try l.nullNode(p), at, p);
+                const getter = try l.arrowOf(&.{}, &.{try l.returnStmt(current, p)}, p);
+                const descriptor = try l.object(&.{
+                    try l.property(try l.interner.getOrPut(l.gpa, "configurable"), try l.add(.true_lit, p, Node.Data.unused, Node.Data.unused), p),
+                    try l.property(try l.interner.getOrPut(l.gpa, "get"), getter, p),
+                }, p);
+                const object_ctor = try l.member(global, try l.interner.getOrPut(l.gpa, "Object"), p);
+                const invoked = try l.call(try l.member(object_ctor, try l.interner.getOrPut(l.gpa, "defineProperty"), p), &.{ values[0], try l.stringNode("currentTarget", p), descriptor }, p);
+                try out.append(l.scratch, try l.add(.expr_stmt, p, invoked.int(), Node.Data.unused));
+                return l.nullNode(p);
+            },
+            .renderer_current_clear => {
+                const reflect = try l.member(global, try l.interner.getOrPut(l.gpa, "Reflect"), p);
+                const invoked = try l.call(try l.member(reflect, try l.interner.getOrPut(l.gpa, "deleteProperty"), p), &.{ values[0], try l.stringNode("currentTarget", p) }, p);
+                try out.append(l.scratch, try l.add(.expr_stmt, p, invoked.int(), Node.Data.unused));
+                return l.nullNode(p);
+            },
+            .renderer_early_take => {
+                const name_ = try l.fresh(l.well.temp);
+                const target = try l.member(global, try l.interner.getOrPut(l.gpa, "$beni"), p);
+                try l.constDecl(out, name_, target, p);
+                const callback = try l.ident(name_, p);
+                const absent = try l.binary(.strict_eq, callback, try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p);
+                const clear = try l.add(.assign_stmt, p, target.int(), (try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused)).int());
+                try l.ifStatement(out, try l.unary(.not, absent, p), &.{clear}, p);
+                return l.condOf(absent, try l.arrayNode(&.{}, p), try l.call(callback, &.{}, p), p);
+            },
+            .renderer_early_event, .renderer_early_target, .renderer_early_remember => {
+                const event = try l.add(.index_get, p, values[0].int(), (try l.intNode(0, p)).int());
+                if (row.recipe == .renderer_early_event) return event;
+                const target = try l.member(event, try l.interner.getOrPut(l.gpa, "target"), p);
+                if (row.recipe == .renderer_early_target) return target;
+                const push = try l.call(try l.member(values[0], try l.interner.getOrPut(l.gpa, "push"), p), &.{
+                    try l.member(target, try l.interner.getOrPut(l.gpa, "value"), p),
+                    try l.member(target, try l.interner.getOrPut(l.gpa, "checked"), p),
+                    try l.member(target, try l.interner.getOrPut(l.gpa, "selectedIndex"), p),
+                }, p);
+                try out.append(l.scratch, try l.add(.expr_stmt, p, push.int(), Node.Data.unused));
+                return l.nullNode(p);
+            },
+            .renderer_early_value, .renderer_early_checked, .renderer_early_selectedindex => {
+                const offset: u32 = if (row.recipe == .renderer_early_value) 0 else if (row.recipe == .renderer_early_checked) 1 else 2;
+                const at = if (offset == 0) values[1] else try l.binary(.add, values[1], try l.intNode(offset, p), p);
+                const name_ = try l.fresh(l.well.temp);
+                try l.constDecl(out, name_, try l.add(.index_get, p, values[0].int(), at.int()), p);
+                const value = try l.ident(name_, p);
+                return l.condOf(try l.binary(.strict_eq, value, try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p), try l.optNone(p), value, p);
+            },
             .renderer_first_child, .renderer_next_sibling, .renderer_parent => {
                 const slot = try l.fresh(l.well.temp);
                 try l.constDecl(out, slot, try l.member(values[0], try l.interner.getOrPut(l.gpa, row.member), p), p);
@@ -10992,6 +11417,7 @@ pub const Lowerer = struct {
             .renderer_import => return l.call(try l.member(document, try l.interner.getOrPut(l.gpa, "importNode"), p), &.{ values[0], try l.add(.true_lit, p, Node.Data.unused, Node.Data.unused) }, p),
             .renderer_fragment => return l.call(try l.member(document, try l.interner.getOrPut(l.gpa, "createDocumentFragment"), p), &.{}, p),
             .renderer_body => return l.member(document, try l.interner.getOrPut(l.gpa, "body"), p),
+            .renderer_document_target => return document,
             .renderer_text => return l.call(try l.member(document, try l.interner.getOrPut(l.gpa, "createTextNode"), p), &.{values[0]}, p),
             .renderer_template => {
                 const template = try l.fresh(l.well.temp);
@@ -11012,7 +11438,7 @@ pub const Lowerer = struct {
                 // A dropped unit still evaluates, and multi-statement recipes may
                 // read an operand twice. Evaluate every non-atom exactly once
                 // before performing any native read or mutation.
-                if (native.recipe == .renderer_fragment or native.recipe == .renderer_body) {
+                if (native.recipe == .renderer_fragment or native.recipe == .renderer_body or native.recipe == .renderer_document_target) {
                     for (arg_insts) |arg| try l.discard(out, arg, p);
                     return try l.rendererExpr(out, native, &.{}, p);
                 }
@@ -11033,6 +11459,47 @@ pub const Lowerer = struct {
             // ownership pin end: rendererAppend
             // ownership pin end: rendererRemove
             // ownership pin end: rendererClone
+            // ownership pin end: rendererEarlyListeners
+            // ownership pin end: rendererEarlyAppend
+            // ownership pin end: rendererEarlySize
+            // ownership pin end: rendererEarlyKindAt
+            // ownership pin end: rendererEarlyHandlerAt
+
+            // ownership pin end: rendererTarget
+            // ownership pin end: rendererDisabled
+            // ownership pin end: rendererTag
+            // ownership pin end: rendererKind
+            // ownership pin end: rendererName
+            // ownership pin end: rendererFocused
+            // ownership pin end: rendererValue
+            // ownership pin end: rendererSetValue
+            // ownership pin end: rendererChecked
+            // ownership pin end: rendererSetChecked
+            // ownership pin end: rendererSelected
+            // ownership pin end: rendererSetSelected
+            // ownership pin end: rendererSelectedIndex
+            // ownership pin end: rendererSetSelectedIndex
+            // ownership pin end: rendererSelectionStart
+            // ownership pin end: rendererSelectionEnd
+            // ownership pin end: rendererSelectionDirection
+            // ownership pin end: rendererSetSelectionRange
+            // ownership pin end: rendererOptions
+            // ownership pin end: rendererElements
+            // ownership pin end: rendererNamed
+            // ownership pin end: rendererControls
+            // ownership pin end: rendererEdits
+            // ownership pin end: rendererSetEdits
+
+            // ownership pin end: rendererCurrentTarget
+            // ownership pin end: rendererClearCurrentTarget
+            // ownership pin end: rendererTakeEarly
+            // ownership pin end: rendererEarlyEvent
+            // ownership pin end: rendererEarlyTarget
+            // ownership pin end: rendererEarlyRemember
+            // ownership pin end: rendererEarlyValue
+            // ownership pin end: rendererEarlyChecked
+            // ownership pin end: rendererEarlySelectedIndex
+
             if (native.recipe == .data_is_finite or native.recipe == .data_is_integer or native.recipe == .data_is_safe_integer) {
                 const values = try l.orderedExprs(out, arg_insts, false);
                 return try l.unary(switch (native.recipe) {
@@ -11043,6 +11510,10 @@ pub const Lowerer = struct {
                 }, values[0], p);
             }
             switch (native.recipe) {
+                .set_make, .set_add, .set_has, .set_size, .set_clear, .set_each, .array_each_view => {},
+                .array_each => {},
+                .event_type, .event_isTrusted, .event_bubbles, .event_cancelBubble, .event_stop, .event_target, .target_node, .node_element, .node_contains, .element_local, .element_as_input, .input_value, .input_value_set, .input_checked, .input_checked_set, .input_disabled, .input_type, .input_name, .input_selectionStart, .input_selectionEnd, .input_selectionDirection, .input_selection_set, .input_node, .element_as_textarea, .textarea_value, .textarea_value_set, .textarea_disabled, .textarea_selectionStart, .textarea_selectionEnd, .textarea_selectionDirection, .textarea_selection_set, .textarea_node, .element_as_select, .select_value, .select_value_set, .select_selectedIndex, .select_selectedIndex_set, .select_disabled, .select_node, .element_as_option, .option_selected, .option_selected_set, .option_node, .element_as_form, .form_node, .select_options, .form_elements, .document_named, .document_active, .document_controls, .event_capture => {},
+                .array_make, .array_get_or, .array_set, .array_push, .array_size, .list_array_view, .array_view_get_or, .array_view_length, .array_view_slice, .key_map_values, .key_map_make, .key_map_get_or, .key_map_get, .key_map_set, .key_map_has, .key_map_remove, .key_map_clear, .key_map_size, .key_map_each, .document_body, .document_create_element, .node_append, .element_attribute, .event_message, .rejection_display => {},
                 .map_get, .map_set, .map_delete, .map_entries, .query_selector, .text_content, .timeout, .queue_microtask, .timer_start, .timer_clear, .message_channel, .message_port1, .message_port2, .post_unit, .on_message, .try_immediate, .date_now, .math_random, .listen_window, .listen_document, .event_prevent, .event_key, .event_code, .event_ctrlKey, .event_shiftKey, .event_altKey, .event_metaKey, .event_pointerId, .event_pointerType, .event_isPrimary, .event_clientX, .event_clientY, .event_box, .rect_left, .rect_top, .event_target_value, .event_target_checked, .event_prevented, .event_button, .event_path, .as_anchor, .anchor_has, .anchor_href, .anchor_protocol, .anchor_host, .anchor_target, .frame_request, .frame_cancel, .inner_width, .inner_height, .visibility_state, .document_title, .document_title_read, .event_listen, .process_stdout, .process_stderr, .process_exit_code, .process_before_exit, .promise_observe, .rejection_is_error, .rejection_name, .rejection_code, .rejection_raise, .abort_create, .abort_signal, .abort_call, .abort_aborted, .node_read_utf8, .node_read_dir, .dirent_name, .dirent_file, .dirent_directory, .dirent_link, .data_is_array, .data_is_finite, .data_is_integer, .data_is_safe_integer, .data_keys, .data_empty_object, .data_has_own, .json_parse, .json_stringify, .url_try_create, .url_href, .url_username, .url_password, .document_base_uri, .headers_create, .headers_append, .headers_has, .headers_set, .headers_get, .headers_entries, .form_create, .form_append, .fetch_text_body, .fetch_form_body, .fetch_init, .fetch_call, .response_url, .response_status, .response_status_text, .response_ok, .response_headers, .response_text, .response_reader, .reader_bytes, .read_result_done, .read_result_value, .decoder_create, .decoder_more, .decoder_finish, .dom_exception_create, .abort_with_reason, .abort_reason_is, .rejection_is_type_error, .regexp_create, .regexp_test, .regexp_replace, .storage_local, .storage_session, .storage_get, .storage_set, .storage_remove, .storage_length, .storage_key, .url_protocol, .url_set_protocol, .ws_create, .ws_binary, .ws_state, .ws_buffered, .ws_protocol, .ws_send, .ws_close, .ws_close_empty, .ws_open, .ws_error, .ws_message, .ws_closed, .console_warn, .document_by_id, .element_focus, .element_blur, .element_box, .element_scroll, .element_into_view, .rect_x, .rect_y, .rect_width, .rect_height, .window_scroll_x, .window_scroll_y, .element_fullscreen_supported, .element_fullscreen, .document_fullscreen_enabled, .document_fullscreen_id, .document_fullscreen_exit, .navigator_activated, .rejection_type_error_message, .data_same, .worker_supported, .worker_create, .worker_endpoint, .worker_self_endpoint, .worker_post, .worker_terminate, .worker_event_target, .global_event_target, .event_data_only, .event_error, .console_error_data, .rejection_abandoned, .global_is_page, .event_error_message, .rejection_create, .rejection_assign, .regexp_group, .worker_close_self, .cf_socketInitialize, .cf_unitResolvers, .cf_stringResolvers, .cf_dataResolvers, .cf_responseResolvers, .cf_program, .cf_definition, .cf_instance, .cf_namespace, .cf_service, .cf_variable, .cf_byName, .cf_idFromString, .cf_getStub, .cf_idName, .cf_requestPath, .cf_requestCopy, .cf_requestSignal, .cf_onAbort, .cf_responseCreate, .cf_responseCopy, .cf_stubFetch, .cf_serviceFetch, .cf_stubRpc, .cf_overloaded, .cf_reset, .cf_retryable, .cf_errorText, .cf_randomUUID, .cf_waitUntil, .cf_objectWaitUntil, .cf_objectAbort, .cf_alarmSet, .cf_alarmDelete, .cf_socketsTagged, .cf_acceptSocket, .cf_autoResponse, .cf_socketPair, .cf_socketClient, .cf_socketServer, .cf_socketResponse, .cf_socketCloseEmpty, .cf_consoleError, .cf_consoleLog, .cf_consoleReason, .promise_resolve, .promise_reject, .promise_after, .cf_socketEq, .cf_socketSend, .cf_socketClose, .cf_socketAttach, .cf_kv, .cf_kvGet, .cf_kvPut, .cf_kvDelete, .cf_kvKeys => {}, // Precise generated adapters.
                 else => {
                     const ignores_unit = native.recipe == .document or native.recipe == .worker_self or native.recipe == .text_encoder or native.recipe == .map_make;
@@ -11221,6 +11692,7 @@ pub const Lowerer = struct {
                 const yes = l.suspendsHere(l.in.dispatch.effectAt(inst).body);
                 return l.add(if (yes) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
             }
+            if (which == .any_unpack_opt) return l.anyUnpackOptCall(out, inst, arg_insts, roots, callee_inst, p);
             // Any's guard and payload stay typed; only an exact compiler
             // identity match can construct Just at the requested type.
             // ownership pin begin: pack
@@ -11232,13 +11704,14 @@ pub const Lowerer = struct {
                 }
                 const values = try l.orderedExprs(out, arg_insts, false);
                 const id = try l.identityValue(roots[roots.len - 1], p);
-                var target = try l.referenceName(callee_inst);
+                const target = try l.referenceName(callee_inst);
                 if (which == .any_pack and arg_insts.len == 1) {
-                    // Only these expressions allocate the packet at this call.
-                    // Aliases, updates and call results retain the ordinary Box,
-                    // including when later release inlining exposes a literal.
+                    // Source eligibility stays narrow even if later inlining
+                    // exposes a literal: aliases, updates and calls keep Box.
                     switch (l.bir.instTag(arg_insts[0])) {
-                        .record, .tuple => target = try l.member(target, try l.interner.getOrPut(l.gpa, "$packet"), p),
+                        .record, .tuple => if (l.freshPacketObject(values[0])) {
+                            return l.freshPacket(target, .{ .value = id }, values[0], p);
+                        },
                         else => {},
                     }
                 }
@@ -11348,7 +11821,12 @@ pub const Lowerer = struct {
         // They are names and closures with no statements of their own, so
         // building them after the sequence changes no evaluation order.
         try l.markSanitizeChain(inst, arg_insts);
-        const values = try l.exprListWithHead(out, callee_inst, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
+        const values = blk: {
+            const saved_callee = l.direct_callee;
+            l.direct_callee = callee_inst.toOptional();
+            defer l.direct_callee = saved_callee;
+            break :blk try l.exprListWithHead(out, callee_inst, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
+        };
         const callee = values[0];
         // A trailing `()` the callee does not take is not passed (§6, *A
         // parameter of type `()`*): `f ()` is `f()`.
@@ -12010,11 +12488,51 @@ pub const Lowerer = struct {
     // ownership pin end: arraySet
     // ownership pin end: arrayAllocate
 
+    // ownership pin begin: unpackOpt
+    fn anyUnpackOptCall(l: *Lowerer, out: *StmtList, inst: Inst.Index, args: []const Inst.Index, roots: []const Dispatch.TermIndex, callee: Inst.Index, p: u32) !Node.Index {
+        if (roots.len == 0 or l.in.dispatch.term(roots[roots.len - 1]) != .identity) {
+            try l.reportEvidenceShape(inst);
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
+        const values = try l.orderedExprs(out, args, false);
+        const id = try l.identityValue(roots[roots.len - 1], p);
+        return l.anyUnpackOpt(out, id, values[0], l.optPlainAt(callee), p);
+    }
+
+    fn anyPackValue(l: *Lowerer, p: u32) !Node.Index {
+        const module_name = l.interner.global.find("Js.Any") orelse return l.missingCoreValue(p, "Js.Any", "pack", "the core module is missing");
+        const owner = l.in.graph.lookup(.core, module_name) orelse return l.missingCoreValue(p, "Js.Any", "pack", "the core module is missing");
+        const bir = l.in.birs[owner.int()];
+        for (bir.decls, 0..) |d, i| {
+            const symbol = bir.symbol(d.name);
+            if (!std.mem.eql(u8, l.text(symbol), "pack")) continue;
+            if (owner == l.in.module) return l.ident(try l.topName(@intCast(i)), p);
+            const needed: Needed = .{ .module = owner, .base = symbol.toOptional() };
+            try l.needName(needed);
+            return l.ident(try l.neededName(needed), p);
+        }
+        return l.missingCoreValue(p, "Js.Any", "pack", "the packet identity producer is missing");
+    }
+
+    fn anyUnpackOpt(l: *Lowerer, out: *StmtList, identity_: Node.Index, operand: Node.Index, plain: bool, p: u32) !Node.Index {
+        const box = try l.bindSubject(out, operand, p);
+        const producer = try l.member(try l.anyPackValue(p), try l.interner.getOrPut(l.gpa, "$packet"), p);
+        const key = try l.member(producer, try l.interner.getOrPut(l.gpa, "key"), p);
+        const packet_type = try l.bindSubject(out, try l.add(.index_get, p, box.int(), key.int()), p);
+        const is_packet = try l.binary(.strict_ne, packet_type, try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p);
+        const stored_type = try l.member(box, try l.interner.getOrPut(l.gpa, "type"), p);
+        const matched = try l.condOf(is_packet, try l.binary(.strict_eq, packet_type, identity_, p), try l.binary(.strict_eq, stored_type, identity_, p), p);
+        const payload = try l.condOf(is_packet, box, try l.member(box, try l.interner.getOrPut(l.gpa, "value"), p), p);
+        const present = if (plain) payload else try l.call(try l.optCoreValue("some", p), &.{payload}, p);
+        return l.condOf(matched, present, try l.optNone(p), p);
+    }
+    // ownership pin end: unpackOpt
+
     /// A first-class typed intrinsic, with no sibling export or import.
     fn jsTypedValue(l: *Lowerer, which: JsIntrinsic.Which, p: u32) !Node.Index {
         const arity: usize = switch (which) {
             .optMatch, .arraySet, .arrayWrite => 3,
-            .schemaIdentity, .optWithDefault, .arrayDone, .arrayGet, .arraySort => 2,
+            .any_unpack_opt, .schemaIdentity, .optWithDefault, .arrayDone, .arrayGet, .arraySort => 2,
             else => 1,
         };
         var names: [3]JsIr.NameIndex = undefined;
@@ -12022,6 +12540,12 @@ pub const Lowerer = struct {
         for (0..arity) |i| {
             names[i] = try l.fresh(l.well.temp);
             values[i] = try l.ident(names[i], p);
+        }
+        if (which == .any_unpack_opt) {
+            var body: StmtList = .empty;
+            const result = try l.anyUnpackOpt(&body, values[0], values[1], false, p);
+            try body.append(l.scratch, try l.returnStmt(result, p));
+            return l.arrowOf(names[0..arity], body.items, p);
         }
         if (which == .some) return l.optSomeArrow(names[0], values[0], p);
         if (which == .arrayAllocate or which == .arraySet or which == .arrayDone or which == .arrayGet or which == .arrayLength or which == .arrayWrite or which == .arraySort) {
@@ -12320,7 +12844,7 @@ pub const Lowerer = struct {
             // Answered at the call, before it gets here (`callExpr`).
             W.maySuspend => l.add(.true_lit, p, Node.Data.unused, Node.Data.unused),
             // Answered at the call, from its site (`callExpr`).
-            W.any_pack, W.any_unpack, W.fingerprint, W.schemaIdentity => l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+            W.any_pack, W.any_unpack, W.any_unpack_opt, W.fingerprint, W.schemaIdentity => l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
             W.throw => blk: {
                 try out.append(l.scratch, try l.add(.throw_stmt, p, v[0].int(), Node.Data.unused));
                 break :blk l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
@@ -20208,10 +20732,14 @@ pub const Lowerer = struct {
             .comparison = .{ .ctx = l, .classify = classifyComparison },
             .debug_module = if (l.in.graph.lookup(.core, InternPool.WellKnown.Debug.symbol())) |d| d.int() else null,
             .parameterised_templates = mk.lowering.parameterised_templates,
+            .capture_identities = mk.lowering.groups and mk.lowering.operand_evidence.identity and
+                mk.lowering.targets.minor >= 26 and !mk.lowering.parameterised_templates,
         }) orelse blk: {
             // A module with no markup of its own may still call a program
             // constructor: the hook runs with an empty tree (§9.4.6, 1.6).
-            if (l.program_calls.len == 0) return;
+            // The runtime module whose values the lowering supplies holds
+            // their hoists likewise (1.30).
+            if (l.program_calls.len == 0 and !l.suppliesValues()) return;
             break :blk MarkupTree.empty;
         };
         const st = try l.scratch.create(MarkupState);
@@ -20287,8 +20815,8 @@ pub const Lowerer = struct {
     /// Whether root `index`'s values are left to the lowering (`cx.grouped`,
     /// `boundary.md` §9.4.6, 1.5): the lowering groups, the tree found
     /// nothing that returns from the enclosing function, and the enclosing
-    /// declaration takes no evidence — its own or a `let` function's — has
-    /// no suspendable body, and is not being lowered in the suspendable
+    /// declaration has no method evidence or source calls that require a
+    /// scoped identity, has no suspendable body, and is not lowered in the suspendable
     /// form, so no value can suspend. Decided once per root.
     fn markupGrouped(l: *Lowerer, index: beni_markup.Root.Index) bool {
         const st = l.mk orelse return false;
@@ -20302,12 +20830,21 @@ pub const Lowerer = struct {
             if (l.suspendable) break :blk false;
             if (l.in.dispatch.effectDecl(decl).twin) break :blk false;
             if (l.in.dispatch.effectDecl(decl).own != .no) break :blk false;
-            if (Convention.ofDecl(l.in.dispatch, l.bir, decl).evidence != 0) break :blk false;
+            if (l.in.dispatch.declRequirements(decl).len != 0) break :blk false;
+            const capture_identities = st.lowering.operand_evidence.identity and
+                st.lowering.targets.minor >= 26 and !st.lowering.parameterised_templates;
+            if (!capture_identities and Convention.ofDecl(l.in.dispatch, l.bir, decl).evidence != 0) break :blk false;
+            for (l.in.dispatch.declIdentities(decl)) |identity| {
+                if (identity & Dispatch.checked_evidence != 0) break :blk false;
+            }
             const d = l.bir.decls[decl];
             for (l.bir.declLocals(d)) |local| {
                 if (local.kind != .let) continue;
                 const row = l.in.dispatch.letIndex(local.inst) orelse continue;
                 if (l.in.dispatch.letRequirements(row).len != 0) break :blk false;
+                for (l.in.dispatch.letIdentities(row)) |identity| {
+                    if (identity & Dispatch.checked_evidence != 0) break :blk false;
+                }
             }
             break :blk true;
         };
@@ -20342,12 +20879,19 @@ pub const Lowerer = struct {
         const st = l.mk.?;
         const root = st.built.tree.root(index);
         const saved = try l.scratch.alloc(JsIr.NameIndex, root.inputs.len);
-        for (0..root.inputs.len) |k| {
-            const local = st.built.values[root.inputs.start + k].capture;
-            saved[k] = if (local < l.local_names.len) l.local_names[local] else .none;
-            if (local < l.local_names.len and k < names.len) l.local_names[local] = @fromBackingInt(@intCast(@backingInt(names[k])));
-        }
-        try st.binds.append(l.scratch, .{ .root = index, .names = saved, .case_depth = l.case_depth });
+        @memset(saved, .none);
+        const identities_start = l.identity_aliases.items.len;
+        for (0..root.inputs.len) |k| switch (st.built.values[root.inputs.start + k]) {
+            .capture => |local| {
+                saved[k] = if (local < l.local_names.len) l.local_names[local] else .none;
+                if (local < l.local_names.len and k < names.len) l.local_names[local] = @fromBackingInt(@intCast(@backingInt(names[k])));
+            },
+            .identity => |parameter| if (k < names.len) {
+                try l.identity_aliases.append(l.scratch, .{ .parameter = parameter, .name = @fromBackingInt(@intCast(@backingInt(names[k]))) });
+            },
+            else => unreachable,
+        };
+        try st.binds.append(l.scratch, .{ .root = index, .names = saved, .case_depth = l.case_depth, .identities_start = identities_start });
         l.case_depth = 0;
         l.function_depth += 1;
     }
@@ -20363,10 +20907,14 @@ pub const Lowerer = struct {
             const saved = top.lets.items[j];
             l.local_names[saved[0]] = saved[1];
         }
-        for (0..root.inputs.len) |k| {
-            const local = st.built.values[root.inputs.start + k].capture;
-            if (local < l.local_names.len) l.local_names[local] = top.names[k];
-        }
+        for (0..root.inputs.len) |k| switch (st.built.values[root.inputs.start + k]) {
+            .capture => |local| if (local < l.local_names.len) {
+                l.local_names[local] = top.names[k];
+            },
+            .identity => {},
+            else => unreachable,
+        };
+        l.identity_aliases.shrinkRetainingCapacity(top.identities_start);
         l.case_depth = top.case_depth;
         l.function_depth -= 1;
     }
@@ -20511,6 +21059,17 @@ pub const Lowerer = struct {
                 },
             },
             .capture => |local| return l.ident(try l.localName(local), p),
+            .identity => |parameter| return l.termName(.{ .param = parameter }, p),
+            .identity_key => |parts| {
+                std.debug.assert(parts.len != 0);
+                if (parts.len == 1) return l.markupValue(parts.at(0));
+                var key = try l.stringNode("(", p);
+                for (0..parts.len) |k| {
+                    if (k != 0) key = try l.binary(.add, key, try l.stringNode(",", p), p);
+                    key = try l.binary(.add, key, try l.markupValue(parts.at(@intCast(k))), p);
+                }
+                return l.binary(.add, key, try l.stringNode(")", p), p);
+            },
             .input => |record| return l.markupInput(record, p),
             .read => |r| {
                 var n = try l.ident(try l.localName(r.local), p);
@@ -20814,6 +21373,26 @@ pub const Lowerer = struct {
         return n;
     }
 
+    /// Whether this module declares a value its lowering supplies.
+    fn suppliesValues(l: *Lowerer) bool {
+        for (l.bir.decls) |d| if (l.loweringSupplied(d) != null) return true;
+        return false;
+    }
+
+    /// The name of a value of the markup runtime module that its lowering
+    /// supplies (`Lowering.runtime_protocol`, `boundary.md` §9.4.6, 1.30),
+    /// or null.
+    fn loweringSupplied(l: *Lowerer, d: Bir.Decl) ?[]const u8 {
+        if (d.kind != .foreign_value) return null;
+        const mk = l.in.markup orelse return null;
+        const module = mk.module orelse return null;
+        if (module != l.in.module) return null;
+        const supplied = mk.lowering.runtime_protocol orelse return null;
+        const name_ = l.text(l.bir.symbol(d.name));
+        for (supplied.values) |v| if (std.mem.eql(u8, v, name_)) return v;
+        return null;
+    }
+
     /// The runtime module's value that supplies the runtime export
     /// `export_name`, recorded as used, or null when the file supplies it
     /// (`backend.md` §15.1, *The runtime module*).
@@ -20977,6 +21556,7 @@ const InputBind = struct {
     root: beni_markup.Root.Index,
     names: []const JsIr.NameIndex,
     case_depth: u32,
+    identities_start: usize,
     /// The root's `let`s bound since (`cx.bindLet`), each with its local's
     /// name before.
     lets: std.ArrayList(struct { u32, JsIr.NameIndex }) = .empty,
@@ -21140,6 +21720,7 @@ const MarkupContext = struct {
                 .function_param => |index_| if (shape.kind == .function and children.len > index_ + 1) children[index_] else return null,
                 .function_result => if (shape.kind == .function and children.len != 0) children[children.len - 1] else return null,
                 .tuple_field => |index_| if (shape.kind == .tuple and children.len > index_) children[index_] else return null,
+                .type_argument => |index_| if (shape.kind == .named and children.len > index_) children[index_] else return null,
                 .record_field => |field| field: {
                     if (shape.kind != .record) return null;
                     for (children) |child| {
@@ -21171,6 +21752,19 @@ const MarkupContext = struct {
     fn evidence(impl: *anyopaque, v: M.Value.Index, path: []const M.TypeStep, kind: M.EvidenceKind) E!M.Evidence {
         const l = lowerer(impl);
         const source = l.mk.?.built.values[@backingInt(v)];
+        if (source == .identity or source == .identity_key) {
+            if (path.len != 0 or kind != .identity) return evidenceError(l);
+            // This synthetic value is a String by construction. Resolve its
+            // identity through the checker's built-in type table, exactly
+            // as source String operands do; release links the same atoms.
+            const id = l.in.types.well_known.string;
+            if (id == .none) return evidenceError(l);
+            const entry = l.in.types.entry(id);
+            const text = try std.fmt.allocPrint(l.scratch, "core:{s}.{s}", .{
+                l.interner.slice(entry.module_name), l.interner.slice(entry.name),
+            });
+            return keepEvidence(l, try l.identityString(text, pos(l)), .identity);
+        }
         const root = switch (source) {
             .inst, .callee => |inst| evidenceRoot(l, inst, kind),
             .call => |call_| evidenceRoot(l, call_.inst, kind),
@@ -21205,7 +21799,7 @@ const MarkupContext = struct {
                 const term = l.in.dispatch.term(index_);
                 if (term == .param) {
                     if (text.items.len != 0) {
-                        try values.append(l.scratch, try l.stringNode(text.items, pos(l)));
+                        try values.append(l.scratch, try l.identityString(text.items, pos(l)));
                         text.clearRetainingCapacity();
                     }
                     try values.append(l.scratch, try l.termName(term, pos(l)));
@@ -21277,7 +21871,7 @@ const MarkupContext = struct {
                 }
             },
         };
-        if (text.items.len != 0) try values.append(l.scratch, try l.stringNode(text.items, pos(l)));
+        if (text.items.len != 0) try values.append(l.scratch, try l.identityString(text.items, pos(l)));
         var result = values.items[0];
         for (values.items[1..]) |value_| result = try l.binary(.add, result, value_, pos(l));
         return result;
@@ -21336,6 +21930,35 @@ const MarkupContext = struct {
             return expr(token);
         }
         return evidenceError(l);
+    }
+
+    fn packetError(l: *Lowerer, message: []const u8) E {
+        l.report(.internal, l.region, "{s}", .{message}) catch return error.OutOfMemory;
+        return error.Reported;
+    }
+
+    fn packet(impl: *anyopaque, fresh_expr: M.Expr, identity_evidence: M.Evidence) E!M.Expr {
+        const l = lowerer(impl);
+        const index_ = @backingInt(identity_evidence);
+        if (index_ >= l.mk.?.evidence.items.len)
+            return packetError(l, "Context.packet requires compiler-issued checked identity evidence.");
+        const identity = l.mk.?.evidence.items[index_];
+        if (identity.kind != .identity)
+            return packetError(l, "Context.packet requires compiler-issued checked identity evidence; checked-data evidence is not an identity.");
+        const value_ = node(fresh_expr);
+        if (value_.int() >= l.b.nodes.len or l.b.nodes.items(.tag)[value_.int()] != .object)
+            return packetError(l, "Context.packet requires a provably fresh object literal; names, calls and other expressions cannot become packets.");
+        if (!l.freshPacketObject(value_))
+            return packetError(l, "Context.packet requires a fresh object literal with ordinary properties; spreads are not accepted.");
+        const module_name = l.interner.global.find("Js.Any") orelse return packetError(l, "Context.packet cannot find the core Any packet producer.");
+        const owner = l.in.graph.lookup(.core, module_name) orelse return packetError(l, "Context.packet cannot find the core Any packet producer.");
+        const pack_name = l.interner.global.find("pack") orelse return packetError(l, "Context.packet cannot find the core Any packet producer.");
+        const pack_value = l.in.interfaces[owner.int()].findValue(l.interner.global, pack_name) orelse return packetError(l, "Context.packet cannot find the core Any packet producer.");
+        const p = pos(l);
+        l.markup_packets = true;
+        try l.need(owner, @backingInt(pack_value));
+        const pack_ref = try l.ident(try l.externalName(owner, @backingInt(pack_value)), p);
+        return expr(try l.freshPacket(pack_ref, .{ .value = identity.value }, value_, p));
     }
 
     fn rowValues(impl: *anyopaque, into: M.Block, row: M.Row.Index, item: M.Name, position: ?M.Name, captures: []const M.Name) E!?M.Expr {
@@ -21972,6 +22595,11 @@ const MarkupContext = struct {
         return expr(try l.member(node(target), try symbolOf(l, field), pos(l)));
     }
 
+    fn fieldMember(impl: *anyopaque, target: M.Expr, field: []const u8) E!M.Expr {
+        const l = lowerer(impl);
+        return expr(try l.fieldMember(node(target), try symbolOf(l, field), pos(l)));
+    }
+
     fn index(impl: *anyopaque, target: M.Expr, at_: M.Expr) E!M.Expr {
         const l = lowerer(impl);
         return expr(try l.add(.index_get, pos(l), node(target).int(), node(at_).int()));
@@ -21981,7 +22609,13 @@ const MarkupContext = struct {
         const l = lowerer(impl);
         const p = pos(l);
         var nodes: std.ArrayList(Node.Index) = .empty;
-        for (properties) |prop| try nodes.append(l.scratch, try l.property(try symbolOf(l, prop.key), node(prop.value), p));
+        for (properties) |prop| {
+            const key = try symbolOf(l, prop.key);
+            try nodes.append(l.scratch, if (prop.source)
+                try l.fieldProperty(key, node(prop.value), p)
+            else
+                try l.property(key, node(prop.value), p));
+        }
         return expr(try l.object(nodes.items, p));
     }
 
@@ -22076,6 +22710,7 @@ const MarkupContext = struct {
         .evidence = evidence,
         .tuple_evidence = tupleEvidence,
         .supplied_runtime = suppliedRuntime,
+        .packet = packet,
         .value = value,
         .row_values = rowValues,
         .row_values_apart = rowValuesApart,
@@ -22172,6 +22807,7 @@ const MarkupContext = struct {
         .name = name,
         .call = call,
         .member = member,
+        .field_member = fieldMember,
         .index = index,
         .object = object,
         .array = array,

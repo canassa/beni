@@ -1,0 +1,1 @@
+[{"code":"private_name","severity":"error","span":{"file":"tests/corpus/check/bad/markup/DomRuntimePrivate.beni","start":{"line":5,"col":18},"end":{"line":5,"col":38}},"title":"PRIVATE NAME","message":"This name is private to core and platform runtimes."}]

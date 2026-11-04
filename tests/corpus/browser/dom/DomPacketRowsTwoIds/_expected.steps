@@ -1,0 +1,7 @@
+click #noop
+click #flip
+click #noop
+click #second
+click #noop
+click #flip
+click #second

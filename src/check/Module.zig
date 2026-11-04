@@ -681,9 +681,9 @@ fn reportMarkup(report: *Report, bir: *const Bir, graph: *const Graph) Error!voi
             \\platform or the platforms it depends on (`docs/design/boundary.md` §9.2).
         ),
         .bad_type => try report.emitText(.no_markup_vocabulary, root, null, lead ++
-            \\The `"markup"` `"type"` of this build's platform must name a `pub foreign type`
-            \\of one parameter in a module of the platform or the platforms it depends on,
-            \\and it names none (`docs/design/boundary.md` §9.2).
+            \\The `"markup"` `"type"` must name a public type of one parameter in this
+            \\platform or its dependencies: a `foreign type`, or an `opaque type` with
+            \\one constructor and one field. It names none (`docs/design/boundary.md` §9.2).
         ),
     }
 }
@@ -1271,7 +1271,7 @@ fn optPlainRows(gpa: Allocator, solver: *Solve) Error![]const Bir.Inst.Index {
     for (solver.opt_uses.items) |use| {
         const func = Walk.function(solver.cx.store, use.copy) orelse continue;
         if (func.params.len == 0) continue;
-        var element = func.params[0];
+        var element = if (use.result) func.result else func.params[0];
         if (!use.some) {
             const app = Walk.nominal(solver.cx.store, element) orelse continue;
             if (!solver.cx.types.isJsOptional(app.type) or app.args.len != 1) continue;
