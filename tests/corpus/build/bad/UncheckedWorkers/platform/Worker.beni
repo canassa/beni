@@ -34,7 +34,7 @@ pub open : Program → Result OpenError Handle
 open definition = nativeOpen definition
 
 
-foreign impure nativeOpen : Js.Value → Result OpenError Handle
+foreign impure nativeOpen : Program → Result OpenError Handle
 
 
 pub foreign impure send : Handle, String → ⊤
