@@ -7048,7 +7048,7 @@ distinct specifier, the name spelled as the one scope spells the module's bindin
 build and a multi-file release build write it first among the module's statements); a built-in's evaluation is not observable to the program, so
 evaluating it first moves nothing anyone can see. *Amended 2026-10-23: a `cloudflare:` built-in is a
 host built-in the same way — the `cloudflare` platform's runtime imports `DurableObject` from
-`cloudflare:workers`, which the host requires of a class that answers RPC (`boundary.md` §9.12
+`cloudflare:workers`, (*since 2026-11-04 through `Js.module` in `Rt.beni`: the emitted module's import of this paragraph's amendment of that date*) which the host requires of a class that answers RPC (`boundary.md` §9.12
 (e.11)) — so the rule reads "a `node:` or `cloudflare:` built-in" wherever this section says
 `node:`.* Of two files binding one name from different
 statements, the later keeps a module of its own, and so does a file whose `import` binds a name

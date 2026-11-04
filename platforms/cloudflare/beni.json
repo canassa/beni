@@ -2,7 +2,7 @@
   "platform": true,
   "name": "cloudflare",
   "program": "Worker.Program",
-  "runtime": "runtime.js",
+  "module": "Rt",
   "entry": "_worker.mjs",
   "exports": "program"
 }
