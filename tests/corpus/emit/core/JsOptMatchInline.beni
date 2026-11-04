@@ -1,0 +1,31 @@
+-- Literal arms are presence branches, including generic escaped payloads.
+import Js
+
+
+pub literal : Js.Opt Int → Int
+literal slot = Js.optMatch slot (λ⊤ → -1) λvalue → value + 2
+
+
+pub generic : Js.Opt a → Maybe a
+generic slot = Js.optMatch slot (λ⊤ → Nothing) λvalue → Just value
+
+
+pub pattern : Js.Opt (Int × Int) → Int
+pattern slot = Js.optMatch slot (λ⊤ → 0) λ( x, y ) → x + y
+
+
+pub statements : Js.Ref Int, Js.Opt Int → Int
+statements counter slot =
+    Js.optMatch
+        slot
+        (λ⊤ →
+            Js.write counter (Js.read counter + 10)
+            -1
+        )
+        λvalue →
+            Js.write counter (Js.read counter + 1)
+            value
+
+
+pub variables : Js.Opt a, sync (⊤ → b), sync (a → b) → b
+variables slot missing present = Js.optMatch slot missing present

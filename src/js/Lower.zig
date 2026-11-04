@@ -12009,6 +12009,64 @@ pub const Lowerer = struct {
         return l.arrowOf(names[0..arity], &.{try l.add(.return_stmt, p, result.int(), Node.Data.unused)}, p);
     }
 
+    /// Literal sync arms are blocks of the presence branch. Other operands
+    /// still evaluate eagerly, once and in order, before testing the slot.
+    fn optMatchInline(l: *Lowerer, out: *StmtList, args: []const Inst.Index, intrinsic: Inst.Index, p: u32) !Node.Index {
+        const arms = [_]?Inst.Index{ l.caughtLambda(args[1]), l.caughtLambda(args[2]) };
+        var operands: [3]Inst.Index = undefined;
+        operands[0] = args[0];
+        var count: usize = 1;
+        for (arms, 1..) |arm, i| if (arm == null) {
+            operands[count] = args[i];
+            count += 1;
+        };
+        const values = try l.orderedExprs(out, operands[0..count], false);
+        for (values) |*value| value.* = try l.bindSubject(out, value.*, p);
+        const slot = values[0];
+        const test_expr = try l.binary(.strict_ne, slot, try l.optNone(p), p);
+        var blocks = [_]StmtList{ .empty, .empty };
+        var results: [2]Node.Index = undefined;
+        var next: usize = 1;
+        for (arms, 0..) |arm, i| {
+            const block = &blocks[i];
+            const payload = if (i == 0) try l.nullNode(p) else try l.optPayload(slot, l.optPlainAt(intrinsic), p);
+            results[i] = if (arm) |f| blk: {
+                const d = l.bir.instData(f);
+                const param = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index)[0];
+                // A bound identifier can be the parameter directly. Complex
+                // payloads are snapshotted once, including for patterns.
+                const subject = try l.bindSubject(block, payload, p);
+                if (l.bir.instTag(param) == .pat_var and l.b.tagOf(subject) == .ident and
+                    l.local_names[l.bir.instData(param).lhs] == .none)
+                {
+                    l.local_names[l.bir.instData(param).lhs] = @fromBackingInt(@intCast(l.b.dataOf(subject).lhs));
+                } else try l.bindings(block, param, subject);
+                break :blk try l.expr(block, @fromBackingInt(@intCast(d.rhs)));
+            } else blk: {
+                next += 1;
+                break :blk try l.call(values[next - 1], &.{payload}, p);
+            };
+        }
+        if (blocks[0].items.len == 0 and blocks[1].items.len == 0)
+            return l.condOf(test_expr, results[1], results[0], p);
+        const result = try l.fresh(l.well.temp);
+        try out.append(l.scratch, try l.add(.let_decl, p, @backingInt(result), @backingInt(Node.OptionalIndex.none)));
+        for (&blocks, results) |*block, value| {
+            const ended = block.items.len != 0 and l.b.tagOf(block.items[block.items.len - 1]) == .throw_stmt and l.b.tagOf(value) == .undefined_lit;
+            if (!ended) try block.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(result, p)).int(), value.int()));
+        }
+        const then_range = try l.b.addRange(blocks[1].items);
+        const else_range = try l.b.addRange(blocks[0].items);
+        const record = try l.b.addRecord(JsIr.If{
+            .then_start = then_range.start,
+            .then_end = then_range.end,
+            .else_start = else_range.start,
+            .else_end = else_range.end,
+        });
+        try out.append(l.scratch, try l.add(.if_stmt, p, test_expr.int(), @backingInt(record)));
+        return l.ident(result, p);
+    }
+
     fn jsIntrinsicCall(l: *Lowerer, out: *StmtList, which: JsIntrinsic.Which, args: []const Inst.Index, intrinsic: Inst.Index, p: u32) !Node.Index {
         const W = JsIntrinsic.Which;
         // A `Js.Ref` written as a `let` (§4, *A `Js.Ref` that does not
@@ -12046,6 +12104,9 @@ pub const Lowerer = struct {
             try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), values[1].int()));
             return l.nullNode(p);
         }
+        if (which == .optMatch and args.len == 3 and
+            (l.caughtLambda(args[1]) != null or l.caughtLambda(args[2]) != null))
+            return l.optMatchInline(out, args, intrinsic, p);
         if (which == .each and args.len == 2) return l.eachLoop(out, args[0], args[1], p);
         if (which == .finally and args.len == 2) return (try l.finallyTry(out, args[0], args[1], .value, p)).?;
         if (which == .catchIf and args.len == 3) return (try l.catchTry(out, args[0], args[1], args[2], .value, p)).?;
