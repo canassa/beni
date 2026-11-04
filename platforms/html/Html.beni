@@ -54,6 +54,50 @@ pub targetChecked : Event → Bool
 targetChecked ev = Js.to (Js.get (Js.get (Js.from ev) "target") "checked")
 
 
+--| A text field's selection, in code points as `String` counts them: where
+--| it starts and where it ends (`start` never after `end`), and whether it
+--| was made backward, its moving end at `start`. A caret is a selection
+--| whose `start` is its `end`.
+pub type alias Selection =
+    start : Int
+    end : Int
+    backward : Bool
+
+
+--| The selection of the text field an event came from: a `textarea`, or an
+--| `input` of a type that has one (`text`, `search`, `url`, `tel`,
+--| `password`). `Nothing` for any other target. A position inside a
+--| character past U+FFFF counts that character.
+--|
+--|     onKeyDown={λevent → Key (Html.key event) (Html.targetSelection event)}
+pub targetSelection : Event → Maybe Selection
+targetSelection ev =
+    target = Js.get (Js.from ev) "target"
+    if Js.isNullish target then
+        Nothing
+    else
+        start = Js.get target "selectionStart"
+        -- `null` on an input of a type with no selection, absent on any
+        -- other element.
+        if not (Js.typeIs start "number") then
+            Nothing
+        else
+            value = Js.get target "value"
+            Just
+                { start = codePointsBefore value start
+                , end = codePointsBefore value (Js.get target "selectionEnd")
+                , backward = Js.same (Js.get target "selectionDirection") (Js.from "backward")
+                }
+
+
+-- How many code points of the string `value` are before UTF-16 offset
+-- `units`.
+codePointsBefore : Js.Value, Js.Value → Int
+codePointsBefore value units =
+    before = Js.call value "slice" [ Js.from 0, units ]
+    Js.to (Js.get (Js.call (Js.global "Array") "from" [ before ]) "length")
+
+
 -- What a handler reads of the event it is handed (`boundary.md` §9.8.10).
 -- Each is the DOM property of the same name, read while the event is
 -- dispatched; one the event does not have reads as `""` or `False`, so a

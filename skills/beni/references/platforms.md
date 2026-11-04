@@ -293,7 +293,7 @@ errors apply (`lists.md`, *Ownership*). View helpers: `markup.md`. Routing: `rou
 The vocabulary the page platforms and `Ssr` share: every element, attribute and event, with the
 payload each event carries (`onInput` gives the input's value as a `String`; `onClick` gives the
 `Event`; the pointer events give an `Html.Pointer`, read with `Html.localX` and `Html.localY`).
-`Html.map`, `Html.text`, `Html.preventDefault`, `Html.key`. A program never names this platform;
-the others include it.
+`Html.map`, `Html.text`, `Html.preventDefault`, `Html.key`, `Html.targetSelection` (a text field's selection, in code
+points; `Dom.select id selection` sets one). A program never names this platform; the others include it.
 
 Sources: `docs/design/boundary.md` §5, §9.1, §9.8, §9.10, §9.12; `platforms/*/beni.json`; the modules' doc comments.
