@@ -5232,6 +5232,15 @@ theorem primType_copy_success {tR type : Ty} (flatR : FlatType tR)
     exact ⟨t, rfl, typeEq⟩
   | _ => simp [primType] at run
 
+theorem primType_view_success {front : Bool} {tR type : Ty} (flatR : FlatType tR)
+    (run : primType (.view front) [tR] = .ok type) : ∃ t, tR = .list t ∧ type = .list t := by
+  cases flatR with
+  | list t _ =>
+    simp [primType] at run
+    have typeEq : type = .list t := by cases run; rfl
+    exact ⟨t, rfl, typeEq⟩
+  | _ => simp [primType] at run
+
 theorem primType_prepend_success {tI tR type : Ty} (flatI : FlatType tI) (flatR : FlatType tR)
     (run : primType .prepend [tI, tR] = .ok type) :
     ∃ t, tI = t ∧ tR = .list t ∧ type = .list t := by
@@ -5291,6 +5300,19 @@ theorem exprType_copy_success {declarations : List Decl} {self : Decl} {tenv : E
   have restNil := except_mapM_nil_success restTyped
   subst restNil
   obtain ⟨t, hR, typeList⟩ := primType_copy_success (flatTypes receiver tR receiverTyped) primTyped
+  subst hR
+  exact ⟨t, receiverTyped, typeList⟩
+
+theorem exprType_view_success {declarations : List Decl} {self : Decl} {tenv : Env Ty} {front : Bool}
+    {receiver : Atom} {type : Ty}
+    (flatTypes : ∀ (atom : Atom) (t : Ty), atomType tenv atom = .ok t → FlatType t)
+    (typed : exprType declarations self tenv (.prim (.view front) [receiver]) = .ok type) :
+    ∃ t, atomType tenv receiver = .ok (.list t) ∧ type = .list t := by
+  obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
+  obtain ⟨tR, rest, receiverTyped, restTyped, rfl⟩ := except_mapM_cons_success atomsTyped
+  have restNil := except_mapM_nil_success restTyped
+  subst restNil
+  obtain ⟨t, hR, typeList⟩ := primType_view_success (flatTypes receiver tR receiverTyped) primTyped
   subst hR
   exact ⟨t, receiverTyped, typeList⟩
 
@@ -5457,6 +5479,10 @@ theorem flat_uses_typed {declarations : List Decl} {self : Decl} {e : Expr} (fla
     obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
     exact atoms_use_typed atomsTyped use
   | @copy receiver =>
+    intro tenv ty typed x p use
+    obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
+    exact atoms_use_typed atomsTyped use
+  | @view receiver front =>
     intro tenv ty typed x p use
     obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
     exact atoms_use_typed atomsTyped use

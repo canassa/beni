@@ -2671,6 +2671,25 @@ theorem primitive_copy_run (ctx : Context) (site : List Nat) (roots : List Origi
   unfold primitive
   rfl
 
+/-- The checker's view: a read of the source, and the source's description
+with the fresh site among its roots (#169). -/
+theorem primitive_view_run (ctx : Context) (site : List Nat) (front : Bool) (roots : List Origin)
+    (element : Abstract) (certificate : Certificate) (later : List Origin) (before : St) :
+    (primitive ctx site (.view front) [.list roots element certificate] later).run before =
+      .ok (.list (if ctx.config.has .viewAlias then [.site site 0] else union roots [.site site 0]) element
+          certificate,
+        {before with facts := {before.facts with
+          reads := union before.facts.reads (roots.filter external)}}) := by
+  unfold primitive
+  rfl
+
+theorem primitive_view_bottom_run (ctx : Context) (site : List Nat) (front : Bool) (later : List Origin)
+    (before : St) :
+    (primitive ctx site (.view front) [.bottom] later).run before = .ok (.bottom, before) := by
+  unfold primitive
+  simp [BEq.beq, Abstract.equal]
+  rfl
+
 theorem primitive_copy_bottom_run (ctx : Context) (site : List Nat) (later : List Origin) (before : St) :
     (primitive ctx site .copy [.bottom] later).run before = .ok (.bottom, before) := by
   unfold primitive
