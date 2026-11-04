@@ -413,7 +413,10 @@ jobs:
           fi
 
   # A job-local path filter: unrelated PRs keep the existing checks and
-  # avoid installing Chromium. Pushes/nightlies run the whole corpus.
+  # avoid installing Chromium. Pushes/nightlies run the whole corpus and
+  # the site check. `run` says whether the Chrome corpus runs, `pages`
+  # whether the site check (`zig build test-pages`, issue #244) runs; the
+  # `browser` job runs when one of them is true.
   browser-plan:
     name: choose Chrome corpus
     runs-on: ubuntu-latest
@@ -423,6 +426,7 @@ jobs:
     outputs:
       run: ${{ steps.plan.outputs.run }}
       corpus: ${{ steps.plan.outputs.corpus }}
+      pages: ${{ steps.plan.outputs.pages }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -439,30 +443,39 @@ jobs:
             corpus=managed
           fi
           echo "corpus=$corpus" >> "$GITHUB_OUTPUT"
+          run=true
+          pages=true
           if [ "$corpus" = managed ] && [ ! -d tests/corpus/browser/managed ]; then
-            echo "::notice::Managed Chrome fixtures are not on this ref yet; skip Chrome until browser/managed lands."
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "::notice::Managed Chrome fixtures are not on this ref yet; skip the Chrome corpus until browser/managed lands."
+            run=false
           fi
           if [ "$EVENT" = pull_request ]; then
             git rev-parse --verify --quiet HEAD^2 > /dev/null || { echo "HEAD is not a merge commit"; exit 1; }
             # Task's explicit imports and their dependencies, including
             # the prelude. Keep this list with Task's imports.
-            changed=$(git diff --name-only HEAD^1 HEAD -- platforms/browser src/js \
+            runtime=(platforms/browser src/js
               core/{Task,Duration,Schedule,Js,List,Basics,Maybe,Result,String,Char,Int,Float,Debug}.{beni,js})
+            changed=$(git diff --name-only HEAD^1 HEAD -- "${runtime[@]}")
             if [ -z "$changed" ]; then
-              echo "::notice::No browser runtime, Task dependency or JavaScript backend changed; skip Chrome."
-              echo "run=false" >> "$GITHUB_OUTPUT"
-              exit 0
+              echo "::notice::No browser runtime, Task dependency or JavaScript backend changed; skip the Chrome corpus."
+              run=false
             fi
-            echo "$changed"
+            # The site check also reads the examples and their site build,
+            # the platform that Conduit is written for, and the check itself.
+            site=$(git diff --name-only HEAD^1 HEAD -- "${runtime[@]}" examples platforms/browser-tea tests/browser/pages.mjs)
+            if [ -z "$site" ]; then
+              echo "::notice::No example, browser runtime or site check changed; skip the site check."
+              pages=false
+            fi
+            echo "$site"
           fi
-          echo "run=true" >> "$GITHUB_OUTPUT"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "pages=$pages" >> "$GITHUB_OUTPUT"
 
   browser:
     name: Chrome (${{ needs.browser-plan.outputs.corpus }})
     needs: browser-plan
-    if: ${{ needs.browser-plan.outputs.run == 'true' }}
+    if: ${{ needs.browser-plan.outputs.run == 'true' || needs.browser-plan.outputs.pages == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -526,6 +539,7 @@ jobs:
             rm -rf .zig-cache ~/.cache/zig
           fi
       - name: build and test Chrome fixtures
+        if: ${{ needs.browser-plan.outputs.run == 'true' }}
         env:
           CORPUS: ${{ needs.browser-plan.outputs.corpus }}
         run: |
@@ -534,6 +548,14 @@ jobs:
             args=(-Dcorpus=browser/managed)
           fi
           nix develop .#browser --command zig build test-browser "${args[@]}" --summary all
+      # The examples' site as GitHub Pages serves it (issue #244): built
+      # with the beni of the step above, served on 127.0.0.1 with Pages'
+      # 404 rule, and loaded in Chrome with no host but 127.0.0.1. 404.html
+      # must stand in for each routed program's shell at a deep path. It
+      # also runs when the corpus failed, so one run reports both.
+      - name: load the site's pages and deep paths
+        if: ${{ !cancelled() && steps.dev-shell.outcome == 'success' && needs.browser-plan.outputs.pages == 'true' }}
+        run: nix develop .#browser --command zig build test-pages --summary all
       - name: save the Nix store
         if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule') && steps.dev-shell.outcome == 'success' && steps.nix-cache.outputs.hit-primary-key != 'true' }}
         uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7
