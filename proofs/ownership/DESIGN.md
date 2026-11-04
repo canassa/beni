@@ -579,7 +579,8 @@ refused controls (a stored payload read at a written or a kept field; one form
 at two model paths or two forms; a command that keeps the model whole or a
 field's value; a traversal that writes fresh rows, `[ r, r ]`, or rows read
 afterwards), reads after an update (kept, written, hoisted by hand, whole, an
-alias), a top-level record, `Record.copy`, a nested update, two updates, a
+alias, an update of every field with the old holder dead or captured), a
+top-level record, `Record.copy`, a nested update, two updates, a
 callee that writes its parameter, the write extent and its twin, and a closure
 that writes its captured record once or twice. Every accepted program's runs
 agree, and every refused program's runs differ, except `calleeKept`, which is
