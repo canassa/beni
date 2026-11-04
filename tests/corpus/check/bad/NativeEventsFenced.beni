@@ -53,4 +53,5 @@ pub forbidden =
     , rendererEarlyValue = M3.rendererEarlyValue
     , rendererEarlyChecked = M3.rendererEarlyChecked
     , rendererEarlySelectedIndex = M3.rendererEarlySelectedIndex
+    , rendererDocument = M4.rendererDocument
     }

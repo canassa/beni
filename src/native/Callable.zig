@@ -126,7 +126,7 @@ pub fn sibling(arena: Allocator, module: []const u8) ![]const u8 {
         if (Operations.renderer(row.recipe)) continue; // Both call forms are compiler-emitted.
         const body = switch (row.recipe) {
             .renderer_early_listeners, .renderer_early_append, .renderer_early_size, .renderer_early_kind_at, .renderer_early_handler_at => unreachable,
-            .renderer_has, .renderer_truncate, .renderer_at, .renderer_first_child, .renderer_next_sibling, .renderer_parent, .renderer_insert, .renderer_append, .renderer_remove, .renderer_clone, .renderer_fragment, .renderer_import, .renderer_template, .renderer_body, .renderer_text, .renderer_from_node => unreachable,
+            .renderer_has, .renderer_truncate, .renderer_at, .renderer_first_child, .renderer_next_sibling, .renderer_parent, .renderer_insert, .renderer_append, .renderer_remove, .renderer_clone, .renderer_fragment, .renderer_import, .renderer_template, .renderer_document_target, .renderer_body, .renderer_text, .renderer_from_node => unreachable,
             .set_make => "(ignored) => new globalThis.Set()",
             .set_add => "(set, value) => { set.add(value); return null; }",
             .set_has => "(set, value) => set.has(value)",

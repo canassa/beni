@@ -7,7 +7,6 @@ import { Html$Runtime$control, Html$Runtime$propertyName, Html$Runtime$propertyS
 import { Basics$min } from "../../_core/Basics.mjs";
 import { Browser$Host$Array$eachView } from "../../_core/Browser/Host/Array.mjs";
 import { Browser$Host$Timers$start } from "../../_core/Browser/Host/Timers.mjs";
-import { Browser$Host$EventTarget$current } from "../../_core/Browser/Host/EventTarget.mjs";
 import { Browser$Host$Window$listen } from "../../_core/Browser/Host/Window.mjs";
 const Rt$Events$through = (p$1, c$2, msg$3) => {
   while (p$1.contextPresent(c$2)) {
@@ -314,7 +313,7 @@ const Rt$Events$watch = (p$1) => {
     Rt$Events$watching = true;
     Rt$Events$stored = p$1;
     Rt$Events$afterRender = Rt$Events$putBackMarked;
-    const page$2 = Browser$Host$EventTarget$current(null);
+    const page$2 = globalThis.document;
     Browser$Host$Events$capture(page$2, "input", Rt$Events$edits);
     Browser$Host$Events$capture(page$2, "change", Rt$Events$edits);
     Browser$Host$Events$capture(page$2, "click", Rt$Events$edits);

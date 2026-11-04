@@ -143,6 +143,9 @@ pub eventstop p0 = M3.stopPropagation p0
 pub eventtarget p0 = M3.target p0
 
 
+pub rendererdocument p0 = M4.rendererDocument p0
+
+
 pub targetnode p0 = M4.asNode p0
 
 
@@ -349,6 +352,7 @@ pub functions =
     , eventcancelBubble = M3.cancelBubble
     , eventstop = M3.stopPropagation
     , eventtarget = M3.target
+    , rendererdocument = M4.rendererDocument
     , targetnode = M4.asNode
     , nodeelement = M4.asElement
     , nodecontains = M11.contains

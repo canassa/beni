@@ -820,6 +820,10 @@ upcast `EventTarget.rendererFromNode`, which is pure. In these signatures
 - `Browser.Host.EventTarget.rendererFromNode : Node → EventTarget` is the
   allocation-free native identity upcast. The existing `Element.toNode`
   remains the Element identity upcast.
+- `Browser.Host.EventTarget.rendererDocument : ⊤ → EventTarget` is the page's
+  document as an event target, for the controlled-input edit listeners, which
+  go on the document in the capture phase (#1826). It names no `Document`:
+  `Event` imports `EventTarget`, so `EventTarget` cannot import `Document`.
 
 **Manager approval, 2026-11-04; #1825:** `Browser.Host.Array.rendererTruncate : written Array a, borrowed Int → ⊤`
 writes the existing array's length directly, after the caller reads and disposes

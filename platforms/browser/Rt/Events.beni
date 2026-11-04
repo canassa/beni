@@ -362,7 +362,7 @@ watch p =
         Js.write watching True
         Js.write stored (Js.some p)
         Js.write afterRender (Js.some putBackMarked)
-        page = EventTarget.current ⊤
+        page = EventTarget.rendererDocument ⊤
         _ = Events.capture page "input" edits
         _ = Events.capture page "change" edits
         _ = Events.capture page "click" edits

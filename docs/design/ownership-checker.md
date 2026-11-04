@@ -4400,6 +4400,10 @@ adding an item escapes it, and the retained-list fixture notices an unsafe flip.
 Array/view iteration reads its receiver and invokes the supplied synchronous
 visitor without retaining it. The native recipes and ordinary siblings are pinned
 at their actual bodies, and the platform-private names share the existing fence.
+`EventTarget.rendererDocument` (#1826) adds one arm to the shared renderer region,
+returning `document`, and takes no list: it has no words. Every entry pinned in
+that region was re-read for it; their bodies are unchanged and their words
+stand.
 
 ### 24.9 The decoder in `Expect`
 

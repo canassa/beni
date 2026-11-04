@@ -11385,6 +11385,7 @@ pub const Lowerer = struct {
             .renderer_import => return l.call(try l.member(document, try l.interner.getOrPut(l.gpa, "importNode"), p), &.{ values[0], try l.add(.true_lit, p, Node.Data.unused, Node.Data.unused) }, p),
             .renderer_fragment => return l.call(try l.member(document, try l.interner.getOrPut(l.gpa, "createDocumentFragment"), p), &.{}, p),
             .renderer_body => return l.member(document, try l.interner.getOrPut(l.gpa, "body"), p),
+            .renderer_document_target => return document,
             .renderer_text => return l.call(try l.member(document, try l.interner.getOrPut(l.gpa, "createTextNode"), p), &.{values[0]}, p),
             .renderer_template => {
                 const template = try l.fresh(l.well.temp);
@@ -11405,7 +11406,7 @@ pub const Lowerer = struct {
                 // A dropped unit still evaluates, and multi-statement recipes may
                 // read an operand twice. Evaluate every non-atom exactly once
                 // before performing any native read or mutation.
-                if (native.recipe == .renderer_fragment or native.recipe == .renderer_body) {
+                if (native.recipe == .renderer_fragment or native.recipe == .renderer_body or native.recipe == .renderer_document_target) {
                     for (arg_insts) |arg| try l.discard(out, arg, p);
                     return try l.rendererExpr(out, native, &.{}, p);
                 }

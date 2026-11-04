@@ -2,6 +2,7 @@ import Browser.Host.Array as Array
 import Browser.Host.Document as Document
 import Browser.Host.Element as Element
 import Browser.Host.EventTarget as Target
+import Browser.Host.Events as Events
 import Browser.Host.HTMLInputElement as Input
 import Browser.Host.HTMLSelectElement as Select
 import Browser.Host.HTMLTextAreaElement as TextArea
@@ -101,7 +102,15 @@ run ⊤ =
             Just element →
                 body = Document.rendererBody ⊤
                 Node.rendererAppend body textNode
+                page = Target.rendererDocument ⊤
+                -- The document node, above the root element, is the same target.
+                same = Js.optMatch (Node.rendererParent body) (λ⊤ → False) λhtml →
+                    Js.optMatch (Node.rendererParent html) (λ⊤ → False) λdocument →
+                        Js.same page (Target.rendererFromNode document)
+                heard = Js.ref False
+                remove = Events.capture page "focus" λ_ → Js.write heard True
                 Element.focus element
+                remove ⊤
                 focused =
                     case Document.activeElement ⊤ of
                         Nothing →
@@ -113,7 +122,7 @@ run ⊤ =
                 all = Array.length (Document.rendererControls ⊤) == 1
                 Element.blur element
                 Node.rendererRemove textNode
-                focused && nativeFocus && named && all
+                focused && nativeFocus && named && all && same && Js.read heard
     focusLabel = if focus then "yes" else "no"
     if values == "" && focus then
         "native controls: ok"

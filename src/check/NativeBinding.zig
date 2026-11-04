@@ -156,6 +156,7 @@ pub fn valid(cx: *const Context, row: Operations.Row, v: Var) bool {
         .renderer_remove => a.len == 1 and native(cx, a[0], "Node") and unit(cx, r),
         .renderer_clone, .renderer_import => a.len == 1 and native(cx, a[0], "Node") and native(cx, r, "Node"),
         .renderer_fragment, .renderer_body => a.len == 1 and unit(cx, a[0]) and native(cx, r, "Node"),
+        .renderer_document_target => a.len == 1 and unit(cx, a[0]) and native(cx, r, "EventTarget"),
         .renderer_template, .renderer_text => a.len == 1 and named(cx, a[0], "String", "String") and native(cx, r, "Node"),
         .renderer_from_node => a.len == 1 and native(cx, a[0], "Node") and native(cx, r, "EventTarget"),
         .worker_close_self => a.len == 1 and unit(cx, a[0]) and unit(cx, r),
