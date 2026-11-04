@@ -1338,8 +1338,11 @@ function: `[key, shape, field]`. The loader decodes the raw value with core's `v
 which the lowering hands it last, and gives the decoded value or the old one, as the function's
 body does. `Result.withDefault`'s argument is the old value, so the decoded type is the field's
 type, and the copy is the one any route's is. The program then calls the `…Shaped` loaders. They
-tell a row's shape (an array) from a function by `typeof`, so a row whose function is anything
-else — a `case` on the run, `CaseLoader`'s `W2.replace` — keeps its function. The tail's call of
+tell a row's shape (an array then; a `Schema.ShapePlan` object since the typed Schema rewrite,
+which `boundary.md` §4, *What JavaScript may read of a beni value*, keeps boxed in release,
+*added 2026-11-04*) from a function by `typeof`,
+so a row whose function is anything else — a `case` on the run, `CaseLoader`'s `W2.replace` —
+keeps its function. The tail's call of
 the function is not followed by reachability (`Emit.shapeRoutes`, a cut at the call's callee), and
 the shape and `validShape` are roots. So the function is in the output only when something else
 names it. The codec's shape is exported by the function's module, which in a development build the
