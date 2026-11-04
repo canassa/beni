@@ -13767,3 +13767,25 @@ test "private renderer arrays truncate in place and defect on invalid reads" {
         try w.expectProgram("probe.mjs", .{ .stdout = "renderer arrays verified\n" });
     }
 }
+
+test "typed events module matches development and release emit goldens" {
+    // Rt.Events is a platform module, which emit/ does not golden: a library
+    // client imports it, and the module's own output is compared.
+    for ([_]bool{ false, true }) |release| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const arena = w.arena.allocator();
+        const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/typed-events/EventsClient.beni", arena, .limited(world.max_stream_bytes));
+        try w.write("EventsClient.beni", source);
+        const built = try w.run(if (release)
+            &.{ "build", "--library", "--platform=browser", "--release", "--out=out", "EventsClient.beni" }
+        else
+            &.{ "build", "--library", "--platform=browser", "--out=out", "EventsClient.beni" });
+        reportUnclean("build typed events", built);
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqualStrings("", built.stderr);
+        const path = if (release) "tests/fixtures/typed-events/Events.release.mjs" else "tests/fixtures/typed-events/Events.dev.mjs";
+        const expected = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, arena, .limited(world.max_stream_bytes));
+        try testing.expectEqualStrings(expected, try w.read("out/_platform/Rt/Events.mjs"));
+    }
+}

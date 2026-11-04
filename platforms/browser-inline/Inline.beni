@@ -6,6 +6,7 @@
 --! beni over core's `Js`, and the platform's runtime module (`boundary.md`
 --! §9.2, *A runtime module*): a page ships only what it reaches.
 
+import Browser.Host.Array as Array
 import Browser.Host.Document as HostDocument
 import Browser.Host.Element as HostElement
 import Browser.Host.Event as HostEvent
@@ -784,16 +785,27 @@ warn why =
 
 -- The records the page's capture script made that `deliver` is to hand on,
 -- each `[event, value, checked, selectedIndex]` as the event found its
--- target, then the same three as `caught` found it; null when there are
+-- target, then the same three as `caught` found it; none when there are
 -- none.
-early : Js.Ref V
-early = Js.ref Js.null
+early : Js.Ref (Js.Opt (Array.Array HostEvent.EarlyCapture))
+early = Js.ref (Js.none ⊤)
 
 
--- Each listener wired while there are records, by its element: a `Map` of
--- element to `[kind, f, kind, f, …]`; null otherwise.
-heard : Js.Ref V
-heard = Js.ref Js.null
+-- Each listener wired while there are records, by its element: a map of
+-- element to `[kind, f, kind, f, …]`; none otherwise.
+heard : Js.Ref (Js.Opt (NativeMap.Map HostNode.Node Noted))
+heard = Js.ref (Js.none ⊤)
+
+
+type alias Noted =
+    HostEvent.EarlyListeners (HostEvent.Event → ⊤)
+
+
+-- The table no element has: what `heard` answers for an element with no
+-- listener noted, so that a lookup makes no `Maybe`. Nothing is appended
+-- to it.
+unheard : Noted
+unheard = HostEvent.rendererEarlyListeners ⊤
 
 
 --| `(at)`: the records of the page's capture script, which it stops — the
@@ -802,59 +814,47 @@ heard = Js.ref Js.null
 --| those whose target is inside `at`, the element the program mounts at,
 --| each with its target's control state now, the state the user left. While
 --| some are kept, `listen` notes each listener wired, for `deliver`.
-pub caught : V → ⊤
+pub caught : HostNode.Node → ⊤
 caught at =
-    capture = Js.global "$beni"
-    if not (Js.isUndefined capture) then
-        Js.set (Js.global "window") "$beni" Js.undefined
-        kept =
-            Js.call (Js.apply capture []) "filter"
-                [ Js.from λrecord →
-                    target = Js.get (Js.at record 0) "target"
-                    _ =
-                        Js.call record "push"
-                            [ Js.get target "value"
-                            , Js.get target "checked"
-                            , Js.get target "selectedIndex"
-                            ]
-                    inside : Bool
-                    inside = Js.to (Js.call at "contains" [ target ])
-                    inside
-                ]
-        if Js.to (Js.get kept "length") > 0 then
-            Js.write early kept
-            Js.write heard (Js.construct (Js.global "Map") [])
+    records = HostEvent.rendererTakeEarly ⊤
+    kept = Array.make ⊤
+    Array.each records λrecord →
+        HostEvent.rendererEarlyRemember record
+        if HostNode.contains at (HostEvent.rendererEarlyTarget record) then
+            Array.push kept record
+    if Array.size kept > 0 then
+        Js.write early (Js.some kept)
+        Js.write heard (Js.some (NativeMap.make ⊤))
 
 
 --| `(node, kind, f)`: listener `f` of event `kind` added to `node`, and,
 --| while `caught` kept records, noted under `node` for `deliver`.
-pub listen : V, V, V → ⊤
+pub listen : HostNode.Node, String, sync (HostEvent.Event → ⊤) → ⊤
 listen node kind f =
-    _ = Js.call node "addEventListener" [ kind, f ]
-    map = Js.read heard
-    if not (Js.isNull map) then
-        noted = Js.call map "get" [ node ]
-        if Js.isUndefined noted then
-            _ = Js.call map "set" [ node, Js.array [ kind, f ] ]
-            ⊤
-        else
-            _ = Js.call noted "push" [ kind, f ]
-            ⊤
+    _ = HostEvents.listen (EventTarget.rendererFromNode node) kind f
+    Js.optMatch (Js.read heard) (λ⊤ → ⊤) λmap → note map node kind f
+
+
+note : NativeMap.Map HostNode.Node Noted, HostNode.Node, String, sync (HostEvent.Event → ⊤) → ⊤
+note map node kind f =
+    noted = NativeMap.getOr map node unheard
+    if Js.same noted unheard then
+        made = HostEvent.rendererEarlyListeners ⊤
+        HostEvent.rendererEarlyAppend made kind f
+        NativeMap.set map node made
+    else
+        HostEvent.rendererEarlyAppend noted kind f
 
 
 --| `on`, in the client of a prerendering build: wired through `listen`.
-pub onTaken : V, V, V, V → ⊤
-onTaken node f kind read =
-    listen
-        node
-        (if Js.isUndefined kind then Js.from "click" else kind)
-        (Js.from λevent → send f event read)
+pub onTaken : HostNode.Node, sync (a → ⊤), String, sync (HostEvent.Event → a) → ⊤
+onTaken node callback kind project = listen node kind λevent → Dispatch.read callback event project
 
 
 --| `onArm`, in the client of a prerendering build: wired through `listen`.
-pub onArmTaken : V, V, V, V, V → ⊤
-onArmTaken node f kind arms read =
-    listen node kind (Js.from λevent → if armsShown arms then send f event read)
+pub onArmTaken : HostNode.Node, sync (a → ⊤), String, V, sync (HostEvent.Event → a) → ⊤
+onArmTaken node callback kind arms project = listen node kind λevent →
+    if armsShown arms then Dispatch.read callback event project
 
 
 --| `(top)`: the records `caught` kept whose target is inside `top`, the
@@ -868,99 +868,85 @@ onArmTaken node f kind arms read =
 --| listener hears changes nothing. The event is not dispatched again, so no
 --| default action runs twice. The last statement of the hydrating mount,
 --| inside its dispatch: each message is queued, in order.
-pub deliver : V → ⊤
-deliver top =
-    records = Js.read early
-    if not (Js.isNull records) then
-        map = Js.read heard
-        Js.write early Js.null
-        Js.write heard Js.null
-        Js.each records λrecord →
-            event = Js.at record 0
-            target = Js.get event "target"
-            inside : Bool
-            inside = Js.to (Js.call top "contains" [ target ])
-            if inside && hears map event target then
-                state target record 1
-                hand map event target
-                state target record 4
-            ⊤
+pub deliver : HostNode.Node → ⊤
+deliver top = Js.optMatch (Js.read early) (λ⊤ → ⊤) λrecords →
+    Js.optMatch (Js.read heard) (λ⊤ → ⊤) λmap →
+        Js.write early (Js.none ⊤)
+        Js.write heard (Js.none ⊤)
+        Array.each records λrecord → replay top map record
 
 
--- The record's control state from its element `i` on — `value`, `checked`,
+replay : HostNode.Node, NativeMap.Map HostNode.Node Noted, HostEvent.EarlyCapture → ⊤
+replay top map record =
+    event = HostEvent.rendererEarlyEvent record
+    target = HostEvent.rendererEarlyTarget record
+    if HostNode.contains top target && hears map event (Js.some target) then
+        state target record 1
+        hand map event (Js.some target)
+        state target record 4
+
+
+-- The record's control state from offset `i` on — `value`, `checked`,
 -- `selectedIndex` — written to `el`, each one it has that `el` does not
 -- show. A file input's `value` cannot be written, and is left alone.
-state : V, V, Int → ⊤
+state : HostNode.Node, HostEvent.EarlyCapture, Int → ⊤
 state el record i =
-    if not (Js.same (Js.get el "type") (Js.from "file")) then
-        restore el "value" (Js.at record i)
-        restore el "checked" (Js.at record (i + 1))
-        restore el "selectedIndex" (Js.at record (i + 2))
-
-
--- The property `name` of `el` set to `v`, when `v` is one and `el` does not
--- show it.
-restore : V, String, V → ⊤
-restore el name v =
-    if not (Js.isUndefined v) && not (Js.same (Js.get el name) v) then
-        Js.set el name v
+    if HostNode.rendererKind el ≠ "file" then
+        Js.optMatch (HostEvent.rendererEarlyValue record i) (λ⊤ → ⊤) λv →
+            if HostNode.rendererValue el ≠ v then
+                HostNode.rendererSetValue el v
+        Js.optMatch (HostEvent.rendererEarlyChecked record i) (λ⊤ → ⊤) λv →
+            if HostNode.rendererChecked el ≠ v then
+                HostNode.rendererSetChecked el v
+        Js.optMatch (HostEvent.rendererEarlySelectedIndex record i) (λ⊤ → ⊤) λv →
+            if HostNode.rendererSelectedIndex el ≠ v then
+                HostNode.rendererSetSelectedIndex el v
 
 
 -- Whether a listener noted under `node`, or under an ancestor while `event`
 -- bubbles, is one of `event`'s type.
-hears : V, V, V → Bool
-hears map event node =
-    if Js.isNull node then
-        False
+hears : NativeMap.Map HostNode.Node Noted, HostEvent.Event, Js.Opt HostNode.Node → Bool
+hears map event current = Js.optMatch current (λ⊤ → False) λnode →
+    noted = NativeMap.getOr map node unheard
+    if not (Js.same noted unheard) && noteOf noted event 0 then
+        True
+    else if HostEvent.bubbles event then
+        hears map event (HostNode.rendererParent node)
     else
-        noted = Js.call map "get" [ node ]
-        bubbles : Bool
-        bubbles = Js.to (Js.get event "bubbles")
-        if not (Js.isUndefined noted) && noteOf noted event 0 then
-            True
-        else if bubbles then
-            hears map event (Js.get node "parentNode")
-        else
-            False
+        False
 
 
 -- Whether `noted`, `[kind, f, …]`, from pair `i`, holds a listener of
 -- `event`'s type.
-noteOf : V, V, Int → Bool
+noteOf : Noted, HostEvent.Event, Int → Bool
 noteOf noted event i =
-    if i ≥ Js.to (Js.get noted "length") then
+    if i ≥ HostEvent.rendererEarlySize noted then
         False
-    else if Js.same (Js.at noted i) (Js.get event "type") then
+    else if HostEvent.rendererEarlyKindAt noted i == HostEvent.kind event then
         True
     else
-        noteOf noted event (i + 2)
+        noteOf noted event (i + 1)
 
 
 -- Each listener noted under `node` for `event`'s type called with it, then
 -- the same on `node`'s parent while the event bubbles and none stopped it.
-hand : V, V, V → ⊤
-hand map event node =
-    if not (Js.isNull node) then
-        noted = Js.call map "get" [ node ]
-        if not (Js.isUndefined noted) then
-            callNoted noted event 0
-        bubbles : Bool
-        bubbles = Js.to (Js.get event "bubbles")
-        halted : Bool
-        halted = Js.to (Js.get event "cancelBubble")
-        if bubbles && not halted then
-            hand map event (Js.get node "parentNode")
+hand : NativeMap.Map HostNode.Node Noted, HostEvent.Event, Js.Opt HostNode.Node → ⊤
+hand map event current = Js.optMatch current (λ⊤ → ⊤) λnode →
+    noted = NativeMap.getOr map node unheard
+    if not (Js.same noted unheard) then
+        callNoted noted event 0
+    if HostEvent.bubbles event && not (HostEvent.cancelBubble event) then
+        hand map event (HostNode.rendererParent node)
 
 
 -- The listeners of `noted`, `[kind, f, …]`, from pair `i`, whose kind is
 -- `event`'s type, called with it in the order they were added.
-callNoted : V, V, Int → ⊤
+callNoted : Noted, HostEvent.Event, Int → ⊤
 callNoted noted event i =
-    if i < Js.to (Js.get noted "length") then
-        if Js.same (Js.at noted i) (Js.get event "type") then
-            _ = Js.apply (Js.at noted (i + 1)) [ event ]
-            ⊤
-        callNoted noted event (i + 2)
+    if i < HostEvent.rendererEarlySize noted then
+        if HostEvent.rendererEarlyKindAt noted i == HostEvent.kind event then
+            Protocol.call (HostEvent.rendererEarlyHandlerAt noted i) event
+        callNoted noted event (i + 1)
 
 
 -- ---- Groups (`browser-inline.md` §8.4, amended 2026-10-22) -------------
