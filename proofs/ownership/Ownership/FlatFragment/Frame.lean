@@ -79,23 +79,23 @@ theorem named_flat_frame {next : Heap} {w : Value} {o : Observation} {gamma : Na
   have old := inv.named x o w a binding abstractBinding q c immutable before
   exact named_same_of_naming namingSame (inv.bindingsBounded x o w binding c (reaches_of_atPath before)) old
 
-/-- The heap frame of the strengthened relation. The hole is the next
-address at an allocation, or the written root at a write step. The live set
-must avoid bindings of the hole; everything else is derived. -/
+/-- The heap frame of the strengthened relation. The changed arrays are
+`inside`: the next address at an allocation, the written array at a plain
+write, and the written array's link component at a linked write (#169). The
+live set and the observers must avoid them; the links must be valid and
+closed under the new naming; everything else is derived. -/
 theorem flatInvariant_heap_frame {gamma : Naming}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
     {vs' : ValueSemantics.State} {hs' : InPlaceSemantics.State} {gamma' : Naming}
-    {live' : Live} {escapes' : List Origin} {hole : Nat} {footprint : List Nat}
+    {live' : Live} {escapes' : List Origin} {inside : Nat → Prop} {footprint : List Nat}
     (liveSub : ∀ use ∈ live', use ∈ live)
     (sizeMono : hs.heap.size ≤ hs'.heap.size)
-    (holeStored : ∃ xs, hs'.heap[hole]? = some xs ∧
-      ∀ x ∈ xs, ∀ d, Reaches hs'.heap x (.ref d) → d < hs'.heap.size)
-    (links : hs'.links = [])
-    (frame : ∀ c, c ≠ hole → hs'.heap[c]? = hs.heap[c]?)
+    (linksValid : LinksValid hs') (linkClosed : Ownership.LinkClauses.LinkClosed hs'.links gamma')
+    (frame : ∀ c, ¬ inside c → hs'.heap[c]? = hs.heap[c]?)
     (liveApart : ∀ x p, (x, p) ∈ live' → ∀ o w w', env.lookup x = some (o, w) →
-      projectVal w p = some w' → ∀ q c, ArrayAt hs.heap w' q c → c ≠ hole)
+      projectVal w p = some w' → ∀ q c, ArrayAt hs.heap w' q c → ¬ inside c)
     (represented : RepresentsMany hs.heap observationDepth hs.kept.toList vs.kept.toList footprint)
-    (observersApart : hole ∉ footprint)
+    (observersApart : ∀ c ∈ footprint, ¬ inside c)
     (keptSame : hs'.kept = hs.kept) (valueKeptSame : vs'.kept = vs.kept)
     (namingSame : ∀ origin cell, cell < hs.heap.size → (cell ∈ gamma' origin ↔ cell ∈ gamma origin))
     (bounded : NamingBound gamma' hs'.heap.size) (separating : Separating gamma')
@@ -104,10 +104,8 @@ theorem flatInvariant_heap_frame {gamma : Naming}
     (escapesMono : ∀ origin, Escaped escapes origin → Escaped escapes' origin)
     (heapKinds : ∃ kinds, StateKinded kinds hs' env tenv) :
     FlatInvariant declarations vs' hs' env live' aenv tenv escapes' gamma' := by
-  have footprintFrame : ∀ address ∈ footprint, hs'.heap[address]? = hs.heap[address]? := by
-    intro address member
-    have different : address ≠ hole := fun same => observersApart (same ▸ member)
-    exact frame address different
+  have footprintFrame : ∀ address ∈ footprint, hs'.heap[address]? = hs.heap[address]? :=
+    fun address member => frame address (observersApart address member)
   have framed : RepresentsMany hs'.heap observationDepth hs'.kept.toList vs'.kept.toList footprint := by
     rw [keptSame, valueKeptSame]
     exact representsMany_frame represented footprintFrame
@@ -128,10 +126,9 @@ theorem flatInvariant_heap_frame {gamma : Naming}
   have bindingsBounded' : ∀ x o w, env.lookup x = some (o, w) →
       ∀ c, Reaches hs'.heap w (.ref c) → c < hs'.heap.size := by
     intro x o w binding c reach
-    obtain ⟨stored, holeAt, storedBounded⟩ := holeStored
-    rcases reaches_split_at_hole holeAt frame reach with before | ⟨z, zMember, zReach⟩
-    · exact Nat.lt_of_lt_of_le (inv.bindingsBounded x o w binding c before) sizeMono
-    · exact storedBounded z zMember c zReach
+    obtain ⟨kinds, state⟩ := heapKinds
+    obtain ⟨ty, declared⟩ := lookup_exists_of_same_keys tenv env inv.typeKeys.symm binding
+    exact state.reach_bound (state.env x ty o w declared binding) reach
   refine {
     toInvariant := {
       reads := reads
@@ -144,10 +141,10 @@ theorem flatInvariant_heap_frame {gamma : Naming}
       described := ?_
       named := ?_
       separating := separating
-      linksValid := Soundness.linksValid_of_empty _ (links)
-      linkNamed := Soundness.linkNamed_of_empty _ _ _ _ (links)
+      linksValid := linksValid
+      linkNamed := Ownership.LinkClauses.linkNamed_of_closed linkClosed
     }
-    links := links
+    linkClosed := linkClosed
     abstractKeys := inv.abstractKeys
     typeKeys := inv.typeKeys
     types := inv.types

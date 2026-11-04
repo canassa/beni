@@ -150,21 +150,21 @@ theorem tail_post_invariant {declarations : List Decl} {vs : ValueSemantics.Stat
       (hs' := heapAllocated hs integers) heapEq rfl
   refine ⟨gamma', ?_, (extension origin hs.heap.size).mpr (Or.inr ⟨rfl, rfl⟩), old,
     ⟨kinds', state', .chain .int _ typedNew⟩⟩
-  refine flatInvariant_heap_frame inv (hole := hs.heap.size) (footprint := footprint)
-    (fun _ member => member) (by rw [heapEq]; simp) ?_ inv.links ?_ ?_ represented ?_ rfl rfl old ?_ separating
+  refine flatInvariant_heap_frame inv (inside := (· = hs.heap.size)) (footprint := footprint)
+    (fun _ member => member) (by rw [heapEq]; simp)
+    (Ownership.LinkClauses.linksValid_of_same
+      (Ownership.LinkClauses.linksValid_push inv.toInvariant.linksValid (heapInts integers)) heapEq rfl)
+    (Ownership.LinkClauses.linkClosed_of_old (hs := hs) inv.toInvariant.linksValid inv.linkClosed old)
+    ?_ ?_ represented ?_ rfl rfl old ?_ separating
     inv.reads inv.external (by simp [valueTicked, heapAllocated, inv.fuel]) (fun _ escaped => escaped)
     ⟨kinds', state'⟩
-  · refine ⟨heapInts integers, by rw [heapEq]; simp, ?_⟩
-    intro x member d reach
-    obtain ⟨i, _, rfl⟩ := List.mem_map.mp member
-    exact (int_reaches_nothing reach).elim
   · intro c different
     rw [heapEq]
-    simp [Array.getElem?_push, different]
-  · intro x p _ o w w' binding projected q c located
+    simp [Array.getElem?_push, show c ≠ hs.heap.size from different]
+  · intro x p _ o w w' binding projected q c located same
     have := live_path_below inv x p o w w' binding projected q c located
     omega
-  · intro member
+  · intro c member same
     have bound := representsMany_bound represented _ member
     omega
   · rw [heapEq]

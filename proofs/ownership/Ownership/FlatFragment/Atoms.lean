@@ -104,10 +104,10 @@ theorem flatInvariant_state_frame
       described := by simpa only [heapSame] using inv.toInvariant.described
       named := by simpa only [heapSame] using inv.named
       separating := inv.separating
-      linksValid := Soundness.linksValid_of_empty _ (linksSame.trans inv.links)
-      linkNamed := Soundness.linkNamed_of_empty _ _ _ _ (linksSame.trans inv.links)
+      linksValid := Ownership.LinkClauses.linksValid_of_same inv.toInvariant.linksValid heapSame linksSame
+      linkNamed := Ownership.LinkClauses.linkNamed_of_closed (by rw [linksSame]; exact inv.linkClosed)
     }
-    links := linksSame.trans inv.links
+    linkClosed := by rw [linksSame]; exact inv.linkClosed
     abstractKeys := inv.abstractKeys
     typeKeys := inv.typeKeys
     types := inv.types

@@ -867,11 +867,12 @@ theorem value_dictRemove_run (s : ValueSemantics.State) (os : List Observation) 
       .ok (.list (dictDrop ValueSemantics.entryKey os k), s) := rfl
 
 theorem heap_dictRemove_run (s : State) (ys : List Value) (k : Int)
-    (lookup : s.heap[root]? = some ys) (links : s.links = []) :
+    (lookup : s.heap[root]? = some ys)
+    (unlinked : ∀ v src f, (v, src, f) ∈ s.links → v ≠ root ∧ src ≠ root) :
     (prim .dictRemove [.ref root, .int k]).run s =
       .ok (.ref root, {s with heap := s.heap.set! root (dictDrop InPlaceSemantics.entryKey ys k), writes := (if ys == dictDrop InPlaceSemantics.entryKey ys k then s.writes else s.writes + 1)}) := by
   have written := writeCounted_empty_run (root := root) (stored := dictDrop InPlaceSemantics.entryKey ys k)
-    s lookup links
+    s lookup unlinked
   simpa [prim, array, lookup, StateT.run, StateT.bind, StateT.get, Option.toExcept, Except.bind,
     Except.pure, bind, pure, get, getThe, MonadStateOf.get, StateT.pure, StateT.lift, liftM, monadLift,
     MonadLift.monadLift] using written
@@ -889,6 +890,7 @@ theorem dictRemove_runtime_success {declarations : List Decl} {vs : ValueSemanti
     (valueKey : ValueSemantics.atom (valueEnv env) key = .ok (.int k))
     (heapKey : InPlaceSemantics.atom (heapEnv env) key = .ok (.int k))
     (lookup : hs.heap[root]? = some ys)
+    (unlinked : ∀ v src f, (v, src, f) ∈ hs.links → v ≠ root ∧ src ≠ root)
     (rootOutside : root ∉ footprint)
     (represented : RepresentsMany hs.heap observationDepth hs.kept.toList vs.kept.toList footprint)
     (hasDepth : depth ≠ 0) (hasFuel : vs.fuel ≠ 0) :
@@ -909,7 +911,7 @@ theorem dictRemove_runtime_success {declarations : List Decl} {vs : ValueSemanti
       .ok [.ref root, .int k] := except_mapM_cons heapReceiver (except_mapM_cons heapKey rfl)
   have removeRun : (prim .dictRemove [.ref root, .int k]).run (heapTicked hs) =
       .ok (.ref root, heapStored hs root ys (dictDrop InPlaceSemantics.entryKey ys k)) :=
-    heap_dictRemove_run (heapTicked hs) ys k lookup inv.links
+    heap_dictRemove_run (heapTicked hs) ys k lookup unlinked
   constructor
   · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms]
     simp [hasDepth, hasFuel, value_dictRemove_run, valueObservedRun, Except.bind, Except.pure, bind, pure]
@@ -943,6 +945,12 @@ theorem dictRemove_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
   obtain ⟨root, ys, os, roots, value, certificate, lookup, receiverNamed, noUnk, _, entryTags,
     valueShape, entriesShaped, entriesDescribed, lenO, entriesTyped, pointwise, pairedList, described,
     valueReceiver, heapReceiver, abstractReceiver⟩ := flat_atom_dict_path inv receiverTyped coveredR
+  -- No link names a dictionary's array (the heap typing, #169): the write is a plain write.
+  have unlinked : ∀ v src f, (v, src, f) ∈ hs.links → v ≠ root ∧ src ≠ root := by
+    obtain ⟨kinds, state⟩ := inv.heapKinds
+    obtain ⟨c0, same0, typed0⟩ := kinded_dict_inv (kinded_atom inv state receiverTyped coveredR heapReceiver)
+    cases same0
+    exact state.dict_unlinked typed0
   obtain ⟨k, valueKey, heapKey, abstractKey⟩ := flat_atom_integer inv keyTyped coveredK
   have abstractAtoms : [receiver, key].mapM (m := Except String) (abstractAtom aenv) =
       .ok [.list roots value certificate, .scalar] :=
@@ -972,7 +980,7 @@ theorem dictRemove_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
       · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run'
         simp [noDepth, noFuel] at run'
       · obtain ⟨valueRun, heapRun⟩ := dictRemove_runtime_success inv valueReceiver heapReceiver valueKey
-          heapKey lookup rootOutside represented noDepth noFuel
+          heapKey lookup unlinked rootOutside represented noDepth noFuel
         rw [valueRun] at run'
         cases run'
         have valid : root < hs.heap.size := (Array.getElem?_eq_some_iff.mp lookup).1
@@ -1038,10 +1046,14 @@ theorem dictRemove_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
           by rw [heapEq]; exact shapedNew, .list _ _ _ _ _, .list _ _ _, by rw [heapEq]; exact deepNew,
           ⟨kinds, state', .dict t root rootTyped⟩⟩
         rw [escapesEq]
-        refine flatInvariant_heap_frame inv (hole := root) (footprint := footprint) afterSub
+        refine flatInvariant_heap_frame inv (inside := (· = root)) (footprint := footprint) afterSub
           (by rw [heapEq, sizeEq]; exact Nat.le_refl _)
-          ⟨dictDrop InPlaceSemantics.entryKey ys k, by rw [heapEq]; exact lookupNew, ?_⟩
-          (by rw [heapObserved_links]; exact inv.links) ?_ apart represented rootOutside
+          (Ownership.LinkClauses.linksValid_of_same
+            (Ownership.LinkClauses.linksValid_set inv.toInvariant.linksValid root _ unlinked)
+            (by rw [heapEq]) (by rw [heapObserved_links]; rfl))
+          (by rw [heapObserved_links]; exact inv.linkClosed)
+          (fun c different => by rw [heapEq]; exact lookup_set_other hs.heap root _ different)
+          apart represented (fun c member same => rootOutside (same ▸ member))
           (by rw [heapObserved_kept]; rfl) (by rw [valueObserved_kept]; rfl) (fun _ _ _ => Iff.rfl)
           (by rw [heapEq, sizeEq]; exact inv.namingBound) inv.separating
           (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
@@ -1049,12 +1061,6 @@ theorem dictRemove_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
             inv.keptSize inv.external)
           (by rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapStored, inv.fuel])
           (fun _ escaped => escaped) ⟨kinds, state'⟩
-        · intro z member d reach
-          rw [heapEq] at reach ⊢
-          exact allocated_reach_bound (shapedZ z member) reach
-        · intro c different
-          rw [heapEq]
-          exact lookup_set_other hs.heap root _ different
   · intro message failed
     by_cases noDepth : depth = 0
     · exact ⟨"in-place execution exhausted depth", by
@@ -1066,7 +1072,7 @@ theorem dictRemove_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
           rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
           simp [noDepth, heapFuel]⟩
       · have success := (dictRemove_runtime_success inv valueReceiver heapReceiver valueKey heapKey lookup
-          rootOutside represented noDepth noFuel).1
+          unlinked rootOutside represented noDepth noFuel).1
         rw [success] at failed
         contradiction
 
@@ -1329,11 +1335,12 @@ theorem value_dictInsert_run (s : ValueSemantics.State) (os : List Observation) 
       .ok (.list (dictPut ValueSemantics.entryKey os k (.record [.int k, o])), s) := rfl
 
 theorem heap_dictInsert_run (s : State) (ys : List Value) (k : Int) (w : Value)
-    (lookup : s.heap[root]? = some ys) (links : s.links = []) :
+    (lookup : s.heap[root]? = some ys)
+    (unlinked : ∀ v src f, (v, src, f) ∈ s.links → v ≠ root ∧ src ≠ root) :
     (prim .dictInsert [.ref root, .int k, w]).run s =
       .ok (.ref root, {s with heap := s.heap.set! root (dictPut InPlaceSemantics.entryKey ys k (.record [.int k, w])), writes := (if ys == dictPut InPlaceSemantics.entryKey ys k (.record [.int k, w]) then s.writes else s.writes + 1)}) := by
   have written := writeCounted_empty_run (root := root)
-    (stored := dictPut InPlaceSemantics.entryKey ys k (.record [.int k, w])) s lookup links
+    (stored := dictPut InPlaceSemantics.entryKey ys k (.record [.int k, w])) s lookup unlinked
   simpa [prim, array, lookup, StateT.run, StateT.bind, StateT.get, Option.toExcept, Except.bind,
     Except.pure, bind, pure, get, getThe, MonadStateOf.get, StateT.pure, StateT.lift, liftM, monadLift,
     MonadLift.monadLift] using written
@@ -1347,6 +1354,7 @@ theorem dictInsert_runtime_success {declarations : List Decl} {vs : ValueSemanti
     (valueItem : ValueSemantics.atom (valueEnv env) item = .ok o)
     (heapItem : InPlaceSemantics.atom (heapEnv env) item = .ok w)
     (lookup : hs.heap[root]? = some ys)
+    (unlinked : ∀ v src f, (v, src, f) ∈ hs.links → v ≠ root ∧ src ≠ root)
     (rootOutside : root ∉ footprint)
     (represented : RepresentsMany hs.heap observationDepth hs.kept.toList vs.kept.toList footprint)
     (hasDepth : depth ≠ 0) (hasFuel : vs.fuel ≠ 0) :
@@ -1371,7 +1379,7 @@ theorem dictInsert_runtime_success {declarations : List Decl} {vs : ValueSemanti
     except_mapM_cons heapReceiver (except_mapM_cons heapKey (except_mapM_cons heapItem rfl))
   have insertRun : (prim .dictInsert [.ref root, .int k, w]).run (heapTicked hs) =
       .ok (.ref root, heapStored hs root ys (dictPut InPlaceSemantics.entryKey ys k (.record [.int k, w]))) :=
-    heap_dictInsert_run (heapTicked hs) ys k w lookup inv.links
+    heap_dictInsert_run (heapTicked hs) ys k w lookup unlinked
   constructor
   · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms]
     simp [hasDepth, hasFuel, value_dictInsert_run, valueObservedRun, Except.bind, Except.pure, bind, pure]
@@ -1399,6 +1407,12 @@ theorem dictInsert_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
   obtain ⟨root, ys, os, roots, value0, certificate, lookup, receiverNamed, noUnk, _, entryTags,
     valueShape0, entriesShaped, entriesDescribed, lenO, entriesTyped, pointwise, pairedList, described,
     valueReceiver, heapReceiver, abstractReceiver⟩ := flat_atom_dict_path inv receiverTyped coveredR
+  -- No link names a dictionary's array (the heap typing, #169): the write is a plain write.
+  have unlinked : ∀ v src f, (v, src, f) ∈ hs.links → v ≠ root ∧ src ≠ root := by
+    obtain ⟨kinds, state⟩ := inv.heapKinds
+    obtain ⟨c0, same0, typed0⟩ := kinded_dict_inv (kinded_atom inv state receiverTyped coveredR heapReceiver)
+    cases same0
+    exact state.dict_unlinked typed0
   obtain ⟨k, valueKey, heapKey, abstractKey⟩ := flat_atom_integer inv keyTyped coveredK
   obtain ⟨o, w, aN0, valueItem, heapItem, abstractItem, pairedN, describedN, observedN, _, _, shapeN0,
     allocatedN, tagsN, chainsN, deepN⟩ := flat_atom_entry inv itemTyped coveredV
@@ -1448,7 +1462,7 @@ theorem dictInsert_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
       · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run'
         simp [noDepth, noFuel] at run'
       · obtain ⟨valueRun, heapRun⟩ := dictInsert_runtime_success inv valueReceiver heapReceiver valueKey
-          heapKey valueItem heapItem lookup rootOutside represented noDepth noFuel
+          heapKey valueItem heapItem lookup unlinked rootOutside represented noDepth noFuel
         rw [valueRun] at run'
         cases run'
         obtain ⟨stored, storedDef⟩ :
@@ -1558,21 +1572,20 @@ theorem dictInsert_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
           by rw [heapEq]; exact shapedNew, .list _ _ _ _ _, .list _ _ _,
           by rw [heapEq]; exact tagsDeep_list lookupNew tagsZ, ⟨kinds, state', .dict t root rootTyped⟩⟩
         · rw [escapesEq]
-          refine flatInvariant_heap_frame inv (hole := root) (footprint := footprint) afterSub
-            (by rw [heapEq, sizeEq]; exact Nat.le_refl _) ⟨stored, by rw [heapEq]; exact lookupNew, ?_⟩
-            (by rw [heapObserved_links]; exact inv.links) ?_ apart represented rootOutside
+          refine flatInvariant_heap_frame inv (inside := (· = root)) (footprint := footprint) afterSub
+            (by rw [heapEq, sizeEq]; exact Nat.le_refl _)
+            (Ownership.LinkClauses.linksValid_of_same
+              (Ownership.LinkClauses.linksValid_set inv.toInvariant.linksValid root _ unlinked)
+              (by rw [heapEq]) (by rw [heapObserved_links]; rfl))
+            (by rw [heapObserved_links]; exact inv.linkClosed)
+            (fun c different => by rw [heapEq]; exact lookup_set_other hs.heap root _ different)
+            apart represented (fun c member same => rootOutside (same ▸ member))
             (by rw [heapObserved_kept]; rfl) (by rw [valueObserved_kept]; rfl) (fun _ _ _ => Iff.rfl)
             (by rw [heapEq, sizeEq]; exact inv.namingBound) inv.separating
             (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
             (observed_external (valueTicked vs) (heapStored hs root ys stored) inv.keptSize inv.external)
             (by rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapStored, inv.fuel])
             (fun _ escaped => escaped) ⟨kinds, state'⟩
-          · intro z member d reach
-            rw [heapEq] at reach ⊢
-            exact allocated_reach_bound (shapedZ z member) reach
-          · intro c different
-            rw [heapEq]
-            exact lookup_set_other hs.heap root _ different
         · rw [heapEq]
           refine list_described_of_elements receiverNamed noUnk lookupNew shapedNew describedZ ?_ ?_
           · intro d
@@ -1637,7 +1650,7 @@ theorem dictInsert_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
           rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
           simp [noDepth, heapFuel]⟩
       · have success := (dictInsert_runtime_success inv valueReceiver heapReceiver valueKey heapKey valueItem
-          heapItem lookup rootOutside represented noDepth noFuel).1
+          heapItem lookup unlinked rootOutside represented noDepth noFuel).1
         rw [success] at failed
         contradiction
 

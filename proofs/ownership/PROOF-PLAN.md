@@ -131,7 +131,7 @@ As built (2026-10-16): `Invariant` has the clauses `linksValid : LinksValid hs` 
 `LinksValid` records the link structure every reachable state has: the view is allocated after its source, both exist, the source is nonempty, and no view has two sources.
 `LinkNamed` is the narrowed clause: for every array a live path or a permanent observer protects, every array in its link component has exactly its origins.
 The clause is conditional on protection, not on a write. At a read-only split such as `readBoth(rest, xs)` both sides are live, so the clause names the view and its source alike; that is possible because the checker's view rule gives a view its source's origins and a fresh site (`Checker.lean`, `primitive`, `.view`). Distinct canonical names for the two sides exist only in a callee frame, where `Invariant` does not apply, so R1 states its premise on written storage. A component that nothing protects is unconstrained.
-`LinkClauses.lean` proves `LinksValid` with the same heap and links, after an allocation, after a `set!` of a nonempty list and after a view; `LinkNamed` with the same heap, links and observers; and that the per-link closure `LinkClosed` gives `LinkNamed` and survives a naming that keeps old origins and names a new view by its source's origins. No theorem uses these lemmas yet.
+`LinkClauses.lean` proves `LinksValid` with the same heap and links, after an allocation, after a `set!` of a nonempty list and after a view; `LinkNamed` with the same heap, links and observers; and that the per-link closure `LinkClosed` gives `LinkNamed` and survives a naming that keeps old origins and names a new view by its source's origins. Since 2026-11-04 the flat fragment uses them (*First fragment*, below).
 `Invariant` does not give `LinkClosed`: a dead split admits distinct names. So the step must keep `LinkNamed` itself: a component that nothing protects before a step becomes protected only through an operand, which the pre-state protects already; and the post-naming keeps the old arrays' origins and names a new view by its source's origins. `LinkClosed` is available in the main context only because of the view rule; it is a sufficient condition, not a clause.
 The first bullet's contents fact is the fourth clause of `LinksValid` since 2026-10-17 (`contents`: every view holds `viewOf front source`). It needs #284's hand-over: the model's `put` writes with `write`, not `writeLinked`, so before #284 the garbage view of a closed and viewed builder went stale in an accepted program (`ViewLinks.lean`, *A stale garbage view*); with the hand-over that program is refused, a builder is never linked, and every write that reaches a linked array in an accepted program is a `writeLinked`. A protected view is never stale: its cells include its source's, so the demand on the source fails. `LinkSummary.lean` checks that the falsifier's `linksValidB` reports the stale state. As decided on 2026-10-17, the clause went in together with the proof of `LinksValid` after a linked write, because its preservation needs the same contents arithmetic of the splice and the refresh.
 `StatementChecks/ViewLinks.lean` proves that the #169 pre-state admits no naming under the clauses.
@@ -454,6 +454,22 @@ So `FlatInvariant` gets the clause `heapKinds`: a map `kinds : Nat → Option Ty
 An allocation extends the map at the new address (`StateKinded.of_alloc`), a write keeps it (`StateKinded.of_write`), a step that keeps the heap keeps it (`FlatInvariant.kindsAt_of`), and an atom has its type (`kinded_atom`).
 `StateKinded.dict_unlinked` gives the fact the views step needs.
 The clause `links = []` stays until the next pull request.
+
+As built (2026-11-04, #169, the second of the pull requests for views): the link clauses in the flat relation.
+`FlatInvariant` replaces `links = []` with `linkClosed : LinkClosed hs.links gamma`, the sufficient condition of `LinkClauses.lean`; `Invariant.linkNamed` follows from it (`linkNamed_of_closed`), and `Invariant.linksValid` is now a real obligation of every case.
+`LinkedWriteValid.lean` moves before the flat fragment in the import chain, and the new module `LinkedWriteRun.lean` follows it.
+`LinkedWriteRun.lean` proves what a counted write of a list does on a state with valid links (`writeCounted_linked`).
+It succeeds: `spliceUp` climbs to smaller addresses and `refreshDown` descends to larger ones, so the fuel `size + 1` suffices.
+The written array holds the stored list: the splice makes each link on the path to the top consistent (`spliceUp_chain`), and the refresh recomputes those links from the top (`writeLinked_root`).
+Only the written array's link component changes, and its new elements come from the stored list or the component's old arrays (`writeLinked_contents`).
+A write of an array that no link names is a plain write (`writeCounted_unlinked_run`).
+The review of PR #273 named three obligations of the step cases. This pull request discharges two of them:
+- No writer shortens a linked array. `push` appends and `set` keeps the length, so `linksValid_after_writeLinked` applies. `dictInsert` and `dictRemove` write an array that the heap typing types as a dictionary, which no link names; so `dictRemove`, which shortens, never writes a linked array.
+- The post-naming keeps every old array's origins: every case keeps the naming or extends it at a fresh address, so `linkClosed_of_old` keeps the closure.
+The third, the view step's split on the source's emptiness and its naming (`linkClosed_viewed`), comes with `view`.
+`push` and `set` frame the whole component: `linkClosed` gives every array of it the receiver's origins, so the Dead test (`live_path_apart`), the Unescaped test (`demand_success_observer_footprint`) and the Disjoint test (`value_apart_root`, for the old elements and the item) exclude every live path, observer and stored value from it.
+`flatInvariant_heap_frame` takes the changed arrays as a set (`inside`), and the bound on the arrays a binding reaches comes from the heap typing (`StateKinded.reach_bound`), not from the contents of one hole.
+No program of the fragment makes a link yet, so `accepted_flat_anf_traces_agree` covers the same programs.
 
 ## Complete case inventory
 

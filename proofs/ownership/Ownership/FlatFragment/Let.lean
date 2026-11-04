@@ -106,10 +106,10 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
       described := ?_
       named := ?_
       separating := inv.separating
-      linksValid := Soundness.linksValid_of_empty _ (inv.links)
-      linkNamed := Soundness.linkNamed_of_empty _ _ _ _ (inv.links)
+      linksValid := inv.toInvariant.linksValid
+      linkNamed := Ownership.LinkClauses.linkNamed_of_closed inv.linkClosed
     }
-    links := inv.links
+    linkClosed := inv.linkClosed
     abstractKeys := by simp [inv.abstractKeys]
     typeKeys := by simp [inv.typeKeys]
     types := ?_
@@ -294,10 +294,10 @@ theorem flatInvariant_unbind {declarations : List Decl} {vs : ValueSemantics.Sta
       described := ?_
       named := ?_
       separating := inv.separating
-      linksValid := Soundness.linksValid_of_empty _ (inv.links)
-      linkNamed := Soundness.linkNamed_of_empty _ _ _ _ (inv.links)
+      linksValid := inv.toInvariant.linksValid
+      linkNamed := Ownership.LinkClauses.linkNamed_of_closed inv.linkClosed
     }
-    links := inv.links
+    linkClosed := inv.linkClosed
     abstractKeys := abstractKeys
     typeKeys := typeKeys
     types := ?_
