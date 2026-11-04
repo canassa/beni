@@ -555,6 +555,12 @@ const Printer = struct {
 
     // ---- Source map ---------------------------------------------------------
 
+    // A mark records a node's `pos` as it is, a row of `JsIr.far` included,
+    // and the map resolves the row (`SourceMap.Stretch.far`).
+    comptime {
+        std.debug.assert(Node.far_bit == SourceMap.Mapping.far_bit);
+    }
+
     /// Record that `node` starts at the next byte (`backend.md` §11). A
     /// node the lowering invented has no position and maps nothing: the
     /// mapping before it covers it.

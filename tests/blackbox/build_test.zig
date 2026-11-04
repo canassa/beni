@@ -4754,17 +4754,18 @@ test "a release build maps the one hoisted file back to each module's beni sourc
     // renamed local, `total`'s `rest` an initialiser the optimiser writes
     // at its one use, every top-level function's first byte carries its beni
     // name, and `Debug.todo` is a body copied from `core/Debug` to its call,
-    // so it maps to the call. `report` is written with `countDown` in it, a loop
+    // so its `throw` maps to the line of `Debug.beni` it came from
+    // (*Deferred* item 2, amended 2026-11-04), and `Debug.beni` is a source
+    // of the map after `Main.beni`, where its first mark is. `report` is
+    // written with `countDown` in it, a loop
     // whose variable the printer declares in a `for` head (item 4). The
     // runtime's `process.stdout` is hand-written and the entry's
     // `run(main)` the link step's: both unmapped, under Node's own reader
     // too, for which the map's last segment must end with its line. So is
     // the runtime's `import` at the top, before the first stretch, which is
-    // where a file §9 declines to hoist is imported too. A module with no
-    // mark (`core/Debug`, whose `todo` is copied to its call) is no source
-    // of the map. Under
-    // Node's `--enable-source-maps`, the crash names `describe` at the call,
-    // as the development build does (§11.1). `--allow-debug` is the hidden
+    // where a file §9 declines to hoist is imported too. Under Node's
+    // `--enable-source-maps`, the crash is in `describe`, at the line of
+    // `Debug.beni` that throws. `--allow-debug` is the hidden
     // flag that lets a release build reach `Debug`, for the crash.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -4871,6 +4872,7 @@ test "a release build maps the one hoisted file back to each module's beni sourc
         \\source beni:///core/List.beni: embedded
         \\source beni:///platforms/node/Node.beni: embedded
         \\source ../src/Main.beni: its text
+        \\source beni:///core/Debug.beni: embedded
         \\q=|a=>{ -> Main.beni:24:13 spread
         \\let b=a*7919 -> Main.beni:22:5
         \\let |b=a*7919 -> Main.beni:22:5 doubled
@@ -4878,7 +4880,7 @@ test "a release build maps the one hoisted file back to each module's beni sourc
         \\b+b*3 -> Main.beni:24:5
         \\r=|a=>{if -> Main.beni:12:5 describe
         \\return b(q( -> Main.beni:14:13
-        \\throw new Error -> Main.beni:17:13
+        \\throw new Error -> Debug.beni:43:5
         \\s=|a=>a.length -> Main.beni:29:5 total
         \\s(o(a)) -> Main.beni:34:17
         \\s(|o(a)) -> Main.beni:33:14
@@ -4889,7 +4891,7 @@ test "a release build maps the one hoisted file back to each module's beni sourc
         \\globalThis.process -> Rt.beni:22:30
         \\process.stdout -> Rt.beni:22:30 (11 before)
         \\a(u) -> unmapped
-        \\frame describe Main.beni:17:13
+        \\frame describe Debug.beni:43:15
         \\frame <anonymous> Main.beni:55:114
         \\exit 1
         \\
@@ -4907,17 +4909,16 @@ test "a branch that specialisation decides maps to the code it keeps" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `backend.md` §11.2, item 6. `crash 500` takes its `then` branch, and
-    // whole-program specialisation writes the call it keeps in place of
-    // the `if`. That call maps to its own line, 14:9, as the development
-    // build's `crash` frame does, and not to the test's `>` at 13:10. The
-    // call to `Aid.twice` is a body copied from another module, so it maps
-    // to its call, in UTF-16 columns after `é😀`. `Aid` keeps no mark of
-    // its own, so it is no source of the map. `and/` is the same for `&&`:
-    // `check 500` keeps `Aid.bad n`, which maps to 8:16 and not to the
-    // `&&` at 8:13. It is a program of its own because a second
-    // `Debug.todo` call would stop `todo` being copied to either call, and
-    // only a copy shows the position a fold leaves.
+    // `backend.md` §11.2, item 6, and *Deferred* item 2 (amended
+    // 2026-11-04). `crash 500` takes its `then` branch, and whole-program
+    // specialisation writes the call it keeps, `Aid.boom n`, in place of the
+    // `if`. That call is a body copied from `Aid`, so it maps to the line of
+    // `Aid.beni` it came from, 8:5, and so does the crash frame: `Aid` is a
+    // source of the map. `Aid.twice n` is a copy too: its `n` is `Main`'s
+    // argument, in UTF-16 columns after `é😀`, and its `2` is `Aid.beni`'s.
+    // `and/` holds item 6 with no copy: `Aid.bad` has two calls, so it is
+    // not copied, and `check 500` keeps the call `Aid.bad n`, which maps to
+    // 8:16 and not to the `&&` at 8:13.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("src/Aid.beni",
@@ -4986,6 +4987,11 @@ test "a branch that specialisation decides maps to the code it keeps" {
         \\
         \\          else
         \\            "n"
+        \\        , if Aid.bad 7 then
+        \\            "a"
+        \\
+        \\          else
+        \\            "b"
         \\        ]
         \\
     );
@@ -4996,7 +5002,7 @@ test "a branch that specialisation decides maps to the code it keeps" {
     // └─────────────────────────────────────────┘
     const built = try w.runWith(&.{ "build", "--platform=node", "--release", "--allow-debug", "--source-maps", "--out=out", "src" }, .{ .raw_diagnostics = true });
     try expectBuilt(built);
-    const checked = try w.runNode(&.{ "check-release-map.mjs", "out/_main.mjs", "run", "b(|c())", "b(|a*2)" });
+    const checked = try w.runNode(&.{ "check-release-map.mjs", "out/_main.mjs", "run", "b(|c())", "b(|a*2)", "a*|2)" });
     const and_built = try w.runWith(&.{ "build", "--platform=node", "--release", "--allow-debug", "--source-maps", "--out=and-out", "and" }, .{ .raw_diagnostics = true });
     try expectBuilt(and_built);
     const and_checked = try w.runNode(&.{ "check-release-map.mjs", "and-out/_main.mjs", "no", "b()?\"y\"" });
@@ -5012,10 +5018,12 @@ test "a branch that specialisation decides maps to the code it keeps" {
         \\source beni:///core/Debug.beni: embedded
         \\source beni:///platforms/node/Node.beni: embedded
         \\source ../src/Main.beni: its text
-        \\b(|c()) -> Main.beni:14:9
+        \\source ../src/Aid.beni: its text
+        \\b(|c()) -> Aid.beni:8:5
         \\b(|a*2) -> Main.beni:8:41
+        \\a*|2) -> Aid.beni:3:9
         \\frame todo Debug.beni:43:15
-        \\frame <anonymous> Main.beni:14:9
+        \\frame <anonymous> Aid.beni:8:5
         \\exit 1
         \\
     , checked.stdout);
@@ -5024,8 +5032,10 @@ test "a branch that specialisation decides maps to the code it keeps" {
     try testing.expectEqualStrings(
         \\version 3, file _main.mjs
         \\source beni:///platforms/node/Rt.beni: embedded
+        \\source ../and/Aid.beni: its text
         \\source beni:///core/Debug.beni: embedded
         \\source beni:///platforms/node/Node.beni: embedded
+        \\source beni:///core/String.beni: embedded
         \\source ../and/Main.beni: its text
         \\b()?"y" -> Main.beni:8:16
         \\
@@ -5482,6 +5492,62 @@ test "a markup runtime the build rewrites maps back to the file as written" {
     // map.
     try testing.expect(w.exists("out/_platform/markup.foreign.mjs.map"));
     try testing.expect(!w.exists("out/_main.mjs.map"));
+}
+
+test "a release library map names the module a copied body came from" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §11.2, *Deferred* item 2 (amended 2026-11-04), in the
+    // multi-file layout: whole-program specialisation writes `Aid.twice`'s
+    // body in place of `label`'s call of it. So `Lib.mjs.map` has a second
+    // source, `Aid.beni`: the copy's `2` maps there, and its `n`, `label`'s
+    // own argument, to `Lib.beni`. `Aid.mjs.map` has its own source only.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Aid.beni",
+        \\pub twice : Int → Int
+        \\twice n =
+        \\    n * 2
+        \\
+    );
+    try w.write("Lib.beni",
+        \\import Aid
+        \\import String
+        \\
+        \\
+        \\pub label : Int → String
+        \\label n =
+        \\    "n = " ++ String.fromInt (Aid.twice n)
+        \\
+    );
+    try w.write("check-release-map.mjs", check_release_map_script);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=node", "--release", "--library", "--source-maps", "--out=lib", "Lib.beni", "Aid.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const checked = try w.runNode(&.{ "check-release-map.mjs", "lib/Lib.mjs", "no", "b(|a*2)", "a*|2)" });
+    const aid = try w.runNode(&.{ "check-release-map.mjs", "lib/Aid.mjs", "no" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("", checked.stderr);
+    try testing.expectEqualStrings(
+        \\version 3, file Lib.mjs
+        \\source ../Lib.beni: its text
+        \\source ../Aid.beni: its text
+        \\b(|a*2) -> Lib.beni:7:41
+        \\a*|2) -> Aid.beni:3:9
+        \\
+    , checked.stdout);
+    try testing.expectEqualStrings(
+        \\version 3, file Aid.mjs
+        \\source ../Aid.beni: its text
+        \\
+    , aid.stdout);
 }
 
 test "--no-source-maps writes no map and no comment, and contradicting it is refused" {

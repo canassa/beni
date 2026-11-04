@@ -24,7 +24,8 @@
 //!
 //! **Every node carries a source position from the start** (§9.6), a byte
 //! offset into the module's source or `Node.no_pos` for a node the lowering
-//! invented. It is what a development build's source map is made of
+//! invented — or, for a node `--release` copied in from another module, a
+//! row of `far` (backend.md §11.2, amended 2026-11-04). It is what a development build's source map is made of
 //! (backend.md §11.1, `js/SourceMap.zig`), and it was here before the maps
 //! were: Elm never threaded positions through codegen and consequently
 //! has no source maps at all, and retrofitting one means touching every
@@ -67,6 +68,17 @@ node_keys: []const KeyedNode = &.{},
 /// local it names (`Lower.localName`), `RepKey.wild` for every other name.
 /// A name past its end is wild.
 name_key: []const RepKey = &.{},
+/// Owned, `--release` only (`backend.md` §11.2, *Deferred* item 2, amended
+/// 2026-11-04): the positions in other modules' sources of the nodes that
+/// whole-program specialisation copied in from them. A node whose `pos`
+/// has `Node.far_bit` set has the position of row `pos & ~far_bit` here.
+/// Empty in a module nothing was copied into, which pays nothing more.
+far: []const FarPos = &.{},
+
+/// A position in another module's source (`far`): the module, by the
+/// caller's id of it (`Emit` gives its graph index), and a byte offset into
+/// its source.
+pub const FarPos = struct { module: u32, offset: u32 };
 
 /// One row of `node_keys`.
 pub const KeyedNode = struct { node: Node.Index, key: RepKey };
@@ -88,10 +100,10 @@ pub const NodeList = std.MultiArrayList(Node);
 
 pub const Node = struct {
     tag: Tag,
-    /// Byte offset into the module's source, or `no_pos`. Only the
-    /// printer's source-map marks read it (`backend.md` §11): no pass
-    /// decides anything by it, so a moved position changes a map and no
-    /// emitted byte.
+    /// Byte offset into the module's source, `no_pos`, or a row of
+    /// `JsIr.far` (`far_bit`). Only the printer's source-map marks read it
+    /// (`backend.md` §11): no pass decides anything by it, so a moved
+    /// position changes a map and no emitted byte.
     pos: u32,
     data: Data,
     /// `call` only: lowered from a `Js.apply`, whose callee is a `Js.Value`
@@ -115,6 +127,17 @@ pub const Node = struct {
     /// wrapper around a constructor used as a value. Printed the same; a
     /// source map skips it.
     pub const no_pos: u32 = std.math.maxInt(u32);
+
+    /// On a `pos` other than `no_pos`: the rest is a row of `JsIr.far`, a
+    /// position in another module's source. A position of the module's own
+    /// source is below it: the builder gives a node 2 GiB or more into its
+    /// source no position (`Builder.addParts`).
+    pub const far_bit: u32 = 1 << 31;
+
+    /// Whether `at`, a `pos`, names a row of `JsIr.far`.
+    pub inline fn isFar(at: u32) bool {
+        return at != no_pos and at & far_bit != 0;
+    }
 
     /// `arrow`'s `rhs`: an ordinary arrow, or one whose last parameter
     /// defaults to `0`.
@@ -670,6 +693,7 @@ pub fn deinit(ir: *JsIr, gpa: Allocator) void {
     gpa.free(ir.names);
     gpa.free(ir.node_keys);
     gpa.free(ir.name_key);
+    gpa.free(ir.far);
     ir.* = undefined;
 }
 
@@ -1420,7 +1444,9 @@ pub const Builder = struct {
         const datas: [*]Node.Data = @ptrCast(@alignCast(b.cols.ptrs[@backingInt(NodeList.Field.data)]));
         const hosts: [*]bool = @ptrCast(b.cols.ptrs[@backingInt(NodeList.Field.host)]);
         tags[index] = node_tag;
-        positions[index] = node_pos;
+        // An offset that would read as a row of `far` has no position: a
+        // source map then skips the node, and never names another module.
+        positions[index] = if (node_pos & Node.far_bit != 0) Node.no_pos else node_pos;
         datas[index] = .{ .lhs = lhs, .rhs = rhs };
         hosts[index] = false;
         return @fromBackingInt(@intCast(index));
