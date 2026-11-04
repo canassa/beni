@@ -509,8 +509,9 @@ const Printer = struct {
     work: std.ArrayList(Work) = .empty,
     /// Expression levels entered by recursion, against `recursion_limit`.
     depth: u32 = 0,
-    /// `Options.recursion_limit`.
-    recursion_limit: u32 = 112,
+    /// `Options.recursion_limit`. A piece's printer takes the default, so the
+    /// default is `Options`' own and has one place.
+    recursion_limit: u32 = (Options{}).recursion_limit,
     /// `Options.fields`.
     fields: ?*const Fields.Table = null,
     /// Each name's printed text, spelled the first time it is printed
