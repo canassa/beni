@@ -2141,6 +2141,27 @@ fn isListWriter(name: []const u8) bool {
     return false;
 }
 
+/// Whether `module.name` is refused as `private_name`, and only that, both
+/// to a module of a platform read from a directory and to an app module: a
+/// writer only core can call.
+fn fencedToCore(w: *World, module: []const u8, name: []const u8) !bool {
+    const arena = w.arena.allocator();
+    const use = try std.fmt.allocPrint(arena, "import {s} as Fenced\n\n\nprobe = Fenced.{s}\n", .{ module, name });
+    try writeUserPlatform(w);
+    try w.write("myplat/Probe.beni", use);
+    try w.write("mine/Main.beni", "import Prog exposing (Program)\n\n\nmain : Program\nmain =\n    Prog.say \"hi\"\n");
+    try w.write("app/Fenced.beni", use);
+    for ([_][]const []const u8{
+        &.{ "check", "--platform=./myplat", "mine/Main.beni" },
+        &.{ "check", "--platform=node", "app/Fenced.beni" },
+    }) |args| {
+        const r = try w.runWith(args, .{});
+        if (r.exit_code == 0 or r.diagnostics.len == 0) return false;
+        for (r.diagnostics) |d| if (d.code != .private_name) return false;
+    }
+    return true;
+}
+
 test "ownership: only List's eight writers are pub core functions that write a parameter" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -2182,6 +2203,11 @@ test "ownership: only List's eight writers are pub core functions that write a p
             }
         }
         if (!is_pub) continue;
+        // A writer in a module `resolve/CorePrivate.zig` fences to core
+        // (`Js.Array`'s builder stores, `ownership-checker.md`'s Js.Array
+        // rows) has no caller outside core, which is what the exemption
+        // is about: prove the fence from a platform and from an app.
+        if (!std.mem.eql(u8, module, "List") and try fencedToCore(&w, module, name)) continue;
         found += 1;
         if (!std.mem.eql(u8, module, "List") or !isListWriter(name)) {
             std.debug.print("core's pub {s}.{s} writes a parameter and is not one of List's writers (writes/Core.zig `listWriter`)\n", .{ module, name });
