@@ -19145,6 +19145,10 @@ const Walker = struct {
             const c = (try w.classSummary(cls)) orelse return true;
             if (c.limit != .none or c.writesAny()) return true;
             for (c.funs) |f| {
+                // Unseen call paths must also sight their arguments, marking
+                // function parameters unseen (conservativeAV/escapeCall and
+                // sightAt). No W bit alone proves nothing about such a path.
+                // HigherOrderWriter.unseen pins this even with read-only work.
                 if (!f.seen) return true;
                 if (f.calls == .zero) continue;
                 if (f.param >= c.params) return true;

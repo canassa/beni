@@ -1,4 +1,4 @@
--- Truncation emits only a length store, with no result wrapper.
+-- Truncation checks whole, non-growing bounds before the length store.
 import Browser.Host.Array as Array
 
 

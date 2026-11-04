@@ -689,7 +689,7 @@ pub const Gen = struct {
         var e: ?m.Expr = null;
         for (b.ops.items, 0..) |op, k| {
             if (!op.slotted()) continue;
-            const slot_ = if (from_locals) try g.ident(f.slots[k].?) else try g.fieldOf(f, "c{d}", .{k});
+            const slot_ = if (from_locals) try g.ident(f.slots[k].?) else try g.fieldOf(f, "$c{d}", .{k});
             const parts: []const []const u8 = switch (op.what) {
                 .for_ => &.{ "w", "l" },
                 .html => |x| if (x.kind == .list_html) &.{"w"} else &.{"l"},
@@ -937,12 +937,12 @@ pub const Gen = struct {
         // written*) and a group reading only one would never run at mount.
         const unseen = try js.number("NaN");
         // The `let`s only this root reads, first, each under the test of
-        // what it reads, and kept: `d<k>` (backend.md §15.4, *The `let`
+        // what it reads, and kept: `$d<k>` (backend.md §15.4, *The `let`
         // rule*).
         for (0..r.lets.len) |k| {
             const lv = r.lets.at(@intCast(k));
             const then = try js.block();
-            const kept = try g.print("d{d}", .{k});
+            const kept = try g.print("$d{d}", .{k});
             var condition: ?m.Expr = null;
             var let_reads: std.ArrayList(u32) = .empty;
             try let_reads.appendSlice(a_, g.tree.readsOf(lv));
@@ -951,7 +951,7 @@ pub const Gen = struct {
             if (reads.len == 0) {
                 condition = try js.binary(.strict_eq, try g.member(try g.ident(i), kept), undef);
             } else for (reads, 0..) |rd, j| {
-                const field = try g.print("l{d}_{d}", .{ k, j });
+                const field = try g.print("$l{d}_{d}", .{ k, j });
                 const path = r.reads.at(rd);
                 const test_ = if (g.tree.identitySafe(path)) try js.binary(.strict_ne, try g.cx.value(path), try g.member(try g.ident(i), field)) else try js.literal(.true);
                 condition = if (condition) |c| try js.binary(.logical_or, c, test_) else test_;
@@ -996,18 +996,18 @@ pub const Gen = struct {
                 try skip.append(a_, v);
             };
             if (one) |x| {
-                const field = try g.print("g{d}_0", .{gi});
+                const field = try g.print("$g{d}_0", .{gi});
                 condition = try js.binary(.strict_ne, try g.ident(x), try g.member(try g.ident(i), field));
                 try js.assign(then, try g.member(try g.ident(i), field), try g.ident(x));
                 try fields.append(a_, .{ .key = field, .value = unseen });
             } else if (!gr.every) {
                 if (gr.reads.items.len == 0) {
-                    const field = try g.print("g{d}", .{gi});
+                    const field = try g.print("$g{d}", .{gi});
                     condition = try js.binary(.strict_eq, try g.member(try g.ident(i), field), undef);
                     try js.assign(then, try g.member(try g.ident(i), field), try js.literal(.true));
                     try fields.append(a_, .{ .key = field, .value = undef });
                 } else for (gr.reads.items, 0..) |rd, j| {
-                    const field = try g.print("g{d}_{d}", .{ gi, j });
+                    const field = try g.print("$g{d}_{d}", .{ gi, j });
                     const path = r.reads.at(rd);
                     const test_ = try js.binary(.strict_ne, try g.cx.value(path), try g.member(try g.ident(i), field));
                     condition = if (condition) |c| try js.binary(.logical_or, c, test_) else test_;
@@ -1039,7 +1039,7 @@ pub const Gen = struct {
             const otherwise = try js.block();
             var restates = false;
             for (gr.ops.items) |k| if (ops[k].slotted()) {
-                try g.writeRestateSlot(b, &patch, otherwise, ops[k], try g.fieldOf(&patch, "c{d}", .{k}));
+                try g.writeRestateSlot(b, &patch, otherwise, ops[k], try g.fieldOf(&patch, "$c{d}", .{k}));
                 restates = true;
             };
             // A selected producer must propagate its call substitution even
@@ -2127,7 +2127,7 @@ pub const Gen = struct {
 
     /// A template node: its walk in `m`, the instance's field in `p`.
     fn node(g: *Gen, f: *const Fn, t: u32) !m.Expr {
-        if (f.i) |i| return g.member(try g.ident(i), try g.print("w{d}", .{t}));
+        if (f.i) |i| return g.member(try g.ident(i), try g.print("$w{d}", .{t}));
         return g.ident(f.walks[t].?);
     }
 
@@ -2230,11 +2230,11 @@ pub const Gen = struct {
             try props.append(a_, .{ .key = "kt", .value = try g.empty(), .source = true });
         }
         for (b.tnodes.items, 0..) |tn, i| {
-            if (tn.stored) try props.append(a_, .{ .key = try g.print("w{d}", .{i}), .value = try g.ident(f.walks[i].?) });
+            if (tn.stored) try props.append(a_, .{ .key = try g.print("$w{d}", .{i}), .value = try g.ident(f.walks[i].?) });
         }
         for (b.ops.items, 0..) |_, k| {
-            if (f.slots[k]) |c| try props.append(a_, .{ .key = try g.print("c{d}", .{k}), .value = try g.ident(c) });
-            if (f.texts[k]) |x| try props.append(a_, .{ .key = try g.print("x{d}", .{k}), .value = try g.ident(x) });
+            if (f.slots[k]) |c| try props.append(a_, .{ .key = try g.print("$c{d}", .{k}), .value = try g.ident(c) });
+            if (f.texts[k]) |x| try props.append(a_, .{ .key = try g.print("$x{d}", .{k}), .value = try g.ident(x) });
         }
         try props.appendSlice(a_, fields.items);
         // Whether the instance is live (`l`): for an `m` that leaves its
@@ -2268,14 +2268,14 @@ pub const Gen = struct {
         switch (op.what) {
             .placeholder => |x| {
                 try js.assign(f.block, try g.member(try g.node(f, x.t), "data"), try g.read(b, f, x.value));
-                try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = try g.read(b, f, x.value) });
+                try fields.append(a_, .{ .key = try g.print("$a{d}", .{k}), .value = try g.read(b, f, x.value) });
             },
             .text => |x| {
                 const n = try g.cx.fresh("x");
                 const shown = if (x.string) try g.read(b, f, x.value) else try js.binary(.add, try g.str(""), try g.read(b, f, x.value));
                 try js.constant(f.block, n, try g.rt("insertText", &.{ try g.parentOf(f, x.at, true), try g.markerOf(f, x.at), shown }));
                 f.texts[k] = n;
-                try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = try g.read(b, f, x.value) });
+                try fields.append(a_, .{ .key = try g.print("$a{d}", .{k}), .value = try g.read(b, f, x.value) });
             },
             .attribute => |x| {
                 if (g.stateful(x.item)) {
@@ -2285,10 +2285,10 @@ pub const Gen = struct {
                 if (x.item.class == .class_list or x.item.class == .style_list) {
                     const snapshot = try g.cx.fresh("written");
                     try js.constant(f.block, snapshot, try g.rt(if (x.item.class == .class_list) "classes" else "styles", &.{ try g.node(f, x.t), try g.read(b, f, x.value), try g.nul() }));
-                    try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = try g.ident(snapshot) });
+                    try fields.append(a_, .{ .key = try g.print("$a{d}", .{k}), .value = try g.ident(snapshot) });
                 } else {
                     try g.writeAttribute(f.block, try g.node(f, x.t), x.item, try g.read(b, f, x.value), null);
-                    if (!x.constant) try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = if (g.identityOperand(b, x.value)) try g.read(b, f, x.value) else try js.literal(.undefined) });
+                    if (!x.constant) try fields.append(a_, .{ .key = try g.print("$a{d}", .{k}), .value = if (g.identityOperand(b, x.value)) try g.read(b, f, x.value) else try js.literal(.undefined) });
                 }
             },
             .toggle => |x| {
@@ -2297,30 +2297,30 @@ pub const Gen = struct {
                 const then = try js.block();
                 try js.expression(then, try g.method(try g.member(try g.node(f, x.t), "classList"), "toggle", &.{ try g.str(x.name), try js.literal(.true) }));
                 try js.@"if"(f.block, try g.read(b, f, x.value), then, null);
-                try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = try g.read(b, f, x.value) });
+                try fields.append(a_, .{ .key = try g.print("$a{d}", .{k}), .value = try g.read(b, f, x.value) });
             },
             .style => |x| {
                 try js.expression(f.block, try g.method(try g.member(try g.node(f, x.t), "style"), "setProperty", &.{ try g.str(x.name), try g.read(b, f, x.value) }));
-                try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = try g.read(b, f, x.value) });
+                try fields.append(a_, .{ .key = try g.print("$a{d}", .{k}), .value = try g.read(b, f, x.value) });
             },
             .event => |x| {
                 try g.mountEvent(f, x, try g.read(b, f, x.handler));
-                try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = if (g.identityOperand(b, x.handler)) try g.read(b, f, x.handler) else try js.literal(.undefined) });
+                try fields.append(a_, .{ .key = try g.print("$a{d}", .{k}), .value = if (g.identityOperand(b, x.handler)) try g.read(b, f, x.handler) else try js.literal(.undefined) });
             },
             .html => |x| try js.expression(f.block, try g.slotWrite(b, f, op.node, x.kind, try g.ident(f.slots[k].?), x.value)),
             .helper => |x| {
                 for (x.args, 0..) |p, j| {
                     if (g.constantOperand(b, p)) continue;
-                    try fields.append(a_, .{ .key = try g.print("a{d}_{d}", .{ k, j }), .value = if (g.identityOperand(b, p)) try g.read(b, f, p) else try js.literal(.undefined) });
+                    try fields.append(a_, .{ .key = try g.print("$a{d}_{d}", .{ k, j }), .value = if (g.identityOperand(b, p)) try g.read(b, f, p) else try js.literal(.undefined) });
                 }
                 try js.expression(f.block, try g.placement(op.node, try g.rt("childHtml", &.{ try g.ident(f.slots[k].?), try g.helperCall(b, f, x.callee, x.args, op.node) })));
             },
             .component => |x| {
                 for (x.props, 0..) |p, j| {
                     if (g.constantOperand(b, p)) continue;
-                    try fields.append(a_, .{ .key = try g.print("a{d}_{d}", .{ k, j }), .value = if (g.identityOperand(b, p)) try g.read(b, f, p) else try js.literal(.undefined) });
+                    try fields.append(a_, .{ .key = try g.print("$a{d}_{d}", .{ k, j }), .value = if (g.identityOperand(b, p)) try g.read(b, f, p) else try js.literal(.undefined) });
                 }
-                if (x.children) |ch| try fields.append(a_, .{ .key = try g.print("a{d}c", .{k}), .value = if (g.identityOperand(b, ch)) try g.read(b, f, ch) else try js.literal(.undefined) });
+                if (x.children) |ch| try fields.append(a_, .{ .key = try g.print("$a{d}c", .{k}), .value = if (g.identityOperand(b, ch)) try g.read(b, f, ch) else try js.literal(.undefined) });
                 try js.expression(f.block, try g.placement(op.node, try g.rt("childHtml", &.{ try g.ident(f.slots[k].?), try g.componentCall(b, f, op.node, x.thunk, x.children) })));
             },
             .for_ => |x| try js.expression(f.block, try g.forCall(b, f, op.node, x.mode, try g.ident(f.slots[k].?), x.each, x.key, x.row, x.inputs)),
@@ -2339,9 +2339,9 @@ pub const Gen = struct {
                 const otherwise = try js.block();
                 try js.expression(otherwise, try g.rt("hide", &.{ try g.ident(c), if (x.fallback) |fb| try g.read(b, f, fb) else try g.empty() }));
                 try js.@"if"(f.block, try g.cx.isJust(try g.read(b, f, x.when)), then, otherwise);
-                try fields.append(a_, .{ .key = try g.print("a{d}k", .{k}), .value = try g.ident(key) });
-                try fields.append(a_, .{ .key = try g.print("a{d}v", .{k}), .value = if (g.tree.show(op.node).value_is_primitive) try g.ident(shown) else try js.literal(.undefined) });
-                for (x.inputs, 0..) |in, j| try fields.append(a_, .{ .key = try g.print("a{d}i{d}", .{ k, j }), .value = if (g.identityOperand(b, in)) try g.read(b, f, in) else try js.literal(.undefined) });
+                try fields.append(a_, .{ .key = try g.print("$a{d}k", .{k}), .value = try g.ident(key) });
+                try fields.append(a_, .{ .key = try g.print("$a{d}v", .{k}), .value = if (g.tree.show(op.node).value_is_primitive) try g.ident(shown) else try js.literal(.undefined) });
+                for (x.inputs, 0..) |in, j| try fields.append(a_, .{ .key = try g.print("$a{d}i{d}", .{ k, j }), .value = if (g.identityOperand(b, in)) try g.read(b, f, in) else try js.literal(.undefined) });
             },
         }
     }
@@ -2413,48 +2413,48 @@ pub const Gen = struct {
             return;
         }
         switch (op.what) {
-            .placeholder, .style => try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = undef }),
+            .placeholder, .style => try fields.append(a_, .{ .key = try g.print("$a{d}", .{k}), .value = undef }),
             .text => |x| {
                 const n = try g.cx.fresh("x");
                 try js.constant(f.block, n, try g.rt("insertText", &.{ try g.parentOf(f, x.at, true), try g.markerOf(f, x.at), try g.str("") }));
                 f.texts[k] = n;
-                try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = undef });
+                try fields.append(a_, .{ .key = try g.print("$a{d}", .{k}), .value = undef });
             },
             .attribute => |x| {
                 if (g.stateful(x.item)) return;
                 if (x.constant) {
                     // Its field exists only where its write is guarded.
-                    if (k < f.guarded.len and f.guarded[k]) try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = undef });
+                    if (k < f.guarded.len and f.guarded[k]) try fields.append(a_, .{ .key = try g.print("$a{d}", .{k}), .value = undef });
                     return;
                 }
                 const first = if (x.item.class == .class_list or x.item.class == .style_list) try g.nul() else undef;
-                try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = first });
+                try fields.append(a_, .{ .key = try g.print("$a{d}", .{k}), .value = first });
             },
-            .toggle => try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = try js.literal(.false) }),
+            .toggle => try fields.append(a_, .{ .key = try g.print("$a{d}", .{k}), .value = try js.literal(.false) }),
             .event => |x| {
                 try g.mountEvent(f, x, null);
-                try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = undef });
+                try fields.append(a_, .{ .key = try g.print("$a{d}", .{k}), .value = undef });
             },
             .html, .for_ => {},
             .helper => |x| {
                 for (x.args, 0..) |arg, j| {
                     if (g.constantOperand(b, arg)) continue;
-                    try fields.append(a_, .{ .key = try g.print("a{d}_{d}", .{ k, j }), .value = undef });
+                    try fields.append(a_, .{ .key = try g.print("$a{d}_{d}", .{ k, j }), .value = undef });
                 }
-                if (!x.impure and g.allConstant(b, x.args)) try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = undef });
+                if (!x.impure and g.allConstant(b, x.args)) try fields.append(a_, .{ .key = try g.print("$a{d}", .{k}), .value = undef });
             },
             .component => |x| {
                 for (x.props, 0..) |prop, j| {
                     if (g.constantOperand(b, prop)) continue;
-                    try fields.append(a_, .{ .key = try g.print("a{d}_{d}", .{ k, j }), .value = undef });
+                    try fields.append(a_, .{ .key = try g.print("$a{d}_{d}", .{ k, j }), .value = undef });
                 }
-                if (x.children != null) try fields.append(a_, .{ .key = try g.print("a{d}c", .{k}), .value = undef });
-                if (!x.impure and x.children == null and g.allConstant(b, x.props)) try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = undef });
+                if (x.children != null) try fields.append(a_, .{ .key = try g.print("$a{d}c", .{k}), .value = undef });
+                if (!x.impure and x.children == null and g.allConstant(b, x.props)) try fields.append(a_, .{ .key = try g.print("$a{d}", .{k}), .value = undef });
             },
             .show => |x| {
-                try fields.append(a_, .{ .key = try g.print("a{d}k", .{k}), .value = undef });
-                try fields.append(a_, .{ .key = try g.print("a{d}v", .{k}), .value = undef });
-                for (x.inputs, 0..) |_, j| try fields.append(a_, .{ .key = try g.print("a{d}i{d}", .{ k, j }), .value = undef });
+                try fields.append(a_, .{ .key = try g.print("$a{d}k", .{k}), .value = undef });
+                try fields.append(a_, .{ .key = try g.print("$a{d}v", .{k}), .value = undef });
+                for (x.inputs, 0..) |_, j| try fields.append(a_, .{ .key = try g.print("$a{d}i{d}", .{ k, j }), .value = undef });
             },
         }
     }
@@ -2472,7 +2472,7 @@ pub const Gen = struct {
             .event => |x| try g.mountEvent(f, x, null),
             else => unreachable,
         }
-        try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = try js.literal(.undefined) });
+        try fields.append(a_, .{ .key = try g.print("$a{d}", .{k}), .value = try js.literal(.undefined) });
     }
 
     /// An event's writes at mount: its handler, unless `p` writes it, and
@@ -2508,7 +2508,7 @@ pub const Gen = struct {
     /// (§15.3, *Controlled inputs*).
     fn writeRestate(g: *Gen, b: *const Body, f: *Fn) m.Error!void {
         for (b.ops.items, 0..) |op, i| {
-            if (op.slotted()) try g.writeRestateSlot(b, f, f.block, op, try g.fieldOf(f, "c{d}", .{@as(u32, @intCast(i))}));
+            if (op.slotted()) try g.writeRestateSlot(b, f, f.block, op, try g.fieldOf(f, "$c{d}", .{@as(u32, @intCast(i))}));
         }
     }
 
@@ -2585,7 +2585,7 @@ pub const Gen = struct {
             if (op.node != .none) g.cx.at(op.node);
             switch (op.what) {
                 .placeholder => |x| try g.guarded(b, f, x.value, k, try g.node(f, x.t), .data),
-                .text => |x| try g.guarded(b, f, x.value, k, try g.fieldOf(f, "x{d}", .{k}), .data),
+                .text => |x| try g.guarded(b, f, x.value, k, try g.fieldOf(f, "$x{d}", .{k}), .data),
                 .attribute => |x| {
                     if (g.stateful(x.item)) {
                         // Kept on the element and compared with the page's
@@ -2603,8 +2603,8 @@ pub const Gen = struct {
                         } else if (f.grouped) {
                             const once = try js.block();
                             try g.writeAttribute(once, try g.node(f, x.t), x.item, try g.read(b, f, x.value), null);
-                            try js.assign(once, try g.fieldOf(f, "a{d}", .{k}), try js.literal(.true));
-                            try js.@"if"(f.block, try js.binary(.strict_eq, try g.fieldOf(f, "a{d}", .{k}), try js.literal(.undefined)), once, null);
+                            try js.assign(once, try g.fieldOf(f, "$a{d}", .{k}), try js.literal(.true));
+                            try js.@"if"(f.block, try js.binary(.strict_eq, try g.fieldOf(f, "$a{d}", .{k}), try js.literal(.undefined)), once, null);
                         }
                         continue;
                     }
@@ -2613,15 +2613,15 @@ pub const Gen = struct {
                         continue;
                     };
                     if (x.item.class == .class_list or x.item.class == .style_list) {
-                        const kept = try g.fieldOf(f, "a{d}", .{k});
+                        const kept = try g.fieldOf(f, "$a{d}", .{k});
                         const call = try g.rt(if (x.item.class == .class_list) "classes" else "styles", &.{ try g.node(f, x.t), try g.read(b, f, x.value), kept });
                         try js.assign(f.block, kept, call);
                         continue;
                     }
                     const then = try js.block();
-                    try g.writeAttribute(then, try g.node(f, x.t), x.item, try g.read(b, f, x.value), try g.fieldOf(f, "a{d}", .{k}));
-                    if (g.identityOperand(b, x.value)) try js.assign(then, try g.fieldOf(f, "a{d}", .{k}), try g.read(b, f, x.value));
-                    try js.@"if"(f.block, try g.identityChanged(b, f, x.value, try g.fieldOf(f, "a{d}", .{k})), then, null);
+                    try g.writeAttribute(then, try g.node(f, x.t), x.item, try g.read(b, f, x.value), try g.fieldOf(f, "$a{d}", .{k}));
+                    if (g.identityOperand(b, x.value)) try js.assign(then, try g.fieldOf(f, "$a{d}", .{k}), try g.read(b, f, x.value));
+                    try js.@"if"(f.block, try g.identityChanged(b, f, x.value, try g.fieldOf(f, "$a{d}", .{k})), then, null);
                 },
                 .toggle => |x| try g.guarded(b, f, x.value, k, try g.node(f, x.t), .{ .toggle = x.name }),
                 .style => |x| try g.guarded(b, f, x.value, k, try g.node(f, x.t), .{ .style = x.name }),
@@ -2629,7 +2629,7 @@ pub const Gen = struct {
                     const facts = g.tree.eventFacts(x.item.event);
                     try g.guarded(b, f, x.handler, k, try g.node(f, x.t), .{ .property = try g.print("$${s}", .{g.tree.string(facts.dom_name)}) });
                 },
-                .html => |x| try js.expression(f.block, try g.slotWrite(b, f, op.node, x.kind, try g.fieldOf(f, "c{d}", .{k}), x.value)),
+                .html => |x| try js.expression(f.block, try g.slotWrite(b, f, op.node, x.kind, try g.fieldOf(f, "$c{d}", .{k}), x.value)),
                 .helper => |x| {
                     // A component's skip, for a plain function: the call is
                     // made only when an argument changed (§11.6). A
@@ -2639,11 +2639,11 @@ pub const Gen = struct {
                     const then = try js.block();
                     for (x.args, 0..) |p, j| {
                         if (g.constantOperand(b, p)) continue;
-                        const test_ = try g.identityChanged(b, f, p, try g.fieldOf(f, "a{d}_{d}", .{ k, j }));
+                        const test_ = try g.identityChanged(b, f, p, try g.fieldOf(f, "$a{d}_{d}", .{ k, j }));
                         changed = if (changed) |c| try js.binary(.logical_or, c, test_) else test_;
-                        if (g.identityOperand(b, p)) try js.assign(then, try g.fieldOf(f, "a{d}_{d}", .{ k, j }), try g.read(b, f, p));
+                        if (g.identityOperand(b, p)) try js.assign(then, try g.fieldOf(f, "$a{d}_{d}", .{ k, j }), try g.read(b, f, p));
                     }
-                    try js.expression(then, try g.placement(op.node, try g.rt("childHtml", &.{ try g.fieldOf(f, "c{d}", .{k}), try g.helperCall(b, f, x.callee, x.args, op.node) })));
+                    try js.expression(then, try g.placement(op.node, try g.rt("childHtml", &.{ try g.fieldOf(f, "$c{d}", .{k}), try g.helperCall(b, f, x.callee, x.args, op.node) })));
                     if (g.direct) try js.nested(f.block, then) else try g.callOrRestate(f, k, changed, then, x.impure);
                 },
                 .component => |x| {
@@ -2651,43 +2651,43 @@ pub const Gen = struct {
                     const then = try js.block();
                     for (x.props, 0..) |p, j| {
                         if (g.constantOperand(b, p)) continue;
-                        const test_ = try g.identityChanged(b, f, p, try g.fieldOf(f, "a{d}_{d}", .{ k, j }));
+                        const test_ = try g.identityChanged(b, f, p, try g.fieldOf(f, "$a{d}_{d}", .{ k, j }));
                         changed = if (changed) |c| try js.binary(.logical_or, c, test_) else test_;
-                        if (g.identityOperand(b, p)) try js.assign(then, try g.fieldOf(f, "a{d}_{d}", .{ k, j }), try g.read(b, f, p));
+                        if (g.identityOperand(b, p)) try js.assign(then, try g.fieldOf(f, "$a{d}_{d}", .{ k, j }), try g.read(b, f, p));
                     }
                     if (x.children) |ch| {
-                        const test_ = try g.identityChanged(b, f, ch, try g.fieldOf(f, "a{d}c", .{k}));
+                        const test_ = try g.identityChanged(b, f, ch, try g.fieldOf(f, "$a{d}c", .{k}));
                         changed = if (changed) |c| try js.binary(.logical_or, c, test_) else test_;
-                        if (g.identityOperand(b, ch)) try js.assign(then, try g.fieldOf(f, "a{d}c", .{k}), try g.read(b, f, ch));
+                        if (g.identityOperand(b, ch)) try js.assign(then, try g.fieldOf(f, "$a{d}c", .{k}), try g.read(b, f, ch));
                     }
-                    try js.expression(then, try g.placement(op.node, try g.rt("childHtml", &.{ try g.fieldOf(f, "c{d}", .{k}), try g.componentCall(b, f, op.node, x.thunk, x.children) })));
+                    try js.expression(then, try g.placement(op.node, try g.rt("childHtml", &.{ try g.fieldOf(f, "$c{d}", .{k}), try g.componentCall(b, f, op.node, x.thunk, x.children) })));
                     if (g.direct) try js.nested(f.block, then) else try g.callOrRestate(f, k, changed, then, x.impure);
                 },
-                .for_ => |x| try js.expression(f.block, try g.forCall(b, f, op.node, x.mode, try g.fieldOf(f, "c{d}", .{k}), x.each, x.key, x.row, x.inputs)),
+                .for_ => |x| try js.expression(f.block, try g.forCall(b, f, op.node, x.mode, try g.fieldOf(f, "$c{d}", .{k}), x.each, x.key, x.row, x.inputs)),
                 .show => |x| {
                     const then = try js.block();
                     const it = try g.cx.fresh("value");
                     const key = try g.cx.fresh("key");
                     try js.constant(then, it, try g.cx.maybe(try g.read(b, f, x.when)));
                     try js.constant(then, key, try g.showKey(b, f, x.key, it));
-                    var changed = try js.binary(.logical_or, try js.binary(.strict_ne, try g.ident(key), try g.fieldOf(f, "a{d}k", .{k})), if (g.tree.show(op.node).value_is_primitive) try js.binary(.strict_ne, try g.ident(it), try g.fieldOf(f, "a{d}v", .{k})) else try js.literal(.true));
+                    var changed = try js.binary(.logical_or, try js.binary(.strict_ne, try g.ident(key), try g.fieldOf(f, "$a{d}k", .{k})), if (g.tree.show(op.node).value_is_primitive) try js.binary(.strict_ne, try g.ident(it), try g.fieldOf(f, "$a{d}v", .{k})) else try js.literal(.true));
                     const again = try js.block();
-                    try js.assign(again, try g.fieldOf(f, "a{d}k", .{k}), try g.ident(key));
-                    if (g.tree.show(op.node).value_is_primitive) try js.assign(again, try g.fieldOf(f, "a{d}v", .{k}), try g.ident(it));
+                    try js.assign(again, try g.fieldOf(f, "$a{d}k", .{k}), try g.ident(key));
+                    if (g.tree.show(op.node).value_is_primitive) try js.assign(again, try g.fieldOf(f, "$a{d}v", .{k}), try g.ident(it));
                     for (x.inputs, 0..) |in, j| {
-                        changed = try js.binary(.logical_or, changed, try g.identityChanged(b, f, in, try g.fieldOf(f, "a{d}i{d}", .{ k, j })));
-                        if (g.identityOperand(b, in)) try js.assign(again, try g.fieldOf(f, "a{d}i{d}", .{ k, j }), try g.read(b, f, in));
+                        changed = try js.binary(.logical_or, changed, try g.identityChanged(b, f, in, try g.fieldOf(f, "$a{d}i{d}", .{ k, j })));
+                        if (g.identityOperand(b, in)) try js.assign(again, try g.fieldOf(f, "$a{d}i{d}", .{ k, j }), try g.read(b, f, in));
                     }
-                    try js.expression(again, try g.showCall(op.node, try g.fieldOf(f, "c{d}", .{k}), try g.ident(key), try js.call(try g.read(b, f, x.body), &.{try g.ident(it)})));
+                    try js.expression(again, try g.showCall(op.node, try g.fieldOf(f, "$c{d}", .{k}), try g.ident(key), try js.call(try g.read(b, f, x.body), &.{try g.ident(it)})));
                     // The body unchanged and skipped: what it shows kept
                     // current all the same (`Rt.restate`).
                     const same = try js.block();
-                    try js.expression(same, try g.rt("restate", &.{try g.fieldOf(f, "c{d}", .{k})}));
+                    try js.expression(same, try g.rt("restate", &.{try g.fieldOf(f, "$c{d}", .{k})}));
                     try js.@"if"(then, changed, again, same);
                     const otherwise = try js.block();
                     // The slot stands for "nothing shown": no key is it.
-                    try js.assign(otherwise, try g.fieldOf(f, "a{d}k", .{k}), try g.fieldOf(f, "c{d}", .{k}));
-                    try js.expression(otherwise, try g.rt("hide", &.{ try g.fieldOf(f, "c{d}", .{k}), if (x.fallback) |fb| try g.read(b, f, fb) else try g.empty() }));
+                    try js.assign(otherwise, try g.fieldOf(f, "$a{d}k", .{k}), try g.fieldOf(f, "$c{d}", .{k}));
+                    try js.expression(otherwise, try g.rt("hide", &.{ try g.fieldOf(f, "$c{d}", .{k}), if (x.fallback) |fb| try g.read(b, f, fb) else try g.empty() }));
                     try js.@"if"(f.block, try g.cx.isJust(try g.read(b, f, x.when)), then, otherwise);
                 },
             }
@@ -2706,11 +2706,11 @@ pub const Gen = struct {
         const js = g.jsb();
         if (impure) return js.nested(f.block, then);
         const otherwise = try js.block();
-        try js.expression(otherwise, try g.rt("restate", &.{try g.fieldOf(f, "c{d}", .{k})}));
+        try js.expression(otherwise, try g.rt("restate", &.{try g.fieldOf(f, "$c{d}", .{k})}));
         if (changed) |c| return js.@"if"(f.block, c, then, otherwise);
         if (!f.grouped) return js.nested(f.block, otherwise);
-        try js.assign(then, try g.fieldOf(f, "a{d}", .{k}), try js.literal(.true));
-        try js.@"if"(f.block, try js.binary(.strict_eq, try g.fieldOf(f, "a{d}", .{k}), try js.literal(.undefined)), then, otherwise);
+        try js.assign(then, try g.fieldOf(f, "$a{d}", .{k}), try js.literal(.true));
+        try js.@"if"(f.block, try js.binary(.strict_eq, try g.fieldOf(f, "$a{d}", .{k}), try js.literal(.undefined)), then, otherwise);
     }
 
     /// The operands an op writes from, for the ops a row may leave alone
@@ -2794,14 +2794,14 @@ pub const Gen = struct {
             return;
         };
         const then = try js.block();
-        if (g.identityOperand(b, v)) try js.assign(then, try g.fieldOf(f, "a{d}", .{k}), try g.read(b, f, v));
+        if (g.identityOperand(b, v)) try js.assign(then, try g.fieldOf(f, "$a{d}", .{k}), try g.read(b, f, v));
         switch (w) {
             .data => try js.assign(then, try g.member(target, "data"), try g.read(b, f, v)),
             .property => |p| try js.assign(then, try g.member(target, p), try g.read(b, f, v)),
             .toggle => |n| try js.expression(then, try g.method(try g.member(target, "classList"), "toggle", &.{ try g.str(n), try g.read(b, f, v) })),
             .style => |n| try js.expression(then, try g.method(try g.member(target, "style"), "setProperty", &.{ try g.str(n), try g.read(b, f, v) })),
         }
-        try js.@"if"(f.block, try g.identityChanged(b, f, v, try g.fieldOf(f, "a{d}", .{k})), then, null);
+        try js.@"if"(f.block, try g.identityChanged(b, f, v, try g.fieldOf(f, "$a{d}", .{k})), then, null);
     }
 
     /// What an attribute writes, by its facts and its value's class

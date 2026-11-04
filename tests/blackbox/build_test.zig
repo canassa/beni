@@ -13761,6 +13761,13 @@ test "private renderer arrays truncate in place and defect on invalid reads" {
             \\    assert.throws(() => at(array, index), { name: 'RangeError', message: 'beni: renderer array index out of bounds' });
             \\  }
             \\}
+            \\for (const cut of [truncate, functions.truncate]) {
+            \\  cut(array, array.length);
+            \\  for (const size of [-1, 2, 0.5, 4294967296, NaN, Infinity]) {
+            \\    assert.throws(() => cut(array, size), { name: 'RangeError', message: 'beni: renderer array length out of bounds' });
+            \\    assert.deepEqual(array, [10]);
+            \\  }
+            \\}
             \\functions.truncate(array, 0);
             \\assert.deepEqual(array, []);
             \\assert.throws(() => read(array, 0), { name: 'RangeError', message: 'beni: renderer array index out of bounds' });
@@ -13845,4 +13852,27 @@ test "typed events module matches development and release emit goldens" {
         const expected = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, arena, .limited(world.max_stream_bytes));
         try testing.expectEqualStrings(expected, try w.read("out/_platform/Rt/Events.mjs"));
     }
+}
+
+test "DOM producer slots stay in the reserved dollar namespace" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    for ([_][]const u8{ "DomGrouped", "DomChildren" }) |name| {
+        const path = try std.fmt.allocPrint(a, "tests/corpus/emit/dom/{s}.beni", .{name});
+        const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, a, .limited(world.max_stream_bytes));
+        try w.write(try std.fmt.allocPrint(a, "{s}.beni", .{name}), source);
+    }
+    const built = try w.run(&.{ "build", "--library", "--platform=browser", "--out=out", "." });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expectEqualStrings("", built.stderr);
+    try w.write("reserved.mjs",
+        \\import assert from 'node:assert/strict';
+        \\import {readFileSync} from 'node:fs';
+        \\const js = ['DomGrouped', 'DomChildren'].map(n => readFileSync('./out/' + n + '.mjs', 'utf8')).join('\n');
+        \\for (const key of ['$w0', '$c0', '$x0', '$a1', '$g0_0', '$d0', '$l0_0']) assert.ok(js.includes(key + ':'), key);
+        \\assert.doesNotMatch(js, /(?<![$\w])(?:w\d+|c\d+|x\d+|a\d+(?:_\d+|[ckv]|i\d+)?|g\d+(?:_\d+)?|d\d+|l\d+_\d+)\s*:/);
+        \\console.log('producer keys reserved');
+    );
+    try w.expectProgram("reserved.mjs", .{ .stdout = "producer keys reserved\n" });
 }

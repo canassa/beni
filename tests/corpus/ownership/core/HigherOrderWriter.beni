@@ -22,3 +22,17 @@ pub writes ⊤ = wrapped (λxs → ( xs, 1 )) callbacks.turn λxs → List.push 
 
 
 pub unknownEffect turn = wrapped (λxs → ( xs, 1 )) turn λxs → xs
+
+
+-- No write bit alone is insufficient: handing a callback to a callee whose
+-- calls are unseen must flag that argument and retain the writer need.
+pub foreign pure hideCallback : (List Int → List Int) → ⊤
+
+
+pub unseenWriter : (List Int → List Int), List Int → List Int
+unseenWriter work xs =
+    hideCallback work
+    xs
+
+
+pub unseen ⊤ = wrapped (λxs → ( xs, 1 )) unseenWriter λxs → xs

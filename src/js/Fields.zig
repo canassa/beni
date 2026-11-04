@@ -356,9 +356,10 @@ pub const Conflicts = struct {
 /// text the build writes that is not a field's. A field in either set keeps
 /// its text. No spelling holds a `$`, and none is the text of a field that
 /// keeps it, because the two could be keys of one record. A spelling MAY be
-/// a plain property's text: a record holds nothing but its fields, and
-/// nothing that reads a plain property by name is handed a record whose
-/// fields it does not name (`boundary.md` §4).
+/// a plain property's text only when the representations cannot share an
+/// object. Renderer InstanceFields/RowFields mix source fields with producer
+/// slots: those plain producer keys must contain `$`, outside this alphabet
+/// (`backend.md` §15.4). Boundary-visible names stay pinned (§4).
 pub fn assign(
     arena: Allocator,
     counts: []Count,

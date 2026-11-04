@@ -2,6 +2,7 @@ module HigherOrderWriter
   21:16 value <lambda>: rejected need: HigherOrderWriter.wrapped edits what it returns, which may be a list it does not own
   21:63 List.push xs: pending: HigherOrderWriter.wrapped loses sight of what calls it
   24:26 value <lambda>: rejected need: HigherOrderWriter.wrapped edits what it returns, which may be a list it does not own
+  38:16 value <lambda>: rejected need: HigherOrderWriter.wrapped edits what it returns, which may be a list it does not own
   summary callbacks: res .turn λr{lost} (words)
   summary callbacks.turn: π1 R, π2 R; res ⊤{lost}r{lost}; π1 calls ≤1, supply 1 ⊤ borrowed (words)
   summary keepThenCall: π1.call R, π1.keep R, π2 R, π3 R; res .0 cb(π1.keep){excl cb(π1.keep)}r{excl cb(π1.keep)} condition(fresh2), .1 cb(π1.call){excl cb(π1.call)} condition(fresh3), condition(fresh1){sep cb(π1.keep) cb(π1.call)}; π3 calls 0, unseen; π1.keep calls ≤1, supply 1 π2 borrowed{excl π2}; π1.call calls ≤1, supply 1 π3 owned{excl π3}, supply 2 π2 owned{excl π2}
@@ -9,6 +10,9 @@ module HigherOrderWriter
   summary readonly: res .0 condition(fresh2), .0.0 condition(fresh3) fresh3{lost}r{lost}, .1 condition(fresh4) ⊤{lost}r{lost}, condition(fresh1){lost}
   summary writes: res .0 condition(fresh2), .0.0 condition(fresh3) fresh3{lost}r{lost}, .1 condition(fresh4) ⊤{lost}r{lost}, condition(fresh1){lost}
   summary unknownEffect: π1 R; res .0 condition(fresh2), .0.0 fresh4{lost}r{lost}, .1 cb1{excl cb1}r{excl cb1} condition(fresh3), condition(fresh1); π1 calls ≤1, unseen, supply 2 fresh owned
-  demands 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 2
-total 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 2
-cause need 2
+  summary hideCallback: π1 RJ; res ⊤{lost}r{lost}; π1 calls many, unseen, supply 1 ⊤ borrowed
+  summary unseenWriter: π1 RJ, π2 RA; res π2; π1 calls many, unseen, supply 1 ⊤ borrowed
+  summary unseen: res .0 condition(fresh2), .0.0 condition(fresh3) fresh5{lost}r{lost}, .1 condition(fresh4) fresh5{lost}r{lost}, condition(fresh1){shared}
+  demands 4: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 3
+total 4: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 3
+cause need 3

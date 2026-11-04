@@ -302,6 +302,9 @@ const Rt$Rows$dropPastFrom = (protocol$1, rows$2, recipe$3, index$4, length$5) =
 const Rt$Rows$dropPast = (protocol$1, rows$2, recipe$3, length$4) => {
   if (Browser$Host$Array$size(rows$2) > length$4) {
     Rt$Rows$dropPastFrom(protocol$1, rows$2, recipe$3, Browser$Host$Array$size(rows$2) - 1, length$4);
+    if (length$4 !== length$4 >>> 0 || length$4 > rows$2.length) {
+      throw new globalThis.RangeError("beni: renderer array length out of bounds");
+    }
     rows$2.length = length$4;
     return null;
   } else {

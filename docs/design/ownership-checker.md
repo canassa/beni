@@ -8496,6 +8496,15 @@ removed elements are disposed before the caller invokes it.
 
 *Corrected 2026-11-04 (manager, #1825):* the entry is now `borrowed Array a, borrowed Int → ⊤`, with no asserted row: like `push` and `set`, it mutates a host Array that only `make` creates and that shares storage with no List or View, so a cell-held renderer array can be truncated (`ownership/core/ArrayTruncateCell`).
 
+*Amended 2026-11-04 (manager review of #1898, Part of #1825):* rendererTruncate
+accepts only a whole length with 0 ≤ length ≤ the current array length. An
+invalid length throws a RangeError defect before changing the array. It never
+grows storage or introduces holes. This checks the trusted renderer's structural
+invariant; the borrowed native-handle word and unit result are unchanged.
+The shared renderer pin spans are re-audited: this guard is the sole Lower.zig
+code change. The other 46 operations keep their bodies and words; their hashes
+move because the shared span includes rendererTruncate.
+
 `put` and `done` retain their fresh-builder obligations. `peekArray` returns an
 alias without changing length; it is read only, and only a full immutable tail
 becomes a tree leaf. `writeArray` is an impure native capacity write with aliased

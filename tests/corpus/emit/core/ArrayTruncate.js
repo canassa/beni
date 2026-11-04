@@ -1,5 +1,8 @@
 import { Browser$Host$Array$rendererAt, Browser$Host$Array$rendererTruncate, Browser$Host$Array$rendererHas } from "./_core/Browser/Host/Array.mjs";
 const ArrayTruncate$shrink = (array$1, length$2) => {
+  if (length$2 !== length$2 >>> 0 || length$2 > array$1.length) {
+    throw new globalThis.RangeError("beni: renderer array length out of bounds");
+  }
   array$1.length = length$2;
   return null;
 };

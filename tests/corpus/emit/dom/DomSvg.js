@@ -5,36 +5,36 @@ const DomSvg$p10 = ($i$1, $v$2) => {
   const $input$3 = $v$2.a;
   const $input$4 = $v$2.b;
   const $x$5 = $input$3;
-  if ($x$5 !== $i$1.g0_0) {
-    $i$1.g0_0 = $x$5;
-    $i$1.w0.setAttribute("viewBox", $x$5);
+  if ($x$5 !== $i$1.$g0_0) {
+    $i$1.$g0_0 = $x$5;
+    $i$1.$w0.setAttribute("viewBox", $x$5);
   }
   const $x$6 = $input$4;
-  if ($x$6 !== $i$1.g1_0) {
-    $i$1.g1_0 = $x$6;
-    Rt$attrNS($i$1.w3, "http://www.w3.org/1999/xlink", "xlink:href", Rt$safeUrl($x$6));
+  if ($x$6 !== $i$1.$g1_0) {
+    $i$1.$g1_0 = $x$6;
+    Rt$attrNS($i$1.$w3, "http://www.w3.org/1999/xlink", "xlink:href", Rt$safeUrl($x$6));
   }
 };
 const DomSvg$t10 = Rt$template("<svg><linearGradient id=fade><stop offset=0 stop-color=white></stop></linearGradient><use>");
 const DomSvg$k10 = { m: ($v$7, $cx$8) => {
   const $r$9 = DomSvg$t10();
   const $w$10 = $r$9.firstChild.nextSibling;
-  const $i$11 = { s: $r$9, q: Rt$empty, e: $r$9, w0: $r$9, w3: $w$10, g0_0: NaN, g1_0: NaN };
+  const $i$11 = { s: $r$9, q: Rt$empty, e: $r$9, $w0: $r$9, $w3: $w$10, $g0_0: NaN, $g1_0: NaN };
   DomSvg$p10($i$11, $v$7);
   return $i$11;
 }, p: DomSvg$p10 };
 const DomSvg$p18 = ($i$1, $v$2) => {
   const $input$3 = $v$2.a;
   const $x$4 = $input$3;
-  if ($x$4 !== $i$1.g0_0) {
-    $i$1.g0_0 = $x$4;
-    $i$1.w0.setAttribute("cx", $x$4);
+  if ($x$4 !== $i$1.$g0_0) {
+    $i$1.$g0_0 = $x$4;
+    $i$1.$w0.setAttribute("cx", $x$4);
   }
 };
 const DomSvg$t18 = Rt$templateOf("<svg><circle r=2></svg>", 2);
 const DomSvg$k18 = { m: ($v$5, $cx$6) => {
   const $r$7 = DomSvg$t18();
-  const $i$8 = { s: $r$7, q: Rt$empty, e: $r$7, w0: $r$7, g0_0: NaN };
+  const $i$8 = { s: $r$7, q: Rt$empty, e: $r$7, $w0: $r$7, $g0_0: NaN };
   DomSvg$p18($i$8, $v$5);
   return $i$8;
 }, p: DomSvg$p18 };
@@ -66,27 +66,27 @@ const DomSvg$p41 = ($i$1, $v$2) => {
     const $t$4 = (n$2) => n$2;
     const $made$5 = (($patch$15) => ({ m: ($item$6, $key$7, $position$8, $cx$13) => {
       const $r$14 = DomSvg$t39();
-      const $i$16 = { s: $r$14, q: Rt$empty, e: $r$14, x: undefined, y: $position$8, k: $key$7, kv: 0, rs: 0, n: Rt$empty, kc: Rt$empty, kt: Rt$empty, w0: $r$14, a0: undefined };
+      const $i$16 = { s: $r$14, q: Rt$empty, e: $r$14, x: undefined, y: $position$8, k: $key$7, kv: 0, rs: 0, n: Rt$empty, kc: Rt$empty, kt: Rt$empty, $w0: $r$14, $a0: undefined };
       $patch$15($i$16, $item$6, $position$8);
       $i$16.x = $item$6;
       return $i$16;
     }, p: $patch$15, r: DomSvg$domNoRestate, view: DomSvg$domRowView, item: DomSvg$domRowItem, sameItem: DomSvg$domRowSameItem, setItem: DomSvg$domRowSetItem, o: true, i: false, l: false, e: false, f: Rt$empty, j: Rt$empty, same: DomSvg$domSameNone, remember: DomSvg$domRememberAll, probe: DomSvg$domNoProbe }))(($i$9, $item$10, $position$11) => {
       const $t$12 = String$fromInt($item$10);
-      if ($t$12 !== $i$9.a0) {
-        $i$9.w0.setAttribute("height", $t$12);
-        $i$9.a0 = $t$12;
+      if ($t$12 !== $i$9.$a0) {
+        $i$9.$w0.setAttribute("height", $t$12);
+        $i$9.$a0 = $t$12;
       }
       return $i$9;
     });
-    Rt$forKeyed("core:Basics.Int", $i$1.c0, $input$3, $t$4, $made$5, Rt$empty, DomSvg$domSite10, $made$5);
+    Rt$forKeyed("core:Basics.Int", $i$1.$c0, $input$3, $t$4, $made$5, Rt$empty, DomSvg$domSite10, $made$5);
   }
-  $i$1.$l = $i$1.c0.w || $i$1.c0.l;
+  $i$1.$l = $i$1.$c0.w || $i$1.$c0.l;
 };
 const DomSvg$t41 = Rt$templateOf("<svg><g></svg>", 2);
 const DomSvg$k41 = { m: ($v$44, $cx$45) => {
   const $r$46 = DomSvg$t41();
   const $c$47 = Rt$slot($r$46, Rt$empty, $cx$45);
-  const $i$48 = { s: $r$46, q: Rt$empty, e: $r$46, c0: $c$47 };
+  const $i$48 = { s: $r$46, q: Rt$empty, e: $r$46, $c0: $c$47 };
   DomSvg$p41($i$48, $v$44);
   return $i$48;
 }, p: DomSvg$p41, l: true };

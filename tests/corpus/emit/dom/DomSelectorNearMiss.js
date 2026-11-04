@@ -46,49 +46,49 @@ const DomSelectorNearMiss$p202 = ($i$1, $v$2) => {
     const $made$17 = (($patch$29) => ({ m: ($item$18, $key$19, $position$20, $cx$26) => {
       const $r$27 = DomSelectorNearMiss$t68();
       const $w$28 = $r$27.firstChild;
-      const $i$30 = { s: $r$27, q: Rt$empty, e: $r$27, x: undefined, y: $position$20, k: $key$19, kv: 0, rs: 0, n: Rt$empty, kc: Rt$empty, kt: Rt$empty, w0: $r$27, w1: $w$28, a0: undefined, a1: undefined };
+      const $i$30 = { s: $r$27, q: Rt$empty, e: $r$27, x: undefined, y: $position$20, k: $key$19, kv: 0, rs: 0, n: Rt$empty, kc: Rt$empty, kt: Rt$empty, $w0: $r$27, $w1: $w$28, $a0: undefined, $a1: undefined };
       $patch$29($i$30, $item$18, $position$20);
       $i$30.x = $item$18;
       return $i$30;
     }, p: $patch$29, r: DomSelectorNearMiss$domNoRestate, view: DomSelectorNearMiss$domRowView, item: DomSelectorNearMiss$domRowItem, sameItem: DomSelectorNearMiss$domRowSameItem, setItem: DomSelectorNearMiss$domRowSetItem, o: false, i: false, l: false, e: false, f: Rt$empty, j: Rt$empty, same: DomSelectorNearMiss$domSame12, remember: DomSelectorNearMiss$domRememberAll, probe: DomSelectorNearMiss$domNoProbe }))(($i$21, $item$22, $position$23) => {
       const $t$24 = $input$3.selected.$ === "Just" && $input$3.selected.a === $item$22.parent ? "on" : "";
       const $t$25 = $item$22.label;
-      if ($t$24 !== $i$21.a0) {
-        $i$21.w0.setAttribute("class", $t$24);
-        $i$21.a0 = $t$24;
+      if ($t$24 !== $i$21.$a0) {
+        $i$21.$w0.setAttribute("class", $t$24);
+        $i$21.$a0 = $t$24;
       }
-      if ($t$25 !== $i$21.a1) {
-        $i$21.a1 = $t$25;
-        $i$21.w1.data = $t$25;
+      if ($t$25 !== $i$21.$a1) {
+        $i$21.$a1 = $t$25;
+        $i$21.$w1.data = $t$25;
       }
       return $i$21;
     });
-    Rt$forKeyed("core:Basics.Int", $i$1.c0, $t$4, $t$6, $made$17, [$input$3.selected], DomSelectorNearMiss$domSite12, $made$17);
+    Rt$forKeyed("core:Basics.Int", $i$1.$c0, $t$4, $t$6, $made$17, [$input$3.selected], DomSelectorNearMiss$domSite12, $made$17);
     const $made$58 = (($patch$70) => ({ m: ($item$59, $key$60, $position$61, $cx$67) => {
       const $r$68 = DomSelectorNearMiss$t98();
       const $w$69 = $r$68.firstChild;
-      const $i$71 = { s: $r$68, q: Rt$empty, e: $r$68, x: undefined, y: $position$61, k: $key$60, kv: 0, rs: 0, n: Rt$empty, kc: Rt$empty, kt: Rt$empty, w0: $r$68, w1: $w$69, a0: undefined, a1: undefined };
+      const $i$71 = { s: $r$68, q: Rt$empty, e: $r$68, x: undefined, y: $position$61, k: $key$60, kv: 0, rs: 0, n: Rt$empty, kc: Rt$empty, kt: Rt$empty, $w0: $r$68, $w1: $w$69, $a0: undefined, $a1: undefined };
       $patch$70($i$71, $item$59, $position$61);
       $i$71.x = $item$59;
       return $i$71;
     }, p: $patch$70, r: DomSelectorNearMiss$domNoRestate, view: DomSelectorNearMiss$domRowView, item: DomSelectorNearMiss$domRowItem, sameItem: DomSelectorNearMiss$domRowSameItem, setItem: DomSelectorNearMiss$domRowSetItem, o: false, i: false, l: false, e: false, f: Rt$empty, j: Rt$empty, same: DomSelectorNearMiss$domSame13, remember: DomSelectorNearMiss$domRememberAll, probe: DomSelectorNearMiss$domNoProbe }))(($i$62, $item$63, $position$64) => {
       const $t$65 = $input$3.selected.$ === "Just" && $input$3.selected.a === $item$63.id ? "on" : "";
       const $t$66 = Maybe$withDefault($input$3.selected, 0);
-      if ($t$65 !== $i$62.a0) {
-        $i$62.w0.setAttribute("class", $t$65);
-        $i$62.a0 = $t$65;
+      if ($t$65 !== $i$62.$a0) {
+        $i$62.$w0.setAttribute("class", $t$65);
+        $i$62.$a0 = $t$65;
       }
-      if ($t$66 !== $i$62.a1) {
-        $i$62.a1 = $t$66;
-        $i$62.w1.data = $t$66;
+      if ($t$66 !== $i$62.$a1) {
+        $i$62.$a1 = $t$66;
+        $i$62.$w1.data = $t$66;
       }
       return $i$62;
     });
-    Rt$forKeyed("core:Basics.Int", $i$1.c1, $t$7, $t$9, $made$58, [$input$3.selected], DomSelectorNearMiss$domSite13, $made$58);
+    Rt$forKeyed("core:Basics.Int", $i$1.$c1, $t$7, $t$9, $made$58, [$input$3.selected], DomSelectorNearMiss$domSite13, $made$58);
     const $made$90 = (($patch$102) => ({ m: ($item$91, $key$92, $position$93, $cx$99) => {
       const $r$100 = DomSelectorNearMiss$t127();
       const $w$101 = $r$100.firstChild;
-      const $i$103 = { s: $r$100, q: Rt$empty, e: $r$100, x: undefined, y: $position$93, k: $key$92, kv: 0, rs: 0, n: Rt$empty, kc: Rt$empty, kt: Rt$empty, w0: $r$100, w1: $w$101, a0: undefined, a1: undefined };
+      const $i$103 = { s: $r$100, q: Rt$empty, e: $r$100, x: undefined, y: $position$93, k: $key$92, kv: 0, rs: 0, n: Rt$empty, kc: Rt$empty, kt: Rt$empty, $w0: $r$100, $w1: $w$101, $a0: undefined, $a1: undefined };
       $patch$102($i$103, $item$91, $position$93);
       $i$103.x = $item$91;
       return $i$103;
@@ -96,59 +96,59 @@ const DomSelectorNearMiss$p202 = ($i$1, $v$2) => {
       const sel$8 = $input$3.selected;
       const $t$97 = sel$8.$ === "Just" && sel$8.a === $item$95.id ? "on" : "";
       const $t$98 = $item$95.label;
-      if ($t$97 !== $i$94.a0) {
-        $i$94.w0.setAttribute("class", $t$97);
-        $i$94.a0 = $t$97;
+      if ($t$97 !== $i$94.$a0) {
+        $i$94.$w0.setAttribute("class", $t$97);
+        $i$94.$a0 = $t$97;
       }
-      if ($t$98 !== $i$94.a1) {
-        $i$94.a1 = $t$98;
-        $i$94.w1.data = $t$98;
+      if ($t$98 !== $i$94.$a1) {
+        $i$94.$a1 = $t$98;
+        $i$94.$w1.data = $t$98;
       }
       return $i$94;
     });
-    Rt$forKeyed("core:Basics.Int", $i$1.c2, $t$10, $t$12, $made$90, [$input$3.selected], DomSelectorNearMiss$domSite14, $made$90);
+    Rt$forKeyed("core:Basics.Int", $i$1.$c2, $t$10, $t$12, $made$90, [$input$3.selected], DomSelectorNearMiss$domSite14, $made$90);
     const $made$122 = (($patch$134) => ({ m: ($item$123, $key$124, $position$125, $cx$131) => {
       const $r$132 = DomSelectorNearMiss$t152();
       const $w$133 = $r$132.firstChild;
-      const $i$135 = { s: $r$132, q: Rt$empty, e: $r$132, x: undefined, y: $position$125, k: $key$124, kv: 0, rs: 0, n: Rt$empty, kc: Rt$empty, kt: Rt$empty, w0: $r$132, w1: $w$133, a0: undefined, a1: undefined };
+      const $i$135 = { s: $r$132, q: Rt$empty, e: $r$132, x: undefined, y: $position$125, k: $key$124, kv: 0, rs: 0, n: Rt$empty, kc: Rt$empty, kt: Rt$empty, $w0: $r$132, $w1: $w$133, $a0: undefined, $a1: undefined };
       $patch$134($i$135, $item$123, $position$125);
       $i$135.x = $item$123;
       return $i$135;
     }, p: $patch$134, r: DomSelectorNearMiss$domNoRestate, view: DomSelectorNearMiss$domRowView, item: DomSelectorNearMiss$domRowItem, sameItem: DomSelectorNearMiss$domRowSameItem, setItem: DomSelectorNearMiss$domRowSetItem, o: false, i: false, l: false, e: false, f: Rt$empty, j: Rt$empty, same: DomSelectorNearMiss$domSame15, remember: DomSelectorNearMiss$domRememberAll, probe: DomSelectorNearMiss$domNoProbe }))(($i$126, $item$127, $position$128) => {
       const $t$129 = $input$3.selected.$ === "Just" && $input$3.selected.a === $item$127.id ? "on" : "";
       const $t$130 = $item$127.label;
-      if ($t$129 !== $i$126.a0) {
-        $i$126.w0.setAttribute("class", $t$129);
-        $i$126.a0 = $t$129;
+      if ($t$129 !== $i$126.$a0) {
+        $i$126.$w0.setAttribute("class", $t$129);
+        $i$126.$a0 = $t$129;
       }
-      if ($t$130 !== $i$126.a1) {
-        $i$126.a1 = $t$130;
-        $i$126.w1.data = $t$130;
+      if ($t$130 !== $i$126.$a1) {
+        $i$126.$a1 = $t$130;
+        $i$126.$w1.data = $t$130;
       }
       return $i$126;
     });
-    Rt$forPosition($i$1.c3, $t$13, $made$122, [$input$3.selected], DomSelectorNearMiss$domPositionSite, $made$122);
+    Rt$forPosition($i$1.$c3, $t$13, $made$122, [$input$3.selected], DomSelectorNearMiss$domPositionSite, $made$122);
     const $made$154 = (($patch$166) => ({ m: ($item$155, $key$156, $position$157, $cx$163) => {
       const $r$164 = DomSelectorNearMiss$t200();
       const $w$165 = $r$164.firstChild;
-      const $i$167 = { s: $r$164, q: Rt$empty, e: $r$164, x: undefined, y: $position$157, k: $key$156, kv: 0, rs: 0, n: Rt$empty, kc: Rt$empty, kt: Rt$empty, w0: $r$164, w1: $w$165, a0: undefined, a1: undefined };
+      const $i$167 = { s: $r$164, q: Rt$empty, e: $r$164, x: undefined, y: $position$157, k: $key$156, kv: 0, rs: 0, n: Rt$empty, kc: Rt$empty, kt: Rt$empty, $w0: $r$164, $w1: $w$165, $a0: undefined, $a1: undefined };
       $patch$166($i$167, $item$155, $position$157);
       $i$167.x = $item$155;
       return $i$167;
     }, p: $patch$166, r: DomSelectorNearMiss$domNoRestate, view: DomSelectorNearMiss$domRowView, item: DomSelectorNearMiss$domRowItem, sameItem: DomSelectorNearMiss$domRowSameItem, setItem: DomSelectorNearMiss$domRowSetItem, o: false, i: false, l: false, e: false, f: Rt$empty, j: Rt$empty, same: DomSelectorNearMiss$domSame17, remember: DomSelectorNearMiss$domRememberAll, probe: DomSelectorNearMiss$domNoProbe }))(($i$158, $item$159, $position$160) => {
       const $t$161 = DomSelectorNearMiss$isOn($input$3.selected, $item$159.id + 1);
       const $t$162 = $item$159.label;
-      if ($t$161 !== $i$158.a0) {
-        $i$158.w0.setAttribute("class", $t$161);
-        $i$158.a0 = $t$161;
+      if ($t$161 !== $i$158.$a0) {
+        $i$158.$w0.setAttribute("class", $t$161);
+        $i$158.$a0 = $t$161;
       }
-      if ($t$162 !== $i$158.a1) {
-        $i$158.a1 = $t$162;
-        $i$158.w1.data = $t$162;
+      if ($t$162 !== $i$158.$a1) {
+        $i$158.$a1 = $t$162;
+        $i$158.$w1.data = $t$162;
       }
       return $i$158;
     });
-    Rt$forKeyed("core:Basics.Int", $i$1.c5, $t$14, $t$16, $made$154, [$input$3.selected], DomSelectorNearMiss$domSite17, $made$154);
+    Rt$forKeyed("core:Basics.Int", $i$1.$c5, $t$14, $t$16, $made$154, [$input$3.selected], DomSelectorNearMiss$domSite17, $made$154);
   }
   {
     const $t$186 = $input$3.rows;
@@ -156,26 +156,26 @@ const DomSelectorNearMiss$p202 = ($i$1, $v$2) => {
     const $made$189 = (($patch$204) => ({ m: ($item$190, $key$191, $position$192, $cx$201) => {
       const $r$202 = DomSelectorNearMiss$t180();
       const $w$203 = $r$202.firstChild;
-      const $i$205 = { s: $r$202, q: Rt$empty, e: $r$202, x: undefined, y: $position$192, k: $key$191, kv: 0, rs: 0, n: Rt$empty, kc: Rt$empty, kt: Rt$empty, w0: $r$202, w1: $w$203, a0: undefined, a1: undefined };
+      const $i$205 = { s: $r$202, q: Rt$empty, e: $r$202, x: undefined, y: $position$192, k: $key$191, kv: 0, rs: 0, n: Rt$empty, kc: Rt$empty, kt: Rt$empty, $w0: $r$202, $w1: $w$203, $a0: undefined, $a1: undefined };
       $patch$204($i$205, $item$190, $position$192);
       $i$205.x = $item$190;
       return $i$205;
     }, p: $patch$204, r: DomSelectorNearMiss$domNoRestate, view: DomSelectorNearMiss$domRowView, item: DomSelectorNearMiss$domRowItem, sameItem: DomSelectorNearMiss$domRowSameItem, setItem: DomSelectorNearMiss$domRowSetItem, o: false, i: false, l: false, e: false, f: Rt$empty, j: Rt$empty, same: DomSelectorNearMiss$domSameNever, remember: DomSelectorNearMiss$domRemember16, probe: DomSelectorNearMiss$domNoProbe }))(($i$193, $item$194, $position$195) => {
       const $t$199 = DomSelectorNearMiss$eq$r$at(($p$196, $p$197, $p$198) => Maybe$Maybe$$eq(DomSelectorNearMiss$eq$prim, $p$196, $p$197, $p$198), { at: { $: "Just", a: $item$194.id } }, $input$3.pick) ? "on" : "";
       const $t$200 = $item$194.label;
-      if ($t$199 !== $i$193.a0) {
-        $i$193.w0.setAttribute("class", $t$199);
-        $i$193.a0 = $t$199;
+      if ($t$199 !== $i$193.$a0) {
+        $i$193.$w0.setAttribute("class", $t$199);
+        $i$193.$a0 = $t$199;
       }
-      if ($t$200 !== $i$193.a1) {
-        $i$193.a1 = $t$200;
-        $i$193.w1.data = $t$200;
+      if ($t$200 !== $i$193.$a1) {
+        $i$193.$a1 = $t$200;
+        $i$193.$w1.data = $t$200;
       }
       return $i$193;
     });
-    Rt$forKeyed("core:Basics.Int", $i$1.c4, $t$186, $t$188, $made$189, [$input$3.pick], DomSelectorNearMiss$domSite16, $made$189);
+    Rt$forKeyed("core:Basics.Int", $i$1.$c4, $t$186, $t$188, $made$189, [$input$3.pick], DomSelectorNearMiss$domSite16, $made$189);
   }
-  $i$1.$l = $i$1.c0.w || $i$1.c0.l || $i$1.c1.w || $i$1.c1.l || $i$1.c2.w || $i$1.c2.l || $i$1.c3.w || $i$1.c3.l || $i$1.c4.w || $i$1.c4.l || $i$1.c5.w || $i$1.c5.l;
+  $i$1.$l = $i$1.$c0.w || $i$1.$c0.l || $i$1.$c1.w || $i$1.$c1.l || $i$1.$c2.w || $i$1.$c2.l || $i$1.$c3.w || $i$1.$c3.l || $i$1.$c4.w || $i$1.$c4.l || $i$1.$c5.w || $i$1.$c5.l;
 };
 const DomSelectorNearMiss$t202 = Rt$template("<div><!><!><!><!><!><!>");
 const DomSelectorNearMiss$k202 = { m: ($v$225, $cx$226) => {
@@ -192,7 +192,7 @@ const DomSelectorNearMiss$k202 = { m: ($v$225, $cx$226) => {
   const $c$237 = Rt$slot($r$227, $w$231, $cx$226);
   const $c$238 = Rt$slot($r$227, $w$232, $cx$226);
   const $c$239 = Rt$slot($r$227, $w$233, $cx$226);
-  const $i$240 = { s: $r$227, q: Rt$empty, e: $r$227, c0: $c$234, c1: $c$235, c2: $c$236, c3: $c$237, c4: $c$238, c5: $c$239 };
+  const $i$240 = { s: $r$227, q: Rt$empty, e: $r$227, $c0: $c$234, $c1: $c$235, $c2: $c$236, $c3: $c$237, $c4: $c$238, $c5: $c$239 };
   DomSelectorNearMiss$p202($i$240, $v$225);
   return $i$240;
 }, p: DomSelectorNearMiss$p202, l: true };

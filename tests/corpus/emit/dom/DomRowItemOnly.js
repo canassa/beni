@@ -34,7 +34,7 @@ const DomRowItemOnly$p53 = ($i$1, $v$2) => {
       if ($cx$19 !== null) {
         $w$27.$$cx = $cx$19;
       }
-      const $i$29 = { s: $r$20, q: Rt$empty, e: $r$20, x: undefined, y: $position$10, k: $key$9, kv: 0, rs: 0, n: Rt$empty, kc: Rt$empty, kt: Rt$empty, w0: $r$20, w2: $w$22, w4: $w$24, w5: $w$25, w7: $w$27, a0: undefined, a1: undefined, a2: undefined, a3: undefined, a4: undefined };
+      const $i$29 = { s: $r$20, q: Rt$empty, e: $r$20, x: undefined, y: $position$10, k: $key$9, kv: 0, rs: 0, n: Rt$empty, kc: Rt$empty, kt: Rt$empty, $w0: $r$20, $w2: $w$22, $w4: $w$24, $w5: $w$25, $w7: $w$27, $a0: undefined, $a1: undefined, $a2: undefined, $a3: undefined, $a4: undefined };
       $patch$28($i$29, $item$8, $position$10);
       $i$29.x = $item$8;
       return $i$29;
@@ -44,37 +44,37 @@ const DomRowItemOnly$p53 = ($i$1, $v$2) => {
       const $t$16 = { $: "Select", a: $item$12.id };
       const $t$17 = $item$12.label;
       const $t$18 = { $: "Remove", a: $item$12.id };
-      if ($t$14 !== $i$11.a0) {
-        $i$11.w0.setAttribute("class", $t$14);
-        $i$11.a0 = $t$14;
+      if ($t$14 !== $i$11.$a0) {
+        $i$11.$w0.setAttribute("class", $t$14);
+        $i$11.$a0 = $t$14;
       }
-      if ($t$15 !== $i$11.a1) {
-        $i$11.a1 = $t$15;
-        $i$11.w2.data = $t$15;
+      if ($t$15 !== $i$11.$a1) {
+        $i$11.$a1 = $t$15;
+        $i$11.$w2.data = $t$15;
       }
-      if ($t$16 !== $i$11.a2) {
-        $i$11.a2 = $t$16;
-        $i$11.w4.$$click = $t$16;
+      if ($t$16 !== $i$11.$a2) {
+        $i$11.$a2 = $t$16;
+        $i$11.$w4.$$click = $t$16;
       }
-      if ($t$17 !== $i$11.a3) {
-        $i$11.a3 = $t$17;
-        $i$11.w5.data = $t$17;
+      if ($t$17 !== $i$11.$a3) {
+        $i$11.$a3 = $t$17;
+        $i$11.$w5.data = $t$17;
       }
-      if ($t$18 !== $i$11.a4) {
-        $i$11.a4 = $t$18;
-        $i$11.w7.$$click = $t$18;
+      if ($t$18 !== $i$11.$a4) {
+        $i$11.$a4 = $t$18;
+        $i$11.$w7.$$click = $t$18;
       }
       return $i$11;
     });
-    Rt$forKeyed("core:Basics.Int", $i$1.c0, $t$4, $t$6, $made$7, [$input$3.selected, $input$3.selected.$ === "Just" ? $input$3.selected.a : $input$3.selected], DomRowItemOnly$domSite9, $made$7);
+    Rt$forKeyed("core:Basics.Int", $i$1.$c0, $t$4, $t$6, $made$7, [$input$3.selected, $input$3.selected.$ === "Just" ? $input$3.selected.a : $input$3.selected], DomRowItemOnly$domSite9, $made$7);
   }
-  $i$1.$l = $i$1.c0.w || $i$1.c0.l;
+  $i$1.$l = $i$1.$c0.w || $i$1.$c0.l;
 };
 const DomRowItemOnly$t53 = Rt$template("<table>");
 const DomRowItemOnly$k53 = { m: ($v$57, $cx$58) => {
   const $r$59 = DomRowItemOnly$t53();
   const $c$60 = Rt$slot($r$59, Rt$empty, $cx$58);
-  const $i$61 = { s: $r$59, q: Rt$empty, e: $r$59, c0: $c$60 };
+  const $i$61 = { s: $r$59, q: Rt$empty, e: $r$59, $c0: $c$60 };
   DomRowItemOnly$p53($i$61, $v$57);
   return $i$61;
 }, p: DomRowItemOnly$p53, l: true };

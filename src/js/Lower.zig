@@ -11156,7 +11156,15 @@ pub const Lowerer = struct {
     // ownership pin begin: rendererTruncate
     fn rendererTruncate(l: *Lowerer, out: *StmtList, values: []const Node.Index, p: u32) Allocator.Error!Node.Index {
         const size = try l.member(values[0], try l.interner.getOrPut(l.gpa, "length"), p);
-        try out.append(l.scratch, try l.add(.assign_stmt, p, size.int(), values[1].int()));
+        const length = values[1];
+        const unsigned = try l.binary(.shr, length, try l.intNode(0, p), p);
+        const invalid = try l.binary(.logical_or, try l.binary(.strict_ne, length, unsigned, p), try l.binary(.gt, length, size, p), p);
+        const global = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
+        const err = try l.member(global, try l.interner.getOrPut(l.gpa, "RangeError"), p);
+        const message = try l.stringNode("beni: renderer array length out of bounds", p);
+        const made = try l.add(.new_call, p, err.int(), @backingInt(try l.b.addRecord(try l.b.addRange(&.{message}))));
+        try l.ifStatement(out, invalid, &.{try l.add(.throw_stmt, p, made.int(), Node.Data.unused)}, p);
+        try out.append(l.scratch, try l.add(.assign_stmt, p, size.int(), length.int()));
         return l.nullNode(p);
     }
     // ownership pin end: rendererTruncate

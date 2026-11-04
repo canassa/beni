@@ -12268,6 +12268,14 @@ message visits no control: a value set with no event stays; `pageshow` reconcile
 
 ### 15.4 Blocks: where markup that escapes goes
 
+*Amended 2026-11-04 (Part of #1825, review of #1898):* producer-private
+instance and row keys use the reserved `$` namespace: `$w`, `$c`, `$x`,
+`$a`, `$g`, `$d` and `$l` with their site/index suffixes. InstanceFields
+and RowFields also carry source-named runtime fields, whose release colours
+must never overwrite those producer slots. Field colours exclude `$`.
+Capture tuples retain their ordinary positional Beni fields.
+
+
 W29's answer, in Solid's own split (research 36 Â§0 item 3, Â§4.2; question 3, accepted). A root whose
 value **escapes** â into a `let`, a helper's result, a `case` branch, a list, a record field, a
 component's `children`, or a recursive view â evaluates to a block `{ t, v }`, and the slot that

@@ -6,15 +6,15 @@ const DomPacketScope$p15 = ($i$1, $v$2) => {
   const $input$4 = $v$2.b;
   {
     const $t$5 = Keep$keep("platform:Html.Html(" + $input$4 + ")", $input$3);
-    Rt$childHtml($i$1.c0, $t$5);
+    Rt$childHtml($i$1.$c0, $t$5);
   }
-  $i$1.$l = $i$1.c0.l;
+  $i$1.$l = $i$1.$c0.l;
 };
 const DomPacketScope$t15 = Rt$template("<section>");
 const DomPacketScope$k15 = { m: ($v$6, $cx$7) => {
   const $r$8 = DomPacketScope$t15();
   const $c$9 = Rt$slot($r$8, Rt$empty, $cx$7);
-  const $i$10 = { s: $r$8, q: Rt$empty, e: $r$8, c0: $c$9 };
+  const $i$10 = { s: $r$8, q: Rt$empty, e: $r$8, $c0: $c$9 };
   DomPacketScope$p15($i$10, $v$6);
   return $i$10;
 }, p: DomPacketScope$p15, l: true };

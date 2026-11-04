@@ -7191,7 +7191,7 @@ const Spec = struct {
                 for (nodes) |node| {
                     if (ir.tag(node) != .const_decl) continue;
                     const name: NameIndex = @fromBackingInt(@intCast(ir.data(node).lhs));
-                    if (m.globalOf(name) != null) continue;
+                    if (m.globalOf(name) != null or try declCount(s, m, top, name) != 1) continue;
                     const value: Index = @fromBackingInt(@intCast(ir.data(node).rhs));
                     if (try s.smallOf(@intCast(mi), value, null, true)) |small| {
                         var recursive = false;

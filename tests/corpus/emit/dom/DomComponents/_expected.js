@@ -9,11 +9,11 @@ const DomComponents$k14n4 = { m: ($v$8, $cx$9) => {
   const $w$13 = $w$12.firstChild;
   const $w$14 = $w$12.nextSibling;
   $w$13.data = $v$8[0];
-  return { s: $w$11, q: Rt$empty, e: $w$14, w2: $w$13, a0: $v$8[0] };
+  return { s: $w$11, q: Rt$empty, e: $w$14, $w2: $w$13, $a0: $v$8[0] };
 }, p: ($i$15, $v$16) => {
-  if ($v$16[0] !== $i$15.a0) {
-    $i$15.a0 = $v$16[0];
-    $i$15.w2.data = $v$16[0];
+  if ($v$16[0] !== $i$15.$a0) {
+    $i$15.$a0 = $v$16[0];
+    $i$15.$w2.data = $v$16[0];
   }
 } };
 const DomComponents$t14n6 = Rt$template("no values");
@@ -26,35 +26,35 @@ const DomComponents$b14n6 = { t: DomComponents$k14n6, v: null };
 const DomComponents$p14 = ($i$1, $v$2) => {
   const $input$3 = $v$2.a;
   const $input$4 = $v$2.b;
-  if ($input$3.title !== $i$1.g0_0 || $input$3.name !== $i$1.g0_1 || $input$4 !== $i$1.g0_2) {
-    $i$1.g0_0 = $input$3.title;
-    $i$1.g0_1 = $input$3.name;
-    $i$1.g0_2 = $input$4;
+  if ($input$3.title !== $i$1.$g0_0 || $input$3.name !== $i$1.$g0_1 || $input$4 !== $i$1.$g0_2) {
+    $i$1.$g0_0 = $input$3.title;
+    $i$1.$g0_1 = $input$3.name;
+    $i$1.$g0_2 = $input$4;
     const $t$5 = $input$3.title;
     const $t$6 = $input$3.name;
     const $made$7 = { t: DomComponents$k14n4, v: [$t$6] };
-    if ($t$5 !== $i$1.a0_0 || true) {
-      $i$1.a0_0 = $t$5;
-      Rt$childHtml($i$1.c0, Card$view($input$4, { children: $made$7, title: $t$5 }));
+    if ($t$5 !== $i$1.$a0_0 || true) {
+      $i$1.$a0_0 = $t$5;
+      Rt$childHtml($i$1.$c0, Card$view($input$4, { children: $made$7, title: $t$5 }));
     } else {
-      Rt$restate($i$1.c0);
+      Rt$restate($i$1.$c0);
     }
   } else {
-    Rt$restate($i$1.c0);
+    Rt$restate($i$1.$c0);
   }
   const $x$17 = $input$4;
-  if ($x$17 !== $i$1.g1_0) {
-    $i$1.g1_0 = $x$17;
+  if ($x$17 !== $i$1.$g1_0) {
+    $i$1.$g1_0 = $x$17;
     const $made$18 = DomComponents$b14n6;
     if (true) {
-      Rt$childHtml($i$1.c1, Card$view($input$4, { children: $made$18, title: "static" }));
+      Rt$childHtml($i$1.$c1, Card$view($input$4, { children: $made$18, title: "static" }));
     } else {
-      Rt$restate($i$1.c1);
+      Rt$restate($i$1.$c1);
     }
   } else {
-    Rt$restate($i$1.c1);
+    Rt$restate($i$1.$c1);
   }
-  $i$1.$l = $i$1.c0.l || $i$1.c1.l;
+  $i$1.$l = $i$1.$c0.l || $i$1.$c1.l;
 };
 const DomComponents$t14 = Rt$template("<main><!><!>");
 const DomComponents$k14 = { m: ($v$24, $cx$25) => {
@@ -63,7 +63,7 @@ const DomComponents$k14 = { m: ($v$24, $cx$25) => {
   const $w$28 = $w$27.nextSibling;
   const $c$29 = Rt$slot($r$26, $w$27, $cx$25);
   const $c$30 = Rt$slot($r$26, $w$28, $cx$25);
-  const $i$31 = { s: $r$26, q: Rt$empty, e: $r$26, c0: $c$29, c1: $c$30, a0_0: undefined, a0c: undefined, a1c: undefined, g0_0: NaN, g0_1: NaN, g0_2: NaN, g1_0: NaN };
+  const $i$31 = { s: $r$26, q: Rt$empty, e: $r$26, $c0: $c$29, $c1: $c$30, $a0_0: undefined, $a0c: undefined, $a1c: undefined, $g0_0: NaN, $g0_1: NaN, $g0_2: NaN, $g1_0: NaN };
   DomComponents$p14($i$31, $v$24);
   return $i$31;
 }, p: DomComponents$p14, l: true };
