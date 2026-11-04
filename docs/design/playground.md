@@ -717,3 +717,226 @@ prints). The samples that drew in the frame moved with their files to
 naming `browser-direct` opens on the default platform, as any link naming a platform the page does
 not offer does. `zig build test-playground` builds `browser/tea/` pages for `browser-tea` and
 `browser/inline/` pages for `browser-inline`, and TodoMVC for `browser-tea`.
+
+## 10. The page's own code in beni
+
+*Specified 2026-11-04, issue #142; not built.* The page's own JavaScript, nine files on `master`
+`99355536bc`, becomes beni. This section says which file becomes what, which part of `wasi.js` is
+privileged, and which host APIs `core/` and the platforms do not wrap yet. Each gap has its own
+issue. Four choices are the owner's (§10.9); a part that depends on one waits for the answer.
+CLAUDE.md rules 6, 7, 9 and 10 apply to every step: only a platform or `core/` uses `Js`, a gap
+is filled inside the wall for every program, each host failure is a typed error or a crash, and a
+wall is reported, not worked around.
+
+### 10.1 What changes, and what stays JavaScript
+
+| File | Lines | Bytes | brotli -q 11 | Becomes |
+|---|---:|---:|---:|---|
+| `wasi.js` | 750 | 27 722 | 6 413 | beni of the page over a typed WebAssembly module (§10.5) |
+| `page.js` | 447 | 16 725 | 4 931 | the page program, a Tea program (§10.2) |
+| `syntax.js` | 270 | 9 750 | 2 815 | a beni tokenizer, run by the CodeMirror binding (§10.4) |
+| `editor.js` | 152 | 6 592 | 1 996 | beni configuration of the CodeMirror binding (§10.4) |
+| `frame.js` | 138 | 6 533 | 2 254 | the frame runner, a beni program (§10.3) |
+| `share.js` | 155 | 5 987 | 1 915 | beni of the page |
+| `worker.js` | 66 | 3 047 | 1 083 | the compiler worker, a beni program (§10.3) |
+| `positions.js` | 31 | 1 260 | 554 | beni of the page |
+| `srcdoc.js` | 21 | 1 022 | 461 | beni of the page |
+| **Total** | **2 030** | **78 638** | **22 422** | |
+
+Measured on 2026-11-04 with Node 24.19's `zlib` at brotli quality 11, one file at a time.
+
+Two parts stay JavaScript:
+
+- **`vendor/`**, the 19 CodeMirror modules (§4.2). Issue #142 keeps them.
+- **The load-error listener in `index.html`** (10 lines of code, `index.html:45-54`; §8 *A module that does not load*). It
+  runs before any module of the page, and a module that does not load cannot report its own
+  failure. It is part of the HTML document, not a module. This is the one piece of hand-written
+  JavaScript that this section keeps, and it needs the owner's word (rule 10). Without it, a
+  module that does not load leaves the status at "Loading the compiler…".
+
+The import map stays: it is JSON, not code.
+
+### 10.2 The platform of the page
+
+Issue #142 names `browser-direct`, after §1's launch decision. The owner retired that platform on
+2026-10-19 (#423): "browser-inline (#295) replaces it". It was not renamed. Today
+`browser-inline` depends on `html` alone and has no `Http`, `Time`, `Dom` or `core/Task`
+(`browser-inline.md` §1). `browser-tea` has them (`platforms/browser-tea/beni.json`).
+
+Which platform the page builds for is the owner's decision (§10.9, `playground-beni-q1`). Both
+platforms give `Tea.element`, `Cmd` and `Sub` with the same signatures (`browser-inline.md` §1),
+so the page's update loop does not depend on the answer. A part that uses `Http`, `Time` or `Dom`
+waits for it.
+
+### 10.3 Three programs, in three realms
+
+The page runs code in three realms. Each becomes a beni program:
+
+| Realm | Today | Becomes | Platform |
+|---|---|---|---|
+| The page | `page.js`, `editor.js`, `syntax.js`, `positions.js`, `share.js`, `srcdoc.js` | a Tea program, `playground/src/` | §10.2, with §10.4's platform over it |
+| The compiler's worker | `worker.js`, `wasi.js` | a dedicated worker program | `Browser.Worker` (#1297, `workers-api.md` §1 on PR #1304) |
+| The output frame | `frame.js` | the frame runner | §10.4's platform |
+
+- **The worker.** The workers delivery (#1612) owns how a page opens a worker and how they
+  exchange messages. The playground uses that API and adds none of its own. Until #1297 lands,
+  `worker.js` stays as it is, and the WASI host in beni (§10.5) runs from it.
+- **The frame runner.** The page puts it in the frame's `srcdoc`, as it puts `frame.js` there
+  today (§5). It is built with `--release` into one module and inlined as a module script. The
+  rest of §5 does not change: the sandbox, the opaque origin, the files as JSON, the CSS of §4.6
+  and the messages to the parent.
+- **The build.** `zig build playground` builds the three programs with the native compiler of the
+  same build and writes them into the site, beside `beni.wasm`. The site stays static (§9).
+- **The format gate** (`beni-fmt-check`) covers every `.beni` file under `playground/`, as it
+  covers the samples now (§4.3).
+
+### 10.4 The playground's own platform
+
+`playground/platform/` is a platform package (`"platform": true`) that ships with the site, not in
+the beni binary. It is layered on the page's platform (`boundary.md` §9.1, the `"platforms"`
+key), and the build names it with `--platform=<dir>` (`boundary.md` §5.3, *How a platform is
+located*). It has no Zig, so the beni binary does not change for it.
+
+It holds only what is specific to the site:
+
+- **The CodeMirror binding** (#1893), beni over `Js`: an editor, a read-only view, the text, lint
+  marks, a selection, and a stream language whose tokenizer is a beni function. How beni imports
+  the vendored modules is the owner's decision (#1882), and where an editor lives in a view is
+  also the owner's (#1881).
+- **The tokenizer's adapter.** CodeMirror's `StreamLanguage` changes its state in place and copies
+  it with `copyState`. The adapter keeps the beni state, an immutable value, in a host object;
+  the tokenizer is a beni function from the line's text, a position and a state to a token name,
+  a new position and a new state. Where beni's rules leave a token to Elm (§4.2, *The grammar*),
+  the adapter calls the vendored Elm mode on the real stream. So the tokenizer is ordinary beni,
+  and a test drives it with no CodeMirror, as `tests/wasm/page_test.mjs` drives `syntax.js` now.
+- **The frame runner's host parts** (#1894): the runner's `main`, blob URLs in the frame's own
+  origin, a dynamic `import` of one, the `process` stand-in of §5 step 2, and the wrapper of
+  `console`. The rewrite of import specifiers is ordinary beni over strings.
+
+A host API that every program can use does not go here: it goes to `core/` or to a platform that
+ships (§10.6), so that the playground fills a gap for every program, not only for itself (rule 7).
+`skills/beni/` does not describe this platform, because no developer builds on it.
+
+### 10.5 The WASI host
+
+Which part of the host is beni of the page, and which part is privileged, is the owner's decision
+(§10.9, `playground-beni-q2`). The recommended split:
+
+- **Privileged: a typed WebAssembly module** (#1883), next to `Binary` (#1278). It compiles a
+  module from bytes, makes an instance with imports that are beni functions, reads the exports
+  (a function, or a memory as a `Binary` buffer), calls a function, and lets an import stop the
+  instance. Each failure is typed: `CompileError`, `LinkError`, a trap (`RuntimeError`), and the
+  engine's stack exhaustion with §3 rule 7's exact messages.
+- **Beni of the page: everything else.** The files and directories, the file descriptors, every
+  one of the 46 functions of WASI preview 1, `directoryOf`, `filesOf` and `run`.
+
+§3's rules keep their meaning:
+
+1. One instance per compile, and the project directory is the first preopen, fd 3, named `.`.
+2. Standard input is empty. The two streams are captured. A positional read or write on them is
+   `ESPIPE`.
+3. Every function of WASI preview 1 exists. One with no meaning in memory returns `ENOSYS`.
+4. A position or a size past 1 GiB is `EFBIG` or `EINVAL`. So every offset and size that the host
+   keeps fits in an `Int` exactly.
+5. No function of the host catches. An unforeseen failure crashes the compile (rule 9).
+6. `proc_exit` stops the instance through the module's stop, not by a thrown object that beni
+   catches.
+7. A trap and an exhausted engine stack end that compile, and `run` returns them as its `crash`.
+
+**64-bit values.** WASI passes offsets, sizes, rights, cookies and times in nanoseconds as
+`i64`. The host takes them as `Binary.U64`, word pairs (`webgpu.md` §3.1), and converts one to an
+`Int` only with a check: past the bound of rule 4 it is `EFBIG`, as today. A time is kept as its
+word pair, so `path_filestat_set_times` and `fd_filestat_get` give back exactly what the
+compiler set.
+
+**The host APIs inside it:** UTF-8 for paths (#1884), random bytes for `random_get` (#1888), and a
+monotonic clock for clock id 1 (#1889).
+
+**The tests run the host that the page runs** (§3). `tests/wasm/beni.mjs` (§6 item 1) loads the
+beni build of the host, made for `node` by the compiler under test. So the host must use no
+API that only a browser has.
+
+### 10.6 The host APIs that `core/` and the platforms do not wrap
+
+Each row is a gap: no module of `core/` or of a platform gives it on `master` `99355536bc`.
+
+| Host API | Where the page uses it | Proposed home | Issue |
+|---|---|---|---|
+| A Web Worker and its messages | `page.js:40`, `worker.js` | `Browser.Worker` | #1297 (#1612) |
+| Bytes, `ArrayBuffer`, `DataView`, 64-bit word pairs | `wasi.js`, `share.js`, `worker.js` | `Binary` | #1278 (`webgpu.md` §3.1) |
+| WebAssembly: compile, instantiate, memory, traps | `wasi.js:724-740`, `worker.js:26-33` | `core/`, next to `Binary` | #1883 |
+| UTF-8 between `String` and bytes, fatal decode | `share.js:53-90`, `wasi.js:84-87`, `worker.js:17` | `core/`, on `Binary` | #1884 |
+| Base64 and base64url (`btoa`, `atob`) | `share.js:67-91` | `core/`, ordinary beni | #1885 |
+| `CompressionStream`, `DecompressionStream` | `share.js:98-155` | `browser` and `node` | #1886 |
+| A response body as bytes | `worker.js:26-33` | `Http.expectBytes` | #1887 |
+| Random bytes (`crypto.getRandomValues`) | `wasi.js:379-384` | `browser` and `node` | #1888 |
+| A monotonic clock (`performance.now`) | `wasi.js:376`, `worker.js:27,46` | `core/Clock` | #1889 |
+| `srcdoc` and `sandbox` on `iframe` | `page.js:154-166` | the `html` vocabulary | #1890 |
+| Messages between a page and its frame | `page.js:234,296-312`, `frame.js:19,131-133` | `browser` | #1891 |
+| The clipboard (`navigator.clipboard.writeText`) | `page.js:415-430` | `browser` | #1892 |
+| A scroll into view with `block` and `inline` options | `page.js:327` | `Dom` | #1896 |
+| An element whose inside a library owns | `editor.js:74-100`, `page.js:330-374` | the owner's decision | #1881 |
+| A third-party ES module from beni | `editor.js:10-25`, `syntax.js:31` | the owner's decision | #1882 |
+| The CodeMirror 6 API | `editor.js`, `syntax.js` | §10.4's platform | #1893 |
+| Blob URLs, a dynamic `import`, the `process` stand-in, `console` | `frame.js` | §10.4's platform | #1894 |
+
+`boundary.md` §9.13 lists the failures that each platform row must type.
+
+These are wrapped already, and the page uses them as they are:
+
+| Host API | Where the page uses it | Module |
+|---|---|---|
+| `fetch` of text (the samples, the frame runner) | `page.js:64-68` | `Http.get` with `expectString` |
+| A timer (the compile 300 ms after an edit) | `page.js:116-126` | `Time.sleep`, a command with `Cmd.Restart` (`boundary.md` §9.8.2) |
+| The URL fragment and `history.replaceState` | `page.js:118,243,413` | `Browser.Navigation.currentUrl`, `replace` |
+| `JSON.parse`, `JSON.stringify` | `page.js`, `share.js`, `srcdoc.js` | `Json` |
+| `URLSearchParams` (the fragment's fields) | `share.js:18,34` | `Url.percentEncode`, `Url.percentDecode` |
+| Code points against UTF-16 units | `positions.js` | `String`, `Char.toCode` |
+| Wall-clock time (`Date.now`) | `wasi.js:106` | `Clock.now` |
+
+### 10.7 The order of the work
+
+One pull request per gap or per file, smallest first. A file goes when every gap it needs has
+landed. After each pull request the page works and every test of §6 passes.
+
+1. `positions.js`: no gap.
+2. `srcdoc.js`: no gap.
+3. `share.js`: #1278, #1884, #1885, #1886.
+4. `syntax.js`: #1882, #1893.
+5. `editor.js`: #1881, #1882, #1893.
+6. `frame.js`: #1891, #1894.
+7. `wasi.js`: #1278, #1883, #1884, #1888, #1889, and `playground-beni-q2`.
+8. `worker.js`: #1297, #1887, #1889.
+9. `page.js`: `playground-beni-q1`, #1881, #1890, #1891, #1892, #1893, #1896.
+
+### 10.8 During the move
+
+- **The JavaScript that remains calls the beni that has landed.** A file that is still JavaScript
+  imports the beni modules from a development `--library` build of `playground/src/`
+  (`backend.md` §2), which keeps the source field names of what it exports (`boundary.md` §4,
+  *What JavaScript may read of a beni value*). `zig build playground` writes that build into the
+  site.
+- **Defects.** In beni, a failure that no wrapper foresaw is a defect of the program
+  (`boundary.md` §9.8.14). When `page.js` goes, its `error` and `unhandledrejection` listeners
+  (`page.js:33-38`) go with it, and the platform's defect screen shows such a failure. A crash of
+  the compiler (§3 rule 7) and a defect of the worker (§4.4) stay values that the page shows.
+- **The tests move with their files.** The checks of §6 item 2 for a file that becomes beni run
+  as a beni test program, built by the compiler under test and run under Node by
+  `tests/blackbox/playground_page_test.zig`. The list of checks does not get shorter. The Chrome
+  test (§6 item 3) does not change, and each pull request that changes the page runs it.
+- **Measurements, before and after.** Each pull request that moves a file measures, on one
+  machine and in one session: the bytes, raw and at brotli quality 11, of each file that the site
+  serves except `beni.wasm` and `vendor/` (the baseline is §10.1's table), and the load and
+  compile times of §7.2 with `bench/playground/chrome.mjs`. A beni page that is slower than the
+  JavaScript one is a finding to report, not a reason to keep JavaScript (rule 10).
+
+### 10.9 The owner's decisions
+
+Asked on the dashboard on 2026-11-04. Each part that depends on an answer waits for it.
+
+| Question | Options | Recommended |
+|---|---|---|
+| `playground-beni-q1`: the platform of the page (§10.2) | `browser-tea`; `browser-inline` | `browser-tea`: it has `Http`, `Time` and `Dom` today, and the page can move later |
+| `playground-beni-q2`: the split of the WASI host (§10.5) | a typed WebAssembly module and a host in beni; a privileged WASI host with one `run` | the WebAssembly module: every program gets WebAssembly |
+| `playground-beni-q3`: an element whose inside a library owns (#1881) | a new markup form; static elements by id in `index.html` | the markup form: every widget library needs it |
+| `playground-beni-q4`: a third-party ES module from beni (#1882) | `Js.module` of a bare specifier that the platform's `beni.json` lists; a sibling `.js` file | `Js.module`: no new JavaScript |
