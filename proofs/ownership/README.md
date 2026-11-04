@@ -271,6 +271,7 @@ The write diagnostics count actual runtime write events.
 | `Aliasing.lean` | a campaign metric: does an accepted program write an array two names reach |
 | `Fixtures.lean`, `GeneratedRegressions.lean`, `Smoke.lean` | verdict fixtures, frozen regressions, negative-control probes |
 | `DictPrograms.lean`, `DictProbes.lean` | the dictionary model's probe programs and their probes: `DictFocus`, `DictValueWritten` and #474 as `#guard`s against `check` and both runs (#522) |
+| `RecordPrograms.lean`, `RecordProbes.lean` | the record model's probe programs and their probes: #316's three two-holder shapes and the update's conditions (`ownership-checker.md` §31) as `#guard`s against `check` and both runs (#316) |
 | `HeapProof.lean`, `BuilderProof.lean`, `KernelChecks.lean` | concrete heap and builder/close proofs, kernel checks |
 | `LinkedWriteFrame.lean` | conditional heap and observer frames for successful linked writes |
 | `FlatFragment/` | the first flat fragment: the strengthened relation, records and field paths (`Fields.lean`), its heap frame, the expression cases (`Branch.lean` for `branch`, `ResultCase.lean` for `resultCase`, `ChainCase.lean` for `chainCase`), and the trace corollary, in one import chain |

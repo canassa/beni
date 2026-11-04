@@ -405,6 +405,9 @@ its proofs name; no builder is ever a view.
 A record update, `{ r | f = y }`, needs no core syntax: it is the record of
 `r`'s other fields and `y` (§5's row). The bridge prints such a record as an
 update when the types agree, so the Zig rule for an update's base is compared.
+*Amended 2026-11-04 (#316):* that record is the immutable positional value
+(`Ty.record`), as before. A record written in place is a record object, and its
+update is `Expr.assign` (the last section).
 
 Two controls weaken the new rules: `construct-disjoint` (a construction's
 Disjoint sees only the base's own contents) and `view-alias` (a view forgets its
@@ -482,3 +485,109 @@ fold, until #294 lands); #579 tracks the difference. The frozen per-call checker
 limit and the primitives as shapes. Not modelled: string keys, `Dict.map`,
 `Dict.foldl` and the other folds, `Dict.keys`/`values`/`toList`, and the
 `Map` index of #294 (the meaning does not see it).
+
+## Records written in place (2026-11-04, #316)
+
+`ownership-checker.md` §31 makes a beni record an object that an update writes
+in place (#315). This section is the oracle's model of it, slice 1 of #316.
+
+What the core lacked:
+
+- The in-place interpreter held a record as an inline value
+  (`InPlaceSemantics.Value.record`), so two holders of one record were two
+  copies. No write was visible through another holder.
+- The abstract record (`Abstract.record`) had no cell, so no demand could name
+  a record's object.
+- `{ r | f = v }` was a new record (the row above), not a demand.
+
+Syntax (`Syntax.lean`):
+
+- `Ty.object fields`: a record object. `Ty.record` stays the immutable
+  positional value: a tuple, the Result encoding, a dictionary entry, a markup
+  record.
+- `Prim.object`: a record literal, a new object (`site(ι)`, §31.2).
+- `Prim.get i`: the read `r.f` of field `i`. A field read is pure and records no
+  observation (`language.md` §11.11).
+- `Prim.recordCopy`: `Record.copy r` (§31.15), a new object with the same fields.
+- `Expr.assign width fields base values`: `{ base | f₁ = v₁, … }`. The update
+  is an expression, not a primitive: its rule reads the continuation's liveness
+  per field (§31.4 item 5), and a primitive gets only the live cells. `width`
+  is the record's field count. The base use of an update is the fields that it
+  keeps (§7.1).
+
+The representation is the same at the three levels. An object is a one-slot
+array whose element is the record:
+
+- the value interpreter holds `list [record fields]`;
+- the in-place interpreter holds a heap array `[record fields]`, and an update
+  is one counted write of that array (`writeCounted`), after every new value is
+  evaluated (§31.10's order);
+- the checker holds `.list roots (.record fields) certificate`.
+
+So every list rule applies to an object with no new constructor of
+`Observation`, `InPlaceSemantics.Value` or `Abstract`: cells, escapes, `shared`,
+summaries, supplies, traversal and focus loans, the certificates and the heap
+relations of `Soundness.lean`. A traversal step that writes the record that it
+is handed needs an exclusive source, as for a list of lists, so `[ r, r ]` is
+refused (§31.4 item 6). The record condition of the Zig checker is a domain of
+its own (`rexcl`, `rsep`); here it is the list certificate of the box. That is
+stricter than Zig where a list's records are shared and its step writes no
+record.
+
+The checker (`Checker.lean`):
+
+- `object` is the literal's rule for one record. `get i` answers the field's
+  abstract and reads the object's cells. `recordCopy` is the copy's rule: a
+  fresh object that proves no certificate.
+- `assign` is one demand on the base's object cells (§31.3). Known, Unescaped
+  (a `shared` record is the top-level case, §31.8), Disjoint (no new value and
+  no kept field holds the object, item 3) and Dead per field (item 5,
+  `recordLiveCells`): a later use that goes through an object into a field that
+  the update keeps is no use of it. A field read leaves the object by its
+  element step, then the field step (`fieldUses`). The result is the base's
+  object with the kept fields and the new values. Its certificate is the old
+  one over the kept fields, with the new values stored as a `set` stores one.
+- A write is a storage write of the object (#670): it changes the object's
+  slots and no value stored in them. A holder of a field's old value is not a
+  holder of the object, so that value stays the program's own.
+
+Differences from the Zig checker, each one on purpose:
+
+- **No hoist.** A later read of a written field through a holder from before
+  the update is a use, so this core refuses it. The Zig lowering reads it into a
+  temporary before the write (§31.14). The in-place interpreter here has no
+  lowering, and to accept the read it would have to run a hoisted program. That
+  changes what `accepted_traces_agree` claims: the owner's decision
+  (`own-record-assign-q1`).
+- **No `W{F}`.** A summary's write names the object, not its fields (§31.7). A
+  caller's later read of a field that the callee keeps is therefore a use too.
+- **An update's base use is the fields that it keeps.** Zig reads the base of
+  a later update as a whole use (item 5). Here `{ r | a = 1 }` and then
+  `{ r | a = 2 }`, the first result dead, is accepted: the second update reads
+  only `b`, which neither writes. Its runs agree.
+
+Disjoint (item 3) is reached only through a closure that captures the record
+whole: no finite type lets a record's field hold the record otherwise. Such a
+closure captures a record with a function field, which the summaries refuse as
+a limit (function value below an input path) before Disjoint. So item 3 has no
+witness in this core.
+
+Checked, not proved (`RecordPrograms.lean`, `RecordProbes.lean`: `#guard`
+against `check` and both runs): #316's three two-holder shapes with accepted and
+refused controls (a stored payload read at a written or a kept field; one form
+at two model paths or two forms; a command that keeps the model whole or a
+field's value; a traversal that writes fresh rows, `[ r, r ]`, or rows read
+afterwards), reads after an update (kept, written, hoisted by hand, whole, an
+alias), a top-level record, `Record.copy`, a nested update, two updates, a
+callee that writes its parameter, the write extent and its twin, and a closure
+that writes its captured record once or twice. Every accepted program's runs
+agree, and every refused program's runs differ, except `calleeKept`, which is
+refused by the missing `W{F}`. The frozen per-call checker refuses the record
+forms as a limit. No form is in `FlatANF0`, so no theorem names one.
+
+Not modelled yet: `W{F}` and per-field reads through summaries, the hoist, a
+record field written through a constructor's payload (§31.5), messages and
+sends (§31.6), and the entry's checks (§31.8). The generator, the targeted
+enumerator and the mutation controls draw no record object, and the bridge
+skips one (`record-object`).
+
