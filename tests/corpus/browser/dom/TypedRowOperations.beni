@@ -1,0 +1,123 @@
+-- The typed row port preserves every DOM step through the real producer.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Create
+    | Append
+    | Relabel
+    | Swap
+    | Rotate
+    | Reverse
+    | Remove
+    | Clear
+    | Replace
+    | Duplicate
+    | Toggle
+    | ChangeKey
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+type alias Model =
+    rows : List Row
+    shown : Maybe Int
+
+
+row : Int → Row
+row id = { id = id, label = "row ${String.fromInt id}" }
+
+
+swapEnds : List a → List a
+swapEnds rows =
+    case rows of
+        [ first, …middle, last ] →
+            [ last, …middle, first ]
+        _ →
+            rows
+
+
+rotate : List a → List a
+rotate rows =
+    case rows of
+        [ first, …rest ] →
+            [ …rest, first ]
+        [] →
+            []
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Create →
+            { model | rows = List.map (List.range 0 5) row }
+        Append →
+            { model | rows = [ …model.rows, row 6, row 7 ] }
+        Relabel →
+            { model
+                | rows =
+                    List.map model.rows λitem →
+                        if item.id == 0 then { item | label = "edited" } else item
+            }
+        Swap →
+            { model | rows = swapEnds model.rows }
+        Rotate →
+            { model | rows = rotate model.rows }
+        Reverse →
+            { model | rows = List.reverse model.rows }
+        Remove →
+            { model | rows = List.filter model.rows λitem → item.id ≠ 2 }
+        Clear →
+            { model | rows = [] }
+        Replace →
+            { model | rows = List.map (List.range 10 12) row }
+        Duplicate →
+            { model | rows = [ row 1, row 1, row 2, row 1 ] }
+        Toggle →
+            { model
+                | shown =
+                    case model.shown of
+                        Just _ →
+                            Nothing
+                        Nothing →
+                            Just 1
+            }
+        ChangeKey →
+            { model | shown = Just 2 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="create" onClick={Create}>create</button>
+        <button id="append" onClick={Append}>append</button>
+        <button id="relabel" onClick={Relabel}>relabel</button>
+        <button id="swap" onClick={Swap}>swap</button>
+        <button id="rotate" onClick={Rotate}>rotate</button>
+        <button id="reverse" onClick={Reverse}>reverse</button>
+        <button id="remove" onClick={Remove}>remove</button>
+        <button id="clear" onClick={Clear}>clear</button>
+        <button id="replace" onClick={Replace}>replace</button>
+        <button id="duplicate" onClick={Duplicate}>duplicate</button>
+        <button id="toggle" onClick={Toggle}>toggle</button>
+        <button id="change-key" onClick={ChangeKey}>change key</button>
+        <ol id="keyed">
+            <For each={model.rows} keyed={.id}>{λitem → <li>{item.label}<input /></li>}</For>
+        </ol>
+        <ol id="position">
+            <For each={model.rows} keyed={False}>{λitem → <li>{item.label}<input /></li>}</For>
+        </ol>
+        <aside>
+            <Show when={model.shown} keyed fallback={<b>hidden</b>}>
+                {λkey → <em>{String.fromInt key}<input id="show-node" /></em>}
+            </Show>
+        </aside>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → { rows = [], shown = Just 1 }, update = update, view = view }

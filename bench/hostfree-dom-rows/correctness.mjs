@@ -16,6 +16,7 @@ assert.ok(NONE,'compiler-emitted private optional sentinel');
 const old = Object.values(await import(pathToFileURL(legacyRoot+'/LegacyClient.mjs')))[0];
 const INT = 'core:Basics.Int';
 const STR = 'core:Basics.String';
+const FLOAT = 'core:Basics.Float';
 const typedOnly = process.argv.includes("--typed-only");
 const swapOnly = process.argv.includes("--swap-only");
 let checked = 0;
@@ -53,6 +54,8 @@ function world(typed, { marker = true, multi = false, live = false, index = fals
   document.body.append(parent);
   let next = 0;
   const trace = [];
+  const opsTypes = new WeakMap();
+  const disposedTypes = [];
   const id = node => node ? node.__id ?? (node === parent ? 'parent' : node.nodeType === 11 ? 'fragment' : 'other') : null;
   worlds.set(document,(node, [action,...args]) => trace.push([action,id(node),...args.map(value => typeof value === 'string' ? value : id(value))]));
   instrument(window);
@@ -99,7 +102,7 @@ function world(typed, { marker = true, multi = false, live = false, index = fals
     siteHead: (site, location) => site.ops.head(site.scope, site.data, location),
     siteTail: (site, location) => site.ops.tail(site.scope, site.data, location),
     siteRestate: (site, location, stamp) => site.ops.restate(site.scope, site.data, location, stamp),
-    siteDispose: (site, location) => site.ops.dispose(site.scope, site.data, location),
+    siteDispose(site,location) { disposedTypes.push(opsTypes.get(site.ops)); return site.ops.dispose(site.scope,site.data,location); },
   };
   let epoch = '';
   let previousKeyType;
@@ -125,12 +128,19 @@ function world(typed, { marker = true, multi = false, live = false, index = fals
       restate: (_, data, location, stamp) => rows.restate(keyType, protocol, recipe, data, location, stamp),
       dispose: (_, data, location) => rows.dispose(keyType, protocol, recipe, data, location),
     };
+    opsTypes.set(ops,keyType);
     const previousSite = slot.r;
+    const previousData = !typed || previousSite === NONE ? null : previousSite.data;
     if (typed) {
       rows.forKeyed(keyType, protocol, slot, items, keyOf, recipe, NONE, ops, stamp);
       if (previousSite !== NONE && previousKeyType === keyType) {
         assert.equal(slot.r,previousSite,'same-key site retained');
-        assert.equal(slot.r.data,previousSite.data,'same-key state retained');
+        assert.equal(slot.r.data,previousData,'same-key state retained');
+      }
+      if (previousSite !== NONE && previousKeyType !== keyType) {
+        assert.notEqual(slot.r,previousSite,'new key type gets a new site');
+        assert.notEqual(slot.r.data,previousData,'old state is never viewed at the new key type');
+        assert.equal(disposedTypes.at(-1),previousKeyType,'dispose uses OLD typed callbacks');
       }
       assert.equal(slot.r.ops,ops,'site reads current operations');
       assert.equal(slot.r.scope,stamp,'site reads current scope');
@@ -189,6 +199,15 @@ for (const marker of (swapOnly ? [false] : [false,true])) for (const multi of (s
   for (let step = 0; step < 150; step++) {
     const items = Array.from({ length: random(18) }, () => pool[random(20)]);
     compare(a,b,'keyed',[items,INT, step > 75 ? 'new-item-type-and-environment' : ''],`random ${JSON.stringify(options)} step ${step}`);
+  }
+  if (typedOnly) {
+    // Same JS numbers, different compiler identities: this is defensive ABI
+    // coverage, since generic primitive markup keys are refused in source.
+    const items = pool.slice(0,3);
+    b.keyed(items,INT); checked++;
+    const previousNodes = Array.from(b.parent.querySelectorAll('span'));
+    b.keyed(items,FLOAT); checked++;
+    for (const node of previousNodes) assert.equal(node.isConnected,false,'old key type nodes disposed');
   }
   // A raw key type change must dispose under the old callbacks then remount.
   const changed = [{ key:'a',label:'string-a' },{ key:'b',label:'string-b' }];

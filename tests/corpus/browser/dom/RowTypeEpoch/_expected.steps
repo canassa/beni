@@ -1,0 +1,7 @@
+input #item-input "item node"
+input #show-input "show node"
+click #noop
+click #flip
+click #noop
+click #flip
+click #noop

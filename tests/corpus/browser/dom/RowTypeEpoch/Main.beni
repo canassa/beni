@@ -1,0 +1,75 @@
+-- #1834: every retained row sees a changed item/environment identity.
+-- A changed ITEM type with a stable Int key patches its row and keeps
+-- the uncontrolled input node. Generic markup keys are refused separately.
+import Browser
+import Html exposing (Html)
+import Probe
+
+
+type Msg
+    = Flip
+    | Noop
+
+
+type alias Model =
+    float : Bool
+    ticks : Int
+
+
+itemRows : a → Html Msg
+itemRows value =
+    <section id="item-type">
+        <For each={[ value ]} keyed={λ_ → 42}>
+            {λitem → <p>{Probe.valueType item}<input id="item-input" /></p>}
+        </For>
+    </section>
+
+
+environmentRows : (a → a) → Html Msg
+environmentRows callback =
+    <section id="environment-type">
+        <For each={[ 1, 2, 3 ]} keyed={identity}>
+            {λkey → <p>{String.fromInt key ++ ":" ++ Probe.callbackType callback}</p>}
+        </For>
+    </section>
+
+
+showEnvironment : (a → a) → Html Msg
+showEnvironment callback =
+    <section id="show-type">
+        <Show when={Just 42} keyed>
+            {λ_ → <p>{Probe.callbackType callback}<input id="show-input" /></p>}
+        </Show>
+    </section>
+
+
+intCallback : Int → Int
+intCallback = Probe.identity
+
+
+floatCallback : Float → Float
+floatCallback = Probe.identity
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="flip" onClick={Flip}>flip</button>
+        <button id="noop" onClick={Noop}>noop</button>
+        {if model.float then itemRows 1.0 else itemRows 1}
+        {if model.float then environmentRows floatCallback else environmentRows intCallback}
+        {if model.float then showEnvironment floatCallback else showEnvironment intCallback}
+    </main>
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Flip →
+            { model | float = not model.float }
+        Noop →
+            { model | ticks = model.ticks + 1 }
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → { float = False, ticks = 0 }, update = update, view = view }

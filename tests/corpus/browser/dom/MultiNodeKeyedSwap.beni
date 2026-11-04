@@ -1,0 +1,31 @@
+-- #1833: adjacent keyed rows keep their sibling ranges in order when swapped.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Swap
+
+
+update : Msg, List Int → List Int
+update Swap rows = List.reverse rows
+
+
+view : List Int → Html Msg
+view rows =
+    <main>
+        <button id="swap" onClick={Swap}>swap</button>
+        <section>
+            <For each={rows} keyed={identity}>
+                {λkey →
+                    <>
+                        <span>{String.fromInt key ++ "/0"}</span><span>{String.fromInt key ++ "/1"}</span>
+                    </>
+                }
+            </For>
+        </section>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → [ 0, 1 ], update = update, view = view }

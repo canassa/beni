@@ -1,0 +1,21 @@
+import Js
+import Js.Any as Any
+
+
+pub identity : a → a
+identity value = value
+
+
+-- These fixtures instantiate only Int and Float at the same producer site.
+pub valueType : a → String
+valueType value =
+    restored : Js.Opt Int
+    restored = Any.unpackOpt (Any.pack value)
+    Js.optMatch restored (λ⊤ → "Float") λ_ → "Int"
+
+
+pub callbackType : (a → a) → String
+callbackType callback =
+    restored : Js.Opt (Int → Int)
+    restored = Any.unpackOpt (Any.pack callback)
+    Js.optMatch restored (λ⊤ → "Float") λ_ → "Int"
