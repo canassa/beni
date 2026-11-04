@@ -275,6 +275,31 @@ core Browser.Host.Node.rendererInsertBefore ownership/core/NativeRenderer.beni -
 core Browser.Host.Node.rendererAppend ownership/core/NativeRenderer.beni - N.rendererAppend
 core Browser.Host.Node.rendererRemove ownership/core/NativeRenderer.beni - N.rendererRemove
 core Browser.Host.Node.rendererClone ownership/core/NativeRenderer.beni - N.rendererClone
-core Browser.Host.Array.rendererTruncate ownership/core/ArrayTruncate.beni - Array.rendererTruncate
 core Browser.Host.Array.rendererAt ownership/core/ArrayTruncate.beni - Array.rendererAt
 core Browser.Host.Array.rendererHas ownership/core/ArrayTruncate.beni - Array.rendererHas
+
+# Native containers: make/slice are fresh outer storage. Native reads do not
+# expose an owned writer. Retention/default alias flips are asserted below.
+core Browser.Host.Array.make ownership/core/NativeContainerWords.beni - Array.make
+core Browser.Host.Array.getOr ownership/core/NativeContainerWords.beni 3:returned>-+res:->fresh Array.getOr
+core Browser.Host.Array.set ownership/core/NativeContainerWords.beni 3:escaped>borrowed Array.set
+core Browser.Host.Array.push ownership/core/NativeContainerWords.beni 2:escaped>borrowed Array.push
+core Browser.Host.Array.size ownership/core/NativeContainerWords.beni - Array.size
+core Browser.Host.Array.fromList ownership/core/NativeContainerWords.beni 1:returned>borrowed Array.fromList
+core Browser.Host.Array.atOr ownership/core/NativeContainerWords.beni 3:returned>-+res:->fresh Array.atOr
+core Browser.Host.Array.length ownership/core/NativeContainerWords.beni - Array.length
+core Browser.Host.Array.slice ownership/core/NativeContainerWords.beni - Array.slice
+core Browser.Host.KeyMap.values ownership/core/NativeContainerWords.beni - Map.values
+core Browser.Host.KeyMap.make ownership/core/NativeContainerWords.beni - Map.make
+core Browser.Host.KeyMap.get ownership/core/NativeContainerWords.beni - Map.get
+core Browser.Host.KeyMap.getOr ownership/core/NativeContainerWords.beni 3:returned>-+res:->fresh Map.getOr
+core Browser.Host.KeyMap.set ownership/core/NativeContainerWords.beni 2:escaped>borrowed|3:escaped>borrowed Map.set
+core Browser.Host.KeyMap.has ownership/core/NativeContainerWords.beni - Map.has
+core Browser.Host.KeyMap.remove ownership/core/NativeContainerWords.beni - Map.remove
+core Browser.Host.KeyMap.clear ownership/core/NativeContainerWords.beni - Map.clear
+core Browser.Host.KeyMap.size ownership/core/NativeContainerWords.beni - Map.size
+core Browser.Host.KeyMap.each ownership/core/NativeContainerWords.beni - Map.each
+core Browser.Host.Element.styleText ownership/core/RendererSupportWords.beni - Element.styleText
+core Browser.Host.Event.message ownership/core/RendererSupportWords.beni - Event.message
+core Browser.Host.Node.append ownership/core/RendererSupportWords.beni - Node.append
+core Browser.Host.Rejection.display ownership/core/RendererSupportWords.beni - Rejection.display

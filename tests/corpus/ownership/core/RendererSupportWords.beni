@@ -1,0 +1,17 @@
+-- Reviewed support adapters only read native handles or primitive strings.
+import Browser.Host.Element as Element
+import Browser.Host.Event as Event
+import Browser.Host.Node as Node
+import Browser.Host.Rejection as Rejection
+
+
+pub style element text = Element.styleText element text
+
+
+pub message event = Event.message event
+
+
+pub append parent child = Node.append parent child
+
+
+pub display reason = Rejection.display reason

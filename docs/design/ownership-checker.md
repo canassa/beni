@@ -8405,3 +8405,19 @@ the old type/value fields. Unpack retains no input and constructs its own Maybe
 result, with the same payload alias as before. The caller region and the shared
 freshPackets proof/emitter region are pinned; the unchanged sibling constructor,
 packet helper, Symbol, descriptor and unpack retain their existing pins.
+
+
+*Renderer prerequisite audit, 2026-11-04 (#1612, #1827):* the typed native
+Array/KeyMap bodies retain raw elements and keys without invoking them.
+`set`/`push` therefore escape the stored values; Map.set escapes both key and
+value. A missing lookup returns its exact supplied default, and fromList
+returns the original array or its list-protocol projection, so those returned
+arguments retain their aliases. make and slice allocate fresh outer storage,
+without claiming to copy nested payloads. NativeContainerWords pins retention
+and returned-alias effects with unsafe flips; native reads and fresh outer
+storage have no stronger observable ownership claim to test with a flip.
+Element.styleText writes only its primitive text, Event.message and
+Rejection.display return primitive strings, and Node.append changes the native
+tree under its checked public error adapter. Their borrowed native handles
+neither return Beni-owned lists nor grant ownership over them. Their exact
+sibling bodies and ordinary typed calls are pinned independently.

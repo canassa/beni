@@ -68,9 +68,9 @@ pub fn source(arena: Allocator, module: []const u8, type_name: ?[]const u8) ![]c
     if (std.mem.eql(u8, module, "Browser.Host.EventTarget")) try w.writeAll("import Browser.Host.HTMLAnchorElement as HTMLAnchorElement\nimport Browser.Host.Node as Node\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Event")) try w.writeAll("import Browser.Host.EventTarget as EventTarget\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Event")) try w.writeAll("import Browser.Host.DOMRect as DOMRect\n\n\n");
-    if (std.mem.eql(u8, module, "Browser.Host.Window") or std.mem.eql(u8, module, "Browser.Host.Document")) try w.writeAll("import Browser.Host.Event as Event\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Window")) try w.writeAll("import Browser.Host.Event as Event\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Window")) try w.writeAll("import Browser.Host.Document as Document\n\n\n");
-    if (std.mem.eql(u8, module, "Browser.Host.Document")) try w.writeAll("import Browser.Host.Element as Element\nimport Browser.Host.Node as Node\nimport Browser.Host.Promise as Promise\n\n\npub type QueryError\n    = SyntaxError\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Document")) try w.writeAll("import Browser.Host.Element as Element\nimport Browser.Host.Event as Event\nimport Browser.Host.Node as Node\nimport Browser.Host.Promise as Promise\n\n\npub type QueryError\n    = SyntaxError\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Element")) try w.writeAll("import Browser.Host.Node as Node\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.TextEncoder")) try w.writeAll("import Browser.Host.Uint8Array as Uint8Array\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.MessageChannel")) try w.writeAll("import Browser.Host.MessagePort as MessagePort\n\n\n");

@@ -1038,6 +1038,10 @@ test "ownership words: native retained callbacks preserve captured aliases" {
     try expectFlips("ownership/core/NativeEscapes.beni", &.{"--core"});
 }
 
+test "ownership words: native containers retain elements and returned defaults" {
+    try expectFlips("ownership/core/NativeContainerWords.beni", &.{"--core"});
+}
+
 test "ownership words: existential storage and checked data preserve aliases" {
     try expectFlips("ownership/core/AnyDataWords.beni", &.{"--core"});
 }
