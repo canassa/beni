@@ -5636,6 +5636,15 @@ day, and it is decided by lowering, not guessed by this pass:
   the fold of a member chain into the next statement would read it after that statement's earlier
   operands ran: `f(bump(o), o.v)` answered `2` where the program says `1`. Only a read of a beni
   value, which nothing can change, is folded. `run/JsIntrinsics`'s last line.
+  *Amended 2026-11-04 (#1227, #1842):* **lowering's own temporaries go under the same rule.** A
+  value pinned in a `const $t$<n>` where it is written (`orderedExprs`: the keys of a record are
+  sorted, or a later value hoists statements) and a value bound because it grew
+  `JsIr.nesting.spill` tall are listed when they may have an effect, as `enterInline` lists the
+  arguments it binds. Unlisted, each one lost its effect when its only reader went:
+  `Spec.dropKeys` dropped an unread key whose value was the temporary's name, and `Opt` then
+  dropped the temporary. A pinned `Js.get` was also folded back into the sorted keys, so two getters
+  ran in the order of the keys and not in the order written. `run/ReleaseKeepsUnreadField`,
+  `run/ReleaseKeepsSpilledCall`.
 - **`impure` in the table means *may be***: the callee's rung is `impure` or `suspends`, or it is
   `poly` (it would be, used with something that is), or a `sync` class of the declaration's scheme
   reaches it â a `sync` class cannot suspend, so it never makes a call `poly`, but it can still be
@@ -6324,6 +6333,8 @@ The fixtures, by intent:
 | `run/ReleaseDeadDebug` | a `Debug.log` in a binding nothing reads, beside one in a binding that is read, beside one in a dropped declaration (`run/DceDebugLog`'s other half) | exactly the live lines, in order â pins that the surviving order did not move. *Amended 2026-09-30*: the unread binding's line is now printed by both builds (item 1 keeps a binding that may be impure), and the fixture's `.release-expected` is gone |
 | `run/ReleaseKeepsNamedSpawn` | a named, unread `Task.spawnIn`, and one inside a list literal, whose children print through a test platform's `foreign impure` | the children's lines in both builds (2026-09-30) |
 | `run/ReleaseKeepsNamedForeign` | unread bindings over an impure `foreign` called directly, inside a pure call's argument, in one branch of an `if`, inside a tuple a pattern takes apart, through an inferred-impure helper, through a callback parameter, and through a `sync` callback parameter | every line in both builds (2026-09-30) |
+| `run/ReleaseKeepsUnreadField` | records whose two fields are written out of sorted order, each a call: `Log.info`, `Debug.log`, an impure `foreign`, a record alias constructor, and in a platform module `Js.call` and getters read by `Js.get`; one field read or none | every line in both builds, the getters in the order written (2026-11-04, #1227) |
+| `run/ReleaseKeepsSpilledCall` | a `Debug.log` under 50 and under 51 calls in a field nothing reads, so that the record or the field value is a spill temporary | every line in both builds (2026-11-04, #1842) |
 | `emit/release/ReleaseDropsPureBinding` | unread bindings over arithmetic and over pure calls, beside one over `Task.spawn` | golden: the pure two are gone, the impure one's `const` stays (2026-09-30) |
 | `run/ReleaseNameCollision` | locals whose source names are JavaScript reserved words (`new`, `class`, `let`, `eval`); more than 54 locals in one declaration, so the alphabet spills to two characters; two sibling `case` branches binding the same source name; a Â§8 loop label beside a binding of the same source name; a declaration that mentions enough globals to push its locals past the ones they may not take | the answers; a collision is a `SyntaxError` at load or a silently wrong value |
 | `run/ReleaseAsiTraps` | expressions whose printed form starts with `(`, `[`, `` ` ``, `+`, `-` and `/`, in statement position and after a `return`; `a - -1` and `a + +b` in one expression | the values; pins that the printer never needs ASI and never merges two operators |
