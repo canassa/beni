@@ -1294,5 +1294,5 @@ with its result read is open, and `run/ProgramModuleExports` is its measure). Pr
 own, built and run in both builds (the exports one is the red fixture of the pruning); five
 `World` tests in `platform_test.zig` for the entry file, the exports entry, the two refusals and
 the missing module. No size figure: the feature changes no existing program, and the `emit/`
-goldens prove it byte for byte. Found on the way: #1837, `backend.md` holds a double-encoded
-section sign on 1 091 lines.
+goldens prove it byte for byte. Found on the way: `backend.md` holds a double-encoded
+section sign on 1 091 lines, which is #886 (open since `540e16e03`); the evidence is there.
