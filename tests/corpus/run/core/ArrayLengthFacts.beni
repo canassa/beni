@@ -1,0 +1,42 @@
+-- A closed allocation has a fixed length. Different lengths and host mutation
+-- refuse the fold, and an element's effect is still evaluated.
+import Js
+import Node
+
+
+length : List Int → Int
+length items = List.length items
+
+
+pub empty : ⊤ → Int
+empty ⊤ = length []
+
+
+pub chosen : Bool → Int
+chosen flag = length (if flag then [ 1 ] else [ 2, 3 ])
+
+
+pub modified : ⊤ → Int
+modified ⊤ =
+    items = Js.array [ Js.from 1 ]
+    _ = Js.call items "push" [ Js.from 2 ]
+    Js.to (Js.get items "length")
+
+
+pub effects : ⊤ → Int
+effects ⊤ =
+    counter = Js.ref 0
+    bump =
+        λ⊤ →
+            Js.write counter (Js.read counter + 1)
+            3
+    size = length [ bump ⊤ ]
+    size + Js.read counter
+
+
+main : Node.Program
+main =
+    Node.print
+        (String.join ","
+            (List.map [ empty ⊤, chosen True, chosen False, modified ⊤, effects ⊤ ] String.fromInt)
+        )

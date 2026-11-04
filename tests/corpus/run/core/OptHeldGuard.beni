@@ -1,0 +1,26 @@
+-- Absence, concrete payloads and some(none) remain distinct after guard folding.
+import Js
+import Node
+
+
+guarded : Js.Opt a, (a → Int) → Int
+guarded slot read =
+    if Js.same slot (Js.none ⊤) then
+        0
+    else
+        Js.optMatch slot (λ⊤ → -99) read
+
+
+main : Node.Program
+main =
+    Node.print
+        (String.join ","
+            (List.map
+                [ guarded (Js.none ⊤) identity
+                , guarded (Js.some 7) identity
+                , guarded (Js.some (Js.none ⊤)) λinner → Js.optWithDefault inner 2
+                , guarded (Js.some (Js.some 9)) λinner → Js.optWithDefault inner 2
+                ]
+                String.fromInt
+            )
+        )

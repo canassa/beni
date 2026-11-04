@@ -1,0 +1,17 @@
+-- Literal predicates fold; dynamic inputs retain the non-coercing operation.
+import Browser.Host.Data as HostData
+import Js
+
+
+pub literals : ⊤ → List Bool
+literals ⊤ =
+    [ HostData.isInteger (Js.from 512)
+    , HostData.isInteger (Js.from 0.5)
+    , HostData.isInteger (Js.from "512")
+    , HostData.isFinite Js.null
+    , HostData.isSafeInteger (Js.from 9007199254740992.0)
+    ]
+
+
+pub dynamic : Js.Value → Bool
+dynamic value = HostData.isInteger value && HostData.isFinite value && HostData.isSafeInteger value
