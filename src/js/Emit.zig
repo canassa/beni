@@ -6086,6 +6086,15 @@ const Emitter = struct {
         e.wire_names = table;
     }
 
+    /// A JavaScript platform runtime receives the manifest's Program in its
+    /// development representation, even when the app has no worker entries.
+    /// Keep the same seed when specialization refines the field boundary.
+    fn jsRuntimeProgramType(e: *Emitter) !Dispatch.TypeId {
+        if (e.options.platform.runtime == null) return .none;
+        const qualified = e.options.platform.program orelse return .none;
+        return e.session.checked.types.find(e.graph(), .platform, try e.session.interner.getOrPut(e.gpa, platformModule(qualified)), try e.session.interner.getOrPut(e.gpa, shortName(qualified)));
+    }
+
     fn closeBoundary(e: *Emitter) !void {
         e.boundary = null;
         if (!e.options.release or e.options.library or e.reachesDebug()) return;
@@ -6103,15 +6112,9 @@ const Emitter = struct {
             b.* = e.bir(m);
             d.* = e.dispatchOf(m);
         }
-        var runtime_types: std.ArrayList(Dispatch.TypeId) = .empty;
-        if (e.worker_entries.len != 0 and e.options.platform.runtime != null) {
-            if (e.options.platform.program) |qualified| {
-                const id = e.session.checked.types.find(e.graph(), .platform, try e.session.interner.getOrPut(e.gpa, platformModule(qualified)), try e.session.interner.getOrPut(e.gpa, shortName(qualified)));
-                if (id != .none) try runtime_types.append(e.scratch, id);
-            }
-        }
+        const runtime_types = [_]Dispatch.TypeId{try e.jsRuntimeProgramType()};
         e.boundary = try Fields.close(.{
-            .observed_types = runtime_types.items,
+            .observed_types = &runtime_types,
 
             .arena = e.scratch,
             .graph = e.graph(),
@@ -8202,7 +8205,9 @@ const Emitter = struct {
             bb.* = e.bir(m);
             dt.* = e.dispatchOf(m);
         }
+        const runtime_types = [_]Dispatch.TypeId{try e.jsRuntimeProgramType()};
         const refined = try Fields.close(.{
+            .observed_types = &runtime_types,
             .arena = e.scratch,
             .graph = e.graph(),
             .birs = birs,

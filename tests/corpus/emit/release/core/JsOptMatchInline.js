@@ -1,0 +1,1 @@
+import{a}from"./_core/Js.mjs";const b={$:"Nothing",a:null},c=b=>b!==a?b+2:-1,d=c=>{let e;if(c!==a){let f=c&&c.$opt===a?c.$previous:c;e={$:"Just",a:f}}else e=b;return e},e=b=>{let c;if(b!==a)c=b.a+b.b;else c=0;return c},f=(b,c)=>{let d;if(c!==a){b.v=b.v+1;d=c}else{b.v=b.v+10;d=-1}return d},g=(b,c,d)=>b!==a?d(b&&b.$opt===a?b.$previous:b):c(null);export{c,d,e,f,g};
