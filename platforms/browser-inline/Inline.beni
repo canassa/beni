@@ -7,8 +7,8 @@
 --! §9.2, *A runtime module*): a page ships only what it reaches.
 
 import Browser.Host.Event as HostEvent
-import Browser.Host.Events as HostEvents
 import Browser.Host.EventTarget as EventTarget
+import Browser.Host.Events as HostEvents
 import Cmd exposing (Cmd)
 import Js
 import Js.Dispatch as Dispatch
@@ -27,10 +27,8 @@ type alias V =
 pub send : V, V, V → ⊤
 send callback value project =
     Dispatch.onDefect λ⊤ → if Js.development ⊤ then crashScreen ⊤
-    Dispatch.read
-        (λread → Js.to (Js.apply callback [ read ]))
-        value
-        (λraw → if Js.isUndefined project then raw else Js.apply project [ raw ])
+    Dispatch.read (λread → Js.to (Js.apply callback [ read ])) value λraw →
+        if Js.isUndefined project then raw else Js.apply project [ raw ]
 
 
 -- An overlay above the page, which it leaves in place to inspect: the
@@ -452,7 +450,8 @@ on node callback kind project =
 --| arm ships neither it nor the arm walk (#874).
 pub onArm : EventTarget.EventTarget, sync (a → ⊤), String, V, sync (HostEvent.Event → a) → ⊤
 onArm node callback kind arms project =
-    _ = HostEvents.listen node kind λevent → if armsShown arms then Dispatch.read callback event project
+    _ = HostEvents.listen node kind λevent →
+        if armsShown arms then Dispatch.read callback event project
     ⊤
 
 

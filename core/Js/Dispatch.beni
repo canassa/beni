@@ -17,7 +17,7 @@ running = Js.ref False
 
 
 failure : Js.Ref (⊤ → ⊤)
-failure = Js.ref (λ⊤ → ⊤)
+failure = Js.ref λ⊤ → ⊤
 
 
 pub onDefect : sync (⊤ → ⊤) → ⊤

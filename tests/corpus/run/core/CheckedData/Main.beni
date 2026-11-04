@@ -1,8 +1,8 @@
 -- The checked conversion never invokes a function and preserves plain identity.
 import Browser.Host.TextEncoder as Encoder
 import Js
-import Js.Data as Data
 import Js.Any as Any
+import Js.Data as Data
 import Node
 
 

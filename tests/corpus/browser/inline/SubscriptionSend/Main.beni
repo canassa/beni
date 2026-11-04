@@ -37,24 +37,27 @@ update message model =
 main : Browser.Program
 main =
     Tea.element
-        { init = λ⊤ →
-            ( { subscription = "waiting", command = "waiting" }
-            , Cmd.perform λsend →
-                send (Command "initial")
-                ⊤
-            )
-        , update = update
-        , subscriptions = λ_ →
-            Sub.on Immediate
-                (λsend →
-                    send "delivered"
-                    λ⊤ → ⊤
+        { init =
+            λ⊤ →
+                ( { subscription = "waiting", command = "waiting" }
+                , Cmd.perform λsend →
+                    send (Command "initial")
+                    ⊤
                 )
-                Subscription
-        , view = λmodel →
-            <main>
-                <p id="subscription">{model.subscription}</p>
-                <p id="command">{model.command}</p>
-                <button id="again" onClick={Again}>again</button>
-            </main>
+        , update = update
+        , subscriptions =
+            λ_ →
+                Sub.on Immediate
+                    (λsend →
+                        send "delivered"
+                        λ⊤ → ⊤
+                    )
+                    Subscription
+        , view =
+            λmodel →
+                <main>
+                    <p id="subscription">{model.subscription}</p>
+                    <p id="command">{model.command}</p>
+                    <button id="again" onClick={Again}>again</button>
+                </main>
         }

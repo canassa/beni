@@ -140,7 +140,10 @@ type alias Dispatched =
 pointer : Dispatched → Pointer
 pointer event =
     box = HostEvent.currentBox event
-    Pointer event (HostEvent.clientX event - DOMRect.left box) (HostEvent.clientY event - DOMRect.top box)
+    Pointer
+        event
+        (HostEvent.clientX event - DOMRect.left box)
+        (HostEvent.clientY event - DOMRect.top box)
 
 
 --| The pointer's identity: the same number from its first event to its
@@ -193,7 +196,6 @@ localY (Pointer _ _ y) = y
 --| modifier keys and `preventDefault`.
 pub pointerEvent : Pointer → Event
 pointerEvent (Pointer event _ _) = event
-
 
 
 -- Elements. A `void` element takes no children.
