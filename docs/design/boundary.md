@@ -8769,8 +8769,14 @@ and `q4`, 19:00 UTC): "replace CodeMirror with a simple editor written in beni i
 (`playground.md` §10.10). This section named two more decisions, an element whose inside a library
 owns (#1881) and a third-party ES module from beni (#1882), and the CodeMirror binding (#1893). The
 three are closed as not planned. The selection row (#1900) came with the beni editor. If the owner
-takes the browser's undo for it (`playground-beni-q5`), one more row comes: text inserted with
-`execCommand("insertText")`, whose `false` answer is a typed error.
+takes the browser's undo for it (`playground-beni-q8`, which replaces `q5`), one more row comes:
+text inserted with `execCommand("insertText")`, whose `false` answer is a typed error.
+
+*Amended 2026-11-04:* the `srcdoc` half of the `iframe` row meets the owner's rule of 2026-09-29
+that closed `srcdoc` as a script sink (`language.md` §11.5, `untyped_srcdoc_attribute`). It waits
+for `playground-beni-q6`: a frame loaded from a URL that gets its files by `postMessage` needs only
+`sandbox`, and a typed `srcdoc` needs a rule that it comes only with a `sandbox` that has no
+`allow-same-origin`.
 
 ## Appendix — what is deliberately not done
 
