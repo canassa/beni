@@ -72,7 +72,7 @@ module NativeWords
   summary probe70: π1 R
   summary probe71: π1 R
   summary probe72: π1 R
-  summary probe73: π1 RE; res ⊤{lost}r{lost}
+  summary probe73: π1 RE; res fresh1{lost}r{lost}
   summary probe74: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
   summary probe75: π1 R
   summary probe76: π1 R
