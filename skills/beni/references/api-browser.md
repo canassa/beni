@@ -116,6 +116,9 @@ module Dom
     Unsupported
     NotActivated
     Refused
+  type SelectError
+    NoField
+    NotText
   alias Viewport
     Viewport
   value blur : String → Result Error ⊤  -- impure
@@ -130,6 +133,7 @@ module Dom
   value scrollIntoView : String → Result Error ⊤  -- impure
   value scrollIntoViewWith : String, Alignment → Result Error ⊤  -- impure
   value scrollTo : String, Float, Float → Result Error ⊤  -- impure
+  value select : String, Selection → Result SelectError ⊤  -- impure
   value viewport : ⊤ → Viewport  -- impure
 module Hosted
   type Job a

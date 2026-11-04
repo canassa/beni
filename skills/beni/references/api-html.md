@@ -13,6 +13,8 @@ module Html
   type Event
   type Html a
   type Pointer
+  alias Selection
+    Selection
   value altKey : Event → Bool  -- impure
   value clientX : Pointer → Float  -- impure
   value clientY : Pointer → Float  -- impure
@@ -30,6 +32,7 @@ module Html
   value preventDefault : Event → ⊤  -- impure
   value shiftKey : Event → Bool  -- impure
   value targetChecked : Event → Bool  -- impure
+  value targetSelection : Event → Maybe Selection  -- impure
   value targetValue : Event → String  -- impure
   value text : String → Html msg
   element "*-*"

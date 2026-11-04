@@ -3181,6 +3181,34 @@ may send, which queues the next flush.
 `Dom.blur`, `Dom.box`, `Dom.scrollTo`, `Dom.scrollIntoView` (`Err (NotFound id)` for a node that is
 not in the page) and `Dom.viewport`. Called outside phase (2) they are still correct — a measurement
 forces a layout, which is slow and right. Research 17 §4.7's `suspends` capabilities are withdrawn.
+
+*Amended 2026-11-04 (issue #1900, a gap of #142, `playground.md` §10.10): a text field's
+selection.* The playground's beni editor indents the selected lines with Tab and selects a
+diagnostic's span, so a page must read and set a selection:
+
+```text
+-- Html (the html platform)
+pub type alias Selection = { start : Int, end : Int, backward : Bool }
+pub targetSelection : Event → Maybe Selection
+-- Dom
+pub type SelectError = NoField String | NotText String
+pub select : String, Html.Selection → Result SelectError ⊤   -- impure
+```
+
+- Both count code points, as `String` does. The host counts UTF-16 units, so each wrapper converts
+  with the field's value: a character past U+FFFF is one position, and a host offset inside one
+  counts that character. A position past the text is its end.
+- A text field is a `textarea`, or an `input` of a type that has a selection. On any other target
+  `selectionStart` is `null` or absent: `targetSelection` is `Nothing`, and `select` is
+  `Err (NotText id)` without a call of `setSelectionRange`, which throws `InvalidStateError` on an
+  input of a type with no selection (CLAUDE.md rule 9: the documented failure is not reached).
+  A node that is not in the page is `Err (NoField id)`.
+- `select` does not focus the field; `Dom.focus` does. `backward` sets the direction, so a history
+  that records a selection gives it back as the person made it.
+- `SelectError` is a type of its own, not two constructors more of `Dom.Error`, so every existing
+  match of `Dom.Error` stays exhaustive.
+- Pinned by `tests/corpus/browser/tea/TextFieldSelection`, the same transcript in happy-dom and in
+  Chrome.
 **`Dom.rendered : () -> ()`** suspends: at once when no render and no after-render work is queued,
 otherwise until the next flush's after-render phase begins; its fiber goes on at the scheduler's
 next drain, before paint.

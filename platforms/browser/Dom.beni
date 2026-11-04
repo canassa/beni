@@ -26,6 +26,7 @@
 --!         ( model, Cmd.perform λsend → send (Entered (Dom.requestFullscreen "arena")) )
 
 import Browser
+import Html
 import Js
 import Listen
 import Sub exposing (Sub)
@@ -104,6 +105,48 @@ pub scrollTo : String, Float, Float → Result Error ⊤
 scrollTo id x y = found id λn →
     _ = Js.call n "scrollTo" [ Js.from x, Js.from y ]
     ⊤
+
+
+--| Why a text field's selection could not be set: no node in the page has
+--| this id, or the node is not a text field (`Html.targetSelection` names
+--| the ones that are).
+pub type SelectError
+    = NoField String
+    | NotText String
+
+
+--| Select from `start` to `end` in the text field with this id, in code
+--| points as `String` counts them (`Html.Selection`), backward when
+--| `backward` says so. A position past the text is the text's end. It does
+--| not focus the field; `focus` does.
+--|
+--|     Dom.select "editor" { start = 4, end = 9, backward = False }
+pub select : String, Html.Selection → Result SelectError ⊤
+select id selection =
+    node = Js.call (Js.global "document") "getElementById" [ Js.from id ]
+    if Js.isNull node then
+        Err (NoField id)
+    else if not (Js.typeIs (Js.get node "selectionStart") "number") then
+        -- `setSelectionRange` throws on an input of a type with no
+        -- selection, and an element that is no field has none: neither is
+        -- called.
+        Err (NotText id)
+    else
+        value = Js.get node "value"
+        from = unitsBefore value selection.start
+        to = unitsBefore value (max selection.start selection.end)
+        direction = if selection.backward then "backward" else "forward"
+        _ = Js.call node "setSelectionRange" [ Js.from from, Js.from to, Js.from direction ]
+        Ok ⊤
+
+
+-- How many UTF-16 units the first `count` code points of the string
+-- `value` take: all of them when it has fewer.
+unitsBefore : Js.Value, Int → Int
+unitsBefore value count =
+    points = Js.call (Js.global "Array") "from" [ value ]
+    first = Js.call points "slice" [ Js.from 0, Js.from (max 0 count) ]
+    Js.to (Js.get (Js.call first "join" [ Js.from "" ]) "length")
 
 
 --| Scroll the page until the element with this id is in view.
