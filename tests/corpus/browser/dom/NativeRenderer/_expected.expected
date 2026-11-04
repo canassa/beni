@@ -1,0 +1,7 @@
+-- load
+<body>
+  <p>"native adapters: ok"</p>
+</body>
+-- flush body
+(flushed)
+(the DOM did not change)

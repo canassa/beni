@@ -778,6 +778,45 @@ identity governs these names, for named access and static dispatch alike:
 - Only core Debug may use the whole `Js.Inspect` module. The Cloudflare-only
   reply intrinsic below has its narrower platform identity check.
 
+**Private renderer native bridges** (manager approval, 2026-11-04; #1822,
+Part of #1612). Checked core/platform package identity, through the same
+`resolve/CorePrivate.zig` fence, reserves the following renderer-prefixed
+entries for the browser platform family. Applications cannot name them,
+including through method dispatch; an application module with a matching
+spelling gains no native authority. All entries are impure except the identity
+upcast `EventTarget.rendererFromNode`, which is pure. In these signatures
+`Node` means `Browser.Host.Node.Node` and `Opt` means `Js.Opt`:
+
+- `Browser.Host.Node.rendererFirstChild : borrowed Node → Opt Node`,
+  `rendererNextSibling : borrowed Node → Opt Node`, and
+  `rendererParent : borrowed Node → Opt Node` read nullable traversal links.
+- `Browser.Host.Node.rendererInsertBefore : borrowed Node, borrowed Node, borrowed Opt Node → ⊤`
+  inserts the second node into the first, before the optional reference.
+  `rendererAppend : borrowed Node, borrowed Node → ⊤` appends a child;
+  `rendererRemove : borrowed Node → ⊤` detaches a node if it has a parent;
+  `rendererClone : borrowed Node → Node` clones a subtree deeply.
+- `Browser.Host.Document.rendererFragment : ⊤ → Node` creates an empty
+  document fragment; `rendererImport : borrowed Node → Node` deeply imports
+  into the current document; `rendererTemplate : String → Node` parses a
+  renderer template and returns its content fragment; `rendererBody : ⊤ → Node`
+  reads the mounted page's body; `rendererText : String → Node` creates a text node.
+- `Browser.Host.EventTarget.rendererFromNode : Node → EventTarget` is the
+  allocation-free native identity upcast. The existing `Element.toNode`
+  remains the Element identity upcast.
+
+The renderer calls these entries only on nodes and fragments it created and
+owns, with structural relationships maintained by its own algorithms. A
+`HierarchyRequestError`, `NotFoundError`, Trusted Types refusal, or other
+structural failure therefore indicates a beni or host bug. These entries
+return plain values, with no `Result` and no `catch`: native exceptions reach
+the existing defect rule (development crash screen; logged and stopped in
+release). Public `Node.append : … → Result MoveError ⊤` remains the separate
+user API. Nullable links map native null to the existing private `optNone`
+identity and retain a present node as itself; insertion maps that identity
+back to native null. Saturated calls and first-class arrows are compiler-emitted,
+sharing the same sentinel with `Js.Opt`, without per-call wrappers or a second
+sentinel. Unused bridges add no emitted code to an ordinary mounted page.
+
 **Cloudflare reply discovery** (owner, 2026-11-03; #1612) is a
 platform-private rule-6 extension. `Worker.Object.replyIds : borrowed msg → fresh List String`
 is available only inside the actual Cloudflare platform. It is a saturated-call

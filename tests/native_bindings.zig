@@ -103,6 +103,22 @@ test "reviewed callable subset resolves against the pinned catalogue" {
     defer arena.deinit();
     const result = try Native.generate(arena.allocator(), @embedFile("webref_idl"));
     try std.testing.expect(Native.Callable.validate(result.success));
+    // An identity upcast has no member spelling: its checked binding must
+    // link the native declaration rather than scan for an empty identifier.
+    const c = result.success;
+    for (c.callable_bindings) |binding| {
+        if (!std.mem.eql(u8, binding.operation.module, "Browser.Host.EventTarget") or !std.mem.eql(u8, binding.operation.name, "rendererFromNode")) continue;
+        try std.testing.expect(binding.member == null);
+        for (c.declarations) |decl| {
+            if (decl.partial or !std.mem.eql(u8, decl.name, "Node")) continue;
+            try std.testing.expectEqual(decl.file, binding.file orelse return error.MissingUpcastSource);
+            try std.testing.expectEqual(decl.source_span.start, binding.start);
+            try std.testing.expectEqual(decl.source_span.end, binding.end);
+            return;
+        }
+        return error.MissingNodeDeclaration;
+    }
+    return error.MissingRendererUpcast;
 }
 
 fn nativeSourceMatches(a: std.mem.Allocator, path: []const u8, expected: []const u8) !bool {

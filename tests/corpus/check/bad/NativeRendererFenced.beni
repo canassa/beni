@@ -1,0 +1,21 @@
+-- Applications cannot name any plain renderer bridge.
+import Browser.Host.Document as D
+import Browser.Host.EventTarget as T
+import Browser.Host.Node as N
+
+
+pub forbidden =
+    { rendererFirstChild = N.rendererFirstChild
+    , rendererNextSibling = N.rendererNextSibling
+    , rendererParent = N.rendererParent
+    , rendererInsertBefore = N.rendererInsertBefore
+    , rendererAppend = N.rendererAppend
+    , rendererRemove = N.rendererRemove
+    , rendererClone = N.rendererClone
+    , rendererFragment = D.rendererFragment
+    , rendererImport = D.rendererImport
+    , rendererTemplate = D.rendererTemplate
+    , rendererBody = D.rendererBody
+    , rendererText = D.rendererText
+    , rendererFromNode = T.rendererFromNode
+    }

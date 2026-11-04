@@ -1,0 +1,1 @@
+[{"code":"private_method","severity":"error","span":{"file":"tests/corpus/check/bad/NativeRendererMethodFenced.beni","start":{"line":7,"col":9},"end":{"line":7,"col":28}},"title":"PRIVATE METHOD","message":"This name is private to core and platform runtimes."}]

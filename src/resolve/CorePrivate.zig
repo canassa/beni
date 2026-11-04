@@ -10,6 +10,19 @@ const Entry = struct {
 };
 
 const entries = [_]Entry{
+    .{ .module = "Browser.Host.Node", .name = "rendererFirstChild", .access = .platform },
+    .{ .module = "Browser.Host.Node", .name = "rendererNextSibling", .access = .platform },
+    .{ .module = "Browser.Host.Node", .name = "rendererParent", .access = .platform },
+    .{ .module = "Browser.Host.Node", .name = "rendererInsertBefore", .access = .platform },
+    .{ .module = "Browser.Host.Node", .name = "rendererAppend", .access = .platform },
+    .{ .module = "Browser.Host.Node", .name = "rendererRemove", .access = .platform },
+    .{ .module = "Browser.Host.Node", .name = "rendererClone", .access = .platform },
+    .{ .module = "Browser.Host.Document", .name = "rendererFragment", .access = .platform },
+    .{ .module = "Browser.Host.Document", .name = "rendererImport", .access = .platform },
+    .{ .module = "Browser.Host.Document", .name = "rendererTemplate", .access = .platform },
+    .{ .module = "Browser.Host.Document", .name = "rendererBody", .access = .platform },
+    .{ .module = "Browser.Host.Document", .name = "rendererText", .access = .platform },
+    .{ .module = "Browser.Host.EventTarget", .name = "rendererFromNode", .access = .platform },
     .{ .module = "Browser.Worker", .name = "eventsPossible", .access = .platform },
     .{ .module = "Browser.Host.Worker", .name = "closeSelf", .access = .platform },
     .{ .module = "Js", .name = "Builder" },

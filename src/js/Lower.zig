@@ -3553,6 +3553,14 @@ pub const Lowerer = struct {
             .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => return,
             // Bound by the sibling import, not by a declaration here.
             .foreign_value => {
+                if (l.rendererDecl(d)) |row| {
+                    if (!l.liveDecl(index)) return;
+                    records.direct = try l.recBegin(Funnel.Selector.declarationPart(index, Funnel.Selector.direct));
+                    l.restartNames();
+                    try l.constDecl(out, try l.topName(index), try l.rendererArrow(row, l.pos(d.inst_start)), l.pos(d.inst_start));
+                    try l.recEnd(records.direct, index);
+                    return;
+                }
                 const which = l.typedIntrinsicDecl(d) orelse return;
                 if (!l.liveDecl(index)) return;
                 if (which == .cellRead or which == .cellWrite) return;
@@ -4024,7 +4032,7 @@ pub const Lowerer = struct {
         // Foreign values first: `import { add as Basics$add } from "./Basics.js"`.
         var siblings: std.ArrayList(JsIr.Specifier) = .empty;
         for (l.bir.decls, 0..) |d, index| {
-            if (d.kind != .foreign_value or l.typedIntrinsicDecl(d) != null) continue;
+            if (d.kind != .foreign_value or l.typedIntrinsicDecl(d) != null or l.rendererDecl(d) != null) continue;
             // §5: the one import leg that is not use-driven. Every other
             // `import` shrinks for free with the declaration that wanted
             // it; this loop walks `bir.decls` and would otherwise import
@@ -10921,9 +10929,105 @@ pub const Lowerer = struct {
         return .{ .c = c, .x = x };
     }
 
+    // ownership pin begin: rendererImport
+    // ownership pin begin: rendererFirstChild
+    // ownership pin begin: rendererNextSibling
+    // ownership pin begin: rendererParent
+    // ownership pin begin: rendererInsertBefore
+    // ownership pin begin: rendererAppend
+    // ownership pin begin: rendererRemove
+    // ownership pin begin: rendererClone
+    fn rendererDecl(l: *Lowerer, d: Bir.Decl) ?@import("../native/Operations.zig").Row {
+        if (l.in.graph.modulePackage(l.in.module) != .core) return null;
+        const row = @import("../native/Operations.zig").lookup(l.text(l.module_name), l.text(l.bir.symbol(d.name))) orelse return null;
+        return if (@import("../native/Operations.zig").renderer(row.recipe)) row else null;
+    }
+
+    fn rendererArrow(l: *Lowerer, row: @import("../native/Operations.zig").Row, p: u32) Allocator.Error!Node.Index {
+        var names: [3]JsIr.NameIndex = undefined;
+        var values: [3]Node.Index = undefined;
+        const arity = @import("../native/Operations.zig").rendererArity(row.recipe);
+        for (0..arity) |i| {
+            names[i] = try l.fresh(l.well.temp);
+            values[i] = try l.ident(names[i], p);
+        }
+        var body: StmtList = .empty;
+        const result = try l.rendererExpr(&body, row, values[0..arity], p);
+        try body.append(l.scratch, try l.returnStmt(result, p));
+        return l.arrowOf(names[0..arity], body.items, p);
+    }
+
+    // Private renderer-owned nodes. Native structural failures are defects;
+    // preserve identity, use the existing Opt sentinel, and allocate no adapter.
+    fn rendererExpr(l: *Lowerer, out: *StmtList, row: @import("../native/Operations.zig").Row, values: []const Node.Index, p: u32) Allocator.Error!Node.Index {
+        const global = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
+        const document = try l.member(global, try l.interner.getOrPut(l.gpa, "document"), p);
+        switch (row.recipe) {
+            .renderer_first_child, .renderer_next_sibling, .renderer_parent => {
+                const slot = try l.fresh(l.well.temp);
+                try l.constDecl(out, slot, try l.member(values[0], try l.interner.getOrPut(l.gpa, row.member), p), p);
+                const value = try l.ident(slot, p);
+                return l.condOf(try l.binary(.strict_eq, value, try l.nullNode(p), p), try l.optNone(p), value, p);
+            },
+            .renderer_from_node => return values[0],
+            .renderer_insert, .renderer_append => {
+                const args = if (row.recipe == .renderer_insert) &[_]Node.Index{ values[1], try l.condOf(try l.binary(.strict_eq, values[2], try l.optNone(p), p), try l.nullNode(p), values[2], p) } else &[_]Node.Index{values[1]};
+                try out.append(l.scratch, try l.add(.expr_stmt, p, (try l.call(try l.member(values[0], try l.interner.getOrPut(l.gpa, row.member), p), args, p)).int(), Node.Data.unused));
+                return l.nullNode(p);
+            },
+            .renderer_remove => {
+                const parent = try l.fresh(l.well.temp);
+                try l.constDecl(out, parent, try l.member(values[0], try l.interner.getOrPut(l.gpa, "parentNode"), p), p);
+                const value = try l.ident(parent, p);
+                const remove = try l.call(try l.member(value, try l.interner.getOrPut(l.gpa, "removeChild"), p), &.{values[0]}, p);
+                try l.ifStatement(out, try l.binary(.strict_ne, value, try l.nullNode(p), p), &.{try l.add(.expr_stmt, p, remove.int(), Node.Data.unused)}, p);
+                return l.nullNode(p);
+            },
+            .renderer_clone => return l.call(try l.member(values[0], try l.interner.getOrPut(l.gpa, "cloneNode"), p), &.{try l.add(.true_lit, p, Node.Data.unused, Node.Data.unused)}, p),
+            .renderer_import => return l.call(try l.member(document, try l.interner.getOrPut(l.gpa, "importNode"), p), &.{ values[0], try l.add(.true_lit, p, Node.Data.unused, Node.Data.unused) }, p),
+            .renderer_fragment => return l.call(try l.member(document, try l.interner.getOrPut(l.gpa, "createDocumentFragment"), p), &.{}, p),
+            .renderer_body => return l.member(document, try l.interner.getOrPut(l.gpa, "body"), p),
+            .renderer_text => return l.call(try l.member(document, try l.interner.getOrPut(l.gpa, "createTextNode"), p), &.{values[0]}, p),
+            .renderer_template => {
+                const template = try l.fresh(l.well.temp);
+                try l.constDecl(out, template, try l.call(try l.member(document, try l.interner.getOrPut(l.gpa, "createElement"), p), &.{try l.stringNode("template", p)}, p), p);
+                const value = try l.ident(template, p);
+                const html = try l.member(value, try l.interner.getOrPut(l.gpa, "innerHTML"), p);
+                try out.append(l.scratch, try l.add(.assign_stmt, p, html.int(), values[0].int()));
+                return l.member(value, try l.interner.getOrPut(l.gpa, "content"), p);
+            },
+            else => unreachable,
+        }
+    }
+
     // Keep native recipe temporaries out of the recursive ordinary-call frame.
     noinline fn nativeCallExpr(l: *Lowerer, out: *StmtList, callee_inst: Inst.Index, arg_insts: []const Inst.Index, p: u32) Allocator.Error!?Node.Index {
         if (@import("NativeIntrinsic.zig").of(l.in.graph, l.in.interfaces, l.bir, l.in.module, callee_inst, l.interner)) |native| {
+            if (@import("../native/Operations.zig").renderer(native.recipe)) {
+                // A dropped unit still evaluates, and multi-statement recipes may
+                // read an operand twice. Evaluate every non-atom exactly once
+                // before performing any native read or mutation.
+                if (native.recipe == .renderer_fragment or native.recipe == .renderer_body) {
+                    for (arg_insts) |arg| try l.discard(out, arg, p);
+                    return try l.rendererExpr(out, native, &.{}, p);
+                }
+                const values = try l.orderedExprs(out, arg_insts, false);
+                for (values) |*value| {
+                    if (l.isAtom(value.*)) continue;
+                    const name_ = try l.fresh(l.well.temp);
+                    try l.constDecl(out, name_, value.*, p);
+                    value.* = try l.ident(name_, p);
+                }
+                return try l.rendererExpr(out, native, values, p);
+            }
+            // ownership pin end: rendererImport
+            // ownership pin end: rendererFirstChild
+            // ownership pin end: rendererNextSibling
+            // ownership pin end: rendererParent
+            // ownership pin end: rendererInsertBefore
+            // ownership pin end: rendererAppend
+            // ownership pin end: rendererRemove
+            // ownership pin end: rendererClone
             switch (native.recipe) {
                 .map_get, .map_set, .map_delete, .map_entries, .query_selector, .text_content, .timeout, .queue_microtask, .timer_start, .timer_clear, .message_channel, .message_port1, .message_port2, .post_unit, .on_message, .try_immediate, .date_now, .math_random, .listen_window, .listen_document, .event_prevent, .event_key, .event_code, .event_ctrlKey, .event_shiftKey, .event_altKey, .event_metaKey, .event_pointerId, .event_pointerType, .event_isPrimary, .event_clientX, .event_clientY, .event_box, .rect_left, .rect_top, .event_target_value, .event_target_checked, .event_prevented, .event_button, .event_path, .as_anchor, .anchor_has, .anchor_href, .anchor_protocol, .anchor_host, .anchor_target, .frame_request, .frame_cancel, .inner_width, .inner_height, .visibility_state, .document_title, .document_title_read, .event_listen, .process_stdout, .process_stderr, .process_exit_code, .process_before_exit, .promise_observe, .rejection_is_error, .rejection_name, .rejection_code, .rejection_raise, .abort_create, .abort_signal, .abort_call, .abort_aborted, .node_read_utf8, .node_read_dir, .dirent_name, .dirent_file, .dirent_directory, .dirent_link, .data_is_array, .data_is_finite, .data_is_integer, .data_is_safe_integer, .data_keys, .data_empty_object, .data_has_own, .json_parse, .json_stringify, .url_try_create, .url_href, .url_username, .url_password, .document_base_uri, .headers_create, .headers_append, .headers_has, .headers_set, .headers_get, .headers_entries, .form_create, .form_append, .fetch_text_body, .fetch_form_body, .fetch_init, .fetch_call, .response_url, .response_status, .response_status_text, .response_ok, .response_headers, .response_text, .response_reader, .reader_bytes, .read_result_done, .read_result_value, .decoder_create, .decoder_more, .decoder_finish, .dom_exception_create, .abort_with_reason, .abort_reason_is, .rejection_is_type_error, .regexp_create, .regexp_test, .regexp_replace, .storage_local, .storage_session, .storage_get, .storage_set, .storage_remove, .storage_length, .storage_key, .url_protocol, .url_set_protocol, .ws_create, .ws_binary, .ws_state, .ws_buffered, .ws_protocol, .ws_send, .ws_close, .ws_close_empty, .ws_open, .ws_error, .ws_message, .ws_closed, .console_warn, .document_by_id, .element_focus, .element_blur, .element_box, .element_scroll, .element_into_view, .rect_x, .rect_y, .rect_width, .rect_height, .window_scroll_x, .window_scroll_y, .element_fullscreen_supported, .element_fullscreen, .document_fullscreen_enabled, .document_fullscreen_id, .document_fullscreen_exit, .navigator_activated, .rejection_type_error_message, .data_same, .worker_supported, .worker_create, .worker_endpoint, .worker_self_endpoint, .worker_post, .worker_terminate, .worker_event_target, .global_event_target, .event_data_only, .event_error, .console_error_data, .rejection_abandoned, .global_is_page, .event_error_message, .rejection_create, .rejection_assign, .regexp_group, .worker_close_self, .cf_socketInitialize, .cf_unitResolvers, .cf_stringResolvers, .cf_dataResolvers, .cf_responseResolvers, .cf_program, .cf_definition, .cf_instance, .cf_namespace, .cf_service, .cf_variable, .cf_byName, .cf_idFromString, .cf_getStub, .cf_idName, .cf_requestPath, .cf_requestCopy, .cf_requestSignal, .cf_onAbort, .cf_responseCreate, .cf_responseCopy, .cf_stubFetch, .cf_serviceFetch, .cf_stubRpc, .cf_overloaded, .cf_reset, .cf_retryable, .cf_errorText, .cf_randomUUID, .cf_waitUntil, .cf_objectWaitUntil, .cf_objectAbort, .cf_alarmSet, .cf_alarmDelete, .cf_socketsTagged, .cf_acceptSocket, .cf_autoResponse, .cf_socketPair, .cf_socketClient, .cf_socketServer, .cf_socketResponse, .cf_socketCloseEmpty, .cf_consoleError, .cf_consoleLog, .cf_consoleReason, .promise_resolve, .promise_reject, .promise_after, .cf_socketEq, .cf_socketSend, .cf_socketClose, .cf_socketAttach, .cf_kv, .cf_kvGet, .cf_kvPut, .cf_kvDelete, .cf_kvKeys => {}, // Precise generated adapters.
                 else => {

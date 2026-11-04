@@ -265,3 +265,13 @@ core Js.Any.pack ownership/core/AnyDataWords.beni 1:escaped>borrowed
 core Js.Any.unpack ownership/core/AnyDataWords.beni res:->fresh+res:->exclusive
 core Js.Data.checked ownership/core/AnyDataWords.beni 1:returned>borrowed+res:->fresh
 core Js.Data.checkedGraph ownership/core/AnyDataWords.beni - Js.Data.checked
+
+# Native handles have no sequence ownership; no unsafer word flip is observable.
+core Browser.Host.Document.rendererImport ownership/core/NativeRenderer.beni - D.rendererImport
+core Browser.Host.Node.rendererFirstChild ownership/core/NativeRenderer.beni - N.rendererFirstChild
+core Browser.Host.Node.rendererNextSibling ownership/core/NativeRenderer.beni - N.rendererNextSibling
+core Browser.Host.Node.rendererParent ownership/core/NativeRenderer.beni - N.rendererParent
+core Browser.Host.Node.rendererInsertBefore ownership/core/NativeRenderer.beni - N.rendererInsertBefore
+core Browser.Host.Node.rendererAppend ownership/core/NativeRenderer.beni - N.rendererAppend
+core Browser.Host.Node.rendererRemove ownership/core/NativeRenderer.beni - N.rendererRemove
+core Browser.Host.Node.rendererClone ownership/core/NativeRenderer.beni - N.rendererClone

@@ -3,6 +3,7 @@ import Browser.Host.Event as Event
 
 
 import Browser.Host.Element as Element
+import Browser.Host.Node as Node
 import Browser.Host.Promise as Promise
 
 
@@ -11,6 +12,21 @@ pub type QueryError
 
 
 pub foreign type Document
+
+
+pub foreign impure rendererFragment : ⊤ → Node.Node
+
+
+pub foreign impure rendererImport : borrowed Node.Node → Node.Node
+
+
+pub foreign impure rendererTemplate : String → Node.Node
+
+
+pub foreign impure rendererBody : ⊤ → Node.Node
+
+
+pub foreign impure rendererText : String → Node.Node
 
 
 pub foreign impure byId : String → Maybe Element.Element

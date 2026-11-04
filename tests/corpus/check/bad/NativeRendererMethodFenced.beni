@@ -1,0 +1,8 @@
+-- Static dispatch obeys the same checked-package fence as qualified access.
+import Browser.Host.Node as NativeNode
+
+
+pub first : NativeNode.Node → Int
+first node =
+    node.rendererFirstChild
+    0

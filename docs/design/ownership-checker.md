@@ -4368,6 +4368,22 @@ model and one current view through typed refs, replacing each after its sync
 callback; its entry protocol still retains no earlier model. These pins will
 be re-audited when the separately owned DOM/Schema changes land.
 
+**Private renderer native handles** (2026-11-04; #1822). The borrowed
+arguments of `Browser.Host.Node.rendererFirstChild`, `rendererNextSibling`,
+`rendererParent`, `rendererInsertBefore`, `rendererAppend`, `rendererRemove`,
+`rendererClone`, and `Browser.Host.Document.rendererImport` are native Node
+identities (or an unboxed optional Node), never beni sequence storage. Traversal
+reads a link; mutation changes only the renderer-owned DOM; clone/import leave
+the original handle valid. None consumes a beni sequence or stores one in the
+host. Returning a different linked native Node does not claim a fresh sequence.
+The private package fence and structural-defect contract are in boundary.md's
+*Private renderer native bridges*. Both saturated and first-class call forms
+use the same compiler recipe; its argument evaluation and lowering helpers are
+pinned together in `word-bodies.txt`. The native-handle calls in
+`ownership/core/NativeRenderer.beni` justify the trusted-surface rows. No unsafe
+sequence verdict can distinguish a weaker word on these handle-only arguments,
+so their flip column is `-`, as for the existing native handle readers.
+
 ### 24.9 The decoder in `Expect`
 
 `Http.request r` calls the function `r.expect` holds — `transfer`'s pattern `(Expect accept read)` binds it and
