@@ -43,6 +43,10 @@ dashboard at 12:36 UTC:
 | `wasm-playground-q5`: the two `.wasm` gate tests cost a fixed 74% of the budget | **A budget of their own, and `test-playground` in CI on every pull request** (§6). The budget was granted by Cesar on 2026-10-15 (dashboard question `wasm-playground-q7`). |
 | `wasm-playground-q6`: the editor's 13 modules from esm.sh run in the shared `canassa.github.io` origin with no integrity check | **Vendor the 13 files** in the repository, each with a checksum, and a script that fetches them again (§4.2). This replaces the "from a CDN" part of the editor decision above; CodeMirror 6 and the pinned versions stay. |
 
+*Amended 2026-11-04 (issue #142):* the editor row of the first table and `wasm-playground-q6` are
+superseded. The owner decided to replace CodeMirror with a simple editor written in beni (§10,
+first amendment; §10.10). They hold until that editor lands.
+
 The work lands in two pull requests:
 
 1. The WebAssembly target, the single-threaded path with byte-identical output, and a minimal
@@ -506,6 +510,10 @@ native threaded build. Items 1 and 4 prove it; items 2 and 3 test the page itsel
    runs, an error is marked on its text in the editor and listed, the Types, Ownership and
    JavaScript tabs show their output, Share after an edit makes a link that opens the edited
    source and platform, and a damaged link opens the first sample.
+
+   *Amended 2026-11-04 (issue #142):* when the beni editor lands (§10.10), item 2's check of the
+   vendored modules and item 3's checks that read CodeMirror go with `vendor/`. Every other check
+   of items 2 and 3 stays.
 4. **Not a gate:** `zig build test-playground` runs the shipped `ReleaseSmall` `.wasm` (§7.1) on
    the hand-picked programs of `tests/blackbox/playground_test.zig` (amended 2026-11-01, below), and
    compares every output file, both streams and the exit code with the native compiler's.
@@ -780,10 +788,10 @@ Issue #142 names `browser-direct`, after §1's launch decision. The owner retire
 `browser-inline` depends on `html` alone and has no `Http`, `Time`, `Dom` or `core/Task`
 (`browser-inline.md` §1). `browser-tea` has them (`platforms/browser-tea/beni.json`).
 
-Which platform the page builds for is the owner's decision (§10.9, `playground-beni-q1`). Both
-platforms give `Tea.element`, `Cmd` and `Sub` with the same signatures (`browser-inline.md` §1),
-so the page's update loop does not depend on the answer. A part that uses `Http`, `Time` or `Dom`
-waits for it.
+Which platform the page builds for was the owner's decision (§10.9, `playground-beni-q1`), and
+the amendment below records it. Both platforms give `Tea.element`, `Cmd` and `Sub` with the same
+signatures (`browser-inline.md` §1), so the page can move to `browser-inline` later with no change
+to its update loop.
 
 *Amended 2026-11-04, the owner's decision* (Cesar Canassa, dashboard question
 `playground-beni-q1`, 18:48 UTC): **`browser-tea`**. The page is a `Tea.element` program that
@@ -836,8 +844,8 @@ not on `browser-tea`.
 
 ### 10.5 The WASI host
 
-Which part of the host is beni of the page, and which part is privileged, is the owner's decision
-(§10.9, `playground-beni-q2`). The recommended split:
+Which part of the host is beni of the page, and which part is privileged, was the owner's
+decision (§10.9, `playground-beni-q2`).
 
 *Amended 2026-11-04, the owner's decision* (Cesar Canassa, dashboard question
 `playground-beni-q2`, 18:51 UTC): **the recommended split**, a typed WebAssembly module and a host
@@ -845,6 +853,8 @@ in beni. The module (#1883) wraps only compile, instantiate, memory and traps, e
 typed error (rule 9), and every program gets it. The file system in memory and the 46 WASI
 functions are ordinary beni in `playground/`. The other choice, a privileged WASI host with one
 `run`, was not taken.
+
+The split:
 
 - **Privileged: a typed WebAssembly module** (#1883), next to `Binary` (#1278). It compiles a
   module from bytes, makes an instance with imports that are beni functions, reads the exports
@@ -932,7 +942,10 @@ landed. After each pull request the page works and every test of §6 passes.
 
 1. `srcdoc.js`: no gap.
 2. `syntax.js`: no gap. It becomes the beni editor's tokenizer (§10.10), with the Elm mode's rules
-   in beni too. Until the editor lands, `editor.js` runs it in CodeMirror's `StreamLanguage`.
+   in beni too. Until the editor lands, a few lines of `editor.js` run it in CodeMirror's
+   `StreamLanguage`: they keep the beni state in the stream's state object and move the stream's
+   position. Those lines are JavaScript, and they go with `editor.js` in step 7. The vendored Elm
+   mode is then used by nothing.
 3. `share.js`: #1278, #1884, #1885, #1886.
 4. `frame.js`: #1891, #1894.
 5. `wasi.js`: #1278, #1883, #1884, #1888, #1889.
@@ -984,7 +997,10 @@ decision asked one more question, `playground-beni-q5` (§10.10).
 | `playground-beni-q2`: the split of the WASI host (§10.5) | a typed WebAssembly module and a host in beni; a privileged WASI host with one `run` | the WebAssembly module: every program gets WebAssembly. **Decided: the WebAssembly module and a host in beni** (Cesar Canassa, 2026-11-04) |
 | `playground-beni-q3`: an element whose inside a library owns (#1881) | a new markup form; static elements by id in `index.html` | the markup form: every widget library needs it. **Decided: neither — "replace CodeMirror with a simple editor written in beni itself"** (Cesar Canassa, 2026-11-04) |
 | `playground-beni-q4`: a third-party ES module from beni (#1882) | `Js.module` of a bare specifier that the platform's `beni.json` lists; a sibling `.js` file | `Js.module`: no new JavaScript. **Decided: as `q3`** (Cesar Canassa, 2026-11-04) |
-| `playground-beni-q5`: undo and redo in the beni editor (§10.10) | the browser's own undo, with `execCommand("insertText")` for the editor's own insertions; a history that the editor keeps in beni | the browser's undo: less code, and each file keeps its own history |
+| `playground-beni-q5`: undo and redo in the beni editor (§10.10) | the browser's own undo, with `execCommand("insertText")` for the editor's own insertions; a history that the editor keeps in beni | the browser's undo. **Withdrawn:** its reason was wrong, so `q8` replaces it (§10.10, *Undo*) |
+| `playground-beni-q6`: how the frame gets its program (#1890) | a frame loaded from a URL, with the files by `postMessage`; a typed `srcdoc` in `html` | the frame from a URL: the owner's rule that closed `srcdoc` (`language.md` §11.5, 2026-09-29) stays |
+| `playground-beni-q7`: the load-error listener of `index.html` (§10.1) | keep its 10 lines of JavaScript; remove it | keep it: no beni module can report a module that does not load |
+| `playground-beni-q8`: undo and redo in the beni editor, replacing `q5` (§10.10) | a history for each file in beni; the browser's one history for the whole page | the history in beni: it keeps §4.2's per-file undo (amended 2026-10-26) |
 
 ### 10.10 The beni editor
 
@@ -1013,15 +1029,44 @@ page, on `browser-tea`, and replaces `editor.js`, `syntax.js` and `positions.js`
 | beni highlighting, §4.2 *The grammar* | Every token class of §4.2, the Elm mode's included: names, a definition at the start of a line, types and constructors, numbers, characters, operators and brackets, strings with `${…}` and escapes, `\\` lines, comments and doc comments, the Unicode notation, `⊤` and `⊥`, keywords, `.field`, and the three modes of markup. All of it is beni (`playground/src/Syntax.beni`). The state goes from line to line, so an edit highlights again from its line only until the state is as it was |
 | Diagnostics as lint marks, and the list under the editor | A mark under each diagnostic's span in its own module, with its title and message as the mark's `title`, and the same list. A click on one opens its file, selects its span (#1900) and scrolls it into view (#1896). A column counts code points, as the editor's text does |
 | Tab inserts the indent unit | Tab inserts the file's unit (four spaces for beni, two for CSS) at the caret; with a selection over lines it indents each line. Shift+Tab removes one unit from the start of each line of the selection. beni refuses a tab character (`language.md` §2.1) |
-| Undo and redo | For each editor, as `playground-beni-q5` decides (§10.9) |
+| Undo and redo, for each file | As `playground-beni-q8` decides (§10.9; *Undo*, below) |
 | The emitted JavaScript, highlighted, read-only | A read-only `<pre>` with line numbers, highlighted for comments, strings, numbers and keywords by a small beni tokenizer |
 | The CSS pane, highlighted | Highlighted for comments, strings, numbers, at-rules and property names by a small beni tokenizer |
 | One highlight style, from `style.css` | The same `--syntax-*` colours, in both schemes |
 
-**What it drops:** CodeMirror's search panel (the browser's own find searches the page), the
-match of a bracket, the closing bracket written as one types, the highlight of the active line and
-of the matches of the selection, the lint gutter (the marks and the list stay), several carets,
-and CodeMirror's other keys.
+A tab character that a person pastes stays in the text. The compiler's `tab_in_source`
+diagnostic marks it, as it marks any other error (`language.md` §2.1).
+
+**Undo.** *Added 2026-11-04.* `playground-beni-q5` recommended the browser's undo, for "each file
+keeps its own history". A test in headless Chromium 153 showed that reason to be wrong:
+
+- After `insertText` "a1" in one `textarea` and "b1" in a second, an undo with the first focused
+  took back "b1". The browser keeps one history for the whole document, not one for each field.
+- After code set a field's value, an undo in that field changed nothing.
+- An edit in a hidden field, shown again, was not the one that undo took back.
+
+The runtime does not write a `value` that the field already shows
+(`platforms/browser/Rt.beni:1746`), so typing alone keeps the browser's history. But a sample, a
+link and any text that the editor inserts itself (Tab, Shift+Tab) clear it, unless the editor
+calls `execCommand("insertText")`. That call is deprecated: where a browser answers `false`, the
+wrapper's typed error is the answer to the key, and the editor must then set the value itself and
+lose the browser's history at that edit. So `playground-beni-q8` replaces `q5`, and recommends a
+history in beni: an undo and a redo stack of each file's text and selection, the keys Ctrl+Z,
+Ctrl+Shift+Z and Ctrl+Y and their Cmd forms, and the `beforeinput` events `historyUndo` and
+`historyRedo`, all handled by the editor, which sets the text and the selection itself. It needs
+no deprecated call.
+
+**What it drops**, each the author's reading of "simple", with what it would cost to keep:
+
+- CodeMirror's search panel: the browser's own find searches the text of a `textarea`.
+- The match of a bracket: a scan of the tokens around the caret, about 50 lines of beni.
+- The closing bracket written as one types: a key handler of about 30 lines, which every undo
+  then has to take back too.
+- The highlight of the active line: about 10 lines, the caret's line in the gutter.
+- The highlight of the matches of the selection: a search of the text on each move of the caret.
+- The lint gutter: the marks and the list stay, so the gutter shows only line numbers.
+- Several carets: a `textarea` has one selection, so this cannot come back on this form.
+- CodeMirror's other keys.
 
 **What goes with CodeMirror:** `vendor/` (19 modules of 1 344 418 bytes; with `SHA256SUMS` and
 `LICENSES.txt`, 1 371 215 bytes raw and 294 035 at brotli quality 11, measured on 2026-11-04 one
@@ -1036,6 +1081,7 @@ keeps its text. It types as a person does, through the DevTools protocol, as now
 checks of CodeMirror's own parts.
 
 **Measurements.** The editor's pull request gives the page's bytes with `vendor/`, raw and at
-brotli quality 11, before and after, and `bench/playground/chrome.mjs`'s `editorReady` and TodoMVC
-edit times before and after. It also gives the time from a keystroke to the highlighted text, on
-TodoMVC (298 lines) and on a file of 2 000 lines.
+brotli quality 11, before and after; the after bytes hold all the beni of the editor, its three
+tokenizers included. It also gives `bench/playground/chrome.mjs`'s `editorReady` and TodoMVC edit
+times before and after, and the time from a keystroke to the highlighted text, on TodoMVC
+(298 lines) and on a file of 2 000 lines.
