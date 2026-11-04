@@ -3471,6 +3471,32 @@ theorem flat_atom_entry {declarations : List Decl} {vs : ValueSemantics.State} {
         rwa [entryAbstract_atPath shape0 at_p] at projectedChains,
       inv.deepTags k p use o0 w0 tk a0 ty w binding declared abstractBinding at_p valuePath⟩
 
+/-- An atom's runtime value has the atom's type under the heap typing. -/
+theorem kinded_atom {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {atom : Atom} {ty : Ty}
+    {kinds : Nat → Option Ty} {w : Value}
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
+    (state : StateKinded kinds hs env tenv)
+    (typed : atomType tenv atom = .ok ty)
+    (covered : ∀ use ∈ atomUses atom, use ∈ live)
+    (heapRun : InPlaceSemantics.atom (heapEnv env) atom = .ok w) : Kinded kinds ty w := by
+  cases root : atomRoot atom with
+  | none =>
+    obtain ⟨n, rfl, rfl⟩ := atom_int_of_root_none typed root
+    have same : (Except.ok (Value.int n) : Except String Value) = .ok w := heapRun
+    cases same
+    exact .int n
+  | some kp =>
+    rcases kp with ⟨k, p⟩
+    obtain ⟨tk, declared, at_p⟩ := atom_type_of_root typed root
+    obtain ⟨pair, binding⟩ := lookup_exists_of_same_keys env tenv inv.typeKeys declared
+    rcases pair with ⟨o0, w0⟩
+    have use : (k, p) ∈ live := covered (k, p) (by rw [atomUses_of_root root]; simp)
+    obtain ⟨o, w', _, valuePath, _⟩ := inv.bindings k p use o0 w0 binding
+    have heapRun' := heap_atom_of_root root (heapEnv_lookup binding) valuePath
+    rw [heapRun] at heapRun'
+    cases heapRun'
+    exact kinded_project (state.env k tk o0 w0 declared binding) at_p valuePath
+
 /-- `flat_atom_entry` at a type with no dictionary, which is its own
 representation. -/
 theorem flat_atom_values {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {atom : Atom} {ty : Ty}
@@ -3650,6 +3676,36 @@ theorem flat_atoms_values {declarations : List Decl} {vs : ValueSemantics.State}
       exact fields i o' w' a' t' (by simpa using os_i) (by simpa using ws_i) (by simpa using as_i)
         (by simpa using types_i)
 
+
+/-- Every atom of a list has its type under the heap typing. -/
+theorem kinded_atoms {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {kinds : Nat → Option Ty}
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
+    (state : StateKinded kinds hs env tenv) :
+    ∀ {args : List Atom} {types : List Ty} {ws : List Value},
+      args.mapM (atomType tenv) = .ok types →
+      (∀ atom ∈ args, ∀ use ∈ atomUses atom, use ∈ live) →
+      args.mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) = .ok ws →
+      ∀ (i : Nat) (w : Value) (t : Ty), ws[i]? = some w → types[i]? = some t → Kinded kinds t w := by
+  intro args
+  induction args with
+  | nil =>
+    intro types ws _ _ heapAtoms i w t ws_i _
+    have := except_mapM_nil_success heapAtoms
+    subst this
+    simp at ws_i
+  | cons atom rest ih =>
+    intro types ws typed covered heapAtoms i w t ws_i types_i
+    obtain ⟨ty, restTypes, headTyped, restTyped, rfl⟩ := except_mapM_cons_success typed
+    obtain ⟨w0, restWs, headRun, restRun, rfl⟩ := except_mapM_cons_success heapAtoms
+    cases i with
+    | zero =>
+      simp at ws_i types_i
+      subst ws_i
+      subst types_i
+      exact kinded_atom inv state headTyped (covered atom (by simp)) headRun
+    | succ i =>
+      exact ih restTyped (fun atom member => covered atom (by simp [member])) restRun i w t
+        (by simpa using ws_i) (by simpa using types_i)
 
 /-- A `Chain Int`-typed atom whose uses are live is an allocated integer
 array on the heap side, its observation on the value side, and a named flat

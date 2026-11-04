@@ -137,16 +137,23 @@ theorem tail_post_invariant {declarations : List Decl} {vs : ValueSemantics.Stat
     ∃ gamma',
       FlatInvariant declarations (valueTicked vs) (heapAllocated hs integers) env live aenv tenv escapes gamma' ∧
       hs.heap.size ∈ gamma' origin ∧
-      (∀ o cell, cell < hs.heap.size → (cell ∈ gamma' o ↔ cell ∈ gamma o)) := by
+      (∀ o cell, cell < hs.heap.size → (cell ∈ gamma' o ↔ cell ∈ gamma o)) ∧
+      KindsAt (heapAllocated hs integers) env tenv (.chain .int) (.ref hs.heap.size) := by
   obtain ⟨gamma', extension, bounded, separating, old⟩ :=
     origin_allocation_naming (gamma := gamma) (heapSize := hs.heap.size)
       (fun o address member => inv.namingBound o address member) inv.separating origin
   obtain ⟨footprint, represented⟩ := inv.observers
-  refine ⟨gamma', ?_, (extension origin hs.heap.size).mpr (Or.inr ⟨rfl, rfl⟩), old⟩
   have heapEq : (heapAllocated hs integers).heap = hs.heap.push (heapInts integers) := rfl
+  obtain ⟨kinds, state⟩ := inv.heapKinds
+  obtain ⟨kinds', state', _, typedNew⟩ :=
+    state.of_alloc (Ownership.FlatFragment.Literal.chain_contents_ints kinds integers)
+      (hs' := heapAllocated hs integers) heapEq rfl
+  refine ⟨gamma', ?_, (extension origin hs.heap.size).mpr (Or.inr ⟨rfl, rfl⟩), old,
+    ⟨kinds', state', .chain .int _ typedNew⟩⟩
   refine flatInvariant_heap_frame inv (hole := hs.heap.size) (footprint := footprint)
     (fun _ member => member) (by rw [heapEq]; simp) ?_ inv.links ?_ ?_ represented ?_ rfl rfl old ?_ separating
     inv.reads inv.external (by simp [valueTicked, heapAllocated, inv.fuel]) (fun _ escaped => escaped)
+    ⟨kinds', state'⟩
   · refine ⟨heapInts integers, by rw [heapEq]; simp, ?_⟩
     intro x member d reach
     obtain ⟨i, _, rfl⟩ := List.mem_map.mp member
@@ -194,7 +201,7 @@ theorem chainCase_end_preserved {declarations : List Decl} {vs : ValueSemantics.
         obtain ⟨p2, armValueRun, run⟩ := except_bind_success run
         rcases p2 with ⟨y, s2⟩
         obtain ⟨actual, hs2, gamma2, armHeapRun, inv2, size2, paired2, described2, observed2, typed2,
-          shaped2, tags2, chains2, deep2⟩ := armPreserved.success y s2 armValueRun
+          shaped2, tags2, chains2, deep2, kinds2⟩ := armPreserved.success y s2 armValueRun
         try dsimp only at run
         obtain ⟨p3, observeRun, run⟩ := except_bind_success run
         rcases p3 with ⟨u, s3⟩
@@ -220,7 +227,8 @@ theorem chainCase_end_preserved {declarations : List Decl} {vs : ValueSemantics.
              exact chainTags_join chains2 (flatAbstract_entry shapeArm) (flatAbstract_entry shapeOther),
           by rw [entryAbstract_join shapeArm shapeOther]
              simpa only [heapObserved_heap] using
-               tagsDeep_join deep2 (flatAbstract_entry shapeArm) (flatAbstract_entry shapeOther)⟩
+               tagsDeep_join deep2 (flatAbstract_entry shapeArm) (flatAbstract_entry shapeOther),
+          kindsAt_of_heap kinds2 (heapObserved_heap _ _) (heapObserved_links _ _)⟩
         · rw [heap_chainCase_end_equation hs (heapEnv env) heapInput lookup]
           rw [if_neg noDepth, if_neg heapFuel]
           simp [armHeapRun, heapObserveRun, Except.bind, Except.pure, bind, pure]
@@ -318,7 +326,7 @@ theorem chainCase_link_preserved {declarations : List Decl} {vs : ValueSemantics
         obtain ⟨p2, armValueRun, run⟩ := except_bind_success run
         rcases p2 with ⟨y, s2⟩
         obtain ⟨actual, hs2, gamma2, armHeapRun, inv2, size2, paired2, described2, observed2, typed2,
-          shaped2, tags2, chains2, deep2⟩ := armPreserved.success y s2 armValueRun
+          shaped2, tags2, chains2, deep2, kinds2⟩ := armPreserved.success y s2 armValueRun
         try dsimp only at run
         obtain ⟨p3, observeRun, run⟩ := except_bind_success run
         rcases p3 with ⟨u, s3⟩
@@ -346,7 +354,9 @@ theorem chainCase_link_preserved {declarations : List Decl} {vs : ValueSemantics
              exact chainTags_join_right chains2 (flatAbstract_entry shapeOther) (flatAbstract_entry shapeArm),
           by rw [entryAbstract_join shapeOther shapeArm]
              simpa only [heapObserved_heap] using
-               tagsDeep_join_right deep2 (flatAbstract_entry shapeOther) (flatAbstract_entry shapeArm)⟩
+               tagsDeep_join_right deep2 (flatAbstract_entry shapeOther) (flatAbstract_entry shapeArm),
+          kindsAt_of_heap (kindsAt_unbind (kindsAt_unbind kinds2 freshHead') freshTail)
+            (heapObserved_heap _ _) (heapObserved_links _ _)⟩
         · rw [heap_chainCase_link_equation hs (heapEnv env) heapInput lookupCons]
           rw [if_neg noDepth, if_neg heapFuel, heapCopied_ints, heapArmRun]
           simp [armHeapRun, heapObserveRun, Except.bind, Except.pure, bind, pure]
@@ -561,14 +571,14 @@ theorem chainCase_preserved {declarations : List Decl} {input : Atom} {head tail
       · exact absurd rfl (noUseHead (head, p) outer)
     -- The copy of the tail, named by an origin of the input.
     obtain ⟨origin, originMember, _⟩ := rootNamed
-    obtain ⟨gamma', invCopy, fresh, _⟩ := tail_post_invariant inv integers origin
+    obtain ⟨gamma', invCopy, fresh, _, tailKinds⟩ := tail_post_invariant inv integers origin
     have lookupNew : (heapAllocated hs integers).heap[hs.heap.size]? = some (heapInts integers) := by
       simp [heapAllocated]
     have invTail := flatInvariant_bind (ty := .chain .int) (a := .list roots .scalar certificate)
       invCopy freshTail (corresponds_integer_ref lookupNew)
       (allocated_list_described lookupNew ⟨origin, originMember, fresh⟩) .chainInt tailShape
       (integer_chain_observation_typed declarations integers)
-      (.chain _ integers lookupNew) (.chainInt _ _ _ _) (.chainScalar _ _ _) (.chain _ _)
+      (.chain _ integers lookupNew) (.chainInt _ _ _ _) (.chainScalar _ _ _) (.chain _ _) tailKinds
       tailLiveSub tailLiveTyped
     have freshHead' : head ∉ ((tail, .list (valueInts integers), .ref hs.heap.size) :: env).map Prod.fst := by
       intro member
@@ -579,7 +589,7 @@ theorem chainCase_preserved {declarations : List Decl} {input : Atom} {head tail
     have invLink := flatInvariant_bind (ty := .int) (a := .scalar) invTail freshHead'
       (AtomPreservation.integer_corresponds n)
       (AtomPreservation.integer_described n) .int .int (by simp [obsTyped])
-      (.int n) (.int n) (.int _ _) (.int _ _)
+      (.int n) (.int n) (.int _ _) (.int _ _) (invTail.kindsAt_of rfl rfl (fun _ _ => .int n))
       headLiveSub headLiveTyped
     have linkPreserved := ihLink (valueTicked vs) (heapAllocated hs integers)
       ((head, .int n, .int n) :: (tail, .list (valueInts integers), .ref hs.heap.size) :: env)

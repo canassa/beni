@@ -184,7 +184,8 @@ theorem dictSize_preserved {declarations : List Decl} {vs : ValueSemantics.State
         Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
         AllocatedFlatValue hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual) ∧
+        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .dictSize [receiver])).run vs = .error message →
@@ -223,7 +224,9 @@ theorem dictSize_preserved {declarations : List Decl} {vs : ValueSemantics.State
         refine ⟨.int os.length, heapRead hs (.int os.length) vs.kept.toList, gamma,
           heapRun, ?_, ?_, Ownership.FlatFragment.AtomPreservation.integer_corresponds _, ?_, by simp [obsTyped],
           ⟨1, .int os.length, [], .int, by simp [obsTyped]⟩, .int _, by rw [resultScalar]; exact .int _,
-          .int _ _, .int _ _⟩
+          .int _ _, .int _ _,
+          inv.kindsAt_of (by unfold heapRead; rw [heapObserved_heap]) (by unfold heapRead; rw [heapObserved_links])
+            (fun _ _ => .int _)⟩
         · rw [nextEscapes]; exact read_post_invariant inv _
         · exact Nat.le_of_eq (by unfold heapRead; rw [heapObserved_heap])
         · rw [resultScalar]; exact Ownership.FlatFragment.AtomPreservation.integer_described _
@@ -467,7 +470,8 @@ theorem dictGet_preserved {declarations : List Decl} {vs : ValueSemantics.State}
         AllocatedFlatValue hs'.heap actual (entryType type) ∧
         ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
         ChainTags (entryType type) (entryAbstract declarations type result) value ∧
-        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual) ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .dictGet [receiver, key])).run vs = .error message →
@@ -574,7 +578,18 @@ theorem dictGet_preserved {declarations : List Decl} {vs : ValueSemantics.State}
             by rw [heapSame]; exact paired, by rw [heapSame, resultRep]; exact described, observed,
             by rw [heapSame]; exact valueTyped_of_corresponds paired observed, by rw [heapSame]; exact allocated,
             by rw [resultRep]; exact tagsR, by rw [resultRep]; exact chainsR,
-            by rw [heapSame, resultRep]; exact deepR⟩
+            by rw [heapSame, resultRep]; exact deepR,
+            inv.kindsAt_of heapSame (by unfold heapRead; rw [heapObserved_links]) (fun kinds state => by
+              obtain ⟨c, same, rootTyped⟩ :=
+                kinded_dict_inv (kinded_atom inv state receiverTyped coveredR heapReceiver)
+              cases same
+              unfold getVal
+              cases found : dictFind InPlaceSemantics.entryKey ys k with
+              | none => exact .err .int t (.int 0) (.int 0)
+              | some y =>
+                obtain ⟨k', v, rfl, typedV⟩ := state.dict_contents rootTyped lookup y
+                  (List.mem_of_find?_eq_some (p := fun e => InPlaceSemantics.entryKey e == some k) found)
+                exact .ok .int t v typedV)⟩
           rw [nextEscapes]; exact read_post_invariant inv _
   · intro message failed
     by_cases noDepth : depth = 0
@@ -645,7 +660,8 @@ theorem dictEmpty_preserved {declarations : List Decl} {vs : ValueSemantics.Stat
         AllocatedFlatValue hs'.heap actual (entryType type) ∧
         ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
         ChainTags (entryType type) (entryAbstract declarations type result) value ∧
-        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual) ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual ∧
+        KindsAt hs' env tenv type actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim (.dictEmpty t) [])).run vs = .error message →
@@ -676,7 +692,9 @@ theorem dictEmpty_preserved {declarations : List Decl} {vs : ValueSemantics.Stat
       · obtain ⟨valueRun, heapRun⟩ := dictEmpty_runtime_success (t := t) inv noDepth noFuel
         rw [valueRun] at run'
         cases run'
-        obtain ⟨gamma', postInvariant, fresh, _⟩ := literal_post_invariant inv [] site
+        obtain ⟨kinds', state', newTyped⟩ := literal_kinds inv [] (t := .dict t)
+          (fun _ => .dict t _ (fun x member => by simp [heapInts] at member))
+        obtain ⟨gamma', postInvariant, fresh, _⟩ := literal_post_invariant inv [] site ⟨kinds', state'⟩
         have heapEq : (heapObserved (heapAllocated hs []) vs.kept.toList).heap = hs.heap.push [] := by
           rw [heapObserved_heap]; rfl
         have lookupNew : (hs.heap.push [])[hs.heap.size]? = some (([] : List Int).map Value.int) := by simp
@@ -693,7 +711,8 @@ theorem dictEmpty_preserved {declarations : List Decl} {vs : ValueSemantics.Stat
           by rw [heapEq]; exact allocated_list_described lookupNew rootNamed, observedNew,
           by rw [heapEq]; exact valueTyped_of_corresponds pairedNew observedNew,
           by rw [heapEq]; exact shapedNew, .list _ _ _ _ _, .list _ _ _,
-          by rw [heapEq]; exact tagsDeep_list lookupEmpty (by intro w member; simp at member)⟩
+          by rw [heapEq]; exact tagsDeep_list lookupEmpty (by intro w member; simp at member),
+          ⟨kinds', state', .dict t _ newTyped⟩⟩
   · intro message failed
     by_cases noDepth : depth = 0
     · exact ⟨"in-place execution exhausted depth", by
@@ -1000,11 +1019,24 @@ theorem dictRemove_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
             (.list (.record [.int, entryType t])) (.list roots (.record [.scalar, entryAbstract declarations t value]) certificate) (.ref root) :=
           tagsDeep_list lookupNew (fun z member =>
             elementTags_of_agree (entryTags z (keptOld z member)) (agreeOld z (keptOld z member)))
+        obtain ⟨kinds, state⟩ := inv.heapKinds
+        have rootTyped : kinds root = some (.dict t) := by
+          obtain ⟨c0, same0, typed0⟩ :=
+            kinded_dict_inv (kinded_atom inv state receiverTyped coveredR heapReceiver)
+          cases same0
+          exact typed0
+        have state' : StateKinded kinds
+            (heapObserved (heapStored hs root ys (dictDrop InPlaceSemantics.entryKey ys k)) vs.kept.toList)
+            env tenv :=
+          state.of_write rootTyped
+            (.dict t _ fun z member => state.dict_contents rootTyped lookup z (keptOld z member))
+            heapEq (by rw [heapObserved_links]; rfl)
         refine ⟨.ref root, heapObserved (heapStored hs root ys (dictDrop InPlaceSemantics.entryKey ys k))
             vs.kept.toList, gamma, heapRun, ?_, Nat.le_of_eq (by rw [heapEq, sizeEq]),
           by rw [heapEq]; exact pairedNew, by rw [heapEq]; exact describedNew, observedNew,
           by rw [heapEq]; exact valueTyped_of_corresponds pairedNew observedNew,
-          by rw [heapEq]; exact shapedNew, .list _ _ _ _ _, .list _ _ _, by rw [heapEq]; exact deepNew⟩
+          by rw [heapEq]; exact shapedNew, .list _ _ _ _ _, .list _ _ _, by rw [heapEq]; exact deepNew,
+          ⟨kinds, state', .dict t root rootTyped⟩⟩
         rw [escapesEq]
         refine flatInvariant_heap_frame inv (hole := root) (footprint := footprint) afterSub
           (by rw [heapEq, sizeEq]; exact Nat.le_refl _)
@@ -1016,7 +1048,7 @@ theorem dictRemove_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
           (observed_external (valueTicked vs) (heapStored hs root ys (dictDrop InPlaceSemantics.entryKey ys k))
             inv.keptSize inv.external)
           (by rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapStored, inv.fuel])
-          (fun _ escaped => escaped)
+          (fun _ escaped => escaped) ⟨kinds, state'⟩
         · intro z member d reach
           rw [heapEq] at reach ⊢
           exact allocated_reach_bound (shapedZ z member) reach
@@ -1507,11 +1539,24 @@ theorem dictInsert_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
             rcases mem_dictPut member with old | rfl
             · exact entriesTyped o' old
             · exact entry_observed observedN)
+        obtain ⟨kinds, state⟩ := inv.heapKinds
+        have rootTyped : kinds root = some (.dict t) := by
+          obtain ⟨c0, same0, typed0⟩ :=
+            kinded_dict_inv (kinded_atom inv state receiverTyped coveredR heapReceiver)
+          cases same0
+          exact typed0
+        have state' : StateKinded kinds (heapObserved (heapStored hs root ys stored) vs.kept.toList) env tenv :=
+          state.of_write rootTyped
+            (.dict t _ fun z member => by
+              rcases memStored z member with old | rfl
+              · exact state.dict_contents rootTyped lookup z old
+              · exact ⟨k, w, rfl, kinded_atom inv state itemTyped coveredV heapItem⟩)
+            heapEq (by rw [heapObserved_links]; rfl)
         refine ⟨.ref root, heapObserved (heapStored hs root ys stored) vs.kept.toList, gamma, heapRun, ?_,
           Nat.le_of_eq (by rw [heapEq, sizeEq]), by rw [heapEq]; exact pairedNew, ?_, observedNew,
           by rw [heapEq]; exact valueTyped_of_corresponds pairedNew observedNew,
           by rw [heapEq]; exact shapedNew, .list _ _ _ _ _, .list _ _ _,
-          by rw [heapEq]; exact tagsDeep_list lookupNew tagsZ⟩
+          by rw [heapEq]; exact tagsDeep_list lookupNew tagsZ, ⟨kinds, state', .dict t root rootTyped⟩⟩
         · rw [escapesEq]
           refine flatInvariant_heap_frame inv (hole := root) (footprint := footprint) afterSub
             (by rw [heapEq, sizeEq]; exact Nat.le_refl _) ⟨stored, by rw [heapEq]; exact lookupNew, ?_⟩
@@ -1521,7 +1566,7 @@ theorem dictInsert_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
             (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
             (observed_external (valueTicked vs) (heapStored hs root ys stored) inv.keptSize inv.external)
             (by rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapStored, inv.fuel])
-            (fun _ escaped => escaped)
+            (fun _ escaped => escaped) ⟨kinds, state'⟩
           · intro z member d reach
             rw [heapEq] at reach ⊢
             exact allocated_reach_bound (shapedZ z member) reach

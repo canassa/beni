@@ -445,6 +445,16 @@ As built (2026-10-20, #165, `at`, `set`, `copy`, `prepend`): `FlatANF0` contains
 The probes `atOps`, `setOps`, `setAlias`, `copyOps`, `prependOps` and `prependAlias` check them at build time.
 What stays out: lists of lists and nested literals (the real exclusivity certificates through nested arrays), constructions, builders and views.
 
+As built (2026-11-04, #169, the first of the pull requests for views): a heap typing in the flat relation.
+The views step must show that `dictRemove`, the one writer that shortens an array (`dictDrop`), never writes a linked array: `linksValid_after_writeLinked` asks for a write that does not shorten, and a source with one entry would become empty.
+Only `view` makes a link, at a list type, so no accepted program links a dictionary's array.
+But the relation types values at their representation (`entryType`), where a dictionary of `t` and a list of `{Int, t}` records have one shape, and the naming cannot carry the kind either (`shared` adds `.shared` to lists and dictionaries alike).
+So `FlatInvariant` gets the clause `heapKinds`: a map `kinds : Nat → Option Ty` under which every typed array holds values of its element type, every binding has its declared type, and both ends of a link are lists of one type (`StateKinded`; the value relation `Kinded` reads no heap).
+`Preserved` concludes `KindsAt`, the same map for the state after the step and for its result.
+An allocation extends the map at the new address (`StateKinded.of_alloc`), a write keeps it (`StateKinded.of_write`), a step that keeps the heap keeps it (`FlatInvariant.kindsAt_of`), and an atom has its type (`kinded_atom`).
+`StateKinded.dict_unlinked` gives the fact the views step needs.
+The clause `links = []` stays until the next pull request.
+
 ## Complete case inventory
 
 The baseline contains 12 expression constructors and 25 primitive constructors.
