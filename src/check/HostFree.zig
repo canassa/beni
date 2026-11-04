@@ -358,7 +358,15 @@ test "HostFree renderer storage retains imported erasure obligations in platform
     try testing.expect(std.mem.indexOf(u8, p.stderr.written(), "Js.Any.Any") != null);
 }
 
-test "HostFree private DOM protocol carriers retain native and callable facts through imported containers" {
+test "HostFree private DOM protocol carriers retain facts through imported containers" {
+    try privateDomProtocolCarriers(false);
+}
+
+test "HostFree nested DOM protocol carriers retain facts through imported containers" {
+    try privateDomProtocolCarriers(true);
+}
+
+fn privateDomProtocolCarriers(nested: bool) !void {
     const TestProject = @import("../resolve/TestProject.zig");
     const Session = @import("../Session.zig");
     const testing = std.testing;
@@ -367,38 +375,36 @@ test "HostFree private DOM protocol carriers retain native and callable facts th
     const a = arena.allocator();
     const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, "platforms/html/Html/Runtime.beni", a, .limited(64 * 1024));
     for ([_][]const u8{ "Payload", "Context", "Kind", "Block", "RowSite", "Property", "Control" }) |carrier| {
-        for ([_]bool{ false, true }) |nested| {
-            var modules: std.ArrayList(TestProject.Module) = .empty;
-            defer modules.deinit(testing.allocator);
-            try modules.appendSlice(testing.allocator, &@import("checker_test.zig").test_core);
-            try modules.appendSlice(testing.allocator, &.{
-                .{ .path = "Js.beni", .package = .core, .source = "pub foreign type Value\npub cell foreign type Cell r\npub foreign type Opt a\npub foreign pure from : a → Value\npub foreign impure cellRead : cellread Cell r, unused sync (r → a) → lent a\n" },
-                .{ .path = "Js/Any.beni", .package = .core, .source = "pub foreign type Any\n" },
-                .{ .path = "Browser/Host/Array.beni", .package = .core, .source = "pub foreign type Array a\n" },
-                .{ .path = "Browser/Host/Node.beni", .package = .core, .source = "pub foreign type Node\n" },
-                .{ .path = "Browser/Host/Event.beni", .package = .core, .source = "pub foreign type Event\n" },
-                .{ .path = "Library.beni", .package = .core, .source = "import Js\npub erase value = Js.from value\n" },
-                .{ .path = "Html/Runtime.beni", .package = .platform, .source = try std.fmt.allocPrintSentinel(a, "{s}", .{source}, 0) },
-            });
-            const payload = if (nested) "[ { payload = value } ]" else "value";
-            const code = try std.fmt.allocPrintSentinel(a, "import Html.Runtime as Runtime\nimport Js\nimport Library\npub bad : Runtime.{s} → Js.Value\nbad value = Library.erase {s}\n", .{ carrier, payload }, 0);
-            try modules.append(testing.allocator, .{ .path = "M.beni", .package = .platform, .source = code });
-            var project = try TestProject.initWith(testing.allocator, modules.items, .{ .phases = Session.check_phases, .host_free = true });
-            defer project.deinit();
-            var refusals: usize = 0;
-            for (project.session.diagnostics.items) |diagnostic| if (diagnostic.code == .host_value_erasure) {
-                refusals += 1;
-            };
-            if (refusals != 1 or project.session.diagnostics.items.len != 1) std.debug.print("{s} nested={any}\n{s}\n", .{ carrier, nested, project.stderr.written() });
-            try testing.expectEqual(@as(usize, 1), refusals);
-            try testing.expectEqual(@as(usize, 1), project.session.diagnostics.items.len);
-            var found = false;
-            for (project.session.checked.types.entries, project.session.checked.types.host_free.info) |entry, facts| {
-                if (!std.mem.eql(u8, project.session.interner.slice(entry.module_name), "Html.Runtime") or !std.mem.eql(u8, project.session.interner.slice(entry.name), carrier)) continue;
-                found = true;
-                try testing.expectEqual(native | callable, facts.flags & (native | callable));
-            }
-            try testing.expect(found);
+        var modules: std.ArrayList(TestProject.Module) = .empty;
+        defer modules.deinit(testing.allocator);
+        try modules.appendSlice(testing.allocator, &@import("checker_test.zig").test_core);
+        try modules.appendSlice(testing.allocator, &.{
+            .{ .path = "Js.beni", .package = .core, .source = "pub foreign type Value\npub cell foreign type Cell r\npub foreign type Opt a\npub foreign pure from : a → Value\npub foreign impure cellRead : cellread Cell r, unused sync (r → a) → lent a\n" },
+            .{ .path = "Js/Any.beni", .package = .core, .source = "pub foreign type Any\n" },
+            .{ .path = "Browser/Host/Array.beni", .package = .core, .source = "pub foreign type Array a\n" },
+            .{ .path = "Browser/Host/Node.beni", .package = .core, .source = "pub foreign type Node\n" },
+            .{ .path = "Browser/Host/Event.beni", .package = .core, .source = "pub foreign type Event\n" },
+            .{ .path = "Library.beni", .package = .core, .source = "import Js\npub erase value = Js.from value\n" },
+            .{ .path = "Html/Runtime.beni", .package = .platform, .source = try std.fmt.allocPrintSentinel(a, "{s}", .{source}, 0) },
+        });
+        const payload = if (nested) "[ { payload = value } ]" else "value";
+        const code = try std.fmt.allocPrintSentinel(a, "import Html.Runtime as Runtime\nimport Js\nimport Library\npub bad : Runtime.{s} → Js.Value\nbad value = Library.erase {s}\n", .{ carrier, payload }, 0);
+        try modules.append(testing.allocator, .{ .path = "M.beni", .package = .platform, .source = code });
+        var project = try TestProject.initWith(testing.allocator, modules.items, .{ .phases = Session.check_phases, .host_free = true });
+        defer project.deinit();
+        var refusals: usize = 0;
+        for (project.session.diagnostics.items) |diagnostic| if (diagnostic.code == .host_value_erasure) {
+            refusals += 1;
+        };
+        if (refusals != 1 or project.session.diagnostics.items.len != 1) std.debug.print("{s} nested={any}\n{s}\n", .{ carrier, nested, project.stderr.written() });
+        try testing.expectEqual(@as(usize, 1), refusals);
+        try testing.expectEqual(@as(usize, 1), project.session.diagnostics.items.len);
+        var found = false;
+        for (project.session.checked.types.entries, project.session.checked.types.host_free.info) |entry, facts| {
+            if (!std.mem.eql(u8, project.session.interner.slice(entry.module_name), "Html.Runtime") or !std.mem.eql(u8, project.session.interner.slice(entry.name), carrier)) continue;
+            found = true;
+            try testing.expectEqual(native | callable, facts.flags & (native | callable));
         }
+        try testing.expect(found);
     }
 }

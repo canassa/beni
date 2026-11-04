@@ -82,8 +82,6 @@ module Inline
   value navigationKey : ⊤ → NavigationKey
   value on : EventTarget, (a → ⊤), String, (Event → a) → ⊤  -- impure
   value onArm : EventTarget, (a → ⊤), String, V, (Event → a) → ⊤  -- impure
-  value onArmTaken : Node, (a → ⊤), String, V, (Event → a) → ⊤  -- impure
-  value onTaken : Node, (a → ⊤), String, (Event → a) → ⊤  -- impure
   value own : (⊤ → ⊤) → ⊤  -- impure
   value pageData : (Schema e d), V → V  -- impure
   value pageUrl : String → Url  -- impure

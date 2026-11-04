@@ -240,43 +240,58 @@ module Random
 module Rt
   value attr : V, V, V → ⊤  -- impure
   value attrNS : V, V, V, V → ⊤  -- impure
-  value childHtml : V, V → ⊤  -- impure
-  value childList : V, V → ⊤  -- impure
-  value childMaybe : V, V → ⊤  -- impure
+  value childHtml : Slot, Block → ⊤  -- impure
+  value childList : Slot, List Block → ⊤  -- impure
+  value childMaybe : Slot, Opt Block → ⊤  -- impure
   value classes : V, V, V → V  -- impure
-  value control : V, String, V, Bool → ⊤  -- impure
+  value control : Node, (Property), Payload → ⊤  -- impure
   value delegate : V → ⊤  -- impure
-  value drop : V → ⊤  -- impure
-  value edited : V → ⊤  -- impure
+  value edited : Node → ⊤  -- impure
   value elements : V → V  -- impure
-  value first : V → V  -- impure
+  value empty : Opt a
   value flush : ⊤ → ⊤  -- impure
-  value forKeyed : V, V, V, V, V → ⊤  -- impure
-  value forPosition : V, V, V, V → ⊤  -- impure
+  value forKeyed : Slot, List item, (item → key), RowRecipe item key, Opt Any, SiteProtocol, Payload → ⊤  -- impure
+  value forPosition : Slot, List item, RowRecipe item ⊤, Opt Any, SiteProtocol, Payload → ⊤  -- impure
   value fuzzInstall : V → V  -- impure
-  value hide : V, V → ⊤  -- impure
+  value hide : Slot, Opt Block → ⊤  -- impure
   value identity : V → V
-  value insertText : V, V, V → V  -- impure
-  value last : V → V  -- impure
-  value listen : V, String, Int → ⊤  -- impure
-  value map : V, V → V  -- impure
-  value parentOf : V → V  -- impure
-  value patch : V, V, V → V  -- impure
-  value place : V, V → ⊤  -- impure
-  value put : V, V, V → ⊤  -- impure
+  value insertText : Node, Opt Node, String → Node  -- impure
+  value listen : Node, String, Int → ⊤  -- impure
+  value map : Block, Payload → Block
+  value positionDispose : RowRecipe item ⊤, Any, Slot → ⊤  -- impure
+  value positionHead : RowRecipe item ⊤, Any, Slot → Opt Node  -- impure
+  value positionRestate : RowRecipe item ⊤, Any, Slot, Int → ⊤  -- impure
+  value positionTail : RowRecipe item ⊤, Any, Slot → Opt Node  -- impure
+  value protocol : { again : Instance → ⊤, childMaybe : Slot, Opt Block → ⊤, contextApply : Context, Payload → Payload, contextParent : Context → Context, contextPresent : Context → Bool, controls : Node → Opt Control, dead : ⊤ → Bool, drop : Instance → ⊤, eventPayload : Node, Event, String, String → Payload, first : Instance → Node, handlerFlags : Node, String → Int, hasHandler : Node, String → Bool, hasRoot : Node → Bool, last : Instance → Node, live : Instance → Bool, makeSite : SiteProtocol, Payload, Any → RowSite, nodeContext : Node → Context, none : Context, parentOf : Slot → Node, patch : Instance, Block, Context → Instance, put : Node, Instance, Opt Node → ⊤, restate : Slot → ⊤, sendRoot : Node, Payload → ⊤, setControls : Node, Control → ⊤, setSiteScope : RowSite, SiteProtocol, Payload → ⊤, siteData : RowSite → Any, siteDispose : RowSite, Slot → ⊤, siteHead : RowSite, Slot → Opt Node, siteRestate : RowSite, Slot, Int → ⊤, siteScope : RowSite → Payload, siteTail : RowSite, Slot → Opt Node, stop : ⊤ → ⊤, swap : Instance, Instance → ⊤, turn : Bool, (⊤ → ⊤) → ⊤, unit : Block, Context → Instance }
+  value protocolChildMaybe : Slot, Opt Block → ⊤  -- impure
+  value protocolDead : ⊤ → Bool  -- impure
+  value protocolDrop : Instance → ⊤  -- impure
+  value protocolFire : Node, Event, String, String, Int → ⊤  -- impure
+  value protocolFirst : Instance → Node  -- impure
+  value protocolLast : Instance → Node  -- impure
+  value protocolParentOf : Slot → Node  -- impure
+  value protocolPut : Node, Instance, Opt Node → ⊤  -- impure
+  value protocolRestate : Slot → ⊤  -- impure
+  value protocolSlot : Opt Node, Opt Node, Context → Slot  -- impure
+  value protocolStop : ⊤ → ⊤  -- impure
+  value protocolSwap : Instance, Instance → ⊤  -- impure
+  value protocolTextNode : String → Node  -- impure
+  value protocolTurn : Bool, (⊤ → ⊤) → ⊤  -- impure
   value rawHtml : V, V → ⊤  -- impure
-  value restate : V → ⊤  -- impure
+  value restate : Slot → ⊤  -- impure
+  value rowsDispose : RowRecipe item key, Any, Slot → ⊤  -- impure
+  value rowsHead : RowRecipe item key, Any, Slot → Opt Node  -- impure
+  value rowsRestate : RowRecipe item key, Any, Slot, Int → ⊤  -- impure
+  value rowsTail : RowRecipe item key, Any, Slot → Opt Node  -- impure
   value run : V → ⊤  -- impure
   value safeUrl : V → V  -- impure
-  value show : V, V, V → ⊤  -- impure
-  value slot : V, V, V → V
+  value show : Slot, key, Block, Opt String, SiteProtocol, Payload → ⊤  -- impure
+  value slot : Opt Node, Opt Node, Context → Slot  -- impure
   value start : V → ⊤  -- impure
   value styles : V, V, V → V  -- impure
-  value swap : V, V → ⊤  -- impure
-  value template : String → (⊤ → V)  -- impure
-  value templateOf : String, Int → (⊤ → V)  -- impure
-  value text : V → V
-  value unit : V, V → V  -- impure
+  value template : String → (⊤ → Node)  -- impure
+  value templateOf : String, Int → (⊤ → Node)  -- impure
+  value text : String → Block
 module Rt.Events
   value control : Protocol, Node, (Property), Payload → ⊤  -- impure
   value delegate : Protocol, String → ⊤  -- impure
