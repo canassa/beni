@@ -555,7 +555,9 @@ Any. Its compiler-owned pack/read operations are fenced to core Task alone,
 including first-class references and imported methods. They grant no ownership
 freshness. Stored callable arrows are charged to their writer, including
 frames supplied by the compiler's current typed completion convention. Only
-paired typed endpoints read a Slot; the kernel treats its payload as data.
+paired typed endpoints read a Slot. Resume and result payloads are data and
+are never called through the slot; frames and host cancellers are invoked
+only at their established typed endpoints.
 The same representation becomes the protocol resume slot in the later lowering
 slice; no suspension lowering or DOM producer changes belong to this slice.
 
@@ -719,3 +721,8 @@ Their linking, unlinking and wait-reset consumers test that same monotonic
 facility flag; spawnIn creates scope membership without enabling ordinary
 parent-child machinery. This applies the existing facility policy to both
 producers and consumers, without changing any ownership row or runtime field.
+
+An explicit list-kind bit identifies an intrusive wait independently of host
+activity or delivery. If a host registration halts its own fiber, its returned
+canceller runs immediately and the step leaves through forced cancellation;
+no canceller can be decoded as an intrusive list, and no resumed body runs.

@@ -400,7 +400,11 @@ callbackWith register done later =
         Js.cellWrite c (Kernel.slotPack wake) .value
         stopWait = register (Resume wake)
         set c syncBit False
-        if has c readyBit && not later then
+        if interrupted fiber then
+            Js.invoke stopWait ⊤ λ_ → ⊤
+            Js.write pending 2
+            Runtime.parked ⊤
+        else if has c readyBit && not later then
             set c readyBit False
             set c parkedBit False
             Kernel.slotRead (Js.cellRead c .value)
@@ -2874,6 +2878,10 @@ childrenBit : Int
 childrenBit = 1024
 
 
+listBit : Int
+listBit = 4096
+
+
 has : Js.Cell ControlFields, Int → Bool
 has c bit = Js.bitAnd (Js.cellRead c .flags) bit ≠ 0
 
@@ -3026,6 +3034,7 @@ waitList ⊤ = WaitList (Js.cell { first = Js.none ⊤, last = Js.none ⊤ })
 
 linkWait : WaitList a, Control → ⊤
 linkWait ((WaitList q) as list) ((Control c) as fiber) =
+    set c listBit True
     last = Js.cellRead q .last
     Js.cellWrite c last .wbefore
     Js.cellWrite c (Js.none ⊤) .wafter
@@ -3039,6 +3048,7 @@ linkWait ((WaitList q) as list) ((Control c) as fiber) =
 
 unlinkList : WaitList a, Control → ⊤
 unlinkList (WaitList q) (Control c) =
+    set c listBit False
     before = Js.cellRead c .wbefore
     after = Js.cellRead c .wafter
     if absent before then
@@ -3056,7 +3066,6 @@ unlinkList (WaitList q) (Control c) =
 
 pub parkIn : WaitList a → a
 parkIn list = Js.suspending λ⊤ →
-    Js.write listing True
     fiber = here ⊤
     if interrupted fiber then
         Js.write pending 2
@@ -3106,17 +3115,17 @@ clearWait ((Control c) as fiber) =
     if host then Js.cellWrite c (Kernel.slotPack ⊤) .value
     if absent saved then
         Nothing
-    else if host then
-        Js.cellWrite c (Js.none ⊤) .wait
-        Just (Kernel.slotRead (required saved))
     else if kids then
         Js.cellWrite c (Js.none ⊤) .wait
         Nothing
-    else
+    else if has c listBit then
         list : WaitList ⊤
         list = Kernel.slotRead (required saved)
         unlinkList list fiber
         Nothing
+    else
+        Js.cellWrite c (Js.none ⊤) .wait
+        Just (Kernel.slotRead (required saved))
 
 
 joinerList : Js.Cell ControlFields → WaitList ⊤
@@ -3470,10 +3479,6 @@ byBirth (Control left) (Control right) = Js.cellRead left .ordinal - Js.cellRead
 
 callbacking : Js.Ref Bool
 callbacking = Js.ref False
-
-
-listing : Js.Ref Bool
-listing = Js.ref False
 
 
 appendScope : Js.Opt Scope, Scope → Js.Opt Scope
