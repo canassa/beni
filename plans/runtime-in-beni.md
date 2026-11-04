@@ -32,7 +32,7 @@ the runtime to the page (§9, *Whole-program specialisation*).
 | 14 | **The three thin files**: `html`'s `Html.js` (`targetValue`, `targetChecked`, `pointer`), `node`'s `Prerender.js` (`writeRecords`) and `Io.js` (`startReadDir`) | **specified 2026-11-03**, below: five declarations, the three siblings deleted |
 | 15 | **`node`'s `markup.js` and `runtime.js`** (`escape`, `escapeAttr`, `safeUrl`, `list`, `classes`, `styles`, `rawText`, `text`, `map`; `run`) | **specified 2026-11-03**, below: the runtime module `Rt.beni`, as `browser`'s; both files deleted |
 | 16 | **A runtime module without markup** (`cloudflare`'s `runtime.js` needs it; #1812) | **built 2026-11-04**, below: a top-level `"module"` key for a chain with no lowering; the build waits on `runtime-in-beni-q3` (#1813) |
-| 17 | **`cloudflare`'s `runtime.js`** (`run`: the handler table and `exports(name)`, the Durable Object class) | **specified 2026-11-04**, below: `Js.method` with parameters and `Js.module` (`boundary.md` §4.2), then the runtime module `Rt.beni` over step 16; the last file of #877 |
+| 17 | **`cloudflare`'s `runtime.js`** (`run`: the handler table and `exports(name)`, the Durable Object class) | **built 2026-11-04**, below: `Js.method` with parameters and `Js.module` (`boundary.md` §4.2), then the runtime module `Rt.beni` over step 16; the last file of #877 |
 
 ## Step 1 — slot and mount (2026-10-02)
 
@@ -1327,3 +1327,35 @@ words, for a name the program defines nothing for (§9.12 (c)); the class is bui
 `DurableObject` through `Reflect.construct`, so the host offers RPC on its stub (§9.12 (e.11)),
 with its methods on the prototype; the two keywords the release compactor cannot hoist past
 (`class`, `new.target`) stay out, which `Js.method` and `Reflect.construct` keep true.
+
+**As built (2026-11-04).** The two spellings first, each its own pair of commits. `Js.method`:
+`Lower.methodFunc` keeps the lambda's parameters after the first as the `function`'s; the checker
+(`constrain/Expr.zig`, `methodLambda`) types a lambda of two or more parameters against an arrow
+of its own count, each parameter `Js.Value`, generates the declaration against a variable of its
+own so the use is recorded, and demands the arrow `sync` at the reference to `Js.method`, which
+gives `check/bad/core/MethodParamsSuspends` the one-parameter form's words. `Js.module`:
+`JsIntrinsic.Which.module` with its specifier in place; `invalid_js_module` from `Module.zig`
+for a non-literal or a specifier that is no `node:`/`cloudflare:` built-in; the lowering records
+each specifier once and binds `<Module>$$<specifier sanitised>` (`JsIntrinsic.moduleBindingBase`),
+writing `import * as … from "…"` first among the module's statements (a `Specifier` whose
+`imported` is `none`); the scope-hoisted file skips the module's statement and writes
+`import*as <short> from"…";` at its top, once per text, beside the hand-written files' host
+imports. Two defects on the way to the move, both hidden by the first fixtures: `Session.
+isPlatformRoot` did not root a top-level `"module"`, so an embedded platform's program that did
+not import `Rt` failed to find it (the `ProgramModule` fixtures import theirs, and a directory
+platform roots every module); and the hoist plan took the host import for an emitted module it
+could not find and declined the one file, so every Workers program came out as the multi-file
+layout, +214 to +539 brotli, before `planHoist` learned to skip a host built-in — and its first
+one-file text lacked the space after the binding. The move itself is the draft above, with
+`self.constructor` for `new.target` and `_ =` on the two `setPrototypeOf` calls.
+
+**Sizes** (the 15 `workers/` programs, release, brotli 11 over the emitted files, master
+`3b6170d9ad` against the head): every program 88 to 92 raw bytes smaller — the shape beside the
+file's: `let f=a.DurableObject,g=function(c,d){let h=Reflect.construct(f,[c,d],this.constructor)…`
+against `function a(e,f){let self=Reflect.construct(DurableObject,[e,f],new.target??a)…`, the
+prototype in a local, the arrow's `if` without braces — and 14 smaller after brotli (−4 to −90),
+one larger: `ObjectHolders` +3 at −90 raw. Total 147 142 → 146 594 (−548, −0.37 %). No
+reproducible slowdown: `run` runs once at load, and the hooks are one call each, as before. The
+`workers/` corpus under Miniflare (`zig build test-workers`) is green in both builds: RPC on the
+stub, the alarm, the WebSocket hooks. No file of the platforms is hand-written JavaScript now;
+`core/Js.js` stays (the owner's deferral of 2026-10-02), the one file a build copies.
