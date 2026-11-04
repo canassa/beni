@@ -54,6 +54,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const JsIr = @import("JsIr.zig");
+const small_stack = @import("../small_stack.zig");
 
 const Node = JsIr.Node;
 const Index = Node.Index;
@@ -1141,6 +1142,22 @@ const Opt = struct {
 
     const Before = enum { clean, dirty, found_clean, found_dirty };
 
+    /// `JsIr.pushOperands` behind a call, for `mayWriteIn` and `height`,
+    /// which recurse once per level. It is `inline` for the walks that keep
+    /// their own stack. Inlined into a walk that recurses, its whole switch
+    /// took space in every level's frame: in the Debug test binary
+    /// (self-hosted x86_64, 2026-11-04) a `mayWriteIn` level was 4 128 B and
+    /// a `height` level 4 224 B, so `height` at its cap needed more than
+    /// `small_stack.size` (#1843). Behind the call each level is 384 B. The
+    /// margin tests ("…'s levels take at most half of the small stack")
+    /// hold them; `noinline` keeps an optimiser from undoing it.
+    noinline fn operands(o: *Opt, kids: *std.ArrayList(Index), node: Index) Allocator.Error!void {
+        return o.ir.pushOperands(o.arena, kids, node);
+    }
+
+    /// The levels `mayWriteIn` recurses before it answers `dirty`.
+    const may_write_in_cap: u32 = 128;
+
     /// Whether `site` is reached in statement `stmt`'s own expressions, in
     /// evaluation order, before anything that may write.
     fn cleanBefore(o: *Opt, stmt: Index, site: Index) bool {
@@ -1181,12 +1198,16 @@ const Opt = struct {
     /// deep counts as a write, so the fold is declined.
     fn mayWriteIn(o: *Opt, node: Index, site: ?Index, depth: u32) Before {
         if (site) |u| if (node == u) return .found_clean;
-        if (depth > 128) return .dirty;
+        if (depth > may_write_in_cap) {
+            // Where the recursion stops, for the margin test; empty outside tests.
+            small_stack.mark();
+            return .dirty;
+        }
         const tag = o.ir.tag(node);
         if (tag == .arrow) return .clean;
         var dirty = false;
         var kids: std.ArrayList(Index) = .empty;
-        o.ir.pushOperands(o.arena, &kids, node) catch return .dirty;
+        o.operands(&kids, node) catch return .dirty;
         // `pushOperands` pushes in reverse, so the last is evaluated first.
         var k = kids.items.len;
         while (k > 0) {
@@ -1239,6 +1260,9 @@ const Opt = struct {
 
     const Reads = enum { clean, found, bad };
 
+    /// The levels `readsTo` recurses before it answers `bad`.
+    const reads_to_cap: u32 = 128;
+
     /// Walk `node` in evaluation order toward `site`: `found` when it is
     /// reached having evaluated nothing but reads (`unchangedName`, a literal,
     /// a field read, an index read, a function made), always; `clean` when
@@ -1246,7 +1270,10 @@ const Opt = struct {
     /// operator that may convert, or `site` where it may not be evaluated.
     fn readsTo(o: *Opt, node: Index, site: Index, depth: u32) Reads {
         if (node == site) return .found;
-        if (depth > 128) return .bad;
+        if (depth > reads_to_cap) {
+            small_stack.mark();
+            return .bad;
+        }
         const d = o.ir.data(node);
         switch (o.ir.tag(node)) {
             .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk => return .clean,
@@ -1375,7 +1402,10 @@ const Opt = struct {
     /// it is never less than what `Builder.measure` would find.
     fn height(o: *Opt, node: Index, depth: u32) u32 {
         const n = JsIr.nesting;
-        if (depth > n.spill) return n.spill + 1;
+        if (depth > n.spill) {
+            small_stack.mark();
+            return n.spill + 1;
+        }
         const tag = o.ir.tag(node);
         if (tag == .ident) if (o.inlined[node.int()].unwrap()) |v| return o.height(v, depth + 1);
         if (tag == .arrow) return n.arrow;
@@ -1389,7 +1419,7 @@ const Opt = struct {
             else => 1,
         };
         var kids: std.ArrayList(Index) = .empty;
-        o.ir.pushOperands(o.arena, &kids, node) catch return n.spill + 1;
+        o.operands(&kids, node) catch return n.spill + 1;
         var most: u32 = 0;
         for (kids.items) |k| {
             most = @max(most, o.height(k, depth + 1));
@@ -1631,8 +1661,6 @@ test "the empty plan drops nothing and substitutes nothing" {
     try testing.expectEqual(@as(?Index, null), p.replacement(@fromBackingInt(@intCast(9999))));
 }
 
-const small_stack = @import("../small_stack.zig");
-
 /// Twice the depth a walk that recursed once per link fails at on
 /// `small_stack.size`: a `countExpr` that recursed into each `&&`'s operands
 /// finished 2 000 links on the Debug test binary and overflowed at 5 000.
@@ -1687,6 +1715,134 @@ fn planDeepChain() !void {
 
 fn testNode(b: *JsIr.Builder, tag: Node.Tag, lhs: u32, rhs: u32) !Index {
     return b.addNode(.{ .tag = tag, .pos = Node.no_pos, .data = .{ .lhs = lhs, .rhs = rhs } });
+}
+
+// ---- The capped walks' margins (#1171 item 2, #1843) ----------------------
+//
+// `mayWriteIn`, `readsTo` and `height` recurse once per level down to a
+// depth cap, and each marks the frame where it stops (`small_stack.mark`).
+// A margin test drives one walk to its cap on `small_stack` and fails when
+// the levels, with the entry frames above them, take more than half of the
+// stack: the other half is for what runs below the deepest level, such as
+// `testing.allocator`'s stack-trace capture under an allocation. A frame
+// that grows then fails a test, and does not overflow a depth test, which is
+// found only as a crash (#1171).
+//
+// In the Debug test binary (self-hosted x86_64, 2026-11-04), with about
+// 22 KB of entry frames above the first level:
+//
+//   - `mayWriteIn`: 129 levels of 384 B, 71 872 B in all, 6.9 %;
+//   - `readsTo`: 129 levels of 2 368 B, 327 776 B, 31.3 %;
+//   - `height`: 257 levels of 384 B, 120 544 B, 11.5 %.
+//
+// Before `operands`, `mayWriteIn` took 554 848 B (52.9 %) and `height`
+// more than the whole stack; `readsTo` does not call it. LLVM's Debug
+// frames are about the same size; its ReleaseSafe ones take at most 3.4 %.
+
+/// More links than any of the three caps: `height`'s is `nesting.spill`.
+const past_caps = 2 * JsIr.nesting.spill;
+
+const Walk = enum { may_write_in, reads_to, height };
+
+/// `function f(c, h, k, a) { const d = …; … }`, where `walk` meets a
+/// left-nested `&&` chain of `links` names, and whether `d`'s binding was
+/// folded away:
+///
+///   - `may_write_in`: `const d = c.x; const e = a && … && a; return d;`.
+///     `d` reads a field, so it moves past `e` only if `e`'s binding can
+///     write nothing (`writeFree`).
+///   - `reads_to`: `const d = h(c); return d && a && … && a;`. `d` moves into
+///     the return only if nothing but reads comes before it there
+///     (`readsBefore`).
+///   - `height`: `const d = h(a && … && a); return k(d);`. `d` moves into the
+///     return only if the two together are no taller than `nesting.spill`.
+fn walkCase(gpa: Allocator, walk: Walk, links: u32) !bool {
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    const c = try b.intern(.local(@fromBackingInt(@intCast(0))));
+    const h = try b.intern(.local(@fromBackingInt(@intCast(1))));
+    const k = try b.intern(.local(@fromBackingInt(@intCast(2))));
+    const a = try b.intern(.local(@fromBackingInt(@intCast(3))));
+    const d = try b.intern(.local(@fromBackingInt(@intCast(4))));
+    const e = try b.intern(.local(@fromBackingInt(@intCast(5))));
+    const f = try b.intern(.local(@fromBackingInt(@intCast(6))));
+    const x = try b.intern(.{ .module = .none, .base = @fromBackingInt(@intCast(7)), .tag = JsIr.Name.field });
+    const helpers = struct {
+        fn call(bb: *JsIr.Builder, callee: NameIndex, args: []const Index) !Index {
+            const record = try bb.addRecord(try bb.addRange(args));
+            return testNode(bb, .call, (try testNode(bb, .ident, callee.int(), 0)).int(), @backingInt(record));
+        }
+        /// `first && a && … && a`, `count` operands in all.
+        fn chain(bb: *JsIr.Builder, first: Index, operand: NameIndex, count: u32) !Index {
+            var link = first;
+            for (1..count) |_| {
+                const pair = try bb.addRecord(JsIr.Binary{ .left = link, .right = try testNode(bb, .ident, operand.int(), 0) });
+                link = try testNode(bb, .binary, @backingInt(pair), @backingInt(JsIr.BinaryOp.logical_and));
+            }
+            return link;
+        }
+    };
+    const a_read = try testNode(&b, .ident, a.int(), 0);
+    const d_use = try testNode(&b, .ident, d.int(), 0);
+    var body: [3]Index = undefined;
+    const stmts: []const Index = switch (walk) {
+        .may_write_in => blk: {
+            const read = try testNode(&b, .member, (try testNode(&b, .ident, c.int(), 0)).int(), x.int());
+            body[0] = try testNode(&b, .const_decl, d.int(), read.int());
+            body[1] = try testNode(&b, .const_decl, e.int(), (try helpers.chain(&b, a_read, a, links)).int());
+            body[2] = try testNode(&b, .return_stmt, d_use.int(), 0);
+            break :blk body[0..3];
+        },
+        .reads_to => blk: {
+            body[0] = try testNode(&b, .const_decl, d.int(), (try helpers.call(&b, h, &.{try testNode(&b, .ident, c.int(), 0)})).int());
+            body[1] = try testNode(&b, .return_stmt, (try helpers.chain(&b, d_use, a, links)).int(), 0);
+            break :blk body[0..2];
+        },
+        .height => blk: {
+            body[0] = try testNode(&b, .const_decl, d.int(), (try helpers.call(&b, h, &.{try helpers.chain(&b, a_read, a, links)})).int());
+            body[1] = try testNode(&b, .return_stmt, (try helpers.call(&b, k, &.{d_use})).int(), 0);
+            break :blk body[0..2];
+        },
+    };
+    const params = try b.addNames(&.{ c, h, k, a });
+    const range = try b.addRange(stmts);
+    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = range.start, .body_end = range.end });
+    const decl = try testNode(&b, .func_decl, f.int(), @backingInt(func));
+    var ir = try b.toOwned(try b.addRange(&.{decl}));
+    defer ir.deinit(gpa);
+    try ir.verify();
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const plan = try run(arena_state.allocator(), &ir);
+    return plan.isDropped(stmts[0]);
+}
+
+/// On `small_stack`: `walk` folds `d` under its cap and marks nothing, and
+/// declines past it, where its levels must take at most half of the stack.
+fn walkMargin(walk: Walk, cap: u32) !void {
+    try testing.expect(try walkCase(testing.allocator, walk, 8));
+    try testing.expectEqual(@as(usize, 0), small_stack.deepest());
+    try testing.expect(!try walkCase(testing.allocator, walk, past_caps));
+    const used = small_stack.deepest();
+    try testing.expect(used != 0);
+    if (used > small_stack.size / 2) {
+        std.debug.print("`{t}` at its cap of {d} levels took {d} B of the {d} B small stack, more than half\n", .{
+            walk, cap, used, small_stack.size,
+        });
+        return error.TestUnexpectedResult;
+    }
+}
+
+test "mayWriteIn's levels take at most half of the small stack" {
+    try small_stack.run(walkMargin, .{ Walk.may_write_in, Opt.may_write_in_cap });
+}
+
+test "readsTo's levels take at most half of the small stack" {
+    try small_stack.run(walkMargin, .{ Walk.reads_to, Opt.reads_to_cap });
+}
+
+test "height's levels take at most half of the small stack at nesting.spill" {
+    try small_stack.run(walkMargin, .{ Walk.height, JsIr.nesting.spill });
 }
 
 test "a binding nothing reads is kept when it writes a record in place" {
