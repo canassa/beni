@@ -735,3 +735,52 @@ with no dictionary.
   `Describes`, `FlatInvariant`, `Preserved` and the statement of
   `accepted_flat_anf_traces_agree` do not change. `dictFocus` stays out
   (#165 step 3).
+
+## Records written in place (#316)
+
+The plan, written before the Lean (#316, 2026-11-04). `ownership-checker.md`
+§31 makes a beni record an object that an update writes in place (#315). The
+oracle models it in slices, each a pull request that is part of #316 and of
+#165, as the dictionary slices of #522 did.
+
+1. The model: syntax, typing, both interpreters, the checker rules and the
+   probes as `#guard`s against the real `check` and both runs. A record object
+   is a one-slot array whose element is the record, at all three levels, so
+   every list rule and every heap relation applies to it unchanged. The new
+   rule is the update's Dead per field. No theorem changes.
+2. The objects in the flat fragment: `FlatType.object`, `FlatAbstract` and
+   `AllocatedFlatValue` for an object, the four forms in `FlatANF0`, and their
+   cases in `flat_preserved`. The new proof step is the heap frame of a write
+   through an object whose kept fields stay live: a live path goes through the
+   written array (`live_path_apart` does not hold there), and the frame must
+   show that the value at a kept field is the same before and after.
+3. The summaries and the bridge: `W{F}` and per-field reads through calls
+   (§31.7), the bridge's spelling of an object as a beni record, and record
+   verdicts in the comparison; the generator, the targeted enumerator and
+   mutation controls for the record rules.
+
+The hoist (§31.14) is the owner's decision (`own-record-assign-q1`): without
+it this core refuses a later read of a written field, and every theorem keeps
+its statement.
+
+As built (2026-11-04, #316, slice 1): `Ty.object`, `Prim.object`, `Prim.get`,
+`Prim.recordCopy` and `Expr.assign` in `Syntax.lean` (`assignFields`, shared by
+both interpreters and the checker); both interpreters (`list [record fields]`
+on the value side, a heap array `[record fields]` and a counted write in
+place); the checker (`recordLiveCells` and the update's demand in `inferExpr`,
+the three primitives in `primitive`, the type helpers); the frozen per-call
+checker refuses the record forms as a limit; the aliasing and diagnostic
+interpreters, the shrinker, the falsifier's walkers, the bridge's printer and
+parser, and `obsTyped`, `entryPath`, `entryAbstract`, `fieldType` read the new
+forms. `fieldUses` (`Domain.lean`) gives a field read and an update's base use
+their paths. The flat fragment's representation lemmas gained the object case
+(`entryType`, `DictFree.object`); `FlatANF0`, `FlatType` and every theorem
+statement did not change. `RecordPrograms.lean` holds 28 probe programs,
+`RecordProbes.lean` their `#guard`s.
+
+#704 (the pairwise-apart construction atom) is not in slice 1. This core has
+no summary atom vocabulary: it tests a construction's separation once, with
+`separatedValues` and `separatedPaths`, and `separatedPaths_iff_pairwise`
+states that test as the pairwise expansion. The record condition (`rexcl`,
+`rsep`, §31.4 item 6) is the list certificate of the box here. #704 becomes
+concrete in the slice that splits the record condition from the list one.
