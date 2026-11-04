@@ -249,6 +249,28 @@ fn breakAfterMount(w: *World, path: []const u8, needle: []const u8) !void {
     }));
 }
 
+/// Break `b/`'s file `path` as `breakAfterMount` does, for a write that is
+/// one statement inside a one-line function body (a generated native
+/// sibling's `export const f = (x) => { …; return null; };`): only the
+/// statement that starts with `needle`, up to its `;`, runs once.
+fn breakStatementAfterMount(w: *World, path: []const u8, needle: []const u8) !void {
+    const arena = w.arena.allocator();
+    const js = try w.read(path);
+    const at = std.mem.indexOf(u8, js, needle) orelse {
+        std.debug.print("{s} holds no `{s}`: the emitted write this test breaks moved\n", .{ path, needle });
+        return error.NoWriteToBreak;
+    };
+    const end = (std.mem.indexOfScalarPos(u8, js, at, ';') orelse return error.NoWriteToBreak) + 1;
+    try w.write(path, try std.mem.concat(arena, u8, &.{
+        "let broken$ = false;\n",
+        js[0..at],
+        "if (!broken$) { broken$ = true; ",
+        js[at..end],
+        " }",
+        js[end..],
+    }));
+}
+
 /// The fuzz of `f`, expected to end with `code` and print `stdout`, unless
 /// the index lists this exact run (`run_hash.checkDigested`).
 fn expectFuzz(w: *World, given: browser.Fuzz, code: u8, stdout: []const u8) !void {
@@ -531,8 +553,9 @@ test "a missed title write is caught though the body is the same" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try setUp(&w, document);
-    // The title is written by the platform (`Hosted.title`), not the program.
-    try breakAfterMount(&w, "b/_platform/_browser/Hosted.mjs", ".title = ");
+    // The title is written by the platform (`Hosted.title`), not the program,
+    // through the generated `Browser.Host.Document.setTitle` native.
+    try breakStatementAfterMount(&w, "b/_core/Browser/Host/Document.foreign.mjs", "globalThis.document.title = ");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE / VERIFY OUTPUT                 │

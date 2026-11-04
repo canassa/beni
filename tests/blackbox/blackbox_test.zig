@@ -5802,7 +5802,8 @@ test "interface v3's rows are in the record: record-alias field names, payload p
     // `primitive` (§3.2's table: `Bool`, `Char`, `Order`'s `eq`; `Order`'s
     // `compare` is derived), `own_method` on a `foreign type` whose module
     // declares the method (`List`), and `foreign` for one it does not, of
-    // any arity (`Schema.Conversion`).
+    // any arity (`Js.Opt`; `Schema.Conversion`, the example until the
+    // compiled Schema rewrite, is an opaque ADT now).
     // From the repository root, where `core/` is: the harness runs there.
     const core = try w.runWith(&.{ "dump", "--stage=raw", "core" }, .{ .raw_diagnostics = true, .cwd = .inherit });
     try testing.expectEqual(@as(u8, 0), core.exit_code);
@@ -5811,7 +5812,7 @@ test "interface v3's rows are in the record: record-alias field names, payload p
     var core_lines = std.mem.splitScalar(u8, core.stdout, '\n');
     while (core_lines.next()) |line| {
         if (!std.mem.startsWith(u8, line, "type ")) continue;
-        inline for (.{ " Bool ", " Char ", " Order ", " List ", " Conversion " }) |wanted| {
+        inline for (.{ " Bool ", " Char ", " Order ", " List ", " Opt " }) |wanted| {
             if (std.mem.indexOf(u8, line, wanted) != null) {
                 const from = std.mem.indexOf(u8, line, " eq=").?;
                 const to = std.mem.indexOf(u8, line, " payload=").?;
@@ -5825,8 +5826,8 @@ test "interface v3's rows are in the record: record-alias field names, payload p
         \\Bool eq=primitive compare=primitive
         \\Order eq=primitive compare=present
         \\Char eq=primitive compare=primitive
+        \\Opt eq=foreign compare=foreign
         \\List eq=own_method compare=own_method
-        \\Conversion eq=foreign compare=foreign
         \\
     , statuses.items);
 }

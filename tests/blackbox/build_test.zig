@@ -80,14 +80,16 @@ test "a program computes something and prints the right answer" {
     // One `.mjs` per source module, mirroring the source tree, packages in
     // directories of their own, plus each sibling next to its module and the
     // platform's runtime (backend.md §5, boundary.md §5.2). `Node` has no
-    // sibling since 2026-10-23 (#877): its values are beni over `Js`.
+    // sibling since 2026-10-23 (#877): its values are beni over `Js`. Its
+    // runtime is the typed entry module `NodeRuntime` (its manifest's
+    // `"entryKinds"`) since 3948c1f9c, not a hand-written `runtime.js`.
     for ([_][]const u8{
         "out/Main.mjs",
         "out/_main.mjs",
         "out/_core/Basics.mjs",
         "out/_core/List.mjs",
         "out/_platform/Node.mjs",
-        "out/_platform/runtime.foreign.mjs",
+        "out/_platform/NodeRuntime.mjs",
     }) |path| {
         if (!w.exists(path)) {
             std.debug.print("expected {s} to exist\n", .{path});
@@ -4601,7 +4603,7 @@ test "a development build maps a crash in a case arm back to the beni line and c
         \\(n$1) => -> Main.beni:22:7 twice
         \\n$1 * 2 -> Main.beni:22:5
         \\Main$describe(Main$Stop -> Main.beni:27:41
-        \\frame todo Debug.beni:43:15
+        \\frame todo Debug.beni:44:15
         \\frame describe Main.beni:17:13
         \\frame <anonymous> Main.beni:27:41
         \\exit 1
@@ -4982,7 +4984,7 @@ test "a branch that specialisation decides maps to the code it keeps" {
         \\source ../src/Main.beni: its text
         \\a(|b()) -> Main.beni:14:9
         \\a(|b*2) -> Main.beni:8:41
-        \\frame todo Debug.beni:43:15
+        \\frame todo Debug.beni:44:15
         \\frame <anonymous> Main.beni:14:9
         \\exit 1
         \\
