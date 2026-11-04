@@ -2,7 +2,13 @@
 pub foreign type View a
 
 
-pub foreign type Array a
+pub sequence foreign type Array a
+
+
+pub foreign impure rendererTruncate : written Array a, borrowed Int → ⊤
+
+
+pub foreign impure rendererAt : borrowed Array a, borrowed Int → a
 
 
 pub foreign impure make : ⊤ → fresh Array a

@@ -3907,6 +3907,13 @@ fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
     if (o.in.packages[m] == .core and std.mem.eql(u8, o.in.module_names[m], "Schema")) return o.schemaRunRow(m, d);
     if (o.in.packages[m] == .core and std.mem.eql(u8, o.in.module_names[m], "Record")) return o.recordRow(m, d);
     if (o.in.packages[m] != .core) return null;
+    if (std.mem.eql(u8, o.in.module_names[m], "Browser.Host.Array")) {
+        const native_bir = o.in.birs[m];
+        const native_name = o.in.interner.slice(native_bir.symbol(native_bir.decls[d].name));
+        if (std.mem.eql(u8, native_name, "rendererTruncate")) {
+            return .{ .params = 2, .asserted = true, .uses = try o.keep.allocator().dupe(UseEntry, &.{.{ .param = 0, .path = eps, .extent = .storage, .bits = bit_r | bit_a | bit_w | bit_x }}) };
+        }
+    }
     const list = std.mem.eql(u8, o.in.module_names[m], "List");
     const arrays = std.mem.eql(u8, o.in.module_names[m], "Js.Array");
     if (!list and !arrays) return null;

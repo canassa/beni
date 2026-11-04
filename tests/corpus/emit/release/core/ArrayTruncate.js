@@ -1,0 +1,1 @@
+import{a,b}from"./_core/Browser/Host/Array.mjs";const c=(a,b)=>{a.length=b},d=(a,b)=>{if(b!==b>>>0||b>=a.length)throw new RangeError("beni: renderer array index out of bounds");return a[b]},e={at:b,truncate:a};export{c,d,e};

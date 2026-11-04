@@ -1,0 +1,13 @@
+-- Truncation emits only a length store, with no result wrapper.
+import Browser.Host.Array as Array
+
+
+pub shrink : Array.Array a, Int → ⊤
+shrink array length = Array.rendererTruncate array length
+
+
+pub read : Array.Array a, Int → a
+read array index = Array.rendererAt array index
+
+
+pub functions = { truncate = Array.rendererTruncate, at = Array.rendererAt }

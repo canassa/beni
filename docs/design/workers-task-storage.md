@@ -169,6 +169,25 @@ stores and prefix completion. Chain snapshots call them without importing
 List.mjs. No Js.Value conversion or extra storage representation is involved.
 No `Js.Buffer` is needed.
 
+**Manager approval, 2026-11-04:** core and platforms may truncate a typed
+native array through `Browser.Host.Array.rendererTruncate : Array a, Int → ⊤`.
+The operation lowers directly to `array.length = n`, retaining the element
+type and allocating nothing. Its precondition is `0 ≤ n ≤ array.length`;
+violating it is a runtime defect. The array write requires unique ownership,
+like the other typed array writes, and the name is fenced from applications
+in `resolve/CorePrivate.zig`. A row algorithm reads and disposes every removed
+row before truncating the existing row array. No removed value, optional
+wrapper or `Js.Value` conversion is involved. This is a reviewed native
+catalogue entry on the same array type as slots and rows.
+
+`Browser.Host.Array.rendererAt : Array a, Int → a` reads an initialized
+in-range element without an eager fallback, wrapper or allocation. A checked
+index must be an unsigned integer less than the array length; an invalid
+index raises a runtime defect rather than returning `undefined` as `a`.
+The private renderer owns these dense arrays and initializes every slot
+before reading it. This operation is fenced from applications alongside
+`rendererTruncate`.
+
 List keeps its persistent radix tree and a claimable 32-element tail until
 the ownership-backed representation can replace both together. The tree and
 tail protocol are beni over typed builders and Cell; native wrappers retain

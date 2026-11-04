@@ -182,6 +182,12 @@ pub fn valid(cx: *const Context, row: Operations.Row, v: Var) bool {
         .worker_event_target => a.len == 1 and named(cx, a[0], "Browser.Host.Worker", "Endpoint") and native(cx, r, "EventTarget"),
         .global_event_target => a.len == 1 and unit(cx, a[0]) and native(cx, r, "EventTarget"),
         .event_data_only => a.len == 1 and native(cx, a[0], "Event") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |data| named(cx, data, "Js", "Value") else false),
+        .renderer_truncate => a.len == 2 and argument(cx, a[0], "Browser.Host.Array", "Array", 0) != null and named(cx, a[1], "Basics", "Int") and unit(cx, r),
+        .renderer_at => blk: {
+            if (a.len != 2 or !named(cx, a[1], "Basics", "Int")) break :blk false;
+            const value = argument(cx, a[0], "Browser.Host.Array", "Array", 0) orelse break :blk false;
+            break :blk cx.store.find(value) == cx.store.find(r);
+        },
         .array_make => a.len == 1 and unit(cx, a[0]) and argument(cx, r, "Browser.Host.Array", "Array", 0) != null,
         .array_get_or, .array_view_get_or => blk: {
             if (a.len != 3 or !named(cx, a[1], "Basics", "Int")) break :blk false;

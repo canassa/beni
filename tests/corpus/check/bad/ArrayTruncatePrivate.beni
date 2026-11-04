@@ -1,0 +1,8 @@
+-- Applications cannot obtain the runtime's typed truncation primitive.
+import Browser.Host.Array exposing (rendererTruncate, rendererAt)
+
+
+pub truncate = rendererTruncate
+
+
+pub at = rendererAt

@@ -814,6 +814,16 @@ upcast `EventTarget.rendererFromNode`, which is pure. In these signatures
   allocation-free native identity upcast. The existing `Element.toNode`
   remains the Element identity upcast.
 
+**Manager approval, 2026-11-04; #1825:** `Browser.Host.Array.rendererTruncate : written Array a, borrowed Int → ⊤`
+writes the existing array's length directly, after the caller reads and disposes
+removed elements; `0 ≤ n ≤ length` is its source invariant and a violation
+is a defect. `rendererAt : borrowed Array a, borrowed Int → a` checks that
+the index is an unsigned integer less than the length, defects otherwise,
+and then reads the initialized element, without a fallback or wrapper.
+Both are reviewed ECMAScript native entries available in every host realm,
+reserved by the same core/platform fence above. Browser.Host.Array.Array is
+a `sequence` type, so its storage writes require unique ownership under v2.
+
 The caller of `Document.rendererBody` must wait until `document.body` exists;
 an earlier call violates the renderer contract and is a defect.
 The renderer calls these entries only on nodes and fragments it created and

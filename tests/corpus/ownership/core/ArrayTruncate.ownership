@@ -1,0 +1,9 @@
+module ArrayTruncate
+  6:16 call Browser.Host.Array.rendererTruncate array: accepted param
+  11:5 call Browser.Host.Array.rendererTruncate array: rejected later-use: array is read again at 12:5
+  summary shrink: π1 RW[storage]
+  summary retained: π1 RW[storage]
+  summary read: π1 R
+  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause later-use 1

@@ -13691,3 +13691,63 @@ test "release libraries keep sibling imports and exports consistent" {
         \\
     });
 }
+
+test "private renderer arrays truncate in place and defect on invalid reads" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("ArrayProbe.beni",
+        \\import Browser.Host.Array as Array
+        \\
+        \\
+        \\make : ⊤ → Array.Array Int
+        \\make ⊤ =
+        \\    array = Array.make ⊤
+        \\    Array.push array 10
+        \\    Array.push array 20
+        \\    array
+        \\
+        \\
+        \\read : Array.Array Int, Int → Int
+        \\read array index = Array.rendererAt array index
+        \\
+        \\
+        \\truncate : Array.Array Int, Int → ⊤
+        \\truncate array length = Array.rendererTruncate array length
+        \\
+        \\
+        \\pub operations = { make = make, read = read, truncate = truncate, functions = { read = Array.rendererAt, truncate = Array.rendererTruncate } }
+    );
+    for ([_]bool{ false, true }) |release| {
+        const args: []const []const u8 = if (release)
+            &.{ "build", "--core", "--platform=node", "--library", "--release", "--out=out", "ArrayProbe.beni" }
+        else
+            &.{ "build", "--core", "--platform=node", "--library", "--out=out", "ArrayProbe.beni" };
+        const result = try w.run(args);
+        try testing.expectEqual(@as(u8, 0), result.exit_code);
+        try testing.expectEqual(@as(usize, 0), result.diagnostics.len);
+        try w.write("probe.mjs",
+            \\import assert from 'node:assert/strict';
+            \\import * as module from './out/ArrayProbe.mjs';
+            \\assert.equal(Object.keys(module).length, 1);
+            \\const { make, read, truncate, functions } = Object.values(module)[0];
+            \\const array = make(null);
+            \\assert.deepEqual(array, [10, 20]);
+            \\assert.equal(read(array, 1), 20);
+            \\assert.equal(functions.read(array, 0), 10);
+            \\const original = array;
+            \\truncate(array, 1);
+            \\assert.equal(array, original);
+            \\assert.deepEqual(array, [10]);
+            \\for (const index of [-1, 1, 2, 0.5, 4294967296, NaN, Infinity]) {
+            \\  for (const at of [read, functions.read]) {
+            \\    assert.throws(() => at(array, index), { name: 'RangeError', message: 'beni: renderer array index out of bounds' });
+            \\  }
+            \\}
+            \\functions.truncate(array, 0);
+            \\assert.deepEqual(array, []);
+            \\assert.throws(() => read(array, 0), { name: 'RangeError', message: 'beni: renderer array index out of bounds' });
+            \\console.log('renderer arrays verified');
+        );
+        try w.expectProgram("probe.mjs", .{ .stdout = "renderer arrays verified\n" });
+    }
+}

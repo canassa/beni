@@ -8337,6 +8337,12 @@ ownership/core/JsArrayWords observes both a stored element's later use and a
 builder's later write after completion. Finishing a builder does not make its
 pre-existing elements fresh.
 
+**Manager approval, 2026-11-04:** `Browser.Host.Array.rendererTruncate` is a storage
+write with the same read/alias/write demand on its uniquely owned first
+argument as the other array writers. It stores nothing and returns unit,
+so its result retains no alias. The lowering writes only the array length;
+removed elements are disposed before the caller invokes it.
+
 `put` and `done` retain their fresh-builder obligations. `peekArray` returns an
 alias without changing length; it is read only, and only a full immutable tail
 becomes a tree leaf. `writeArray` is an impure native capacity write with aliased

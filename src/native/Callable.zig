@@ -100,7 +100,7 @@ pub fn source(arena: Allocator, module: []const u8, type_name: ?[]const u8) ![]c
     if (std.mem.eql(u8, module, "Browser.Host.Node")) try w.writeAll("import Js\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Node")) try w.writeAll("pub type MoveError\n    = HierarchyRequestError\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Array")) try w.writeAll("pub foreign type View a\n\n\n");
-    if (type_name) |name| try w.print("pub foreign type {s}\n", .{name});
+    if (type_name) |name| try w.print("pub {s}foreign type {s}\n", .{ if (std.mem.eql(u8, module, "Browser.Host.Array")) "sequence " else "", name });
     for (Operations.rows) |row| {
         if (!std.mem.eql(u8, row.module, module)) continue;
         try w.print("{s}pub foreign {s} {s} :{s}{s}\n", .{ if (type_name == null and !std.mem.eql(u8, module, "Browser.Host.Cloudflare")) "\n" else "\n\n", @tagName(row.effect), row.name, if (std.mem.startsWith(u8, row.signature, "\n")) "" else " ", row.signature });
@@ -115,7 +115,7 @@ pub fn sibling(arena: Allocator, module: []const u8) ![]const u8 {
         if (!std.mem.eql(u8, row.module, module)) continue;
         if (Operations.renderer(row.recipe)) continue; // Both call forms are compiler-emitted.
         const body = switch (row.recipe) {
-            .renderer_first_child, .renderer_next_sibling, .renderer_parent, .renderer_insert, .renderer_append, .renderer_remove, .renderer_clone, .renderer_fragment, .renderer_import, .renderer_template, .renderer_body, .renderer_text, .renderer_from_node => unreachable,
+            .renderer_truncate, .renderer_at, .renderer_first_child, .renderer_next_sibling, .renderer_parent, .renderer_insert, .renderer_append, .renderer_remove, .renderer_clone, .renderer_fragment, .renderer_import, .renderer_template, .renderer_body, .renderer_text, .renderer_from_node => unreachable,
             .worker_close_self => "(ignored) => { globalThis.close(); return null; }",
             .global_is_page => "(ignored) => { return typeof globalThis.window !== \"undefined\"; }",
             .event_error_message => "(event) => { return typeof globalThis.ErrorEvent === \"function\" && event instanceof globalThis.ErrorEvent ? { $: \"Just\", a: event.message } : { $: \"Nothing\", a: null }; }",

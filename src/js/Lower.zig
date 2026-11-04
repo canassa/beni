@@ -11095,12 +11095,37 @@ pub const Lowerer = struct {
         return l.arrowOf(names[0..arity], body.items, p);
     }
 
+    // ownership pin begin: rendererTruncate
+    fn rendererTruncate(l: *Lowerer, out: *StmtList, values: []const Node.Index, p: u32) Allocator.Error!Node.Index {
+        const size = try l.member(values[0], try l.interner.getOrPut(l.gpa, "length"), p);
+        try out.append(l.scratch, try l.add(.assign_stmt, p, size.int(), values[1].int()));
+        return l.nullNode(p);
+    }
+    // ownership pin end: rendererTruncate
+
+    // ownership pin begin: rendererAt
+    fn rendererAt(l: *Lowerer, out: *StmtList, values: []const Node.Index, p: u32) Allocator.Error!Node.Index {
+        const index = values[1];
+        const size = try l.member(values[0], try l.interner.getOrPut(l.gpa, "length"), p);
+        const unsigned = try l.binary(.shr, index, try l.intNode(0, p), p);
+        const invalid = try l.binary(.logical_or, try l.binary(.strict_ne, index, unsigned, p), try l.binary(.ge, index, size, p), p);
+        const global = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
+        const err = try l.member(global, try l.interner.getOrPut(l.gpa, "RangeError"), p);
+        const message = try l.stringNode("beni: renderer array index out of bounds", p);
+        const made = try l.add(.new_call, p, err.int(), @backingInt(try l.b.addRecord(try l.b.addRange(&.{message}))));
+        try l.ifStatement(out, invalid, &.{try l.add(.throw_stmt, p, made.int(), Node.Data.unused)}, p);
+        return l.add(.index_get, p, values[0].int(), index.int());
+    }
+    // ownership pin end: rendererAt
+
     // Private renderer-owned nodes. Native structural failures are defects;
     // preserve identity, use the existing Opt sentinel, and allocate no adapter.
     fn rendererExpr(l: *Lowerer, out: *StmtList, row: @import("../native/Operations.zig").Row, values: []const Node.Index, p: u32) Allocator.Error!Node.Index {
         const global = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
         const document = try l.member(global, try l.interner.getOrPut(l.gpa, "document"), p);
         switch (row.recipe) {
+            .renderer_truncate => return l.rendererTruncate(out, values, p),
+            .renderer_at => return l.rendererAt(out, values, p),
             .renderer_first_child, .renderer_next_sibling, .renderer_parent => {
                 const slot = try l.fresh(l.well.temp);
                 try l.constDecl(out, slot, try l.member(values[0], try l.interner.getOrPut(l.gpa, row.member), p), p);
