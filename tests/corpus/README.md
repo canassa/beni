@@ -165,9 +165,10 @@ never appears in the transcript**. The script is one JSON object per line,
                                 or `(error …)` when its connection ends, is
                                 printed after the last step under
                                 `--- detached ---`, in completion order
-    {…, "abort": true}          the same request, sent and then given up on
-                                at once: the server sees a client that left
-                                before it answered
+    {…, "abort": true}          the same request with `expect: 100-continue`,
+                                given up on when the server answers `100
+                                Continue`: the server has the request, and
+                                the client left before it answered
     {"raw": "GARBAGE\r\n\r\n"}  those bytes on a new connection; prints
                                 the first line of the answer and `(closed by
                                 the server)`
