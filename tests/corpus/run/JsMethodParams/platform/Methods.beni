@@ -1,0 +1,72 @@
+--! `Js.method` with parameters (`boundary.md` §4.2, amended 2026-11-04):
+--! the lambda's parameters after its receiver are the `function`'s, so
+--! `o.m(x, y)` hands `x` and `y` to them, each a `Js.Value`. A method
+--! adding its arguments to its receiver's field, one storing an argument
+--! on its receiver and answering it, one whose argument an arrow it makes
+--! reads, and one JavaScript calls with more arguments than it names.
+
+import Js
+
+
+--| An accumulator whose `add` method adds its two arguments to `n`.
+pub accumulator : Int → Js.Value
+accumulator start =
+    Js.object
+        [ ( "n", Js.from start )
+        , ( "add"
+          , Js.method λself a b →
+              n : Int
+              n = Js.to (Js.get self "n")
+              x : Int
+              x = Js.to a
+              y : Int
+              y = Js.to b
+              Js.set self "n" (Js.from (n + x + y))
+              n + x + y
+          )
+        ]
+
+
+--| The accumulator's value after adding two numbers, by its method.
+pub add : Js.Value, Int, Int → Int
+add o x y = Js.to (Js.call o "add" [ Js.from x, Js.from y ])
+
+
+--| A holder whose `keep` stores its argument on its receiver and answers
+--| the receiver, as a constructor built over `Reflect.construct` does.
+pub keeper : ⊤ → String
+keeper ⊤ =
+    o =
+        Js.object
+            [ ( "kept", Js.null )
+            , ( "keep"
+              , Js.method λself v →
+                  Js.set self "kept" v
+                  self
+              )
+            ]
+    same = Js.call o "keep" [ Js.from "held" ]
+    kept : String
+    kept = Js.to (Js.get same "kept")
+    if Js.same same o then "${kept} on itself" else "${kept} elsewhere"
+
+
+--| A method whose argument an arrow it makes reads, called later.
+pub deferred : Int → Int
+deferred k =
+    o =
+        Js.object
+            [ ( "make"
+              , Js.method λself step → Js.from λ⊤ → Js.to (Js.get self "base") + Js.to step
+              )
+            , ( "base", Js.from k )
+            ]
+    later = Js.call o "make" [ Js.from 5 ]
+    Js.to (Js.apply later [])
+
+
+--| A method named for one argument, called with two: the second is dropped.
+pub extra : ⊤ → Int
+extra ⊤ =
+    o = Js.object [ ( "first", Js.method λself a → Js.to a ) ]
+    Js.to (Js.call o "first" [ Js.from 7, Js.from 8 ])
