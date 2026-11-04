@@ -5,7 +5,9 @@
 -- records keep `x`, `y`, `width` and `height`, which `box` also reads as
 -- plain properties of the host rectangle (backend.md §9 item 4's closed
 -- list); the node lookup, the method calls and the four window reads are
--- written in place.
+-- written in place. Each read is a `Js.get`, kept in the order `Dom`
+-- writes it: until #1227 the release build dropped the three window reads
+-- that nothing reads, and read the rectangle's four in key order.
 import Cmd exposing (Cmd)
 import Dom
 import Html exposing (Html)
