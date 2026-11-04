@@ -769,9 +769,9 @@ oracle models it in slices, each a pull request that is part of #316 and of
    verdicts in the comparison; the generator, the targeted enumerator and
    mutation controls for the record rules.
 
-The hoist (§31.14) is the owner's decision (`own-record-assign-q1`): without
-it this core refuses a later read of a written field, and every theorem keeps
-its statement.
+The hoist (§31.14): Jayson decided on 2026-11-04 (#316) to refuse, with no
+hoist. This core refuses a later read of a written field, every theorem keeps
+its statement, and the hoist stays tested by the Zig side only.
 
 As built (2026-11-04, #316, slice 1): `Ty.object`, `Prim.object`, `Prim.get`,
 `Prim.recordCopy` and `Expr.assign` in `Syntax.lean` (`assignFields`, shared by
