@@ -306,7 +306,7 @@ core/Browser/Host/Worker.js Browser.Host.Worker.endpoint 755e1a042413a6c4c0d8aa4
 core/Browser/Host/Worker.js Browser.Host.Worker.post 115425a022a32c21f75a89e0511368245dcbc266c9a690afbe98895cab0367e4
 core/Browser/Host/Worker.js Browser.Host.Worker.terminate 7354b6b30beb22ed25f4d0cd021adcd3a05582a12171369313bbb89625e93f51
 core/Browser/Host/Worker.js Browser.Host.Worker.toEventTarget 444c5bf77999d80d95f10a250de61a385740a6eea2cdef3c856b5b911724eeb9
-core/Browser/Host/Event.js Browser.Host.Event.dataOnly 9ff771015a1c1bd620213895cda143e96f0203f1ab55d5993c62f2b7021c51fc
+core/Browser/Host/Event.js Browser.Host.Event.dataOnly 430a5ac97e0db40a9366087d83178e06a8dabaa3f7f817ecb6187b847957e0e1
 core/Browser/Host/Event.js Browser.Host.Event.error df145ea6e21c7bae65b22705b3a8b1ab88d0fec276b5f845c6cea56cd8d90b0f
 core/Browser/Host/Rejection.js Browser.Host.Rejection.setAbandoned 373c6edf7ce252b243aed04c231f66453514ea08ae32f43e719ebfcef7bab73c
 core/Browser/Host/Element.js Browser.Host.Element.focus 258bdd8beeff05352d35f55770a78573e793ded22895c45dea4ac4aec52e3fbe
