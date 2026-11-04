@@ -2909,6 +2909,13 @@ emission. Other sites use the cached nested-none escapes specified in
 `workers-task-storage.md`; release-erased wrappers are classified by their
 payload too. Dispatch.opt_plain and its emission-funnel fact carry the static
 decision. First-class intrinsics retain one shared generic implementation.
+
+Literal sync arms of a saturated `optMatch` are lowered inside the presence branches,
+with their typed parameter bindings, without allocating arm functions. The slot and all
+non-literal arm expressions are evaluated once in written order before choosing a branch.
+The selected present arm retains the same nested-Opt payload escape check. Non-literal
+arms and first-class forms keep the existing call behavior, in development and release.
+
 Chain snapshots use the core-private typed array operations in Js.Array,
 written in place, so the fiber kernel gains no runtime import of List.
 

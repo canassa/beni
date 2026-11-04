@@ -1,0 +1,63 @@
+-- Inline branches preserve nesting, operand order, single evaluation and patterns.
+import Js
+import Node
+
+
+show : Js.Opt a, sync (a → String) → String
+show slot render = Js.optMatch slot (λ⊤ → "none") λvalue → "some(" ++ render value ++ ")"
+
+
+choose : Js.Opt a, sync (⊤ → String), sync (a → String) → String
+choose slot missing present = Js.optMatch slot missing present
+
+
+main : Node.Program
+main =
+    trace = Js.ref ""
+    scrutinees = Js.ref 0
+    push = λtext → Js.write trace (Js.read trace ++ text)
+    slot =
+        λinhabited →
+            push "slot;"
+            Js.write scrutinees (Js.read scrutinees + 1)
+            if inhabited then Js.some 7 else Js.none ⊤
+    missing =
+        λ⊤ →
+            push "missing-value;"
+            λ⊤ →
+                push "missing-body;"
+                "absent"
+    present =
+        λ⊤ →
+            push "present-value;"
+            λvalue →
+                push "present-body;"
+                String.fromInt value
+    a = choose (slot True) (missing ⊤) (present ⊤)
+    b =
+        Js.optMatch
+            (slot False)
+            (λ⊤ →
+                push "inline-missing;"
+                "empty"
+            )
+            (present ⊤)
+    c = Js.optMatch (slot True) (missing ⊤) λvalue →
+        push "inline-present;"
+        String.fromInt (value + 1)
+    empty : Js.Opt Int
+    empty = Js.none ⊤
+    nested = Js.some empty
+    deeper = Js.some nested
+    pair = Js.optMatch (Js.some ( 3, 4 )) (λ⊤ → 0) λ( x, y ) → x * 10 + y
+    Node.printLines
+        [ a
+        , b
+        , c
+        , String.fromInt (Js.read scrutinees)
+        , Js.read trace
+        , show empty String.fromInt
+        , show nested λinner → show inner String.fromInt
+        , show deeper λinner → show inner λlast → show last String.fromInt
+        , String.fromInt pair
+        ]
