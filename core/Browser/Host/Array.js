@@ -1,3 +1,5 @@
+export const eachView = (view, callback) => { for (let i = 0; i < view.length; i++) callback(view[i]); return null; };
+export const each = (array, callback) => { array.forEach(callback); return null; };
 export const make = (ignored) => { return []; };
 export const getOr = (array, index, fallback) => { return index >>> 0 === index && Object.hasOwn(array, index) ? array[index] : fallback; };
 export const set = (array, index, value) => { if (index >>> 0 !== index || index === 4294967295) return false; array[index] = value; return true; };

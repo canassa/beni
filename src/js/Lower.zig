@@ -11068,6 +11068,44 @@ pub const Lowerer = struct {
         return .{ .c = c, .x = x };
     }
 
+    // ownership pin begin: rendererCurrentTarget
+    // ownership pin begin: rendererClearCurrentTarget
+    // ownership pin begin: rendererTakeEarly
+    // ownership pin begin: rendererEarlyEvent
+    // ownership pin begin: rendererEarlyTarget
+    // ownership pin begin: rendererEarlyRemember
+    // ownership pin begin: rendererEarlyValue
+    // ownership pin begin: rendererEarlyChecked
+    // ownership pin begin: rendererEarlySelectedIndex
+    // ownership pin begin: rendererTarget
+    // ownership pin begin: rendererDisabled
+    // ownership pin begin: rendererTag
+    // ownership pin begin: rendererKind
+    // ownership pin begin: rendererName
+    // ownership pin begin: rendererFocused
+    // ownership pin begin: rendererValue
+    // ownership pin begin: rendererSetValue
+    // ownership pin begin: rendererChecked
+    // ownership pin begin: rendererSetChecked
+    // ownership pin begin: rendererSelected
+    // ownership pin begin: rendererSetSelected
+    // ownership pin begin: rendererSelectedIndex
+    // ownership pin begin: rendererSetSelectedIndex
+    // ownership pin begin: rendererSelectionStart
+    // ownership pin begin: rendererSelectionEnd
+    // ownership pin begin: rendererSelectionDirection
+    // ownership pin begin: rendererSetSelectionRange
+    // ownership pin begin: rendererOptions
+    // ownership pin begin: rendererElements
+    // ownership pin begin: rendererNamed
+    // ownership pin begin: rendererControls
+    // ownership pin begin: rendererEdits
+    // ownership pin begin: rendererSetEdits
+    // ownership pin begin: rendererEarlyListeners
+    // ownership pin begin: rendererEarlyAppend
+    // ownership pin begin: rendererEarlySize
+    // ownership pin begin: rendererEarlyKindAt
+    // ownership pin begin: rendererEarlyHandlerAt
     // ownership pin begin: rendererImport
     // ownership pin begin: rendererFirstChild
     // ownership pin begin: rendererNextSibling
@@ -11083,8 +11121,8 @@ pub const Lowerer = struct {
     }
 
     fn rendererArrow(l: *Lowerer, row: @import("../native/Operations.zig").Row, p: u32) Allocator.Error!Node.Index {
-        var names: [3]JsIr.NameIndex = undefined;
-        var values: [3]Node.Index = undefined;
+        var names: [4]JsIr.NameIndex = undefined;
+        var values: [4]Node.Index = undefined;
         const arity = @import("../native/Operations.zig").rendererArity(row.recipe);
         for (0..arity) |i| {
             names[i] = try l.fresh(l.well.temp);
@@ -11141,6 +11179,188 @@ pub const Lowerer = struct {
             .renderer_has => return l.rendererHas(values, p),
             .renderer_truncate => return l.rendererTruncate(out, values, p),
             .renderer_at => return l.rendererAt(out, values, p),
+            .renderer_early_listeners => return l.arrayNode(&.{}, p),
+            .renderer_early_append => {
+                const invoked = try l.call(try l.member(values[0], try l.interner.getOrPut(l.gpa, "push"), p), values[1..], p);
+                try out.append(l.scratch, try l.add(.expr_stmt, p, invoked.int(), Node.Data.unused));
+                return l.nullNode(p);
+            },
+            .renderer_early_size => return l.binary(.div, try l.member(values[0], try l.interner.getOrPut(l.gpa, "length"), p), try l.intNode(2, p), p),
+            .renderer_early_kind_at, .renderer_early_handler_at => {
+                // Validate the logical pair index before doubling it: 0.5
+                // must never turn a kind read into a callback read.
+                const logical = values[1];
+                const unsigned = try l.binary(.shr, logical, try l.intNode(0, p), p);
+                const offset = try l.binary(.mul, logical, try l.intNode(2, p), p);
+                const index = if (row.recipe == .renderer_early_handler_at) try l.binary(.add, offset, try l.intNode(1, p), p) else offset;
+                const size = try l.member(values[0], try l.interner.getOrPut(l.gpa, "length"), p);
+                const invalid = try l.binary(.logical_or, try l.binary(.strict_ne, logical, unsigned, p), try l.binary(.ge, index, size, p), p);
+                const err = try l.member(global, try l.interner.getOrPut(l.gpa, "RangeError"), p);
+                const message = try l.stringNode("beni: early listener index out of bounds", p);
+                const made = try l.add(.new_call, p, err.int(), @backingInt(try l.b.addRecord(try l.b.addRange(&.{message}))));
+                try l.ifStatement(out, invalid, &.{try l.add(.throw_stmt, p, made.int(), Node.Data.unused)}, p);
+                return l.add(.index_get, p, values[0].int(), index.int());
+            },
+            .renderer_event_target => {
+                const saved = try l.fresh(l.well.temp);
+                try l.constDecl(out, saved, try l.member(values[0], try l.interner.getOrPut(l.gpa, "target"), p), p);
+                const value = try l.ident(saved, p);
+                return l.condOf(try l.binary(.instance_of, value, try l.member(global, try l.interner.getOrPut(l.gpa, "Node"), p), p), value, try l.optNone(p), p);
+            },
+            .renderer_node_disabled => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "disabled"), p);
+                return l.unary(.not, try l.unary(.not, value, p), p);
+            },
+            .renderer_node_tag => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "localName"), p);
+                return l.binary(.logical_or, value, try l.stringNode("", p), p);
+            },
+            .renderer_node_kind => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "type"), p);
+                return l.binary(.logical_or, value, try l.stringNode("", p), p);
+            },
+            .renderer_node_name => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "name"), p);
+                return l.binary(.logical_or, value, try l.stringNode("", p), p);
+            },
+            .renderer_node_focused => {
+                return l.binary(.strict_eq, values[0], try l.member(document, try l.interner.getOrPut(l.gpa, "activeElement"), p), p);
+            },
+            .renderer_control_value => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "value"), p);
+                return value;
+            },
+            .renderer_control_value_set => {
+                const target = try l.member(values[0], try l.interner.getOrPut(l.gpa, "value"), p);
+                try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), values[1].int()));
+                return l.nullNode(p);
+            },
+            .renderer_control_checked => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "checked"), p);
+                return value;
+            },
+            .renderer_control_checked_set => {
+                const target = try l.member(values[0], try l.interner.getOrPut(l.gpa, "checked"), p);
+                try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), values[1].int()));
+                return l.nullNode(p);
+            },
+            .renderer_control_selected => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "selected"), p);
+                return value;
+            },
+            .renderer_control_selected_set => {
+                const target = try l.member(values[0], try l.interner.getOrPut(l.gpa, "selected"), p);
+                try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), values[1].int()));
+                return l.nullNode(p);
+            },
+            .renderer_control_selectedIndex => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "selectedIndex"), p);
+                return value;
+            },
+            .renderer_control_selectedIndex_set => {
+                const target = try l.member(values[0], try l.interner.getOrPut(l.gpa, "selectedIndex"), p);
+                try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), values[1].int()));
+                return l.nullNode(p);
+            },
+            .renderer_selectionStart => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "selectionStart"), p);
+                const saved = try l.fresh(l.well.temp);
+                try l.constDecl(out, saved, value, p);
+                const present = try l.ident(saved, p);
+                return l.condOf(try l.binary(.logical_or, try l.binary(.strict_eq, present, try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p), try l.binary(.strict_eq, present, try l.nullNode(p), p), p), try l.optNone(p), present, p);
+            },
+            .renderer_selectionEnd => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "selectionEnd"), p);
+                const saved = try l.fresh(l.well.temp);
+                try l.constDecl(out, saved, value, p);
+                const present = try l.ident(saved, p);
+                return l.condOf(try l.binary(.logical_or, try l.binary(.strict_eq, present, try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p), try l.binary(.strict_eq, present, try l.nullNode(p), p), p), try l.optNone(p), present, p);
+            },
+            .renderer_selectionDirection => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "selectionDirection"), p);
+                return value;
+            },
+            .renderer_selection_set => {
+                const invoked = try l.call(try l.member(values[0], try l.interner.getOrPut(l.gpa, "setSelectionRange"), p), values[1..], p);
+                try out.append(l.scratch, try l.add(.expr_stmt, p, invoked.int(), Node.Data.unused));
+                return l.nullNode(p);
+            },
+            .renderer_node_options => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "options"), p);
+                return value;
+            },
+            .renderer_node_elements => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "elements"), p);
+                return value;
+            },
+            .renderer_document_named => {
+                return l.call(try l.member(document, try l.interner.getOrPut(l.gpa, "getElementsByName"), p), &.{values[0]}, p);
+            },
+            .renderer_document_controls => {
+                return l.call(try l.member(document, try l.interner.getOrPut(l.gpa, "querySelectorAll"), p), &.{try l.stringNode("input,select,textarea,option", p)}, p);
+            },
+            .renderer_node_edits => {
+                const value = try l.member(values[0], try l.interner.getOrPut(l.gpa, "$$e"), p);
+                const saved = try l.fresh(l.well.temp);
+                try l.constDecl(out, saved, value, p);
+                const present = try l.ident(saved, p);
+                return l.condOf(try l.binary(.strict_eq, present, try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p), try l.optNone(p), present, p);
+            },
+            .renderer_node_edits_set => {
+                const target = try l.member(values[0], try l.interner.getOrPut(l.gpa, "$$e"), p);
+                try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), values[1].int()));
+                return l.nullNode(p);
+            },
+            .renderer_current => {
+                const at = try l.member(values[1], try l.interner.getOrPut(l.gpa, "v"), p);
+                const current = try l.condOf(try l.binary(.strict_eq, at, try l.optNone(p), p), try l.nullNode(p), at, p);
+                const getter = try l.arrowOf(&.{}, &.{try l.returnStmt(current, p)}, p);
+                const descriptor = try l.object(&.{
+                    try l.property(try l.interner.getOrPut(l.gpa, "configurable"), try l.add(.true_lit, p, Node.Data.unused, Node.Data.unused), p),
+                    try l.property(try l.interner.getOrPut(l.gpa, "get"), getter, p),
+                }, p);
+                const object_ctor = try l.member(global, try l.interner.getOrPut(l.gpa, "Object"), p);
+                const invoked = try l.call(try l.member(object_ctor, try l.interner.getOrPut(l.gpa, "defineProperty"), p), &.{ values[0], try l.stringNode("currentTarget", p), descriptor }, p);
+                try out.append(l.scratch, try l.add(.expr_stmt, p, invoked.int(), Node.Data.unused));
+                return l.nullNode(p);
+            },
+            .renderer_current_clear => {
+                const reflect = try l.member(global, try l.interner.getOrPut(l.gpa, "Reflect"), p);
+                const invoked = try l.call(try l.member(reflect, try l.interner.getOrPut(l.gpa, "deleteProperty"), p), &.{ values[0], try l.stringNode("currentTarget", p) }, p);
+                try out.append(l.scratch, try l.add(.expr_stmt, p, invoked.int(), Node.Data.unused));
+                return l.nullNode(p);
+            },
+            .renderer_early_take => {
+                const name_ = try l.fresh(l.well.temp);
+                const target = try l.member(global, try l.interner.getOrPut(l.gpa, "$beni"), p);
+                try l.constDecl(out, name_, target, p);
+                const callback = try l.ident(name_, p);
+                const absent = try l.binary(.strict_eq, callback, try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p);
+                const clear = try l.add(.assign_stmt, p, target.int(), (try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused)).int());
+                try l.ifStatement(out, try l.unary(.not, absent, p), &.{clear}, p);
+                return l.condOf(absent, try l.arrayNode(&.{}, p), try l.call(callback, &.{}, p), p);
+            },
+            .renderer_early_event, .renderer_early_target, .renderer_early_remember => {
+                const event = try l.add(.index_get, p, values[0].int(), (try l.intNode(0, p)).int());
+                if (row.recipe == .renderer_early_event) return event;
+                const target = try l.member(event, try l.interner.getOrPut(l.gpa, "target"), p);
+                if (row.recipe == .renderer_early_target) return target;
+                const push = try l.call(try l.member(values[0], try l.interner.getOrPut(l.gpa, "push"), p), &.{
+                    try l.member(target, try l.interner.getOrPut(l.gpa, "value"), p),
+                    try l.member(target, try l.interner.getOrPut(l.gpa, "checked"), p),
+                    try l.member(target, try l.interner.getOrPut(l.gpa, "selectedIndex"), p),
+                }, p);
+                try out.append(l.scratch, try l.add(.expr_stmt, p, push.int(), Node.Data.unused));
+                return l.nullNode(p);
+            },
+            .renderer_early_value, .renderer_early_checked, .renderer_early_selectedindex => {
+                const offset: u32 = if (row.recipe == .renderer_early_value) 0 else if (row.recipe == .renderer_early_checked) 1 else 2;
+                const at = if (offset == 0) values[1] else try l.binary(.add, values[1], try l.intNode(offset, p), p);
+                const name_ = try l.fresh(l.well.temp);
+                try l.constDecl(out, name_, try l.add(.index_get, p, values[0].int(), at.int()), p);
+                const value = try l.ident(name_, p);
+                return l.condOf(try l.binary(.strict_eq, value, try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p), try l.optNone(p), value, p);
+            },
             .renderer_first_child, .renderer_next_sibling, .renderer_parent => {
                 const slot = try l.fresh(l.well.temp);
                 try l.constDecl(out, slot, try l.member(values[0], try l.interner.getOrPut(l.gpa, row.member), p), p);
@@ -11206,7 +11426,51 @@ pub const Lowerer = struct {
             // ownership pin end: rendererAppend
             // ownership pin end: rendererRemove
             // ownership pin end: rendererClone
+            // ownership pin end: rendererEarlyListeners
+            // ownership pin end: rendererEarlyAppend
+            // ownership pin end: rendererEarlySize
+            // ownership pin end: rendererEarlyKindAt
+            // ownership pin end: rendererEarlyHandlerAt
+
+            // ownership pin end: rendererTarget
+            // ownership pin end: rendererDisabled
+            // ownership pin end: rendererTag
+            // ownership pin end: rendererKind
+            // ownership pin end: rendererName
+            // ownership pin end: rendererFocused
+            // ownership pin end: rendererValue
+            // ownership pin end: rendererSetValue
+            // ownership pin end: rendererChecked
+            // ownership pin end: rendererSetChecked
+            // ownership pin end: rendererSelected
+            // ownership pin end: rendererSetSelected
+            // ownership pin end: rendererSelectedIndex
+            // ownership pin end: rendererSetSelectedIndex
+            // ownership pin end: rendererSelectionStart
+            // ownership pin end: rendererSelectionEnd
+            // ownership pin end: rendererSelectionDirection
+            // ownership pin end: rendererSetSelectionRange
+            // ownership pin end: rendererOptions
+            // ownership pin end: rendererElements
+            // ownership pin end: rendererNamed
+            // ownership pin end: rendererControls
+            // ownership pin end: rendererEdits
+            // ownership pin end: rendererSetEdits
+
+            // ownership pin end: rendererCurrentTarget
+            // ownership pin end: rendererClearCurrentTarget
+            // ownership pin end: rendererTakeEarly
+            // ownership pin end: rendererEarlyEvent
+            // ownership pin end: rendererEarlyTarget
+            // ownership pin end: rendererEarlyRemember
+            // ownership pin end: rendererEarlyValue
+            // ownership pin end: rendererEarlyChecked
+            // ownership pin end: rendererEarlySelectedIndex
+
             switch (native.recipe) {
+                .set_make, .set_add, .set_has, .set_size, .set_clear, .set_each, .array_each_view => {},
+                .array_each => {},
+                .event_type, .event_isTrusted, .event_bubbles, .event_cancelBubble, .event_stop, .event_target, .target_node, .node_element, .node_contains, .element_local, .element_as_input, .input_value, .input_value_set, .input_checked, .input_checked_set, .input_disabled, .input_type, .input_name, .input_selectionStart, .input_selectionEnd, .input_selectionDirection, .input_selection_set, .input_node, .element_as_textarea, .textarea_value, .textarea_value_set, .textarea_disabled, .textarea_selectionStart, .textarea_selectionEnd, .textarea_selectionDirection, .textarea_selection_set, .textarea_node, .element_as_select, .select_value, .select_value_set, .select_selectedIndex, .select_selectedIndex_set, .select_disabled, .select_node, .element_as_option, .option_selected, .option_selected_set, .option_node, .element_as_form, .form_node, .select_options, .form_elements, .document_named, .document_active, .document_controls, .event_capture => {},
                 .array_make, .array_get_or, .array_set, .array_push, .array_size, .list_array_view, .array_view_get_or, .array_view_length, .array_view_slice, .key_map_values, .key_map_make, .key_map_get_or, .key_map_get, .key_map_set, .key_map_has, .key_map_remove, .key_map_clear, .key_map_size, .key_map_each, .document_body, .document_create_element, .node_append, .element_attribute, .event_message, .rejection_display => {},
                 .map_get, .map_set, .map_delete, .map_entries, .query_selector, .text_content, .timeout, .queue_microtask, .timer_start, .timer_clear, .message_channel, .message_port1, .message_port2, .post_unit, .on_message, .try_immediate, .date_now, .math_random, .listen_window, .listen_document, .event_prevent, .event_key, .event_code, .event_ctrlKey, .event_shiftKey, .event_altKey, .event_metaKey, .event_pointerId, .event_pointerType, .event_isPrimary, .event_clientX, .event_clientY, .event_box, .rect_left, .rect_top, .event_target_value, .event_target_checked, .event_prevented, .event_button, .event_path, .as_anchor, .anchor_has, .anchor_href, .anchor_protocol, .anchor_host, .anchor_target, .frame_request, .frame_cancel, .inner_width, .inner_height, .visibility_state, .document_title, .document_title_read, .event_listen, .process_stdout, .process_stderr, .process_exit_code, .process_before_exit, .promise_observe, .rejection_is_error, .rejection_name, .rejection_code, .rejection_raise, .abort_create, .abort_signal, .abort_call, .abort_aborted, .node_read_utf8, .node_read_dir, .dirent_name, .dirent_file, .dirent_directory, .dirent_link, .data_is_array, .data_is_finite, .data_is_integer, .data_is_safe_integer, .data_keys, .data_empty_object, .data_has_own, .json_parse, .json_stringify, .url_try_create, .url_href, .url_username, .url_password, .document_base_uri, .headers_create, .headers_append, .headers_has, .headers_set, .headers_get, .headers_entries, .form_create, .form_append, .fetch_text_body, .fetch_form_body, .fetch_init, .fetch_call, .response_url, .response_status, .response_status_text, .response_ok, .response_headers, .response_text, .response_reader, .reader_bytes, .read_result_done, .read_result_value, .decoder_create, .decoder_more, .decoder_finish, .dom_exception_create, .abort_with_reason, .abort_reason_is, .rejection_is_type_error, .regexp_create, .regexp_test, .regexp_replace, .storage_local, .storage_session, .storage_get, .storage_set, .storage_remove, .storage_length, .storage_key, .url_protocol, .url_set_protocol, .ws_create, .ws_binary, .ws_state, .ws_buffered, .ws_protocol, .ws_send, .ws_close, .ws_close_empty, .ws_open, .ws_error, .ws_message, .ws_closed, .console_warn, .document_by_id, .element_focus, .element_blur, .element_box, .element_scroll, .element_into_view, .rect_x, .rect_y, .rect_width, .rect_height, .window_scroll_x, .window_scroll_y, .element_fullscreen_supported, .element_fullscreen, .document_fullscreen_enabled, .document_fullscreen_id, .document_fullscreen_exit, .navigator_activated, .rejection_type_error_message, .data_same, .worker_supported, .worker_create, .worker_endpoint, .worker_self_endpoint, .worker_post, .worker_terminate, .worker_event_target, .global_event_target, .event_data_only, .event_error, .console_error_data, .rejection_abandoned, .global_is_page, .event_error_message, .rejection_create, .rejection_assign, .regexp_group, .worker_close_self, .cf_socketInitialize, .cf_unitResolvers, .cf_stringResolvers, .cf_dataResolvers, .cf_responseResolvers, .cf_program, .cf_definition, .cf_instance, .cf_namespace, .cf_service, .cf_variable, .cf_byName, .cf_idFromString, .cf_getStub, .cf_idName, .cf_requestPath, .cf_requestCopy, .cf_requestSignal, .cf_onAbort, .cf_responseCreate, .cf_responseCopy, .cf_stubFetch, .cf_serviceFetch, .cf_stubRpc, .cf_overloaded, .cf_reset, .cf_retryable, .cf_errorText, .cf_randomUUID, .cf_waitUntil, .cf_objectWaitUntil, .cf_objectAbort, .cf_alarmSet, .cf_alarmDelete, .cf_socketsTagged, .cf_acceptSocket, .cf_autoResponse, .cf_socketPair, .cf_socketClient, .cf_socketServer, .cf_socketResponse, .cf_socketCloseEmpty, .cf_consoleError, .cf_consoleLog, .cf_consoleReason, .promise_resolve, .promise_reject, .promise_after, .cf_socketEq, .cf_socketSend, .cf_socketClose, .cf_socketAttach, .cf_kv, .cf_kvGet, .cf_kvPut, .cf_kvDelete, .cf_kvKeys => {}, // Precise generated adapters.
                 else => {

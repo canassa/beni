@@ -2324,3 +2324,7 @@ test "ownership words: compiler intrinsic pins cover the reply scan fixture" {
     // the traversal. Both independently pinned regions must remain covered.
     try testing.expectEqual(@as(usize, 2), try expectPinBodies("tests/platforms/reply-scan", "Worker.Object.replyIds"));
 }
+
+test "ownership words: native event containers retain element aliases" {
+    try expectFlips("ownership/core/NativeEvents.beni", &.{"--core"});
+}

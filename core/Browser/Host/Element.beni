@@ -1,12 +1,13 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
-import Browser.Host.Node as Node
-
-
 import Browser.Host.DOMRect as DOMRect
+import Browser.Host.Node as Node
 import Browser.Host.Promise as Promise
 
 
 pub foreign type Element
+
+
+pub foreign impure localName : borrowed Element → String
 
 
 pub foreign impure styleText : borrowed Element, String → ⊤

@@ -1,4 +1,6 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Browser.Host.Array as Array
+import Browser.Host.Set as Set
 import Js
 
 
@@ -7,6 +9,72 @@ pub type MoveError
 
 
 pub foreign type Node
+
+
+pub foreign impure rendererDisabled : borrowed Node → Bool
+
+
+pub foreign impure rendererTag : borrowed Node → String
+
+
+pub foreign impure rendererKind : borrowed Node → String
+
+
+pub foreign impure rendererName : borrowed Node → String
+
+
+pub foreign impure rendererFocused : borrowed Node → Bool
+
+
+pub foreign impure rendererValue : borrowed Node → String
+
+
+pub foreign impure rendererSetValue : borrowed Node, String → ⊤
+
+
+pub foreign impure rendererChecked : borrowed Node → Bool
+
+
+pub foreign impure rendererSetChecked : borrowed Node, Bool → ⊤
+
+
+pub foreign impure rendererSelected : borrowed Node → Bool
+
+
+pub foreign impure rendererSetSelected : borrowed Node, Bool → ⊤
+
+
+pub foreign impure rendererSelectedIndex : borrowed Node → Int
+
+
+pub foreign impure rendererSetSelectedIndex : borrowed Node, Int → ⊤
+
+
+pub foreign impure rendererSelectionStart : borrowed Node → Js.Opt Int
+
+
+pub foreign impure rendererSelectionEnd : borrowed Node → Js.Opt Int
+
+
+pub foreign impure rendererSelectionDirection : borrowed Node → String
+
+
+pub foreign impure rendererSetSelectionRange : borrowed Node, Int, Int, String → ⊤
+
+
+pub foreign impure rendererOptions : aliased Node → Array.View Node
+
+
+pub foreign impure rendererElements : aliased Node → Array.View Node
+
+
+pub foreign impure rendererEdits : borrowed Node → Js.Opt (Set.Set Node)
+
+
+pub foreign impure rendererSetEdits : borrowed Node, Set.Set Node → ⊤
+
+
+pub foreign impure contains : borrowed Node, borrowed Node → Bool
 
 
 pub foreign impure rendererFirstChild : borrowed Node → Js.Opt Node

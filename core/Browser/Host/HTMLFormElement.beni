@@ -1,0 +1,11 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Browser.Host.Node as Node
+
+
+pub foreign type HTMLFormElement
+
+
+pub foreign impure toNode : HTMLFormElement → Node.Node
+
+
+pub foreign impure elements : aliased HTMLFormElement → List Node.Node

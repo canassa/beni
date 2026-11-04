@@ -78,6 +78,20 @@ module Browser.Host.AbortSignal
   type AbortSignal
   value aborted : AbortSignal → Bool  -- impure
   value reasonIs : AbortSignal, DOMException → Bool  -- impure
+module Browser.Host.Array
+  type Array a
+  type View a
+  value atOr : View a, Int, a → a  -- impure
+  value each : Array a, (a → ⊤) → ⊤  -- impure
+  value eachView : View a, (a → ⊤) → ⊤  -- impure
+  value fromList : List a → View a  -- impure
+  value getOr : Array a, Int, a → a  -- impure
+  value length : View a → Int  -- impure
+  value make : ⊤ → Array a  -- impure
+  value push : Array a, a → ⊤  -- impure
+  value set : Array a, Int, a → Bool  -- impure
+  value size : Array a → Int  -- impure
+  value slice : View a, Int → View a  -- impure
 module Browser.Host.Console
   type Console
   value errorData : String, Value → ⊤  -- impure
@@ -108,11 +122,16 @@ module Browser.Host.Document
   type Document
   type QueryError
     SyntaxError
+  value activeElement : ⊤ → Maybe Element  -- impure
   value baseURI : ⊤ → String  -- impure
+  value body : ⊤ → Maybe Element  -- impure
   value byId : String → Maybe Element  -- impure
+  value controls : ⊤ → List Node  -- impure
+  value div : ⊤ → Element  -- impure
   value exitFullscreen : ⊤ → Promise ⊤  -- impure
   value fullscreenElementId : ⊤ → Maybe String  -- impure
   value fullscreenEnabled : ⊤ → Bool  -- impure
+  value getElementsByName : String → List Node  -- impure
   value listen : String, (Event → ⊤) → (⊤ → ⊤)  -- impure
   value querySelector : Document, String → Result QueryError (Maybe Element)  -- impure
   value setTitle : String → ⊤  -- impure
@@ -124,14 +143,18 @@ module Browser.Host.Element
   value box : Element → DOMRect  -- impure
   value focus : Element → ⊤  -- impure
   value fullscreenSupported : Element → Bool  -- impure
+  value localName : Element → String  -- impure
   value requestFullscreen : Element → Promise ⊤  -- impure
   value scrollIntoView : Element → ⊤  -- impure
   value scrollTo : Element, Float, Float → ⊤  -- impure
+  value styleText : Element, String → ⊤  -- impure
   value toNode : Element → Node
 module Browser.Host.Event
   type Event
   value altKey : Event → Bool  -- impure
+  value bubbles : Event → Bool  -- impure
   value button : Event → Int  -- impure
+  value cancelBubble : Event → Bool  -- impure
   value clientX : Event → Float  -- impure
   value clientY : Event → Float  -- impure
   value code : Event → String  -- impure
@@ -143,20 +166,33 @@ module Browser.Host.Event
   value error : Event → Maybe Rejection  -- impure
   value errorMessage : Event → Maybe String  -- impure
   value isPrimary : Event → Bool  -- impure
+  value isTrusted : Event → Bool  -- impure
   value key : Event → String  -- impure
+  value kind : Event → String  -- impure
+  value message : Event → String  -- impure
   value metaKey : Event → Bool  -- impure
   value pointerId : Event → Int  -- impure
   value pointerType : Event → String  -- impure
   value preventDefault : Event → ⊤  -- impure
   value shiftKey : Event → Bool  -- impure
+  value stopPropagation : Event → ⊤  -- impure
+  value target : Event → Maybe EventTarget  -- impure
   value targetChecked : Event → Bool  -- impure
   value targetValue : Event → String  -- impure
 module Browser.Host.EventTarget
   type EventTarget
   value asAnchor : EventTarget → Maybe HTMLAnchorElement  -- impure
+  value asElement : EventTarget → Maybe Element  -- impure
+  value asForm : EventTarget → Maybe HTMLFormElement  -- impure
+  value asInput : EventTarget → Maybe HTMLInputElement  -- impure
+  value asNode : EventTarget → Maybe Node  -- impure
+  value asOption : EventTarget → Maybe HTMLOptionElement  -- impure
+  value asSelect : EventTarget → Maybe HTMLSelectElement  -- impure
+  value asTextArea : EventTarget → Maybe HTMLTextAreaElement  -- impure
   value current : ⊤ → EventTarget  -- impure
   value isPage : ⊤ → Bool  -- impure
 module Browser.Host.Events
+  value capture : EventTarget, String, (Event → ⊤) → (⊤ → ⊤)  -- impure
   value listen : EventTarget, String, (Event → ⊤) → (⊤ → ⊤)  -- impure
 module Browser.Host.Fetch
   type Body
@@ -176,6 +212,50 @@ module Browser.Host.HTMLAnchorElement
   value href : HTMLAnchorElement → String  -- impure
   value protocol : HTMLAnchorElement → String  -- impure
   value target : HTMLAnchorElement → String  -- impure
+module Browser.Host.HTMLFormElement
+  type HTMLFormElement
+  value elements : HTMLFormElement → List Node  -- impure
+  value toNode : HTMLFormElement → Node  -- impure
+module Browser.Host.HTMLInputElement
+  type HTMLInputElement
+  type WriteError
+    InvalidStateError
+  value checked : HTMLInputElement → Bool  -- impure
+  value disabled : HTMLInputElement → Bool  -- impure
+  value kind : HTMLInputElement → String  -- impure
+  value name : HTMLInputElement → String  -- impure
+  value selectionDirection : HTMLInputElement → Maybe String  -- impure
+  value selectionEnd : HTMLInputElement → Maybe Int  -- impure
+  value selectionStart : HTMLInputElement → Maybe Int  -- impure
+  value setChecked : HTMLInputElement, Bool → ⊤  -- impure
+  value setSelectionRange : HTMLInputElement, Int, Int, String → Result WriteError ⊤  -- impure
+  value setValue : HTMLInputElement, String → Result WriteError ⊤  -- impure
+  value toNode : HTMLInputElement → Node  -- impure
+  value value : HTMLInputElement → String  -- impure
+module Browser.Host.HTMLOptionElement
+  type HTMLOptionElement
+  value selected : HTMLOptionElement → Bool  -- impure
+  value setSelected : HTMLOptionElement, Bool → ⊤  -- impure
+  value toNode : HTMLOptionElement → Node  -- impure
+module Browser.Host.HTMLSelectElement
+  type HTMLSelectElement
+  value disabled : HTMLSelectElement → Bool  -- impure
+  value options : HTMLSelectElement → List Node  -- impure
+  value selectedIndex : HTMLSelectElement → Int  -- impure
+  value setSelectedIndex : HTMLSelectElement, Int → ⊤  -- impure
+  value setValue : HTMLSelectElement, String → ⊤  -- impure
+  value toNode : HTMLSelectElement → Node  -- impure
+  value value : HTMLSelectElement → String  -- impure
+module Browser.Host.HTMLTextAreaElement
+  type HTMLTextAreaElement
+  value disabled : HTMLTextAreaElement → Bool  -- impure
+  value selectionDirection : HTMLTextAreaElement → String  -- impure
+  value selectionEnd : HTMLTextAreaElement → Int  -- impure
+  value selectionStart : HTMLTextAreaElement → Int  -- impure
+  value setSelectionRange : HTMLTextAreaElement, Int, Int, String → ⊤  -- impure
+  value setValue : HTMLTextAreaElement, String → ⊤  -- impure
+  value toNode : HTMLTextAreaElement → Node  -- impure
+  value value : HTMLTextAreaElement → String  -- impure
 module Browser.Host.Headers
   type Headers
   value append : Headers, String, String → ⊤  -- impure
@@ -191,6 +271,18 @@ module Browser.Host.Json
     SyntaxError
   value parse : String → Result ParseError Value  -- impure
   value stringify : Value → Value  -- impure
+module Browser.Host.KeyMap
+  type Map a b
+  value clear : Map key value → ⊤  -- impure
+  value each : Map key value, (key, value → ⊤) → ⊤  -- impure
+  value get : Map key value, key → Maybe value  -- impure
+  value getOr : Map key value, key, value → value  -- impure
+  value has : Map key value, key → Bool  -- impure
+  value make : ⊤ → Map key value  -- impure
+  value remove : Map key value, key → Bool  -- impure
+  value set : Map key value, key, value → ⊤  -- impure
+  value size : Map key value → Int  -- impure
+  value values : Map key value → List value  -- impure
 module Browser.Host.Math
   value random : ⊤ → Float  -- impure
 module Browser.Host.MessageChannel
@@ -206,7 +298,11 @@ module Browser.Host.Navigator
   type Navigator
   value activated : ⊤ → Bool  -- impure
 module Browser.Host.Node
+  type MoveError
+    HierarchyRequestError
   type Node
+  value append : Node, Node → Result MoveError ⊤  -- impure
+  value contains : Node, Node → Bool  -- impure
   value setTextContent : Node, String → ⊤  -- impure
   value textContent : Node → Maybe String  -- impure
 module Browser.Host.NodeDirent
@@ -254,6 +350,7 @@ module Browser.Host.Rejection
   value assign : Rejection, Value → ⊤  -- impure
   value code : Rejection → Maybe String  -- impure
   value create : String → Rejection  -- impure
+  value display : Rejection → String  -- impure
   value isError : Rejection → Bool  -- impure
   value isTypeError : Rejection → Bool  -- impure
   value name : Rejection → String  -- impure
@@ -271,6 +368,14 @@ module Browser.Host.Response
   value statusText : Response → String  -- impure
   value text : Response → Promise String  -- impure
   value url : Response → String  -- impure
+module Browser.Host.Set
+  type Set a
+  value add : Set a, a → ⊤  -- impure
+  value clear : Set a → ⊤  -- impure
+  value each : Set a, (a → ⊤) → ⊤  -- impure
+  value has : Set a, a → Bool  -- impure
+  value make : ⊤ → Set a  -- impure
+  value size : Set a → Int  -- impure
 module Browser.Host.Storage
   type SetError
     QuotaExceeded

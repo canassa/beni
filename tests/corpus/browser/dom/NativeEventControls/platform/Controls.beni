@@ -1,0 +1,121 @@
+import Browser.Host.Array as Array
+import Browser.Host.Document as Document
+import Browser.Host.Element as Element
+import Browser.Host.EventTarget as Target
+import Browser.Host.HTMLInputElement as Input
+import Browser.Host.HTMLSelectElement as Select
+import Browser.Host.HTMLTextAreaElement as TextArea
+import Browser.Host.Node as Node
+import Browser.Host.Set as Set
+import Js
+import Maybe
+
+
+node : Js.Opt Node.Node → Node.Node
+node value = Js.optMatch value (λ⊤ → Document.rendererText "missing") λpresent → present
+
+
+pub run : ⊤ → String
+run ⊤ =
+    fragment =
+        Document.rendererTemplate
+            "<input value='before' name='sample'><input type='file'><textarea>before</textarea><select><option>A</option><option>B</option></select>"
+    textNode = node (Node.rendererFirstChild fragment)
+    fileNode = node (Node.rendererNextSibling textNode)
+    areaNode = node (Node.rendererNextSibling fileNode)
+    selectNode = node (Node.rendererNextSibling areaNode)
+    values =
+        case
+            ( Target.asInput (Target.rendererFromNode textNode)
+            , Target.asInput (Target.rendererFromNode fileNode)
+            , Target.asTextArea (Target.rendererFromNode areaNode)
+            , Target.asSelect (Target.rendererFromNode selectNode)
+            )
+        of
+            ( Just input, Just file, Just area, Just select ) →
+                inputWrite = Input.setValue input "abcdef"
+                selected = Input.setSelectionRange input 1 3 "backward"
+                fileWrite = Input.setValue file "forbidden"
+                fileSelection = Input.setSelectionRange file 0 0 "none"
+                TextArea.setValue area "xyz"
+                TextArea.setSelectionRange area 1 2 "forward"
+                Select.setSelectedIndex select 1
+                Node.rendererSetValue textNode "abcdef"
+                Node.rendererSetChecked textNode True
+                Node.rendererSetSelectedIndex selectNode 1
+                optionNode = node (Node.rendererFirstChild selectNode)
+                Node.rendererSetSelected optionNode False
+                Node.rendererSetSelectionRange textNode 1 3 "backward"
+                caretStart = Js.optMatch (Node.rendererSelectionStart textNode) (λ⊤ → -1) λn → n
+                caretEnd = Js.optMatch (Node.rendererSelectionEnd textNode) (λ⊤ → -1) λn → n
+                edits = Set.make ⊤
+                Set.add edits textNode
+                Node.rendererSetEdits fragment edits
+                List.foldl
+                    [ ( "input-write", inputWrite == Ok ⊤ )
+                    , ( "input-selection", selected == Ok ⊤ )
+                    , ( "file-write-error", fileWrite == Err Input.InvalidStateError )
+                    , ( "file-selection-error", fileSelection == Err Input.InvalidStateError )
+                    , ( "input-value", Input.value input == "abcdef" )
+                    , ( "caret-start", Input.selectionStart input == Just 1 )
+                    , ( "caret-end", Input.selectionEnd input == Just 3 )
+                    , ( "caret-direction", Input.selectionDirection input == Just "backward" )
+                    , ( "textarea-value", TextArea.value area == "xyz" )
+                    , ( "textarea-start", TextArea.selectionStart area == 1 )
+                    , ( "textarea-end", TextArea.selectionEnd area == 2 )
+                    , ( "textarea-direction", TextArea.selectionDirection area == "forward" )
+                    , ( "select-value", Select.value select == "B" )
+                    , ( "select-index", Select.selectedIndex select == 1 )
+                    , ( "select-options", List.length (Select.options select) == 2 )
+                    , ( "native-value", Node.rendererValue textNode == "abcdef" )
+                    , ( "native-check", Node.rendererChecked textNode )
+                    , ( "native-select"
+                      , not (Node.rendererSelected optionNode)
+                          && Node.rendererSelectedIndex selectNode == 1
+                      )
+                    , ( "native-caret"
+                      , caretStart == 1
+                          && caretEnd == 3
+                          && Node.rendererSelectionDirection textNode == "backward"
+                      )
+                    , ( "native-input"
+                      , Node.rendererTag textNode == "input"
+                          && Node.rendererKind textNode == "text"
+                          && Node.rendererName textNode == "sample"
+                          && not (Node.rendererDisabled textNode)
+                      )
+                    , ( "native-options", Array.length (Node.rendererOptions selectNode) == 2 )
+                    , ( "native-edits"
+                      , Js.optMatch (Node.rendererEdits fragment) (λ⊤ → False) λfound →
+                          Js.same found edits && Set.has found textNode && Set.size found == 1
+                      )
+                    ]
+                    ""
+                    λ( label, ok ) failures → if ok then failures else failures ++ label ++ " "
+            _ →
+                "cast "
+    focus =
+        case Target.asElement (Target.rendererFromNode textNode) of
+            Nothing →
+                False
+            Just element →
+                body = Document.rendererBody ⊤
+                Node.rendererAppend body textNode
+                Element.focus element
+                focused =
+                    case Document.activeElement ⊤ of
+                        Nothing →
+                            False
+                        Just active →
+                            Js.same (Element.toNode active) textNode
+                nativeFocus = Node.rendererFocused textNode
+                named = Array.length (Document.rendererNamed "sample") == 1
+                all = Array.length (Document.rendererControls ⊤) == 1
+                Element.blur element
+                Node.rendererRemove textNode
+                focused && nativeFocus && named && all
+    focusLabel = if focus then "yes" else "no"
+    if values == "" && focus then
+        "native controls: ok"
+    else
+        "native controls: ${values}focus=${focusLabel}"

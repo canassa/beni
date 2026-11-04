@@ -50,15 +50,18 @@ module Cmd
   value none : Cmd msg
   value perform : ((Send msg) → ⊤) → (Cmd msg)
 module Inline
+  opaque type Bucket
+  opaque type Entry
   opaque type NavigationKey
   value address : ⊤ → Url  -- impure
   value arrived : Url → ⊤  -- impure
+  value bucket : ⊤ → Bucket  -- impure
   value busy : ⊤ → Bool  -- impure
   value caught : V → ⊤  -- impure
-  value commands : (Cmd V), V → ⊤  -- impure
+  value commands : (Cmd msg), (msg → ⊤) → ⊤  -- impure
   value decoded : (Schema e d), V → V  -- impure
   value deliver : V → ⊤  -- impure
-  value entry : V, V → V  -- impure
+  value entry : (⊤ → ⊤), List (Bucket) → (Entry)  -- impure
   value escape : V → V  -- impure
   value escapeAttribute : V → V  -- impure
   value escapePre : V → V  -- impure
@@ -85,11 +88,11 @@ module Inline
   value pageData : (Schema e d), V → V  -- impure
   value pageUrl : String → Url  -- impure
   value part : V → V  -- impure
-  value pass : V → ⊤  -- impure
-  value passes : V → ⊤  -- impure
+  value pass : Bucket → ⊤  -- impure
+  value passes : List Bucket → ⊤  -- impure
   value prop : V, V, V → ⊤  -- impure
   value root : V → V  -- impure
-  value roots : V, V, Int, V, Int → ⊤  -- impure
+  value roots : List (⊤ → ⊤) → ⊤  -- impure
   value routeUrl : String, String → Url  -- impure
   value run : V → ⊤  -- impure
   value send : V, V, V → ⊤  -- impure

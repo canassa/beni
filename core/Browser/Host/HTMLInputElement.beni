@@ -1,0 +1,50 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Browser.Host.Node as Node
+
+
+pub type WriteError
+    = InvalidStateError
+
+
+pub foreign type HTMLInputElement
+
+
+pub foreign impure value : borrowed HTMLInputElement → String
+
+
+pub foreign impure setValue : borrowed HTMLInputElement, String → Result WriteError ⊤
+
+
+pub foreign impure checked : borrowed HTMLInputElement → Bool
+
+
+pub foreign impure setChecked : borrowed HTMLInputElement, Bool → ⊤
+
+
+pub foreign impure disabled : borrowed HTMLInputElement → Bool
+
+
+pub foreign impure kind : borrowed HTMLInputElement → String
+
+
+pub foreign impure name : borrowed HTMLInputElement → String
+
+
+pub foreign impure selectionStart : borrowed HTMLInputElement → Maybe Int
+
+
+pub foreign impure selectionEnd : borrowed HTMLInputElement → Maybe Int
+
+
+pub foreign impure selectionDirection : borrowed HTMLInputElement → Maybe String
+
+
+pub foreign impure setSelectionRange :
+      borrowed HTMLInputElement
+    , Int
+    , Int
+    , String
+    → Result WriteError ⊤
+
+
+pub foreign impure toNode : HTMLInputElement → Node.Node

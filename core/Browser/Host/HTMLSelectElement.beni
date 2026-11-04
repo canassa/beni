@@ -1,0 +1,26 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Browser.Host.Node as Node
+
+
+pub foreign type HTMLSelectElement
+
+
+pub foreign impure value : borrowed HTMLSelectElement → String
+
+
+pub foreign impure setValue : borrowed HTMLSelectElement, String → ⊤
+
+
+pub foreign impure selectedIndex : borrowed HTMLSelectElement → Int
+
+
+pub foreign impure setSelectedIndex : borrowed HTMLSelectElement, Int → ⊤
+
+
+pub foreign impure disabled : borrowed HTMLSelectElement → Bool
+
+
+pub foreign impure toNode : HTMLSelectElement → Node.Node
+
+
+pub foreign impure options : aliased HTMLSelectElement → List Node.Node

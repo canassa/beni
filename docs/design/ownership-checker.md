@@ -4384,6 +4384,23 @@ pinned together in `word-bodies.txt`. The native-handle calls in
 sequence verdict can distinguish a weaker word on these handle-only arguments,
 so their flip column is `-`, as for the existing native handle readers.
 
+**Typed event and control native handles** (2026-11-04; #1826). The new
+Node/Event/control projections borrow native identities and change only native
+DOM state. They retain no Beni sequence. Capture tuples keep the original native
+event and data snapshots; listener tables keep raw alternating strings and
+callbacks. The latter are a host sequence over the handler type, fixed by each
+operation to `Event → ⊤`. Like `Array.push`, append borrows its receiver, a
+host container that no beni value reads, and escapes its callback; indexed reads
+are borrowed and check logical pair bounds. A `written` receiver was tried and
+refused the one use the table exists for, an append to a table read from its
+`KeyMap` (v2: `unknown`), and an append to a new table before it is stored (v2:
+`later-use`). Its retained callback case matches `NativeEscapes`, including the existing
+lambda-under-v2 limitation. Native Set handles are mutable host identities;
+adding an item escapes it, and the retained-list fixture notices an unsafe flip.
+Array/view iteration reads its receiver and invokes the supplied synchronous
+visitor without retaining it. The native recipes and ordinary siblings are pinned
+at their actual bodies, and the platform-private names share the existing fence.
+
 ### 24.9 The decoder in `Expect`
 
 `Http.request r` calls the function `r.expect` holds — `transfer`'s pattern `(Expect accept read)` binds it and

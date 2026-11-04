@@ -1,4 +1,5 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Browser.Host.Array as Array
 import Browser.Host.Element as Element
 import Browser.Host.Event as Event
 import Browser.Host.Node as Node
@@ -10,6 +11,21 @@ pub type QueryError
 
 
 pub foreign type Document
+
+
+pub foreign impure rendererNamed : String → Array.View Node.Node
+
+
+pub foreign impure rendererControls : ⊤ → Array.View Node.Node
+
+
+pub foreign impure getElementsByName : String → List Node.Node
+
+
+pub foreign impure activeElement : ⊤ → Maybe Element.Element
+
+
+pub foreign impure controls : ⊤ → List Node.Node
 
 
 pub foreign impure rendererFragment : ⊤ → Node.Node

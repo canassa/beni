@@ -1,0 +1,9 @@
+-- Real native controls: typed value/selection APIs and their documented failures.
+import Browser
+import Controls
+import Html exposing (Html)
+
+
+main : Browser.Program
+main =
+    Browser.program { init = Controls.run, update = λ_ model → model, view = λtext → <p>{text}</p> }
