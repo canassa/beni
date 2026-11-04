@@ -1384,7 +1384,9 @@ theorem dictInsert_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
     (show ({ctx with escaped := union ctx.escaped before.facts.escapes} : Context).config = {} from
       defaultConfig) run
   have resultRep := entryAbstract_stored_dict (ds := declarations) valueShape0 shapeN0 resultEq
-  -- From here the value and the item are read at their representation (#1840).
+  -- From here the value and the item are read at their representation (#1840):
+  -- the names `value` and `aN` denote `entryAbstract declarations t value0` and
+  -- `entryAbstract declarations t aN0`, and `value0` and `aN0` are the checker's abstracts.
   have valueShape := flatAbstract_entry (ds := declarations) valueShape0
   have shapeN := flatAbstract_entry (ds := declarations) shapeN0
   obtain ⟨value, valueDef⟩ : ∃ x, x = entryAbstract declarations t value0 := ⟨_, rfl⟩

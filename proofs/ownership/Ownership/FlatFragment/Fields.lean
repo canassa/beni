@@ -5517,8 +5517,7 @@ theorem pathKinds_entryAbstract {ds : List Decl} {t : Ty} {a : Abstract} (shape 
     show pathKinds (.record [entryAbstract ds .int .scalar, entryAbstract ds error ae,
       entryAbstract ds success aa]) = _
     rw [pathKinds_record, pathKinds_record]
-    simp [ihError, ihSuccess]
-    rfl
+    simp only [List.flatMap_cons, List.flatMap_nil, entryAbstract_scalar, ihError, ihSuccess]
 
 /-- The cell lists of an abstract's paths are its kinds' cell lists. -/
 theorem paths_snd_eq (a : Abstract) : a.paths.map Prod.snd = (pathKinds a).map Prod.snd := by
@@ -5616,8 +5615,7 @@ theorem deepExclusive_entryAbstract {ds : List Decl} {t : Ty} {a : Abstract} (sh
     show (Abstract.record [entryAbstract ds .int .scalar, entryAbstract ds error ae,
       entryAbstract ds success aa]).deepExclusive = _
     rw [deepExclusive_record, deepExclusive_record]
-    simp [ihError, ihSuccess]
-    rfl
+    simp only [List.all_cons, List.all_nil, entryAbstract_scalar, ihError, ihSuccess]
 
 theorem all_congr_mem {α : Type} {l : List α} {p q : α → Bool} (h : ∀ a ∈ l, p a = q a) :
     l.all p = l.all q := by
@@ -5764,8 +5762,9 @@ theorem entryAbstract_fold_join {ds : List Decl} {t : Ty} {as : List Abstract}
       entryAbstract_join shape (shapes a (by simp))]
 
 /-- The certificate of a value stored into a list (a push, a set, a prepend,
-    an insert), read through the type: the store tests give the same answers
-    on the representations of the element and the item. -/
+    an insert), read through the type: the whole certificate record, both
+    store tests and the receiver's container test, is the same on the
+    representations of the element and the item. -/
 theorem storeCertificate_entry {ds : List Decl} {t : Ty} {ctx : Context} {later : List Origin}
     {element item : Abstract} {certificate : Certificate}
     (shapeE : FlatAbstract t element) (shapeI : FlatAbstract t item) :
