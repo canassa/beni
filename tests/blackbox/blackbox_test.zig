@@ -1960,6 +1960,16 @@ test "fmt --to-unicode preserves shadowed Never and unit comments" {
     try testing.expectEqualStrings("type Never\n    = N\n\n\nf : Never → ⊥ → ⊤\nf x y = never y\n\n\nu = ⊤ -- unit\n", try w.read("Main.beni"));
 }
 
+test "fmt --to-unicode resolves qualified Never through module aliases" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", "import Basics as B\nimport Other as Basics exposing (Never)\n\n\nf : Never, Basics.Never, B.Never -> ()\nf x y z = never z\n");
+    const result = try w.run(&.{ "fmt", "--to-unicode", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), result.exit_code);
+    try testing.expectEqualStrings("", result.stderr);
+    try testing.expectEqualStrings("import Basics as B\nimport Other as Basics exposing (Never)\n\n\nf : Never, Basics.Never, ⊥ → ⊤\nf x y z = never z\n", try w.read("Main.beni"));
+}
+
 test "fmt --to-unicode formats a case branch that shares the of line" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();

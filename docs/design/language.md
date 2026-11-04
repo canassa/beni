@@ -3191,7 +3191,8 @@ Public `fmt --to-unicode` converts these synonyms while formatting code only.
 `--check --to-unicode` fails while conversion or formatting would change a file.
 Strings, chars, multiline strings, comments and markup text keep their bytes;
 interpolation and markup holes are code. Conversion of `Never` honors
-`topNeverShadowed`; comments inside unit parentheses are retained.
+`topNeverShadowed`; qualified names follow explicit module aliases before the
+prelude. Comments inside unit parentheses are retained.
 `--migrate-unicode` and `--migrate-lambda` are retired. `--migrate-top` retains
 only structural rewrites (dropping `else ⊤` or `else ()`, deleting warned `_ =`).
 `--migrate-cons` is unchanged. Diagnostics, dumps and type rendering stay Unicode.
