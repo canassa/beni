@@ -74,8 +74,10 @@ core:Task -> core:Browser.Host.MessagePort
 core:Task -> core:Browser.Host.Timers
 core:Task -> core:Duration
 core:Task -> core:Js
+core:Task -> core:Js.Array
 core:Task -> core:Js.Chain
 core:Task -> core:Js.Fifo
+core:Task -> core:Js.Kernel
 core:Task -> core:Js.Runtime
 core:Task -> core:Js.TaskHooks
 core:Task -> core:List

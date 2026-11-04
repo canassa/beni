@@ -1,0 +1,28 @@
+-- #1719: the fiber itself is the wait-list link; cancelling the middle
+-- waiter must preserve its neighbours and each wake's typed result.
+import Browser.Host.NodeProcess as Output
+import Io
+import Node
+import Task
+
+
+receive : Task.WaitList Int, String → ⊤
+receive waiting label =
+    value = Task.parkIn waiting
+    Output.writeOut "${label}:${value}\n"
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    waiting = Task.waitList ⊤
+    first = Task.spawn λ⊤ → receive waiting "first"
+    middle = Task.spawn λ⊤ → receive waiting "middle"
+    last = Task.spawn λ⊤ → receive waiting "last"
+    Task.yieldNow ⊤
+    Task.cancel middle
+    a = Task.wakeFirst waiting 7
+    b = Task.wakeFirst waiting 9
+    c = Task.wakeFirst waiting 11
+    Task.join first
+    Task.join last
+    Node.print "${a},${b},${c}"

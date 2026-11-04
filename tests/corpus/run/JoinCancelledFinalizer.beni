@@ -1,0 +1,27 @@
+-- A forced cancellation in one finalizer skips it and drives the remaining
+-- finalizers; the original caller cannot resume after the cancelled join.
+import Io
+import Node
+import Task exposing (Cancelled, Done)
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    target = Task.spawn λ⊤ → Task.never ⊤
+    Task.cancel target
+    caller = Task.spawn λ⊤ →
+        Task.bracket (λ⊤ → ⊤) (λ_ _ → Debug.log "outer released" ⊤) λ_ →
+            Task.bracket
+                (λ⊤ → ⊤)
+                (λ_ _ →
+                    Task.join target
+                    Debug.log "inner resumed" ⊤
+                )
+                λ_ → Task.never ⊤
+    Task.yieldNow ⊤
+    Task.cancel caller
+    case Task.wait caller of
+        Cancelled →
+            Node.print "finalizer join cancelled"
+        Done _ →
+            Node.print "unexpected return"

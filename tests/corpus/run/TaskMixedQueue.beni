@@ -1,0 +1,24 @@
+-- #1719: Soon jobs and fiber resumptions share one FIFO, including jobs
+-- queued from a Soon callback and the next empty-to-nonempty transition.
+import Io
+import Node
+import Task
+
+
+say : String → ⊤
+say text = Debug.log text ⊤
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    _ = Task.spawn λ⊤ → say "fiber 1"
+    _ = Task.soon λ⊤ →
+        say "soon 1"
+        _ = Task.soon λ⊤ → say "soon 3"
+        ⊤
+    _ = Task.spawn λ⊤ → say "fiber 2"
+    _ = Task.soon λ⊤ → say "soon 2"
+    Task.yieldNow ⊤
+    say "main resumed"
+    Task.yieldNow ⊤
+    Node.print "done"

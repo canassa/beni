@@ -1,0 +1,17 @@
+-- #1719: sort writes its builder, and comparisons borrow their elements.
+import Js
+import Js.Array as Array
+
+
+sortCaptured : Js.Builder (List Int) → ⊤
+sortCaptured values =
+    _ = Array.arraySort values λleft right →
+        _ = List.push left (List.length right)
+        0
+    ⊤
+
+
+sortStored : Js.Cell { values : Js.Builder Int } → ⊤
+sortStored holder =
+    _ = Array.arraySort (Js.cellRead holder .values) λleft right → left - right
+    ⊤

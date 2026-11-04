@@ -1799,6 +1799,25 @@ manufactured or read by application code. `workers-task-storage.md` owns the
 migration order. This decision supersedes the proposal's §16.1 erased continuation list
 where the typed implementation replaces it; sections are not renumbered.
 
+
+**Owner decision D3, 2026-11-04 (#1719): sentinel frames and the kernel slot.**
+The kernel owns an unchecked existential resume/result slot and a stack of
+compiler-written frames, with frame callables charged to their writer under
+workers.md §4. A frame is constructed only after a call returns the parking
+sentinel; the run loop invokes it through Js.invoke with the slot's value.
+Typed Fiber a, Resume a and WaitList a fix the value type at both ends; the
+kernel never inspects the erased data or exposes it as Js.Value. This replaces
+the 2026-11-01 CPS frame-chain decision, without changing public Task semantics
+or output for functions that cannot suspend. Migration is ordered: the kernel
+and intrusive wait lists first share this slot while accepting compiler-supplied
+typed completion frames; the following lowering change removes hidden CPS
+completion arguments and constructs frames only on the parked path.
+Each host wait stores its fresh wake closure in the slot only as an identity
+epoch, compared with ===, never called through the slot or read as a value of
+type a. It is charged to its writer under workers.md §4 like frames. Delivery
+overwrites the token with the typed payload before any resumption; cancellation
+clears the token before the host canceller runs.
+
 ### 16.2 What the checker hands the backend
 
 The checker already knows, per class, the rung it reaches and which classes of its declaration's

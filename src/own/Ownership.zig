@@ -3912,7 +3912,7 @@ fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
     if (!list and !arrays) return null;
     const bir = o.in.birs[m];
     const declared = o.in.interner.slice(bir.symbol(bir.decls[d].name));
-    const name = if (!arrays) declared else if (std.mem.eql(u8, declared, "arraySet")) "put" else if (std.mem.eql(u8, declared, "arrayDone")) "done" else return null;
+    const name = if (!arrays) declared else if (std.mem.eql(u8, declared, "arraySet")) "put" else if (std.mem.eql(u8, declared, "arrayDone")) "done" else if (std.mem.eql(u8, declared, "arraySort")) "arraySort" else return null;
     const R = bit_r;
     const A = bit_a;
     const W = bit_w | bit_x;
@@ -3934,6 +3934,16 @@ fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
         // stays exclusive when π₃ is and shares nothing with its elements).
         uses = &.{ .{ .param = 0, .path = eps, .extent = .storage, .bits = R | A | W }, .{ .param = 2, .path = eps, .bits = A } };
         res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = p(0, eps), .xc = try o.stores(0, 2, elem) }, .{ .path = elem, .prov = p(0, elem) }, .{ .path = elem, .prov = p(2, eps) } });
+    } else if (std.mem.eql(u8, name, "arraySort")) {
+        // The core-fenced native sort changes only ordering. Its comparator
+        // sees borrowed entries; it neither owns nor retains either one.
+        uses = &.{ .{ .param = 0, .path = eps, .extent = .storage, .bits = R | A | W }, .{ .param = 0, .path = elem, .bits = A }, .{ .param = 1, .path = eps, .bits = R } };
+        res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = p(0, eps) }, .{ .path = elem, .prov = p(0, elem) } });
+        supply = try keep.dupe(SupplyEntry, &.{
+            .{ .fun = 1, .k = 0, .path = eps, .prov = p(0, elem), .owned = false },
+            .{ .fun = 1, .k = 1, .path = eps, .prov = p(0, elem), .owned = false },
+        });
+        funs = try keep.dupe(FunFacts, &.{.{ .param = 1, .calls = .many }});
     } else if (std.mem.eql(u8, name, "push")) {
         uses = &.{ .{ .param = 0, .path = eps, .extent = .storage, .bits = R | A | W }, .{ .param = 1, .path = eps, .bits = A } };
         res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = p(0, eps), .xc = try o.stores(0, 1, elem) }, .{ .path = elem, .prov = p(0, elem) }, .{ .path = elem, .prov = p(1, eps) } });

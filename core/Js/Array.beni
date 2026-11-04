@@ -24,3 +24,10 @@ pub foreign impure arrayLength : borrowed Js.Builder a → Int
 
 --| Shared runtime capacity store. Stored callbacks remain charged to the writer.
 pub foreign impure arrayWrite : escaped Js.Builder a, unused Int, escaped a → ⊤
+
+
+--| Sort initialized private capacity in place. Comparison borrows both values.
+pub foreign impure arraySort :
+      written returned Js.Builder a
+    , borrowed sync (a, a → Int)
+    → Js.Builder a

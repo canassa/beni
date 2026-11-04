@@ -24,8 +24,8 @@
 --! expect is a `Result`, and a fiber ends either `Done` with its value or
 --! `Cancelled`.
 
--- Typed controls store closed unit jobs. Each job retains its callback and
--- matching result destination; native resources stay in Js.Runtime's sibling.
+-- One Control Cell holds intrusive links and the private resume/result slot.
+-- Stored callables remain charged to their writer; native resources keep their types.
 
 import Browser.Host.Date as HostDate
 import Browser.Host.Immediate as Immediate
@@ -35,8 +35,10 @@ import Browser.Host.MessagePort as MessagePort
 import Browser.Host.Timers as Timers
 import Duration exposing (Duration)
 import Js
+import Js.Array as Array
 import Js.Chain as Chain exposing (Chain, Link)
 import Js.Fifo as Fifo
+import Js.Kernel as Kernel
 import Js.Runtime as Runtime
 import Js.TaskHooks as Hooks
 import List
@@ -52,7 +54,7 @@ pub type Exit a
 
 --| A fiber that is running, or has ended. `join` waits for its value.
 pub opaque type Fiber a
-    = Fiber Control (Js.Ref (Maybe (Exit a)))
+    = Fiber Control
 
 
 --| How a platform's primitive resumes the fiber that waits on it, once: a
@@ -61,45 +63,66 @@ pub opaque type Resume a
     = Resume (a → ⊤)
 
 
--- Closed protocol steps retain their original work and typed destinations
--- in their environments. True means the step completed without parking.
+-- Original typed work retains its captures; Js.invoke supplies completion.
 type alias UnitJob =
-    (⊤ → ⊤) → Bool
+    (⊤ → ⊤) → ⊤
 
 
-type Frame
-    = Execute (⊤ → ⊤)
-    | Boundary
+type alias Frame =
+    Kernel.Slot
 
 
 type Control
-    = Control
+    = Control (Js.Cell ControlFields)
+
+
+type alias ControlFields =
+    flags : Int
+    ordinal : Int
+    masks : Int
+    top : Js.Opt Frame
+    frames : Js.Opt FrameStack
+    value : Kernel.Slot
+    owner : Js.Opt Control
+    group : Js.Opt Scope
+    before : Js.Opt Control
+    after : Js.Opt Control
+    children : Js.Opt Control
+    finalizers : Js.Opt Finalizer
+    wait : Js.Opt Kernel.Slot
+    wbefore : Js.Opt Control
+    wafter : Js.Opt Control
+    joiners : Js.Opt (WaitList ⊤)
+    slots : Slots
+    ext : Js.Opt ControlExt
+
+
+type FrameStack
+    = FrameStack (Js.Cell { values : Js.Builder (Js.Opt Frame), count : Int })
+
+
+type Finalizer
+    = Finalizer
+        (Js.Cell { work : Js.Opt UnitJob, before : Js.Opt Finalizer, after : Js.Opt Finalizer })
+
+
+type ControlExt
+    = ControlExt
         (Js.Cell
-            { stack : Chain Frame
-            , finalizers : Chain UnitJob
-            , observers : Chain (⊤ → ⊤)
-            , children : Chain Control
-            , interrupted : Bool
-            , unwinding : Bool
-            , registered : Bool
-            , ended : Bool
-            , masks : Int
-            , parked : Maybe Wait
-            , slots : Slots
-            , member : Maybe Scheduler
-            , unlinks : Chain (⊤ → ⊤)
-            , cancelled : ⊤ → ⊤
-            , cleaning : Maybe (Link Control)
+            { member : Maybe Scheduler
+            , cleanBefore : Js.Opt Control
+            , cleanAfter : Js.Opt Control
+            , outsideOwner : Maybe Control
+            , scopes : Js.Opt Scope
+            , observers : Maybe (Chain (⊤ → ⊤))
+            , report : Maybe (⊤ → ⊤)
             }
         )
 
 
-type Wait
-    = Wait (Js.Cell { stopWait : ⊤ → ⊤, done : Bool })
-
-
-type Pending
-    = Pending Bool (Maybe Wait)
+-- Core-only coordination; wake writes its typed result into the waiting fiber.
+pub opaque type WaitList a
+    = WaitList (Js.Cell { first : Js.Opt Control, last : Js.Opt Control })
 
 
 --| The fibers a `scope` started. It is cancelled, and waited for, when the
@@ -107,19 +130,18 @@ type Pending
 pub opaque type Scope
     = Scope
         (Js.Cell
-            { children : Chain Control
+            { children : Js.Opt Control
             , closed : Bool
-            , deferred : Chain (Exit ⊤ → UnitJob)
-            , finalizer : Maybe (Control × Link UnitJob)
+            , deferred : Maybe (Chain (Exit ⊤ → UnitJob))
+            , finalizer : Js.Opt Finalizer
             , root : Bool
-            , listed : Maybe (Scheduler × Link Root)
+            , listed : Maybe Scheduler
+            , waiters : Js.Opt (WaitList ⊤)
+            , owner : Js.Opt Control
+            , before : Js.Opt Scope
+            , after : Js.Opt Scope
             }
         )
-
-
-type Root
-    = RootScope Scope
-    | RootFiber Control
 
 
 --| Work queued to run once, in no fiber, where a fiber started now would
@@ -128,8 +150,10 @@ pub opaque type Soon
     = Soon
         (Js.Cell
             { work : Maybe (⊤ → ⊤)
-            , children : Chain Control
             , sched : Scheduler
+            , next : Js.Opt Soon
+            , position : Int
+            , group : Js.Opt Scope
             }
         )
 
@@ -171,9 +195,9 @@ pub opaque type Scheduler
             , runner : (⊤ → ⊤) → ⊤
             , more : (⊤ → ⊤) → ⊤
             , hook : Maybe (⊤ → ⊤)
-            , roots : Chain Root
-            , members : Chain Control
-            , loans : Chain Loan
+            , roots : Js.Opt Control
+            , rootScopes : Js.Opt Scope
+            , loans : Maybe (Chain Loan)
             , live : Int
             , idle : Maybe (⊤ → ⊤)
             , watch : Maybe (Int → ⊤)
@@ -184,10 +208,11 @@ pub opaque type Scheduler
             , timer : Maybe (⊤ → ⊤)
             , expired : Bool
             , abandoned : Int
-            , sweeping : Chain Control
+            , sweeping : Sweep
             , torn : Bool
             , listed : Maybe (Link Scheduler)
             , program : Bool
+            , serial : Int
             }
         )
 
@@ -204,16 +229,16 @@ outside : Js.Ref (Maybe Control)
 outside = Js.ref Nothing
 
 
-pending : Js.Ref (Maybe Pending)
-pending = Js.ref Nothing
+pending : Js.Ref Int
+pending = Js.ref 0
 
 
 soonRunning : Js.Ref (Maybe Soon)
 soonRunning = Js.ref Nothing
 
 
-cleaning : Chain Control
-cleaning = Chain.make ⊤
+cleaning : Js.Ref (Js.Opt Control)
+cleaning = Js.ref (Js.none ⊤)
 
 
 schedulers : Chain Scheduler
@@ -251,46 +276,48 @@ continueWith : (a → b), a, sync (b → ⊤) → ⊤
 continueWith next value done =
     pushFrame
         (here ⊤)
-        (Execute λ⊤ →
+        (Kernel.slotPack λ⊤ →
             result = Js.invoke next value done
             if isWaiting result then ⊤ else done result
         )
 
 
 unitJob : (⊤ → ⊤) → UnitJob
-unitJob work = λdone → not (isWaiting (Js.invoke work ⊤ done))
+unitJob work = λdone → Js.invoke work ⊤ done
 
 
 runUnitJob : UnitJob → ⊤
-runUnitJob job = Js.suspending λ⊤ →
-    if Js.invoke job (Js.completion ⊤) λ_ → ⊤ then ⊤ else Runtime.parked ⊤
+runUnitJob job = Js.suspending λ⊤ → Js.invoke job (Js.completion ⊤) λ_ → ⊤
 
 
-pushFrame : Control, Frame → ⊤
-pushFrame (Control c) frame = pushStep (Js.cellRead c .stack) frame
-
-
-newControl : Slots, sync (⊤ → ⊤) → Control
-newControl slots cancelled =
+newControl : Slots → Control
+newControl slots =
     Js.write fibered True
     installHooks ⊤
+    (Scheduler p) = program
+    ordinal = Js.cellRead p .serial
+    if ordinal == 9007199254740991 then Runtime.defect "the fiber birth ordinal was exhausted"
+    Js.cellWrite p (ordinal + 1) .serial
     Control
         (Js.cell
-            { stack = Chain.make ⊤
-            , finalizers = Chain.make ⊤
-            , observers = Chain.make ⊤
-            , children = Chain.make ⊤
-            , interrupted = False
-            , unwinding = False
-            , registered = False
-            , ended = False
+            { flags = 0
+            , ordinal = ordinal
             , masks = 0
-            , parked = Nothing
+            , top = Js.none ⊤
+            , frames = Js.none ⊤
+            , value = Kernel.slotPack ⊤
+            , owner = Js.none ⊤
+            , group = Js.none ⊤
+            , before = Js.none ⊤
+            , after = Js.none ⊤
+            , children = Js.none ⊤
+            , finalizers = Js.none ⊤
+            , wait = Js.none ⊤
+            , wbefore = Js.none ⊤
+            , wafter = Js.none ⊤
+            , joiners = Js.none ⊤
             , slots = slots
-            , member = Nothing
-            , unlinks = Chain.make ⊤
-            , cancelled = cancelled
-            , cleaning = Nothing
+            , ext = Js.none ⊤
             }
         )
 
@@ -305,7 +332,7 @@ here ⊤ =
                 Just fiber →
                     fiber
                 Nothing →
-                    made = newControl emptySlots λ⊤ → ⊤
+                    made = newControl emptySlots
                     Js.write outside (Just made)
                     made
 
@@ -332,12 +359,12 @@ currentSlots ⊤ =
 
 
 endedControl : Control → Bool
-endedControl (Control c) = (Js.cellRead c .ended)
+endedControl (Control c) = (has c endedBit)
 
 
 interrupted : Control → Bool
 interrupted (Control c) =
-    (Js.cellRead c .interrupted) && (Js.cellRead c .masks) == 0 && not ((Js.cellRead c .unwinding))
+    (has c interruptBit) && (Js.cellRead c .masks) == 0 && not ((has c unwindBit))
 
 
 --| Wait for a platform's callback: the one way a fiber suspends. The
@@ -353,35 +380,35 @@ callback register = Js.suspending λ⊤ → callbackWith register (Js.completion
 
 callbackWith : sync (Resume a → sync (⊤ → ⊤)), sync (a → ⊤), Bool → a
 callbackWith register done later =
+    Js.write callbacking True
     fiber = here ⊤
     if interrupted fiber then
-        Js.write pending (Just (Pending True Nothing))
+        Js.write pending 2
         Runtime.parked ⊤
     else
-        ready = Js.ref Nothing
-        synchronous = Js.ref (not later)
-        waiting = Wait (Js.cell { stopWait = λ⊤ → ⊤, done = False })
-        (Wait w) = waiting
-        wake =
-            λvalue →
-                if (Js.cellRead w .done) then
-                    ⊤
-                else
-                    Js.cellWrite w True .done
-                    if Js.read synchronous then
-                        Js.write ready (Just value)
-                    else
-                        pushFrame fiber (Execute λ⊤ → done value)
-                        enqueue fiber (Just waiting)
+        (Control c) = fiber
+        set c hostBit True
+        set c parkedBit True
+        set c readyBit False
+        set c syncBit (not later)
+        wake value =
+            if has c hostBit && Js.same (Js.cellRead c .value) wake then
+                Js.cellWrite c (Kernel.slotPack value) .value
+                set c hostBit False
+                set c readyBit True
+                if not (has c syncBit) then enqueue fiber
+        Js.cellWrite c (Kernel.slotPack wake) .value
         stopWait = register (Resume wake)
-        Js.write synchronous False
-        case Js.read ready of
-            Just value →
-                value
-            Nothing →
-                Js.cellWrite w stopWait .stopWait
-                Js.write pending (Just (Pending False (Just waiting)))
-                Runtime.parked ⊤
+        set c syncBit False
+        if has c readyBit && not later then
+            set c readyBit False
+            set c parkedBit False
+            Kernel.slotRead (Js.cellRead c .value)
+        else
+            Js.cellWrite c (Js.some (Kernel.slotPack stopWait)) .wait
+            pushFrame fiber (Kernel.slotPack done)
+            Js.write pending 1
+            Runtime.parked ⊤
 
 
 --| Answer the wait `resume` belongs to with `value`: the fiber that waits
@@ -427,7 +454,8 @@ never ⊤ = callback λ_ → λ⊤ → ⊤
 
 selfCancel : ⊤ → a
 selfCancel ⊤ = Js.suspending λ⊤ →
-    Js.write pending (Just (Pending True Nothing))
+    set (cellOf (here ⊤)) interruptBit True
+    Js.write pending 2
     Runtime.parked ⊤
 
 
@@ -435,163 +463,172 @@ runFiber : Control → ⊤
 runFiber ((Control c) as fiber) =
     outer = Js.read current
     Js.write current (Just fiber)
-    Js.cellWrite c Nothing .parked
+    if Js.read callbacking && has c readyBit && not (interrupted fiber) then
+        set c readyBit False
+        Js.cellWrite c (Js.none ⊤) .wait
+    set c parkedBit False
     runLoop fiber
     Js.write current outer
 
 
 runLoop : Control → ⊤
 runLoop ((Control c) as fiber) =
-    if interrupted fiber then unwind fiber
-    if (Js.cellRead c .ended) then
+    mode = Js.read pending
+    Js.write pending 0
+    if mode == 2 then
+        forceCancel fiber
+        runLoop fiber
+    else if interrupted fiber then
+        unwind fiber
+        runLoop fiber
+    else if has c endedBit then
         ⊤
+    else if mode == 1 then
+        if Js.read finalising && inCleanup fiber && deadlinePassed fiber then
+            abandon fiber
+            runLoop fiber
     else
-        case Chain.pop (Js.cellRead c .stack) of
-            Nothing →
-                ⊤
-            Just Boundary →
-                leaveCleanup fiber
+        frame = popFrame c
+        if absent frame then
+            if has c unwindBit then
+                advanceUnwind fiber
                 runLoop fiber
-            Just (Execute work) →
-                Js.invoke work ⊤ λ_ → ⊤
-                if (Js.cellRead c .ended) then
-                    ⊤
-                else
-                    case Js.read pending of
-                        Nothing →
-                            runLoop fiber
-                        Just (Pending stop waiting) →
-                            Js.write pending Nothing
-                            if stop then
-                                unwind fiber
-                                runLoop fiber
-                            else if inCleanup fiber && deadlinePassed fiber then
-                                abandon fiber waiting
-                                runLoop fiber
-                            else
-                                Js.cellWrite c waiting .parked
+        else
+            _ = Js.invoke (Kernel.slotRead (required frame)) (Js.cellRead c .value) λ_ → ⊤
+            runLoop fiber
 
 
 unwind : Control → ⊤
 unwind ((Control c) as fiber) =
-    Js.cellWrite c True .unwinding
-    Js.cellWrite c Nothing .parked
-    Chain.clear (Js.cellRead c .stack)
-    pushFrame
-        fiber
-        (Execute
-            (driverJob λ⊤ →
-                cancelChildren fiber
-                (Js.cellRead c .cancelled) ⊤
-                complete fiber
-            )
-        )
-    cleanups fiber
-    pushFrame fiber (Execute (driverJob λ⊤ → cancelChildren fiber))
-
-
-driverJob : (⊤ → ⊤) → (⊤ → ⊤)
-driverJob work =
-    λ⊤ →
-        Js.invoke work ⊤ λ⊤ → ⊤
-        ⊤
-
-
-cleanups : Control → ⊤
-cleanups ((Control c) as fiber) =
-    case Chain.shift (Js.cellRead c .finalizers) of
+    set c unwindBit True
+    set c cancelBit True
+    if Js.read spawning then set c cleanupPhaseBit False
+    case clearWait fiber of
         Nothing →
             ⊤
-        Just fin →
-            pushFrame fiber Boundary
-            pushFrame
-                fiber
-                (Execute λ⊤ →
-                    enterCleanup fiber
-                    _ = Js.invoke fin (λ⊤ → ⊤) λ_ → ⊤
-                    ⊤
-                )
-            cleanups fiber
+        Just stopWait →
+            Js.invoke stopWait ⊤ λ_ → ⊤
+            ⊤
+    clearFrames c
+    Js.cellWrite c (Kernel.slotPack ⊤) .value
+
+
+finishCancelled : Control → ⊤
+finishCancelled ((Control c) as fiber) =
+    set c cancelBit True
+    Js.cellWrite c (Kernel.slotPack ⊤) .value
+    complete fiber
 
 
 enterCleanup : Control → ⊤
 enterCleanup ((Control c) as fiber) =
-    case (Js.cellRead c .cleaning) of
+    (ControlExt extra) = extension c
+    if absent (Js.cellRead extra .cleanBefore) then
+        first = Js.read cleaning
+        if absent first then
+            Js.cellWrite extra (Js.some fiber) .cleanBefore
+            Js.cellWrite extra (Js.some fiber) .cleanAfter
+            Js.write cleaning (Js.some fiber)
+        else
+            (ControlExt head) = extension (cellOf (required first))
+            last = Js.cellRead head .cleanBefore
+            (ControlExt tail) = extension (cellOf (required last))
+            Js.cellWrite extra last .cleanBefore
+            Js.cellWrite extra first .cleanAfter
+            Js.cellWrite tail (Js.some fiber) .cleanAfter
+            Js.cellWrite head (Js.some fiber) .cleanBefore
+    case Js.cellRead extra .outsideOwner of
         Nothing →
-            Js.cellWrite c (Just (Chain.append cleaning fiber)) .cleaning
-        Just _ →
             ⊤
+        Just (Control holder) →
+            old = Js.cellRead holder .slots
+            Js.cellWrite c { Record.copy old | sched = Nothing } .slots
 
 
 leaveCleanup : Control → ⊤
-leaveCleanup (Control c) =
-    case (Js.cellRead c .cleaning) of
-        Nothing →
-            ⊤
-        Just token →
-            _ = Chain.remove cleaning token
-            Js.cellWrite c Nothing .cleaning
+leaveCleanup ((Control c) as fiber) =
+    if Js.read finalising && not (absent (Js.cellRead c .ext)) then
+        (ControlExt extra) = required (Js.cellRead c .ext)
+        if not (absent (Js.cellRead extra .cleanBefore)) then
+            before = Js.cellRead extra .cleanBefore
+            after = Js.cellRead extra .cleanAfter
+            if Js.same (required after) fiber then
+                Js.write cleaning (Js.none ⊤)
+            else
+                (ControlExt prev) = extension (cellOf (required before))
+                (ControlExt next) = extension (cellOf (required after))
+                Js.cellWrite prev after .cleanAfter
+                Js.cellWrite next before .cleanBefore
+                if Js.same (required (Js.read cleaning)) fiber then Js.write cleaning after
+            Js.cellWrite extra (Js.none ⊤) .cleanBefore
+            Js.cellWrite extra (Js.none ⊤) .cleanAfter
 
 
 inCleanup : Control → Bool
 inCleanup (Control c) =
-    case (Js.cellRead c .cleaning) of
-        Nothing →
-            False
-        Just _ →
-            True
+    if not (Js.read finalising) then
+        False
+    else
+        Js.optMatch (Js.cellRead c .ext) (λ⊤ → False) λ(ControlExt extra) →
+            not (absent (Js.cellRead extra .cleanBefore))
 
 
 cutBack : Control → ⊤
 cutBack ((Control c) as fiber) =
-    popBoundary (Js.cellRead c .stack)
+    clearFrames c
     leaveCleanup fiber
-    cleanups fiber
-
-
-popBoundary : Chain Frame → ⊤
-popBoundary stack =
-    case Chain.pop stack of
-        Nothing →
-            ⊤
-        Just Boundary →
-            ⊤
-        Just (Execute _) →
-            popBoundary stack
 
 
 halt : Control → ⊤
 halt ((Control c) as fiber) =
-    if (Js.cellRead c .ended) || (Js.cellRead c .unwinding) then
-        ⊤
-    else
-        Js.cellWrite c True .interrupted
-        case (Js.cellRead c .parked) of
-            Nothing →
-                ⊤
-            Just (Wait waiting) →
-                if (Js.cellRead c .masks) == 0 then
-                    Js.cellWrite c Nothing .parked
-                    Js.cellWrite waiting True .done
-                    enqueue fiber Nothing
-                    ((Js.cellRead waiting .stopWait)) ⊤
+    if not (has c endedBit || has c unwindBit) then
+        set c interruptBit True
+        if has c parkedBit && Js.cellRead c .masks == 0 then
+            stop = clearWait fiber
+            enqueue fiber
+            case stop of
+                Nothing →
+                    ⊤
+                Just cancelWait →
+                    Js.invoke cancelWait ⊤ λ_ → ⊤
+                    ⊤
 
 
 complete : Control → ⊤
 complete ((Control c) as fiber) =
-    Js.cellWrite c True .ended
-    Chain.clear (Js.cellRead c .stack)
-    leaveCleanup fiber
-    runJobs (Js.cellRead c .unlinks)
-    runJobs (Js.cellRead c .observers)
-    if (Js.cellRead c .registered) then
+    set c endedBit True
+    clearFrames c
+    if Js.read finalising then leaveCleanup fiber
+    unlinkOwner fiber
+    if not (absent (Js.cellRead c .ext)) then
+        (ControlExt extra) = required (Js.cellRead c .ext)
+        report = Js.cellRead extra .report
+        Js.cellWrite extra Nothing .report
+        case report of
+            Nothing →
+                ⊤
+            Just notify →
+                Js.invoke notify ⊤ λ_ → ⊤
+                ⊤
+        if Js.read observed then
+            case Js.cellRead extra .observers of
+                Nothing →
+                    ⊤
+                Just observers →
+                    runJobs observers
+    joiners = Js.cellRead c .joiners
+    Js.cellWrite c (Js.none ⊤) .joiners
+    if Js.read joined && not (absent joiners) then wakeAll (required joiners) ⊤
+    if has c registeredBit then
         if Js.read many then
-            case (Js.cellRead c .member) of
+            case memberOf c of
                 Nothing →
                     ⊤
                 Just sched →
                     countDown sched
         countDown program
+    Js.cellWrite c (Js.none ⊤) .ext
+    if Js.read slotted then Js.cellWrite c emptySlots .slots
 
 
 runJobs : Chain (⊤ → ⊤) → ⊤
@@ -604,11 +641,6 @@ runJobs jobs =
             runJobs jobs
 
 
-cancelChildren : Control → ⊤
-cancelChildren (Control c) =
-    if Js.read spawning then cancelControls (Chain.toList (Js.cellRead c .children))
-
-
 cancelControls : List Control → ⊤
 cancelControls fibers =
     each fibers halt
@@ -617,97 +649,69 @@ cancelControls fibers =
 
 waitControls : List Control → ⊤
 waitControls fibers =
-    if List.all fibers endedControl then
-        ⊤
-    else
-        callback λwake →
-            listeners = Chain.make ⊤
-            remaining = Js.ref 0
-            each fibers λfiber →
-                if endedControl fiber then
-                    ⊤
-                else
-                    (Control c) = fiber
-                    Js.write remaining (Js.read remaining + 1)
-                    token = Chain.append (Js.cellRead c .observers) λ⊤ →
-                        left = Js.read remaining - 1
-                        Js.write remaining left
-                        if left == 0 then resume wake ⊤
-                    pushStep listeners λ⊤ →
-                        _ = Chain.remove (Js.cellRead c .observers) token
-                        ⊤
-            λ⊤ → runJobs listeners
+    case fibers of
+        [] →
+            ⊤
+        [ fiber, …rest ] →
+            waitControl fiber
+            waitControls rest
 
 
 makeFiber : Slots, (⊤ → a) → Fiber a
 makeFiber slots work =
-    result = Js.ref Nothing
-    fiber = newControl slots λ⊤ → Js.write result (Just Cancelled)
-    (Control c) = fiber
-    pushFrame
-        fiber
-        (Execute
-            (driverJob λ⊤ →
-                value = work ⊤
-                Js.cellWrite c True .unwinding
-                cancelChildren fiber
-                Js.write result (Just (Done value))
-                complete fiber
-            )
-        )
-    Fiber fiber result
+    fiber = newControl slots
+    c = cellOf fiber
+    initial =
+        λ⊤ →
+            value = Js.invoke work ⊤ λresult → finishReturned fiber result
+            if isWaiting value then ⊤ else finishReturned fiber value
+    Js.cellWrite c (Js.some (Kernel.slotPack initial)) .top
+    Fiber fiber
 
 
 --| How a fiber ended, `Just` once it has and `Nothing` while it runs,
 --| without waiting. A fiber that is cancelled but still running its cleanup
 --| is running.
 pub poll : Fiber a → Maybe (Exit a)
-poll (Fiber _ result) = Js.read result
+poll (Fiber (Control c)) =
+    if has c endedBit then
+        Just (if has c cancelBit then Cancelled else Done (Kernel.slotRead (Js.cellRead c .value)))
+    else
+        Nothing
 
 
 --| Whether a fiber is still running: `False` once it has ended, either
 --| way. A fiber that has been cancelled but is still running its cleanup
 --| is still running.
 pub running : Fiber a → Bool
-running (Fiber fiber _) = not (endedControl fiber)
+running (Fiber fiber) = not (endedControl fiber)
 
 
 --| Wait for a fiber to end, and say how.
 pub wait : Fiber a → Exit a
-wait (Fiber (Control c) result) =
-    case Js.read result of
+wait ((Fiber control) as fiber) =
+    waitControl control
+    case poll fiber of
         Just value →
             value
         Nothing →
-            callback λwake →
-                token = Chain.append (Js.cellRead c .observers) λ⊤ →
-                    case Js.read result of
-                        Nothing →
-                            ⊤
-                        Just value →
-                            resume wake value
-                λ⊤ →
-                    _ = Chain.remove (Js.cellRead c .observers) token
-                    ⊤
+            Runtime.defect "a fiber wait completed before its target ended"
 
 
 --| Wait for a fiber's value. If it was cancelled, the fiber that joins it is
 --| cancelled too.
 pub join : Fiber a → a
-join fiber =
-    case wait fiber of
-        Done value →
-            value
-        Cancelled →
-            selfCancel ⊤
+join (Fiber ((Control c) as fiber)) =
+    waitControl fiber
+    if has c cancelBit then selfCancel ⊤ else Kernel.slotRead (Js.cellRead c .value)
 
 
 --| Cancel a fiber and wait until its cleanup has run. Cancelling a fiber
 --| that has ended does nothing.
 pub cancel : Fiber a → ⊤
-cancel (Fiber fiber _) =
+cancel (Fiber fiber) =
     halt fiber
-    waitControls [ fiber ]
+    waitControl fiber
 
 
 --| Wait for every fiber in the list, then answer their values, in list
@@ -716,7 +720,7 @@ cancel (Fiber fiber _) =
 --| A fiber named twice is waited for once and its value given twice.
 pub joinAll : List (Fiber a) → List a
 joinAll fibers =
-    waitControls (List.map fibers λ(Fiber fiber _) → fiber)
+    waitControls (List.map fibers λ(Fiber fiber) → fiber)
     List.map fibers join
 
 
@@ -724,7 +728,7 @@ joinAll fibers =
 --| them have ended and run their cleanup. A fiber that has ended is left
 --| as it is; a fiber that belongs to a scope still belongs to it.
 pub cancelAll : List (Fiber a) → ⊤
-cancelAll fibers = cancelControls (List.map fibers λ(Fiber fiber _) → fiber)
+cancelAll fibers = cancelControls (List.map fibers λ(Fiber fiber) → fiber)
 
 
 --| Run `work` again and again. It ends only when the fiber is cancelled,
@@ -751,20 +755,24 @@ forever work =
     forever work
 
 
-type alias JobQueue =
-    Fifo.Fifo (⊤ → Bool)
-
-
 newJobs : ⊤ → JobQueue
-newJobs ⊤ = Fifo.make ⊤
-
-
-pushJob : JobQueue, sync (⊤ → Bool) → ⊤
-pushJob q job = Fifo.push q job
+newJobs ⊤ =
+    Js.cell
+        { first = Js.none ⊤
+        , last = Js.none ⊤
+        , soonFirst = Js.none ⊤
+        , soonLast = Js.none ⊤
+        , enqueued = 0
+        , dequeued = 0
+        }
 
 
 jobsEmpty : JobQueue → Bool
-jobsEmpty q = Fifo.empty q
+jobsEmpty q =
+    if Js.read soonable then
+        absent (Js.cellRead q .first) && absent (Js.cellRead q .soonFirst)
+    else
+        absent (Js.cellRead q .first)
 
 
 hosting : Js.Ref Bool
@@ -785,9 +793,9 @@ newScheduler runner more root =
             , runner = runner
             , more = more
             , hook = Nothing
-            , roots = Chain.make ⊤
-            , members = Chain.make ⊤
-            , loans = Chain.make ⊤
+            , roots = Js.none ⊤
+            , rootScopes = Js.none ⊤
+            , loans = Nothing
             , live = 0
             , idle = Nothing
             , watch = Nothing
@@ -798,10 +806,11 @@ newScheduler runner more root =
             , timer = Nothing
             , expired = False
             , abandoned = 0
-            , sweeping = Chain.make ⊤
+            , sweeping = Js.cell { values = Array.arrayAllocate 0, count = 0, at = 0 }
             , torn = False
             , listed = Nothing
             , program = root
+            , serial = 0
             }
         )
 
@@ -885,35 +894,26 @@ endedScheduler : Scheduler → Bool
 endedScheduler (Scheduler s) = (Js.cellRead s .phase) == 3
 
 
-enqueue : Control, Maybe Wait → ⊤
-enqueue ((Control c) as fiber) waiting =
-    sched = schedulerOf fiber
-    target = if endedScheduler sched then program else sched
-    if endedScheduler sched then Js.cellWrite c True .interrupted
-    scheduleOn target λ⊤ →
-        valid =
-            case waiting of
-                Nothing →
-                    True
-                Just expected →
-                    case (Js.cellRead c .parked) of
-                        Nothing →
-                            False
-                        Just actual →
-                            Js.same actual expected
-        if valid then
-            runFiber fiber
-            True
+enqueue : Control → ⊤
+enqueue ((Control c) as fiber) =
+    if not (has c queuedBit) then
+        sched = schedulerOf fiber
+        target = if endedScheduler sched then program else sched
+        if endedScheduler sched then set c interruptBit True
+        (Scheduler s) = target
+        q = Js.cellRead s .queue
+        if Js.cellRead q .enqueued == 9007199254740991 then
+            Runtime.defect "the run queue position was exhausted"
+        set c queuedBit True
+        Js.cellWrite c (Js.none ⊤) .wafter
+        last = Js.cellRead q .last
+        if absent last then
+            Js.cellWrite q (Js.some fiber) .first
         else
-            False
-
-
-scheduleOn : Scheduler, sync (⊤ → Bool) → ⊤
-scheduleOn ((Scheduler s) as sched) task =
-    pushJob (Js.cellRead s .queue) task
-    if not ((Js.cellRead s .scheduled)) then
-        Js.cellWrite s True .scheduled
-        if (Js.cellRead s .program) && Js.read hosting then ⊤ else requeue sched λ⊤ → drain sched
+            Js.cellWrite (cellOf (required last)) (Js.some fiber) .wafter
+        Js.cellWrite q (Js.some fiber) .last
+        Js.cellWrite q (Js.cellRead q .enqueued + 1) .enqueued
+        requestDrain target
 
 
 -- The host scheduler retains this closed drain. Its captures escape; the
@@ -1009,7 +1009,7 @@ drainNow ((Scheduler s) as sched) =
 drainFrom : Scheduler, Int → Bool
 drainFrom ((Scheduler s) as sched) count =
     queue = Js.cellRead s .queue
-    if Fifo.empty queue then
+    if jobsEmpty queue then
         True
     else if count == 64 || Js.cellRead s .phase == 1 then
         if Js.cellRead s .program || count == 64 then
@@ -1018,8 +1018,7 @@ drainFrom ((Scheduler s) as sched) count =
             requeue sched λ⊤ → drain sched
         False
     else
-        task = Fifo.shift queue
-        result = Js.invoke task ⊤ λ_ → ⊤
+        result = runQueued queue
         drainFrom sched (if result then count + 1 else count)
 
 
@@ -1027,7 +1026,7 @@ failed : Scheduler → ⊤
 failed ((Scheduler s) as sched) =
     fiber = Js.read current
     Js.write current Nothing
-    Js.write pending Nothing
+    Js.write pending 0
     Js.write soonRunning Nothing
     case Js.read outside of
         Nothing →
@@ -1052,7 +1051,7 @@ failed ((Scheduler s) as sched) =
             Just control →
                 if not (endedControl control) then
                     recover control
-                    enqueue control Nothing
+                    enqueue control
         if (Js.cellRead s .program) then
             macrotask λ⊤ → drain sched
         else
@@ -1161,59 +1160,37 @@ countDown ((Scheduler s) as sched) =
 
 
 attachFiber : Maybe Control, Maybe Scope, Fiber a → ⊤
-attachFiber parent group (Fiber ((Control c) as fiber) _) =
+attachFiber parent group (Fiber ((Control c) as fiber)) =
     sched = schedulerOf fiber
     (Scheduler s) = sched
     (Scheduler p) = program
     Js.cellWrite p (Js.cellRead p .live + 1) .live
-    globalToken = Chain.append (Js.cellRead p .members) fiber
-    pushStep (Js.cellRead c .unlinks) λ⊤ →
-        _ = Chain.remove (Js.cellRead p .members) globalToken
-        ⊤
     if Js.read many && not (Js.cellRead s .program) && not (endedScheduler sched) then
-        Js.cellWrite c (Just sched) .member
-        Js.cellWrite s ((Js.cellRead s .live) + 1) .live
-        token = Chain.append (Js.cellRead s .members) fiber
-        pushStep (Js.cellRead c .unlinks) λ⊤ →
-            _ = Chain.remove (Js.cellRead s .members) token
-            ⊤
-    if stopped program || stopped sched then Js.cellWrite c True .interrupted
+        (ControlExt extra) = extension c
+        Js.cellWrite extra (Just sched) .member
+        Js.cellWrite s (Js.cellRead s .live + 1) .live
+    if stopped program || stopped sched then set c interruptBit True
     case group of
-        Just ((Scope sc) as attachedGroup) →
-            listRoot attachedGroup sched
-            if (Js.cellRead sc .closed) then Js.cellWrite c True .interrupted
-            token = Chain.append (Js.cellRead sc .children) fiber
-            pushStep (Js.cellRead c .unlinks) λ⊤ →
-                _ = Chain.remove (Js.cellRead sc .children) token
-                ⊤
         Nothing →
-            case parent of
-                Just (Control owner) →
-                    if (Js.cellRead owner .ended) then
-                        registerRoot fiber sched
-                    else
-                        token = Chain.append (Js.cellRead owner .children) fiber
-                        pushStep (Js.cellRead c .unlinks) λ⊤ →
-                            _ = Chain.remove (Js.cellRead owner .children) token
-                            ⊤
-                Nothing →
-                    registerRoot fiber sched
+            ⊤
+        Just attachedScope →
+            listRoot attachedScope sched
+    linkChild parent group fiber
 
 
 registerRoot : Control, Scheduler → ⊤
-registerRoot (Control c) (Scheduler s) =
-    token = Chain.append (Js.cellRead s .roots) (RootFiber (Control c))
-    pushStep (Js.cellRead c .unlinks) λ⊤ →
-        _ = Chain.remove (Js.cellRead s .roots) token
-        ⊤
+registerRoot fiber _ =
+    (Scheduler p) = program
+    roots = appendChild (Js.cellRead p .roots) fiber
+    Js.cellWrite p roots .roots
 
 
 fork : Maybe Control, Maybe Scope, Slots, (⊤ → a) → Fiber a
 fork parent group slots work =
     fiber = makeFiber slots work
     registerFiber parent group fiber
-    (Fiber control _) = fiber
-    enqueue control Nothing
+    (Fiber control) = fiber
+    enqueue control
     fiber
 
 
@@ -1222,18 +1199,31 @@ fork parent group slots work =
 pub spawn : (⊤ → a) → Fiber a
 spawn work =
     Js.write spawning True
-    fiber = fork (Js.read current) Nothing (currentSlots ⊤) work
     case Js.read current of
-        Just _ →
-            ⊤
+        Just owner →
+            fork (Just owner) Nothing (currentSlots ⊤) work
         Nothing →
-            case Js.read soonRunning of
-                Nothing →
-                    ⊤
-                Just (Soon queuedWork) →
-                    (Fiber control _) = fiber
-                    pushStep (Js.cellRead queuedWork .children) control
-    fiber
+            if Js.read soonable then
+                spawnFromSoon work
+            else
+                fork Nothing Nothing (currentSlots ⊤) work
+
+
+spawnFromSoon : (⊤ → a) → Fiber a
+spawnFromSoon work =
+    case Js.read soonRunning of
+        Nothing →
+            fork Nothing Nothing (currentSlots ⊤) work
+        Just (Soon s) →
+            group =
+                Js.optMatch (Js.cellRead s .group)
+                    (λ⊤ →
+                        made = openRoot ⊤
+                        Js.cellWrite s (Js.some made) .group
+                        made
+                    )
+                    identity
+            fork Nothing (Just group) (currentSlots ⊤) work
 
 
 --| Start `work` in a new fiber that belongs to no other: it outlives the
@@ -1255,13 +1245,20 @@ spawnIn group work = fork (Js.read current) (Just group) (currentSlots ⊤) work
 --| platform's entry point uses; a program asks its platform instead.
 pub start : (⊤ → a), sync (Exit a → ⊤) → ⊤
 start work report =
-    (Fiber (Control c) result) = fork Nothing Nothing emptySlots work
-    pushStep (Js.cellRead c .observers) λ⊤ →
-        case Js.read result of
-            Nothing →
-                ⊤
-            Just exit →
-                report exit
+    (Fiber control) = fork Nothing Nothing emptySlots work
+    c = cellOf control
+    (ControlExt extra) = extension c
+    Js.cellWrite
+        extra
+        (Just λ⊤ →
+            report
+                (if has c cancelBit then
+                    Cancelled
+                 else
+                    Done (Kernel.slotRead (Js.cellRead c .value))
+                )
+        )
+        .report
 
 
 --| Whether stopping will have cleanup to run: `True` once a fiber has been
@@ -1282,16 +1279,26 @@ cleansUp ⊤ = Js.read fibered
 --| that have not started are cancelled before their first line when it ends.
 pub soon : sync (⊤ → ⊤) → Soon
 soon work =
+    Js.write soonable True
     installHooks ⊤
     sched = schedulerHere ⊤
-    queuedWork = Soon (Js.cell { work = (Just work), children = Chain.make ⊤, sched = sched })
-    scheduleOn sched λ⊤ → runSoon queuedWork
+    queuedWork =
+        Soon
+            (Js.cell
+                { work = Just work
+                , sched = sched
+                , next = Js.none ⊤
+                , position = 0
+                , group = Js.none ⊤
+                }
+            )
+    queueSoon sched queuedWork
     queuedWork
 
 
 runSoon : Soon → Bool
 runSoon ((Soon s) as queuedWork) =
-    work = (Js.cellRead s .work)
+    work = Js.cellRead s .work
     Js.cellWrite s Nothing .work
     if stopped program || stopped (Js.cellRead s .sched) then
         False
@@ -1304,7 +1311,8 @@ runSoon ((Soon s) as queuedWork) =
                 Js.write soonRunning (Just queuedWork)
                 task ⊤
                 Js.write soonRunning outer
-                each (Chain.toList (Js.cellRead s .children)) halt
+                group = Js.cellRead s .group
+                if not (absent group) then closeRoot (required group)
                 True
 
 
@@ -1333,14 +1341,19 @@ scope body =
 
 newScope : Bool → Scope
 newScope root =
+    Js.write scoped True
     Scope
         (Js.cell
-            { children = Chain.make ⊤
+            { children = Js.none ⊤
             , closed = False
-            , deferred = Chain.make ⊤
-            , finalizer = Nothing
+            , deferred = Nothing
+            , finalizer = Js.none ⊤
             , root = root
             , listed = Nothing
+            , waiters = Js.none ⊤
+            , owner = Js.none ⊤
+            , before = Js.none ⊤
+            , after = Js.none ⊤
             }
         )
 
@@ -1349,82 +1362,90 @@ newScope root =
 --| outlives every call: a page program's commands and subscriptions run
 --| in one. `closeRoot` ends it; nothing else does.
 pub openRoot : ⊤ → Scope
-openRoot ⊤ = newScope True
+openRoot ⊤ =
+    Js.write rooted True
+    newScope True
 
 
 openScope : ⊤ → Scope
 openScope ⊤ =
+    Js.write finalising True
     group = newScope False
     (Scope sc) = group
     owner = here ⊤
-    (Control c) = owner
-    token = Chain.append (Js.cellRead c .finalizers) (unitJob λ⊤ → shutWith group Cancelled)
-    Js.cellWrite sc (Just ( owner, token )) .finalizer
+    c = cellOf owner
+    token = addFinalizer c (unitJob λ⊤ → shutWith group Cancelled)
+    Js.cellWrite sc (Js.some token) .finalizer
+    linkScope owner group
     group
 
 
 listRoot : Scope, Scheduler → ⊤
-listRoot ((Scope sc) as group) ((Scheduler s) as sched) =
-    if (Js.cellRead sc .root) then
-        case (Js.cellRead sc .listed) of
-            Nothing →
-                Js.cellWrite
-                    sc
-                    (Just ( sched, Chain.append (Js.cellRead s .roots) (RootScope group) ))
-                    .listed
+listRoot ((Scope sc) as group) sched =
+    if Js.read rooted && Js.cellRead sc .root then
+        case Js.cellRead sc .listed of
             Just _ →
                 ⊤
+            Nothing →
+                (Scheduler p) = program
+                roots = appendScope (Js.cellRead p .rootScopes) group
+                Js.cellWrite p roots .rootScopes
+                Js.cellWrite sc (Just sched) .listed
 
 
 unlistScope : Scope → Scheduler
-unlistScope (Scope sc) =
-    case (Js.cellRead sc .listed) of
+unlistScope ((Scope sc) as group) =
+    case Js.cellRead sc .listed of
         Nothing →
             program
-        Just ( (Scheduler s) as sched, token ) →
-            _ = Chain.remove (Js.cellRead s .roots) token
+        Just sched →
+            (Scheduler p) = program
+            roots = removeScope (Js.cellRead p .rootScopes) group
+            Js.cellWrite p roots .rootScopes
             Js.cellWrite sc Nothing .listed
+            Js.cellWrite sc (Js.none ⊤) .before
+            Js.cellWrite sc (Js.none ⊤) .after
             sched
 
 
 shut : Scope → ⊤
-shut ((Scope sc) as group) =
+shut (Scope sc) =
     Js.cellWrite sc True .closed
-    if Chain.size (Js.cellRead sc .children) == 0 then
-        ⊤
-    else
-        cancelControls (Chain.toList (Js.cellRead sc .children))
-        shut group
+    haltChildren (Js.cellRead sc .children)
+    if not (absent (Js.cellRead sc .children)) then parkIn (scopeWaiters sc)
 
 
 closeScope : Scope, a → a
 closeScope ((Scope sc) as group) value =
     shut group
-    case (Js.cellRead sc .finalizer) of
-        Nothing →
-            ⊤
-        Just ( Control c, token ) →
-            _ = Chain.remove (Js.cellRead c .finalizers) token
-            Js.cellWrite sc Nothing .finalizer
-    runDeferred group (Done ⊤)
+    token = Js.cellRead sc .finalizer
+    if not (absent token) then
+        _ = removeFinalizer (cellOf (required (Js.cellRead sc .owner))) (required token)
+        Js.cellWrite sc (Js.none ⊤) .finalizer
+    unlinkScope group
+    if Js.read releasing || Js.read rooted then runDeferred group (Done ⊤)
     value
 
 
 shutWith : Scope, Exit ⊤ → ⊤
 shutWith group exit =
     shut group
-    runDeferred group exit
+    if Js.read releasing || Js.read rooted then runDeferred group exit
 
 
 runDeferred : Scope, Exit ⊤ → ⊤
 runDeferred ((Scope sc) as group) exit =
-    case Chain.pop (Js.cellRead sc .deferred) of
-        Nothing →
-            ⊤
-        Just cleanup →
-            uninterruptible λ⊤ →
-                runUnitJob (cleanup exit)
-                runDeferred group exit
+    if Js.read releasing && hasDeferred group then
+        case Chain.pop (deferredList group) of
+            Nothing →
+                ⊤
+            Just cleanup →
+                uninterruptible λ⊤ →
+                    runUnitJob (cleanup exit)
+                    runDeferred group exit
+    else if Js.read rooted && Js.cellRead sc .root then
+        _ = unlistScope group
+        ⊤
 
 
 --| Run `finally` when `scope` closes — after every fiber started in it has
@@ -1444,13 +1465,15 @@ runDeferred ((Scope sc) as group) exit =
 --| program stops, told `Cancelled`, with the rest of its cleanup.
 pub defer : Scope, (Exit ⊤ → ⊤) → ⊤
 defer ((Scope sc) as group) cleanup =
+    Js.write releasing True
+    Js.write finalising True
     if (Js.cellRead sc .closed) then
         uninterruptible λ⊤ → cleanup Cancelled
     else
         Js.write fibered True
         installHooks ⊤
         listRoot group (schedulerHere ⊤)
-        pushStep (Js.cellRead sc .deferred) λexit → unitJob λ⊤ → cleanup exit
+        pushStep (deferredList group) λexit → unitJob λ⊤ → cleanup exit
 
 
 --| Cancel every fiber of a scope `openRoot` made, without waiting for
@@ -1459,10 +1482,19 @@ defer ((Scope sc) as group) cleanup =
 --| runs once those fibers have ended, in a fiber of its own.
 pub closeRoot : Scope → ⊤
 closeRoot ((Scope sc) as group) =
-    owner = unlistScope group
+    owner =
+        case Js.cellRead sc .listed of
+            Nothing →
+                program
+            Just sched →
+                sched
     Js.cellWrite sc True .closed
-    each (Chain.toList (Js.cellRead sc .children)) halt
-    if Chain.size (Js.cellRead sc .deferred) > 0 then cleanupScope group (Done ⊤) owner
+    haltChildren (Js.cellRead sc .children)
+    if Js.read releasing && hasDeferred group then
+        cleanupScope group (Done ⊤) owner
+    else if absent (Js.cellRead sc .children) then
+        _ = unlistScope group
+        ⊤
 
 
 cleanupScope : Scope, Exit ⊤, Scheduler → ⊤
@@ -1534,11 +1566,12 @@ restore (Restore token) work =
 --|     Task.bracket (λ⊤ → open path) (λfile _ → close file) λfile → read file
 pub bracket : (⊤ → r), (r, Exit a → ⊤), (r → a) → a
 bracket acquire release use =
+    Js.write finalising True
     resource = uninterruptible acquire
     (Control c) = here ⊤
-    token = Chain.append (Js.cellRead c .finalizers) (unitJob λ⊤ → release resource Cancelled)
+    token = addFinalizer c (unitJob λ⊤ → release resource Cancelled)
     value = use resource
-    _ = Chain.remove (Js.cellRead c .finalizers) token
+    _ = removeFinalizer c token
     uninterruptible λ⊤ →
         release resource (Done value)
         value
@@ -1573,7 +1606,7 @@ shutdownRuntime ms done =
     (Scheduler s) = program
     if (Js.cellRead s .phase) == 0 then Js.cellWrite s 1 .phase
     if Js.read many then
-        each (Chain.toList schedulers) λsched →
+        walkChain schedulers λsched →
             stopScheduler sched ms λcut →
                 Js.cellWrite s ((Js.cellRead s .abandoned) + cut) .abandoned
     if Js.read fibered then stopScheduler program ms done
@@ -1623,25 +1656,27 @@ arm ((Scheduler s) as sched) =
 
 teardown : Scheduler → ⊤
 teardown ((Scheduler s) as sched) =
-    if (Js.cellRead s .phase) == 1 then
+    if Js.cellRead s .phase == 1 then
         Js.cellWrite s 2 .phase
-        case (Js.cellRead s .done) of
+        case Js.cellRead s .done of
             Nothing →
                 ⊤
             Just _ →
                 arm sched
-        roots = Chain.toList (Js.cellRead s .roots)
-        each roots λroot →
-            case root of
-                RootFiber _ →
-                    ⊤
-                RootScope (Scope group) →
-                    Js.cellWrite group True .closed
-        each (Chain.toList (Js.cellRead s .members)) λfiber →
-            pushStep (Js.cellRead s .sweeping) fiber
-        each (Chain.toList (Js.cellRead s .loans)) λ(Loan loan) →
-            pushStep (Js.cellRead s .sweeping) (Js.cellRead loan .fiber)
-        cleanupRoots roots Cancelled sched
+        (Scheduler p) = program
+        state = Js.cellRead s .sweeping
+        gatherChildren (Js.cellRead p .roots) state
+        if Js.read rooted then
+            visitScopes (Js.cellRead p .rootScopes) λ((Scope sc) as group) →
+                if ownedScope group sched then Js.cellWrite sc True .closed
+            gatherScopes (Js.cellRead p .rootScopes) state
+        collectTree sched 0 0
+        if Js.read many then
+            walkChain (loanList sched) λ(Loan loan) →
+                pushSweep (Js.cellRead s .sweeping) (Js.cellRead loan .fiber)
+        if Js.read spawning || Js.read scoped then sortSweep (Js.cellRead s .sweeping)
+        if Js.read rooted && Js.read releasing then
+            cleanupRoots (Js.cellRead p .rootScopes) Cancelled sched
     ok = Js.ref False
     Js.finally
         (λ⊤ →
@@ -1649,103 +1684,82 @@ teardown ((Scheduler s) as sched) =
             Js.write ok True
         )
         λ⊤ → if Js.read ok then ⊤ else queueTeardown sched
-    case (Js.cellRead s .culprit) of
+    case Js.cellRead s .culprit of
         Nothing →
             ⊤
         Just fiber →
             Js.cellWrite s Nothing .culprit
             if not (endedControl fiber) then
                 recover fiber
-                enqueue fiber Nothing
-    if (Js.cellRead s .program) then
-        case Js.read outside of
-            Nothing →
-                ⊤
-            Just ((Control holder) as outsideControl) →
-                if Chain.size (Js.cellRead holder .finalizers) > 0 then
-                    fins = Chain.make ⊤
-                    moveOutside outsideControl (Js.cellRead holder .finalizers) fins
-                    Js.cellWrite holder 0 .masks
-                    cleanupFiber fins program
-    if (Js.cellRead s .live) == 0 then allEnded sched else drain sched
+                enqueue fiber
+    if Js.read finalising then
+        if Js.cellRead s .program then
+            case Js.read outside of
+                Nothing →
+                    ⊤
+                Just ((Control holder) as control) →
+                    if not (absent (Js.cellRead holder .finalizers)) then
+                        cleanupOutside control
+    if Js.cellRead s .live == 0 then allEnded sched else drain sched
 
 
-moveOutside : Control, Chain UnitJob, Chain UnitJob → ⊤
-moveOutside (Control owner) from into =
-    case Chain.shift from of
-        Nothing →
-            ⊤
-        Just fin →
-            pushStep into λdone →
-                (Control active) = here ⊤
-                old = (Js.cellRead owner .slots)
-                Js.cellWrite active { Record.copy old | sched = Nothing } .slots
-                Js.invoke fin done λ_ → ⊤
-            moveOutside (Control owner) from into
-
-
-cleanupRoots : List Root, Exit ⊤, Scheduler → ⊤
+cleanupRoots : Js.Opt Scope, Exit ⊤, Scheduler → ⊤
 cleanupRoots roots exit owner =
     fins = Chain.make ⊤
-    each roots λroot →
-        case root of
-            RootFiber _ →
-                ⊤
-            RootScope ((Scope sc) as group) →
-                if Chain.size (Js.cellRead sc .deferred) > 0 then
-                    _ = Chain.prepend fins (unitJob λ⊤ → shutWith group exit)
-                    ⊤
+    visitScopes roots λgroup →
+        if ownedScope group owner && hasDeferred group then
+            Chain.unshift fins (unitJob λ⊤ → shutWith group exit)
     if Chain.size fins > 0 then cleanupFiber fins owner
 
 
 cleanupFiber : Chain UnitJob, Scheduler → ⊤
 cleanupFiber fins sched =
-    fiber = newControl { Record.copy emptySlots | sched = Just sched } λ⊤ → ⊤
-    (Control c) = fiber
-    copyFinalizers fins (Js.cellRead c .finalizers)
-    registerFiber Nothing Nothing (Fiber fiber (Js.ref Nothing))
+    fiber = newControl { Record.copy emptySlots | sched = Just sched }
+    c = cellOf fiber
+    copyFinalizers fins c
+    registerFiber Nothing Nothing (Fiber fiber)
     unwind fiber
-    enqueue fiber Nothing
+    enqueue fiber
 
 
-copyFinalizers : Chain UnitJob, Chain UnitJob → ⊤
+copyFinalizers : Chain UnitJob, Js.Cell ControlFields → ⊤
 copyFinalizers from into =
     case Chain.shift from of
         Nothing →
             ⊤
         Just fin →
-            pushStep into fin
+            _ = addFinalizer into fin
             copyFinalizers from into
 
 
 sweep : Scheduler → ⊤
 sweep ((Scheduler s) as sched) =
-    case Chain.shift (Js.cellRead s .sweeping) of
-        Nothing →
-            ⊤
-        Just fiber →
-            halt fiber
-            sweep sched
+    state = Js.cellRead s .sweeping
+    at = Js.cellRead state .at
+    if at < Js.cellRead state .count then
+        fiber = Array.arrayGet (Js.cellRead state .values) at
+        Js.cellWrite state (at + 1) .at
+        halt fiber
+        sweep sched
+    else
+        Js.cellWrite state (Array.arrayAllocate 0) .values
+        Js.cellWrite state 0 .count
+        Js.cellWrite state 0 .at
 
 
 recover : Control → ⊤
 recover ((Control c) as fiber) =
-    Js.cellWrite c True .interrupted
-    Js.cellWrite c Nothing .parked
+    set c interruptBit True
+    set c cancelBit True
+    stop = clearWait fiber
     Js.cellWrite c 0 .masks
-    if inCleanup fiber then
-        cutBack fiber
-    else if not ((Js.cellRead c .unwinding)) then
-        unwind fiber
-    else
-        if Chain.size (Js.cellRead c .stack) == 0 then
-            pushFrame
-                fiber
-                (Execute λ⊤ →
-                    (Js.cellRead c .cancelled) ⊤
-                    complete fiber
-                )
-        pushFrame fiber (Execute (driverJob λ⊤ → cancelChildren fiber))
+    if Js.read finalising && inCleanup fiber then cutBack fiber else clearFrames c
+    case stop of
+        Nothing →
+            ⊤
+        Just cancelWait →
+            Js.invoke cancelWait ⊤ λ_ → ⊤
+            ⊤
 
 
 deadlinePassed : Control → Bool
@@ -1759,46 +1773,41 @@ expire : Scheduler → ⊤
 expire ((Scheduler s) as sched) =
     Js.cellWrite s Nothing .timer
     Js.cellWrite s True .expired
-    ok = Js.ref False
-    Js.finally
-        (λ⊤ →
-            each (Chain.toList cleaning) λ((Control c) as fiber) →
-                if (Js.cellRead s .program) || Js.same (schedulerOf fiber) sched then
-                    case (Js.cellRead c .parked) of
-                        Nothing →
-                            ⊤
-                        Just waiting →
-                            Js.cellWrite c Nothing .parked
-                            enqueue fiber Nothing
-                            abandon fiber (Just waiting)
-            Js.write ok True
-        )
-        λ⊤ → if Js.read ok then ⊤ else macrotask λ⊤ → expire sched
+    if Js.read finalising then
+        ok = Js.ref False
+        Js.finally
+            (λ⊤ →
+                expireWaiting sched
+                Js.write ok True
+            )
+            λ⊤ → if Js.read ok then ⊤ else macrotask λ⊤ → expire sched
 
 
-abandon : Control, Maybe Wait → ⊤
-abandon fiber waiting =
+abandon : Control → ⊤
+abandon fiber =
     (Scheduler s) = schedulerOf fiber
-    Js.cellWrite s ((Js.cellRead s .abandoned) + 1) .abandoned
+    Js.cellWrite s (Js.cellRead s .abandoned + 1) .abandoned
+    stop = clearWait fiber
     cutBack fiber
-    case waiting of
+    case stop of
         Nothing →
             ⊤
-        Just (Wait w) →
-            Js.cellWrite w True .done
-            ((Js.cellRead w .stopWait)) ⊤
+        Just cancelWait →
+            Js.invoke cancelWait ⊤ λ_ → ⊤
+            ⊤
 
 
 allEnded : Scheduler → ⊤
 allEnded (Scheduler s) =
     if (Js.cellRead s .phase) ≠ 3 then
         Js.cellWrite s 3 .phase
-        case (Js.cellRead s .listed) of
-            Nothing →
-                ⊤
-            Just token →
-                _ = Chain.remove schedulers token
-                Js.cellWrite s Nothing .listed
+        if Js.read many then
+            case (Js.cellRead s .listed) of
+                Nothing →
+                    ⊤
+                Just token →
+                    _ = Chain.remove schedulers token
+                    Js.cellWrite s Nothing .listed
         case (Js.cellRead s .timer) of
             Nothing →
                 ⊤
@@ -1820,7 +1829,7 @@ lend : Control, Scheduler → Maybe (Link Loan)
 lend fiber ((Scheduler s) as sched) =
     (Control c) = fiber
     owned =
-        case (Js.cellRead c .member) of
+        case (memberOf c) of
             Nothing →
                 (Js.cellRead s .program)
             Just owner →
@@ -1828,9 +1837,7 @@ lend fiber ((Scheduler s) as sched) =
     if owned then
         Nothing
     else
-        case
-            Chain.find (Js.cellRead s .loans) λ(Loan loan) → Js.same (Js.cellRead loan .fiber) fiber
-        of
+        case Chain.find (loanList sched) λ(Loan loan) → Js.same (Js.cellRead loan .fiber) fiber of
             Just token →
                 case Chain.peek token of
                     Nothing →
@@ -1842,7 +1849,7 @@ lend fiber ((Scheduler s) as sched) =
                 Js.cellWrite s ((Js.cellRead s .live) + 1) .live
                 Just
                     (Chain.append
-                        (Js.cellRead s .loans)
+                        (loanList sched)
                         (Loan (Js.cell { fiber = fiber, depth = 1 }))
                     )
 
@@ -1860,7 +1867,7 @@ unlend ((Scheduler s) as sched) maybe =
                     if (Js.cellRead loan .depth) > 1 then
                         Js.cellWrite loan ((Js.cellRead loan .depth) - 1) .depth
                     else
-                        _ = Chain.remove (Js.cellRead s .loans) token
+                        _ = Chain.remove (loanList sched) token
                         countDown sched
 
 
@@ -1888,6 +1895,7 @@ withScheduler sched work =
 
 withSlots : Slots, (⊤ → a), sync (⊤ → ⊤) → a
 withSlots slots work after =
+    Js.write finalising True
     Js.write slotted True
     (Control c) = here ⊤
     old = (Js.cellRead c .slots)
@@ -1895,10 +1903,10 @@ withSlots slots work after =
         λ⊤ →
             Js.cellWrite c old .slots
             after ⊤
-    token = Chain.append (Js.cellRead c .finalizers) (unitJob putBack)
+    token = addFinalizer c (unitJob putBack)
     Js.cellWrite c slots .slots
     value = work ⊤
-    _ = Chain.remove (Js.cellRead c .finalizers) token
+    _ = removeFinalizer c token
     putBack ⊤
     value
 
@@ -1967,9 +1975,9 @@ withoutLogContext work =
         Nothing →
             work ⊤
         Just (Control c) →
+            Js.write finalising True
             old = (Js.cellRead c .slots)
-            token =
-                Chain.append (Js.cellRead c .finalizers) (unitJob λ⊤ → Js.cellWrite c old .slots)
+            token = addFinalizer c (unitJob λ⊤ → Js.cellWrite c old .slots)
             Js.cellWrite c { Record.copy old | log = Nothing } .slots
             ok = Js.ref False
             Js.finally
@@ -1980,13 +1988,12 @@ withoutLogContext work =
                 )
                 λ⊤ →
                     if Js.read ok then
-                        _ = Chain.remove (Js.cellRead c .finalizers) token
+                        _ = removeFinalizer c token
                         ⊤
                     else
                         thrown = (Js.cellRead c .slots)
-                        pushStep
-                            (Js.cellRead c .finalizers)
-                            (unitJob λ⊤ → Js.cellWrite c thrown .slots)
+                        _ = addFinalizer c (unitJob λ⊤ → Js.cellWrite c thrown .slots)
+                        ⊤
                     Js.cellWrite c old .slots
 
 
@@ -2077,10 +2084,10 @@ adjustClock ((VirtualClock clock) as virtual) ms =
 
 advance : VirtualClock, Int → ⊤
 advance ((VirtualClock clock) as virtual) target =
-    case Chain.toList (Js.cellRead clock .sleepers) of
-        [] →
+    case Chain.first (Js.cellRead clock .sleepers) of
+        Nothing →
             Js.cellWrite clock target .now
-        [ Sleeper at _, …_ ] →
+        Just (Sleeper at _) →
             if at > target then
                 Js.cellWrite clock target .now
             else
@@ -2134,39 +2141,36 @@ each items work =
 startIn : Scope, (⊤ → a) → Fiber a
 startIn group work =
     fiber = makeFiber (currentSlots ⊤) work
-    (Fiber ((Control c) as control) _) = fiber
+    (Fiber ((Control c) as control)) = fiber
     outer = Js.read current
     Js.write current (Just control)
     ok = Js.ref False
     Js.finally
         (λ⊤ →
-            case Chain.pop (Js.cellRead c .stack) of
-                Just (Execute job) →
-                    Js.invoke job ⊤ λ_ → ⊤
-                    ⊤
-                _ →
-                    ⊤
-            if not ((Js.cellRead c .ended)) then
+            frame = popFrame c
+            if not (absent frame) then
+                _ = Js.invoke (Kernel.slotRead (required frame)) (Js.cellRead c .value) λ_ → ⊤
+                ⊤
+            if Js.read pending == 0 && has c unwindBit then advanceUnwind control
+            if not (has c endedBit) then
                 registerFiber outer (Just group) fiber
-                case Js.read pending of
-                    Nothing →
-                        enqueue control Nothing
-                    Just (Pending stop waiting) →
-                        Js.write pending Nothing
-                        if stop then
-                            unwind control
-                            enqueue control Nothing
-                        else
-                            Js.cellWrite c waiting .parked
+                mode = Js.read pending
+                if mode > 0 then
+                    Js.write pending 0
+                    if mode == 2 || interrupted control then
+                        forceCancel control
+                        enqueue control
+                else
+                    enqueue control
             Js.write ok True
         )
         λ⊤ →
             Js.write current outer
             if not (Js.read ok) then
-                Js.write pending Nothing
+                Js.write pending 0
                 registerFiber outer (Just group) fiber
                 recover control
-                enqueue control Nothing
+                enqueue control
     fiber
 
 
@@ -2175,20 +2179,20 @@ type Entry
 
 
 entry : Int, Fiber a, sync (Exit a → Bool), sync (Exit a → Bool) → Entry
-entry number (Fiber fiber result) stop kill =
+entry number ((Fiber control) as fiber) stop kill =
     Entry
         { number = number
-        , fiber = fiber
+        , fiber = control
         , stop =
             λ⊤ →
-                case Js.read result of
+                case poll fiber of
                     Nothing →
                         False
                     Just exit →
                         stop exit
         , kill =
             λ⊤ →
-                case Js.read result of
+                case poll fiber of
                     Nothing →
                         False
                     Just exit →
@@ -2223,7 +2227,7 @@ firstOf entries =
                             ⊤
                         else
                             (Control c) = item.fiber
-                            token = Chain.append (Js.cellRead c .observers) λ⊤ →
+                            token = Chain.append (observerList c) λ⊤ →
                                 if item.stop ⊤ then
                                     if item.kill ⊤ then haltAs me entries item.fiber
                                     resume wake (Just item.number)
@@ -2232,7 +2236,7 @@ firstOf entries =
                                 then
                                     resume wake Nothing
                             pushStep listeners λ⊤ →
-                                _ = Chain.remove (Js.cellRead c .observers) token
+                                _ = Chain.remove (observerList c) token
                                 ⊤
                     λ⊤ → runJobs listeners
                 runJobs listeners
@@ -2772,9 +2776,9 @@ metadata input attempt began =
 
 
 registerFiber : Maybe Control, Maybe Scope, Fiber a → ⊤
-registerFiber parent group ((Fiber (Control c) _) as fiber) =
-    if not ((Js.cellRead c .registered)) then
-        Js.cellWrite c True .registered
+registerFiber parent group ((Fiber (Control c)) as fiber) =
+    if not ((has c registeredBit)) then
+        set c registeredBit True
         attachFiber parent group fiber
 
 
@@ -2824,3 +2828,874 @@ slotted = Js.ref False
 
 spawning : Js.Ref Bool
 spawning = Js.ref False
+
+
+interruptBit : Int
+interruptBit = 1
+
+
+unwindBit : Int
+unwindBit = 2
+
+
+endedBit : Int
+endedBit = 4
+
+
+cancelBit : Int
+cancelBit = 8
+
+
+queuedBit : Int
+queuedBit = 16
+
+
+parkedBit : Int
+parkedBit = 32
+
+
+registeredBit : Int
+registeredBit = 64
+
+
+hostBit : Int
+hostBit = 128
+
+
+syncBit : Int
+syncBit = 256
+
+
+readyBit : Int
+readyBit = 512
+
+
+childrenBit : Int
+childrenBit = 1024
+
+
+has : Js.Cell ControlFields, Int → Bool
+has c bit = Js.bitAnd (Js.cellRead c .flags) bit ≠ 0
+
+
+set : Js.Cell ControlFields, Int, Bool → ⊤
+set c bit enabled =
+    flags = Js.cellRead c .flags
+    next = if enabled then Js.bitOr flags bit else Js.bitAnd flags (Js.bitXor bit (0 - 1))
+    Js.cellWrite c next .flags
+
+
+absent : Js.Opt a → Bool
+absent value = Js.same value (Js.none ⊤)
+
+
+required : Js.Opt a → a
+required value = Js.optMatch value (λ⊤ → Runtime.defect "an absent kernel link was read") identity
+
+
+cellOf : Control → Js.Cell ControlFields
+cellOf (Control c) = c
+
+
+extension : Js.Cell ControlFields → ControlExt
+extension c =
+    slot = Js.cellRead c .ext
+    if absent slot then
+        made =
+            ControlExt
+                (Js.cell
+                    { member = Nothing
+                    , cleanBefore = Js.none ⊤
+                    , cleanAfter = Js.none ⊤
+                    , outsideOwner = Nothing
+                    , scopes = Js.none ⊤
+                    , observers = Nothing
+                    , report = Nothing
+                    }
+                )
+        Js.cellWrite c (Js.some made) .ext
+        made
+    else
+        required slot
+
+
+memberOf : Js.Cell ControlFields → Maybe Scheduler
+memberOf c = Js.optMatch (Js.cellRead c .ext) (λ⊤ → Nothing) λ(ControlExt extra) →
+    Js.cellRead extra .member
+
+
+observerList : Js.Cell ControlFields → Chain (⊤ → ⊤)
+observerList c =
+    Js.write observed True
+    (ControlExt extra) = extension c
+    case Js.cellRead extra .observers of
+        Just existing →
+            existing
+        Nothing →
+            made = Chain.make ⊤
+            Js.cellWrite extra (Just made) .observers
+            made
+
+
+pushFrame : Control, Frame → ⊤
+pushFrame (Control c) frame =
+    top = Js.cellRead c .top
+    if not (absent top) then
+        stack =
+            Js.optMatch (Js.cellRead c .frames)
+                (λ⊤ →
+                    made = FrameStack (Js.cell { values = Array.arrayAllocate 0, count = 0 })
+                    Js.cellWrite c (Js.some made) .frames
+                    made
+                )
+                identity
+        (FrameStack frames) = stack
+        count = Js.cellRead frames .count
+        Array.arrayWrite (Js.cellRead frames .values) count top
+        Js.cellWrite frames (count + 1) .count
+    Js.cellWrite c (Js.some frame) .top
+
+
+popFrame : Js.Cell ControlFields → Js.Opt Frame
+popFrame c =
+    top = Js.cellRead c .top
+    if not (absent top) then
+        next = Js.optMatch (Js.cellRead c .frames) (λ⊤ → Js.none ⊤) λ(FrameStack frames) →
+            count = Js.cellRead frames .count
+            if count == 0 then
+                Js.none ⊤
+            else
+                index = count - 1
+                values = Js.cellRead frames .values
+                value = Array.arrayGet values index
+                Array.arrayWrite values index (Js.none ⊤)
+                Js.cellWrite frames index .count
+                value
+        Js.cellWrite c next .top
+    top
+
+
+clearFrames : Js.Cell ControlFields → ⊤
+clearFrames c =
+    Js.cellWrite c (Js.none ⊤) .top
+    Js.cellWrite c (Js.none ⊤) .frames
+
+
+addFinalizer : Js.Cell ControlFields, UnitJob → Finalizer
+addFinalizer c work =
+    old = Js.cellRead c .finalizers
+    made = Finalizer (Js.cell { work = Js.some work, before = Js.none ⊤, after = old })
+    if not (absent old) then
+        (Finalizer next) = required old
+        Js.cellWrite next (Js.some made) .before
+    Js.cellWrite c (Js.some made) .finalizers
+    made
+
+
+removeFinalizer : Js.Cell ControlFields, Finalizer → Js.Opt UnitJob
+removeFinalizer c (Finalizer fin) =
+    work = Js.cellRead fin .work
+    if not (absent work) then
+        before = Js.cellRead fin .before
+        after = Js.cellRead fin .after
+        if absent before then
+            Js.cellWrite c after .finalizers
+        else
+            (Finalizer prev) = required before
+            Js.cellWrite prev after .after
+        if not (absent after) then
+            (Finalizer next) = required after
+            Js.cellWrite next before .before
+        Js.cellWrite fin (Js.none ⊤) .work
+        Js.cellWrite fin (Js.none ⊤) .before
+        Js.cellWrite fin (Js.none ⊤) .after
+    work
+
+
+walkChain : Chain a, sync (a → ⊤) → ⊤
+walkChain entries work =
+    _ = Chain.find entries λvalue →
+        work value
+        False
+    ⊤
+
+
+pub waitList : ⊤ → WaitList a
+waitList ⊤ = WaitList (Js.cell { first = Js.none ⊤, last = Js.none ⊤ })
+
+
+linkWait : WaitList a, Control → ⊤
+linkWait ((WaitList q) as list) ((Control c) as fiber) =
+    last = Js.cellRead q .last
+    Js.cellWrite c last .wbefore
+    Js.cellWrite c (Js.none ⊤) .wafter
+    Js.cellWrite c (Js.some (Kernel.slotPack list)) .wait
+    if absent last then
+        Js.cellWrite q (Js.some fiber) .first
+    else
+        Js.cellWrite (cellOf (required last)) (Js.some fiber) .wafter
+    Js.cellWrite q (Js.some fiber) .last
+
+
+unlinkList : WaitList a, Control → ⊤
+unlinkList (WaitList q) (Control c) =
+    before = Js.cellRead c .wbefore
+    after = Js.cellRead c .wafter
+    if absent before then
+        Js.cellWrite q after .first
+    else
+        Js.cellWrite (cellOf (required before)) after .wafter
+    if absent after then
+        Js.cellWrite q before .last
+    else
+        Js.cellWrite (cellOf (required after)) before .wbefore
+    Js.cellWrite c (Js.none ⊤) .wbefore
+    Js.cellWrite c (Js.none ⊤) .wafter
+    Js.cellWrite c (Js.none ⊤) .wait
+
+
+pub parkIn : WaitList a → a
+parkIn list = Js.suspending λ⊤ →
+    Js.write listing True
+    fiber = here ⊤
+    if interrupted fiber then
+        Js.write pending 2
+        Runtime.parked ⊤
+    else
+        (Control c) = fiber
+        set c parkedBit True
+        set c hostBit False
+        linkWait list fiber
+        pushFrame fiber (Kernel.slotPack (Js.completion ⊤))
+        Js.write pending 1
+        Runtime.parked ⊤
+
+
+pub wakeFirst : WaitList a, a → Bool
+wakeFirst ((WaitList q) as list) value =
+    first = Js.cellRead q .first
+    if absent first then
+        False
+    else
+        fiber = required first
+        c = cellOf fiber
+        unlinkList list fiber
+        set c parkedBit False
+        Js.cellWrite c (Kernel.slotPack value) .value
+        enqueue fiber
+        True
+
+
+wakeAll : WaitList a, a → ⊤
+wakeAll list value = if wakeFirst list value then wakeAll list value
+
+
+-- Remove links before the host canceller can run user code. The caller
+-- enqueues cancellation before invoking the returned canceller.
+
+clearWait : Control → Maybe (⊤ → ⊤)
+clearWait ((Control c) as fiber) =
+    saved = Js.cellRead c .wait
+    host = if Js.read callbacking then has c hostBit || has c readyBit else False
+    kids = if Js.read spawning then has c childrenBit else False
+    if Js.read callbacking then
+        set c hostBit False
+        set c readyBit False
+    set c parkedBit False
+    if Js.read spawning then set c childrenBit False
+    if host then Js.cellWrite c (Kernel.slotPack ⊤) .value
+    if absent saved then
+        Nothing
+    else if host then
+        Js.cellWrite c (Js.none ⊤) .wait
+        Just (Kernel.slotRead (required saved))
+    else if kids then
+        Js.cellWrite c (Js.none ⊤) .wait
+        Nothing
+    else
+        list : WaitList ⊤
+        list = Kernel.slotRead (required saved)
+        unlinkList list fiber
+        Nothing
+
+
+joinerList : Js.Cell ControlFields → WaitList ⊤
+joinerList c =
+    Js.write joined True
+    old = Js.cellRead c .joiners
+    if absent old then
+        made = waitList ⊤
+        Js.cellWrite c (Js.some made) .joiners
+        made
+    else
+        required old
+
+
+waitControl : Control → ⊤
+waitControl (Control c) = if not (has c endedBit) then parkIn (joinerList c)
+
+
+haltChildren : Js.Opt Control → ⊤
+haltChildren children =
+    if not (absent children) then
+        fiber = required children
+        next = Js.cellRead (cellOf fiber) .after
+        halt fiber
+        haltChildren next
+
+
+linkChild : Maybe Control, Maybe Scope, Control → ⊤
+linkChild parent group ((Control c) as fiber) =
+    if Js.read scoped then linkChildGroup parent group fiber else linkParent parent fiber
+
+
+linkChildGroup : Maybe Control, Maybe Scope, Control → ⊤
+linkChildGroup parent group ((Control c) as fiber) =
+    case group of
+        Just attachedScope →
+            (Scope sc) = attachedScope
+            Js.cellWrite c (Js.some attachedScope) .group
+            first = appendChild (Js.cellRead sc .children) fiber
+            Js.cellWrite sc first .children
+            if Js.cellRead sc .closed then set c interruptBit True
+        Nothing →
+            linkParent parent fiber
+
+
+linkParent : Maybe Control, Control → ⊤
+linkParent parent ((Control c) as fiber) =
+    if not (Js.read spawning) then
+        registerRoot fiber (schedulerOf fiber)
+    else
+        case parent of
+            Nothing →
+                registerRoot fiber (schedulerOf fiber)
+            Just ((Control owner) as holder) →
+                if has owner endedBit then
+                    registerRoot fiber (schedulerOf fiber)
+                else
+                    Js.cellWrite c (Js.some holder) .owner
+                    first = appendChild (Js.cellRead owner .children) fiber
+                    Js.cellWrite owner first .children
+
+
+unlinkOwner : Control → ⊤
+unlinkOwner ((Control c) as fiber) =
+    owner = Js.cellRead c .owner
+    if Js.read spawning && not (absent owner) then
+        parent = required owner
+        p = cellOf parent
+        first = removeChild (Js.cellRead p .children) fiber
+        Js.cellWrite p first .children
+        if absent first && has p childrenBit then
+            set p childrenBit False
+            set p parkedBit False
+            enqueue parent
+    else if has c registeredBit && absent (Js.cellRead c .group) then
+        (Scheduler p) = program
+        roots = removeChild (Js.cellRead p .roots) fiber
+        Js.cellWrite p roots .roots
+    if Js.read scoped then unlinkGroup fiber
+    Js.cellWrite c (Js.none ⊤) .owner
+    Js.cellWrite c (Js.none ⊤) .group
+    Js.cellWrite c (Js.none ⊤) .before
+    Js.cellWrite c (Js.none ⊤) .after
+
+
+linkScope : Control, Scope → ⊤
+linkScope ((Control c) as fiber) ((Scope sc) as group) =
+    (ControlExt extra) = extension c
+    first = appendScope (Js.cellRead extra .scopes) group
+    Js.cellWrite extra first .scopes
+    Js.cellWrite sc (Js.some fiber) .owner
+
+
+unlinkScope : Scope → ⊤
+unlinkScope ((Scope sc) as group) =
+    owner = Js.cellRead sc .owner
+    if not (absent owner) then
+        (ControlExt extra) = extension (cellOf (required owner))
+        first = removeScope (Js.cellRead extra .scopes) group
+        Js.cellWrite extra first .scopes
+        Js.cellWrite sc (Js.none ⊤) .owner
+        Js.cellWrite sc (Js.none ⊤) .before
+        Js.cellWrite sc (Js.none ⊤) .after
+
+
+scopeWaiters : Js.Cell { r | waiters : Js.Opt (WaitList ⊤) } → WaitList ⊤
+scopeWaiters sc =
+    old = Js.cellRead sc .waiters
+    if absent old then
+        made = waitList ⊤
+        Js.cellWrite sc (Js.some made) .waiters
+        made
+    else
+        required old
+
+
+type alias JobQueue =
+    Js.Cell
+        { first : Js.Opt Control
+        , last : Js.Opt Control
+        , soonFirst : Js.Opt Soon
+        , soonLast : Js.Opt Soon
+        , enqueued : Int
+        , dequeued : Int
+        }
+
+
+queueSoon : Scheduler, Soon → ⊤
+queueSoon ((Scheduler s) as sched) ((Soon work) as queuedWork) =
+    q = Js.cellRead s .queue
+    Js.cellWrite work (Js.cellRead q .enqueued) .position
+    last = Js.cellRead q .soonLast
+    if absent last then
+        Js.cellWrite q (Js.some queuedWork) .soonFirst
+    else
+        (Soon previous) = required last
+        Js.cellWrite previous (Js.some queuedWork) .next
+    Js.cellWrite q (Js.some queuedWork) .soonLast
+    requestDrain sched
+
+
+requestDrain : Scheduler → ⊤
+requestDrain ((Scheduler s) as sched) =
+    if not (Js.cellRead s .scheduled) then
+        Js.cellWrite s True .scheduled
+        if Js.cellRead s .program && Js.read hosting then ⊤ else requeue sched λ⊤ → drain sched
+
+
+runQueued : JobQueue → Bool
+runQueued q = if Js.read soonable then runMixed q else runFiberJob q
+
+
+runMixed : JobQueue → Bool
+runMixed q =
+    soonHead = Js.cellRead q .soonFirst
+    takeSoon =
+        if absent soonHead then
+            False
+        else
+            (Soon s) = required soonHead
+            Js.cellRead s .position ≤ Js.cellRead q .dequeued
+    if takeSoon then
+        work = required soonHead
+        (Soon s) = work
+        next = Js.cellRead s .next
+        Js.cellWrite q next .soonFirst
+        if absent next then Js.cellWrite q (Js.none ⊤) .soonLast
+        Js.cellWrite s (Js.none ⊤) .next
+        if jobsEmpty q then
+            Js.cellWrite q 0 .enqueued
+            Js.cellWrite q 0 .dequeued
+        runSoon work
+    else
+        runFiberJob q
+
+
+runFiberJob : JobQueue → Bool
+runFiberJob q =
+    fiber = required (Js.cellRead q .first)
+    c = cellOf fiber
+    next = Js.cellRead c .wafter
+    Js.cellWrite q next .first
+    if absent next then Js.cellWrite q (Js.none ⊤) .last
+    Js.cellWrite c (Js.none ⊤) .wafter
+    if jobsEmpty q then
+        Js.cellWrite q 0 .enqueued
+        Js.cellWrite q 0 .dequeued
+    else
+        Js.cellWrite q (Js.cellRead q .dequeued + 1) .dequeued
+    set c queuedBit False
+    runFiber fiber
+    True
+
+
+visitChildren : Js.Opt Control, sync (Control → ⊤) → ⊤
+visitChildren children visit =
+    if not (absent children) then
+        fiber = required children
+        next = Js.cellRead (cellOf fiber) .after
+        visit fiber
+        visitChildren next visit
+
+
+ownedScope : Scope, Scheduler → Bool
+ownedScope (Scope sc) ((Scheduler s) as sched) =
+    if Js.cellRead s .program then
+        True
+    else
+        case Js.cellRead sc .listed of
+            Nothing →
+                False
+            Just owner →
+                Js.same owner sched
+
+
+expireWaiting : Scheduler → ⊤
+expireWaiting sched =
+    case findCleaning (Js.read cleaning) sched of
+        Nothing →
+            ⊤
+        Just fiber →
+            abandon fiber
+            enqueue fiber
+            expireWaiting sched
+
+
+finalising : Js.Ref Bool
+finalising = Js.ref False
+
+
+joined : Js.Ref Bool
+joined = Js.ref False
+
+
+observed : Js.Ref Bool
+observed = Js.ref False
+
+
+scoped : Js.Ref Bool
+scoped = Js.ref False
+
+
+soonable : Js.Ref Bool
+soonable = Js.ref False
+
+
+finishReturned : Control, a → ⊤
+finishReturned ((Control c) as fiber) value =
+    set c unwindBit True
+    Js.cellWrite c (Kernel.slotPack value) .value
+    clearFrames c
+
+
+parkChildren : Control → ⊤
+parkChildren (Control c) =
+    set c parkedBit True
+    set c childrenBit True
+    Js.write pending 1
+
+
+finishUnwind : Control → ⊤
+finishUnwind fiber = if settleChildren fiber then finishCancelled fiber
+
+
+appendChild : Js.Opt Control, Control → Js.Opt Control
+appendChild first ((Control c) as fiber) =
+    Js.cellWrite c (Js.none ⊤) .after
+    if absent first then
+        Js.cellWrite c (Js.some fiber) .before
+        Js.some fiber
+    else
+        head = cellOf (required first)
+        last = required (Js.cellRead head .before)
+        Js.cellWrite c (Js.some last) .before
+        Js.cellWrite (cellOf last) (Js.some fiber) .after
+        Js.cellWrite head (Js.some fiber) .before
+        first
+
+
+removeChild : Js.Opt Control, Control → Js.Opt Control
+removeChild first ((Control c) as fiber) =
+    head = required first
+    before = Js.cellRead c .before
+    after = Js.cellRead c .after
+    if Js.same head fiber then
+        if not (absent after) then Js.cellWrite (cellOf (required after)) before .before
+        after
+    else
+        Js.cellWrite (cellOf (required before)) after .after
+        if absent after then
+            Js.cellWrite (cellOf head) before .before
+        else
+            Js.cellWrite (cellOf (required after)) before .before
+        first
+
+
+unlinkGroup : Control → ⊤
+unlinkGroup ((Control c) as fiber) =
+    group = Js.cellRead c .group
+    if not (absent group) then
+        attachedScope = required group
+        (Scope sc) = attachedScope
+        first = removeChild (Js.cellRead sc .children) fiber
+        Js.cellWrite sc first .children
+        if absent first then
+            waiting = Js.cellRead sc .waiters
+            if not (absent waiting) then wakeAll (required waiting) ⊤
+            if
+                Js.cellRead sc .closed
+                    && Js.read rooted
+                    && Js.cellRead sc .root
+                    && not (hasDeferred attachedScope)
+            then
+                _ = unlistScope attachedScope
+                ⊤
+
+
+type alias Sweep =
+    Js.Cell { values : Js.Builder Control, count : Int, at : Int }
+
+
+pushSweep : Sweep, Control → ⊤
+pushSweep sweepState fiber =
+    count = Js.cellRead sweepState .count
+    Array.arrayWrite (Js.cellRead sweepState .values) count fiber
+    Js.cellWrite sweepState (count + 1) .count
+
+
+sortSweep : Sweep → ⊤
+sortSweep sweepState =
+    count = Js.cellRead sweepState .count
+    if count > 1 then
+        fresh = Array.arrayAllocate count
+        filled = copySweep (Js.cellRead sweepState .values) fresh 0 count
+        sorted = Array.arraySort filled byBirth
+        Js.cellWrite sweepState sorted .values
+
+
+copySweep : Js.Builder Control, Js.Builder Control, Int, Int → Js.Builder Control
+copySweep source into index count =
+    if index == count then
+        into
+    else
+        filled = Array.arraySet into index (Array.arrayGet source index)
+        copySweep source filled (index + 1) count
+
+
+byBirth : Control, Control → Int
+byBirth (Control left) (Control right) = Js.cellRead left .ordinal - Js.cellRead right .ordinal
+
+
+callbacking : Js.Ref Bool
+callbacking = Js.ref False
+
+
+listing : Js.Ref Bool
+listing = Js.ref False
+
+
+appendScope : Js.Opt Scope, Scope → Js.Opt Scope
+appendScope first ((Scope sc) as group) =
+    Js.cellWrite sc (Js.none ⊤) .after
+    if absent first then
+        Js.cellWrite sc (Js.some group) .before
+        Js.some group
+    else
+        (Scope head) = required first
+        last = required (Js.cellRead head .before)
+        (Scope tail) = last
+        Js.cellWrite sc (Js.some last) .before
+        Js.cellWrite tail (Js.some group) .after
+        Js.cellWrite head (Js.some group) .before
+        first
+
+
+removeScope : Js.Opt Scope, Scope → Js.Opt Scope
+removeScope first ((Scope sc) as group) =
+    head = required first
+    before = Js.cellRead sc .before
+    after = Js.cellRead sc .after
+    if Js.same head group then
+        if not (absent after) then
+            (Scope next) = required after
+            Js.cellWrite next before .before
+        after
+    else
+        (Scope prev) = required before
+        Js.cellWrite prev after .after
+        if absent after then
+            (Scope firstCell) = head
+            Js.cellWrite firstCell before .before
+        else
+            (Scope next) = required after
+            Js.cellWrite next before .before
+        first
+
+
+visitScopes : Js.Opt Scope, sync (Scope → ⊤) → ⊤
+visitScopes first visit =
+    if not (absent first) then
+        group = required first
+        (Scope sc) = group
+        next = Js.cellRead sc .after
+        visit group
+        visitScopes next visit
+
+
+cleanupOutside : Control → ⊤
+cleanupOutside ((Control owner) as holder) =
+    old = Js.cellRead owner .slots
+    fiber = newControl { Record.copy old | sched = Nothing }
+    c = cellOf fiber
+    Js.cellWrite c (Js.cellRead owner .finalizers) .finalizers
+    Js.cellWrite owner (Js.none ⊤) .finalizers
+    Js.cellWrite owner 0 .masks
+    (ControlExt extra) = extension c
+    Js.cellWrite extra (Just holder) .outsideOwner
+    registerFiber Nothing Nothing (Fiber fiber)
+    unwind fiber
+    enqueue fiber
+
+
+findCleaning : Js.Opt Control, Scheduler → Maybe Control
+findCleaning first ((Scheduler s) as sched) =
+    if absent first then
+        Nothing
+    else
+        fiber = required first
+        c = cellOf fiber
+        if has c parkedBit && (Js.cellRead s .program || Js.same (schedulerOf fiber) sched) then
+            Just fiber
+        else
+            (ControlExt extra) = required (Js.cellRead c .ext)
+            next = Js.cellRead extra .cleanAfter
+            if Js.same next (Js.read cleaning) then Nothing else findCleaning next sched
+
+
+deferredList : Scope → Chain (Exit ⊤ → UnitJob)
+deferredList (Scope sc) =
+    case Js.cellRead sc .deferred of
+        Just existing →
+            existing
+        Nothing →
+            made = Chain.make ⊤
+            Js.cellWrite sc (Just made) .deferred
+            made
+
+
+hasDeferred : Scope → Bool
+hasDeferred (Scope sc) =
+    if not (Js.read releasing) then
+        False
+    else
+        case Js.cellRead sc .deferred of
+            Nothing →
+                False
+            Just jobs →
+                Chain.size jobs > 0
+
+
+releasing : Js.Ref Bool
+releasing = Js.ref False
+
+
+scopeHeads : Control → Js.Opt Scope
+scopeHeads (Control c) =
+    if Js.read scoped then
+        Js.optMatch (Js.cellRead c .ext) (λ⊤ → Js.none ⊤) λ(ControlExt extra) →
+            Js.cellRead extra .scopes
+    else
+        Js.none ⊤
+
+
+collectTree : Scheduler, Int, Int → ⊤
+collectTree ((Scheduler s) as sched) index kept =
+    state = Js.cellRead s .sweeping
+    if index == Js.cellRead state .count then
+        Js.cellWrite state kept .count
+    else
+        values = Js.cellRead state .values
+        fiber = Array.arrayGet values index
+        c = cellOf fiber
+        if Js.read spawning then gatherChildren (Js.cellRead c .children) state
+        if Js.read scoped then gatherScopes (scopeHeads fiber) state
+        matches =
+            if not (Js.read many) || Js.cellRead s .program then
+                True
+            else
+                case memberOf c of
+                    Nothing →
+                        False
+                    Just owner →
+                        Js.same owner sched
+        if matches && not (has c endedBit) then
+            Array.arrayWrite values kept fiber
+            collectTree sched (index + 1) (kept + 1)
+        else
+            collectTree sched (index + 1) kept
+
+
+cleanupPhaseBit : Int
+cleanupPhaseBit = 2048
+
+
+settleChildren : Control → Bool
+settleChildren ((Control c) as fiber) =
+    if not (Js.read spawning) then
+        True
+    else
+        haltChildren (Js.cellRead c .children)
+        if absent (Js.cellRead c .children) then
+            True
+        else
+            parkChildren fiber
+            False
+
+
+advanceUnwind : Control → ⊤
+advanceUnwind ((Control c) as fiber) =
+    if not (has c cancelBit) then
+        if settleChildren fiber then complete fiber
+    else if not (Js.read finalising) then
+        finishUnwind fiber
+    else if not (Js.read spawning) || has c cleanupPhaseBit then
+        runFinalizer fiber
+    else if settleChildren fiber then
+        set c cleanupPhaseBit True
+        runFinalizer fiber
+
+
+runFinalizer : Control → ⊤
+runFinalizer ((Control c) as fiber) =
+    if inCleanup fiber then leaveCleanup fiber
+    first = Js.cellRead c .finalizers
+    if absent first then
+        finishUnwind fiber
+    else
+        fin = required (removeFinalizer c (required first))
+        enterCleanup fiber
+        Js.invoke fin (λ⊤ → ⊤) λ_ → ⊤
+        ⊤
+
+
+forceCancel : Control → ⊤
+forceCancel ((Control c) as fiber) =
+    if not (has c endedBit) then
+        if has c unwindBit then
+            set c cancelBit True
+            cutBack fiber
+        else
+            unwind fiber
+
+
+rooted : Js.Ref Bool
+rooted = Js.ref False
+
+
+gatherChildren : Js.Opt Control, Sweep → ⊤
+gatherChildren first state =
+    if not (absent first) then
+        fiber = required first
+        pushSweep state fiber
+        gatherChildren (Js.cellRead (cellOf fiber) .after) state
+
+
+gatherScopes : Js.Opt Scope, Sweep → ⊤
+gatherScopes first state =
+    if not (absent first) then
+        (Scope group) = required first
+        gatherChildren (Js.cellRead group .children) state
+        gatherScopes (Js.cellRead group .after) state
+
+
+loanList : Scheduler → Chain Loan
+loanList ((Scheduler s) as sched) =
+    case Js.cellRead s .loans of
+        Just existing →
+            existing
+        Nothing →
+            made = Chain.make ⊤
+            Js.cellWrite s (Just made) .loans
+            made

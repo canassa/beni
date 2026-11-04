@@ -1,0 +1,5 @@
+-- #1719: runtime array sorting is private to core, including first-class access.
+import Js.Array as Array
+
+
+sort = Array.arraySort

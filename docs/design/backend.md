@@ -2636,6 +2636,19 @@ manufactured or read by application code. `workers-task-storage.md` owns the
 migration order. This decision supersedes the proposal's §16.1 erased continuation list
 where the typed implementation replaces it; sections are not renumbered.
 
+**Owner decision D3, 2026-11-04 (#1719): sentinel frames and the kernel slot.**
+The kernel owns an unchecked existential resume/result slot and a stack of
+compiler-written frames, with frame callables charged to their writer under
+workers.md §4. A frame is constructed only after a call returns the parking
+sentinel; the run loop invokes it through Js.invoke with the slot's value.
+Typed Fiber a, Resume a and WaitList a fix the value type at both ends; the
+kernel never inspects the erased data or exposes it as Js.Value. This replaces
+the 2026-11-01 CPS frame-chain decision, without changing public Task semantics
+or output for functions that cannot suspend. Migration is ordered: the kernel
+and intrusive wait lists first share this slot while accepting compiler-supplied
+typed completion frames; the following lowering change removes hidden CPS
+completion arguments and constructs frames only on the parked path.
+
 ### `Js.regExp` is a literal
 
 *Added 2026-10-01.* `Js.regExp pattern flags`, both string literals (`boundary.md` Â§4.2), is a
@@ -13399,3 +13412,12 @@ to choose a live row's patch versus restate protocol. A clock call passed to
 a pure helper inside a helper-owned `For` must therefore update on every
 render on both browser platforms. Enabling grouped rows only on direct must
 not leave the ordinary lowering with an all-false effect table for those rows.
+
+
+*Typed runtime sort amendment, manager approval 2026-11-04 (#1719).* The
+Task teardown sweep calls core-fenced Js.Array.arraySort on its existing typed
+Builder, emitted directly as array.sort(comparator) with a synchronous typed
+comparator and no catch. ES2019+ sort is stable; unique birth ordinals already
+fully determine Task's order. Sorting runs only at teardown, never a hot-path
+spawn, join, wake or drain. Both saturated and first-class uses are compiler
+owned, with no sibling export and no Js.Value erasure.

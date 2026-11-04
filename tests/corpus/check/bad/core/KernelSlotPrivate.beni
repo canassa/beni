@@ -1,0 +1,13 @@
+-- #1719: the existential is private to Task, even from another core module.
+import Js.Kernel as Kernel
+
+
+value : Kernel.Slot
+value = Kernel.slotPack 7
+
+
+read : Int
+read = Kernel.slotRead value
+
+
+firstClass = Kernel.slotPack

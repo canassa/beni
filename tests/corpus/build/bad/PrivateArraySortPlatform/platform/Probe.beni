@@ -1,0 +1,7 @@
+import Js.Array as Array
+
+
+pub run : ⊤ → ⊤
+run ⊤ =
+    _ = Array.arraySort
+    ⊤

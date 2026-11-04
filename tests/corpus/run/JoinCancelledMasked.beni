@@ -1,0 +1,16 @@
+-- A cancelled join is forced cancellation even while interrupts are masked.
+import Io
+import Node
+import Task exposing (Cancelled, Done)
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    target = Task.spawn λ⊤ → Task.never ⊤
+    Task.cancel target
+    caller = Task.spawn λ⊤ → Task.uninterruptible λ⊤ → Task.join target
+    case Task.wait caller of
+        Cancelled →
+            Node.print "masked join cancelled"
+        Done _ →
+            Node.print "unexpected return"

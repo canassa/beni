@@ -1,0 +1,6 @@
+module KernelSlotWords
+  9:13 List.push xs: rejected unknown: the list came from JavaScript (approx)
+  summary editPolled: π1#Fiber.0#Control.0 RE; res [*] ~⊤{lost}r{lost}, fresh1 ⊤{lost}r{lost}
+  demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause unknown 1

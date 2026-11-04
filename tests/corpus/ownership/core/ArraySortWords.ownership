@@ -1,0 +1,10 @@
+module ArraySortWords
+  8:9 call Js.Array.arraySort values: accepted param
+  9:13 List.push left: rejected supply: Js.Array.arraySort supplies its parameter 1 borrowed (π1[*])
+  16:9 call Js.Array.arraySort <call Js.cellRead>: rejected unknown: the list came from JavaScript (approx)
+  summary sortCaptured: π1 RW[storage], π1[*] R
+  summary sortStored: π1 RE
+  demands 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause unknown 1
+cause supply 1

@@ -1,0 +1,58 @@
+-- #1719: stale, duplicate and cancelled host wakes cannot answer another
+-- wait. A function payload is data even though the epoch is a function.
+import Io
+import Node
+import Ref
+import Task
+
+
+answer : Ref.Ref (Maybe (Task.Resume a)), a → ⊤
+answer slot value =
+    case Ref.get slot of
+        Just wake →
+            Task.resume wake value
+        Nothing →
+            Debug.todo "wait not registered"
+
+
+waitInto : Ref.Ref (Maybe (Task.Resume a)) → a
+waitInto slot = Task.callback λwake →
+    Ref.set slot (Just wake)
+    λ⊤ → ⊤
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    first = Ref.make Nothing
+    second = Ref.make Nothing
+    waiter = Task.spawn λ⊤ →
+        a = waitInto first
+        b = waitInto second
+        a + b
+    Task.yieldNow ⊤
+    answer first 3
+    answer first 90
+    Task.yieldNow ⊤
+    answer first 100
+    answer second 4
+    answer second 200
+    total = Task.join waiter
+    _ = Debug.log "delivered once" total
+
+    cancelled = Ref.make Nothing
+    stopped = Task.spawn λ⊤ →
+        value = waitInto cancelled
+        Debug.log "cancelled wake ran" value
+    Task.yieldNow ⊤
+    Task.cancel stopped
+    answer cancelled 99
+    Task.yieldNow ⊤
+
+    functions = Ref.make Nothing
+    callable = Task.spawn λ⊤ →
+        f = waitInto functions
+        f 7
+    Task.yieldNow ⊤
+    answer functions λn → n + 5
+    result = Task.join callable
+    Node.print "function payload: ${result}"

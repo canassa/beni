@@ -88,12 +88,15 @@ pub const Which = enum {
     cellWrite,
     none,
     some,
+    kernelPack,
+    kernelRead,
     arrayAllocate,
     arraySet,
     arrayDone,
     arrayGet,
     arrayLength,
     arrayWrite,
+    arraySort,
     optMatch,
     optWithDefault,
     ref,
@@ -272,11 +275,16 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
         if (same(name, "unpack")) return .any_unpack;
         return null;
     }
+    if (same(module_name, "Js.Kernel")) {
+        if (same(name, "slotPack")) return .kernelPack;
+        if (same(name, "slotRead")) return .kernelRead;
+        return null;
+    }
     if (same(module_name, "Schema")) return if (same(name, "endpointIdentity")) .schemaIdentity else null;
     if (same(module_name, "Js.Array")) {
         const which = std.meta.stringToEnum(Which, name) orelse return null;
         return switch (which) {
-            .arrayAllocate, .arraySet, .arrayDone, .arrayGet, .arrayLength, .arrayWrite => which,
+            .arrayAllocate, .arraySet, .arrayDone, .arrayGet, .arrayLength, .arrayWrite, .arraySort => which,
             else => null,
         };
     }
@@ -289,7 +297,7 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
 /// does not change the sibling copied by an existing development program.
 pub fn compilerOnly(which: Which) bool {
     return switch (which) {
-        .schemaIdentity, .arrayAllocate, .arraySet, .arrayDone, .arrayGet, .arrayLength, .arrayWrite, .optNone, .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
+        .kernelPack, .kernelRead, .schemaIdentity, .arrayAllocate, .arraySet, .arrayDone, .arrayGet, .arrayLength, .arrayWrite, .arraySort, .optNone, .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
         else => false,
     };
 }
