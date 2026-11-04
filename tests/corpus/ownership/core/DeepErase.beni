@@ -1,0 +1,62 @@
+-- A store must keep every reachable object, even across a wrapper summary.
+import Js
+import Js.Any
+import List
+
+
+type alias Form =
+    name : String
+
+
+type alias Model =
+    form : Form
+
+
+packModel : Model → Js.Any.Any
+packModel model = Js.Any.pack model
+
+
+pub record : Model → Js.Any.Any × Form
+record model =
+    box = packModel model
+    form = model.form
+    ( box, { form | name = "new" } )
+
+
+pub nested : { form : { rows : List Int } } → Js.Any.Any × List Int
+nested model =
+    box = Js.Any.pack model
+    ( box, List.push model.form.rows 1 )
+
+
+pub closure : Model → Js.Any.Any × Form
+closure model =
+    box = Js.Any.pack λ⊤ → readName model
+    form = model.form
+    ( box, { form | name = "new" } )
+
+
+pub legacy : Model → Form
+legacy model =
+    Js.set (Js.global "globalThis") "old" (Js.from model)
+    form = model.form
+    { form | name = "new" }
+
+
+pub reference : Model → Js.Ref Model × Form
+reference model =
+    ref = Js.ref model
+    form = model.form
+    ( ref, { form | name = "new" } )
+
+
+readName : Model → String
+readName model = model.form.name
+
+
+-- The scalar field is read eagerly, so the form does not escape.
+pub fieldCapture : Model → Js.Any.Any × Form
+fieldCapture model =
+    box = Js.Any.pack λ⊤ → model.form.name
+    form = model.form
+    ( box, { form | name = "new" } )

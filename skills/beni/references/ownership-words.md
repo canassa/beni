@@ -37,6 +37,11 @@ The result selectors and a stored callback need these words:
   into the cell, and with `cellmodify stored sync` its second part goes into
   the cell.
 
+A value passed to an `escaped` parameter can remain in storage after the call.
+All records and lists reachable from that value escape too. This includes
+values stored by `Js.Any.pack` and the captures of a stored function.
+A later in-place write to a reachable value needs a separate copy.
+
 The words do not change a type or the
 emitted code. Other packages cannot use them. A word in another package, at
 an incorrect position, or without its companion word causes
@@ -86,4 +91,4 @@ pub small : List Int
 small = [ 1 ]
 ```
 
-Source: `docs/design/language.md` §5.4, §9, §10; `docs/design/ownership-v2.md` §2.13.5, §2.13.6, §4.4.
+Source: `docs/design/ownership-checker.md` §31.8; `docs/design/language.md` §5.4, §9, §10; `docs/design/ownership-v2.md` §2.13.5, §2.13.6, §4.4.

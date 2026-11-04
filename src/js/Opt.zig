@@ -1403,7 +1403,7 @@ const Opt = struct {
                 const r = o.readsTo(@fromBackingInt(@intCast(d.lhs)), site, depth + 1);
                 if (r != .clean) return r;
                 return switch (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs)))) {
-                    .not, .type_of, .worker_definition_type => .clean,
+                    .not, .type_of, .worker_definition_type, .number_is_finite, .number_is_integer, .number_is_safe_integer => .clean,
                     else => .bad,
                 };
             },
@@ -1543,7 +1543,7 @@ const Opt = struct {
             .unary => {
                 const shape = o.pureValue(@fromBackingInt(@intCast(d.lhs)), depth + 1) orelse return null;
                 return switch (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs)))) {
-                    .not, .type_of, .worker_definition_type => .primitive,
+                    .not, .type_of, .worker_definition_type, .number_is_finite, .number_is_integer, .number_is_safe_integer => .primitive,
                     .neg => if (shape == .primitive) .primitive else null,
                     .yield => null,
                 };

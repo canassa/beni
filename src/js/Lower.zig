@@ -11487,6 +11487,15 @@ pub const Lowerer = struct {
             // ownership pin end: rendererEarlyChecked
             // ownership pin end: rendererEarlySelectedIndex
 
+            if (native.recipe == .data_is_finite or native.recipe == .data_is_integer or native.recipe == .data_is_safe_integer) {
+                const values = try l.orderedExprs(out, arg_insts, false);
+                return try l.unary(switch (native.recipe) {
+                    .data_is_finite => .number_is_finite,
+                    .data_is_integer => .number_is_integer,
+                    .data_is_safe_integer => .number_is_safe_integer,
+                    else => unreachable,
+                }, values[0], p);
+            }
             switch (native.recipe) {
                 .set_make, .set_add, .set_has, .set_size, .set_clear, .set_each, .array_each_view => {},
                 .array_each => {},

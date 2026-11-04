@@ -2639,7 +2639,8 @@ const Printer = struct {
                 // the guard supplies one only where it is needed, so
                 // `typeof x` keeps it and `typeof(a)` would not.
                 try p.tok(op.text(), op.compactText());
-                try p.expression(@fromBackingInt(@intCast(d.lhs)), unaryOperand(op), level);
+                try p.expression(@fromBackingInt(@intCast(d.lhs)), if (op.isNumberPredicate()) prec_arrow else unaryOperand(op), level);
+                if (op.isNumberPredicate()) try p.push(")");
             },
             .assign => {
                 try p.expression(@fromBackingInt(@intCast(d.lhs)), prec_call, level);
@@ -2829,7 +2830,8 @@ const Printer = struct {
                 // `typeof x` keeps it and `typeof(a)` would not.
                 const op: JsIr.UnaryOp = @fromBackingInt(@intCast(d.rhs));
                 try p.tok(op.text(), op.compactText());
-                return .expr(@fromBackingInt(@intCast(d.lhs)), unaryOperand(op));
+                if (op.isNumberPredicate()) try p.later(.piece(.close_paren));
+                return .expr(@fromBackingInt(@intCast(d.lhs)), if (op.isNumberPredicate()) prec_arrow else unaryOperand(op));
             },
             .assign => {
                 // target ` = ` value

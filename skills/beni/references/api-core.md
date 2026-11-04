@@ -111,9 +111,9 @@ module Browser.Host.Data
   value emptyObject : ⊤ → Value  -- impure
   value hasOwn : Value, String → Bool  -- impure
   value isArray : Value → Bool  -- impure
-  value isFinite : Value → Bool  -- impure
-  value isInteger : Value → Bool  -- impure
-  value isSafeInteger : Value → Bool  -- impure
+  value isFinite : Value → Bool
+  value isInteger : Value → Bool
+  value isSafeInteger : Value → Bool
   value keys : Value → List String  -- impure
   value same : Value, Value → Bool
 module Browser.Host.Date

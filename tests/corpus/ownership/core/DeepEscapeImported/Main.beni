@@ -1,0 +1,10 @@
+-- An imported erased store must escape nested records, including on a cache hit.
+import Js.Any
+import Pack
+
+
+pub edit : { form : { name : String } } → Js.Any.Any × { name : String }
+edit model =
+    box = Pack.store model
+    form = model.form
+    ( box, { form | name = "new" } )

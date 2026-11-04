@@ -452,8 +452,20 @@ pub const UnaryOp = enum(u8) {
     /// Separate from source `typeof`: allocation facts may refine this site.
     worker_definition_type,
 
+    /// Non-coercing native predicates; parentheses belong to their printing.
+    number_is_finite,
+    number_is_integer,
+    number_is_safe_integer,
+
+    pub fn isNumberPredicate(op: UnaryOp) bool {
+        return op == .number_is_finite or op == .number_is_integer or op == .number_is_safe_integer;
+    }
+
     pub fn text(op: UnaryOp) []const u8 {
         return switch (op) {
+            .number_is_finite => "Number.isFinite(",
+            .number_is_integer => "Number.isInteger(",
+            .number_is_safe_integer => "Number.isSafeInteger(",
             .neg => "-",
             .not => "!",
             .type_of, .worker_definition_type => "typeof ",

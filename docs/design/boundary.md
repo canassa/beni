@@ -1127,6 +1127,10 @@ function a platform receives through `Js.from` — an event handler, a render ca
 `undefined` where a development build returns `null`. A platform's JavaScript never reads what such
 a function returns; a `()` it is handed, and a `()` it returns, may be either.
 
+The native catalogue records the non-coercing Number predicates `isFinite`,
+`isInteger` and `isSafeInteger` as pure (2026-11-04, #1859): none coerces its
+argument, invokes user code or throws; lowering may fold literal arguments.
+
 ## 5. `main`, and what a platform provides
 
 **`main` is a platform-owned opaque `Program`.** Its type is a platform fact, so M3 resolves it per

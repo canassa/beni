@@ -1,0 +1,5 @@
+DeepErase record: lines 19-23 (not built: record_update)
+DeepErase closure: lines 32-36 (not built: lambda)
+DeepErase legacy: lines 39-43 (not built: call)
+DeepErase reference: lines 46-50 (not built: record_update)
+DeepErase fieldCapture: lines 58-62 (not built: lambda)
