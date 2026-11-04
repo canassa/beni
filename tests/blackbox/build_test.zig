@@ -6707,13 +6707,13 @@ fn expectSameWithBuiltEdges(w: *World, platform: []const u8, out: []const u8, ar
             // units included. The manifest hashes those maps, so its map
             // lines are masked; the map bytes themselves are compared here.
             const want_cmp = if (mapped and std.mem.endsWith(u8, a, ".mjs.map"))
-                try comparableMapSources(arena, want_bytes)
+                try comparableMapSources(arena, a, want_bytes)
             else if (mapped and std.mem.eql(u8, a, "_manifest.txt"))
                 try comparableManifestHashes(arena, want_bytes)
             else
                 want_bytes;
             const got_cmp = if (mapped and std.mem.endsWith(u8, b, ".mjs.map"))
-                try comparableMapSources(arena, got_bytes)
+                try comparableMapSources(arena, b, got_bytes)
             else if (mapped and std.mem.eql(u8, b, "_manifest.txt"))
                 try comparableManifestHashes(arena, got_bytes)
             else
@@ -6729,18 +6729,22 @@ fn expectSameWithBuiltEdges(w: *World, platform: []const u8, out: []const u8, ar
 
 /// A map's `sources` names the core two ways: `beni:///core/…` when the
 /// binary carries it, the relative path from the map's directory to
-/// `mycore/…` when `--core-root` reads it. Both become `core/…`, so the
+/// `mycore/…` when `--core-root` reads it: one `../` per directory of
+/// `map_path`, the map's path below the output directory, and one for the
+/// output directory itself. Both become `core/…`, so the
 /// comparison is about the map's positions rather than where its source
 /// came from. The same two substitutions run on both trees, whose sources
 /// are the same inputs; a source that contained either spelling would be
 /// rewritten on both sides, so the rewrite cannot make two different
 /// sources equal.
-fn comparableMapSources(arena: std.mem.Allocator, bytes: []const u8) ![]const u8 {
-    var text = try std.mem.replaceOwned(u8, arena, bytes, "beni:///core/", "core/");
-    // A core module in a directory (`_core/Browser/Host/…`) climbs as many
-    // levels as its map is deep, so drop every `../` before `mycore/`.
-    while (std.mem.indexOf(u8, text, "../mycore/") != null) text = try std.mem.replaceOwned(u8, arena, text, "../mycore/", "mycore/");
-    return std.mem.replaceOwned(u8, arena, text, "mycore/", "core/");
+fn comparableMapSources(arena: std.mem.Allocator, map_path: []const u8, bytes: []const u8) ![]const u8 {
+    const text = try std.mem.replaceOwned(u8, arena, bytes, "beni:///core/", "core/");
+    // A map at a wrong depth keeps its other `../` and stays unequal.
+    var built: std.ArrayList(u8) = .empty;
+    try built.appendSlice(arena, "../");
+    for (map_path) |c| if (c == '/') try built.appendSlice(arena, "../");
+    try built.appendSlice(arena, "mycore/");
+    return std.mem.replaceOwned(u8, arena, text, built.items, "core/");
 }
 
 /// A manifest hashes every file, its maps included, and a core map's hash
