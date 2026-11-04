@@ -8753,7 +8753,7 @@ dated amendment, before the code (rule 1).
 | A response body as bytes | `Http` (§9.8.12) | the failures that `Http` maps now | #1887 |
 | Random bytes | `browser`, `node` | none: the wrapper splits a request into calls of 65 536 bytes, so `QuotaExceededError` cannot happen | #1888 |
 | A monotonic clock | `core/Clock` | none | #1889 |
-| `srcdoc` and `sandbox` on `iframe` | `html` (§9.3) | none: `sandbox` takes the standard's tokens as a type | #1890 |
+| `sandbox` on `iframe` (*amended 2026-11-04*: `srcdoc` is not needed, below) | `html` (§9.3) | none: `sandbox` takes the standard's tokens as a type | #1890 |
 | Messages between a page and its frame | `browser` | a message that its `Schema` refuses; a frame that is not in the document | #1891 |
 | The clipboard | `browser` | no clipboard (an insecure page); `NotAllowedError` | #1892 |
 | A scroll into view with `block` and `inline` options | `Dom` (§9.8.6) | the failures of `Dom.scrollIntoView` now | #1896 |
@@ -8776,7 +8776,12 @@ text inserted with `execCommand("insertText")`, whose `false` answer is a typed 
 that closed `srcdoc` as a script sink (`language.md` §11.5, `untyped_srcdoc_attribute`). It waits
 for `playground-beni-q6`: a frame loaded from a URL that gets its files by `postMessage` needs only
 `sandbox`, and a typed `srcdoc` needs a rule that it comes only with a `sandbox` that has no
-`allow-same-origin`.
+`allow-same-origin`. *Amended 2026-11-04, the owner's decision* (Cesar Canassa,
+`playground-beni-q6`, 19:31:35 UTC): the frame loads from a URL and gets its files by
+`postMessage(…, "*")`; each side checks `event.source`, never `event.origin`, and each run has an
+id (`playground.md` §10.3). So `html` gets only `sandbox`, and the rule of 2026-09-29 stays.
+`playground-beni-q8` (19:32:46 UTC) took a history in beni for the editor and dropped
+`execCommand`, so the `insertText` row does not come.
 
 ## Appendix — what is deliberately not done
 
