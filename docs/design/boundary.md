@@ -8757,12 +8757,20 @@ dated amendment, before the code (rule 1).
 | Messages between a page and its frame | `browser` | a message that its `Schema` refuses; a frame that is not in the document | #1891 |
 | The clipboard | `browser` | no clipboard (an insecure page); `NotAllowedError` | #1892 |
 | A scroll into view with `block` and `inline` options | `Dom` (§9.8.6) | the failures of `Dom.scrollIntoView` now | #1896 |
+| The selection of a text field, read and set, in code points | `Html`, `Dom` (§9.8.6) | an element that is not a text field; a missing id | #1900 |
 
-Two more are the owner's decisions: an element whose inside a library owns (#1881), and a
-third-party ES module from beni (#1882). Bytes, `DataView` and 64-bit word pairs are `Binary`'s
-(#1278, [`webgpu.md`](webgpu.md) §3.1), and a Web Worker is `Browser.Worker`'s (#1297,
-`workers-api.md` §1 on PR #1304). The playground's own platform (`playground.md` §10.4) wraps the
-CodeMirror API (#1893) and the frame runner's host parts (#1894); no other program uses them.
+Bytes, `DataView` and 64-bit word pairs are `Binary`'s (#1278, [`webgpu.md`](webgpu.md) §3.1), and
+a Web Worker is `Browser.Worker`'s (#1297, `workers-api.md` §1 on PR #1304). The playground's own
+platform (`playground.md` §10.4) wraps the frame runner's host parts (#1894); no other program
+uses them.
+
+*Amended 2026-11-04, the owner's decision* (Cesar Canassa, dashboard questions `playground-beni-q3`
+and `q4`, 19:00 UTC): "replace CodeMirror with a simple editor written in beni itself"
+(`playground.md` §10.10). This section named two more decisions, an element whose inside a library
+owns (#1881) and a third-party ES module from beni (#1882), and the CodeMirror binding (#1893). The
+three are closed as not planned. The selection row (#1900) came with the beni editor. If the owner
+takes the browser's undo for it (`playground-beni-q5`), one more row comes: text inserted with
+`execCommand("insertText")`, whose `false` answer is a typed error.
 
 ## Appendix — what is deliberately not done
 
