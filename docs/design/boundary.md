@@ -3039,6 +3039,16 @@ be written against it; they are 1.0's contract:
   `Html.text` and nothing else of it — is not written: its primitives are the runtime's exports and
   nothing imports the module.
 
+**Version 1.28** (*owner amendment, 2026-11-04*): the private DOM protocol's
+`setSiteScope` takes `RowSite, SiteProtocol, Payload → ⊤`. It replaces the
+callback table and its paired checked scope together, synchronously, on the
+same site. The key-typed Any state and wrapper are retained. Every later
+head/tail/restate/dispose reads the current table; no callback may open a new
+scope under its old evidence. On an item/environment epoch change, rows update
+all item payloads before restating through the current recipe. A changed key
+type still disposes through the OLD site's paired table/scope before replacing
+state. This adds no per-row work or per-render replacement.
+
 ### 9.5 How a lowering is compiled into beni
 
 **No dynamic loading, ever**: a lowering is Zig linked into the binary, and a platform is trusted
@@ -3109,6 +3119,10 @@ build id and independent emit-unit cache keys, with no new `Js` primitive,
 `Any.js` change, HostFree exemption or per-view/per-row factory or closure.
 This is additive: another lowering need not declare a runtime protocol, and
 existing constructor and first-class uses gain no new refusal.
+
+*Owner amendment, 2026-11-04 (interface 1.28):* a retained row site's callback
+table and its paired scope are retargeted together on the same carrier. Its
+key-typed Any state is retained; §9.4.6 defines the three-argument operation.
 
 ### 9.6 Determinism, and what the cache must know
 

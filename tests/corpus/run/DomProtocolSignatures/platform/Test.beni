@@ -54,7 +54,7 @@ pub site :
     → Runtime.RowSite
 site protocol callbacks scope payload slot =
     value = protocol.makeSite callbacks scope payload
-    protocol.setSiteScope value scope
+    protocol.setSiteScope value callbacks scope
     _ = protocol.siteData value
     _ = protocol.siteHead value slot
     _ = protocol.siteTail value slot

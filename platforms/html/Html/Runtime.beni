@@ -1,4 +1,4 @@
---! The private typed producer/runtime ABI (boundary.md §9.4–9.5, 1.27).
+--! The private typed producer/runtime ABI (boundary.md §9.4–9.5, 1.28).
 --! Only the compiled lowering opens the existential carriers. Source keeps
 --! slots, rows, controls and scheduling typed. No carrier crosses Js.Value.
 --! Helpers are emitted cold; this module creates no helper factory.
@@ -142,6 +142,7 @@ pub type alias RowRecipe item key =
 -- The lowering emits one private record per independent emit/cache unit.
 -- These functions open only the checked producer's paired native ABI.
 -- makeSite hides persistent typed row state once per site, never per row.
+-- 1.28: setSiteScope retargets operations AND scope together, preserving data.
 -- first/last/moves/parentOf/childMaybe/restate/turn/dead/stop reference Beni
 -- algorithms through cold adapters; they are not moved into generated IR.
 -- hasRoot/hasHandler/handlerFlags read only compiler-owned producer metadata.
@@ -176,7 +177,7 @@ pub type alias Protocol =
     stop : (⊤ → ⊤)
     makeSite : (SiteProtocol, Payload, Any.Any → RowSite)
     siteScope : (RowSite → Payload)
-    setSiteScope : (RowSite, Payload → ⊤)
+    setSiteScope : (RowSite, SiteProtocol, Payload → ⊤)
     siteData : (RowSite → Any.Any)
     siteHead : (RowSite, Slot → Js.Opt Node.Node)
     siteTail : (RowSite, Slot → Js.Opt Node.Node)
