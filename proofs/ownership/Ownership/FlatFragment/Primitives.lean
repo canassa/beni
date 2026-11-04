@@ -3051,7 +3051,9 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
       defaultConfig) run
   have resultRep := entryAbstract_stored (ds := declarations) elemShape0 shapeN0
     (entryAbstract_join elemShape0 shapeN0) resultEq
-  -- From here the element and the item are read at their representation (#1840).
+  -- From here the element and the item are read at their representation (#1840):
+  -- the names `element` and `aN` denote `entryAbstract declarations t element0` and
+  -- `entryAbstract declarations t aN0`, and `element0` and `aN0` are the checker's abstracts.
   have elemShape := flatAbstract_entry (ds := declarations) elemShape0
   have shapeN := flatAbstract_entry (ds := declarations) shapeN0
   obtain ⟨element, elementDef⟩ : ∃ x, x = entryAbstract declarations t element0 := ⟨_, rfl⟩
@@ -3630,7 +3632,9 @@ theorem prepend_preserved {declarations : List Decl} {vs : ValueSemantics.State}
   have resultEq := first.symm
   have resultRep := entryAbstract_stored (ds := declarations) elemShape0 shapeN0
     (entryAbstract_join shapeN0 elemShape0) resultEq
-  -- From here the element and the item are read at their representation (#1840).
+  -- From here the element and the item are read at their representation (#1840):
+  -- the names `element` and `aN` denote `entryAbstract declarations t element0` and
+  -- `entryAbstract declarations t aN0`, and `element0` and `aN0` are the checker's abstracts.
   have elemShape := flatAbstract_entry (ds := declarations) elemShape0
   have shapeN := flatAbstract_entry (ds := declarations) shapeN0
   obtain ⟨element, elementDef⟩ : ∃ x, x = entryAbstract declarations t element0 := ⟨_, rfl⟩
