@@ -73,13 +73,13 @@ handle request =
 - Build with `beni build --platform=cloudflare --out=out Main.beni` and point `wrangler.jsonc`'s
   `main` at `out/_worker.mjs`. The entry file exports the Durable Object classes the app's
   `beni.json` lists under `"exports"`.
-- A Durable Object is `Worker.Object.define name schema restore handlers`, listed in `objects`
-  and in `beni.json`'s `"exports"`. `schema` is the object's protocol, the type of the messages
-  it receives. `restore ctx` builds the state at each start, from `Worker.Storage`. Each handler
-  of `Handlers` takes the state and returns the next one; `Object.none` has a handler for each
-  kind that keeps the state. Events run one at a time: `request` (a `Worker.forward` from the
-  Worker), `received` (a message), `alarm`, `tick`/`ticked` (a timer the state names; `tick`
-  must not wait), and the WebSocket handlers.
+- A Durable Object is `Worker.Object.define name schema restore handlers`, listed in `objects` and
+  in `beni.json`'s `"exports"`. `schema` is the object's protocol, the type of the messages it
+  receives. `restore ctx` builds the state at each start, from `Worker.Storage`. Each handler of
+  `Handlers` takes the state and returns the next one; `Object.none` has a handler for each kind
+  that keeps the state. Events run one at a time: `request` (a `Worker.forward` from the Worker),
+  `received` (a message), `alarm` (only at the time `Object.alarmAt` or `alarmIn` set),
+  `tick`/`ticked` (a timer the state names; `tick` must not wait), and the WebSocket handlers.
 - Reach an object with `Worker.objects (Worker.env ctx) "NAME" schema`, then `Worker.byName`,
   `Worker.unique` or `Worker.byId`. `Worker.forward ref request` sends a request. `Object.post
   ref message` sends a message and waits for nothing. `Object.ask ref schema (λreply → message)`

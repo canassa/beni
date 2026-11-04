@@ -1,0 +1,52 @@
+# Nothing is set: the host holds no alarm.
+{"path": "/room/a/__beni/alarms"}
+# The program's alarm an hour ahead is the host alarm.
+{"path": "/room/a/later"}
+{"path": "/room/a/__beni/alarms"}
+# A fiber parks: the platform holds its timer, and the wake, earlier than
+# the program's time, takes the host alarm.
+{"path": "/room/a/park"}
+{"path": "/room/a/__beni/hold"}
+{"path": "/room/a/__beni/alarms"}
+# The wake fires while the fiber lives: no alarm runs, and the wake is set
+# again.
+{"path": "/room/a/__beni/host-alarm"}
+{"path": "/room/a/count"}
+{"path": "/room/a/__beni/alarms"}
+# The program's time comes while the fiber lives: the host alarm is the
+# program's, its firing runs the alarm once, and then the wake holds the
+# host alarm again.
+{"path": "/room/a/due"}
+{"path": "/room/a/__beni/alarms"}
+{"path": "/room/a/__beni/host-alarm"}
+{"path": "/room/a/count"}
+{"path": "/room/a/__beni/alarms"}
+# An alarm handler that sets the next alarm keeps it.
+{"path": "/room/a/again"}
+{"path": "/room/a/__beni/host-alarm"}
+{"path": "/room/a/__beni/alarms"}
+# The gate opens: the hold is released at once, and the wake stays until
+# it fires.
+{"path": "/room/a/finish"}
+{"path": "/room/a/__beni/hold"}
+{"path": "/room/a/__beni/alarms"}
+# The wake fires with no fiber: no alarm runs, and the host alarm is the
+# program's again.
+{"path": "/room/a/__beni/host-alarm"}
+{"path": "/room/a/__beni/alarms"}
+{"path": "/room/a/count"}
+# With no fiber, a cancel leaves no host alarm.
+{"path": "/room/a/cancel"}
+{"path": "/room/a/__beni/alarms"}
+# The program's time is durable. Room b parks a fiber, so the wake holds
+# the host alarm; the fiber ends, and the room hibernates.
+{"path": "/room/b/later"}
+{"path": "/room/b/park"}
+{"path": "/room/b/__beni/alarms"}
+{"path": "/room/b/finish"}
+{"idle": 16000}
+# The wake fires in a new instance: it finds the program's time, runs no
+# alarm, and gives the host alarm back to the program.
+{"path": "/room/b/__beni/host-alarm"}
+{"path": "/room/b/__beni/alarms"}
+{"path": "/room/b/count"}

@@ -425,7 +425,10 @@ the next; the host's stack lines (`    at …`) are left out, since they hold a
 store path. A request forwarded to a Durable Object whose path ends in
 `/__beni/tick` fires the object's timer (a `ticked` event; 204, or 409 when
 no timer is armed), and one ending in `/__beni/alarm` runs its `alarm`
-(204); under `--test-hooks` the object arms no host timer. Each of the two
+(204); under `--test-hooks` the object arms no host timer. The host alarm
+that the object shares with the wake (`boundary.md` §9.12 (e.5)) is not set
+either: `/__beni/host-alarm` is its firing (204), and `/__beni/alarms`
+answers `host <none|program|wake>, program <none|set>`. Each of the two
 cases starts Miniflare once.
 
 ### `browser/`: a program in a page

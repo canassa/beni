@@ -1,0 +1,151 @@
+> GET /room/a/__beni/alarms
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< host none, program none
+| out: restore of a: ⊤
+> GET /room/a/later
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< alarm in an hour
+> GET /room/a/__beni/alarms
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< host program, program set
+> GET /room/a/park
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< parked in a
+> GET /room/a/__beni/hold
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< held
+> GET /room/a/__beni/alarms
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< host wake, program set
+> GET /room/a/__beni/host-alarm
+< 204
+> GET /room/a/count
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< a served 3, alarms 0
+> GET /room/a/__beni/alarms
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< host wake, program set
+> GET /room/a/due
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< alarm due
+> GET /room/a/__beni/alarms
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< host program, program set
+> GET /room/a/__beni/host-alarm
+< 204
+| out: alarm ran in a: ⊤
+> GET /room/a/count
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< a served 5, alarms 1
+> GET /room/a/__beni/alarms
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< host wake, program none
+> GET /room/a/again
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< alarm due, then again in an hour
+> GET /room/a/__beni/host-alarm
+< 204
+| out: alarm ran in a: ⊤
+> GET /room/a/__beni/alarms
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< host wake, program set
+> GET /room/a/finish
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< finished in a
+> GET /room/a/__beni/hold
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< free
+> GET /room/a/__beni/alarms
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< host wake, program set
+> GET /room/a/__beni/host-alarm
+< 204
+> GET /room/a/__beni/alarms
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< host program, program set
+> GET /room/a/count
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< a served 8, alarms 2
+> GET /room/a/cancel
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< alarm cancelled
+> GET /room/a/__beni/alarms
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< host none, program none
+> GET /room/b/later
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< alarm in an hour
+| out: restore of b: ⊤
+> GET /room/b/park
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< parked in b
+> GET /room/b/__beni/alarms
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< host wake, program set
+> GET /room/b/finish
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< finished in b
+> (idle 16000 ms)
+> GET /room/b/__beni/host-alarm
+< 204
+| out: restore of b: ⊤
+> GET /room/b/__beni/alarms
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< host program, program set
+> GET /room/b/count
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< b served 1, alarms 0
