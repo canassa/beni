@@ -1561,6 +1561,12 @@ const Spec = struct {
     /// solver*); then what no longer has a reference goes (slice 2).
     fn rounds(s: *Spec) Allocator.Error!void {
         if (!try s.analyse()) return;
+        // Branch refinement copies IR nodes: solve the copied graph before
+        // rewriting or consulting any per-node fact of it.
+        if (try s.refineHeldPass()) {
+            try s.grow();
+            if (!try s.analyse()) return;
+        }
         _ = try s.rewrite();
         _ = try s.prune();
         // A key nothing left reads goes from its literal (fact 3), and
@@ -5082,6 +5088,23 @@ const Spec = struct {
         return true;
     }
 
+    fn refineHeldPass(s: *Spec) Allocator.Error!bool {
+        const saved_top = s.cur_top;
+        defer s.cur_top = saved_top;
+        var changed = false;
+        for (s.mods) |*m| {
+            const roots = try s.arena.dupe(Index, m.ir.extraSlice(m.ir.body, Index));
+            for (roots) |top| {
+                s.cur_top = top;
+                for (try s.preorder(m, top)) |node|
+                    if (try s.heldBranches(m, node)) {
+                        changed = true;
+                    };
+            }
+        }
+        return changed;
+    }
+
     const HeldTest = struct { local: NameIndex, held: u32, equal: bool };
 
     fn heldTest(s: *Spec, m: *Mod, node: Index) ?HeldTest {
@@ -5099,7 +5122,7 @@ const Spec = struct {
 
     /// Within a branch, an immutable local keeps its relation to a held
     /// object. Do not carry a branch fact into a deferred function body.
-    fn refineHeld(s: *Spec, m: *Mod, roots: []const Index, fact: HeldTest, taken: bool) Allocator.Error!bool {
+    fn refineHeld(s: *Spec, m: *Mod, roots: []const Index, fact: HeldTest, taken: bool, apply: bool) Allocator.Error!bool {
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
         for (roots) |root| try JsIr.pushOperand(s.arena, &stack, root);
@@ -5112,19 +5135,19 @@ const Spec = struct {
             if (m.ir.tag(node) == .cond) {
                 const d = m.ir.data(node);
                 if (s.heldTest(m, @fromBackingInt(@intCast(d.lhs)))) |test_| if (test_.local == fact.local and test_.held == fact.held) {
+                    if (!apply) return true;
                     const c = m.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond);
                     const kept = if (taken == (test_.equal == fact.equal)) c.consequent else c.alternate;
                     try m.foldTo(s.gpa, node, kept);
-                    if (node.int() < m.memo.len and kept.int() < m.memo.len) m.memo[node.int()] = m.memo[kept.int()];
                     changed = true;
                     try JsIr.pushOperand(s.arena, &stack, node);
                     continue;
                 };
             }
             if (s.heldTest(m, node)) |test_| if (test_.local == fact.local and test_.held == fact.held) {
+                if (!apply) return true;
                 const value = taken == (test_.equal == fact.equal);
                 m.setNode(node, if (value) .true_lit else .false_lit, 0, 0);
-                if (node.int() < m.memo.len) m.memo[node.int()] = try s.boolean(value);
                 changed = true;
                 continue;
             };
@@ -5133,29 +5156,61 @@ const Spec = struct {
         return changed;
     }
 
+    /// Contextual facts must not mutate a node also reached outside its
+    /// branch. Copy only a branch containing a test we can refine; Copy
+    /// makes its expression graph private before any contextual rewrite.
+    fn refinedHeldExpr(s: *Spec, m: *Mod, root: Index, fact: HeldTest, taken: bool) Allocator.Error!?Index {
+        if (!try s.refineHeld(m, &.{root}, fact, taken, false)) return null;
+        var copy: Copy = .{ .s = s, .src = m, .dst = m, .cross = false, .renamed = &.{}, .subst = &.{} };
+        const result = try copy.expr(root, 0);
+        _ = try s.refineHeld(m, &.{result}, fact, taken, true);
+        return result;
+    }
+
+    fn refinedHeldList(s: *Spec, m: *Mod, range: JsIr.SubRange, fact: HeldTest, taken: bool) Allocator.Error!?JsIr.SubRange {
+        const roots = m.ir.extraSlice(range, Index);
+        if (!try s.refineHeld(m, roots, fact, taken, false)) return null;
+        const source = try s.arena.dupe(Index, roots);
+        var copy: Copy = .{ .s = s, .src = m, .dst = m, .cross = false, .renamed = &.{}, .subst = &.{} };
+        var statements: std.ArrayList(u32) = .empty;
+        for (source) |stmt| try copy.stmtsInto(stmt, &statements, 0);
+        const at = try m.append(s.gpa, statements.items);
+        const result: JsIr.SubRange = .{ .start = @fromBackingInt(at), .end = @fromBackingInt(at + @as(u32, @intCast(statements.items.len))) };
+        _ = try s.refineHeld(m, m.ir.extraSlice(result, Index), fact, taken, true);
+        return result;
+    }
+
     fn heldBranches(s: *Spec, m: *Mod, node: Index) Allocator.Error!bool {
         const ir = m.ir;
         if (ir.tag(node) != .cond and ir.tag(node) != .if_stmt) return false;
         const d = ir.data(node);
         const test_ = s.heldTest(m, @fromBackingInt(@intCast(d.lhs))) orelse return false;
-        if (try declCount(s, m, s.cur_top, test_.local) > 1 or try s.assignedInTop(m, s.cur_top, test_.local)) return false;
+        if (try declCount(s, m, s.cur_top, test_.local) != 1 or try s.assignedInTop(m, s.cur_top, test_.local)) return false;
         if (ir.tag(node) == .cond) {
             const c = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond);
-            const yes = try s.refineHeld(m, &.{c.consequent}, test_, true);
-            const no = try s.refineHeld(m, &.{c.alternate}, test_, false);
-            return yes or no;
+            const yes = try s.refinedHeldExpr(m, c.consequent, test_, true);
+            const no = try s.refinedHeldExpr(m, c.alternate, test_, false);
+            if (yes == null and no == null) return false;
+            const at = try m.append(s.gpa, &.{ (yes orelse c.consequent).int(), (no orelse c.alternate).int() });
+            m.setData(node, d.lhs, at);
+            return true;
         }
         const b = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
-        const yes = try s.refineHeld(m, ir.extraSlice(b.thenBody(), Index), test_, true);
-        const no = try s.refineHeld(m, ir.extraSlice(b.elseBody(), Index), test_, false);
-        return yes or no;
+        const yes = try s.refinedHeldList(m, b.thenBody(), test_, true);
+        const no = try s.refinedHeldList(m, b.elseBody(), test_, false);
+        if (yes == null and no == null) return false;
+        const t = yes orelse b.thenBody();
+        const e = no orelse b.elseBody();
+        const at = try m.append(s.gpa, &.{ @backingInt(t.start), @backingInt(t.end), @backingInt(e.start), @backingInt(e.end) });
+        m.setData(node, d.lhs, at);
+        return true;
     }
 
     /// The statement lists below one statement, each folded in its owner.
     fn foldBelow(s: *Spec, m: *Mod, stmt: Index, depth: u32) Allocator.Error!bool {
         const ir = m.ir;
         const d = ir.data(stmt);
-        var any = try s.heldBranches(m, stmt);
+        var any = false;
         switch (ir.tag(stmt)) {
             .const_decl => any = try s.foldExprLists(m, @fromBackingInt(@intCast(d.rhs)), depth),
             .let_decl => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |v| {
@@ -5221,7 +5276,6 @@ const Spec = struct {
         defer s.giveStack(&stack);
         try JsIr.pushOperand(s.arena, &stack, root);
         while (JsIr.popOperand(&stack)) |node| {
-            if (try s.heldBranches(m, node)) any = true;
             if (m.ir.tag(node) == .arrow) {
                 if (try s.foldFunc(m, @fromBackingInt(@intCast(m.ir.data(node).lhs)), depth)) any = true;
                 continue;
