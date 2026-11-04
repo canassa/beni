@@ -3199,7 +3199,8 @@ only structural rewrites (dropping `else ⊤` or `else ()`, deleting warned `_ =
 
 `x <-1` lexes as `x <- 1`. The existing `unexpected_token` or `expected_token` diagnostic at a
 rejected bind suggests `x < -1` with a space for comparison with a negative number.
-Valid binds, including negative numeric right-hand sides, stay accepted.
+A numeric right-hand side rejected as `bind_rhs_not_application` gets the same
+hint when it immediately follows an ASCII bind. Valid binds stay accepted.
 
 
 *Specified 2026-10-01; built 2026-10-02* — taught, the repository migrated, and the ASCII

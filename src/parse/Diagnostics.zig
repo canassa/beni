@@ -890,7 +890,11 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
         // caller reused this record for another phase's code.
         else => try w.writeAll(diagnostic.title(item.code)),
     }
-    if ((item.code == .unexpected_token or item.code == .expected_token) and std.mem.eql(u8, text, "<-")) {
+    const ascii_arrow = (item.code == .unexpected_token or item.code == .expected_token) and std.mem.eql(u8, text, "<-");
+    const numeric_bind = item.code == .bind_rhs_not_application and text.len != 0 and
+        (std.ascii.isDigit(text[0]) or text[0] == '-') and
+        std.mem.endsWith(u8, std.mem.trimEnd(u8, source[0..item.start], " \t\r\n"), "<-");
+    if (ascii_arrow or numeric_bind) {
         try w.writeAll("\n\nIf you meant less than a negative number, write `x < -1`, with a space.");
     }
 }
