@@ -1,0 +1,96 @@
+--! The cloudflare platform's output shape (boundary.md §5.2, §9.12 (b) and
+--! (c)): what the entry file hands `main` to. The chain names this module
+--! at the top level of its manifest (`"module": "Rt"`), so no runtime file
+--! exists (§5.2, *A runtime module without markup*).
+--!
+--! `run program` answers what the entry file exports: `default`, the
+--! Worker's handler table, whose `fetch` the host calls once per request,
+--! and `exports name`, called once at load for each name the app's
+--! `beni.json` lists: the Durable Object class of the definition of that
+--! name among the program's `objects` (`Worker.Object.define`). It is found
+--! by its export name, so a name the program defines nothing for fails the
+--! load here, with a message in beni's words rather than in Wrangler's.
+--! What is exported is a plain function the host calls with `new (ctx,
+--! env)`, built over `DurableObject` from `cloudflare:workers` through
+--! `Reflect.construct` so that the host offers RPC on its stub (§9.12
+--! (e.11)), with its methods on the prototype; the two keywords the
+--! release compactor cannot hoist past, `class` and `new.target`, stay out:
+--! `Js.method` is a `function`, and `self.constructor` stands in for
+--! `new.target`. Each method hands its event to beni (`Worker/Object.beni`).
+
+import Js
+import Worker exposing (Program)
+
+
+--| What the entry file exports: the handler table as `default`, and
+--| `exports`, the Durable Object class of a listed name.
+pub run : Program → Js.Value
+run program =
+    p = Js.from program
+    Js.object
+        [ ( "default", Js.object [ ( "fetch", Js.get p "fetch" ) ] )
+        , ( "exports", Js.from λname → exported p name )
+        ]
+
+
+-- The class of the definition named `name`, or a load failure in beni's
+-- words (§9.12 (c)).
+exported : Js.Value, Js.Value → Js.Value
+exported p name =
+    definition = Js.call (Js.get p "objects") "find" [ Js.from λd → Js.same (Js.get d "name") name ]
+    if Js.isUndefined definition then
+        listed = str name
+        Js.throw
+            (Js.construct (Js.global "Error")
+                [ Js.from
+                    "the app's beni.json lists the export \"${listed}\", and the program defines no Durable Object of that name (boundary.md §9.12 (c))"
+                ]
+            )
+    else
+        instanceClass definition
+
+
+-- A plain function the host calls with `new (ctx, env)`: the instance is
+-- made by `DurableObject`'s constructor for the class the host asked for,
+-- then holds the beni instance under `$`, and every host hook on the
+-- prototype hands its event to that instance.
+instanceClass : Js.Value → Js.Value
+instanceClass definition =
+    durable = Js.get (Js.module "cloudflare:workers") "DurableObject"
+    instance = Js.method λself ctx env →
+        made =
+            Js.call (Js.global "Reflect") "construct"
+                [ durable, Js.array [ ctx, env ], Js.get self "constructor" ]
+        Js.set made "$" (Js.call definition "start" [ ctx, env, Js.get definition "worker" ])
+        made
+    proto = Js.get instance "prototype"
+    _ = Js.call (Js.global "Object") "setPrototypeOf" [ proto, Js.get durable "prototype" ]
+    _ = Js.call (Js.global "Object") "setPrototypeOf" [ instance, durable ]
+    Js.set proto "fetch" (Js.method λself request → Js.call (Js.get self "$") "fetch" [ request ])
+    Js.set proto "alarm" (Js.method λself → Js.call (Js.get self "$") "alarm" [ Js.null ])
+    -- The one RPC method, the transport of `post` and `ask` (§9.12 (e.11)).
+    Js.set
+        proto
+        "$beni"
+        (Js.method λself chain kind id text →
+            Js.call (Js.get self "$") "rpc" [ chain, kind, id, text ]
+        )
+    Js.set
+        proto
+        "webSocketMessage"
+        (Js.method λself ws message → Js.call (Js.get self "$") "webSocketMessage" [ ws, message ])
+    Js.set
+        proto
+        "webSocketClose"
+        (Js.method λself ws code reason wasClean →
+            Js.call (Js.get self "$") "webSocketClose" [ ws, code, reason, wasClean ]
+        )
+    Js.set
+        proto
+        "webSocketError"
+        (Js.method λself ws error → Js.call (Js.get self "$") "webSocketError" [ ws, error ])
+    instance
+
+
+str : Js.Value → String
+str v = Js.to v

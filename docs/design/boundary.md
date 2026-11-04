@@ -969,7 +969,11 @@ amendment: its `runtime.js` exported nothing once `safeUrl` moved to `Rt.beni`, 
 could keep `run` only in a `"runtime"` file. A top-level `"module"` of the package that declares
 `"program"` names a beni module of that package that supplies `run`, and only `run`, since there
 is no lowering to ask for more: the build writes no runtime file, and the entry file imports
-`run` from the module's output, as it does under `"markup".module`. The module is held to §9.2's
+`run` from the module's output, as it does under `"markup".module`. The compiler reaches the
+module with no import, as it reaches `"markup".module` and the module of `"program"`'s type
+(`Session.isPlatformRoot`): a program of an embedded platform need not name it, and `cloudflare`'s
+do not (*found 2026-11-04 while moving its runtime: the first programs of the feature imported
+their module, and a platform read from a directory has every module as a root*). The module is held to §9.2's
 terms: `run` is a `pub` value with a body that takes one parameter and no evidence, or it is
 `foreign_export_mismatch` against the manifest at `1:1`; a name that is no module of the package
 is `foreign_sibling_missing` there. A package that declares both `"runtime"` and `"module"`, or a
@@ -7239,7 +7243,7 @@ Its manifest:
   "platform": true,
   "name": "cloudflare",
   "program": "Worker.Program",
-  "runtime": "runtime.js",
+  "module": "Rt",
   "entry": "_worker.mjs",
   "exports": "program"
 }
@@ -7272,7 +7276,7 @@ lexical and that is the edge it makes visible. *As built
 2026-10-29 (`plans/runtime-in-beni.md` step 11):* the platform has no sibling of §4's shape left —
 `Worker.js`, `Worker/Object.js` and `Worker/Storage.js` are beni over `Js.catchIf` and a walk —
 and `runtime.js` is its one file of JavaScript; a beni module reaches those globals through
-`Js.global`.
+`Js.global`. *As built 2026-11-04 (step 17; #1813, the owner's answer A to `runtime-in-beni-q3`):* `runtime.js` is gone too. Its `run` is `platforms/cloudflare/Rt.beni`, the chain's runtime module without markup (§5.2, the manifest above), and the Durable Object class is built there over `Js.method` with parameters and `Js.module "cloudflare:workers"` (§4.2): no file of the platform is JavaScript, and `core/Js.js` is the one hand-written file a build of it copies.
 
 **(c) The entry file, and the `"exports"` output key** (a compiler change, the one §5.1's "not a
 compiler change" did not foresee: ES module exports are static, and a Durable Object class is found
