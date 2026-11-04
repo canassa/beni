@@ -1,0 +1,1434 @@
+--! Typed row reconciliation. Persistent state depends only on the key type;
+--! the producer keeps each last item raw in its existing row cell.
+
+import Browser.Host.Array as Array
+import Browser.Host.Document as Document
+import Browser.Host.KeyMap as Map
+import Browser.Host.Node as Node
+import Html.Runtime as Runtime
+import Js
+import Js.Any as Any
+import Js.Protocol as Protocol
+
+
+type alias State key =
+    Js.Cell
+        { u : Array.Array (Runtime.Row key)
+        , x : Js.Opt (Map.Map key (Runtime.Row key))
+        , y : Js.Opt Any.Any
+        , z : Js.Opt key
+        , d : Bool
+        , keyed : Bool
+        }
+
+
+type alias ShowState key =
+    Js.Cell { key : key }
+
+
+required : Js.Opt a → a
+required value = Js.optMatch value (λ⊤ → Protocol.defect "missing renderer row state") λpresent →
+    present
+
+
+unpack : Runtime.RowRecipe item key, Any.Any → Js.Opt (State key)
+unpack _ data = Any.unpackOpt data
+
+
+unpackShow : key, Any.Any → Js.Opt (ShowState key)
+unpackShow _ data = Any.unpackOpt data
+
+
+newState :
+      Runtime.Protocol
+    , Runtime.Slot
+    , Runtime.RowRecipe item key
+    , Bool
+    , Runtime.SiteProtocol
+    , Runtime.Payload
+    → State key
+newState protocol location _ keyed callbacks scope =
+    state =
+        Js.cell
+            { u = Array.make ⊤
+            , x = if keyed then Js.some (Map.make ⊤) else Js.none ⊤
+            , y = Js.none ⊤
+            , z = Js.none ⊤
+            , d = False
+            , keyed = keyed
+            }
+    fields = Runtime.slotCell location
+    Js.cellWrite fields (Js.some (protocol.makeSite callbacks scope (Any.pack state))) .r
+    Js.cellWrite fields False .v
+    Js.cellWrite fields False .w
+    state
+
+
+-- Change the scope only after the old key-typed state has been checked.
+-- A mismatch is disposed through the old site's callbacks, before mounting.
+stateFor :
+      Runtime.Protocol
+    , Runtime.Slot
+    , Runtime.RowRecipe item key
+    , Bool
+    , Runtime.SiteProtocol
+    , Runtime.Payload
+    → State key
+stateFor protocol location recipe keyed callbacks scope =
+    Js.optMatch (Js.cellRead (Runtime.slotCell location) .r)
+        (λ⊤ → newState protocol location recipe keyed callbacks scope)
+        λsite →
+            Js.optMatch (unpack recipe (protocol.siteData site))
+                (λ⊤ →
+                    protocol.siteDispose site location
+                    newState protocol location recipe keyed callbacks scope
+                )
+                λstate →
+                    if Js.cellRead state .keyed == keyed then
+                        protocol.setSiteScope site callbacks scope
+                        state
+                    else
+                        protocol.siteDispose site location
+                        newState protocol location recipe keyed callbacks scope
+
+
+singleHead : Runtime.Protocol, Runtime.Slot → Js.Opt Node.Node
+singleHead protocol location =
+    fields = Runtime.slotCell location
+    Js.optMatch (Js.cellRead fields .i) (λ⊤ → Js.cellRead fields .m) λvalue →
+        Js.some (protocol.first value)
+
+
+singleTail : Runtime.Protocol, Runtime.Slot → Js.Opt Node.Node
+singleTail protocol location =
+    fields = Runtime.slotCell location
+    Js.optMatch (Js.cellRead fields .m)
+        (λ⊤ →
+            Js.optMatch (Js.cellRead fields .i) (λ⊤ → Js.none ⊤) λvalue →
+                Js.some (protocol.last value)
+        )
+        λmarker → Js.some marker
+
+
+pub head : Runtime.Protocol, Runtime.RowRecipe item key, Any.Any, Runtime.Slot → Js.Opt Node.Node
+head protocol recipe data location =
+    Js.optMatch (unpack recipe data) (λ⊤ → singleHead protocol location) λstate →
+        rows = Js.cellRead state .u
+        if Array.size rows == 0 then
+            singleHead protocol location
+        else
+            Js.some (protocol.first (recipe.view (Array.rendererAt rows 0)))
+
+
+pub tail : Runtime.Protocol, Runtime.RowRecipe item key, Any.Any, Runtime.Slot → Js.Opt Node.Node
+tail protocol recipe data location =
+    fields = Runtime.slotCell location
+    Js.optMatch (Js.cellRead fields .m)
+        (λ⊤ →
+            Js.optMatch (unpack recipe data) (λ⊤ → singleTail protocol location) λstate →
+                rows = Js.cellRead state .u
+                if Array.size rows == 0 then
+                    singleTail protocol location
+                else
+                    Js.some
+                        (protocol.last
+                            (recipe.view (Array.rendererAt rows (Array.size rows - 1)))
+                        )
+        )
+        λmarker → Js.some marker
+
+
+pub restate : Runtime.Protocol, Runtime.RowRecipe item key, Any.Any, Runtime.Slot, Int → ⊤
+restate protocol recipe data location stamp = Js.optMatch (unpack recipe data) (λ⊤ → ⊤) λstate →
+    live = restateRows protocol recipe (Js.cellRead state .u) stamp 0 False
+    Js.cellWrite (Runtime.slotCell location) live .w
+
+
+restateRows :
+      Runtime.Protocol
+    , Runtime.RowRecipe item key
+    , Array.Array (Runtime.Row key)
+    , Int
+    , Int
+    , Bool
+    → Bool
+restateRows protocol recipe rows stamp index live =
+    if index == Array.size rows then
+        live
+    else
+        value = Array.rendererAt rows index
+        instance = recipe.view value
+        if protocol.live instance && Js.cellRead (Runtime.rowCell value) .rs ≠ stamp then
+            if recipe.e then
+                _ = recipe.p value (recipe.item value) (Js.cellRead (Runtime.rowCell value) .y)
+                ⊤
+            else
+                recipe.r value
+        restateRows protocol recipe rows stamp (index + 1) (live || protocol.live instance)
+
+
+pub dispose : Runtime.Protocol, Runtime.RowRecipe item key, Any.Any, Runtime.Slot → ⊤
+dispose protocol recipe data location =
+    Js.optMatch (unpack recipe data) (λ⊤ → ⊤) λstate →
+        disposeRows protocol recipe (Js.cellRead state .u) 0
+    fields = Runtime.slotCell location
+    Js.optMatch (Js.cellRead fields .i) (λ⊤ → ⊤) λvalue → protocol.drop value
+    Js.cellWrite fields (Js.none ⊤) .i
+    Js.cellWrite fields (Js.none ⊤) .r
+    Js.cellWrite fields False .l
+    Js.cellWrite fields False .w
+    Js.cellWrite fields False .v
+
+
+disposeRows : Runtime.Protocol, Runtime.RowRecipe item key, Array.Array (Runtime.Row key), Int → ⊤
+disposeRows protocol recipe rows index =
+    if index < Array.size rows then
+        protocol.drop (recipe.view (Array.rendererAt rows index))
+        disposeRows protocol recipe rows (index + 1)
+
+
+startPass : Runtime.Slot, Runtime.RowRecipe item key → ⊤
+startPass location recipe =
+    if recipe.l then
+        fields = Runtime.slotCell location
+        Js.cellWrite fields (Js.cellRead fields .k + 1) .k
+
+
+passed : Runtime.Protocol, Runtime.Slot, Runtime.RowRecipe item key, Runtime.Row key → ⊤
+passed protocol location recipe value =
+    if recipe.l && protocol.live (recipe.view value) then
+        fields = Runtime.slotCell location
+        Js.cellWrite (Runtime.rowCell value) (Js.cellRead fields .k) .rs
+        Js.cellWrite fields True .w
+
+
+endPass : Runtime.Protocol, Runtime.Slot, Runtime.RowRecipe item key, State key → ⊤
+endPass protocol location recipe state =
+    fields = Runtime.slotCell location
+    if Js.cellRead fields .w then
+        live = restateRows protocol recipe (Js.cellRead state .u) (Js.cellRead fields .k) 0 False
+        Js.cellWrite fields live .w
+
+
+mountRow :
+      Runtime.Protocol
+    , Runtime.Slot
+    , Runtime.RowRecipe item key
+    , item
+    , key
+    , Int
+    → Runtime.Row key
+mountRow protocol location recipe item key position =
+    value = recipe.m item key position (Js.cellRead (Runtime.slotCell location) .cx)
+    passed protocol location recipe value
+    value
+
+
+patchRow :
+      Runtime.Protocol
+    , Runtime.Slot
+    , Runtime.RowRecipe item key
+    , Runtime.Row key
+    , item
+    , Int
+    → Runtime.Row key
+patchRow protocol location recipe old item position =
+    value = recipe.p old item position
+    if not (Js.same value old) then
+        fields = Runtime.rowCell value
+        previous = Runtime.rowCell old
+        Js.cellWrite fields (Js.cellRead previous .k) .k
+        Js.cellWrite fields (Js.none ⊤) .n
+        Js.cellWrite fields 0 .kv
+        Js.cellWrite fields (Js.cellRead previous .kc) .kc
+        Js.cellWrite fields (Js.none ⊤) .kt
+    passed protocol location recipe value
+    value
+
+
+sameProbe : Js.Opt key, Js.Opt key → Bool
+sameProbe a b = Js.optMatch a (λ⊤ → Js.optMatch b (λ⊤ → True) λ_ → False) λkey →
+    Js.optMatch b (λ⊤ → False) λother → Js.same key other
+
+
+probed : key, Js.Opt key → Bool
+probed key probe = Js.optMatch probe (λ⊤ → False) λcandidate → Js.same key candidate
+
+
+pub forPosition :
+      Runtime.Protocol
+    , Runtime.Slot
+    , List item
+    , Runtime.RowRecipe item ⊤
+    , Js.Opt Any.Any
+    , Runtime.SiteProtocol
+    , Runtime.Payload
+    → ⊤
+forPosition protocol location items recipe inputs callbacks scope =
+    state = stateFor protocol location recipe False callbacks scope
+    startPass location recipe
+    fields = Runtime.slotCell location
+    same =
+        Js.cellRead fields .v
+            && Js.same (Js.cellRead fields .j) recipe.j
+            && recipe.same (Js.cellRead state .y) inputs
+    Js.cellWrite fields recipe.j .j
+    Js.cellWrite fields True .v
+    Js.cellWrite state (recipe.remember inputs) .y
+    rows = Js.cellRead state .u
+    values = Array.fromList items
+    case items of
+        [] →
+            ⊤
+
+        [ first, …_ ] →
+            positionsFrom protocol location rows values first recipe same 0
+    dropPast protocol rows recipe (Array.length values)
+    endPass protocol location recipe state
+    protocol.childMaybe location (if Array.length values == 0 then recipe.f else Js.none ⊤)
+
+
+positionsFrom :
+      Runtime.Protocol
+    , Runtime.Slot
+    , Array.Array (Runtime.Row ⊤)
+    , Array.View item
+    , item
+    , Runtime.RowRecipe item ⊤
+    , Bool
+    , Int
+    → ⊤
+positionsFrom protocol location rows values first recipe same index =
+    if index < Array.length values then
+        -- The array view has a valid element here. Its first element is a
+        -- typed eager default, never a fabricated row or an erased value.
+        item = Array.atOr values index first
+        if index < Array.size rows then
+            old = Array.rendererAt rows index
+            if not same || not recipe.o || not (recipe.sameItem old item) then
+                value = patchRow protocol location recipe old item index
+                _ = Array.set rows index value
+                recipe.setItem value item
+        else
+            value = mountRow protocol location recipe item ⊤ index
+            protocol.put
+                (protocol.parentOf location)
+                (recipe.view value)
+                (singleHead protocol location)
+            Array.push rows value
+        positionsFrom protocol location rows values first recipe same (index + 1)
+
+
+-- Removed rows are read and disposed in the old pop order BEFORE the length
+-- store, so the existing array and the DOM operation sequence are retained.
+dropPast : Runtime.Protocol, Array.Array (Runtime.Row key), Runtime.RowRecipe item key, Int → ⊤
+dropPast protocol rows recipe length =
+    if Array.size rows > length then
+        dropPastFrom protocol rows recipe (Array.size rows - 1) length
+        Array.rendererTruncate rows length
+
+
+dropPastFrom :
+      Runtime.Protocol
+    , Array.Array (Runtime.Row key)
+    , Runtime.RowRecipe item key
+    , Int
+    , Int
+    → ⊤
+dropPastFrom protocol rows recipe index length =
+    if index ≥ length then
+        protocol.drop (recipe.view (Array.rendererAt rows index))
+        dropPastFrom protocol rows recipe (index - 1) length
+
+
+pub show :
+      Runtime.Protocol
+    , Runtime.Slot
+    , key
+    , Runtime.Block
+    , Js.Opt String
+    , Runtime.SiteProtocol
+    , Runtime.Payload
+    → ⊤
+show protocol location key block identityTag callbacks scope =
+    fields = Runtime.slotCell location
+    state =
+        Js.optMatch (Js.cellRead fields .r) (λ⊤ → newShow protocol location key callbacks scope) λsite →
+            Js.optMatch (unpackShow key (protocol.siteData site))
+                (λ⊤ →
+                    protocol.siteDispose site location
+                    newShow protocol location key callbacks scope
+                )
+                λprevious →
+                    protocol.setSiteScope site callbacks scope
+                    previous
+    if Js.cellRead fields .v && Js.same (Js.cellRead state .key) key then
+        protocol.childMaybe location (Js.some block)
+    else
+        placeBlock protocol location block
+    Js.cellWrite state key .key
+    Js.cellWrite fields identityTag .j
+    Js.cellWrite fields True .v
+
+
+newShow : Runtime.Protocol, Runtime.Slot, key, Runtime.SiteProtocol, Runtime.Payload → ShowState key
+newShow protocol location key callbacks scope =
+    state = Js.cell { key = key }
+    fields = Runtime.slotCell location
+    Js.cellWrite fields (Js.some (protocol.makeSite callbacks scope (Any.pack state))) .r
+    Js.cellWrite fields False .v
+    state
+
+
+pub hide : Runtime.Protocol, Runtime.Slot, Js.Opt Runtime.Block → ⊤
+hide protocol location fallback =
+    fields = Runtime.slotCell location
+    Js.optMatch fallback (λ⊤ → protocol.childMaybe location fallback) λblock →
+        if not (Js.cellRead fields .v) then
+            protocol.childMaybe location fallback
+        else
+            placeBlock protocol location block
+    Js.cellWrite fields False .v
+
+
+-- Mount before replacing the old range, as the original Show/place path does.
+placeBlock : Runtime.Protocol, Runtime.Slot, Runtime.Block → ⊤
+placeBlock protocol location block =
+    fields = Runtime.slotCell location
+    value = protocol.unit block (Js.cellRead fields .cx)
+    Js.optMatch (Js.cellRead fields .i)
+        (λ⊤ → protocol.put (protocol.parentOf location) value (Js.cellRead fields .m))
+        λold → protocol.swap old value
+    Js.cellWrite fields (Js.some value) .i
+    Js.cellWrite fields (protocol.live value) .l
+
+
+parked : Js.Ref (Js.Opt Node.Node)
+parked = Js.ref (Js.none ⊤)
+
+
+park : Runtime.Protocol, Runtime.RowRecipe item key, Runtime.Row key → ⊤
+park protocol recipe value =
+    instance = recipe.view value
+    first = protocol.first instance
+    if Js.same first (protocol.last instance) then
+        Node.rendererRemove first
+    else
+        fragment =
+            Js.optMatch (Js.read parked)
+                (λ⊤ →
+                    created = Document.rendererFragment ⊤
+                    Js.write parked (Js.some created)
+                    created
+                )
+                λexisting → existing
+        protocol.put fragment instance (Js.none ⊤)
+
+
+reconcile :
+      Runtime.Protocol
+    , Runtime.RowRecipe item key
+    , Node.Node
+    , Array.Array (Runtime.Row key)
+    , Array.Array (Runtime.Row key)
+    , Int
+    , Js.Opt Node.Node
+    , Int
+    , Int
+    , Int
+    , Int
+    , Js.Opt (Map.Map (Runtime.Row key) Int)
+    → ⊤
+reconcile protocol recipe parent a b bLength after aStart aEnd bStart bEnd indices =
+    if not (aStart < aEnd || bStart < bEnd) then
+        ⊤
+    else if
+        aStart < aEnd
+            && bStart < bEnd
+            && Js.same (Array.rendererAt a aStart) (Array.rendererAt b bStart)
+    then
+        reconcile
+            protocol
+            recipe
+            parent
+            a
+            b
+            bLength
+            after
+            (aStart + 1)
+            aEnd
+            (bStart + 1)
+            bEnd
+            indices
+    else
+        ( aTo, bTo ) = sameEnds a b aStart aEnd bStart bEnd
+        if aTo == aStart then
+            node =
+                if bTo < bLength then
+                    if bStart ≠ 0 then
+                        Node.rendererNextSibling
+                            (protocol.last (recipe.view (Array.rendererAt b (bStart - 1))))
+                    else
+                        Js.some (protocol.first (recipe.view (Array.rendererAt b bTo)))
+                else
+                    after
+            putRange protocol recipe parent b bStart bTo node
+            reconcile protocol recipe parent a b bLength after aStart aTo bTo bTo indices
+        else if bTo == bStart then
+            dropRange protocol recipe a indices aStart aTo
+            reconcile protocol recipe parent a b bLength after aTo aTo bStart bTo indices
+        else if
+            Js.same (Array.rendererAt a aStart) (Array.rendererAt b (bTo - 1))
+                && Js.same (Array.rendererAt b bStart) (Array.rendererAt a (aTo - 1))
+        then
+            node =
+                Node.rendererNextSibling
+                    (protocol.last (recipe.view (Array.rendererAt a (aTo - 1))))
+            moving = recipe.view (Array.rendererAt b bStart)
+            before =
+                Node.rendererNextSibling (protocol.last (recipe.view (Array.rendererAt a aStart)))
+            -- #1833: putting a range before its own first node reverses it
+            -- one node at a time. Adjacent swaps already have this range here.
+            if
+                Js.same (protocol.first moving) (protocol.last moving)
+                    || Js.optMatch before (λ⊤ → True) λfollowing →
+                        not (Js.same following (protocol.first moving))
+            then
+                protocol.put parent moving before
+            protocol.put parent (recipe.view (Array.rendererAt b (bTo - 1))) node
+            _ = Array.set a (aTo - 1) (Array.rendererAt b (bTo - 1))
+            reconcile
+                protocol
+                recipe
+                parent
+                a
+                b
+                bLength
+                after
+                (aStart + 1)
+                (aTo - 1)
+                (bStart + 1)
+                (bTo - 1)
+                indices
+        else
+            positions =
+                Js.optMatch indices
+                    (λ⊤ →
+                        created = Map.make ⊤
+                        indexRange created b bStart bTo
+                        created
+                    )
+                    λexisting → existing
+            found = Map.getOr positions (Array.rendererAt a aStart) (-1)
+            if found < 0 then
+                protocol.drop (recipe.view (Array.rendererAt a aStart))
+                reconcile
+                    protocol
+                    recipe
+                    parent
+                    a
+                    b
+                    bLength
+                    after
+                    (aStart + 1)
+                    aTo
+                    bStart
+                    bTo
+                    (Js.some positions)
+            else if bStart < found && found < bTo then
+                sequence = sameRun positions a aTo bTo found (aStart + 1) 1
+                if sequence > found - bStart then
+                    putRange
+                        protocol
+                        recipe
+                        parent
+                        b
+                        bStart
+                        found
+                        (Js.some (protocol.first (recipe.view (Array.rendererAt a aStart))))
+                    reconcile
+                        protocol
+                        recipe
+                        parent
+                        a
+                        b
+                        bLength
+                        after
+                        aStart
+                        aTo
+                        found
+                        bTo
+                        (Js.some positions)
+                else
+                    old = Array.rendererAt a aStart
+                    protocol.put
+                        parent
+                        (recipe.view (Array.rendererAt b bStart))
+                        (Js.some (protocol.first (recipe.view old)))
+                    park protocol recipe old
+                    reconcile
+                        protocol
+                        recipe
+                        parent
+                        a
+                        b
+                        bLength
+                        after
+                        (aStart + 1)
+                        aTo
+                        (bStart + 1)
+                        bTo
+                        (Js.some positions)
+            else
+                reconcile
+                    protocol
+                    recipe
+                    parent
+                    a
+                    b
+                    bLength
+                    after
+                    (aStart + 1)
+                    aTo
+                    bStart
+                    bTo
+                    (Js.some positions)
+
+
+sameEnds :
+      Array.Array (Runtime.Row key)
+    , Array.Array (Runtime.Row key)
+    , Int
+    , Int
+    , Int
+    , Int
+    → Int × Int
+sameEnds a b aStart aEnd bStart bEnd =
+    if
+        aEnd > aStart
+            && bEnd > bStart
+            && Js.same (Array.rendererAt a (aEnd - 1)) (Array.rendererAt b (bEnd - 1))
+    then
+        sameEnds a b aStart (aEnd - 1) bStart (bEnd - 1)
+    else
+        ( aEnd, bEnd )
+
+
+putRange :
+      Runtime.Protocol
+    , Runtime.RowRecipe item key
+    , Node.Node
+    , Array.Array (Runtime.Row key)
+    , Int
+    , Int
+    , Js.Opt Node.Node
+    → ⊤
+putRange protocol recipe parent rows from to node =
+    if from < to then
+        protocol.put parent (recipe.view (Array.rendererAt rows from)) node
+        putRange protocol recipe parent rows (from + 1) to node
+
+
+dropRange :
+      Runtime.Protocol
+    , Runtime.RowRecipe item key
+    , Array.Array (Runtime.Row key)
+    , Js.Opt (Map.Map (Runtime.Row key) Int)
+    , Int
+    , Int
+    → ⊤
+dropRange protocol recipe rows indices from to =
+    if from < to then
+        value = Array.rendererAt rows from
+        keep = Js.optMatch indices (λ⊤ → False) λpositions → Map.has positions value
+        if not keep then protocol.drop (recipe.view value)
+        dropRange protocol recipe rows indices (from + 1) to
+
+
+indexRange : Map.Map (Runtime.Row key) Int, Array.Array (Runtime.Row key), Int, Int → ⊤
+indexRange positions rows from to =
+    if from < to then
+        Map.set positions (Array.rendererAt rows from) from
+        indexRange positions rows (from + 1) to
+
+
+sameRun :
+      Map.Map (Runtime.Row key) Int
+    , Array.Array (Runtime.Row key)
+    , Int
+    , Int
+    , Int
+    , Int
+    , Int
+    → Int
+sameRun positions rows aEnd bEnd index i sequence =
+    if
+        i < aEnd
+            && i < bEnd
+            && Map.getOr positions (Array.rendererAt rows i) (-1) == index + sequence
+    then
+        sameRun positions rows aEnd bEnd index (i + 1) (sequence + 1)
+    else
+        sequence
+
+
+stamps : Js.Ref Int
+stamps = Js.ref 0
+
+
+-- SameValueZero is the native key map's equality, including a raw NaN key.
+sameKey : key, key → Bool
+sameKey a b = Js.same a b || (not (Js.same a a) && not (Js.same b b))
+
+
+-- The anchor's key is in the map throughout a matching pass. It supplies a
+-- raw typed default without allocating Maybe/Any or boxing any row. Cleanup
+-- removes keys only AFTER the matching pass, so it cannot invalidate this proof.
+lookup : Map.Map key (Runtime.Row key), key, Runtime.Row key → Js.Opt (Runtime.Row key)
+lookup byKey key anchor =
+    found = Map.getOr byKey key anchor
+    if Js.same found anchor && not (sameKey key (Js.cellRead (Runtime.rowCell anchor) .k)) then
+        Js.none ⊤
+    else
+        Js.some found
+
+
+pub forKeyed :
+      Runtime.Protocol
+    , Runtime.Slot
+    , List item
+    , (item → key)
+    , Runtime.RowRecipe item key
+    , Js.Opt Any.Any
+    , Runtime.SiteProtocol
+    , Runtime.Payload
+    → ⊤
+forKeyed protocol location items keyOf recipe inputs callbacks scope =
+    state = stateFor protocol location recipe True callbacks scope
+    startPass location recipe
+    fields = Runtime.slotCell location
+    rendered = Js.cellRead fields .v
+    stable = rendered && Js.same (Js.cellRead fields .j) recipe.j
+    same = stable && recipe.same (Js.cellRead state .y) inputs
+    probe = recipe.probe inputs
+    moving = rendered && not (sameProbe (Js.cellRead state .z) probe)
+    was = if moving then Js.cellRead state .z else Js.none ⊤
+    now = if moving then probe else Js.none ⊤
+    Js.cellWrite state probe .z
+    Js.cellWrite fields recipe.j .j
+    Js.cellWrite fields True .v
+    Js.cellWrite state (recipe.remember inputs) .y
+    case items of
+        [] →
+            emptyKeyed protocol location recipe state
+
+        [ first, …_ ] →
+            values = Array.fromList items
+            if
+                Js.cellRead state .d
+                    && trimmed protocol location values first keyOf recipe state stable same was now
+            then
+                ⊤
+            else
+                keyedPass protocol location values first keyOf recipe state same was now
+    endPass protocol location recipe state
+    protocol.childMaybe location (if List.length items == 0 then recipe.f else Js.none ⊤)
+
+
+emptyKeyed : Runtime.Protocol, Runtime.Slot, Runtime.RowRecipe item key, State key → ⊤
+emptyKeyed protocol location recipe state =
+    Js.write stamps (Js.read stamps + 1)
+    old = Js.cellRead state .u
+    rows = Array.make ⊤
+    byKey = required (Js.cellRead state .x)
+    Map.clear byKey
+    if Array.size old > 0 then
+        parent = protocol.parentOf location
+        if allChildren protocol recipe parent old then
+            Node.setTextContent parent ""
+        else
+            reconcile
+                protocol
+                recipe
+                parent
+                old
+                rows
+                0
+                (Node.rendererNextSibling
+                    (protocol.last (recipe.view (Array.rendererAt old (Array.size old - 1))))
+                )
+                0
+                (Array.size old)
+                0
+                0
+                (Js.none ⊤)
+        Js.write parked (Js.none ⊤)
+    Js.cellWrite state rows .u
+    Js.cellWrite state True .d
+
+
+allChildren :
+      Runtime.Protocol
+    , Runtime.RowRecipe item key
+    , Node.Node
+    , Array.Array (Runtime.Row key)
+    → Bool
+allChildren protocol recipe parent rows =
+    Js.same
+        (Node.rendererFirstChild parent)
+        (Js.some (protocol.first (recipe.view (Array.rendererAt rows 0))))
+        && Js.same
+            (Node.rendererNextSibling
+                (protocol.last (recipe.view (Array.rendererAt rows (Array.size rows - 1))))
+            )
+            (Js.none ⊤)
+
+
+keyedPass :
+      Runtime.Protocol
+    , Runtime.Slot
+    , Array.View item
+    , item
+    , (item → key)
+    , Runtime.RowRecipe item key
+    , State key
+    , Bool
+    , Js.Opt key
+    , Js.Opt key
+    → ⊤
+keyedPass protocol location values first keyOf recipe state same was now =
+    Js.write stamps (Js.read stamps + 1)
+    stamp = Js.read stamps
+    old = Js.cellRead state .u
+    byKey = required (Js.cellRead state .x)
+    next = Array.make ⊤
+    anchor = if Array.size old == 0 then Js.none ⊤ else Js.some (Array.rendererAt old 0)
+    ( distinct, shifted ) =
+        keyedRows
+            protocol
+            location
+            values
+            first
+            keyOf
+            recipe
+            same
+            was
+            now
+            stamp
+            old
+            byKey
+            next
+            0
+            True
+            False
+            anchor
+    forgetOld old byKey stamp (Array.rendererAt next 0) 0
+    if shifted || Array.size next ≠ Array.size old then
+        parent = protocol.parentOf location
+        if Array.size old == 0 then
+            putRange protocol recipe parent next 0 (Array.size next) (singleHead protocol location)
+        else
+            after =
+                Node.rendererNextSibling
+                    (protocol.last (recipe.view (Array.rendererAt old (Array.size old - 1))))
+            reconcile
+                protocol
+                recipe
+                parent
+                old
+                next
+                (Array.size next)
+                after
+                0
+                (Array.size old)
+                0
+                (Array.size next)
+                (Js.none ⊤)
+        Js.write parked (Js.none ⊤)
+    Js.cellWrite state next .u
+    Js.cellWrite state distinct .d
+
+
+keyedRows :
+      Runtime.Protocol
+    , Runtime.Slot
+    , Array.View item
+    , item
+    , (item → key)
+    , Runtime.RowRecipe item key
+    , Bool
+    , Js.Opt key
+    , Js.Opt key
+    , Int
+    , Array.Array (Runtime.Row key)
+    , Map.Map key (Runtime.Row key)
+    , Array.Array (Runtime.Row key)
+    , Int
+    , Bool
+    , Bool
+    , Js.Opt (Runtime.Row key)
+    → Bool × Bool
+keyedRows protocol location values first keyOf recipe same was now stamp old byKey next position distinct moved anchor =
+    if position < Array.length values then
+        item = Array.atOr values position first
+        key = keyOf item
+        h = Js.optMatch anchor (λ⊤ → Js.none ⊤) λfallback → lookup byKey key fallback
+        starts = Js.optMatch h (λ⊤ → True) λrow → Js.cellRead (Runtime.rowCell row) .kv ≠ stamp
+        found = Js.optMatch h (λ⊤ → Js.none ⊤) λrow →
+            fields = Runtime.rowCell row
+            if starts then
+                Js.cellWrite fields (Js.cellRead fields .n) .kc
+                Js.some row
+            else
+                current = Js.cellRead fields .kc
+                Js.optMatch current (λ⊤ → ⊤) λchained →
+                    Js.cellWrite fields (Js.cellRead (Runtime.rowCell chained) .n) .kc
+                current
+        value =
+            Js.optMatch found
+                (λ⊤ →
+                    mounted = mountRow protocol location recipe item key position
+                    if starts then Map.set byKey key mounted
+                    mounted
+                )
+                λprevious →
+                    fields = Runtime.rowCell previous
+                    if
+                        not same
+                            || not recipe.o
+                            || not (recipe.sameItem previous item)
+                            || (recipe.i && Js.cellRead fields .y ≠ position)
+                            || probed (Js.cellRead fields .k) was
+                            || probed (Js.cellRead fields .k) now
+                    then
+                        oldPosition = Js.cellRead fields .y
+                        patched = patchRow protocol location recipe previous item position
+                        if not (Js.same patched previous) then
+                            _ = Array.set old oldPosition patched
+                            if starts then Map.set byKey key patched
+                        patched
+                    else
+                        previous
+        shifted =
+            moved
+                || Js.optMatch found (λ⊤ → True) λ_ →
+                    position ≥ Array.size old || not (Js.same (Array.rendererAt old position) value)
+        shownFields = Runtime.rowCell value
+        Js.cellWrite shownFields stamp .kv
+        recipe.setItem value item
+        Js.cellWrite shownFields position .y
+        Js.cellWrite shownFields (Js.none ⊤) .n
+        if starts then
+            Js.cellWrite shownFields (Js.some value) .kt
+        else
+            firstRow = Runtime.rowCell (required h)
+            Js.cellWrite (Runtime.rowCell (required (Js.cellRead firstRow .kt))) (Js.some value) .n
+            Js.cellWrite firstRow (Js.some value) .kt
+        Array.push next value
+        nextAnchor = Js.optMatch anchor (λ⊤ → Js.some value) λexisting → Js.some existing
+        keyedRows
+            protocol
+            location
+            values
+            first
+            keyOf
+            recipe
+            same
+            was
+            now
+            stamp
+            old
+            byKey
+            next
+            (position + 1)
+            (distinct && starts)
+            shifted
+            nextAnchor
+    else
+        ( distinct, moved )
+
+
+forgetOld :
+      Array.Array (Runtime.Row key)
+    , Map.Map key (Runtime.Row key)
+    , Int
+    , Runtime.Row key
+    , Int
+    → ⊤
+forgetOld old byKey stamp anchor index =
+    if index < Array.size old then
+        value = Array.rendererAt old index
+        fields = Runtime.rowCell value
+        if Js.cellRead fields .kv ≠ stamp then
+            Js.optMatch (lookup byKey (Js.cellRead fields .k) anchor) (λ⊤ → ⊤) λheadRow →
+                if Js.same headRow value then
+                    _ = Map.remove byKey (Js.cellRead fields .k)
+                    ⊤
+        forgetOld old byKey stamp anchor (index + 1)
+
+
+trimmed :
+      Runtime.Protocol
+    , Runtime.Slot
+    , Array.View item
+    , item
+    , (item → key)
+    , Runtime.RowRecipe item key
+    , State key
+    , Bool
+    , Bool
+    , Js.Opt key
+    , Js.Opt key
+    → Bool
+trimmed protocol location values first keyOf recipe state stable same was now =
+    old = Js.cellRead state .u
+    m = Array.size old
+    if m == 0 then
+        False
+    else
+        Js.write stamps (Js.read stamps + 1)
+        stamp = Js.read stamps
+        p =
+            startRows
+                protocol
+                location
+                values
+                first
+                old
+                keyOf
+                recipe
+                state
+                stable
+                same
+                was
+                now
+                stamp
+                m
+                0
+        if p == m && p == Array.length values then
+            True
+        else
+            xs = Array.slice values p
+            n = p + Array.length xs
+            keys = Array.make ⊤
+            keyAt =
+                λb →
+                    index = b - p
+                    if Array.rendererHas keys index then
+                        Array.rendererAt keys index
+                    else
+                        key = keyOf (Array.atOr xs index first)
+                        _ = Array.set keys index key
+                        key
+            hit =
+                λvalue b →
+                    (stable && recipe.o && recipe.sameItem value (Array.atOr xs (b - p) first))
+                        || Js.same (Js.cellRead (Runtime.rowCell value) .k) (keyAt b)
+            next = Array.make ⊤
+            copyRows next old p 0
+            ( aOuter, bOuter ) = endRows old xs first keyAt next recipe stable p stamp m n
+            ( aStart, aEnd, bEnd ) = crossRows old hit next stamp p aOuter bOuter
+            byKey = required (Js.cellRead state .x)
+            unseen = 0 - stamp
+            ( found, kept ) =
+                lookUpRows
+                    protocol
+                    location
+                    xs
+                    first
+                    keyAt
+                    next
+                    recipe
+                    byKey
+                    (Array.rendererAt old 0)
+                    p
+                    stamp
+                    unseen
+                    bEnd
+                    aStart
+                    0
+            if found < bEnd then
+                False
+            else
+                patchRows
+                    protocol
+                    location
+                    old
+                    xs
+                    first
+                    next
+                    recipe
+                    byKey
+                    p
+                    stamp
+                    unseen
+                    same
+                    was
+                    now
+                    n
+                    p
+                forgetRows old byKey stamp aStart aEnd
+                parent = protocol.parentOf location
+                if
+                    kept == 0
+                        && aStart == p
+                        && p == 0
+                        && aOuter == m
+                        && bOuter == n
+                        && allChildren protocol recipe parent old
+                then
+                    Node.setTextContent parent ""
+                    putRange protocol recipe parent next 0 n (Js.none ⊤)
+                else if aStart ≠ p || aStart < aEnd || aStart < bEnd then
+                    after =
+                        if bOuter < n then
+                            Js.some (protocol.first (recipe.view (Array.rendererAt next bOuter)))
+                        else
+                            Node.rendererNextSibling
+                                (protocol.last (recipe.view (Array.rendererAt old (m - 1))))
+                    reconcile
+                        protocol
+                        recipe
+                        parent
+                        old
+                        next
+                        bOuter
+                        after
+                        p
+                        aOuter
+                        p
+                        bOuter
+                        (Js.none ⊤)
+                    Js.write parked (Js.none ⊤)
+                Js.cellWrite state next .u
+                True
+
+
+startRows :
+      Runtime.Protocol
+    , Runtime.Slot
+    , Array.View item
+    , item
+    , Array.Array (Runtime.Row key)
+    , (item → key)
+    , Runtime.RowRecipe item key
+    , State key
+    , Bool
+    , Bool
+    , Js.Opt key
+    , Js.Opt key
+    , Int
+    , Int
+    , Int
+    → Int
+startRows protocol location values first old keyOf recipe state stable same was now stamp m p =
+    if p < Array.length values && p < m then
+        value = Array.rendererAt old p
+        fields = Runtime.rowCell value
+        item = Array.atOr values p first
+        hit = stable && recipe.o && recipe.sameItem value item
+        if not hit && not (Js.same (Js.cellRead fields .k) (keyOf item)) then
+            p
+        else if
+            hit
+                && same
+                && not (probed (Js.cellRead fields .k) was)
+                && not (probed (Js.cellRead fields .k) now)
+        then
+            Js.cellWrite fields stamp .kv
+            startRows
+                protocol
+                location
+                values
+                first
+                old
+                keyOf
+                recipe
+                state
+                stable
+                same
+                was
+                now
+                stamp
+                m
+                (p + 1)
+        else
+            patched = patchRow protocol location recipe value item p
+            patchedFields = Runtime.rowCell patched
+            if not (Js.same patched value) then
+                _ = Array.set old p patched
+                Map.set (required (Js.cellRead state .x)) (Js.cellRead patchedFields .k) patched
+                Js.cellWrite patchedFields p .y
+            recipe.setItem patched item
+            Js.cellWrite patchedFields stamp .kv
+            startRows
+                protocol
+                location
+                values
+                first
+                old
+                keyOf
+                recipe
+                state
+                stable
+                same
+                was
+                now
+                stamp
+                m
+                (p + 1)
+    else
+        p
+
+
+copyRows : Array.Array (Runtime.Row key), Array.Array (Runtime.Row key), Int, Int → ⊤
+copyRows next old p index =
+    if index < p then
+        _ = Array.set next index (Array.rendererAt old index)
+        copyRows next old p (index + 1)
+
+
+endRows :
+      Array.Array (Runtime.Row key)
+    , Array.View item
+    , item
+    , (Int → key)
+    , Array.Array (Runtime.Row key)
+    , Runtime.RowRecipe item key
+    , Bool
+    , Int
+    , Int
+    , Int
+    , Int
+    → Int × Int
+endRows old values first keyAt next recipe stable p stamp aEnd bEnd =
+    if p < aEnd && p < bEnd then
+        value = Array.rendererAt old (aEnd - 1)
+        fields = Runtime.rowCell value
+        if
+            not
+                (stable
+                    && recipe.o
+                    && recipe.sameItem value (Array.atOr values (bEnd - 1 - p) first)
+                )
+                && not (Js.same (Js.cellRead fields .k) (keyAt (bEnd - 1)))
+        then
+            ( aEnd, bEnd )
+        else
+            Js.cellWrite fields stamp .kv
+            _ = Array.set next (bEnd - 1) value
+            endRows old values first keyAt next recipe stable p stamp (aEnd - 1) (bEnd - 1)
+    else
+        ( aEnd, bEnd )
+
+
+crossRows :
+      Array.Array (Runtime.Row key)
+    , (Runtime.Row key, Int → Bool)
+    , Array.Array (Runtime.Row key)
+    , Int
+    , Int
+    , Int
+    , Int
+    → Int × Int × Int
+crossRows old hit next stamp aStart aEnd bEnd =
+    if
+        aEnd - aStart > 1
+            && bEnd - aStart > 1
+            && hit (Array.rendererAt old aStart) (bEnd - 1)
+            && hit (Array.rendererAt old (aEnd - 1)) aStart
+    then
+        i = Array.rendererAt old aStart
+        j = Array.rendererAt old (aEnd - 1)
+        Js.cellWrite (Runtime.rowCell i) stamp .kv
+        Js.cellWrite (Runtime.rowCell j) stamp .kv
+        _ = Array.set next (bEnd - 1) i
+        _ = Array.set next aStart j
+        inner = crossStart old hit next stamp (aStart + 1) (aEnd - 1) (bEnd - 1)
+        ( aTo, bTo ) = crossEnd old hit next stamp inner (aEnd - 1) (bEnd - 1)
+        crossRows old hit next stamp inner aTo bTo
+    else
+        ( aStart, aEnd, bEnd )
+
+
+crossStart :
+      Array.Array (Runtime.Row key)
+    , (Runtime.Row key, Int → Bool)
+    , Array.Array (Runtime.Row key)
+    , Int
+    , Int
+    , Int
+    , Int
+    → Int
+crossStart old hit next stamp aStart aEnd bEnd =
+    if aStart < aEnd && aStart < bEnd then
+        value = Array.rendererAt old aStart
+        if not (hit value aStart) then
+            aStart
+        else
+            Js.cellWrite (Runtime.rowCell value) stamp .kv
+            _ = Array.set next aStart value
+            crossStart old hit next stamp (aStart + 1) aEnd bEnd
+    else
+        aStart
+
+
+crossEnd :
+      Array.Array (Runtime.Row key)
+    , (Runtime.Row key, Int → Bool)
+    , Array.Array (Runtime.Row key)
+    , Int
+    , Int
+    , Int
+    , Int
+    → Int × Int
+crossEnd old hit next stamp aStart aEnd bEnd =
+    if aStart < aEnd && aStart < bEnd && hit (Array.rendererAt old (aEnd - 1)) (bEnd - 1) then
+        value = Array.rendererAt old (aEnd - 1)
+        Js.cellWrite (Runtime.rowCell value) stamp .kv
+        _ = Array.set next (bEnd - 1) value
+        crossEnd old hit next stamp aStart (aEnd - 1) (bEnd - 1)
+    else
+        ( aEnd, bEnd )
+
+
+lookUpRows :
+      Runtime.Protocol
+    , Runtime.Slot
+    , Array.View item
+    , item
+    , (Int → key)
+    , Array.Array (Runtime.Row key)
+    , Runtime.RowRecipe item key
+    , Map.Map key (Runtime.Row key)
+    , Runtime.Row key
+    , Int
+    , Int
+    , Int
+    , Int
+    , Int
+    , Int
+    → Int × Int
+lookUpRows protocol location values first keyAt next recipe byKey anchor p stamp unseen bEnd b kept =
+    if b < bEnd then
+        key = keyAt b
+        found = lookup byKey key anchor
+        if Js.optMatch found (λ⊤ → False) λ_ → True then
+            value = required found
+            fields = Runtime.rowCell value
+            if Js.cellRead fields .kv == stamp || Js.cellRead fields .kv == unseen then
+                ( b, kept )
+            else
+                Js.cellWrite fields stamp .kv
+                _ = Array.set next b value
+                lookUpRows
+                    protocol
+                    location
+                    values
+                    first
+                    keyAt
+                    next
+                    recipe
+                    byKey
+                    anchor
+                    p
+                    stamp
+                    unseen
+                    bEnd
+                    (b + 1)
+                    (kept + 1)
+        else
+            value = mountRow protocol location recipe (Array.atOr values (b - p) first) key b
+            Js.cellWrite (Runtime.rowCell value) unseen .kv
+            Map.set byKey key value
+            _ = Array.set next b value
+            lookUpRows
+                protocol
+                location
+                values
+                first
+                keyAt
+                next
+                recipe
+                byKey
+                anchor
+                p
+                stamp
+                unseen
+                bEnd
+                (b + 1)
+                kept
+    else
+        ( b, kept )
+
+
+patchRows :
+      Runtime.Protocol
+    , Runtime.Slot
+    , Array.Array (Runtime.Row key)
+    , Array.View item
+    , item
+    , Array.Array (Runtime.Row key)
+    , Runtime.RowRecipe item key
+    , Map.Map key (Runtime.Row key)
+    , Int
+    , Int
+    , Int
+    , Bool
+    , Js.Opt key
+    , Js.Opt key
+    , Int
+    , Int
+    → ⊤
+patchRows protocol location old values first next recipe byKey p stamp unseen same was now n b =
+    if b < n then
+        item = Array.atOr values (b - p) first
+        value = Array.rendererAt next b
+        fields = Runtime.rowCell value
+        if Js.cellRead fields .kv == unseen then
+            Js.cellWrite fields stamp .kv
+        else if
+            not same
+                || not recipe.o
+                || not (recipe.sameItem value item)
+                || (recipe.i && Js.cellRead fields .y ≠ b)
+                || probed (Js.cellRead fields .k) was
+                || probed (Js.cellRead fields .k) now
+        then
+            patched = patchRow protocol location recipe value item b
+            if not (Js.same patched value) then
+                _ = Array.set old (Js.cellRead fields .y) patched
+                Js.cellWrite (Runtime.rowCell patched) stamp .kv
+                Map.set byKey (Js.cellRead (Runtime.rowCell patched) .k) patched
+                _ = Array.set next b patched
+                ⊤
+        shown = Array.rendererAt next b
+        recipe.setItem shown item
+        Js.cellWrite (Runtime.rowCell shown) b .y
+        patchRows
+            protocol
+            location
+            old
+            values
+            first
+            next
+            recipe
+            byKey
+            p
+            stamp
+            unseen
+            same
+            was
+            now
+            n
+            (b + 1)
+
+
+forgetRows : Array.Array (Runtime.Row key), Map.Map key (Runtime.Row key), Int, Int, Int → ⊤
+forgetRows old byKey stamp a aEnd =
+    if a < aEnd then
+        value = Array.rendererAt old a
+        if Js.cellRead (Runtime.rowCell value) .kv ≠ stamp then
+            _ = Map.remove byKey (Js.cellRead (Runtime.rowCell value) .k)
+            ⊤
+        forgetRows old byKey stamp (a + 1) aEnd

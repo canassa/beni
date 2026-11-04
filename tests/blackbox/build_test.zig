@@ -13767,3 +13767,25 @@ test "private renderer arrays truncate in place and defect on invalid reads" {
         try w.expectProgram("probe.mjs", .{ .stdout = "renderer arrays verified\n" });
     }
 }
+
+test "typed row module matches development and release emit goldens" {
+    // The shape belongs to the platform module, which emit/ does not golden.
+    // Build a normal library client; never copy the runtime implementation.
+    for ([_]bool{ false, true }) |release| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const arena = w.arena.allocator();
+        const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/fixtures/typed-rows/RowsClient.beni", arena, .limited(world.max_stream_bytes));
+        try w.write("RowsClient.beni", source);
+        const built = try w.run(if (release)
+            &.{ "build", "--library", "--platform=browser", "--release", "--out=out", "RowsClient.beni" }
+        else
+            &.{ "build", "--library", "--platform=browser", "--out=out", "RowsClient.beni" });
+        reportUnclean("build typed rows", built);
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqualStrings("", built.stderr);
+        const path = if (release) "tests/fixtures/typed-rows/Rows.release.mjs" else "tests/fixtures/typed-rows/Rows.dev.mjs";
+        const expected = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, arena, .limited(world.max_stream_bytes));
+        try testing.expectEqualStrings(expected, try w.read("out/_platform/Rt/Rows.mjs"));
+    }
+}
