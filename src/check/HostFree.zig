@@ -78,7 +78,7 @@ pub const State = struct {
             // This strengthens structural facts; it exempts no erasure.
             if (entry.package == .platform and std.mem.eql(u8, cx.interner.slice(entry.module_name), "Html.Runtime")) {
                 const name = cx.interner.slice(entry.name);
-                inline for (.{ "Payload", "Context", "Kind", "Block", "RowSite", "Instance", "Slot", "Row" }) |carrier| {
+                inline for (.{ "Payload", "Context", "Kind", "Block", "RowSite", "Instance", "Slot", "Row", "Property", "Control" }) |carrier| {
                     if (std.mem.eql(u8, name, carrier)) out.flags |= native | callable;
                 }
             }
@@ -366,13 +366,13 @@ test "HostFree private DOM protocol carriers retain native and callable facts th
     defer arena.deinit();
     const a = arena.allocator();
     const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, "platforms/html/Html/Runtime.beni", a, .limited(64 * 1024));
-    for ([_][]const u8{ "Payload", "Context", "Kind", "Block", "RowSite" }) |carrier| {
+    for ([_][]const u8{ "Payload", "Context", "Kind", "Block", "RowSite", "Property", "Control" }) |carrier| {
         for ([_]bool{ false, true }) |nested| {
             var modules: std.ArrayList(TestProject.Module) = .empty;
             defer modules.deinit(testing.allocator);
             try modules.appendSlice(testing.allocator, &@import("checker_test.zig").test_core);
             try modules.appendSlice(testing.allocator, &.{
-                .{ .path = "Js.beni", .package = .core, .source = "pub foreign type Value\npub cell foreign type Cell r\npub foreign type Opt a\npub foreign pure from : a → Value\n" },
+                .{ .path = "Js.beni", .package = .core, .source = "pub foreign type Value\npub cell foreign type Cell r\npub foreign type Opt a\npub foreign pure from : a → Value\npub foreign impure cellRead : cellread Cell r, unused sync (r → a) → lent a\n" },
                 .{ .path = "Js/Any.beni", .package = .core, .source = "pub foreign type Any\n" },
                 .{ .path = "Browser/Host/Array.beni", .package = .core, .source = "pub foreign type Array a\n" },
                 .{ .path = "Browser/Host/Node.beni", .package = .core, .source = "pub foreign type Node\n" },

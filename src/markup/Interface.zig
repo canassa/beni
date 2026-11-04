@@ -89,7 +89,10 @@ const std = @import("std");
 /// Version 1.28 amends the private DOM record (2026-11-04): setSiteScope
 /// receives the current SiteProtocol and its paired scope, updating both
 /// without replacing the site or its key-typed Any state.
-pub const version: Version = .{ .major = 1, .minor = 28 };
+/// Version 1.29 adds cold checked property descriptors and typed control
+/// chains. The producer owns raw property/value pairing; Source retains the
+/// control algorithm and updates the existing entries in place.
+pub const version: Version = .{ .major = 1, .minor = 29 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of

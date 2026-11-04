@@ -3056,6 +3056,35 @@ all item payloads before restating through the current recipe. A changed key
 type still disposes through the OLD site's paired table/scope before replacing
 state. This adds no per-row work or per-render replacement.
 
+**Version 1.29** (*owner decision, 2026-11-04*): every stateful property
+allowed by language.md §11.5 has a cold checked descriptor, cached once per
+(native property name, value class) in its independent emit unit. The existing
+String/Int/Float/Bool/Maybe String cases remain accepted. `Property` is an opaque
+single-Cell wrapper over the SAME `{ name, immutable, get, set }` record;
+its constructor/fields are private and only producer IR constructs it. Typed
+ordinary `propertyName`, `propertyImmutable`, `propertyGet` and `propertySet`
+readers/invokers expose its operations without allowing Source to splice a
+getter and setter. No wrapper is emitted by the general Cell unboxing rule.
+
+The checked vocabulary chooses the exact native member and raw conversion.
+Both descriptor operations and the input Payload come from that checked
+attribute site. Maybe String keeps the existing null/String normalization.
+Payload remains opaque to Source, including when a live property contains a
+host-coerced value; strict identity comparison does not reinterpret its type.
+No guessed type id, new primitive, Just, Any or per-node/event descriptor is
+introduced. The native read/write bodies are pinned compiler-owned producer
+code. Four built-ins may use their reviewed native projections as bodies.
+
+The single runtime control path takes `Protocol, Node, Property, Payload`.
+Per-node state is a linked chain of typed cells with fields
+`{ d : Property, v : Payload, next : Opt Control }`; `Control` is an opaque
+single-Cell wrapper. Its head is stored directly in `$$s`, with no separate
+packet/map. Existing entries update d and v together; restoration uses only
+that entry's descriptor and payload. Links preserve installation order. The
+private Protocol adds `controls : Node → Opt Control` and
+`setControls : Node, Control → ⊤`. Source retains every control algorithm;
+there is no allocation per render for an existing entry and no helper factory.
+
 ### 9.5 How a lowering is compiled into beni
 
 **No dynamic loading, ever**: a lowering is Zig linked into the binary, and a platform is trusted
@@ -3130,6 +3159,11 @@ existing constructor and first-class uses gain no new refusal.
 *Owner amendment, 2026-11-04 (interface 1.28):* a retained row site's callback
 table and its paired scope are retargeted together on the same carrier. Its
 key-typed Any state is retained; §9.4.6 defines the three-argument operation.
+
+*Owner amendment, 2026-11-04 (interface 1.29):* stateful properties use the
+opaque cold descriptor and linked control cells of §9.4.6. Producer-owned
+get/set/value pairing applies to every checked vocabulary property, including
+custom names; Source owns all control traversal and restoration.
 
 ### 9.6 Determinism, and what the cache must know
 

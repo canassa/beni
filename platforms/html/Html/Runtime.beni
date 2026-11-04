@@ -1,4 +1,4 @@
---! The private typed producer/runtime ABI (boundary.md §9.4–9.5, 1.28).
+--! The private typed producer/runtime ABI (boundary.md §9.4–9.5, 1.29).
 --! Only the compiled lowering opens the existential carriers. Source keeps
 --! slots, rows, controls and scheduling typed. No carrier crosses Js.Value.
 --! Helpers are emitted cold; this module creates no helper factory.
@@ -161,6 +161,8 @@ pub type alias Protocol =
     contextParent : (Context → Context)
     contextApply : (Context, Payload → Payload)
     sendRoot : (Node.Node, Payload → ⊤)
+    controls : (Node.Node → Js.Opt Control)
+    setControls : (Node.Node, Control → ⊤)
     hasRoot : (Node.Node → Bool)
     hasHandler : (Node.Node, String → Bool)
     handlerFlags : (Node.Node, String → Int)
@@ -183,6 +185,61 @@ pub type alias Protocol =
     siteTail : (RowSite, Slot → Js.Opt Node.Node)
     siteRestate : (RowSite, Slot, Int → ⊤)
     siteDispose : (RowSite, Slot → ⊤)
+
+
+-- A descriptor is the SAME cold producer record, unboxed through Cell.
+-- Its constructor and fields stay private: Source can invoke the checked
+-- get/set pair but cannot splice methods from differently typed descriptors.
+type alias PropertyFields =
+    name : String
+    immutable : Bool
+    get : (Node.Node → Payload)
+    set : (Node.Node, Payload → ⊤)
+
+
+pub opaque type Property
+    = Property (Js.Cell PropertyFields)
+
+
+pub propertyName : Property → String
+propertyName (Property fields) = Js.cellRead fields .name
+
+
+pub propertyImmutable : Property → Bool
+propertyImmutable (Property fields) = Js.cellRead fields .immutable
+
+
+pub propertyGet : Property, Node.Node → Payload
+propertyGet (Property fields) node =
+    read = Js.cellRead fields .get
+    read node
+
+
+pub propertySet : Property, Node.Node, Payload → ⊤
+propertySet (Property fields) node value =
+    write = Js.cellRead fields .set
+    write node value
+
+
+-- Per-node state is the existing entry cell, installed once and updated in
+-- place. d/v stay paired; next gives the original installation order. The
+-- head itself is stored in $$s, without another packet, map or Any wrapper.
+pub type alias ControlFields =
+    d : Property
+    v : Payload
+    next : Js.Opt Control
+
+
+pub opaque type Control
+    = Control (Js.Cell ControlFields)
+
+
+pub control : Js.Cell ControlFields → Control
+control fields = Control fields
+
+
+pub controlCell : Control → Js.Cell ControlFields
+controlCell (Control fields) = fields
 
 
 -- The parallel row lane implements these exported functions. Persistent

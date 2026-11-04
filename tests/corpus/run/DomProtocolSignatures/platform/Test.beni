@@ -74,3 +74,24 @@ through protocol context message =
         through protocol (protocol.contextParent context) (protocol.contextApply context message)
     else
         message
+
+
+-- The caller receives a producer-owned descriptor/value pair. It can update
+-- typed state but cannot manufacture a descriptor or obtain its cell.
+pub controlled : Runtime.Protocol, Node.Node, Runtime.Property, Runtime.Payload → ⊤
+controlled protocol node descriptor value =
+    current = protocol.controls node
+    Js.optMatch current
+        (λ⊤ →
+            created = Runtime.control (Js.cell { d = descriptor, v = value, next = Js.none ⊤ })
+            protocol.setControls node created
+        )
+        λentry →
+            fields = Runtime.controlCell entry
+            Js.cellWrite fields descriptor .d
+            Js.cellWrite fields value .v
+    if Runtime.propertyImmutable descriptor then
+        if not (Js.same (Runtime.propertyGet descriptor node) value) then
+            Runtime.propertySet descriptor node value
+    else
+        Runtime.propertySet descriptor node value
