@@ -443,7 +443,8 @@ write escapes the stored value and grants no ownership permission. The
 writer rule charges stored callbacks to their writer. Callers initialize
 each index before reading it and check bounds using their own queue state.
 Js.Fifo is a typed circular array with head/count/capacity in a Cell. Removal
-clears its payload slot before returning it; growth copies only live slots.
+defects before touching capacity when empty, and clears its payload slot
+before returning it; growth copies only live slots.
 Dequeue precedes invocation. Returning a cancelled Queue hand-off uses the
 same ring's front insertion; it does not allocate a removal token. Queue's
 item buffer uses the ring, while its takers and offers keep removable links.
@@ -466,7 +467,8 @@ registration order. Log-context queries default to False; clearing a context
 runs its sync body directly until Task installs a handler. The handler's
 closed unit callback retains any generic result in its own typed local Ref,
 so no polymorphic callable or result is erased. A stopped bridge remains
-stopped if Task is first used afterwards. Platform edits are supplied as a
+stopped if Task is first used afterwards: lazy runtime registration also
+marks the program scheduler stopped before it can drain queued work. Platform edits are supplied as a
 separate integration patch until the DOM lane is ready.
 
 

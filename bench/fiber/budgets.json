@@ -49,13 +49,17 @@
   },
   "brotli": {
     "S0Plain": 101,
-    "S1Start": 3565,
+    "S1Start": 3579,
     "S2SpawnJoin": 3809,
     "S3ScopeFinalizer": 3967,
     "S4Cancel": 3828,
-    "S5Queue": 4615
+    "S5Queue": 4633
   },
   "targets": {
     "fast-path": 0
+  },
+  "brotliNotes": {
+    "S1Start": "#1873 review: required empty-FIFO guard plus late-shutdown phase fix; 3565 → 3579 (+14), measured minimum. Guard alone adds 13 B against the fixed-shutdown scratch build.",
+    "S5Queue": "#1873 review: required empty-FIFO guard plus late-shutdown phase fix; 4615 → 4633 (+18), measured minimum. Guard alone adds 14 B against the fixed-shutdown scratch build."
   }
 }

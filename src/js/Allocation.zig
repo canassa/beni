@@ -34,7 +34,7 @@ pub const Proof = struct {
         switch (m.ir.tag(node)) {
             // Inspect every executed operand after Opt substitutions. An
             // inert-looking name can now stand for an effectful call.
-            .ident, .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit, .arrow => return true,
+            .ident, .field_name, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit, .arrow => return true,
             .member => return m.ir.isFieldRead(node) and p.value(module, @fromBackingInt(@intCast(d.lhs)), depth + 1, budget),
             .object => {
                 for (m.ir.extraSlice(JsIr.inlineRange(d), Index)) |prop| {
@@ -43,7 +43,7 @@ pub const Proof = struct {
                 }
                 return true;
             },
-            .array => {
+            .array, .template => {
                 for (m.ir.extraSlice(JsIr.inlineRange(d), Index)) |part| {
                     if (!p.value(module, part, depth + 1, budget)) return false;
                 }

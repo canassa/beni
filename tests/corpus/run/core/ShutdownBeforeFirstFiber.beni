@@ -1,0 +1,16 @@
+-- #1873: shutdown before lazy registration must keep the program drain stopped.
+import Browser.Host.NodeProcess as Output
+import Node
+import Task
+
+
+main : Node.Program
+main =
+    Task.shutdown 0 λ_ → Output.writeOut "shutdown callback\n"
+    Task.start
+        (λ⊤ →
+            Output.writeOut "work ran\n"
+            7
+        )
+        λ_ → Output.writeOut "exit callback\n"
+    Node.print "scheduled after shutdown"

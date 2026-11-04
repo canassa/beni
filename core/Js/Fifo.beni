@@ -67,17 +67,20 @@ copy from into head capacity count index =
         copy from into head capacity count (index + 1)
 
 
--- Callers test empty before shifting. Clearing precedes any callback invocation.
+-- Defect before reading empty capacity. Clearing precedes any callback invocation.
 pub shift : Fifo a → a
 shift (Fifo q) =
-    head = Js.cellRead q .head
-    values = Js.cellRead q .values
-    value = Array.arrayGet values head
-    Array.arrayWrite values head (Js.none ⊤)
-    count = Js.cellRead q .count - 1
-    Js.cellWrite q count .count
-    Js.cellWrite q (if count == 0 then 0 else Js.rem (head + 1) (Js.cellRead q .capacity)) .head
-    Js.optMatch value (λ⊤ → Protocol.defect "an empty FIFO was shifted") identity
+    if Js.cellRead q .count == 0 then
+        Protocol.defect "an empty FIFO was shifted"
+    else
+        head = Js.cellRead q .head
+        values = Js.cellRead q .values
+        value = Array.arrayGet values head
+        Array.arrayWrite values head (Js.none ⊤)
+        count = Js.cellRead q .count - 1
+        Js.cellWrite q count .count
+        Js.cellWrite q (if count == 0 then 0 else Js.rem (head + 1) (Js.cellRead q .capacity)) .head
+        Js.optMatch value (λ⊤ → Protocol.defect "an empty FIFO was shifted") identity
 
 
 pub clear : Fifo a → ⊤
