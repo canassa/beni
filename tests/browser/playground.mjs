@@ -21,7 +21,11 @@
 //     pane reaches the frame, the pane highlights CSS, and an `@import` from
 //     another origin applies in the frame;
 //   - a shared link opens the same source, CSS and platform, and a damaged
-//     one says so.
+//     one says so;
+//   - a sample's short link (§4.5): a choice in the list sets the address
+//     with no history entry, a short link opens its sample, an unknown id
+//     says so, a change clears it, and Share copies it while the sample is
+//     unchanged and the code link after a change.
 // Each failed check prints a line; the exit code is the number of them.
 // With `BENI_PLAYGROUND_SCREENSHOTS=<dir>`, it also saves a screenshot of
 // each styled sample's frame in each scheme, at a desktop and a phone
@@ -31,7 +35,7 @@ import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { delimiter, extname, join, normalize, resolve } from "node:path";
-import { encode } from "../../playground/share.js";
+import { decode, encode } from "../../playground/share.js";
 
 const [site] = process.argv.slice(2);
 if (!site) {
@@ -336,6 +340,7 @@ check((await page.until(`/Compiler loaded in \\d+ ms/.test(${status}) || ${built
 check((await page.until(built)) !== null, `the first sample builds (${await page.evaluate(status)})`);
 check(await page.evaluate(`document.querySelector(".cm-editor") !== null`), "the editor is CodeMirror");
 check((await page.until(loaded)) !== null, "the first sample's program loads in the frame");
+check((await page.evaluate("location.hash")) === "#sample=counter", `a page with no program names its first sample in the address (${await page.evaluate("location.hash")})`);
 // The editor's modules are files of the site (§4.2): the page asks no other
 // origin for anything.
 const elsewhere = requests.filter((url) => !url.startsWith(`${origin}/`) && !url.startsWith("blob:") && !url.startsWith("data:"));
@@ -351,9 +356,12 @@ check(counted !== null && (await page.until(`document.querySelector("span")?.tex
 
 // Every sample.
 const samples = JSON.parse(await page.evaluate(`JSON.stringify([...document.getElementById("sample").options].map((o) => [o.value, o.text]))`));
+// A choice in the list replaces the address and adds no history entry.
+const historyLength = await page.evaluate("history.length");
 for (const [value, name] of samples.filter(([v]) => v !== "shared")) {
   await page.evaluate(`(() => { document.getElementById("status").textContent = ""; const s = document.getElementById("sample"); s.value = ${JSON.stringify(value)}; s.dispatchEvent(new Event("change")); })()`);
   check((await page.until(built)) !== null, `sample ${name} builds (${await page.evaluate(status)})`);
+  check((await page.evaluate("location.hash")) === `#sample=${value}`, `choosing sample ${name} sets the address to its short link (${await page.evaluate("location.hash")})`);
   if ((await page.evaluate(`document.getElementById("platform").value`)) === "node") {
     check((await page.until(`document.getElementById("console").textContent.includes("fib 10 = 55")`, 10_000)) !== null, `sample ${name} prints`);
   } else {
@@ -392,9 +400,10 @@ for (const [value, name] of samples.filter(([v]) => v !== "shared")) {
     }
   }
 }
+check((await page.evaluate("history.length")) === historyLength, `choosing a sample adds no history entry (${historyLength} → ${await page.evaluate("history.length")})`);
 if (screenshots) {
   // The page with the CSS pane open, on TodoMVC.
-  await page.evaluate(`(() => { document.getElementById("status").textContent = ""; const s = document.getElementById("sample"); s.value = "1"; s.dispatchEvent(new Event("change")); })()`);
+  await page.evaluate(`(() => { document.getElementById("status").textContent = ""; const s = document.getElementById("sample"); s.value = "todomvc"; s.dispatchEvent(new Event("change")); })()`);
   await page.until(built);
   await page.until(loaded, 10_000);
   await page.evaluate(showCss);
@@ -451,7 +460,7 @@ check(projectLink !== null, "Share includes all source modules");
 const projectCopy = await open(projectLink);
 check((await projectCopy.until(`(${built}) && document.getElementById("console").textContent.trim() === "42"`)) !== null, "the shared project runs its edited imported module");
 check(await projectCopy.evaluate(`document.querySelector('[aria-label="Files"] [aria-selected="true"]').textContent === "Math/Value.beni" && (${activeText}).includes("answer = 42") && document.getElementById("css-editor").textContent.includes("body {}")`), "the shared project restores the selected source, edits and CSS");
-await projectCopy.evaluate(`(() => { const s = document.getElementById("sample"); s.value = "0"; s.dispatchEvent(new Event("change")); })()`);
+await projectCopy.evaluate(`(() => { const s = document.getElementById("sample"); s.value = "counter"; s.dispatchEvent(new Event("change")); })()`);
 check((await projectCopy.until(`(${built}) && document.querySelectorAll('[aria-label="Files"] [role="tab"]').length === 2`)) !== null, "switching to a single-file sample removes the project's extra modules");
 
 // An error, marked in the editor and listed.
@@ -564,9 +573,60 @@ check((await second.evaluate(`document.getElementById("platform").value`)) === "
 const damaged = await open(`${origin}/#platform=node&code=@@@@`);
 check((await damaged.until(`(${built}) && (${status}).includes("the link held no program")`, 30_000)) !== null, `a damaged link builds the first sample and says so (${await damaged.evaluate(status)})`);
 check(
-  (await damaged.evaluate(`document.getElementById("sample").value`)) === "0" && (await damaged.evaluate(editorText)).startsWith("-- A counter"),
+  (await damaged.evaluate(`document.getElementById("sample").value`)) === "counter" && (await damaged.evaluate(editorText)).startsWith("-- A counter"),
   "a damaged link opens the first sample",
 );
+
+// A sample's short link (§4.5). It opens its sample as the list does: the
+// platform, the modules, the focused module and the CSS.
+const machine = await open(`${origin}/#sample=ball-machine`);
+check((await machine.until(built)) !== null && !(await machine.evaluate(status)).includes("(the link"), `a short link builds its sample (${await machine.evaluate(status)})`);
+check(
+  await machine.evaluate(`document.getElementById("sample").value === "ball-machine" && document.getElementById("platform").value === "browser-tea" && location.hash === "#sample=ball-machine"`),
+  "a short link opens its sample on its platform, and stays in the address",
+);
+const machineTabs = JSON.parse(await machine.evaluate(`JSON.stringify([...document.querySelectorAll('[aria-label="Files"] [role="tab"]')].map((t) => t.textContent))`));
+check(machineTabs.length === 10 && (await machine.evaluate(`document.querySelector('[aria-label="Files"] [aria-selected="true"]').textContent`)) === "Control.beni", `a short link opens every module of its sample and its focused module (${JSON.stringify(machineTabs)})`);
+check((await machine.until(loaded, 10_000)) !== null && (await machine.until(`document.querySelector("svg circle") !== null`, 10_000, true)) !== null, "a short link's program mounts in the frame");
+await machine.scheme("light");
+const machineLook = looks["Ball machine"];
+// Guarded: a page that opened another sample has no `.tally b`.
+check((await machine.until(`document.querySelector(".tally b") !== null && ${machineLook.known} === ${JSON.stringify(machineLook.light)}`, 10_000, true)) !== null && (await machine.evaluate(cssText)) !== "", "a short link opens its sample's CSS, which reaches the frame");
+// Share on the unchanged sample: the short link, and the list stays on it.
+const copied = `["Link copied", "The address bar holds the link"].includes(${status})`;
+await machine.evaluate(`document.getElementById("status").textContent = ""`);
+await machine.evaluate(`document.getElementById("share").click()`);
+check(
+  (await machine.until(copied, 10_000)) !== null && (await machine.evaluate(`location.hash === "#sample=ball-machine" && document.getElementById("sample").value === "ball-machine"`)),
+  `Share on an unchanged sample gives its short link (${await machine.evaluate("location.href")})`,
+);
+// An edit clears the short link; Share then makes the code link, with
+// every module, the edit and the focused module.
+await machine.toEnd(sourceSelector);
+await machine.type("-- shared\n", sourceSelector);
+check((await machine.until(`location.hash === ""`, 5_000)) !== null, "an edit clears the short link from the address");
+await machine.evaluate(`document.getElementById("status").textContent = ""`);
+await machine.evaluate(`document.getElementById("share").click()`);
+const machineLink = await machine.until(`(${copied}) && document.getElementById("sample").value === "shared" && location.href`, 10_000);
+const machineShared = machineLink === null ? null : await decode(new URL(machineLink).hash);
+check(
+  machineShared !== null && Object.keys(machineShared.files).length === 9 && machineShared.files["Control.beni"].endsWith("-- shared\n") && machineShared.focus === "Control.beni",
+  `Share on a changed sample makes the code link (${machineLink?.slice(0, 80)}…)`,
+);
+// An unknown id opens the first sample and says so; the address then names
+// the first sample. An edit of the CSS clears the short link too.
+const unknown = await open(`${origin}/#sample=no-such-sample`);
+check((await unknown.until(`(${built}) && (${status}).includes("the link named no sample of the playground")`, 30_000)) !== null, `an unknown id builds the first sample and says so (${await unknown.evaluate(status)})`);
+check(
+  await unknown.evaluate(`document.getElementById("sample").value === "counter" && location.hash === "#sample=counter" && (${editorText}).startsWith("-- A counter")`),
+  `an unknown id opens the first sample, and the address names it (${await unknown.evaluate("location.hash")})`,
+);
+await unknown.evaluate(showCss);
+await unknown.toEnd("#css-editor");
+await unknown.type("\nmain { outline: 1px solid red; }\n", "#css-editor");
+check((await unknown.until(`location.hash === ""`, 5_000)) !== null, "an edit of the CSS clears the short link from the address");
+await unknown.evaluate(`document.getElementById("share").click()`);
+check((await unknown.until(`location.hash.includes("css=") && document.getElementById("sample").value === "shared"`, 10_000)) !== null, "Share after an edit of the CSS makes the code link");
 
 socket.close();
 const exited = new Promise((done) => browser.on("exit", done));

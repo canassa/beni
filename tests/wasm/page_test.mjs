@@ -9,10 +9,14 @@
 //   node tests/wasm/page_test.mjs srcdoc
 //       the output frame's document, with and without the CSS pane's text
 //   node tests/wasm/page_test.mjs samples
-//       each sample's files, TodoMVC's copy of todomvc-app-css, and the
-//       page's link to its notice
+//       each sample's id and files, TodoMVC's copy of todomvc-app-css, and
+//       the page's link to its notice
 //   node tests/wasm/page_test.mjs tabs
 //       every tab of `index.html` controls a panel the page has
+//   node tests/wasm/page_test.mjs links <library>
+//       a sample's short link opens its sample, and a fragment with no
+//       program the first sample with the note the page shows, from the
+//       beni build of `playground/src/` in <library>
 //   node tests/wasm/page_test.mjs syntax <library>
 //       the grammar names the tokens of each line as the test says, from
 //       the beni build of `playground/src/` in <library>
@@ -125,6 +129,54 @@ if (mode === "positions") {
   const tooLarge = { "More.beni": "😀".repeat(maxSource / 4) };
   check(await decode(await encode("node", "x", "", tooLarge)) === null, "total project size is bounded in UTF-8 bytes");
   check(await decode(await encode("node", "x", "", { "Other.beni": "x" }, "Missing.beni")) === null, "a missing focused module is a damaged project");
+  // A sample's short link holds no program, so `share.js` opens none.
+  check((await decode("#sample=ball-machine")) === null, "a short link holds no program");
+} else if (mode === "links") {
+  // A sample's short link (playground.md §4.5), from the beni build of
+  // `playground/src/Share.beni` in <library>, as the page imports it.
+  const { Share$opening, Share$sampleFragment } = await import(pathToFileURL(resolve(args[0], "Share.mjs")).href);
+  const ids = ["counter", "todomvc", "ball-machine", "fibonacci"];
+  const opened = (fragment) => {
+    const o = Share$opening(fragment, ids);
+    return [o.sample, o.notice];
+  };
+  for (const id of ids) {
+    const fragment = Share$sampleFragment(id);
+    check(fragment === `sample=${id}`, `the short link of ${id} is sample=${id} (${fragment})`);
+    for (const hash of [`#${fragment}`, fragment]) {
+      check(JSON.stringify(opened(hash)) === JSON.stringify([id, ""]), `${hash} opens ${id} with no note (${JSON.stringify(opened(hash))})`);
+    }
+  }
+  const named = " (the link named no sample of the playground, so this is the first sample)";
+  const held = " (the link held no program, so this is the first sample)";
+  // A fragment, the sample it opens and the note. Every field is read as
+  // `URLSearchParams` reads it, which the old page and `share.js` use.
+  const cases = [
+    ["", "counter", ""],
+    ["#sample=fibonacci&platform=node", "fibonacci", ""],
+    ["#sample=todomvc&sample=counter", "todomvc", ""],
+    ["#&&sample=todomvc&", "todomvc", ""],
+    ["#sample=ball%2Dmachine", "ball-machine", ""],
+    ["#sample=no-such-sample", "counter", named],
+    ["#sample=", "counter", named],
+    ["#sample", "counter", named],
+    ["#sample=%ZZ", "counter", named],
+    ["#sample=a+b", "counter", named],
+    ["#sample=Counter", "counter", named],
+    ["#sample=counter&platform=node&code=@@@@", "counter", held],
+    ["#code=&sample=todomvc", "counter", held],
+    ["#platform=node", "counter", held],
+    ["#=x", "counter", held],
+  ];
+  for (const [fragment, sample, notice] of cases) {
+    const got = opened(fragment);
+    check(JSON.stringify(got) === JSON.stringify([sample, notice]), `${JSON.stringify(fragment)} opens ${sample}${notice} (${JSON.stringify(got)})`);
+    // The same answer from `URLSearchParams`.
+    const params = new URLSearchParams(fragment.replace(/^#/, ""));
+    const asked = params.has("code") ? null : params.get("sample");
+    const reference = asked !== null && ids.includes(asked) ? [asked, ""] : [ids[0], asked !== null ? named : fragment.replace(/^#/, "") === "" ? "" : held];
+    check(JSON.stringify(got) === JSON.stringify(reference), `${JSON.stringify(fragment)} is read as URLSearchParams reads it (${JSON.stringify(reference)})`);
+  }
 } else if (mode === "syntax") {
   // Lines, and the name the grammar gives each piece of them, in order; a
   // piece not listed is not checked.
@@ -250,6 +302,15 @@ if (mode === "positions") {
   // benchmark's and the ball machine's is its fixture's, which `zig build
   // playground` copies in.
   const samples = JSON.parse(readFileSync("playground/samples/index.json", "utf8"));
+  // Each id is in links already shared, so it never changes, and an id that
+  // shipped names its sample for as long as the sample is there (§4.3).
+  const ids = samples.map((s) => s.id);
+  check(ids.every((id) => typeof id === "string" && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id) && id !== "shared"), `every sample has a well-formed id (${JSON.stringify(ids)})`);
+  check(new Set(ids).size === ids.length, `no two samples have the same id (${JSON.stringify(ids)})`);
+  const shipped = { counter: "Counter", todomvc: "TodoMVC", "ball-machine": "Ball machine", fibonacci: "Fibonacci (prints)" };
+  for (const [id, name] of Object.entries(shipped)) {
+    check(samples.find((s) => s.id === id)?.name === name, `the id ${id} still names the sample ${name}`);
+  }
   const copied = { TodoMVC: "bench/todomvc/apps/beni/Sandbox.beni" };
   for (const sample of samples) {
     const files = sample.files ?? { "Main.beni": sample.path };
@@ -295,7 +356,7 @@ if (mode === "positions") {
     check(named === panel, `${tag} names the same panel in its data attribute and in aria-controls`);
   }
 } else {
-  process.stderr.write("usage: node tests/wasm/page_test.mjs (positions <source> <diagnostics.json> <text>… | share | srcdoc | samples | syntax <library> | tabs | vendor)\n");
+  process.stderr.write("usage: node tests/wasm/page_test.mjs (positions <source> <diagnostics.json> <text>… | share | links <library> | srcdoc | samples | syntax <library> | tabs | vendor)\n");
   process.exit(2);
 }
 process.exitCode = failures === 0 ? 0 : 1;
