@@ -1,0 +1,12 @@
+-- check/bad (core): `Js.module` writes its specifier as a static import's,
+-- so it is a string literal written in place (`boundary.md` §4.2, rule 2).
+-- A name bound first is `invalid_js_module`, at the argument.
+import Js
+
+
+spec : String
+spec = "node:path"
+
+
+bound : Js.Value
+bound = Js.module spec

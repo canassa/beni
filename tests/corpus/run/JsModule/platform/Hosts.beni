@@ -1,0 +1,26 @@
+--! `Js.module` (`boundary.md` §4.2, 2026-11-04): a static namespace import
+--! of a host built-in, written once at the top of the module that calls
+--! it. A named export read as a property, the default export, two calls
+--! of one specifier sharing one binding, and a second built-in.
+
+import Js
+
+
+--| `node:path`'s `basename`, read from the namespace object.
+pub baseName : String → String
+baseName p = Js.to (Js.call (Js.module "node:path") "basename" [ Js.from p ])
+
+
+--| `node:path`'s `extname`, the same binding as `baseName`'s.
+pub extension : String → String
+extension p = Js.to (Js.call (Js.module "node:path") "extname" [ Js.from p ])
+
+
+--| `node:process`'s default export is the `process` object.
+pub platform : ⊤ → String
+platform ⊤ = Js.to (Js.get (Js.get (Js.module "node:process") "default") "platform")
+
+
+--| A second built-in, `node:url`.
+pub fileUrl : String → String
+fileUrl p = Js.to (Js.get (Js.call (Js.module "node:url") "pathToFileURL" [ Js.from p ]) "href")
