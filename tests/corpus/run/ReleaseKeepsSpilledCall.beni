@@ -1,0 +1,139 @@
+-- run: a `--release` build evaluates a call that lowering binds to a
+-- spill temporary, also when nothing reads the temporary (`language.md` §6,
+-- *What an optimiser may assume*; `backend.md` §4, *Emitted JavaScript nests
+-- only as deep as the source*; §9 item 1).
+--
+-- `Lower.expr` binds a value that grows `JsIr.nesting.spill` tall (256
+-- units: 51 nested calls here) to a `const $t$<n>`. Until #1842 it did not
+-- list that temporary in `effect_keep`. Nothing reads field `z` of either
+-- record below:
+--
+--   - `whole`: with 50 `▷ inc`, the whole record is the spilled value, and
+--     `whole` became a name for the temporary;
+--   - `field`: with 51 `▷ inc`, the value of `z` is the temporary, and
+--     `Spec.dropKeys` dropped the unread key, because its value was a name.
+--
+-- In both, `Opt` dropped the unread temporary, and the release build did
+-- not print the `z` line. Both builds print the same lines.
+import Node exposing (Program)
+import String
+
+
+inc : Int → Int
+inc n = n + 1
+
+
+main : Program
+main =
+    whole =
+        { a = Debug.log "whole a" 1
+        , z =
+            Debug.log "whole z" 1
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+        }
+    field =
+        { a = Debug.log "field a" 1
+        , z =
+            Debug.log "field z" 1
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+                ▷ inc
+        }
+    Node.printLines [ String.fromInt whole.a, String.fromInt field.a ]

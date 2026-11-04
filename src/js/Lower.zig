@@ -6456,6 +6456,11 @@ pub const Lowerer = struct {
             const p = l.pos(inst);
             const n = try l.fresh(l.well.temp);
             try l.constDecl(out, n, value, p);
+            // Kept for its effect like any other binding: the name may end
+            // up read by nothing — a record key `Spec.dropKeys` drops, or a
+            // `let` that becomes this name — and the value is evaluated
+            // all the same.
+            if (l.mayHaveEffect(inst)) try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
             l.expr_height = outer;
             return l.ident(n, p);
         }
