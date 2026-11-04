@@ -11322,7 +11322,8 @@ printing (`src/js/Print.zig`), and `Emitter.linkHoisted` (`src/js/Emit.zig`).
   it.
 - **No map:** the entry file of the multi-file layout and `_core/_derived.mjs`, for Â§11.1's reason
   (no beni line wrote them), and each hand-written file that the build writes as a file of its own
-  (below).
+  (below). *Amended 2026-11-04:* a compacted hand-written file gets a map; one that the build
+  copies does not (*Hand-written JavaScript*, the amendment of 2026-11-04).
 
 *Amended 2026-10-17 (issue #94):* **a release build reads no emit row** (Â§9, *The embedded
 modules' printed text, in the pack*). The release text is entangled with the specialiser, the
@@ -11343,6 +11344,76 @@ not map it: `Minify` does not record token positions. So:
   runtime would point at an unrelated beni line. An unmapped frame shows the compacted text.
 
 A map from the compacted text back to the original `.js` file is deferred (item 1 below).
+
+*Amended 2026-11-04 (issue #141, part 1): hand-written JavaScript is mapped.* `Minify` records a
+mark at each token that it prints: the token's first byte in the compacted text, and the token's
+first byte in the file as written. So each kept token maps to its own token in the `.js` file.
+Compaction does not change the order of the tokens, so the marks are in generated order and in
+source order. The two bullets above now hold only for the files and the bytes that this amendment
+names. The rules:
+
+- **Which files.** Each hand-written file that `Minify` compacts: a `foreign` sibling, a program
+  runtime, a markup runtime. A file that `Minify` declines is copied byte for byte. It IS its
+  source, so it gets no map, as in development (§11.1). `_core/_derived.mjs` gets no map, and its
+  stretch of the hoisted file stays unmapped: the compiler holds its compacted text
+  (`derived_runtime.min.mjs`), and no person wrote that text.
+- **Its source.** The `.js` file, by §11.1's `sources` rule: a file read from disk by its path
+  relative to the map (`../hand/Hand.js`), an embedded one by `beni:///` and its path
+  (`beni:///core/Js.js`). `sourcesContent` holds the file's text as written. A line of the source
+  ends at `\n`, at `\r\n` and at a `\r` alone, as an editor and the developer tools count the
+  lines of a file they show.
+- **`names`.** A token that A2 renamed (§9, *Hand-written JavaScript under `--release`*, amended
+  2026-09-30) carries its spelling as written, at each of its occurrences. A2 renames by name and
+  not by scope, so all the occurrences of one spelling have one name. A spelling that A2 did not
+  change has no name. Two exceptions, both at the first token of a function, because Node's
+  `--enable-source-maps` names a stack frame by the mapping at the start of the enclosing function
+  (§11.1):
+  - a named function's first token carries the function's name as written, renamed or not, as
+    §11.1's named function does. That token is a `function` keyword (and an `async` before it),
+    or the first printed token of a declarator's initialiser that is an arrow or a function
+    expression (`a` of `a=>`, for `const f = (a) =>`);
+  - a parameter that is an arrow's first token carries no name of its own. With its name, the
+    frame of `export const run = (program) => …`, printed `run=a=>…`, read `at program`.
+
+  `names` holds each spelling once for each file.
+- **A compacted file of its own** (the multi-file layout, or a file that §9 declines to hoist):
+  it gets `<path>.map` beside it (`_core/List.foreign.mjs.map`), with one source, and the comment
+  line at its end (*The comment line*, below). A file with no mark gets none.
+- **The hoisted file.** Each hand-written piece is a stretch of its own, and its `.js` file is one
+  more entry of `sources`, in the order of the file. A piece with no mark is an unmapped stretch
+  and has no entry. The bytes that the link step writes stay unmapped: the `import` statements at
+  the top of the file, the `const` aliases after a piece, `start(…)`, `run(main)` and the
+  `export`s.
+- **A markup runtime that the build rewrote.** In the multi-file layout, the build rewrites a
+  markup runtime's `import`s of the runtime module before `Minify` reads it (`rewriteProgramImports`,
+  §15.1). Each mark moves back to the file as written: a mark after a rewritten `import` moves by
+  the difference of the two lengths, and a mark inside one moves to the `import`'s first byte. The
+  hoisted file reads the file as written, so its marks need no move.
+
+Without `--source-maps`, `Minify` records nothing and prints the same bytes (`minifyMarked`'s
+marks are optional, and `zig build fuzz` holds the two outputs equal). Cost, measured 2026-11-04 as
+the table below, master `d2a7239dc1` against this amendment: today the only hand-written file
+these builds reach is `core/Record.js` (every platform runtime is beni since 2026-11-03). Its map
+stretch is 12 segments, and its text is 407 of the bytes it adds.
+
+| Build | Instructions with maps, before → after | Map bytes, before → after | Code bytes |
+|---|---|---|---|
+| `bench/corpus`, `--release --library` | 2 738.19 M → 2 738.37 M | 315 600 → 316 216, 30 → 31 maps | +44, the comment line of `_core/Record.foreign.mjs` |
+| `examples/conduit`, `--release` | 5 150.61 M → 5 150.66 M | 874 340 → 874 857 | the same |
+| `examples/sternhalma`, `--release` | 1 528.99 M → 1 529.03 M | 372 046 → 372 563 | the same |
+
+Each difference of instructions is less than the spread of the five runs of one build (up to
+0.5 M). Without the flag, each build writes the same bytes as before, and its instructions move by
+less than that spread too.
+
+**Tests** (`build_test`): *a release build maps hand-written JavaScript back to the file it is
+written in* (the hoisted file: each token, the names, the function's first token, a callback whose
+first token is its parameter, the link step's alias, the crash frames under
+`--enable-source-maps`, and `beni:///core/Record.js`); *a release library build maps each
+compacted hand-written file, and not one it copies*; *a markup runtime the build rewrites maps back
+to the file as written*. Each was checked red by a revert of its rule: the aliases' unmapped
+stretch, the move back of a rewritten file's marks, and the parameter with no name. `Minify`'s
+unit tests pin the marks and names of a file and of a hoisted body.
 
 **What the marks survive.** The printer records the marks of Â§11.1 at the same sites, in the same
 order. Each release pass changes the printed bytes, and each has a rule.
@@ -11482,7 +11553,8 @@ without `--release`, as in development.
 
 1. **Maps for hand-written JavaScript under `--release`.** `Minify` would record the position of
    each token it keeps, as the printer does, and the hoisted map would get the `.js` file as one
-   more source. The one-field segments of this slice mark where those stretches go.
+   more source. The one-field segments of this slice mark where those stretches go. *Amended
+   2026-11-04:* built (issue #141, part 1); *Hand-written JavaScript* above has the rules.
 2. **The other module's line for a body copied across modules.** `JsIr` positions are offsets
    into one source. A copy from another module maps to its call (item 2 above); to map it to the
    lines it came from, a position needs a source index with its offset.
