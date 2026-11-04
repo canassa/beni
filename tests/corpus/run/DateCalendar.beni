@@ -1,0 +1,196 @@
+-- run: core's `Date` (boundary.md §9.8.21). `fromIso8601` accepts the
+-- RFC 3339 forms and refuses every other text and every field out of its
+-- range; `toIso8601` writes `Date.prototype.toISOString`'s form, and the
+-- two round-trip at both ends of the host's range. `toParts` in UTC is
+-- arithmetic; in a named zone each moment gets the offset of its own side
+-- of a DST change (2026: New York on 8 March, Berlin on 29 March and 25
+-- October). An unknown zone name is `Nothing`. `here` is the harness's
+-- zone, which the harness pins to UTC (§9.8.21 (e)), so the last line is
+-- the same on every machine.
+import Date exposing (Apr, Aug, Dec, Feb, Fri, Jan, Jul, Jun, Mar, May, Mon, Month, Nov, Oct, Parts, Sat, Sep, Sun, Thu, Tue, Wed, Weekday)
+import Io
+import Node exposing (Program)
+
+
+iso : String → String
+iso text =
+    case Date.fromIso8601 text of
+        Just t →
+            "${text} → ${Date.toIso8601 t}"
+
+        Nothing →
+            "${text} → Nothing"
+
+
+month : Month → String
+month m =
+    case m of
+        Jan →
+            "Jan"
+
+        Feb →
+            "Feb"
+
+        Mar →
+            "Mar"
+
+        Apr →
+            "Apr"
+
+        May →
+            "May"
+
+        Jun →
+            "Jun"
+
+        Jul →
+            "Jul"
+
+        Aug →
+            "Aug"
+
+        Sep →
+            "Sep"
+
+        Oct →
+            "Oct"
+
+        Nov →
+            "Nov"
+
+        Dec →
+            "Dec"
+
+
+weekday : Weekday → String
+weekday d =
+    case d of
+        Mon →
+            "Mon"
+
+        Tue →
+            "Tue"
+
+        Wed →
+            "Wed"
+
+        Thu →
+            "Thu"
+
+        Fri →
+            "Fri"
+
+        Sat →
+            "Sat"
+
+        Sun →
+            "Sun"
+
+
+two : Int → String
+two n = String.padLeft (String.fromInt n) 2 '0'
+
+
+parts : Parts → String
+parts p =
+    "${weekday p.weekday} ${String.fromInt p.day} ${month p.month} ${String.fromInt p.year} ${two p.hour}:${two p.minute}:${two p.second}.${String.padLeft (String.fromInt p.millis) 3 '0'} offset ${String.fromInt p.offset}"
+
+
+-- A moment's parts in the zone of that name.
+inZone : String, String → String
+inZone zoneName text =
+    case ( Date.named zoneName, Date.fromIso8601 text ) of
+        ( Just zone, Just t ) →
+            "${text} in ${Date.name zone}: ${parts (Date.toParts t zone)}"
+
+        ( Nothing, _ ) →
+            "${zoneName}: no such zone"
+
+        ( _, Nothing ) →
+            "${text}: not a date"
+
+
+utcParts : Int → String
+utcParts ms = "${String.fromInt ms} in UTC: ${parts (Date.toParts (Date.fromMillis ms) Date.utc)}"
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ "-- accepted"
+        , iso "2016-02-18T03:22:56.637Z"
+        , iso "2016-02-18"
+        , iso "2016-02-18T03:22"
+        , iso "2016-02-18T03:22:56"
+        , iso "2016-02-18t03:22:56z"
+        , iso "2016-02-18 03:22:56Z"
+        , iso "2016-02-18T03:22:56.6Z"
+        , iso "2016-02-18T03:22:56.123456789Z"
+        , iso "2016-02-18T03:22:56+01:00"
+        , iso "2016-02-18T03:22:56-0530"
+        , iso "2016-02-18T03:22:56+14"
+        , iso "2016-02-29T00:00:00Z"
+        , iso "2000-02-29"
+        , iso "0000-01-01"
+        , iso "+275760-09-13T00:00:00.000Z"
+        , iso "-271821-04-20T00:00:00.000Z"
+        , iso "+010000-01-01T00:00:00.000Z"
+        , "-- refused"
+        , iso ""
+        , iso "2016"
+        , iso "2016-02"
+        , iso "16-02-18"
+        , iso "2016-2-18"
+        , iso "2016/02/18"
+        , iso "2016-13-01"
+        , iso "2016-00-01"
+        , iso "2016-04-31"
+        , iso "2015-02-29"
+        , iso "2100-02-29"
+        , iso "2016-02-18T24:00:00Z"
+        , iso "2016-02-18T23:60:00Z"
+        , iso "2016-02-18T23:59:60Z"
+        , iso "2016-02-18T23:59:59.Z"
+        , iso "2016-02-18T23:59:59.1234567890Z"
+        , iso "2016-02-18T03:22.5Z"
+        , iso "2016-02-18T03:22:56,5Z"
+        , iso "2016-02-18T23:59:59+24:00"
+        , iso "2016-02-18T23:59:59+01:60"
+        , iso "2016-02-18T23:59:59+1"
+        , iso "2016-02-18T23:59:59Zjunk"
+        , iso "2016-02-18T"
+        , iso "2016-02-18X03:22"
+        , iso "-000000-01-01"
+        , iso "+275760-09-13T00:00:00.001Z"
+        , iso "-271821-04-19T23:59:59.999Z"
+        , iso " 2016-02-18"
+        , iso "２０１６-02-18"
+        , "-- UTC"
+        , utcParts 0
+        , utcParts (-1)
+        , utcParts 951782400000
+        , utcParts 8640000000000000
+        , utcParts (-8640000000000000)
+        , Date.toIso8601 (Date.fromMillis (-62198755200000))
+        , "-- zones"
+        , inZone "America/New_York" "2026-03-08T06:59:59.999Z"
+        , inZone "America/New_York" "2026-03-08T07:00:00Z"
+        , inZone "Europe/Berlin" "2026-03-29T00:59:59Z"
+        , inZone "Europe/Berlin" "2026-03-29T01:00:00Z"
+        , inZone "Europe/Berlin" "2026-10-25T00:59:59Z"
+        , inZone "Europe/Berlin" "2026-10-25T01:00:00Z"
+        , inZone "Asia/Kolkata" "2016-02-18T23:00:00Z"
+        , inZone "Pacific/Kiritimati" "2016-02-18T23:00:00Z"
+        , inZone "Europe/Berlin" "+275760-09-13T00:00:00.000Z"
+        , inZone "UTC" "2016-02-18T03:22:56.637Z"
+        , inZone "Not/AZone" "2016-02-18"
+        , inZone "" "2016-02-18"
+        , "-- equality"
+        , if Date.named "Europe/Berlin" == Date.named "Europe/Berlin" then
+            "one zone"
+          else
+            "two zones"
+        , if Date.named "UTC" == Just Date.utc then "UTC is utc" else "UTC is not utc"
+        , "-- here"
+        , Date.name (Date.here ⊤)
+        ]

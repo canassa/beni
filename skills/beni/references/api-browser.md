@@ -313,8 +313,7 @@ module Sub
   value taps : Sub msg → List (Key × Kind × Tap msg)
 module Time
   alias Duration
-  type Posix
-    Posix
+  alias Posix
   value every : Duration, (Posix → msg) → Sub msg  -- impure
   value fromMillis : Int → Posix
   value inMillis : Duration → Int

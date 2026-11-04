@@ -2,13 +2,13 @@
 --! ticks (`docs/design/boundary.md` §9.8, §9.8.15 (a)). `sleep` waits in
 --! the calling fiber only; every other fiber, and the page, go on.
 --! Cancelling a fiber that sleeps clears its timer. Both read the calling
---! fiber's clock, core's `Clock`: the page's own `Date` and timers, read
+--! fiber's clock, core's `Clock`: the page's own JavaScript `Date` and timers, read
 --! when called — so a test harness that replaces them before the program
 --! runs is the clock the program sees — or a virtual one inside
 --! `Clock.run`.
 
 import Browser
-import Clock
+import Date
 import Duration
 import Sub exposing (Sub)
 import Task
@@ -35,24 +35,28 @@ pub inMillis : Duration → Int
 inMillis duration = Duration.toMillis duration
 
 
---| A moment, as the milliseconds since the Unix epoch.
-pub type Posix
-    = Posix Int
+--| A moment, as the milliseconds since the Unix epoch: core's
+--| `Date.Posix`, by the name a page has always used (`boundary.md`
+--| §9.8.21 (a)). Its zone and calendar are `Date`'s.
+pub type alias Posix =
+    Date.Posix
 
 
---| The milliseconds since the Unix epoch.
+--| The milliseconds since the Unix epoch: `Date.toMillis`.
 pub toMillis : Posix → Int
-toMillis (Posix n) = n
+toMillis t = Date.toMillis t
 
 
---| The moment from the milliseconds since the Unix epoch.
+--| The moment from the milliseconds since the Unix epoch:
+--| `Date.fromMillis`.
 pub fromMillis : Int → Posix
-fromMillis n = Posix n
+fromMillis n = Date.fromMillis n
 
 
---| What the calling fiber's clock says now: `Clock.now`.
+--| What the calling fiber's clock says now: `Date.now`, which reads
+--| `Clock.now`.
 pub now : ⊤ → Posix
-now ⊤ = Posix (Clock.now ⊤)
+now ⊤ = Date.now ⊤
 
 
 --| Wait for `duration` on the calling fiber's clock: `Task.sleep`. Only

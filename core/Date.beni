@@ -1,0 +1,499 @@
+--! Moments, time zones and the calendar (`docs/design/boundary.md`
+--! §9.8.21): what a program needs to show a moment as a date. Elm's
+--! `Time.Posix`, `Time.Zone` and `Time.toYear` and its siblings, and
+--! `elm-iso8601-date-strings`' parser.
+--!
+--!     Maybe.map (Date.fromIso8601 "2016-02-18T03:22:56.637Z") (Date.toParts _ Date.utc)
+--!
+--! A zone is UTC or a name of the host's time zone database, never a
+--! fixed offset, so a moment on either side of a change to daylight
+--! saving time gets the offset of its own side. `here` is the reader's
+--! zone, by its name.
+--!
+--! `fromIso8601` is one pattern and range checks written here, not the
+--! host's `Date.parse`, which answers `NaN` or what the engine likes for a
+--! text outside ECMAScript's own format. Anything it does not accept is
+--! `Nothing`.
+--!
+--! There are no month names: `Month` and `Weekday` are types, and a
+--! program writes the words of its own language.
+
+import Clock
+import Js
+
+
+--| A moment, as the milliseconds since the Unix epoch.
+pub type Posix
+    = Posix Int
+
+
+--| The milliseconds since the Unix epoch.
+--|
+--|     toMillis (fromMillis 86400000) == 86400000
+pub toMillis : Posix → Int
+toMillis (Posix n) = n
+
+
+--| The moment from the milliseconds since the Unix epoch.
+pub fromMillis : Int → Posix
+fromMillis n = Posix n
+
+
+--| What the calling fiber's clock says now: `Clock.now`.
+pub now : ⊤ → Posix
+now ⊤ = Posix (Clock.now ⊤)
+
+
+--| A time zone: UTC, or a zone of the host's database by its name. Two
+--| zones are `==` when they have one name.
+pub opaque type Zone
+    = Utc
+    | Named String
+
+
+--| Coordinated Universal Time.
+--|
+--|     name utc == "UTC"
+pub utc : Zone
+utc = Utc
+
+
+--| The zone of the host, by the name its time zone database gives it;
+--| `utc` when the host gives no name.
+pub here : ⊤ → Zone
+here ⊤ =
+    options =
+        Js.call (Js.construct (Js.get (Js.global "Intl") "DateTimeFormat") []) "resolvedOptions" []
+    zone = Js.get options "timeZone"
+    if Js.typeIs zone "string" then
+        Maybe.withDefault (named (Js.to zone)) utc
+    else
+        utc
+
+
+--| The zone of this name in the host's time zone database, as
+--| `"Europe/Berlin"`; `Nothing` for a name the host does not know.
+--|
+--|     named "Not/AZone" == Nothing
+pub named : String → Maybe Zone
+named zoneName =
+    if zoneName == "UTC" then
+        Just Utc
+    else
+        -- Total: the one error the formatter can throw is caught here.
+        Js.pure λ⊤ →
+            Js.catchIf
+                (λ⊤ →
+                    if Js.isUndefined (formatterOf zoneName) then Nothing else Just (Named zoneName)
+                )
+                (λerror → Js.instanceOf error (Js.global "RangeError"))
+                λ_ → Nothing
+
+
+-- The host's formatter of each zone that `named` has made, by name. A
+-- `Zone` is a plain value, so that `==` and `compare` derive, and making a
+-- formatter costs far more than asking one for an offset.
+formatters : Js.Value
+formatters = Js.pure λ⊤ → Js.construct (Js.global "Map") []
+
+
+-- The zone's formatter, asked for its offset only, made on the first
+-- call for the name. ECMA-402 throws a `RangeError` for a time zone it
+-- does not know: `named` catches that one and nothing else (CLAUDE.md
+-- rule 9), so a `Named` zone always has its formatter here.
+formatterOf : String → Js.Value
+formatterOf zoneName =
+    known = Js.call formatters "get" [ Js.from zoneName ]
+    if Js.isUndefined known then
+        made =
+            Js.construct (Js.get (Js.global "Intl") "DateTimeFormat")
+                [ Js.from "en-US"
+                , Js.object
+                    [ ( "timeZone", Js.from zoneName ), ( "timeZoneName", Js.from "longOffset" ) ]
+                ]
+        _ = Js.call formatters "set" [ Js.from zoneName, made ]
+        made
+    else
+        known
+
+
+--| The zone's name: `"UTC"`, or the name of the host's database.
+pub name : Zone → String
+name zone =
+    case zone of
+        Utc →
+            "UTC"
+
+        Named zoneName →
+            zoneName
+
+
+--| A month of the year.
+pub type Month
+    = Jan
+    | Feb
+    | Mar
+    | Apr
+    | May
+    | Jun
+    | Jul
+    | Aug
+    | Sep
+    | Oct
+    | Nov
+    | Dec
+
+
+--| A day of the week.
+pub type Weekday
+    = Mon
+    | Tue
+    | Wed
+    | Thu
+    | Fri
+    | Sat
+    | Sun
+
+
+--| A moment as a clock and a calendar in one zone show it. `offset` is
+--| the zone's distance from UTC at that moment, in minutes east.
+pub type alias Parts =
+    year : Int
+    month : Month
+    day : Int
+    weekday : Weekday
+    hour : Int
+    minute : Int
+    second : Int
+    millis : Int
+    offset : Int
+
+
+--| The calendar's and the clock's parts of a moment, in a zone.
+--|
+--|     (toParts (fromMillis 0) utc).year == 1970
+--|     (toParts (fromMillis 0) utc).weekday == Thu
+pub toParts : Posix, Zone → Parts
+toParts (Posix ms) zone =
+    case zone of
+        Utc →
+            partsAt ms 0
+
+        Named zoneName →
+            -- Only `named` makes a `Named` zone, and it put the zone's
+            -- formatter in `formatters` first, so this lookup makes none
+            -- and throws nothing.
+            offset = Js.pure λ⊤ → offsetMillis (formatterOf zoneName) ms
+            partsAt (ms + offset) offset
+
+
+-- A `Date` holds ±8.64 × 10¹⁵ milliseconds (ECMA-262 §21.4.1.1), and the
+-- formatter throws outside them, so a moment outside takes the offset at
+-- the nearer end.
+dateLimit : Int
+dateLimit = 8640000000000000
+
+
+-- The zone's offset at a moment, in milliseconds east: the formatter's
+-- `longOffset` name, `GMT` or `GMT+01:00` (a zone's local mean time can
+-- carry seconds, `GMT+00:53:28`).
+offsetMillis : Js.Value, Int → Int
+offsetMillis format ms =
+    at = Basics.clamp ms (negate dateLimit) dateLimit
+    Js.pure λ⊤ →
+        parts = Js.call format "formatToParts" [ Js.construct (Js.global "Date") [ Js.from at ] ]
+        found =
+            Js.call parts "find"
+                [ Js.method λ_ part → Js.same (Js.get part "type") (Js.from "timeZoneName") ]
+        gmtOffset (Js.to (Js.get found "value"))
+
+
+-- `GMT`, `GMT+01:00`, `GMT-05:30` or `GMT+00:53:28` in milliseconds. The
+-- formatter writes no other form for `longOffset` (ECMA-402 §11.5.5).
+gmtOffset : String → Int
+gmtOffset text =
+    found = Js.call gmtPattern "exec" [ Js.from text ]
+    if Js.isNull found then
+        0
+    else
+        field i = number (Js.at found i)
+        (if Js.same (Js.at found 1) (Js.from "-") then -1 else 1)
+            * (field 2 * 3600000 + field 3 * 60000 + field 4 * 1000)
+
+
+gmtPattern : Js.Value
+gmtPattern = Js.regExp "^GMT(?:([+-])(\\d{2}):(\\d{2})(?::(\\d{2}))?)?$" ""
+
+
+dayMillis : Int
+dayMillis = 86400000
+
+
+-- Division that rounds towards negative infinity, for moments before the
+-- epoch.
+floorDiv : Int, Int → Int
+floorDiv n k = (n - Int.mod n k) // k
+
+
+-- The parts of a moment `local` milliseconds after the epoch on the
+-- zone's clock. `offset` is in milliseconds; `Parts` holds minutes.
+partsAt : Int, Int → Parts
+partsAt local offset =
+    days = floorDiv local dayMillis
+    inDay = Int.mod local dayMillis
+    civil = civilFromDays days
+    { year = civil.year
+    , month = monthOf civil.month
+    , day = civil.day
+    , weekday = weekdayOf (Int.mod (days + 3) 7)
+    , hour = inDay // 3600000
+    , minute = Int.mod (inDay // 60000) 60
+    , second = Int.mod (inDay // 1000) 60
+    , millis = Int.mod inDay 1000
+    , offset = offset // 60000
+    }
+
+
+-- Howard Hinnant's `civil_from_days`: the proleptic Gregorian date of a
+-- count of days since 1970-01-01.
+civilFromDays : Int → { year : Int, month : Int, day : Int }
+civilFromDays count =
+    z = count + 719468
+    era = floorDiv z 146097
+    doe = z - era * 146097
+    yoe = (doe - doe // 1460 + doe // 36524 - doe // 146096) // 365
+    doy = doe - (365 * yoe + yoe // 4 - yoe // 100)
+    mp = (5 * doy + 2) // 153
+    day = doy - (153 * mp + 2) // 5 + 1
+    month = if mp < 10 then mp + 3 else mp - 9
+    { year = yoe + era * 400 + (if month ≤ 2 then 1 else 0), month = month, day = day }
+
+
+-- Its inverse, `days_from_civil`.
+daysFromCivil : Int, Int, Int → Int
+daysFromCivil year month day =
+    y = if month ≤ 2 then year - 1 else year
+    era = floorDiv y 400
+    yoe = y - era * 400
+    doy = (153 * (if month > 2 then month - 3 else month + 9) + 2) // 5 + day - 1
+    doe = yoe * 365 + yoe // 4 - yoe // 100 + doy
+    era * 146097 + doe - 719468
+
+
+monthOf : Int → Month
+monthOf n =
+    case n of
+        1 →
+            Jan
+
+        2 →
+            Feb
+
+        3 →
+            Mar
+
+        4 →
+            Apr
+
+        5 →
+            May
+
+        6 →
+            Jun
+
+        7 →
+            Jul
+
+        8 →
+            Aug
+
+        9 →
+            Sep
+
+        10 →
+            Oct
+
+        11 →
+            Nov
+
+        _ →
+            Dec
+
+
+monthNumber : Month → Int
+monthNumber month =
+    case month of
+        Jan →
+            1
+
+        Feb →
+            2
+
+        Mar →
+            3
+
+        Apr →
+            4
+
+        May →
+            5
+
+        Jun →
+            6
+
+        Jul →
+            7
+
+        Aug →
+            8
+
+        Sep →
+            9
+
+        Oct →
+            10
+
+        Nov →
+            11
+
+        Dec →
+            12
+
+
+-- 0 is Monday: 1970-01-01, day 0, was a Thursday, so `days + 3`.
+weekdayOf : Int → Weekday
+weekdayOf n =
+    case n of
+        0 →
+            Mon
+
+        1 →
+            Tue
+
+        2 →
+            Wed
+
+        3 →
+            Thu
+
+        4 →
+            Fri
+
+        5 →
+            Sat
+
+        _ →
+            Sun
+
+
+-- The days of a month, by the Gregorian rule for leap years.
+daysIn : Int, Int → Int
+daysIn year month =
+    if month == 2 then
+        if Int.mod year 4 == 0 && (Int.mod year 100 ≠ 0 || Int.mod year 400 == 0) then 29 else 28
+    else if month == 4 || month == 6 || month == 9 || month == 11 then
+        30
+    else
+        31
+
+
+--| The moment that an RFC 3339 date or date-time names. It accepts a
+--| date, `2016-02-18` (midnight UTC); or a date, `T`, `t` or one space,
+--| and a time, `03:22`, `03:22:56` or `03:22:56.637` (one to nine digits
+--| of fraction, cut to milliseconds), then `Z`, `z`, `+01:00`, `+0100`
+--| or `+01`, or nothing (UTC). A year is four digits, or a sign and six
+--| (`+275760`), as `toIso8601` writes years outside 0 to 9999. Any other
+--| text, and a field out of its range, is `Nothing`.
+--|
+--|     fromIso8601 "1970-01-02" == Just (fromMillis 86400000)
+--|     fromIso8601 "2016-02-30" == Nothing
+--|     fromIso8601 "1970-01-01T01:00:00+01:00" == Just (fromMillis 0)
+pub fromIso8601 : String → Maybe Posix
+fromIso8601 text = Js.pure λ⊤ →
+    found = Js.call isoPattern "exec" [ Js.from text ]
+    if Js.isNull found then
+        Nothing
+    else
+        field i = number (Js.at found i)
+        -- `Number` reads the year's sign.
+        year = field 1
+        month = field 2
+        day = field 3
+        hour = field 4
+        minute = field 5
+        second = field 6
+        offset =
+            (if Js.same (Js.at found 9) (Js.from "-") then -1 else 1) * (field 10 * 60 + field 11)
+        if
+            Js.same (Js.at found 1) (Js.from "-000000")
+                || month < 1
+                || month > 12
+                || day < 1
+                || day > daysIn year month
+        then
+            Nothing
+        else if hour > 23 || minute > 59 || second > 59 || field 10 > 23 || field 11 > 59 then
+            Nothing
+        else
+            inRange
+                (daysFromCivil year month day * dayMillis
+                    + hour * 3600000
+                    + minute * 60000
+                    + second * 1000
+                    + fraction (Js.at found 7)
+                    - offset * 60000
+                )
+
+
+-- RFC 3339's date and date-time, and `toIso8601`'s years outside 0 to
+-- 9999. The groups: 1 the year, 2 the month, 3 the day, 4 the hour, 5 the
+-- minute, 6 the second, 7 the fraction's digits, 8 `Z`, 9 the offset's
+-- sign, 10 its hours and 11 its minutes. `\d` is ASCII's ten digits.
+isoPattern : Js.Value
+isoPattern =
+    Js.regExp
+        "^([+-]\\d{6}|\\d{4})-(\\d{2})-(\\d{2})(?:[Tt ](\\d{2}):(\\d{2})(?::(\\d{2})(?:\\.(\\d{1,9}))?)?(?:([Zz])|([+-])(\\d{2})(?::?(\\d{2}))?)?)?$"
+        ""
+
+
+-- A group of digits as a number; 0 for a group that matched nothing. The
+-- sign of a year is not a digit: `Number` reads it.
+number : Js.Value → Int
+number group = if Js.isUndefined group then 0 else Js.to (Js.apply (Js.global "Number") [ group ])
+
+
+-- A fraction's digits as milliseconds, cut after the third.
+fraction : Js.Value → Int
+fraction digits =
+    if Js.isUndefined digits then
+        0
+    else
+        number
+            (Js.call (Js.call digits "padEnd" [ Js.from 3, Js.from "0" ]) "slice"
+                [ Js.from 0, Js.from 3 ]
+            )
+
+
+-- A moment that a host's `Date` can hold, or nothing.
+inRange : Int → Maybe Posix
+inRange ms = if ms < negate dateLimit || ms > dateLimit then Nothing else Just (Posix ms)
+
+
+--| The moment in UTC as RFC 3339 writes it, with milliseconds:
+--| `Date.prototype.toISOString`'s form, and its `±YYYYYY` for a year
+--| outside 0 to 9999.
+--|
+--|     toIso8601 (fromMillis 0) == "1970-01-01T00:00:00.000Z"
+--|     toIso8601 (fromMillis (-1)) == "1969-12-31T23:59:59.999Z"
+pub toIso8601 : Posix → String
+toIso8601 (Posix ms) =
+    p = partsAt ms 0
+    year =
+        if p.year ≥ 0 && p.year ≤ 9999 then
+            String.padLeft (String.fromInt p.year) 4 '0'
+        else if p.year < 0 then
+            "-" ++ String.padLeft (String.fromInt (negate p.year)) 6 '0'
+        else
+            "+" ++ String.padLeft (String.fromInt p.year) 6 '0'
+    two n = String.padLeft (String.fromInt n) 2 '0'
+    "${year}-${two (monthNumber p.month)}-${two p.day}T${two p.hour}:${two p.minute}:${two p.second}.${String.padLeft (String.fromInt p.millis) 3 '0'}Z"
