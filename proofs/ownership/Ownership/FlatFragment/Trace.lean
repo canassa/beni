@@ -1,4 +1,4 @@
-import Ownership.FlatFragment.Dictionary
+import Ownership.FlatFragment.View
 
 /-! The first flat fragment: the structural induction and the public trace corollary. -/
 
@@ -418,6 +418,25 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
       exact ⟨receiver, by simp, useMember⟩
     obtain ⟨_, _, _, success, failure⟩ :=
       copy_preserved (depth := depth) inv typed covered defaultConfig accepted
+    constructor
+    · intro value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        shaped, tags, chains, deep⟩ := success value vs' run
+      exact ⟨actual, hs', gamma', heapRun,
+        Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
+    · exact failure
+  | @view receiver front =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have covered : ∀ use ∈ atomUses receiver, use ∈ live := by
+      intro use useMember
+      apply usesLive use
+      rw [uses_view]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨receiver, by simp, useMember⟩
+    obtain ⟨_, _, _, success, failure⟩ :=
+      Ownership.FlatFragment.View.view_preserved (depth := depth) inv typed covered defaultConfig accepted
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
@@ -1562,6 +1581,127 @@ theorem dictOfDicts_traces_agree (a : Accepted) (ok : check dictOfDicts = .ok a)
   | .error message => message == "Dead: an old holder is live after the demand"
   | .ok _ => false
 #guard match ValueSemantics.run dictListDictsAlias 100, InPlaceSemantics.run dictListDictsAlias 100 with
+  | .ok a, .ok b => a.finalValue == .int 1 && b.finalValue == .int 2
+  | _, _ => false
+
+/-! ### Views (#169)
+
+`viewWrite` makes a suffix view of `[1, 2, 3]`, pushes onto the view after
+the source's last use, and reads the pushed element: accepted, one in-place
+write, `9`; the write is linked, so it rewrites the source too.
+`viewReadSource` reads the view and then the source: accepted, `[2, 3]`.
+`viewReadBoth` reads both sides of the split (the `readBoth` shape):
+accepted, `[5, 4]`. `viewEmpty` makes a view of `[]`, which the heap side
+allocates with no link, and pushes onto it: accepted, `1`.
+`viewWriteLive` pushes onto the view while the source is live, and
+`viewSourceWriteLive` pushes onto the source while the view is live: both
+are refused by the Dead test, and their two runs differ. -/
+
+def viewWrite : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1, .int 2, .int 3])
+  (.letE 1 (.prim (.view true) [.var 0])
+  (.letE 2 (.prim .push [.var 1, .int 9])
+  (.prim .at [.var 2, .int 2, .int 0])))) }
+
+theorem viewWrite_flat : FlatANF0 viewWrite.main :=
+  .letE (.literal .int .int) (.letE (.view true) (.letE .push .atRead))
+
+def viewReadSource : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1, .int 2, .int 3])
+  (.letE 1 (.prim (.view false) [.var 0])
+  (.letE 2 (.prim .length [.var 1])
+  (.letE 3 (.prim .length [.var 0])
+  (.prim .record [.var 2, .var 3]))))) }
+
+theorem viewReadSource_flat : FlatANF0 viewReadSource.main :=
+  .letE (.literal .int .int) (.letE (.view false) (.letE .length (.letE .length .record)))
+
+def viewReadBoth : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 4, .int 5, .int 6])
+  (.letE 1 (.prim (.view true) [.var 0])
+  (.letE 2 (.prim .at [.var 1, .int 0, .int 0])
+  (.letE 3 (.prim .at [.var 0, .int 0, .int 0])
+  (.prim .record [.var 2, .var 3]))))) }
+
+theorem viewReadBoth_flat : FlatANF0 viewReadBoth.main :=
+  .letE (.literal .int .int) (.letE (.view true) (.letE .atRead (.letE .atRead .record)))
+
+def viewEmpty : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [])
+  (.letE 1 (.prim (.view true) [.var 0])
+  (.letE 2 (.prim .push [.var 1, .int 7])
+  (.prim .length [.var 2])))) }
+
+theorem viewEmpty_flat : FlatANF0 viewEmpty.main :=
+  .letE (.literal .int .int) (.letE (.view true) (.letE .push .length))
+
+def viewWriteLive : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1, .int 2])
+  (.letE 1 (.prim (.view true) [.var 0])
+  (.letE 2 (.prim .push [.var 1, .int 9])
+  (.prim .length [.var 0])))) }
+
+theorem viewWriteLive_flat : FlatANF0 viewWriteLive.main :=
+  .letE (.literal .int .int) (.letE (.view true) (.letE .push .length))
+
+def viewSourceWriteLive : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1, .int 2])
+  (.letE 1 (.prim (.view true) [.var 0])
+  (.letE 2 (.prim .push [.var 0, .int 9])
+  (.prim .length [.var 1])))) }
+
+theorem viewSourceWriteLive_flat : FlatANF0 viewSourceWriteLive.main :=
+  .letE (.literal .int .int) (.letE (.view true) (.letE .push .length))
+
+/-- The flat theorem gives each accepted view program equal traces. -/
+theorem viewWrite_traces_agree (a : Accepted) (ok : check viewWrite = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run viewWrite fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run viewWrite fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree viewWrite a ok viewWrite_flat fuel t run
+
+theorem viewReadSource_traces_agree (a : Accepted) (ok : check viewReadSource = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run viewReadSource fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run viewReadSource fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree viewReadSource a ok viewReadSource_flat fuel t run
+
+theorem viewReadBoth_traces_agree (a : Accepted) (ok : check viewReadBoth = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run viewReadBoth fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run viewReadBoth fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree viewReadBoth a ok viewReadBoth_flat fuel t run
+
+theorem viewEmpty_traces_agree (a : Accepted) (ok : check viewEmpty = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run viewEmpty fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run viewEmpty fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree viewEmpty a ok viewEmpty_flat fuel t run
+
+#guard taggedProbe viewWrite 9
+#guard InPlaceSemantics.writeCount viewWrite 100 == 1
+#guard (check viewReadSource).isOk
+#guard match ValueSemantics.run viewReadSource 100, InPlaceSemantics.run viewReadSource 100 with
+  | .ok a, .ok b => a.reads == b.reads && a.externalReads == b.externalReads &&
+      a.finalValue == b.finalValue && a.finalValue == .record [.int 2, .int 3]
+  | _, _ => false
+#guard (check viewReadBoth).isOk
+#guard match ValueSemantics.run viewReadBoth 100, InPlaceSemantics.run viewReadBoth 100 with
+  | .ok a, .ok b => a.reads == b.reads && a.externalReads == b.externalReads &&
+      a.finalValue == b.finalValue && a.finalValue == .record [.int 5, .int 4]
+  | _, _ => false
+#guard taggedProbe viewEmpty 1
+#guard InPlaceSemantics.writeCount viewEmpty 100 == 1
+#guard match check viewWriteLive with
+  | .error message => message == "Dead: an old holder is live after the demand"
+  | .ok _ => false
+#guard match ValueSemantics.run viewWriteLive 100, InPlaceSemantics.run viewWriteLive 100 with
+  | .ok a, .ok b => a.finalValue == .int 2 && b.finalValue == .int 3
+  | _, _ => false
+#guard match check viewSourceWriteLive with
+  | .error message => message == "Dead: an old holder is live after the demand"
+  | .ok _ => false
+#guard match ValueSemantics.run viewSourceWriteLive 100, InPlaceSemantics.run viewSourceWriteLive 100 with
   | .ok a, .ok b => a.finalValue == .int 1 && b.finalValue == .int 2
   | _, _ => false
 

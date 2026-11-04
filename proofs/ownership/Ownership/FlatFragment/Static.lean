@@ -521,6 +521,10 @@ theorem flat_type_of_typed {declarations : List Decl} {self : Decl} {e : Expr} (
     intro tenv type types typed
     obtain ⟨t, receiverTyped, rfl⟩ := exprType_copy_success (fun _ _ h => atom_type_flat types h) typed
     exact atom_type_flat types receiverTyped
+  | @view receiver front =>
+    intro tenv type types typed
+    obtain ⟨t, receiverTyped, rfl⟩ := exprType_view_success (fun _ _ h => atom_type_flat types h) typed
+    exact atom_type_flat types receiverTyped
   | @prepend item receiver =>
     intro tenv type types typed
     obtain ⟨t, _, receiverTyped, rfl⟩ := exprType_prepend_success (fun _ _ h => atom_type_flat types h) typed
@@ -1145,6 +1149,41 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
       refine ⟨.list t elemT, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
       rw [← first]
       exact .list _ _ _ _ (by simp) elementShape
+  | @view receiver front =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed _ _ defaultConfig accepted
+    obtain ⟨t, receiverTyped, listType⟩ :=
+      exprType_view_success (fun _ _ h => static_atom_type static h) typed
+    subst listType
+    have elemT : FlatType t := by
+      cases static_atom_type static receiverTyped with
+      | list _ elemT => exact elemT
+    obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
+    obtain ⟨r, rest1, receiverRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
+    have restNil' := except_mapM_nil_success restRun
+    subst shape1
+    subst restNil'
+    obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
+    rcases static_atom_list static receiverTyped receiverRun with rfl |
+      ⟨roots, element, certificate, rfl, noUnk, elementShape⟩
+    · rw [primitive_view_bottom_run] at run
+      have equal := Except.ok.inj run
+      have first : Abstract.bottom = result := congrArg Prod.fst equal
+      have second : next = before := (congrArg Prod.snd equal).symm
+      refine ⟨.list t elemT, ?_, ?_⟩
+      · rw [← first]; exact .bottom _
+      · rw [second]; exact fun _ escaped => escaped
+    · rw [primitive_view_run] at run
+      obtain ⟨first, second⟩ := Prod.mk.inj (Except.ok.inj run)
+      refine ⟨.list t elemT, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
+      rw [← first]
+      split
+      · exact .list _ _ _ _ (by simp) elementShape
+      · refine .list _ _ _ _ ?_ elementShape
+        intro member
+        rcases mem_union_cases _ _ _ member with old | new
+        · exact noUnk old
+        · simp at new
   | @prepend item receiver =>
     intro aenv tenv before next type bound after site result inferenceFuel ctx
       static typed _ _ defaultConfig accepted

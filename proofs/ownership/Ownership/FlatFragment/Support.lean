@@ -165,6 +165,7 @@ inductive FlatANF0 : Expr → Prop where
   | dictRemove : FlatANF0 (.prim .dictRemove [receiver, key])
   | dictGet : FlatANF0 (.prim .dictGet [receiver, key])
   | dictSize : FlatANF0 (.prim .dictSize [receiver])
+  | view (front : Bool) : FlatANF0 (.prim (.view front) [receiver])
 
 theorem lookup_option_of_success {α : Type} [Inhabited α] {env : Env α} {key : Var} {value : α}
     (run : lookup env key = .ok value) :
@@ -1899,6 +1900,9 @@ theorem uses_dictRemove (receiver key : Atom) :
 theorem uses_dictGet (receiver key : Atom) :
     uses (.prim .dictGet [receiver, key]) = atomsUses [receiver, key] := rfl
 
+theorem uses_view (front : Bool) (receiver : Atom) :
+    uses (.prim (.view front) [receiver]) = atomsUses [receiver] := rfl
+
 theorem uses_dictSize (receiver : Atom) :
     uses (.prim .dictSize [receiver]) = atomsUses [receiver] := rfl
 
@@ -1929,6 +1933,7 @@ theorem flatExpr_default_uses (flat : FlatANF0 expression) :
   | dictRemove => simp_all [usesWith, uses, usesArms, Config.has]
   | dictGet => simp_all [usesWith, uses, usesArms, Config.has]
   | dictSize => simp_all [usesWith, uses, usesArms, Config.has]
+  | view _ => simp_all [usesWith, uses, usesArms, Config.has]
 
 end Ownership.FlatFragment.Liveness
 

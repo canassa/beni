@@ -471,6 +471,15 @@ The third, the view step's split on the source's emptiness and its naming (`link
 `flatInvariant_heap_frame` takes the changed arrays as a set (`inside`), and the bound on the arrays a binding reaches comes from the heap typing (`StateKinded.reach_bound`), not from the contents of one hole.
 No program of the fragment makes a link yet, so `accepted_flat_anf_traces_agree` covers the same programs.
 
+As built (2026-11-04, #169, the third of the pull requests for views): `view` in the flat fragment.
+`FlatANF0.view front` (`Support.lean`); `View.lean`, between `Dictionary` and `Trace`, proves `view_preserved`.
+The heap side allocates `viewOf front ys` at the next address and links it to the source when the source is nonempty; an empty source gives a fresh `[]` with no link. So the step splits on the source's emptiness: `linksValid_push` without a link, `linksValid_viewed` with one (its `lookup` and `nonempty` come from the run). This is the third obligation of the review of PR #273.
+The post-naming adds the new address to every origin that names the source (`view_naming`): it keeps every old array's origins and names the view by exactly its source's origins, so `linkClosed_viewed` keeps the closure, and the view's root is named by a root of its abstract, `union roots [fresh]`.
+The view's elements are a sublist of the source's (`viewOf_sublist`), so the source's exclusivity and spine certificates carry over (`representsMany_sublist_merge`, `view_footprint_nodup`, `view_footprint_once`), and the view's array gets the source's type in the heap typing (`view_kinds`).
+The probes `viewWrite`, `viewReadSource`, `viewReadBoth`, `viewEmpty`, `viewWriteLive` and `viewSourceWriteLive` (`Trace.lean`) check an accepted linked write through a view after the source's last use, reads of both sides (the `readBoth` shape), an empty source, and the two write-while-live directions, which the Dead test refuses.
+`accepted_flat_anf_traces_agree` keeps its statement and covers the larger fragment.
+Open on #169, and outside the flat fragment: both clauses under a call, captures, function-valued inputs, non-variable arguments, the `.app` wiring and R2. They need #165 step 3.
+
 ## Complete case inventory
 
 The baseline contains 12 expression constructors and 25 primitive constructors.

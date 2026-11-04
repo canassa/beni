@@ -335,7 +335,8 @@ Every preservation case supplies deep tags for its result, so binders and later 
 `FlatInvariant.heapKinds` types every array at its source type, so a dictionary's array is never a link end (#169).
 Every preservation case supplies this typing for its result.
 
-The fragment excludes calls, closures, views, `construct`, builders, scopes, `traverse`, `focus`, dictionary forms and all other primitives.
+The fragment excludes calls, closures, `construct`, builders, scopes, `traverse`, `focus`, `dictFocus` and all other primitives.
+It contains `view` since 2026-11-04 (#169): a view of a nonempty list is linked to its source, `push` and `set` write through the link, and the relation keeps the link clauses of `Invariant`.
 The three general obligations remain open.
 
 `Invariant` carries two link clauses since 2026-10-16 (#169, owner decisions q1 and q4): every stored link is valid (`LinksValid`, with the view's contents since 2026-10-17), and linked storage that a live path or an observer protects is named as one array (`LinkNamed`).
