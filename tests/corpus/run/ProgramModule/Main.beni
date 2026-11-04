@@ -1,0 +1,8 @@
+-- A program over a platform whose runtime is a beni module and nothing
+-- else (boundary.md §5.2, *A runtime module without markup*): no runtime
+-- file is written, and the entry file imports `run` from `Rt.mjs`.
+import Rt exposing (Program)
+
+
+main : Program
+main = Rt.program "hello from the module\n"
