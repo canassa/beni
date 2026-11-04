@@ -8,7 +8,9 @@
 --     `Task$andThen` with the rest of the function as one arrow.
 --   - `pick`: a join. The `if` is not in tail position and a branch may
 --     suspend, so what follows it is one `const $k = ($t) => …` written in
---     front of the tree, and each leaf returns `$k(value)`.
+--     front of the tree, and each leaf returns `$k(value)`. Release
+--     specialisation folds the zero arm and keeps the continuation only
+--     on the arm that needs it.
 --   - `total`: a tail-call loop. The fast path stays in the loop — `const`,
 --     `Task$isWaiting`, then the rest of the iteration, which ends the body
 --     and so writes no `continue` (§8, *In place, when nothing captures*) — and

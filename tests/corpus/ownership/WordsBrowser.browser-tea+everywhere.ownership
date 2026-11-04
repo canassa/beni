@@ -4,16 +4,16 @@ module WordsBrowser
   40:15 update model: accepted param
   40:33 List.push model.items: accepted param
   43:15 update model: accepted param
-  62:14 construction rows: accepted fresh
-  72:14 construction rows: rejected call: cmd#Cmd.0[*]#Keyed.0[*]⋆ may hold it through the call at 71:11, and is read at 73:5 (approx)
+  62:14 construction rows: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  72:14 construction rows: rejected escaped: cmd, a closure holding it, is used at 73:5; it was given to JavaScript, or kept by a callee (approx)
   78:5 entry WordsBrowser.update model.items: accepted entry
   78:5 update entry WordsBrowser.update model: accepted entry
-  summary update: π2 RAW{draft, items}, π2.draft R, π2.items RAW[storage], π2.items[*] A; res .0 π2 π2◦, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 shared(Cmd.none)#Cmd.0
+  summary update: π1 R, π1#Key.0 R, π2 RAW{draft, items}, π2.draft R, π2.items RAW[storage], π2.items[*] A; res .0 π2 π2◦, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 shared(Cmd.none)#Cmd.0
   summary view: π1.items RA; res ⟨render⟩ fresh1{lost}r{lost}, ⟨render⟩⋆ ~π1.items
   summary keys: unused
-  summary keysHeld: res .0#Cmd.0 fresh2{lost}r{lost}, .0#Cmd.0[*] condition(fresh3){lost}r{lost}, .0#Cmd.0[*]#Keyed.0 fresh4{lost}r{lost} ~condition(fresh5), .0#Cmd.0[*]#Keyed.0[*] fresh8{lost}r{lost} ~condition(fresh9), .0#Cmd.0[*]#Keyed.0[*]⋆ ~condition(fresh14) ~fresh1 ~fresh14{lost}r{lost} ~λr{lost}, .0#Cmd.0[*]#Keyed.2 ~λ?r{lost}, .0#Cmd.0[*]#Keyed.2◇ shared(Task.emptySlots).log#Just.0 ~condition(fresh10) ~⊤{lost}r{lost}, .0#Cmd.0[*]#KeyedNow.0 fresh6{lost}r{lost} ~condition(fresh7), .0#Cmd.0[*]#KeyedNow.0[*] fresh11{lost}r{lost} ~condition(fresh12), .0#Cmd.0[*]#KeyedNow.0[*]⋆ ~condition(fresh15) ~fresh1 ~fresh15{lost}r{lost} ~λr{lost}, .0#Cmd.0[*]#KeyedNow.2 ~λ?r{lost}, .0#Cmd.0[*]#KeyedNow.2◇ shared(Task.emptySlots).log#Just.0 ~condition(fresh13) ~⊤{lost}r{lost}
-  demands 5: accepted 4 (fresh 1, call 0, param 2, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1
+  summary keysHeld: res .0#Cmd.0 fresh2{lost}r{lost}, .0#Cmd.0[*]#Keyed.0 fresh3{lost}r{lost}, .0#Cmd.0[*]#Keyed.0[*]#Storage.1 λr{lost}, .0#Cmd.0[*]#Keyed.0[*]#Storage.1◇ esc1, .0#Cmd.0[*]#Keyed.0[*]#Storage.2 fresh7{lost}r{lost}, .0#Cmd.0[*]#Keyed.2#JobStorage.0 fresh5{lost}r{lost}, .0#Cmd.0[*]#KeyedNow.0 fresh4{lost}r{lost}, .0#Cmd.0[*]#KeyedNow.0[*]#Storage.1 λr{lost}, .0#Cmd.0[*]#KeyedNow.0[*]#Storage.1◇ esc1, .0#Cmd.0[*]#KeyedNow.0[*]#Storage.2 fresh8{lost}r{lost}, .0#Cmd.0[*]#KeyedNow.2#JobStorage.0 fresh6{lost}r{lost}
+  demands 5: accepted 3 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 2
   records 4: accepted 4, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
-total 5: accepted 4 (fresh 1, call 0, param 2, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1
+total 5: accepted 3 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 2
 records 4: accepted 4, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
-cause call 1
+cause escaped 2
