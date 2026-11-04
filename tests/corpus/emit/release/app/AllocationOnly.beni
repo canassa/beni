@@ -1,0 +1,18 @@
+-- #1857: an unread impure factory call goes; live calls retain distinct mutable identities.
+import Node
+import Ref
+
+
+unused : Ref.Ref Int
+unused = Ref.make 99
+
+
+always : ⊤ → Bool
+always ⊤ = True
+
+
+main : Node.Program
+main =
+    live = List.map [ 1, 2, 3 ] Ref.make
+    value = if always ⊤ then 7 else Ref.get unused
+    Node.print "${value},${List.sum (List.map live Ref.get)}"

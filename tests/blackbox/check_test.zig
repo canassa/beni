@@ -2377,3 +2377,7 @@ test "ownership words: foreign record fields retain returned and callback-result
 test "ownership words: native event containers retain element aliases" {
     try expectFlips("ownership/core/NativeEvents.beni", &.{"--core"});
 }
+
+test "ownership words: runtime array stores retain captured aliases" {
+    try expectFlips("ownership/core/JsArrayRuntimeWords.beni", &.{"--core"});
+}

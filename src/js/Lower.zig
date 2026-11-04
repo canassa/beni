@@ -12420,9 +12420,19 @@ pub const Lowerer = struct {
     // ownership pin begin: arrayAllocate
     // ownership pin begin: arraySet
     // ownership pin begin: arrayDone
+    // ownership pin begin: arrayGet
+    // ownership pin begin: arrayLength
+    // ownership pin begin: arrayWrite
     fn typedArrayOperation(l: *Lowerer, out: *StmtList, which: JsIntrinsic.Which, values: []const Node.Index, p: u32) !Node.Index {
         switch (which) {
             .arrayAllocate => {
+                // Empty native capacity is a literal: no constructor call
+                // or RangeError is possible, and unused factories can prove
+                // allocation-only without trusting a host call.
+                if (!l.in.development and l.b.tagOf(values[0]) == .number) {
+                    const d = l.b.dataOf(values[0]);
+                    if (std.mem.eql(u8, l.b.string_bytes.items[d.lhs..][0..d.rhs], "0")) return l.arrayNode(&.{}, p);
+                }
                 const ctor = try l.member(try l.add(.global_this, p, 0, 0), try l.interner.getOrPut(l.gpa, "Array"), p);
                 const n = try l.bindSubject(out, values[0], p);
                 const size = try l.condOf(try l.binary(.gt, n, try l.intNode(0, p), p), n, try l.intNode(0, p), p);
@@ -12435,6 +12445,13 @@ pub const Lowerer = struct {
                 try out.append(l.scratch, try l.add(.assign_stmt, p, slot.int(), values[2].int()));
                 return builder;
             },
+            .arrayGet => return l.add(.index_get, p, values[0].int(), values[1].int()),
+            .arrayLength => return l.member(values[0], try l.interner.getOrPut(l.gpa, "length"), p),
+            .arrayWrite => {
+                const slot = try l.add(.index_get, p, values[0].int(), values[1].int());
+                try out.append(l.scratch, try l.add(.assign_stmt, p, slot.int(), values[2].int()));
+                return l.nullNode(p);
+            },
             .arrayDone => {
                 const builder = try l.bindSubject(out, values[0], p);
                 const size = try l.member(builder, try l.interner.getOrPut(l.gpa, "length"), p);
@@ -12445,6 +12462,9 @@ pub const Lowerer = struct {
         }
     }
 
+    // ownership pin end: arrayWrite
+    // ownership pin end: arrayLength
+    // ownership pin end: arrayGet
     // ownership pin end: arrayDone
     // ownership pin end: arraySet
     // ownership pin end: arrayAllocate
@@ -12492,8 +12512,8 @@ pub const Lowerer = struct {
     /// A first-class typed intrinsic, with no sibling export or import.
     fn jsTypedValue(l: *Lowerer, which: JsIntrinsic.Which, p: u32) !Node.Index {
         const arity: usize = switch (which) {
-            .optMatch, .arraySet => 3,
-            .any_unpack_opt, .schemaIdentity, .optWithDefault, .arrayDone => 2,
+            .optMatch, .arraySet, .arrayWrite => 3,
+            .any_unpack_opt, .schemaIdentity, .optWithDefault, .arrayDone, .arrayGet => 2,
             else => 1,
         };
         var names: [3]JsIr.NameIndex = undefined;
@@ -12509,7 +12529,7 @@ pub const Lowerer = struct {
             return l.arrowOf(names[0..arity], body.items, p);
         }
         if (which == .some) return l.optSomeArrow(names[0], values[0], p);
-        if (which == .arrayAllocate or which == .arraySet or which == .arrayDone) {
+        if (which == .arrayAllocate or which == .arraySet or which == .arrayDone or which == .arrayGet or which == .arrayLength or which == .arrayWrite) {
             var body: StmtList = .empty;
             const result = try l.typedArrayOperation(&body, which, values[0..arity], p);
             try body.append(l.scratch, try l.returnStmt(result, p));
@@ -12767,7 +12787,7 @@ pub const Lowerer = struct {
                 l.b.markCell(object_);
                 break :blk object_;
             },
-            W.arrayAllocate, W.arraySet, W.arrayDone => l.typedArrayOperation(out, which, v, p),
+            W.arrayAllocate, W.arraySet, W.arrayDone, W.arrayGet, W.arrayLength, W.arrayWrite => l.typedArrayOperation(out, which, v, p),
             W.optNone, W.cellRead, W.cellWrite => unreachable,
             W.none => l.optNone(p),
             W.some => if (l.optPlainAt(intrinsic)) v[0] else l.call(try l.optCoreValue("some", p), &.{v[0]}, p),

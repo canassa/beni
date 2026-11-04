@@ -1,0 +1,27 @@
+-- #1873: final top-level pruning retains the inert-template rule.
+import Node
+import Probe
+import Ref
+
+
+text : String
+text = Probe.text ⊤
+
+
+unused : String
+unused = "unread template ${text}"
+
+
+allocated : Ref.Ref String
+allocated = Ref.make unused
+
+
+always : ⊤ → Bool
+always ⊤ = True
+
+
+main : Node.Program
+main =
+    live = List.map [ "a", "b" ] Ref.make
+    value = if always ⊤ then text else Ref.get allocated
+    Node.print (value ++ String.join (List.map live Ref.get) "")

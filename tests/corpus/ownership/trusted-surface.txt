@@ -434,3 +434,8 @@ core Browser.Host.Event.rendererEarlyRemember ownership/core/NativeEvents.beni -
 core Browser.Host.Event.rendererEarlyValue ownership/core/NativeEvents.beni - M3.rendererEarlyValue
 core Browser.Host.Event.rendererEarlyChecked ownership/core/NativeEvents.beni - M3.rendererEarlyChecked
 core Browser.Host.Event.rendererEarlySelectedIndex ownership/core/NativeEvents.beni - M3.rendererEarlySelectedIndex
+# Core-private runtime capacity operations have conservative shared-storage rows.
+# No native result is promised fresh; borrowed reads observe trusted initialized slots.
+core Js.Array.arrayGet ownership/core/JsArrayRuntimeWords.beni - Array.arrayGet
+core Js.Array.arrayLength ownership/core/JsArrayRuntimeWords.beni - Array.arrayLength
+core Js.Array.arrayWrite ownership/core/JsArrayRuntimeWords.beni 3:escaped>borrowed Array.arrayWrite

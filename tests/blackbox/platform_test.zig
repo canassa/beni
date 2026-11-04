@@ -571,23 +571,13 @@ test "a platform whose runtime module is its whole runtime writes no runtime fil
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), built.exit_code);
     try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
-    // Task's typed scheduler (`workers-task-storage.md`) reaches `Js.Chain`,
-    // `Js.Protocol` and the generated `Browser.Host` scheduling natives, each
-    // with its generated sibling: core's, not a platform runtime file.
+    // Lazy Task hooks reach the bridge, FIFO and timer native; these are
+    // core modules rather than a platform runtime file.
     try testing.expectEqualDeep(@as([]const []const u8, &.{
         "Main.mjs",
         "Main.mjs.map",
         "_core/Basics.mjs",
         "_core/Basics.mjs.map",
-        "_core/Browser/Host/Immediate.foreign.mjs",
-        "_core/Browser/Host/Immediate.mjs",
-        "_core/Browser/Host/Immediate.mjs.map",
-        "_core/Browser/Host/MessageChannel.foreign.mjs",
-        "_core/Browser/Host/MessageChannel.mjs",
-        "_core/Browser/Host/MessageChannel.mjs.map",
-        "_core/Browser/Host/MessagePort.foreign.mjs",
-        "_core/Browser/Host/MessagePort.mjs",
-        "_core/Browser/Host/MessagePort.mjs.map",
         "_core/Browser/Host/Timers.foreign.mjs",
         "_core/Browser/Host/Timers.mjs",
         "_core/Browser/Host/Timers.mjs.map",
@@ -595,19 +585,18 @@ test "a platform whose runtime module is its whole runtime writes no runtime fil
         "_core/Js.mjs.map",
         "_core/Js/Chain.mjs",
         "_core/Js/Chain.mjs.map",
+        "_core/Js/Fifo.mjs",
+        "_core/Js/Fifo.mjs.map",
         "_core/Js/Protocol.mjs",
         "_core/Js/Protocol.mjs.map",
         "_core/Js/Runtime.foreign.mjs",
         "_core/Js/Runtime.mjs",
         "_core/Js/Runtime.mjs.map",
-        "_core/List.foreign.mjs",
-        "_core/List.mjs",
-        "_core/List.mjs.map",
+        "_core/Js/TaskHooks.mjs",
+        "_core/Js/TaskHooks.mjs.map",
         "_core/Record.foreign.mjs",
         "_core/Record.mjs",
         "_core/Record.mjs.map",
-        // `Rt`'s `stop` names `Task.shutdown` behind a test a release
-        // build folds (`boundary.md` §9.8.14, the size pass's amendment).
         "_core/Task.mjs",
         "_core/Task.mjs.map",
         "_main.mjs",

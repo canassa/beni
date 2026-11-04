@@ -102,6 +102,7 @@ const SchemaValid = @import("SchemaValid.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
 const SchemaShare = @import("SchemaShare.zig");
 const SchemaCtor = @import("SchemaCtor.zig");
+const Allocation = @import("Allocation.zig");
 const Spec = @import("Spec.zig");
 const RepKeys = @import("RepKeys.zig");
 const Sibling = @import("Sibling.zig");
@@ -8039,6 +8040,40 @@ const Emitter = struct {
             }
         }
         const count = ids.count();
+        // Resolve only statically named emitted functions. Unknown siblings,
+        // indirect calls and generators never qualify as allocation-only.
+        const allocation_modules = try e.scratch.alloc(Allocation.Module, todo.len);
+        const allocation_functions = try e.scratch.alloc(?Allocation.Function, count);
+        @memset(allocation_functions, null);
+        const duplicate_functions = try e.scratch.alloc(bool, count);
+        @memset(duplicate_functions, false);
+        for (todo, gids, 0..) |i, gid, at| {
+            const lowered = &(slots[i].lowered orelse continue);
+            if (lowered.diagnostics.len != 0) continue;
+            const ir = &lowered.ir;
+            allocation_modules[at] = .{ .ir = ir, .plan = &slots[i].plan, .globals = gid };
+            for (ir.extraSlice(ir.body, JsIr.Node.Index)) |stmt| {
+                if (slots[i].plan.isDropped(stmt)) continue;
+                const function = switch (ir.tag(stmt)) {
+                    .func_decl => stmt,
+                    .const_decl => blk: {
+                        const value: JsIr.Node.Index = @fromBackingInt(@intCast(ir.data(stmt).rhs));
+                        if (ir.tag(value) != .arrow or ir.data(value).rhs != JsIr.Node.arrow_plain) continue;
+                        break :blk value;
+                    },
+                    else => continue,
+                };
+                const n: JsIr.NameIndex = @fromBackingInt(@intCast(ir.data(stmt).lhs));
+                const g = if (n.unwrap()) |x| gid[x] else Spec.none;
+                if (g == Spec.none) continue;
+                if (allocation_functions[g] != null) duplicate_functions[g] = true;
+                allocation_functions[g] = .{ .module = @intCast(at), .node = function };
+            }
+        }
+        for (duplicate_functions, 0..) |duplicate, g| if (duplicate) {
+            allocation_functions[g] = null;
+        };
+        const allocation: Allocation.Proof = .{ .modules = allocation_modules, .functions = allocation_functions };
         const Decl = struct { at: u32, stmt: JsIr.Node.Index };
         const decl = try e.scratch.alloc(?Decl, count);
         @memset(decl, null);
@@ -8073,10 +8108,17 @@ const Emitter = struct {
                         }
                         continue;
                     },
-                    .const_decl => {
+                    .const_decl, .let_decl => {
                         const n: JsIr.NameIndex = @fromBackingInt(@intCast(d.lhs));
                         const g = if (n.unwrap()) |x| gid[x] else Spec.none;
-                        if (g != Spec.none and Spec.isInert(ir, @fromBackingInt(@intCast(d.rhs)))) {
+                        const value: ?JsIr.Node.Index = if (ir.tag(stmt) == .const_decl)
+                            @fromBackingInt(@intCast(d.rhs))
+                        else
+                            @as(JsIr.Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap();
+                        // A write mentions the let too, and therefore roots
+                        // it below. Only a binding with no live reads OR
+                        // writes may lose its allocation-only initializer.
+                        if (g != Spec.none and (value == null or allocation.inert(@intCast(at), value.?))) {
                             if (decl[g] != null) many[g] = true;
                             decl[g] = .{ .at = @intCast(at), .stmt = stmt };
                             continue;

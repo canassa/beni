@@ -453,3 +453,81 @@ The private control encoding shares typed records with ordinary fields. Its
 prescribed output spellings are reserved before each entry assigns short field
 names, just like the Wire palette. An ordinary field cannot take the spelling of
 a fixed control key in the same object (#1803).
+
+**Fiber storage slice, 2026-11-04 (#1719).** Control, Wait, Scope, Soon,
+Restore, VirtualClock, Scheduler and Loan keep their fixed mutable fields in
+one typed `Js.Cell` each. Reads and writes use literal field selectors; no
+record copy or update changes these identities. Immutable inherited Slots
+remain snapshots. This changes storage only: typed result destinations and
+the approved completion protocol remain in force. Intrusive membership and
+wait lists follow separately; this slice introduces no sentinel frame stack
+or unchecked resume slot; the protocol replacement is a separate change.
+
+**Core FIFO, manager approval 2026-11-04 (#1857).** The existing typed native
+array operations also serve runtime queues. Core-private Js.Array adds
+`arrayGet : Builder a, Int → a`, `arrayLength : Builder a → Int` and
+`arrayWrite : Builder a, Int, a → ⊤`. These lower to indexed reads, `.length`
+and indexed writes, retain the element type, and have no sibling exports.
+Only core may name them; reads grant no freshness, and a shared capacity
+write escapes the stored value and grants no ownership permission. The
+writer rule charges stored callbacks to their writer. Callers initialize
+each index before reading it and check bounds using their own queue state.
+Js.Fifo is a typed circular array with head/count/capacity in a Cell. Removal
+defects before touching capacity when empty, and clears its payload slot
+before returning it; growth copies only live slots.
+Dequeue precedes invocation. Returning a cancelled Queue hand-off uses the
+same ring's front insertion; it does not allocate a removal token. Queue's
+item buffer uses the ring, while its takers and offers keep removable links.
+Queues that never need removal tokens use this FIFO; cancellation/removal
+queues retain Chain.
+
+**Lazy platform hooks, manager approval 2026-11-04 (#1858).** Js.TaskHooks
+is a core/platform-private bridge with no dependency on Task. Platforms set
+the turn/defect hooks and register synchronous shutdown releases there.
+Task installs typed stop and cleanup-presence callbacks on its first
+Control or synchronous queued job. Making a custom scheduler or
+registering a root deferred release also installs them, preserving shutdown
+before the first fiber starts. Log-context callbacks are registered separately
+when the first log context is installed: starting a fiber alone must not root
+the context-clearing/finalizer path. A page that only mounts and sends
+messages reaches the bridge, not Task's scheduler. Program drains consult
+the bridge's turn hook; custom schedulers keep their own defect hooks.
+Shutdown queues registered releases before fiber cleanup, once, preserving
+registration order. Log-context queries default to False; clearing a context
+runs its sync body directly until Task installs a handler. The handler's
+closed unit callback retains any generic result in its own typed local Ref,
+so no polymorphic callable or result is erased. A stopped bridge remains
+stopped if Task is first used afterwards: lazy runtime registration also
+marks the program scheduler stopped before it can drain queued work. Platform edits are supplied as a
+separate integration patch until the DOM lane is ready.
+
+
+**Scheduler facility pruning, 2026-11-04 (#1719).** The approved module-flag
+idiom guards the custom-scheduler facility. Its opaque factory sets `many`;
+without a reachable factory, scheduler selection is the program scheduler,
+custom membership/count hooks and registry teardown are unreachable. Creating
+any custom scheduler enables the original paths unchanged. This is a release
+reachability aid, not a change to Cell representation or a new public flag.
+
+
+The same facility rule applies to inherited slots. Before `withSlots` or
+`withoutLogContext` changes a snapshot, `currentSlots` is `emptySlots`.
+Those entry points set the private `slotted` module flag. Internal cleanup
+may copy an unchanged empty snapshot without enabling it; no public operation
+observes the identity of a Slots record. Clock, scheduler and log installers
+all pass through the flag-setting entry points. Unused slot facilities can
+therefore disappear without field-constancy analysis of Cell storage.
+
+
+Fiber-owned children have a separate `spawning` flag, set by `Task.spawn`.
+Only that entry can attach to a Control's children: `spawnIn` and fast
+combinator branches attach to a Scope, while detached/start roots attach to
+the scheduler. Without a reachable `spawn`, `cancelChildren` is empty;
+Scope cancellation still drains its own children normally.
+
+
+Log-context queries use the log-installation flag, not the general slot flag.
+Only `withLogContext` introduces a nonempty log slot; clock/scheduler changes
+preserve it and clearing can only remove it. Before that entry is reached,
+`currentLogContext` is Nothing and `hasLogContext` is False. In particular,
+a clearing consumer must not make its own presence test appear possible.

@@ -91,6 +91,9 @@ pub const Which = enum {
     arrayAllocate,
     arraySet,
     arrayDone,
+    arrayGet,
+    arrayLength,
+    arrayWrite,
     optMatch,
     optWithDefault,
     ref,
@@ -275,7 +278,7 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
     if (same(module_name, "Js.Array")) {
         const which = std.meta.stringToEnum(Which, name) orelse return null;
         return switch (which) {
-            .arrayAllocate, .arraySet, .arrayDone => which,
+            .arrayAllocate, .arraySet, .arrayDone, .arrayGet, .arrayLength, .arrayWrite => which,
             else => null,
         };
     }
@@ -288,7 +291,7 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
 /// does not change the sibling copied by an existing development program.
 pub fn compilerOnly(which: Which) bool {
     return switch (which) {
-        .any_unpack_opt, .schemaIdentity, .arrayAllocate, .arraySet, .arrayDone, .optNone, .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
+        .any_unpack_opt, .schemaIdentity, .arrayAllocate, .arraySet, .arrayDone, .arrayGet, .arrayLength, .arrayWrite, .optNone, .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
         else => false,
     };
 }

@@ -8131,6 +8131,21 @@ nothing in the program names `f` and the entry passes at most `n` arguments â
 file calls it and compares nothing. `run`'s `e=a=>d(a)` is `e=d`
 (`emit/release/inline/PushAndTimer` 599 â 589 brotli with both).
 
+*Amended 2026-11-04 (#1857): allocation-only impure initializers.* An
+impure call whose only effect is allocating a fresh value may be removed when
+its result is unread. This is an output optimization, never a purity change
+in the checker: mutable factories remain impure for value restriction and
+identity. `pruneOptimised` applies this rule only to top-level
+initializers in final release reachability. The proof follows only statically
+resolved emitted functions,
+whose executed statements consist of inert local bindings and returns of
+inert values or other proven allocation-only calls. Every evaluated argument
+and initializer must qualify. Unknown calls, stores, suspension, loops,
+exceptions and host constructors decline the proof; a bounded traversal that
+runs out of budget also declines. A fresh result never licenses dropping a
+write or log hidden behind its factory. There is no module/name whitelist:
+Chain.make qualifies by its emitted body, as any equivalent factory does.
+
 *Amended 2026-10-15: a record field's lambda* (issue #95; `plans/queue.md` row 81, found by
 research 79 Â§5). `init` is a function of `â¤` since 2026-10-12 (`boundary.md` Â§9.8.16), so
 `Tea.element`'s hosted `init` calls `app.init â¤` where it read a value. When a page writes its

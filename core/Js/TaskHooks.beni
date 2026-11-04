@@ -1,0 +1,161 @@
+-- Core/platform bridge. Mounting a page never imports Task's scheduler.
+import Browser.Host.Timers as Timers
+import Js
+import Js.Fifo as Fifo
+import Js.Protocol as Protocol
+
+
+turn : Js.Ref (Maybe ((⊤ → ⊤) → ⊤))
+turn = Js.ref Nothing
+
+
+defect : Js.Ref (Maybe (⊤ → ⊤))
+defect = Js.ref Nothing
+
+
+stop : Js.Ref (Maybe (Int, (Int → ⊤) → ⊤))
+stop = Js.ref Nothing
+
+
+cleanup : Js.Ref (Maybe (⊤ → Bool))
+cleanup = Js.ref Nothing
+
+
+context : Js.Ref (Maybe (⊤ → Bool))
+context = Js.ref Nothing
+
+
+defaultContext : Js.Ref (Maybe ((⊤ → ⊤) → ⊤))
+defaultContext = Js.ref Nothing
+
+
+dead : Js.Ref Bool
+dead = Js.ref False
+
+
+releases : Js.Ref (Maybe (Fifo.Fifo (⊤ → ⊤)))
+releases = Js.ref Nothing
+
+
+pub install : sync (Int, (Int → ⊤) → ⊤), sync (⊤ → Bool) → ⊤
+install stopRuntime hasCleanup =
+    Js.write stop (Just stopRuntime)
+    Js.write cleanup (Just hasCleanup)
+
+
+pub installContext : sync (⊤ → Bool), sync ((⊤ → ⊤) → ⊤) → ⊤
+installContext hasContext withoutContext =
+    Js.write context (Just hasContext)
+    Js.write defaultContext (Just withoutContext)
+
+
+pub stopped : ⊤ → Bool
+stopped ⊤ = Js.read dead
+
+
+pub onTurn : sync ((⊤ → ⊤) → ⊤) → ⊤
+onTurn wrapper = Js.write turn (Just wrapper)
+
+
+pub around : sync (⊤ → ⊤) → ⊤
+around drain =
+    case Js.read turn of
+        Nothing →
+            drain ⊤
+        Just wrapper →
+            wrapper drain
+
+
+pub onDefect : sync (⊤ → ⊤) → ⊤
+onDefect hook = Js.write defect (Just hook)
+
+
+pub chainDefect : sync (⊤ → ⊤) → ⊤
+chainDefect hook =
+    previous = Js.read defect
+    onDefect λ⊤ →
+        hook ⊤
+        case previous of
+            Nothing →
+                ⊤
+            Just before →
+                before ⊤
+
+
+pub failed : ⊤ → ⊤
+failed ⊤ =
+    case Js.read defect of
+        Nothing →
+            ⊤
+        Just hook →
+            hook ⊤
+
+
+pub onShutdown : sync (⊤ → ⊤) → ⊤
+onShutdown release =
+    queue =
+        case Js.read releases of
+            Just existing →
+                existing
+            Nothing →
+                made = Fifo.make ⊤
+                Js.write releases (Just made)
+                made
+    Fifo.push queue release
+
+
+runReleases : Fifo.Fifo (⊤ → ⊤) → ⊤
+runReleases queue =
+    if not (Fifo.empty queue) then
+        work = Fifo.shift queue
+        Protocol.call work ⊤
+        runReleases queue
+
+
+pub shutdown : Int, sync (Int → ⊤) → ⊤
+shutdown deadline done =
+    if not (Js.read dead) then
+        Js.write dead True
+        case Js.read releases of
+            Nothing →
+                ⊤
+            Just queue →
+                if not (Fifo.empty queue) then Timers.queueMicrotask λ⊤ → runReleases queue
+        case Js.read stop of
+            Nothing →
+                ⊤
+            Just shutdownRuntime →
+                shutdownRuntime deadline done
+
+
+pub cleansUp : ⊤ → Bool
+cleansUp ⊤ =
+    case Js.read cleanup of
+        Nothing →
+            False
+        Just hasCleanup →
+            hasCleanup ⊤
+
+
+pub hasLogContext : ⊤ → Bool
+hasLogContext ⊤ =
+    case Js.read context of
+        Nothing →
+            False
+        Just hasContext →
+            hasContext ⊤
+
+
+pub withoutLogContext : sync (⊤ → a) → a
+withoutLogContext work =
+    case Js.read defaultContext of
+        Nothing →
+            work ⊤
+        Just withoutContext →
+            result = Js.ref Nothing
+            withoutContext λ⊤ → Js.write result (Just (work ⊤))
+            case Js.read result of
+                Just value →
+                    value
+                Nothing →
+                    Protocol.defect "a context hook did not run its synchronous body"

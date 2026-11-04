@@ -12,3 +12,15 @@ pub foreign pure arraySet : written returned Js.Builder a, borrowed Int, stored 
 
 --| Finish the initialized prefix as a plain List.
 pub foreign pure arrayDone : written returned Js.Builder a, borrowed Int → builderdone List a
+
+
+--| Read an initialized index; the core container proves its bounds.
+pub foreign impure arrayGet : borrowed Js.Builder a, borrowed Int → unknown a
+
+
+--| The native capacity length.
+pub foreign impure arrayLength : borrowed Js.Builder a → Int
+
+
+--| Shared runtime capacity store. Stored callbacks remain charged to the writer.
+pub foreign impure arrayWrite : escaped Js.Builder a, unused Int, escaped a → ⊤

@@ -8571,3 +8571,17 @@ Rejection.display return primitive strings, and Node.append changes the native
 tree under its checked public error adapter. Their borrowed native handles
 neither return Beni-owned lists nor grant ownership over them. Their exact
 sibling bodies and ordinary typed calls are pinned independently.
+
+**Core runtime array rows (manager, 2026-11-04; #1857).** These Js.Array
+operations are fencedToCore. No application or platform can call the writer
+directly; core FIFO writers retain the element's real callback summary.
+
+| declaration | ownership contract |
+|---|---|
+| `arrayGet` | `borrowed Js.Builder a, borrowed Int → unknown a`; shared indexed read, no edit permission |
+| `arrayLength` | `borrowed Js.Builder a → Int`; reads capacity length |
+| `arrayWrite` | `escaped Js.Builder a, unused Int, escaped a → ⊤`; impure shared store, payload escapes, no edit permission |
+
+These rows reuse List's native capacity read/write representation. The core
+writer fence is the writer-rule justification; this is not an ownership
+fallback for application List writes.
