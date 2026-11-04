@@ -781,7 +781,9 @@ identity governs these names, for named access and static dispatch alike:
 **Private renderer native bridges** (manager approval, 2026-11-04; #1822,
 Part of #1612). Checked core/platform package identity, through the same
 `resolve/CorePrivate.zig` fence, reserves the following renderer-prefixed
-entries for the browser platform family. Applications cannot name them,
+entries for core and platform runtimes. Any checked platform package may name
+them; the bindings' `allowed = window` limits execution to the Window/page
+realm. Applications cannot name them,
 including through method dispatch; an application module with a matching
 spelling gains no native authority. All entries are impure except the identity
 upcast `EventTarget.rendererFromNode`, which is pure. In these signatures
@@ -804,6 +806,8 @@ upcast `EventTarget.rendererFromNode`, which is pure. In these signatures
   allocation-free native identity upcast. The existing `Element.toNode`
   remains the Element identity upcast.
 
+The caller of `Document.rendererBody` must wait until `document.body` exists;
+an earlier call violates the renderer contract and is a defect.
 The renderer calls these entries only on nodes and fragments it created and
 owns, with structural relationships maintained by its own algorithms. A
 `HierarchyRequestError`, `NotFoundError`, Trusted Types refusal, or other
