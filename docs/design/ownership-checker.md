@@ -8572,6 +8572,16 @@ tree under its checked public error adapter. Their borrowed native handles
 neither return Beni-owned lists nor grant ownership over them. Their exact
 sibling bodies and ordinary typed calls are pinned independently.
 
+*DOM/fiber merge pin audit, 2026-11-04 (Part of #1825).* Re-read the shared
+Lower region for Js.cell, Js.cellRead, Js.cellWrite, Js.none, Js.some,
+Js.optMatch and Js.optWithDefault after merging #1873. Their applicable
+branches and words are unchanged: cell allocates a fresh outer record while
+retaining fields; selector reads preserve aliases; selector writes retain their
+value; Opt construction and matching retain the same payload aliases and call
+only the selected arm. The region also contains the new, separately reviewed
+core array branches and their arity dispatch. Those unrelated additions move
+these seven hashes. Only these seven unchanged operations are re-pinned.
+
 **Core runtime array rows (manager, 2026-11-04; #1857).** These Js.Array
 operations are fencedToCore. No application or platform can call the writer
 directly; core FIFO writers retain the element's real callback summary.
