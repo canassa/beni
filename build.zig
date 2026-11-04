@@ -65,6 +65,11 @@
 //!                                 the native compiler, byte for byte
 //!   zig build test-playground-page  drive the site in a headless Chrome
 //!                                 (`nix develop .#browser`)
+//! And the examples' site (examples/build-pages.mjs), not a gate either:
+//!   zig build test-pages          build it into zig-out/pages/ and load its
+//!                                 pages and deep paths in a headless Chrome
+//!                                 with GitHub Pages' 404 rule
+//!                                 (`nix develop .#browser`)
 //! And the cross-language benchmark (docs/design/compare-bench.md §12), which
 //! needs `nix develop .#compare` and is not a gate either:
 //!   zig build compare-gen         write the generated projects
@@ -883,6 +888,30 @@ pub fn build(b: *std.Build) void {
     page_run.has_side_effects = true;
     page_run.step.dependOn(playground_step);
     page_step.dependOn(&page_run.step);
+
+    // The examples' site as GitHub Pages serves it (issue #244): built by
+    // `examples/build-pages.mjs` with the tests' compiler under the base
+    // /beni/, without the playground, into zig-out/pages/, then loaded in a
+    // headless Chrome, where 404.html must stand in for each routed
+    // program's shell at a deep path. Not a gate: it needs a Chrome
+    // (`-Dchrome`, else `nix develop .#browser`'s on PATH), and no network.
+    const pages_step = b.step("test-pages", "Build the examples' site and load its pages and deep paths in a headless Chrome, as GitHub Pages serves them (nix develop .#browser)");
+    const pages_build = b.addSystemCommand(&.{ "node", "examples/build-pages.mjs" });
+    pages_build.addArg(installPath(b, b.fmt("{s}/beni", .{safe_dir})));
+    pages_build.addArg(installPath(b, "pages"));
+    pages_build.addArg("/beni/");
+    pages_build.setCwd(b.path("."));
+    pages_build.has_side_effects = true;
+    pages_build.step.dependOn(&safe_install.step);
+    const pages_run = b.addSystemCommand(&.{ "node", "tests/browser/pages.mjs" });
+    pages_run.addArg(installPath(b, "pages"));
+    pages_run.addArg("/beni/");
+    pages_run.setCwd(b.path("."));
+    pages_run.setEnvironmentVariable("BENI_CHROME", bb.chrome);
+    pages_run.setEnvironmentVariable("BENI_CHROME_PROFILE_DIR", installPath(b, "tmp"));
+    pages_run.has_side_effects = true;
+    pages_run.step.dependOn(&pages_build.step);
+    pages_step.dependOn(&pages_run.step);
 
     // ---- Cross-language benchmark (docs/design/compare-bench.md §3, §12). ----
     // The generator is its own target: it imports nothing from `src/`. It
