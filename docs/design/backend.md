@@ -8078,6 +8078,20 @@ checker's purity bit is per whole-program function (*Calls with known results*),
 record is not one. Two rules now see through such a lambda. Each reads the lambda's own body, which
 fact 3 finds at the call:
 
+*Amended 2026-11-04 (#1857): allocation-only impure initializers.* An
+impure call whose only effect is allocating a fresh value may be removed when
+its result is unread. This is an output optimization, never a purity change
+in the checker: mutable factories remain impure for value restriction and
+identity. Final release reachability applies the same rule to top-level
+initializers. The proof follows only statically resolved emitted functions,
+whose executed statements consist of inert local bindings and returns of
+inert values or other proven allocation-only calls. Every evaluated argument
+and initializer must qualify. Unknown calls, stores, suspension, loops,
+exceptions and host constructors decline the proof; a bounded traversal that
+runs out of budget also declines. A fresh result never licenses dropping a
+write or log hidden behind its factory. There is no module/name whitelist:
+Chain.make qualifies by its emitted body, as any equivalent factory does.
+
 - **A call of functions that only make a value does nothing** (`Spec.pureCall`, `makesOnly`).
   `effectFree` is the test a drop asks: of an argument nothing reads (`trimArguments`), of a
   parameter nothing reads, of a dead binding's initialiser (`deadReads`), and of a dead write's

@@ -1,0 +1,43 @@
+-- #1857: fresh results do not license dropping effects hidden in factories or arguments.
+-- Global Ref mutation's separate ownership-v2 discrepancy is tracked in #1866.
+import Browser.Host.NodeProcess as Output
+import Js
+import Node
+
+
+allocated : Js.Ref (Js.Cell { value : Int })
+allocated = Js.ref (factory ⊤)
+
+
+argument : Js.Ref (Js.Cell { value : Int })
+argument = Js.ref (plain (effect ⊤))
+
+
+factory : ⊤ → Js.Cell { value : Int }
+factory ⊤ =
+    Output.writeOut "factory\n"
+    Js.cell { value = 1 }
+
+
+plain : Int → Js.Cell { value : Int }
+plain value = Js.cell { value = value }
+
+
+effect : ⊤ → Int
+effect ⊤ =
+    Output.writeOut "argument\n"
+    2
+
+
+always : ⊤ → Bool
+always ⊤ = True
+
+
+main : Node.Program
+main =
+    value =
+        if always ⊤ then
+            23
+        else
+            Js.cellRead (Js.read allocated) .value + Js.cellRead (Js.read argument) .value
+    Node.print (String.fromInt value)

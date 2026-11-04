@@ -1,0 +1,29 @@
+-- Shared runtime writes retain payload aliases. A read grants no freshness.
+import Js.Array as Array
+
+
+storedAlias : List Int → Int
+storedAlias xs =
+    buffer = Array.arrayAllocate 1
+    Array.arrayWrite buffer 0 xs
+    grown = [ …xs, 1 ]
+    retained = Array.arrayGet buffer 0
+    List.length grown + List.length retained + Array.arrayLength buffer
+
+
+readAlias : List Int → Int
+readAlias xs =
+    buffer = Array.arrayAllocate 1
+    Array.arrayWrite buffer 0 xs
+    retained = Array.arrayGet buffer 0
+    grown = [ …retained, 1 ]
+    List.length grown + List.length xs
+
+
+storedCallback : List Int → Int
+storedCallback xs =
+    buffer = Array.arrayAllocate 1
+    Array.arrayWrite buffer 0 λ⊤ → List.length xs
+    grown = [ …xs, 1 ]
+    retained = Array.arrayGet buffer 0
+    List.length grown + retained ⊤

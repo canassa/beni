@@ -30,6 +30,7 @@
 import Js
 import Js.Array as Array
 import Js.Chain as Chain
+import Js.Fifo as Fifo
 import Task
 
 
@@ -41,7 +42,7 @@ pub opaque type Queue a
 type alias State a =
     mode : Int
     cap : Int
-    items : Chain.Chain a
+    items : Fifo.Fifo a
     takers : Chain.Chain (Taker a)
     offers : Chain.Chain (Offer a)
     ended : Js.Ref Bool
@@ -85,7 +86,7 @@ make mode capacity =
     Queue
         { mode = mode
         , cap = max 1 capacity
-        , items = Chain.make ⊤
+        , items = Fifo.make ⊤
         , takers = Chain.make ⊤
         , offers = Chain.make ⊤
         , ended = Js.ref False
@@ -152,7 +153,7 @@ offerMany q values rest =
 pub take : Queue a → Maybe a
 take (Queue q) =
     if Chain.size q.takers == 0 && count q > 0 then
-        value = Chain.shift q.items
+        value = Just (Fifo.shift q.items)
         refill q
         value
     else if Chain.size q.takers == 0 && finished q then
@@ -194,7 +195,7 @@ takeList q need most =
 pub poll : Queue a → Maybe a
 poll (Queue q) =
     if Chain.size q.takers == 0 && count q > 0 then
-        value = Chain.shift q.items
+        value = Just (Fifo.shift q.items)
         refill q
         value
     else
@@ -224,7 +225,7 @@ finished q = ended q && Js.read q.pending == 0
 
 
 count : State a → Int
-count q = Chain.size q.items
+count q = Fifo.size q.items
 
 
 full : State a → Bool
@@ -232,7 +233,7 @@ full q = q.mode ≠ 3 && count q ≥ q.cap
 
 
 push : State a, a → ⊤
-push q value = Chain.push q.items value
+push q value = Fifo.push q.items value
 
 
 popUpTo : State a, Int → List a
@@ -246,22 +247,19 @@ drainItems q values index limit =
     if index == limit then
         Array.arrayDone values index
     else
-        case Chain.shift q.items of
-            Nothing →
-                Array.arrayDone values index
-            Just value →
-                filled = Array.arraySet values index value
-                drainItems q filled (index + 1) limit
+        value = Fifo.shift q.items
+        filled = Array.arraySet values index value
+        drainItems q filled (index + 1) limit
 
 
 unshift : State a, List a → ⊤
-unshift q values = List.foldr values ⊤ λvalue _ → Chain.unshift q.items value
+unshift q values = List.foldr values ⊤ λvalue _ → Fifo.unshift q.items value
 
 
 slide : State a → ⊤
 slide q =
     if count q ≥ q.cap then
-        _ = Chain.shift q.items
+        _ = Fifo.shift q.items
         slide q
 
 
