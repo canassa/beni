@@ -1,0 +1,43 @@
+-- #1833: append, rotate, remove and reverse preserve every multi-node row.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Next
+
+
+update : Msg, List Int → List Int
+update Next rows =
+    case rows of
+        [ 0, 1, 2, 3 ] →
+            [ 0, 1, 2, 3, 4 ]
+
+        [ 0, 1, 2, 3, 4 ] →
+            [ 4, 0, 1, 2, 3 ]
+
+        [ 4, 0, 1, 2, 3 ] →
+            [ 4, 0, 2, 3 ]
+
+        _ →
+            [ 3, 2, 0, 4 ]
+
+
+view : List Int → Html Msg
+view rows =
+    <main>
+        <button id="next" onClick={Next}>next</button>
+        <section>
+            <For each={rows} keyed={identity}>
+                {λkey →
+                    <>
+                        <span>{String.fromInt key ++ "/0"}</span><span>{String.fromInt key ++ "/1"}</span>
+                    </>
+                }
+            </For>
+        </section>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → [ 0, 1, 2, 3 ], update = update, view = view }

@@ -74,7 +74,14 @@ tail s =
 
 -- Move an instance's nodes before `before` in `parent`, in order.
 pub put : V, V, V → ⊤
-put parent i before = putRun parent (first i) (last i) before
+put parent i before =
+    -- An adjacent swap can leave the run already at its destination.
+    -- Inserting its siblings before its own first node would reverse it.
+    n = first i
+    if Js.same n before then
+        ⊤
+    else
+        putRun parent n (last i) before
 
 
 putRun : V, V, V, V → ⊤
