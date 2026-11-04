@@ -1,0 +1,18 @@
+-- An early imported nullary used only for identity can be {} after pruning.
+-- A later module's host reader must still see its tag and padding after
+-- sharing (backend.md §9, #1856): the full copy covers both modules.
+import Early
+import Late
+import Middle
+import Node
+
+
+main : Node.Program
+main =
+    Node.print
+        ((if Early.same ⊤ then "same" else "different")
+            ++ " "
+            ++ Late.description ⊤
+            ++ " "
+            ++ Middle.description ⊤
+        )
