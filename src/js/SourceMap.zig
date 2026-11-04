@@ -29,13 +29,19 @@ const InternPool = @import("../InternPool.zig");
 pub const Mapping = struct {
     /// Byte offset into the printed module.
     generated: u32,
-    /// Byte offset into the module's `.beni` source.
+    /// Byte offset into the module's `.beni` source, or, with `far_bit`
+    /// set, a row of its stretch's `far`: a position in another module's
+    /// source, where whole-program specialisation copied the node from
+    /// (`JsIr.far`; `backend.md` §11.2, *Deferred* item 2, amended
+    /// 2026-11-04).
     source: u32,
     /// The beni name a binding written here had: an index into
     /// `Marks.names`, or `no_name`.
     name: u32 = no_name,
 
     pub const no_name = std.math.maxInt(u32);
+    /// `JsIr.Node.far_bit`, which the printer's marks carry as they are.
+    pub const far_bit: u32 = 1 << 31;
 };
 
 /// What the printer appends to. In the printer's scratch arena.
@@ -117,6 +123,11 @@ pub const Input = struct {
     name_text: NameText,
     /// `Joined.end_line`: a release map's (backend.md §11.2).
     end_line: bool = false,
+    /// The sources after the module's own, which `far` names by index (the
+    /// module's own is 0).
+    others: []const Source = &.{},
+    /// `Stretch.far`.
+    far: []const Stretch.Far = &.{},
 };
 
 /// The map's bytes, a JSON object and a newline, from `gpa`. Everything
@@ -126,11 +137,14 @@ pub const Input = struct {
 pub fn write(gpa: Allocator, scratch: Allocator, in: Input) Allocator.Error![]u8 {
     const names = try scratch.alloc([]const u8, in.names.len);
     for (names, in.names) |*text, symbol| text.* = in.name_text.lookup(in.name_text.context, symbol);
+    const sources = try scratch.alloc(Source, 1 + in.others.len);
+    sources[0] = .{ .url = in.source_url, .text = in.source, .line_starts = in.line_starts };
+    @memcpy(sources[1..], in.others);
     return writeJoined(gpa, scratch, .{
         .file = in.file,
         .generated = in.generated,
-        .sources = &.{.{ .url = in.source_url, .text = in.source, .line_starts = in.line_starts }},
-        .stretches = &.{.{ .start = 0, .source = 0, .mappings = in.mappings, .names = names }},
+        .sources = sources,
+        .stretches = &.{.{ .start = 0, .source = 0, .mappings = in.mappings, .names = names, .far = in.far }},
         .end_line = in.end_line,
     });
 }
@@ -158,8 +172,26 @@ pub const Stretch = struct {
     mappings: []const Mapping = &.{},
     /// The stretch's names, by `Mapping.name`.
     names: []const []const u8 = &.{},
+    /// The rows a mapping's `source` names with `Mapping.far_bit`, by row:
+    /// a source of the map (or `unmapped`, for a row no mapping names) and
+    /// a byte offset into it.
+    far: []const Far = &.{},
 
     pub const unmapped = std.math.maxInt(u32);
+
+    pub const Far = struct { source: u32 = unmapped, offset: u32 = 0 };
+
+    /// The source and offset a mapping's `source` names, or null when it
+    /// names none: its own source when the stretch has one, else its row.
+    fn locate(s: Stretch, raw: u32) ?Far {
+        if (raw & Mapping.far_bit != 0) {
+            const row = raw & ~Mapping.far_bit;
+            if (row >= s.far.len or s.far[row].source == unmapped) return null;
+            return s.far[row];
+        }
+        if (s.source == unmapped) return null;
+        return .{ .source = s.source, .offset = raw };
+    }
 };
 
 pub const Joined = struct {
@@ -236,22 +268,19 @@ fn encodeMappings(
         defer name_base += @intCast(s.names.len);
         // An unmapped stretch, or the bytes of a mapped one before its
         // first mark: what the segment before them says is not about them.
-        const first: usize = if (s.source == Stretch.unmapped or s.mappings.len == 0)
-            end
-        else
-            @as(usize, s.start) + s.mappings[0].generated;
+        const first: usize = if (s.mappings.len == 0) end else @as(usize, s.start) + s.mappings[0].generated;
         if (first > s.start and s.start < end) try e.unmapped(s.start);
-        if (s.source == Stretch.unmapped) continue;
-        const source = &lines[s.source];
-        if (source.* == null) source.* = try .init(scratch, in.sources[s.source].text, in.sources[s.source].line_starts);
         for (s.mappings) |m| {
             const target = @as(usize, s.start) + m.generated;
             // The join drops a module's last newline, and nothing maps to
             // what it leaves past the stretch.
             if (!last and target >= end) break;
+            const at = s.locate(m.source) orelse continue;
+            const source = &lines[at.source];
+            if (source.* == null) source.* = try .init(scratch, in.sources[at.source].text, in.sources[at.source].line_starts);
             try e.advance(@min(target, in.generated.len));
             const name = if (m.name == Mapping.no_name) Mapping.no_name else m.name + name_base;
-            try e.segment(s.source, source.*.?.position(m.source), name);
+            try e.segment(at.source, source.*.?.position(at.offset), name);
         }
     }
     // `Joined.end_line`: the `;` is the end of the line the last segment
@@ -846,6 +875,34 @@ test "a joined map moves each stretch's marks, numbers its names after the ones 
         "{\"version\":3,\"file\":\"_main.mjs\",\"sources\":[\"A.beni\",\"B.beni\"],\"sourcesContent\":[\"x = 1\",\"\\nlet y\"],\"names\":[\"x\",\"y\"],\"mappings\":\"AAAAA,CAAE,E,MCCCC\"}\n",
         text,
     );
+}
+
+test "a far mark maps to its row's source, and a stretch with no source of its own maps its rows" {
+    // `backend.md` §11.2, *Deferred* item 2, amended 2026-11-04. `a` is A's
+    // own; `c` was copied from B, so its mark names row 1 of the stretch's
+    // `far`, and row 0, which no mark names, is not used. The second stretch
+    // has no source of its own: its one mark is a row too.
+    var a: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer a.deinit();
+    const arena = a.allocator();
+    const text = try writeJoined(arena, arena, .{
+        .file = "m.mjs",
+        .generated = "abc;d",
+        .sources = &.{
+            .{ .url = "A.beni", .text = "ab", .line_starts = &.{0} },
+            .{ .url = "B.beni", .text = "\n  c d", .line_starts = &.{ 0, 1 } },
+        },
+        .stretches = &.{
+            .{ .start = 0, .source = 0, .far = &.{ .{}, .{ .source = 1, .offset = 3 } }, .mappings = &.{
+                .{ .generated = 0, .source = 0 },
+                .{ .generated = 2, .source = Mapping.far_bit | 1 },
+            } },
+            .{ .start = 4, .source = Stretch.unmapped, .far = &.{.{ .source = 1, .offset = 5 }}, .mappings = &.{
+                .{ .generated = 0, .source = Mapping.far_bit | 0 },
+            } },
+        },
+    });
+    try testing.expect(std.mem.endsWith(u8, text, "\"mappings\":\"AAAA,ECCE,EAAE\"}\n"));
 }
 
 test "a mapped stretch whose first mark is past its start begins unmapped" {

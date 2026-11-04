@@ -5926,6 +5926,9 @@ const Emitter = struct {
         /// In the printing worker's `kept` arena.
         marks: []const SourceMap.Mapping = &.{},
         mark_names: []const []const u8 = &.{},
+        /// The module's `JsIr.far`, for the rows `marks` name: the IR is
+        /// gone when the one file is linked.
+        mark_far: []const JsIr.FarPos = &.{},
         /// The lowering is the first lowering's, taken as it is (#608):
         /// `Task.lower` does not lower the module again.
         adopted: bool = false,
@@ -6370,9 +6373,18 @@ const Emitter = struct {
                 const texts = try kept.alloc([]const u8, marks.names.items.len);
                 for (texts, marks.names.items) |*text, symbol| text.* = try kept.dupe(u8, names.text(symbol));
                 slot.mark_names = texts;
+                slot.mark_far = try kept.dupe(JsIr.FarPos, lowered.ir.far);
                 return;
             }
             const store = &e.session.store;
+            // §11.2, *Deferred* item 2 (amended 2026-11-04): a body copied
+            // from another module maps to that module's source, one more
+            // entry of the map's `sources` after the module's own.
+            var others: std.ArrayList(SourceMap.Source) = .empty;
+            var far_sources: FarSources = .{ .alloc = scratch, .sources = &others, .base = 1, .of = try scratch.alloc(u32, e.graph().count()), .map_file = slot.map_file };
+            @memset(far_sources.of, SourceMap.Stretch.unmapped);
+            far_sources.of[i] = 0;
+            const far = try e.farRows(&far_sources, lowered.ir.far, marks.list.items);
             slot.map = try SourceMap.write(e.gpa, scratch, .{
                 .file = std.fs.path.basenamePosix(slot.map_file[0 .. slot.map_file.len - ".map".len]),
                 .source_url = slot.source_url,
@@ -6383,6 +6395,8 @@ const Emitter = struct {
                 .names = marks.names.items,
                 .name_text = names.forMap(),
                 .end_line = true,
+                .others = others.items,
+                .far = far,
             });
         }
     };
@@ -6456,6 +6470,7 @@ const Emitter = struct {
                 .prop = prop,
                 .tables = tables,
                 .self = e.graph().moduleName(@fromBackingInt(@intCast(i))).toOptional(),
+                .id = @intCast(i),
             });
             try spec_slots.append(e.scratch, i);
         }
@@ -7769,9 +7784,17 @@ const Emitter = struct {
         // one file's map, and everything else the file holds is unmapped.
         var stretches: std.ArrayList(SourceMap.Stretch) = .empty;
         var sources: std.ArrayList(SourceMap.Source) = .empty;
+        var far_sources: FarSources = .{
+            .alloc = scratch,
+            .sources = &sources,
+            .base = 0,
+            .of = try scratch.alloc(u32, slots.len),
+            .map_file = try std.fmt.allocPrint(scratch, "{s}.map", .{e.options.platform.entry}),
+        };
+        @memset(far_sources.of, SourceMap.Stretch.unmapped);
         for (h.order) |p| switch (p) {
             .module => |i| if (slots[i].text) |text| {
-                if (mapped) try e.mapStretch(&stretches, &sources, &slots[i], i, out.items.len);
+                if (mapped) try e.mapStretch(&stretches, &far_sources, &slots[i], i, out.items.len);
                 try appendJoined(scratch, &out, text, true);
             },
             .file => |x| if (printed[x]) |pr| {
@@ -7883,32 +7906,76 @@ const Emitter = struct {
     }
 
     /// §11.2, *The join*: the stretch of the one file that module `i`'s
-    /// bytes take from `start`, and its source, named from the entry
-    /// file's map. A module with no mark maps nothing, so its bytes are
-    /// an unmapped stretch and its text is not in the map.
+    /// bytes take from `start`, and its sources, named from the entry
+    /// file's map. A module has an entry in `sources` when a mark maps to
+    /// it: its own, or a row of another module's `far` (*Deferred* item 2,
+    /// amended 2026-11-04). A module with no mark maps nothing, so its bytes
+    /// are an unmapped stretch.
     fn mapStretch(
         e: *Emitter,
         stretches: *std.ArrayList(SourceMap.Stretch),
-        sources: *std.ArrayList(SourceMap.Source),
+        far_sources: *FarSources,
         slot: *const ModuleSlot,
         i: u32,
         start: usize,
     ) Allocator.Error!void {
         if (slot.marks.len == 0) return stretches.append(e.scratch, .{ .start = @intCast(start), .source = SourceMap.Stretch.unmapped });
+        var own: u32 = SourceMap.Stretch.unmapped;
+        for (slot.marks) |m| if (m.source & SourceMap.Mapping.far_bit == 0) {
+            own = try e.mapSource(far_sources, i);
+            break;
+        };
+        try stretches.append(e.scratch, .{
+            .start = @intCast(start),
+            .source = own,
+            .mappings = slot.marks,
+            .names = slot.mark_names,
+            .far = try e.farRows(far_sources, slot.mark_far, slot.marks),
+        });
+    }
+
+    /// The sources of one map that a module's marks name (§11.2, *Deferred*
+    /// item 2, amended 2026-11-04): each module's entry, added the first
+    /// time a mark maps to it.
+    const FarSources = struct {
+        alloc: Allocator,
+        sources: *std.ArrayList(SourceMap.Source),
+        /// The map's index of `sources.items[0]`.
+        base: u32,
+        /// Per module (graph index): its index in the map, or `unmapped`.
+        of: []u32,
+        /// The map's path in the output tree, which the URLs are relative to.
+        map_file: []const u8,
+    };
+
+    /// Module `module`'s index in the map of `fs`, its entry added when it
+    /// has none.
+    fn mapSource(e: *Emitter, fs: *FarSources, module: u32) Allocator.Error!u32 {
+        if (fs.of[module] != SourceMap.Stretch.unmapped) return fs.of[module];
         const store = &e.session.store;
-        const file = e.graph().moduleFile(@fromBackingInt(@intCast(i)));
-        const map_file = try std.fmt.allocPrint(e.scratch, "{s}.map", .{e.options.platform.entry});
-        try sources.append(e.scratch, .{
-            .url = try e.sourceUrl(e.map_root.?, map_file, file),
+        const file = e.graph().moduleFile(@fromBackingInt(module));
+        try fs.sources.append(fs.alloc, .{
+            .url = try e.sourceUrlWith(fs.alloc, e.map_root.?, fs.map_file, file),
             .text = store.bytes(file),
             .line_starts = store.lineStarts(file),
         });
-        try stretches.append(e.scratch, .{
-            .start = @intCast(start),
-            .source = @intCast(sources.items.len - 1),
-            .mappings = slot.marks,
-            .names = slot.mark_names,
-        });
+        fs.of[module] = fs.base + @as(u32, @intCast(fs.sources.items.len - 1));
+        return fs.of[module];
+    }
+
+    /// `far`'s rows as `SourceMap.Stretch.far`: each row a mark names, by
+    /// its module's entry in the map; every other row `unmapped`.
+    fn farRows(e: *Emitter, fs: *FarSources, far: []const JsIr.FarPos, marks: []const SourceMap.Mapping) Allocator.Error![]const SourceMap.Stretch.Far {
+        if (far.len == 0) return &.{};
+        const rows = try fs.alloc.alloc(SourceMap.Stretch.Far, far.len);
+        @memset(rows, .{});
+        for (marks) |m| {
+            if (m.source & SourceMap.Mapping.far_bit == 0) continue;
+            const row = m.source & ~SourceMap.Mapping.far_bit;
+            if (rows[row].source != SourceMap.Stretch.unmapped) continue;
+            rows[row] = .{ .source = try e.mapSource(fs, far[row].module), .offset = far[row].offset };
+        }
+        return rows;
     }
 
     /// §11.2, *Hand-written JavaScript* (amended 2026-11-04): the stretch of
@@ -9211,11 +9278,17 @@ const Emitter = struct {
     /// The URL of `file` in the map at `map_file`, a path in the output
     /// tree (§11.1's `sources`).
     fn sourceUrl(e: *Emitter, root: MapRoot, map_file: []const u8, file: SourceStore.Index) Allocator.Error![]const u8 {
+        return e.sourceUrlWith(e.scratch, root, map_file, file);
+    }
+
+    /// `sourceUrl` into `alloc`, which a worker may call: it reads the
+    /// store and the options, and writes nothing of the emitter.
+    fn sourceUrlWith(e: *Emitter, alloc: Allocator, root: MapRoot, map_file: []const u8, file: SourceStore.Index) Allocator.Error![]const u8 {
         const store = &e.session.store;
-        if (store.isEmbedded(file)) return std.fmt.allocPrint(e.scratch, "beni:///{s}", .{store.path(file)});
-        const map_path = try SourceMap.absolute(e.scratch, root.cwd, try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.out_dir, map_file }));
-        const source_path = try SourceMap.absolute(e.scratch, root.cwd, store.path(file));
-        return SourceMap.relativeUrl(e.scratch, map_path, source_path);
+        if (store.isEmbedded(file)) return std.fmt.allocPrint(alloc, "beni:///{s}", .{store.path(file)});
+        const map_path = try SourceMap.absolute(alloc, root.cwd, try std.fmt.allocPrint(alloc, "{s}/{s}", .{ e.options.out_dir, map_file }));
+        const source_path = try SourceMap.absolute(alloc, root.cwd, store.path(file));
+        return SourceMap.relativeUrl(alloc, map_path, source_path);
     }
 
     fn produceOwned(e: *Emitter, relative_path: []const u8, bytes: []u8, origin: []const u8) Allocator.Error!void {
@@ -9744,6 +9817,7 @@ fn sameIr(a: *const JsIr, ao: *const InternPool.Overlay, b: *const JsIr, bo: *co
     if (!std.mem.eql(u32, a.extra, b.extra) or !std.mem.eql(u8, a.string_bytes, b.string_bytes)) return false;
     if (!std.meta.eql(a.body, b.body)) return false;
     if (!std.mem.eql(u8, bytes(a.node_keys), bytes(b.node_keys)) or !std.mem.eql(u8, bytes(a.name_key), bytes(b.name_key))) return false;
+    if (!std.mem.eql(u8, bytes(a.far), bytes(b.far))) return false;
     for (a.names, b.names) |x, y| {
         if (x.tag != y.tag or (x.module == .none) != (y.module == .none)) return false;
         if (!std.mem.eql(u8, ao.slice(x.base), bo.slice(y.base))) return false;
