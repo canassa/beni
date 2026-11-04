@@ -8584,6 +8584,12 @@ tree under its checked public error adapter. Their borrowed native handles
 neither return Beni-owned lists nor grant ownership over them. Their exact
 sibling bodies and ordinary typed calls are pinned independently.
 
+*Lazy hook integration audit, 2026-11-04 (#1858).* Browser.host registers its
+unchanged synchronous stop closure with Js.TaskHooks.onDefect directly rather
+than Task's forwarding wrapper. Both reach the same typed hook slot. Its entry
+word and callback retention are unchanged; its body pin is refreshed after
+re-reading the host lifecycle.
+
 *DOM/fiber merge pin audit, 2026-11-04 (Part of #1825).* Re-read the shared
 Lower region for Js.cell, Js.cellRead, Js.cellWrite, Js.none, Js.some,
 Js.optMatch and Js.optWithDefault after merging #1873. Their applicable

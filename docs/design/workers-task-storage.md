@@ -498,8 +498,11 @@ runs its sync body directly until Task installs a handler. The handler's
 closed unit callback retains any generic result in its own typed local Ref,
 so no polymorphic callable or result is erased. A stopped bridge remains
 stopped if Task is first used afterwards: lazy runtime registration also
-marks the program scheduler stopped before it can drain queued work. Platform edits are supplied as a
-separate integration patch until the DOM lane is ready.
+marks the program scheduler stopped before it can drain queued work. *Platform integration, 2026-11-04 (#1858):* Browser and Rt register turn and
+defect hooks and query shutdown/log-context state through Js.TaskHooks; Hosted
+registers synchronous releases there. They do not import Task merely for these
+bridge operations. Reachable command/fiber work still uses Task and installs its
+runtime hooks lazily under the contract above.
 
 
 **Scheduler facility pruning, 2026-11-04 (#1719).** The approved module-flag

@@ -61,7 +61,7 @@ platforms/node/Ssr.beni         Ssr.render          045f71e7ff0de60367e997ca719f
 # Entry protocols audited 2026-10-22: ownership-checker.md §24.8 and §30.3.
 platforms/browser/Browser.beni               Browser.program          a1a03d3bdb04728a2178b66cab64a4ee5b0a208a1df64457b3653f821d0980f8
 platforms/browser/Browser.beni               Browser.hosted           b60687d2b82a5f5c513e529c47f2bcf18fa63bb2aebd38360f9e5cc013dd5c62
-platforms/browser/Browser.beni               Browser.host             79d061150295df6491d2d1bf56142eacff40ababc5aa4f324031fde2988055b4
+platforms/browser/Browser.beni               Browser.host             352a87a1502aa65f006c1b5f43f50bcf29a3ff68668017236e477101894e667c
 platforms/browser-tea/Tea.beni               Tea.sandbox              8e3b27e500a7feac2eb34e69e9fcf30fa4f498653e306168d75936f47cf113e1
 platforms/browser-tea/Tea.beni               Tea.element              b4024695983c46b54e8cf3822573fbefcf65bc38cb76e55468e728e2bac6f523
 platforms/browser-tea/Tea.beni               Tea.document             1f37469ef95b2ebf4b679547bdc80d9432c4ea5b6169438bd44bb70b6aa58c29

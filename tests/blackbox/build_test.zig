@@ -13876,3 +13876,46 @@ test "DOM producer slots stay in the reserved dollar namespace" {
     );
     try w.expectProgram("reserved.mjs", .{ .stdout = "producer keys reserved\n" });
 }
+
+test "platform lifecycle hooks bypass the Task scheduler" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const imports =
+        \\import Browser
+        \\import Html exposing (Html)
+        \\import Tea
+        \\import Cmd
+        \\import Sub
+        \\
+        \\view : {} → Html {}
+        \\view _ = <></>
+        \\
+        \\main : Browser.Program
+        \\
+    ;
+    try w.write("plain/Main.beni", imports ++
+        \\main = Tea.element { init = λ⊤ → ( {}, Cmd.none ), update = λ_ m → ( m, Cmd.none ), view = view, subscriptions = λ_ → Sub.none }
+        \\
+    );
+    try w.write("fiber/Main.beni", "import Task\n" ++ imports ++
+        \\main = Tea.element { init = λ⊤ → ( {}, Cmd.task (λ⊤ → Task.yieldNow ⊤) (λ_ → {}) ), update = λ_ m → ( m, Cmd.none ), view = view, subscriptions = λ_ → Sub.none }
+        \\
+    );
+    const plain = try w.run(&.{ "build", "--platform=browser-tea", "--out=plain-out", "plain/Main.beni" });
+    const fiber = try w.run(&.{ "build", "--platform=browser-tea", "--out=fiber-out", "fiber/Main.beni" });
+    try testing.expectEqual(@as(u8, 0), plain.exit_code);
+    try testing.expectEqual(@as(u8, 0), fiber.exit_code);
+    const browser = try w.read("plain-out/_platform/_browser/Browser.mjs");
+    const runtime = try w.read("plain-out/_platform/_browser/Rt.mjs");
+    try testing.expect(std.mem.indexOf(u8, browser, "Js$TaskHooks$onDefect") != null);
+    try testing.expect(std.mem.indexOf(u8, browser, "Task$onDefect") == null);
+    try testing.expect(std.mem.indexOf(u8, runtime, "Js$TaskHooks$onTurn") != null);
+    try testing.expect(std.mem.indexOf(u8, runtime, "Task$onTurn") == null);
+    // Scope allocation/resume helpers may remain; they are not the scheduler.
+    const plain_task = try w.read("plain-out/_core/Task.mjs");
+    const fiber_task = try w.read("fiber-out/_core/Task.mjs");
+    try testing.expect(std.mem.indexOf(u8, plain_task, "Task$makeFiber") == null);
+    try testing.expect(std.mem.indexOf(u8, fiber_task, "Task$makeFiber") != null);
+    try testing.expect(w.exists("plain-out/_core/Js/TaskHooks.mjs"));
+    try testing.expect(w.exists("fiber-out/_core/Task.mjs"));
+}
