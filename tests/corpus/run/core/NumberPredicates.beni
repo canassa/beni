@@ -15,7 +15,7 @@ through predicate value = predicate value
 main : Node.Program
 main =
     Node.print
-        (String.join ","
+        (String.join
             (List.map
                 [ HostData.isInteger (Js.from 512)
                 , HostData.isInteger (Js.from 0.5)
@@ -31,4 +31,5 @@ main =
                 ]
                 label
             )
+            ","
         )

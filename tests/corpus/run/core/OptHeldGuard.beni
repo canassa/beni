@@ -14,7 +14,7 @@ guarded slot read =
 main : Node.Program
 main =
     Node.print
-        (String.join ","
+        (String.join
             (List.map
                 [ guarded (Js.none ⊤) identity
                 , guarded (Js.some 7) identity
@@ -23,4 +23,5 @@ main =
                 ]
                 String.fromInt
             )
+            ","
         )
