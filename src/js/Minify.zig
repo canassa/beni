@@ -55,12 +55,18 @@
 //! `Emit` numbered them and its module syntax gone. The same four passes,
 //! the same refusals, and one more: `Hoisted.declines` names what keeps a
 //! file in a module of its own.
+//!
+//! **Marks** (`minifyMarked`, and `printHoisted`'s `marks`): for a release
+//! source map, `print` records where each token it prints came from, and
+//! `markNames` the name each mark carries (`backend.md` §11.2, *Hand-written
+//! JavaScript*, amended 2026-11-04). Without them the bytes are the same.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Print = @import("Print.zig");
 const Rename = @import("Rename.zig");
 const Sibling = @import("Sibling.zig");
+const SourceMap = @import("SourceMap.zig");
 
 /// Which of research 40's passes run. `minify` always eliminates and
 /// compacts; the two below are what a release build adds.
@@ -122,6 +128,13 @@ inline fn same(a: []const u8, b: []const u8) bool {
 /// that `keep`'s exports reach when `keep` is given. Null when the file is
 /// refused and must be copied as it is.
 pub fn minify(arena: Allocator, source: []const u8, keep: ?[]const []const u8, options: Options) Allocator.Error!?[]const u8 {
+    return minifyMarked(arena, source, keep, options, null);
+}
+
+/// `minify`, and with `marks` the source map's marks of what it prints
+/// (`backend.md` §11.2, *Hand-written JavaScript*, amended 2026-11-04). The
+/// bytes are the same with or without `marks`.
+pub fn minifyMarked(arena: Allocator, source: []const u8, keep: ?[]const []const u8, options: Options, marks: ?*Marks) Allocator.Error!?[]const u8 {
     const tokens = tokenize(arena, source) catch |err| switch (err) {
         error.Unsupported => return null,
         error.OutOfMemory => return error.OutOfMemory,
@@ -132,6 +145,7 @@ pub fn minify(arena: Allocator, source: []const u8, keep: ?[]const []const u8, o
     const spell = try arena.alloc(?[]const u8, tokens.len);
     @memset(spell, null);
     var block_ends: ?[]const bool = null;
+    var names: ?[]const ?[]const u8 = null;
     if (options.rewrite or options.rename) {
         const s: Structure = try .init(arena, source, tokens);
         // Renaming first: it reads which tokens elimination kept, before
@@ -141,11 +155,99 @@ pub fn minify(arena: Allocator, source: []const u8, keep: ?[]const []const u8, o
             try rewrite(arena, &s, shown, spell);
             block_ends = try statementBlocks(arena, &s);
         }
+        if (marks != null) names = try markNames(arena, &s, shown, spell);
     }
-    const plan: Plan = .{ .shown = shown, .spell = spell, .block_ends = block_ends };
-    const out = try print(arena, source, tokens, plan);
+    const plan: Plan = .{ .shown = shown, .spell = spell, .block_ends = block_ends, .names = names };
+    const out = try print(arena, source, tokens, plan, marks);
     if (std.debug.runtime_safety) try verify(arena, source, tokens, plan, out);
     return out;
+}
+
+/// What `print` records for a source map (`backend.md` §11.2, *Hand-written
+/// JavaScript*, amended 2026-11-04): one mark at each token it prints, from
+/// the token's first byte in the output to its first byte in the source,
+/// and the names those marks carry, as written. In the caller's arena.
+pub const Marks = struct {
+    /// In generated order, which is also source order: compaction never
+    /// moves a token.
+    list: std.ArrayList(SourceMap.Mapping) = .empty,
+    /// The map's `names`, each spelling once, in first-use order.
+    names: std.ArrayList([]const u8) = .empty,
+    index: std.StringHashMapUnmanaged(u32) = .empty,
+
+    fn add(m: *Marks, arena: Allocator, generated: usize, source: u32, name: ?[]const u8) Allocator.Error!void {
+        var at: u32 = SourceMap.Mapping.no_name;
+        if (name) |text| {
+            const slot = try m.index.getOrPut(arena, text);
+            if (!slot.found_existing) {
+                slot.value_ptr.* = @intCast(m.names.items.len);
+                try m.names.append(arena, text);
+            }
+            at = slot.value_ptr.*;
+        }
+        try m.list.append(arena, .{ .generated = @intCast(generated), .source = source, .name = at });
+    }
+};
+
+/// Per token, the name its mark carries (`backend.md` §11.2, *Hand-written
+/// JavaScript*, amended 2026-11-04), or null. A token A2 renamed carries its
+/// spelling as written. A named function's first printed token carries the
+/// function's name as written, renamed or not — a `function` keyword, an
+/// `async` before it, or the first printed token of a declarator's arrow or
+/// function initialiser — because an engine names a stack frame by the
+/// mapping at the start of the enclosing function (§11.1). For the same
+/// reason a parameter that begins an arrow carries no name of its own:
+/// Node would name the frame after the parameter. Read after the rewrites,
+/// so `(a) =>` may begin at `a`.
+fn markNames(arena: Allocator, s: *const Structure, shown: []const bool, spell: []const ?[]const u8) Allocator.Error![]const ?[]const u8 {
+    const tokens = s.tokens;
+    const names = try arena.alloc(?[]const u8, tokens.len);
+    @memset(names, null);
+    for (tokens, 0..) |_, i| {
+        if (!s.name(i)) continue;
+        const new = spell[i] orelse continue;
+        const old = s.text(i);
+        // `const` → `let` is the one rewrite that respells a word.
+        if (!same(new, old) and !Print.isReservedWord(old)) names[i] = old;
+    }
+    // The first printed token of each arrow: its parameter, its `(`, or the
+    // first token inside the `(` when the rewrites hid it.
+    for (tokens, 0..) |_, k| {
+        if (!s.punct(k, "=>") or k == 0) continue;
+        var first = if (s.punct(k - 1, ")")) s.close[k - 1] else k - 1;
+        if (first > 0 and s.word(first - 1, "async")) first -= 1;
+        while (first < k and !shown[first]) first += 1;
+        names[first] = null;
+    }
+
+    var list: std.ArrayList(u32) = .empty;
+    for (tokens, 0..) |_, k| {
+        if (!shown[k] or !(s.word(k, "const") or s.word(k, "let") or s.word(k, "var"))) continue;
+        list.clearRetainingCapacity();
+        (try s.declarators(arena, k, &list)) orelse continue;
+        for (list.items) |d| {
+            if (!s.name(d) or !s.punct(d + 1, "=")) continue;
+            var init = d + 2;
+            if (s.word(init, "async")) init += 1;
+            const arrow = (s.punct(init, "(") and s.punct(s.close[init] + 1, "=>")) or
+                (init < tokens.len and s.name(init) and s.punct(init + 1, "=>"));
+            // A function expression with a name of its own is named by it.
+            const function = s.word(init, "function") and !(init + 1 < tokens.len and s.name(init + 1));
+            if (!arrow and !function) continue;
+            var first = d + 2;
+            while (first < tokens.len and !shown[first]) first += 1;
+            if (first < tokens.len) names[first] = s.text(d);
+        }
+    }
+    for (tokens, 0..) |_, i| {
+        if (!shown[i] or !s.word(i, "function")) continue;
+        var j = i + 1;
+        if (s.punct(j, "*")) j += 1;
+        if (j >= tokens.len or !s.name(j)) continue;
+        names[i] = s.text(j);
+        if (i > 0 and shown[i - 1] and s.word(i - 1, "async")) names[i - 1] = s.text(j);
+    }
+    return names;
 }
 
 /// What `print` writes: which tokens, and each one's spelling when a pass
@@ -157,6 +259,8 @@ const Plan = struct {
     /// STATEMENT (`statementBlocks`), after which a line terminator is never
     /// automatic semicolon insertion's. Null keeps every such newline.
     block_ends: ?[]const bool = null,
+    /// Per token, the name its source map mark carries (`markNames`).
+    names: ?[]const ?[]const u8 = null,
 
     fn text(p: Plan, source: []const u8, tokens: []const Token, i: usize) []const u8 {
         return p.spell[i] orelse tokens[i].text(source);
@@ -530,7 +634,8 @@ fn needsSpace(a: Token, at: []const u8, b: Token, bt: []const u8) bool {
     return false;
 }
 
-fn print(arena: Allocator, source: []const u8, tokens: []const Token, plan: Plan) Allocator.Error![]const u8 {
+/// The shown tokens, and with `marks` a mark at the first byte of each.
+fn print(arena: Allocator, source: []const u8, tokens: []const Token, plan: Plan, marks: ?*Marks) Allocator.Error![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     try out.ensureTotalCapacity(arena, source.len / 2);
     var prev: ?usize = null;
@@ -550,6 +655,7 @@ fn print(arena: Allocator, source: []const u8, tokens: []const Token, plan: Plan
                 try out.append(arena, ' ');
             }
         }
+        if (marks) |m| try m.add(arena, out.items.len, t.start, if (plan.names) |n| n[i] else null);
         try out.appendSlice(arena, text);
         prev = i;
     }
@@ -1705,7 +1811,10 @@ pub const Printed = struct {
 /// spelled as `forced` says and every other name renamed by A2 around them:
 /// no `import`, no `export` keyword and no `export { … }` list in the body,
 /// the `import` statements apart. Research 40's rewrites run as in `minify`.
-pub fn printHoisted(arena: Allocator, h: *const Hoisted, forced: *const Forced) Allocator.Error!Printed {
+/// With `marks`, the body's marks, as `minifyMarked` records them; the
+/// `import`s get none (`backend.md` §11.2, *Hand-written JavaScript*,
+/// amended 2026-11-04).
+pub fn printHoisted(arena: Allocator, h: *const Hoisted, forced: *const Forced, marks: ?*Marks) Allocator.Error!Printed {
     const tokens = h.tokens;
     const shown = try arena.dupe(bool, h.cut.mask);
     const spell = try arena.alloc(?[]const u8, tokens.len);
@@ -1727,7 +1836,7 @@ pub fn printHoisted(arena: Allocator, h: *const Hoisted, forced: *const Forced) 
                 @memset(alone, false);
                 @memset(alone[u.start..u.end], true);
                 const plan: Plan = .{ .shown = alone, .spell = spell };
-                const text = try print(arena, h.source, tokens, plan);
+                const text = try print(arena, h.source, tokens, plan, null);
                 if (std.debug.runtime_safety) try verify(arena, h.source, tokens, plan, text);
                 try imports.append(arena, text);
                 @memset(shown[u.start..u.end], false);
@@ -1739,8 +1848,13 @@ pub fn printHoisted(arena: Allocator, h: *const Hoisted, forced: *const Forced) 
         }
     }
     try rewrite(arena, &h.structure, shown, spell);
-    const plan: Plan = .{ .shown = shown, .spell = spell, .block_ends = try statementBlocks(arena, &h.structure) };
-    const body = try print(arena, h.source, tokens, plan);
+    const plan: Plan = .{
+        .shown = shown,
+        .spell = spell,
+        .block_ends = try statementBlocks(arena, &h.structure),
+        .names = if (marks != null) try markNames(arena, &h.structure, shown, spell) else null,
+    };
+    const body = try print(arena, h.source, tokens, plan, marks);
     if (std.debug.runtime_safety) try verify(arena, h.source, tokens, plan, body);
     return .{ .body = body, .imports = imports.items };
 }
@@ -2018,10 +2132,77 @@ test "hoisting: top-level names take the linker's spellings, and the file's modu
     var forced: Forced = .empty;
     try forced.put(arena, "helper", "a");
     try forced.put(arena, "run", "b");
-    const printed = try printHoisted(arena, &h, &forced);
+    var marks: Marks = .{};
+    const printed = try printHoisted(arena, &h, &forced, &marks);
     try testing.expectEqualStrings("import process from\"node:process\";\n", printed.imports[0]);
     // The locals avoid `a` and `b`, which a local would capture.
     try testing.expectEqualStrings("const a=c=>c+1;const b=d=>process.exit(a(d));\n", printed.body);
+    // The body's marks only: the `import` and the `export`s are not in it.
+    try testing.expectEqualStrings((try printHoisted(arena, &h, &forced, null)).body, printed.body);
+    try testing.expectEqualStrings(
+        \\const@36 a@42:helper =@49 c@52:helper =>@59 c@62:value +@68 1@70 ;@71 const@80
+        \\b@86:run =@90 d@93:run =>@96 process@99 .@106 exit@107 (@111 a@112:helper (@118
+        \\d@119:a )@120 )@121 ;@122
+    , try listMarks(arena, h.source, printed.body, &marks));
+}
+
+/// A line of `print`'s marks: each as `<printed token>@<source byte>`, and
+/// `:<name>` when it carries one, ten to a line.
+fn listMarks(arena: Allocator, source: []const u8, out: []const u8, marks: *const Marks) ![]const u8 {
+    var text: std.ArrayList(u8) = .empty;
+    const again = try tokenize(arena, out);
+    const written = try tokenize(arena, source);
+    try testing.expectEqual(again.len, marks.list.items.len);
+    for (marks.list.items, again, 0..) |m, t, k| {
+        try testing.expectEqual(t.start, m.generated);
+        // The mark's source byte begins a token of the source.
+        const begins = for (written) |w| {
+            if (w.start == m.source) break true;
+        } else false;
+        try testing.expect(begins);
+        if (k != 0) try text.append(arena, if (k % 10 == 0) '\n' else ' ');
+        try text.print(arena, "{s}@{d}", .{ t.text(out), m.source });
+        if (m.name != SourceMap.Mapping.no_name) try text.print(arena, ":{s}", .{marks.names.items[m.name]});
+    }
+    return text.items;
+}
+
+test "marks: each printed token maps to its token as written, and a renamed name carries its spelling" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    // `backend.md` §11.2, *Hand-written JavaScript*, amended 2026-11-04.
+    // `helper` is renamed: each use carries `helper`, and its arrow's
+    // first token, `b` once the brackets go, carries `helper` and not
+    // `value`. `step` is a function declaration: its keyword carries its
+    // name. `run` is exported and keeps its name, so the name itself has
+    // none, but its `function` carries it all the same: Node names a frame
+    // by the mapping there. The comment and `unused` print nothing.
+    const source =
+        \\// A comment.
+        \\const helper = (value) => value + 1;
+        \\function step(n) { return helper(n) * 2; }
+        \\const unused = () => 0;
+        \\export function run(count) {
+        \\  return step(count);
+        \\}
+        \\
+    ;
+    var marks: Marks = .{};
+    const out = (try minifyMarked(arena, source, &.{"run"}, release, &marks)).?;
+    try testing.expectEqualStrings((try minify(arena, source, &.{"run"}, release)).?, out);
+    try testing.expectEqualStrings("const a=b=>b+1;function c(d){return a(d)*2}export function run(e){return c(e)}\n", out);
+    // One `names` entry for each spelling, after the marks.
+    try testing.expectEqualStrings(
+        \\const@14 a@20:helper =@27 b@30:helper =>@37 b@40:value +@46 1@48 ;@49 function@51:step
+        \\c@60:step (@64 d@65:n )@66 {@68 return@70 a@77:helper (@83 d@84:n )@85
+        \\*@87 2@89 }@92 export@118 function@125:run run@134 (@137 e@138:count )@143 {@145
+        \\return@149 c@156:step (@160 e@161:count )@166 }@169
+        \\names helper,value,step,n,run,count
+    , try std.fmt.allocPrint(arena, "{s}\nnames {s}", .{
+        try listMarks(arena, source, out, &marks),
+        try std.mem.join(arena, ",", marks.names.items),
+    }));
 }
 
 test "hoisting: a name read unbound is free, and a key after { or , is not" {
@@ -2168,7 +2349,19 @@ test "fuzz: compaction never panics, and what it prints lexes to what it kept" {
         // spellings, so a rename that broke a token, or a dropped `;` or
         // bracket that changed how the rest lexes, panics here.
         _ = try minify(a.allocator(), buf.items, null, release);
-        _ = try minify(a.allocator(), buf.items, &.{"a"}, release);
+        const plain = try minify(a.allocator(), buf.items, &.{"a"}, release);
+        // A map's marks change no byte, and they are ascending on both
+        // sides (`backend.md` §11.2, *Hand-written JavaScript*, amended
+        // 2026-11-04).
+        var marks: Marks = .{};
+        const marked = try minifyMarked(a.allocator(), buf.items, &.{"a"}, release, &marks);
+        try testing.expectEqual(plain == null, marked == null);
+        if (plain) |bytes| {
+            try testing.expectEqualStrings(bytes, marked.?);
+            for (marks.list.items[0..marks.list.items.len -| 1], marks.list.items[@min(1, marks.list.items.len)..]) |x, y| {
+                try testing.expect(x.generated < y.generated and x.source < y.source);
+            }
+        }
         // A scope-hoisted file: its top-level bindings forced to names no
         // piece spells, and `verify` holding the body to the plan.
         if (try hoistable(a.allocator(), buf.items, &.{"a"})) |h| if (h.declines() == null) {
@@ -2176,7 +2369,9 @@ test "fuzz: compaction never panics, and what it prints lexes to what it kept" {
             for (h.tops, 0..) |top, i| if (top.renamable) {
                 try forced.put(a.allocator(), top.name, try std.fmt.allocPrint(a.allocator(), "Q{d}", .{i}));
             };
-            _ = try printHoisted(a.allocator(), &h, &forced);
+            var hoisted_marks: Marks = .{};
+            const body = (try printHoisted(a.allocator(), &h, &forced, &hoisted_marks)).body;
+            try testing.expectEqualStrings((try printHoisted(a.allocator(), &h, &forced, null)).body, body);
         };
     }
 }

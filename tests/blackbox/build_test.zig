@@ -4736,7 +4736,7 @@ const check_release_map_script =
     \\
     \\if (run === "run") {
     \\  const r = spawnSync(process.execPath, ["--enable-source-maps", modulePath], { encoding: "utf8" });
-    \\  for (const frame of r.stderr.matchAll(/^\s+at (\S+) \((?:.*\/)?([^\/]+\.beni:\d+:\d+)\)$/gm)) {
+    \\  for (const frame of r.stderr.matchAll(/^\s+at (\S+) \((?:.*\/)?([^\/]+\.(?:beni|js):\d+:\d+)\)$/gm)) {
     \\    console.log(`frame ${frame[1]} ${frame[2]}`);
     \\  }
     \\  console.log(`exit ${r.status}`);
@@ -5038,8 +5038,9 @@ test "a release library build writes a map beside every module" {
     // └─────────────────────────────────────────┘
     // `backend.md` §11.2: a `--library` release build is one file per
     // module (§9), and each module lowered from beni gets its own map, as
-    // in development. The platform's runtime is hand-written, compacted
-    // and unmapped. In `Lib.mjs`: two exported functions carry their beni
+    // in development, and so does each compacted hand-written file
+    // (*Hand-written JavaScript*, amended 2026-11-04). In `Lib.mjs`: two
+    // exported functions carry their beni
     // names at their first byte, a renamed local its own, and two calls in
     // `label` map to their first tokens. The `export` is covered by the
     // last segment, which has no name: Node's own reader takes the name
@@ -5092,11 +5093,12 @@ test "a release library build writes a map beside every module" {
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
     // A map beside every module lowered from beni, core's included, and
-    // none beside the hand-written runtime.
+    // beside every compacted hand-written file; none beside the
+    // derived-comparison engine, which no person wrote.
     const files = try w.listFiles("lib");
     var maps: usize = 0;
     for (files) |path| {
-        const is_module = std.mem.endsWith(u8, path, ".mjs") and !std.mem.endsWith(u8, path, ".foreign.mjs") and !std.mem.endsWith(u8, path, "_derived.mjs");
+        const is_module = std.mem.endsWith(u8, path, ".mjs") and !std.mem.endsWith(u8, path, "_derived.mjs");
         const map = try std.fmt.allocPrint(w.arena.allocator(), "{s}.map", .{path});
         var has_map = false;
         for (files) |other| has_map = has_map or std.mem.eql(u8, other, map);
@@ -5108,6 +5110,378 @@ test "a release library build writes a map beside every module" {
     try testing.expect(w.exists("lib/_platform/Rt.mjs.map"));
     const core_map = try w.read("lib/_core/List.mjs.map");
     try testing.expect(std.mem.startsWith(u8, core_map, "{\"version\":3,\"file\":\"List.mjs\",\"sources\":[\"beni:///core/List.beni\"],\"sourcesContent\":[\""));
+}
+
+/// The `hand` platform of the hand-written map tests (`backend.md` §11.2,
+/// *Hand-written JavaScript*, amended 2026-11-04): a sibling with a
+/// function declaration that throws, an arrow that calls it, and a second
+/// export of one binding, which the link step aliases; a runtime that
+/// writes the program's one line.
+fn writeMappedHandPlatform(w: *World) !void {
+    try w.write("hand/beni.json",
+        \\{ "platform": true, "name": "hand", "program": "Hand.Program", "runtime": "run.js" }
+    );
+    try w.write("hand/Hand.beni",
+        \\pub foreign type Program
+        \\
+        \\
+        \\pub foreign pure say : String → Program
+        \\
+        \\
+        \\pub foreign pure shout : String → Program
+        \\
+        \\
+        \\pub foreign pure crash : Program, Program → Program
+        \\
+    );
+    try w.write("hand/Hand.js",
+        \\// The sibling of `Hand.beni`.
+        \\
+        \\const spaces = / +/g;
+        \\
+        \\/* Named only inside a substitution below. */
+        \\const upper = (s) => s.toUpperCase();
+        \\
+        \\export const say = (line) => ({
+        \\  text: `[${ upper(line.replace(spaces, " ")) }]`,
+        \\});
+        \\
+        \\function explode(reason) {
+        \\  throw new Error(reason);
+        \\}
+        \\
+        \\export const crash = (first, second) => ({
+        \\  text: [first, second].map((part) => explode(part.text)).join(""),
+        \\});
+        \\
+        \\export { say as shout };
+        \\
+    );
+    try w.write("hand/run.js",
+        \\import process from "node:process";
+        \\
+        \\// Writes the program's one line.
+        \\export const run = (program) => {
+        \\  process.stdout.write(program.text + "\n");
+        \\};
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Hand exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Hand.crash (Hand.say "a  b") (Hand.shout "c")
+        \\
+    );
+}
+
+test "a release build maps hand-written JavaScript back to the file it is written in" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §11.2, *Hand-written JavaScript*, amended 2026-11-04.
+    // In the one hoisted file, each hand-written piece is a stretch of its
+    // own, and its `.js` file a source, by its path from the map. Each token
+    // maps to its token as written: `f`, `g` and `h` carry the names they
+    // are written with, `h`'s `function` too, and each arrow's first token
+    // the name of the function it begins — `run`'s `a` carries `run`, not
+    // `program`, and `crash`'s `(` carries `crash`. The callback's `k`
+    // begins an arrow with no name, so it carries none: Node would name
+    // the frame `part`. Its other `k` carries `part`. The `import` at the top,
+    // the alias `shout` takes (`const b=a`) and the entry's `e(d)` are the
+    // link step's, and unmapped. Under `--enable-source-maps` the crash
+    // names `explode`, the callback and `crash` at their lines in
+    // `Hand.js`. A second
+    // program reaches `core/Record.js`, which is embedded: `beni:///` and
+    // its path.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeMappedHandPlatform(&w);
+    try w.write("rec/Main.beni",
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\type alias Point =
+        \\    x : Int
+        \\    y : Int
+        \\
+        \\
+        \\moved : Point → Point
+        \\moved p = { Record.copy p | x = p.x + 10 }
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    p = moved { x = 1, y = 2 }
+        \\    Node.print (String.fromInt p.x)
+        \\
+    );
+    try w.write("check-release-map.mjs", check_release_map_script);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=hand", "--release", "--source-maps", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const checked = try w.runNode(&.{
+        "check-release-map.mjs",
+        "out/_main.mjs",
+        "run",
+        "import process",
+        "e=|a=>{",
+        "process.stdout",
+        "const |f=/ +/g",
+        "g=|b=>b.toUpperCase",
+        "function h(e)",
+        "function |h(e)",
+        "h(|e){throw",
+        "throw new Error",
+        "c=|(i,j)=>",
+        "(|i,j)=>",
+        "map(|k=>",
+        "h(|k.text)",
+        "const |b=a;",
+        "c(a(\"a  b\")",
+        "e(d);",
+    });
+    const rec_built = try w.runWith(&.{ "build", "--platform=node", "--release", "--source-maps", "--out=rec-out", "rec" }, .{ .raw_diagnostics = true });
+    try expectBuilt(rec_built);
+    const rec_checked = try w.runNode(&.{ "check-release-map.mjs", "rec-out/_main.mjs", "no", "b=|a=>({...a})", "({...|a})" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("", checked.stderr);
+    try testing.expectEqualStrings(
+        \\version 3, file _main.mjs
+        \\source ../hand/run.js: its text
+        \\source ../hand/Hand.js: its text
+        \\source ../Main.beni: its text
+        \\import process -> unmapped
+        \\e=|a=>{ -> run.js:4:21 run
+        \\process.stdout -> run.js:5:3
+        \\const |f=/ +/g -> Hand.js:3:7 spaces
+        \\g=|b=>b.toUpperCase -> Hand.js:6:16 upper
+        \\function h(e) -> Hand.js:12:1 explode
+        \\function |h(e) -> Hand.js:12:10 explode
+        \\h(|e){throw -> Hand.js:12:18 reason
+        \\throw new Error -> Hand.js:13:3
+        \\c=|(i,j)=> -> Hand.js:16:22 crash
+        \\(|i,j)=> -> Hand.js:16:23 first
+        \\map(|k=> -> Hand.js:17:30
+        \\h(|k.text) -> Hand.js:17:47 part
+        \\const |b=a; -> unmapped (6 before)
+        \\c(a("a  b") -> Main.beni:6:5
+        \\e(d); -> unmapped
+        \\frame explode Hand.js:13:9
+        \\frame <anonymous> Hand.js:17:39
+        \\frame crash Hand.js:17:25
+        \\frame <anonymous> Main.beni:6:5
+        \\exit 1
+        \\
+    , checked.stdout);
+    try testing.expectEqual(@as(u8, 0), checked.exit_code);
+    try testing.expectEqualStrings("", rec_checked.stderr);
+    try testing.expectEqualStrings(
+        \\version 3, file _main.mjs
+        \\source beni:///platforms/node/Rt.beni: embedded
+        \\source beni:///core/Record.js: embedded
+        \\source beni:///platforms/node/Node.beni: embedded
+        \\source beni:///core/String.beni: embedded
+        \\source ../rec/Main.beni: its text
+        \\b=|a=>({...a}) -> Record.js:6:22 copy
+        \\({...|a}) -> Record.js:6:34 r
+        \\
+    , rec_checked.stdout);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualDeep(@as([]const []const u8, &.{ "_main.mjs", "_main.mjs.map", "_manifest.txt" }), try w.listFiles("out"));
+}
+
+test "a release library build maps each compacted hand-written file, and not one it copies" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §11.2, *Hand-written JavaScript*, amended 2026-11-04: in
+    // the multi-file layout, a compacted hand-written file gets a map of its
+    // own beside it, one source, and its comment line; nothing else of the
+    // file changes. `say` and `crash` are exported and keep their names,
+    // and their first tokens carry them. The runtime has a `/` after `++`,
+    // which `Minify` cannot read, so it is copied as written: it IS its
+    // source, and it has no map.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeMappedHandPlatform(&w);
+    const runtime =
+        \\import process from "node:process";
+        \\
+        \\// Writes the program's one line.
+        \\export const run = (program) => {
+        \\  let n = 0;
+        \\  n++ / 2;
+        \\  process.stdout.write(program.text + "\n");
+        \\};
+        \\
+    ;
+    try w.write("hand/run.js", runtime);
+    try w.write("check-release-map.mjs", check_release_map_script);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const plain = try w.runWith(&.{ "build", "--platform=hand", "--release", "--library", "--out=plain", "Main.beni" }, .{ .raw_diagnostics = true });
+    const built = try w.runWith(&.{ "build", "--platform=hand", "--release", "--library", "--source-maps", "--out=lib", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(plain);
+    try expectBuilt(built);
+    const checked = try w.runNode(&.{
+        "check-release-map.mjs",
+        "lib/_platform/Hand.foreign.mjs",
+        "no",
+        "const |a=/ +/g",
+        "say=|d=>",
+        "function |e(f)",
+        "crash=|(g,h)",
+        "export{say as shout}",
+    });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("", checked.stderr);
+    try testing.expectEqualStrings(
+        \\version 3, file Hand.foreign.mjs
+        \\source ../../hand/Hand.js: its text
+        \\const |a=/ +/g -> Hand.js:3:7 spaces
+        \\say=|d=> -> Hand.js:8:21 say
+        \\function |e(f) -> Hand.js:12:10 explode
+        \\crash=|(g,h) -> Hand.js:16:22 crash
+        \\export{say as shout} -> Hand.js:20:1
+        \\
+    , checked.stdout);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The sibling and the two modules have maps; the runtime is the file.
+    try testing.expectEqual(@as(usize, 3), try expectMappedTree(&w, "plain", "lib"));
+    try testing.expect(w.exists("lib/_platform/Hand.foreign.mjs.map"));
+    try testing.expect(!w.exists("lib/_platform/run.foreign.mjs.map"));
+    try testing.expectEqualStrings(runtime, try w.read("lib/_platform/run.foreign.mjs"));
+}
+
+test "a markup runtime the build rewrites maps back to the file as written" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §11.2, *Hand-written JavaScript*, amended 2026-11-04.
+    // The platform `views` names `ssr` with a runtime split between
+    // `markup.js` and the module `Views` (`boundary.md` §9.2). Its top-level
+    // assignment is a statement the one file cannot hoist, so the
+    // application keeps the multi-file layout, where the build rewrites the
+    // file's three-line `import` of `beni:Views` to one line before
+    // `Minify` reads it. The marks move back: each token of the rewritten
+    // `import` maps to the statement's first byte, line 4, so the map has
+    // one segment for all of it, and what follows maps to its line as
+    // written, two lines further down than in the text `Minify` read.
+    // Under `--enable-source-maps`, `run`'s crash names `run` at line 20.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("views/beni.json",
+        \\{ "platform": true, "name": "views", "platforms": ["node"], "reexports": ["Node"], "runtime": "markup.js", "markup": { "lowering": "ssr", "runtime": "markup.js", "module": "Views" } }
+    );
+    try w.write("views/Views.beni",
+        \\pub escape : String → String
+        \\escape text = text
+        \\
+        \\
+        \\pub list : String, String, String → String
+        \\list items row empty = items
+        \\
+    );
+    try w.write("views/markup.js",
+        \\// The `ssr` runtime's hand-written half: everything but `escape` and
+        \\// `list`, which the module `Views` supplies.
+        \\import process from "node:process";
+        \\import {
+        \\  escape,
+        \\} from "beni:Views";
+        \\
+        \\// A top-level statement that is not a declaration: the one file declines it.
+        \\globalThis.viewsLoaded = true;
+        \\
+        \\export const escapeAttr = (value) => escape(value);
+        \\export const safeUrl = (url) => url;
+        \\export const classes = (entries) => "";
+        \\export const styles = (entries) => "";
+        \\export const rawText = (text, tag) => text;
+        \\export const text = (s) => ({ t: s });
+        \\export const map = (html, f) => html;
+        \\export const run = (program) => {
+        \\  process.stdout.write(escape(program.$o));
+        \\  throw new Error("done");
+        \\};
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print "hello"
+        \\
+    );
+    try w.write("check-release-map.mjs", check_release_map_script);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=views", "--release", "--source-maps", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const checked = try w.runNode(&.{
+        "check-release-map.mjs",
+        "out/_platform/markup.foreign.mjs",
+        "no",
+        "import{",
+        "escape}from",
+        "globalThis.viewsLoaded",
+        "export const escapeAttr",
+        "run=|",
+        "throw new Error",
+    });
+    const ran = try w.runNode(&.{ "--enable-source-maps", "out/_main.mjs" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("", checked.stderr);
+    try testing.expectEqualStrings(
+        \\version 3, file markup.foreign.mjs
+        \\source ../../views/markup.js: its text
+        \\import{ -> markup.js:4:1
+        \\escape}from -> markup.js:4:1 (12 before)
+        \\globalThis.viewsLoaded -> markup.js:9:1
+        \\export const escapeAttr -> markup.js:11:1
+        \\run=| -> markup.js:18:21 run
+        \\throw new Error -> markup.js:20:3
+        \\
+    , checked.stdout);
+    try testing.expectEqualStrings("hello\n", ran.stdout);
+    try testing.expect(std.mem.indexOf(u8, ran.stderr, "    at run (") != null);
+    try testing.expect(std.mem.indexOf(u8, ran.stderr, "views/markup.js:20:9)\n") != null);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The multi-file layout: the entry file, which no person wrote, has no
+    // map.
+    try testing.expect(w.exists("out/_platform/markup.foreign.mjs.map"));
+    try testing.expect(!w.exists("out/_main.mjs.map"));
 }
 
 test "--no-source-maps writes no map and no comment, and contradicting it is refused" {
