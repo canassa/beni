@@ -115,8 +115,6 @@ pub const lowering: m.Lowering = .{
         // listeners noted.
         .{ .name = "caught", .arity = 1 },
         .{ .name = "listen", .arity = 3 },
-        .{ .name = "onTaken", .arity = 4 },
-        .{ .name = "onArmTaken", .arity = 5 },
         .{ .name = "deliver", .arity = 1 },
         // `(⊤)`, `(⊤)` and `(title)`: an application's address and key, and
         // a document's title written (§10).
@@ -2178,7 +2176,7 @@ const Page = struct {
         return active;
     }
 
-    /// The same single native listener as the Source on/onTaken adapters,
+    /// The same single native listener as the Source on/listen adapters,
     /// with the checked callback, reader and arm test kept in producer IR.
     /// The guard projects immediately even when the mapped send is queued.
     fn onCall(pg: *Page, into: m.Block, node: m.Expr, f: m.Expr, kind: ?[]const u8, ctx: u32, read: ?m.Expr) m.Error!m.Expr {

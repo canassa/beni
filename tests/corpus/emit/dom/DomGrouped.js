@@ -1,6 +1,13 @@
 import { String$fromInt, String$toUpper } from "./_core/String.mjs";
 import { Rt$control, Rt$template, Rt$empty } from "./_platform/Rt.mjs";
 import { Js$Any$pack } from "./_core/Js/Any.mjs";
+function DomGrouped$domProperty_76616c7565_0_get($propertyNode$9) {
+  return $propertyNode$9.value;
+}
+function DomGrouped$domProperty_76616c7565_0_set($propertyNode$9, $propertyValue$10) {
+  $propertyNode$9.value = $propertyValue$10;
+}
+const DomGrouped$domProperty_76616c7565_0 = { name: "value", immutable: true, get: DomGrouped$domProperty_76616c7565_0_get, set: DomGrouped$domProperty_76616c7565_0_set };
 const DomGrouped$p21 = ($i$1, $v$2) => {
   const $input$3 = $v$2.a;
   const $x$4 = $input$3.name;
@@ -26,20 +33,20 @@ const DomGrouped$p21 = ($i$1, $v$2) => {
   if ($x$7 !== $i$1.g3_0) {
     $i$1.g3_0 = $x$7;
     const $t$8 = $input$3.text;
-    Rt$control($i$1.w5, "value", $t$8, true);
+    Rt$control($i$1.w5, DomGrouped$domProperty_76616c7565_0, $t$8);
   }
 };
 const DomGrouped$t21 = Rt$template("<div><p> </p><b> </b><input>");
-const DomGrouped$k21 = { m: ($v$9, $cx$10) => {
-  const $r$11 = DomGrouped$t21();
-  const $w$12 = $r$11.firstChild;
-  const $w$13 = $w$12.firstChild;
-  const $w$14 = $w$12.nextSibling;
+const DomGrouped$k21 = { m: ($v$11, $cx$12) => {
+  const $r$13 = DomGrouped$t21();
+  const $w$14 = $r$13.firstChild;
   const $w$15 = $w$14.firstChild;
   const $w$16 = $w$14.nextSibling;
-  const $i$17 = { s: $r$11, q: Rt$empty, e: $r$11, w0: $r$11, w1: $w$12, w2: $w$13, w4: $w$15, w5: $w$16, a1: undefined, g0_0: NaN, g1: undefined, g2_0: NaN, g3_0: NaN };
-  DomGrouped$p21($i$17, $v$9);
-  return $i$17;
+  const $w$17 = $w$16.firstChild;
+  const $w$18 = $w$16.nextSibling;
+  const $i$19 = { s: $r$13, q: Rt$empty, e: $r$13, w0: $r$13, w1: $w$14, w2: $w$15, w4: $w$17, w5: $w$18, a1: undefined, g0_0: NaN, g1: undefined, g2_0: NaN, g3_0: NaN };
+  DomGrouped$p21($i$19, $v$11);
+  return $i$19;
 }, p: DomGrouped$p21 };
 const DomGrouped$p36 = ($i$1, $v$2) => {
   const $input$3 = $v$2.a;

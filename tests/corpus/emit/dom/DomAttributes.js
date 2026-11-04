@@ -42,6 +42,20 @@ const DomAttributes$k48 = { m: ($v$6, $cx$7) => {
   DomAttributes$p48($i$9, $v$6);
   return $i$9;
 }, p: DomAttributes$p48 };
+function DomAttributes$domProperty_76616c7565_0_get($propertyNode$7) {
+  return $propertyNode$7.value;
+}
+function DomAttributes$domProperty_76616c7565_0_set($propertyNode$7, $propertyValue$8) {
+  $propertyNode$7.value = $propertyValue$8;
+}
+const DomAttributes$domProperty_76616c7565_0 = { name: "value", immutable: true, get: DomAttributes$domProperty_76616c7565_0_get, set: DomAttributes$domProperty_76616c7565_0_set };
+function DomAttributes$domProperty_636865636b6564_3_get($propertyNode$11) {
+  return $propertyNode$11.checked;
+}
+function DomAttributes$domProperty_636865636b6564_3_set($propertyNode$11, $propertyValue$12) {
+  $propertyNode$11.checked = $propertyValue$12;
+}
+const DomAttributes$domProperty_636865636b6564_3 = { name: "checked", immutable: true, get: DomAttributes$domProperty_636865636b6564_3_get, set: DomAttributes$domProperty_636865636b6564_3_set };
 const DomAttributes$p68 = ($i$1, $v$2) => {
   const $input$3 = $v$2.a;
   const $x$4 = $input$3.url;
@@ -55,24 +69,24 @@ const DomAttributes$p68 = ($i$1, $v$2) => {
   if ($x$5 !== $i$1.g1_0) {
     $i$1.g1_0 = $x$5;
     const $t$6 = $input$3.text;
-    Rt$control($i$1.w1, "value", $t$6, true);
+    Rt$control($i$1.w1, DomAttributes$domProperty_76616c7565_0, $t$6);
   }
-  const $x$7 = $input$3.on;
-  if ($x$7 !== $i$1.g2_0) {
-    $i$1.g2_0 = $x$7;
-    const $t$8 = $input$3.on;
-    Rt$control($i$1.w1, "checked", $t$8, true);
+  const $x$9 = $input$3.on;
+  if ($x$9 !== $i$1.g2_0) {
+    $i$1.g2_0 = $x$9;
+    const $t$10 = $input$3.on;
+    Rt$control($i$1.w1, DomAttributes$domProperty_636865636b6564_3, $t$10);
   }
 };
 const DomAttributes$t68 = Rt$template("<form><input><a>link</a><b>");
-const DomAttributes$k68 = { m: ($v$9, $cx$10) => {
-  const $r$11 = DomAttributes$t68();
-  const $w$12 = $r$11.firstChild;
-  const $w$13 = $w$12.nextSibling;
-  const $w$14 = $w$13.nextSibling;
-  const $i$15 = { s: $r$11, q: Rt$empty, e: $r$11, w0: $r$11, w1: $w$12, w2: $w$13, w4: $w$14, g0_0: NaN, g1_0: NaN, g2_0: NaN };
-  DomAttributes$p68($i$15, $v$9);
-  return $i$15;
+const DomAttributes$k68 = { m: ($v$13, $cx$14) => {
+  const $r$15 = DomAttributes$t68();
+  const $w$16 = $r$15.firstChild;
+  const $w$17 = $w$16.nextSibling;
+  const $w$18 = $w$17.nextSibling;
+  const $i$19 = { s: $r$15, q: Rt$empty, e: $r$15, w0: $r$15, w1: $w$16, w2: $w$17, w4: $w$18, g0_0: NaN, g1_0: NaN, g2_0: NaN };
+  DomAttributes$p68($i$19, $v$13);
+  return $i$19;
 }, p: DomAttributes$p68 };
 const DomAttributes$inPlace$$packet$1 = { [Js$Any$pack.$packet.key]: "(" + "{color=core:String.String,danger=core:Basics.Bool}" + ")", a: undefined };
 const DomAttributes$inPlace = (r$1) => ({ t: DomAttributes$k27, v: { ...DomAttributes$inPlace$$packet$1, a: r$1 } });

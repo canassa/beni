@@ -2424,9 +2424,10 @@ test "a platform read from a directory is checked by the build, and an embedded 
     // `Schema`, which only `Prerender` reaches; `Js.Any` and `Js.Data`; and
     // the generated natives their typed bindings import (`AbortController`,
     // `AbortSignal`, `DOMException`, `Data`, `Json`, `NodeDirent`, `NodeFs`,
-    // `Promise`, all `Browser.Host`).
+    // all `Browser.Host`). `Promise` is already reached through the typed
+    // EventTarget → Element projection.
     const unreached = node_modules - 4;
-    const unreached_core = 13;
+    const unreached_core = 12;
     try testing.expectEqual(@as(u64, 1), embedded.counters.checked);
     try testing.expectEqual(disk.counters.modules, embedded.counters.modules + unreached + unreached_core);
 }

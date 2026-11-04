@@ -62,8 +62,12 @@ site protocol callbacks scope payload slot =
     value
 
 
-pub dispatch : Runtime.Protocol, Node.Node, Event.Event → ⊤
-dispatch protocol node event = protocol.fire node event "$$click" "$$clickX" 0
+pub eventMessage : Runtime.Protocol, Node.Node, Event.Event → Runtime.Payload
+eventMessage protocol node event = protocol.eventPayload node event "$$click" "$$clickX"
+
+
+pub send : Runtime.Protocol, Node.Node, Runtime.Payload → ⊤
+send protocol node message = protocol.sendRoot node message
 
 
 -- The opaque step operations also let a consumer keep the chain walk in

@@ -846,17 +846,6 @@ note map node kind f =
         HostEvent.rendererEarlyAppend noted kind f
 
 
---| `on`, in the client of a prerendering build: wired through `listen`.
-pub onTaken : HostNode.Node, sync (a → ⊤), String, sync (HostEvent.Event → a) → ⊤
-onTaken node callback kind project = listen node kind λevent → Dispatch.read callback event project
-
-
---| `onArm`, in the client of a prerendering build: wired through `listen`.
-pub onArmTaken : HostNode.Node, sync (a → ⊤), String, V, sync (HostEvent.Event → a) → ⊤
-onArmTaken node callback kind arms project = listen node kind λevent →
-    if armsShown arms then Dispatch.read callback event project
-
-
 --| `(top)`: the records `caught` kept whose target is inside `top`, the
 --| unit's top element the mount took — none on a fresh mount — handed on in
 --| order, then dropped with the listeners noted. A record some listener

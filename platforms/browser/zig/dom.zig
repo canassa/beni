@@ -93,9 +93,9 @@ pub const lowering: m.Lowering = .{
         // `(slot)`: what the slot shows patched again when it must be on
         // every render — a skipped helper's or component's markup.
         .{ .name = "restate", .arity = 1 },
-        // `(el, prop, value, immutable)`: a `stateful` attribute's write, its value
+        // `(el, descriptor, value)`: a `stateful` attribute's write, its value
         // kept on the element for the page's side of the promise.
-        .{ .name = "control", .arity = 4 },
+        .{ .name = "control", .arity = 3 },
         // `(el)`: a controlled element a write of this render may have
         // changed, put back when the render ends (§15.3, *Controlled
         // inputs*).
@@ -2842,12 +2842,13 @@ pub const Gen = struct {
         return e;
     }
 
-    /// A `stateful` attribute's write: `control(el, "prop", v)`, which
+    /// A `stateful` attribute's write: `control(el, descriptor, v)`, which
     /// keeps `v` on the element and writes it when the page's differs.
     pub fn writeControl(g: *Gen, into: m.Block, el: m.Expr, it: m.Item, v: m.Expr) m.Error!void {
         const prop = g.tree.string(g.tree.attributeFacts(it.attribute).property.?);
         const immutable = if (it.value.dynamic) |value| g.tree.identitySafe(value) else it.value.kind == .constant;
-        try g.jsb().expression(into, try g.rt("control", &.{ el, try g.str(prop), try g.propertyValue(it, v), try g.jsb().literal(if (immutable) .true else .false) }));
+        const descriptor = try protocol.property(g.cx, prop, it.class, immutable);
+        try g.jsb().expression(into, try g.rt("control", &.{ el, try g.jsb().name(descriptor), try g.propertyValue(it, v) }));
     }
 
     fn propertyValue(g: *Gen, it: m.Item, v: m.Expr) !m.Expr {
