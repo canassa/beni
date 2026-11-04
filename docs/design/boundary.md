@@ -8734,6 +8734,36 @@ the part of the section it settles keeps its text.
   Worker deleted after. It replaced q11's token proposal and is how (e.5) and (d) were measured.
 - No question of this section is open.
 
+### 9.13 Host APIs that a page lacks: the playground's inventory (2026-11-04)
+
+*Specified 2026-11-04, issue #142; not built.* The playground's page code becomes beni
+([`playground.md`](playground.md) §10). Its inventory (§10.6 there) found host APIs that no module
+of `core/` or of a platform wraps on `master` `99355536bc`. This section names each one that a
+platform or `core/` must give, its proposed home, and the failures that its wrapper must type
+(CLAUDE.md rule 9: each documented failure is caught by name and returned as a typed error, and
+everything else crashes). Each issue's pull request adds the signatures to this section as a
+dated amendment, before the code (rule 1).
+
+| API | Home | Failures to type | Issue |
+|---|---|---|---|
+| WebAssembly: compile from bytes, instantiate with beni imports, exports, memory, call | `core/`, next to `Binary` | `CompileError`; `LinkError`; a trap (`RuntimeError`); the engine's stack exhaustion, by the messages of `playground.md` §3 rule 7; `Memory.grow`'s `RangeError` | #1883 |
+| UTF-8 between `String` and bytes | `core/` | decode: bytes that are not UTF-8 (the fatal decoder's `TypeError`) | #1884 |
+| Base64 and base64url | `core/` | decode: a character outside the alphabet, a bad length | #1885 |
+| Compress and inflate bytes | `browser`, `node` | inflate: data not in the format (the stream's `TypeError`), output past the limit | #1886 |
+| A response body as bytes | `Http` (§9.8.12) | the failures that `Http` maps now | #1887 |
+| Random bytes | `browser`, `node` | none: the wrapper splits a request into calls of 65 536 bytes, so `QuotaExceededError` cannot happen | #1888 |
+| A monotonic clock | `core/Clock` | none | #1889 |
+| `srcdoc` and `sandbox` on `iframe` | `html` (§9.3) | none: `sandbox` takes the standard's tokens as a type | #1890 |
+| Messages between a page and its frame | `browser` | a message that its `Schema` refuses; a frame that is not in the document | #1891 |
+| The clipboard | `browser` | no clipboard (an insecure page); `NotAllowedError` | #1892 |
+| A scroll into view with `block` and `inline` options | `Dom` (§9.8.6) | the failures of `Dom.scrollIntoView` now | #1896 |
+
+Two more are the owner's decisions: an element whose inside a library owns (#1881), and a
+third-party ES module from beni (#1882). Bytes, `DataView` and 64-bit word pairs are `Binary`'s
+(#1278, [`webgpu.md`](webgpu.md) §3.1), and a Web Worker is `Browser.Worker`'s (#1297,
+`workers-api.md` §1 on PR #1304). The playground's own platform (`playground.md` §10.4) wraps the
+CodeMirror API (#1893) and the frame runner's host parts (#1894); no other program uses them.
+
 ## Appendix — what is deliberately not done
 
 - **User-writable `foreign`.** It has never been made safe in any of the fourteen languages surveyed,
