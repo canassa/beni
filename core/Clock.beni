@@ -23,8 +23,8 @@
 --!
 --! Nothing here is `foreign`.
 
-import Duration exposing (Duration)
 import Browser.Host.Date as HostDate
+import Duration exposing (Duration)
 import Task
 
 
