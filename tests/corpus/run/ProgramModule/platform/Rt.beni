@@ -1,0 +1,20 @@
+-- A runtime module without markup (boundary.md §5.2, amended 2026-11-03):
+-- the manifest names no `"runtime"` and no `"markup"`, and its top-level
+-- `"module"` names this module, whose `run` the entry file hands `main` to.
+import Js
+
+
+pub type Program
+    = Program String
+
+
+pub program : String → Program
+program text = Program text
+
+
+pub run : Program → ⊤
+run p =
+    case p of
+        Program text →
+            _ = Js.call (Js.get (Js.global "process") "stdout") "write" [ Js.from text ]
+            ⊤

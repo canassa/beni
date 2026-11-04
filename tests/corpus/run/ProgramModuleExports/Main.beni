@@ -1,0 +1,9 @@
+-- The `"exports"` output key over a runtime module without markup
+-- (boundary.md §5.2, amended 2026-11-04; §9.12 (c)): this project's
+-- beni.json lists `Arena` and `Lobby`, the platform's `Rt.run` prints each
+-- call, and no runtime file exists.
+import Rt exposing (Program)
+
+
+main : Program
+main = Rt.program "hello"
