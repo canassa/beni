@@ -433,8 +433,8 @@ field names and string tags in every build, and a type of one constructor with o
 its object, where elsewhere a release build represents it by its field (*amended 2026-10-02*;
 `backend.md` §9, *A type of one constructor with one field is its field*).
 
-The Program type named by a platform manifest whose runtime is JavaScript is
-also visible, with its body transitively: the runtime receives `main` directly.
+When a JavaScript platform runtime supplies `run`, it receives the manifest
+Program directly, so that type and its body are visible transitively.
 This boundary applies with or without managed worker entries, and remains when
 specialization refines field names. A runtime written in beni uses the ordinary
 typed calls and casts to establish its boundary.

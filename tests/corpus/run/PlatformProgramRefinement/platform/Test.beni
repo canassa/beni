@@ -1,0 +1,17 @@
+import Generic
+import Js
+
+
+pub opaque type Program
+    = Program { runtimeResult : String }
+
+
+-- A cold branch keeps the helper live until specialization removes it.
+probing : Js.Ref Bool
+probing = Js.ref False
+
+
+pub program : String → Program
+program text =
+    accepted = if Js.read probing then Generic.same text else True
+    Program { runtimeResult = if accepted then text else "unexpected mismatch" }
