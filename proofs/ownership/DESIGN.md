@@ -557,8 +557,9 @@ Differences from the Zig checker, each one on purpose:
   the update is a use, so this core refuses it. The Zig lowering reads it into a
   temporary before the write (§31.14). The in-place interpreter here has no
   lowering, and to accept the read it would have to run a hoisted program. That
-  changes what `accepted_traces_agree` claims: the owner's decision
-  (`own-record-assign-q1`).
+  changes what `accepted_traces_agree` claims. Jayson decided on 2026-11-04
+  (#316): refuse, no hoist. No theorem changes, and the hoist stays tested by
+  the Zig side only.
 - **No `W{F}`.** A summary's write names the object, not its fields (§31.7). A
   caller's later read of a field that the callee keeps is therefore a use too.
 - **An update's base use is the fields that it keeps.** Zig reads the base of
