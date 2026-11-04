@@ -6465,10 +6465,11 @@ test "a release page build lowers each module once" {
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     // One file, and each module in it lowered once: none is lowered two
-    // times, and none is lowered that the file does not hold but one:
+    // times. Two lowered modules emit no runtime code:
     // `Browser.Host.Element`, whose one value the runtime reads, the
     // identity upcast `toNode` that finds the mount node (interface 1.30),
     // is written where it is called, so the file holds nothing of it.
+    // Browser.Bridge is likewise erased into the view expression/root store.
     var files: u64 = 0;
     for (try w.listFiles("out")) |path| {
         if (std.mem.endsWith(u8, path, ".mjs")) files += 1;
@@ -6476,7 +6477,7 @@ test "a release page build lowers each module once" {
     try testing.expectEqual(1, files);
     try testing.expectEqual(2, counters.reach_walks);
     try testing.expect(counters.modules_printed > 1);
-    try testing.expectEqual(counters.modules_printed + 1, counters.modules_lowered);
+    try testing.expectEqual(counters.modules_printed + 2, counters.modules_lowered);
 }
 
 test "a program builds the same with the edge lists the binary carries as with lists it builds" {
@@ -13918,4 +13919,37 @@ test "platform lifecycle hooks bypass the Task scheduler" {
     try testing.expect(std.mem.indexOf(u8, fiber_task, "Task$makeFiber") != null);
     try testing.expect(w.exists("plain-out/_core/Js/TaskHooks.mjs"));
     try testing.expect(w.exists("fiber-out/_core/Task.mjs"));
+}
+
+test "typed browser bridge is identity code and fuzz registration is absent on normal pages" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Browser
+        \\main : Browser.Program
+        \\main = Browser.program { init = λ⊤ → {}, update = λ_ model → model, view = λ_ → <p>Hello</p> }
+        \\
+    );
+    const dev = try w.run(&.{ "build", "--platform=browser", "--out=dev", "Main.beni" });
+    const release = try w.run(&.{ "build", "--release", "--platform=browser", "--out=release", "Main.beni" });
+    const fuzz = try w.run(&.{ "build", "--release", "--fuzz", "--platform=browser", "--out=fuzz", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dev.exit_code);
+    try testing.expectEqualStrings("", dev.stderr);
+    try testing.expectEqual(@as(u8, 0), release.exit_code);
+    try testing.expectEqualStrings("", release.stderr);
+    try testing.expectEqual(@as(u8, 0), fuzz.exit_code);
+    try testing.expectEqualStrings("", fuzz.stderr);
+    const browser = try w.read("dev/_platform/Browser.mjs");
+    const runtime = try w.read("dev/_platform/Rt.mjs");
+    const ordinary = try w.read("release/_main.mjs");
+    const fuzzed = try w.read("fuzz/_main.mjs");
+    // Direct block uses are the view expression itself, not calls to an
+    // identity helper. The bridge's module has no remaining reference.
+    try testing.expect(!w.exists("dev/_platform/Browser/Bridge.mjs"));
+    try testing.expect(std.mem.indexOf(u8, browser, "Bridge$block") == null);
+    try testing.expect(std.mem.indexOf(u8, browser, "Bridge$installRoot") == null);
+    try testing.expect(std.mem.indexOf(u8, browser, "$$root =") != null);
+    try testing.expect(std.mem.indexOf(u8, runtime, "__beniFuzzSend") == null);
+    try testing.expect(std.mem.indexOf(u8, ordinary, "__beniFuzzSend") == null);
+    try testing.expect(std.mem.indexOf(u8, fuzzed, "__beniFuzzSend") != null);
 }

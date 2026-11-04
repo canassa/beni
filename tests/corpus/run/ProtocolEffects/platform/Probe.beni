@@ -1,0 +1,30 @@
+-- Exercise the actual supplied record rather than a duplicate signature.
+import Browser.Host.Node as Node
+import Html.Runtime as Runtime
+import Rt
+
+
+pub opaque type Program
+    = Program
+
+
+pub program : ⊤ → Program
+program ⊤ = Program
+
+
+pub run : Program → ⊤
+run _ = send ⊤
+
+
+foreign impure root : ⊤ → Node.Node
+
+
+foreign pure payload : ⊤ → Runtime.Payload
+
+
+pub send : ⊤ → ⊤
+send ⊤ =
+    node = root ⊤
+    message = payload ⊤
+    Rt.protocol.sendRoot node message
+    ⊤

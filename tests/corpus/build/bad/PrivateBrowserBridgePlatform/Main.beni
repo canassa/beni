@@ -1,0 +1,6 @@
+import Browser
+import Probe
+
+
+main : Browser.Program
+main = Probe.page

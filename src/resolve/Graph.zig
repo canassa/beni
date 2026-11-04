@@ -1429,3 +1429,9 @@ pub fn isCloudflare(g: *const Graph, m: Index) bool {
     const layer = g.cloudflare_layer orelse return false;
     return g.modulePackage(m) == .platform and g.modules.items(.layer)[m.int()] == layer;
 }
+
+/// Native boot bridges are private to their actual loaded platform layer.
+pub fn samePlatformLayer(g: *const Graph, a: Index, b: Index) bool {
+    return g.modulePackage(a) == .platform and g.modulePackage(b) == .platform and
+        g.modules.items(.layer)[a.int()] == g.modules.items(.layer)[b.int()];
+}

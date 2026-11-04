@@ -1,0 +1,1 @@
+{ "platform": true, "name": "bridge-app-test", "platforms": ["browser"], "reexports": ["Browser", "Browser.Bridge"] }

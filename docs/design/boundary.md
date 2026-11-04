@@ -3251,6 +3251,58 @@ No new `Js` primitive, `Any.js` change, HostFree exemption, refusal or per-view
 or per-row factory is introduced. The 1.29 Property descriptors and control
 chains are unchanged.
 
+**Typed browser program boundary** *(amended 2026-11-04, Part of #1807).* The
+browser's public `Program`, `program`, `hosted`, `mountAt`, `programs` and
+`prerender` signatures and observable behavior stay unchanged. Program is an
+opaque beni value holding ordered, closed mount jobs and optional element IDs,
+rather than a foreign array of records erased through Js.Value. Each job captures
+its model and message types, and receives typed boot services and a native Node.
+Initialization remains once per mount; a preceding program may create a later
+program's mount node. Duplicate or missing roots remain defects before rendering.
+Models, shown views, callbacks and queued work stay in typed storage.
+The compiled browser-inline constructors remain unreachable; reaching their
+fallback body is a defect, rather than a cast of undefined to Program.
+
+A compiler-owned `Browser.Bridge`, separate from Html.Runtime, has three operations:
+
+```beni
+block : returned Html.Html msg → Html.Runtime.Block
+installRoot : borrowed Browser.Host.Node.Node, escaped (msg → ⊤) → ⊤
+installFuzz : escaped (Browser.Host.Node.Node, Html.Runtime.Payload → ⊤) → ⊤
+```
+
+`block` preserves the representation exactly: the argument is the result, with
+no call, wrapper or allocation at a direct use. Its returned word preserves all
+aliases; it grants no fresh ownership. `installRoot` stores the typed callback
+under the existing root key, retaining it for later invocation. `installFuzz`
+registers the existing guarded fuzzer callback only in a fuzz build. Ordinary dev
+and release pages contain no registration, callback or bridge body for it. Neither
+operation introduces a source-visible Payload-to-message cast. The lowering's
+existing matched message provenance remains responsible for sendRoot.
+
+All three operations are fenced to core and the owning browser platform layer: application
+code and a different platform layer cannot use them, including through aliases or
+static dispatch. The owner identity comes from the loaded platform graph, not the
+caller's module spelling. Compiler bodies are pinned and ownership words describe
+their actual lowering, including retained callbacks and their effects. A wrong
+word must be caught by misuse fixtures; unknown callback effects remain refused.
+Html.Runtime's frozen 1.30 API and source SHA are unchanged by this bridge.
+
+Hosted control messages distinguish real input from a render-only nudge using
+shared constants. They allocate no object per message or render. A closed job
+keeps typed send closures rather than calling a sender through Js.Value. Dispatch
+reentrancy, update log context, shutdown/defect behavior, after-render ordering,
+render coalescing and lazy Task-hook registration retain their existing contracts.
+
+Validation pins zero-cost block emission, absence of fuzz support on normal
+pages, bridge fences from an app and a foreign platform, and callback/alias words.
+It measures empty, text, TEA element and multiple-program pages against the fresh
+base; growth is reported with its cause on #1861. Completion requires zero normal
+default-on build refusals, lifecycle/hosted/multiple-program/fuzz and Chrome
+coverage, jobs 1/8 byte identity and full gates against that base.
+
+**Supplied record rungs** *(amended 2026-11-04, Part of #1807).* Rt.protocol is a foreign impure record. Its positive function fields inherit that rung; obtaining the record runs no callback. The complete lowering-body audit and all 34 field rows are ownership-checker.md §24.8. Mount/patch, event and map callbacks, root sends, controls, DOM and row operations, turns and shutdown must retain their effects even when their unit results are unused. Metadata readers and the site allocator conservatively inherit impure too. text and map stay pure block constructors; their deferred kind operations run later. This corrects a false pure declaration without weakening release elimination or changing the frozen Html.Runtime ABI. run/ProtocolEffects pins the actual supplied sendRoot in development and release.
+
 ### 9.5 How a lowering is compiled into beni
 
 **No dynamic loading, ever**: a lowering is Zig linked into the binary, and a platform is trusted

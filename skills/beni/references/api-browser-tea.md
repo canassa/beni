@@ -13,8 +13,8 @@ module Tea
   alias Document a
     Document
   alias Program
-  value application : { init : Url, Key → model × Cmd msg, onUrlChange : Url → msg, onUrlRequest : UrlRequest → msg, subscriptions : model → Sub msg, update : msg, model → model × Cmd msg, view : model → Document msg } → Program  -- impure
-  value document : { init : ⊤ → model × Cmd msg, subscriptions : model → Sub msg, update : msg, model → model × Cmd msg, view : model → Document msg } → Program  -- impure
-  value element : { init : ⊤ → model × Cmd msg, subscriptions : model → Sub msg, update : msg, model → model × Cmd msg, view : model → Html msg } → Program  -- impure
-  value sandbox : { init : ⊤ → model, update : msg, model → model, view : model → Html msg } → Program  -- impure
+  value application : { init : Url, Key → model × Cmd msg, onUrlChange : Url → msg, onUrlRequest : UrlRequest → msg, subscriptions : model → Sub msg, update : msg, model → model × Cmd msg, view : model → Document msg } → (Program)
+  value document : { init : ⊤ → model × Cmd msg, subscriptions : model → Sub msg, update : msg, model → model × Cmd msg, view : model → Document msg } → (Program)
+  value element : { init : ⊤ → model × Cmd msg, subscriptions : model → Sub msg, update : msg, model → model × Cmd msg, view : model → Html msg } → (Program)
+  value sandbox : { init : ⊤ → model, update : msg, model → model, view : model → Html msg } → (Program)
 ```

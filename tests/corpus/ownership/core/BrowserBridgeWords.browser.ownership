@@ -1,0 +1,11 @@
+module BrowserBridgeWords
+  20:5 List.push values: rejected escaped: a function value that Browser.Bridge.installRoot hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  28:5 List.push values: rejected escaped: a function value that Browser.Bridge.installFuzz hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  summary block: π1 RA; res π1
+  summary root: π1 R, π2 RJ; π2 calls many, unseen, supply 1 ⊤ borrowed
+  summary fuzz: π1 RJ; π1 calls many, unseen, supply 1 ⊤ borrowed, supply 2 ⊤ borrowed
+  summary rootCapture: π1 R; res esc1
+  summary fuzzCapture: res esc1
+  demands 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause escaped 2

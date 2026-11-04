@@ -11,7 +11,7 @@ import Browser exposing (UrlRequest)
 import Browser.Navigation as Navigation
 import Cmd exposing (Cmd)
 import Html exposing (Html)
-import Js
+import Js.Protocol as Protocol
 import Sub exposing (Sub)
 import Url exposing (Url)
 
@@ -104,4 +104,4 @@ application app = unreachable app
 -- `plans/runtime-in-beni.md` step 9), so the platform has no sibling and
 -- a development build copies none (`browser-inline.md` §10.5).
 unreachable : a → Program
-unreachable _ = Js.to Js.undefined
+unreachable _ = Protocol.defect "an inline program constructor was not lowered"

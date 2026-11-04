@@ -4480,6 +4480,62 @@ returning `document`, and takes no list: it has no words. Every entry pinned in
 that region was re-read for it; their bodies are unchanged and their words
 stand.
 
+**Browser boot bridge (2026-11-04, Part of #1807).** The three compiler-owned
+Browser.Bridge operations have no Js.Value path and are separate from frozen
+Html.Runtime 1.30. Their words are derived from the pinned Lower bodies:
+
+| Declaration | Words and body rationale | Misuse flip |
+|---|---|---|
+| Browser.Bridge.block | returned Html: result is the exact argument, no call/allocation or freshness | returned→borrowed loses the result alias in BrowserBridgeWords |
+| Browser.Bridge.installRoot | borrowed Node; escaped callback: stores the same sender under $$root and the host retains/calls it later | callback escaped→borrowed loses captured-list escape in BrowserBridgeWords.rootCapture; Node is native-handle-only under the existing rationale |
+| Browser.Bridge.installFuzz | escaped callback: installs the retained guarded fuzzer sender if absent | escaped→borrowed loses captured-list escape in BrowserBridgeWords.fuzzCapture |
+
+Entry is not a word for an arbitrary function parameter (§24.4). These retained
+callbacks use escaped, not entry, once, many or owned. No ownership or effect
+fact is strengthened to accommodate program storage. Any demand these honest
+words cannot express requires a separately reduced manager review.
+
+**Supplied protocol effect audit (2026-11-04, Part of #1807; fixes #1921).** The declaration's rung applies to every positive function field, not to an invocation of the record constructor. Declaring Rt.protocol pure was false for the impure fields below: a direct unit call such as sendRoot could disappear in release. Rt.protocol is impure, conservatively including its read/allocate-only fields. No field gains suspension, no ownership word changes, and Html.Runtime 1.30 stays frozen. The separately supplied text and map operations only construct blocks; their deferred kind bodies do not run at construction, so those two remain pure.
+
+| Field | Lowering body | Audited minimum | Published rung |
+|---|---|---|---|
+| unit | calls the kind mount and writes instance metadata | impure (false pure corrected) | impure |
+| patch | calls a kind patch/mount, writes metadata and may swap DOM ranges | impure (false pure corrected) | impure |
+| again | calls the retained kind patch callback | impure (false pure corrected) | impure |
+| live | reads compiler-owned instance metadata | pure read/allocation | impure |
+| eventPayload | may call the event extractor and handler | impure (false pure corrected) | impure |
+| nodeContext | reads compiler-owned context metadata | pure read/allocation | impure |
+| contextPresent | compares the context with null | pure read/allocation | impure |
+| contextParent | reads the retained map-context parent | pure read/allocation | impure |
+| contextApply | calls the retained message mapper | impure (false pure corrected) | impure |
+| sendRoot | calls node.$$root, applying update and queuing work | impure (false pure corrected) | impure |
+| controls | reads compiler-owned controls metadata | pure read/allocation | impure |
+| setControls | writes the control metadata on a native node | impure (false pure corrected) | impure |
+| hasRoot | checks compiler-owned root metadata | pure read/allocation | impure |
+| hasHandler | checks compiler-owned handler metadata | pure read/allocation | impure |
+| handlerFlags | reads compiler-owned handler flags | pure read/allocation | impure |
+| first | traverses slots and may call the row head callback or checked native array read | impure (false pure corrected) | impure |
+| last | traverses slots and may call the row tail callback or checked native array read | impure (false pure corrected) | impure |
+| put | inserts/moves the instance range in the DOM | impure (false pure corrected) | impure |
+| drop | removes its range from the DOM | impure (false pure corrected) | impure |
+| swap | inserts the replacement and removes the old DOM range | impure (false pure corrected) | impure |
+| parentOf | reads a live DOM parent and checks the required-node invariant | impure (false pure corrected) | impure |
+| childMaybe | mounts, patches or removes a child range | impure (false pure corrected) | impure |
+| restate | writes slot state and invokes row/kind patch callbacks | impure (false pure corrected) | impure |
+| turn | changes render-loop state and invokes its callback | impure (false pure corrected) | impure |
+| dead | reads the page dead flag | pure read/allocation | impure |
+| stop | changes the dead state and shuts down/disposes page work | impure (false pure corrected) | impure |
+| makeSite | only allocates the returned site record | pure read/allocation | impure |
+| siteScope | reads the paired site scope | pure read/allocation | impure |
+| setSiteScope | writes the site operations and scope | impure (false pure corrected) | impure |
+| siteData | reads the paired site data | pure read/allocation | impure |
+| siteHead | invokes the paired row head operation, which may perform checked native reads | impure (false pure corrected) | impure |
+| siteTail | invokes the paired row tail operation, which may perform checked native reads | impure (false pure corrected) | impure |
+| siteRestate | invokes the row operation that writes/repatches rows | impure (false pure corrected) | impure |
+| siteDispose | invokes the row disposal operation | impure (false pure corrected) | impure |
+
+All 22 false pure field claims are corrected by the same record declaration change; the 12 read/allocate-only fields are sound conservative over-approximations. The existing per-field lowering body pins remain the guard for every audited body. The protocol declaration itself is also pinned, so changing its rung requires a fresh review. run/ProtocolEffects invokes the actual supplied sendRoot: development and release must both print sent. Its pre-fix release emits no send and prints nothing. The typed root-send browser fuzz fixture and a release emit shape additionally guard the real page boundary.
+
 ### 24.9 The decoder in `Expect`
 
 `Http.request r` calls the function `r.expect` holds — `transfer`'s pattern `(Expect accept read)` binds it and

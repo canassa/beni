@@ -1,7 +1,7 @@
 //! One name fence for resolution, diagnostics and generated API references.
 const std = @import("std");
 
-pub const Access = enum { core, task, worker, runtime, cloudflare, platform, debug };
+pub const Access = enum { core, task, worker, runtime, cloudflare, same_platform, platform, debug };
 const Entry = struct {
     module: []const u8,
     name: ?[]const u8,
@@ -10,6 +10,9 @@ const Entry = struct {
 };
 
 const entries = [_]Entry{
+    .{ .module = "Browser", .name = "Boot", .access = .same_platform },
+    .{ .module = "Browser", .name = "runMounts", .access = .same_platform },
+    .{ .module = "Browser.Bridge", .name = null, .access = .same_platform },
     .{ .module = "Inline", .name = "guarded", .access = .platform },
     .{ .module = "Inline", .name = "unchanged", .access = .platform },
     .{ .module = "Rt.Slots", .name = null, .access = .platform },
@@ -186,6 +189,7 @@ pub fn authority(package: anytype, core_app: bool, app_is_platform: bool) Author
 
 /// Platform identities established by the loaded chain, never a source name.
 pub const PlatformIdentity = struct {
+    same_layer: bool = false,
     owner_cloudflare: bool = false,
     caller_cloudflare: bool = false,
 };
@@ -205,6 +209,7 @@ pub fn deniedAccess(required: Access, owner: Authority, caller: Authority, calle
         .task => owner == .core and !(caller == .core and std.mem.eql(u8, caller_module, "Task")),
         .worker => owner == .platform and !workerCaller(caller == .platform, caller_module),
         .cloudflare => !platform.owner_cloudflare or !platform.caller_cloudflare,
+        .same_platform => caller != .core and (owner != .platform or caller != .platform or !platform.same_layer),
         .runtime => owner == .core and caller == .app,
         .platform => caller == .app,
         .debug => caller != .core or !std.mem.eql(u8, caller_module, "Debug"),
@@ -216,6 +221,7 @@ pub fn explanation(module: []const u8, name: []const u8) ?[]const u8 {
     return switch (required) {
         .worker => "This name is private to the platform’s worker entry machinery.",
         .cloudflare => "This primitive is private to the Cloudflare Object runtime.",
+        .same_platform => "This primitive is private to its owning platform layer.",
         .runtime, .platform => "This name is private to core and platform runtimes.",
         .debug => "This name is private to core's Debug module.",
         .core, .task => if (std.mem.eql(u8, module, "Js"))
@@ -264,4 +270,14 @@ test "Cloudflare privacy requires both loaded platform identities" {
     }
     // An application module with the same spelling does not acquire this fence.
     try std.testing.expect(!denied(.app, "Worker.Object", "replyIds", true, .app, "Main", .{}));
+}
+
+test "browser bridge access requires core or the same loaded platform layer" {
+    const testing = std.testing;
+    for ([_][]const u8{ "block", "installRoot", "installFuzz" }) |name| {
+        try testing.expect(denied(.platform, "Browser.Bridge", name, true, .app, "Main", .{ .same_layer = true }));
+        try testing.expect(denied(.platform, "Browser.Bridge", name, true, .platform, "Browser", .{}));
+        try testing.expect(!denied(.platform, "Browser.Bridge", name, true, .platform, "Rt", .{ .same_layer = true }));
+        try testing.expect(!denied(.platform, "Browser.Bridge", name, true, .core, "Probe", .{}));
+    }
 }
