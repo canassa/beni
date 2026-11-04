@@ -7743,6 +7743,11 @@ const Emitter = struct {
             if (e.suppliedAs("run") != null) run_id = ids.get(Rename.Globals.key(try e.moduleName(module, "run")));
         }
         if (e.selectedRuntime()) |runner| run_id = ids.get(Rename.Globals.key(try e.moduleName(runner.module, e.runtimeRunName())));
+        // The prerender tree's entry calls nothing (`emitPrerenderEntry`): it
+        // exports `main`'s render function and routes, which the Node driver
+        // reads, so `main` escapes whole and no `run(main)` is modelled
+        // (`prerender.md` §5.1 item 2; #1848).
+        if (e.options.prerender == .tree) run_id = null;
         if (e.workerHostClient()) |client| {
             if (ids.get(Rename.Globals.key(try e.moduleName(client, "installHostStop")))) |g| try escaping.append(e.scratch, g);
         }
