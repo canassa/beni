@@ -2583,20 +2583,24 @@ const Emitter = struct {
     /// each `import { … } from "beni:<Module>"` an import of the names the
     /// kept part of the file mentions, spelled as the build spells them,
     /// from the module's file (`backend.md` §15.1, *The runtime module*).
-    fn rewriteProgramImports(e: *Emitter, bytes: []const u8, out: []const u8) ![]const u8 {
-        const spec = try e.programSpecifier() orelse return bytes;
-        const module = e.runtime_module orelse return bytes;
+    /// The edits go with the text, for its map (§11.2, *Hand-written
+    /// JavaScript*, amended 2026-11-04).
+    fn rewriteProgramImports(e: *Emitter, bytes: []const u8, out: []const u8) !HandText {
+        const spec = try e.programSpecifier() orelse return .{ .text = bytes };
+        const module = e.runtime_module orelse return .{ .text = bytes };
         const tokens = Minify.tokenize(e.scratch, bytes) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
-            error.Unsupported => return bytes,
+            error.Unsupported => return .{ .text = bytes },
         };
         const imports = try Minify.programImports(e.scratch, bytes, tokens, spec);
-        if (imports.len == 0) return bytes;
+        if (imports.len == 0) return .{ .text = bytes };
         const target = try relativeSpecifier(e.scratch, out, try e.outputPath(module));
         var text: std.ArrayList(u8) = .empty;
+        var edits: std.ArrayList(HandText.Edit) = .empty;
         var at: usize = 0;
         for (imports) |imp| {
             try text.appendSlice(e.scratch, bytes[at..imp.bytes_start]);
+            const start = text.items.len;
             var first = true;
             for (imp.names) |n| {
                 const used = for (e.program_uses) |u| {
@@ -2608,10 +2612,11 @@ const Emitter = struct {
                 try text.print(e.scratch, "{s} as {s}", .{ try e.moduleSpelling(module, n.name), n.name });
             }
             if (!first) try text.print(e.scratch, " }} from \"{s}\";", .{target});
+            try edits.append(e.scratch, .{ .text_start = @intCast(start), .text_end = @intCast(text.items.len), .file_start = imp.bytes_start, .file_end = imp.bytes_end });
             at = imp.bytes_end;
         }
         try text.appendSlice(e.scratch, bytes[at..]);
-        return text.items;
+        return .{ .text = text.items, .file = bytes, .edits = edits.items };
     }
 
     fn dispatchOf(e: *Emitter, m: Graph.Index) *const Dispatch {
@@ -7150,6 +7155,59 @@ const Emitter = struct {
     // one entry, and the three steps take the pieces they join as a list so
     // that a chunker can hand them a subset.
 
+    /// The text of a hand-written file that the build writes, and where it
+    /// came from: the file as written, or that file with its `import`s of
+    /// the runtime module rewritten (`rewriteProgramImports`).
+    const HandText = struct {
+        text: []const u8,
+        /// The file as written, when `text` is not it.
+        file: ?[]const u8 = null,
+        /// Each rewritten `import`, in order: its bytes in `text` and in
+        /// `file`.
+        edits: []const Edit = &.{},
+        /// Whether a person wrote it, so that a map can name it
+        /// (`HandFile.mapped`).
+        mapped: bool = true,
+
+        const Edit = struct { text_start: u32, text_end: u32, file_start: u32, file_end: u32 };
+
+        /// A byte of `text` as a byte of the file as written (§11.2,
+        /// *Hand-written JavaScript*, amended 2026-11-04): past an edit it
+        /// moves by the difference of the two lengths, and inside one it is
+        /// the `import`'s first byte.
+        fn fileOffset(h: HandText, at: u32) u32 {
+            var moved = at;
+            for (h.edits) |edit| {
+                if (at < edit.text_start) break;
+                moved = if (at < edit.text_end) edit.file_start else at - edit.text_end + edit.file_end;
+            }
+            return moved;
+        }
+    };
+
+    /// A hand-written file's line table for its map (§11.2, *Hand-written
+    /// JavaScript*, amended 2026-11-04): a line ends at `\n`, at `\r\n` and
+    /// at a `\r` alone, as an editor counts them.
+    fn handLineStarts(scratch: Allocator, text: []const u8) Allocator.Error![]const u32 {
+        var starts: std.ArrayList(u32) = .empty;
+        try starts.append(scratch, 0);
+        for (text, 0..) |c, i| {
+            const ends = c == '\n' or (c == '\r' and (i + 1 == text.len or text[i + 1] != '\n'));
+            if (ends) try starts.append(scratch, @intCast(i + 1));
+        }
+        return starts.items;
+    }
+
+    /// The URL of the hand-written file at `path` in the map at `map_file`:
+    /// §11.1's rule for a `.beni` file (`sourceUrl`), by the asset's path.
+    fn assetUrl(e: *Emitter, root: MapRoot, map_file: []const u8, path: []const u8) Allocator.Error![]const u8 {
+        for (e.options.embedded) |asset| {
+            if (std.mem.eql(u8, asset.path, path)) return std.fmt.allocPrint(e.scratch, "beni:///{s}", .{path});
+        }
+        const map_path = try SourceMap.absolute(e.scratch, root.cwd, try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.out_dir, map_file }));
+        return SourceMap.relativeUrl(e.scratch, map_path, try SourceMap.absolute(e.scratch, root.cwd, path));
+    }
+
     /// A hand-written file of a scope-hoisted build.
     const HandFile = struct {
         /// Where the multi-file layout writes it, and what it is read from.
@@ -7167,6 +7225,11 @@ const Emitter = struct {
         declined: bool = false,
         /// Its renamed top-level bindings' spellings in the one scope.
         forced: Minify.Forced = .empty,
+        /// Whether a person wrote it, so that its stretch of the one file
+        /// maps to it: not the derived-comparison engine, whose compacted
+        /// text the compiler holds (§11.2, *Hand-written JavaScript*,
+        /// amended 2026-11-04).
+        mapped: bool = true,
 
         const Use = struct { name: []const u8, local: JsIr.Name };
 
@@ -7265,7 +7328,7 @@ const Emitter = struct {
         var derived_index: ?u32 = null;
         if (uses_runtime) {
             derived_index = @intCast(files.items.len);
-            try files.append(scratch, .{ .out = derived_runtime_path, .origin = derived_runtime_path, .bytes = derived_runtime_compact });
+            try files.append(scratch, .{ .out = derived_runtime_path, .origin = derived_runtime_path, .bytes = derived_runtime_compact, .mapped = false });
         }
 
         var module_at: std.StringHashMapUnmanaged(u32) = .empty;
@@ -7667,11 +7730,15 @@ const Emitter = struct {
     /// then an `export` of whatever else of the program runtime survived.
     fn linkHoisted(e: *Emitter, slots: []ModuleSlot, h: *Hoist) !void {
         const scratch = e.scratch;
+        const mapped = e.map_root != null;
         const printed = try scratch.alloc(?Minify.Printed, h.files.len);
         @memset(printed, null);
+        const marks = try scratch.alloc(Minify.Marks, h.files.len);
+        @memset(marks, .{});
         for (h.order) |p| switch (p) {
             .file => |x| if (!h.files[x].declined) {
-                printed[x] = try Minify.printHoisted(scratch, &h.files[x].read, &h.files[x].forced);
+                const f = &h.files[x];
+                printed[x] = try Minify.printHoisted(scratch, &f.read, &f.forced, if (mapped and f.mapped) &marks[x] else null);
             },
             .module => {},
         };
@@ -7702,7 +7769,6 @@ const Emitter = struct {
         // one file's map, and everything else the file holds is unmapped.
         var stretches: std.ArrayList(SourceMap.Stretch) = .empty;
         var sources: std.ArrayList(SourceMap.Source) = .empty;
-        const mapped = e.map_root != null;
         for (h.order) |p| switch (p) {
             .module => |i| if (slots[i].text) |text| {
                 if (mapped) try e.mapStretch(&stretches, &sources, &slots[i], i, out.items.len);
@@ -7710,7 +7776,7 @@ const Emitter = struct {
             },
             .file => |x| if (printed[x]) |pr| {
                 const f = &h.files[x];
-                if (mapped) try stretches.append(scratch, .{ .start = @intCast(out.items.len), .source = SourceMap.Stretch.unmapped });
+                if (mapped) try e.mapHandStretch(&stretches, &sources, f, &marks[x], out.items.len);
                 try appendJoined(scratch, &out, pr.body, false);
                 var aliased: std.ArrayList(JsIr.Name) = .empty;
                 for (f.uses.items) |u| {
@@ -7720,6 +7786,8 @@ const Emitter = struct {
                         if (a.eql(u.local)) break true;
                     } else false;
                     if (already) continue;
+                    // The aliases are the link step's bytes, unmapped.
+                    if (mapped and aliased.items.len == 0) try stretches.append(scratch, .{ .start = @intCast(out.items.len), .source = SourceMap.Stretch.unmapped });
                     try out.appendSlice(scratch, if (aliased.items.len == 0) "const " else ",");
                     try aliased.append(scratch, u.local);
                     var buf: [8]u8 = undefined;
@@ -7843,6 +7911,33 @@ const Emitter = struct {
         });
     }
 
+    /// §11.2, *Hand-written JavaScript* (amended 2026-11-04): the stretch of
+    /// the one file that hand-written file `f`'s body takes from `start`,
+    /// and its `.js` source. A body with no mark, or the derived-comparison
+    /// engine's, is an unmapped stretch with no source.
+    fn mapHandStretch(
+        e: *Emitter,
+        stretches: *std.ArrayList(SourceMap.Stretch),
+        sources: *std.ArrayList(SourceMap.Source),
+        f: *const HandFile,
+        marks: *const Minify.Marks,
+        start: usize,
+    ) Allocator.Error!void {
+        if (marks.list.items.len == 0) return stretches.append(e.scratch, .{ .start = @intCast(start), .source = SourceMap.Stretch.unmapped });
+        const map_file = try std.fmt.allocPrint(e.scratch, "{s}.map", .{e.options.platform.entry});
+        try sources.append(e.scratch, .{
+            .url = try e.assetUrl(e.map_root.?, map_file, f.origin),
+            .text = f.bytes,
+            .line_starts = try handLineStarts(e.scratch, f.bytes),
+        });
+        try stretches.append(e.scratch, .{
+            .start = @intCast(start),
+            .source = @intCast(sources.items.len - 1),
+            .mappings = marks.list.items,
+            .names = marks.names.items,
+        });
+    }
+
     /// Append one piece of the one file without the newline it ends with,
     /// when nothing can read that newline: after a `;`, and after the `}`
     /// of an emitted module, whose every statement the printer ends
@@ -7863,7 +7958,7 @@ const Emitter = struct {
     fn importDeclined(e: *Emitter, out: *std.ArrayList(u8), h: *const Hoist, x: u32) !void {
         const scratch = e.scratch;
         const f = &h.files[x];
-        try e.produceHandWritten(f.out, f.bytes, f.origin, f.keep.items);
+        try e.produceHandWritten(f.out, .{ .text = f.bytes, .mapped = f.mapped }, f.origin, f.keep.items);
         // `run` and `start` in a statement of their own, in the form the
         // multi-file entry file writes and `tests/browser/driver.mjs` reads.
         const runs = h.runtime == x;
@@ -8250,7 +8345,7 @@ const Emitter = struct {
             const sibling_source = try e.siblingPath(source_path);
             const bytes = e.readAsset(sibling_source) orelse continue;
             const out = try e.siblingOutputPath(m);
-            try e.produceHandWritten(out, bytes, sibling_source, surviving.items);
+            try e.produceHandWritten(out, .{ .text = bytes }, sibling_source, surviving.items);
         }
         try e.copyMarkupRuntime();
         // The platform's runtime (§5.2). It is not a sibling of any module,
@@ -8282,7 +8377,7 @@ const Emitter = struct {
         try keep.appendSlice(e.scratch, &.{ "run", "start" });
         if (e.markupRuntimeIsProgramRuntime()) try keep.appendSlice(e.scratch, e.markup_exports.items);
         const out = try e.runtimeOutputPath();
-        const text = if (e.markupRuntimeIsProgramRuntime()) try e.rewriteProgramImports(bytes, out) else bytes;
+        const text: HandText = if (e.markupRuntimeIsProgramRuntime()) try e.rewriteProgramImports(bytes, out) else .{ .text = bytes };
         try e.produceHandWritten(out, text, runtime_source, keep.items);
     }
 
@@ -8290,11 +8385,33 @@ const Emitter = struct {
     /// under `--release` compacted and cut to the exports `keep` names
     /// (§9, *Hand-written JavaScript under `--release`*). A file `Minify`
     /// cannot read exactly is copied as written in either mode.
-    fn produceHandWritten(e: *Emitter, out: []const u8, bytes: []const u8, origin: []const u8, keep: []const []const u8) !void {
+    ///
+    /// With `--source-maps`, a compacted file gets a map beside it, back to
+    /// the file as written (§11.2, *Hand-written JavaScript*, amended
+    /// 2026-11-04). A copied file IS its source and gets none.
+    fn produceHandWritten(e: *Emitter, out: []const u8, file: HandText, origin: []const u8, keep: []const []const u8) !void {
         if (e.options.release) {
-            if (try Minify.minify(e.scratch, bytes, keep, Minify.release)) |compact| return e.produce(out, compact, origin);
+            const root = if (file.mapped) e.map_root else null;
+            var marks: Minify.Marks = .{};
+            if (try Minify.minifyMarked(e.scratch, file.text, keep, Minify.release, if (root != null) &marks else null)) |compact| {
+                if (root == null or marks.list.items.len == 0) return e.produce(out, compact, origin);
+                const scratch = e.scratch;
+                for (marks.list.items) |*m| m.source = file.fileOffset(m.source);
+                const written = file.file orelse file.text;
+                const map_file = try std.fmt.allocPrint(scratch, "{s}.map", .{out});
+                const map = try SourceMap.writeJoined(e.gpa, scratch, .{
+                    .file = std.fs.path.basenamePosix(out),
+                    .generated = compact,
+                    .sources = &.{.{ .url = try e.assetUrl(root.?, map_file, origin), .text = written, .line_starts = try handLineStarts(scratch, written) }},
+                    .stretches = &.{.{ .start = 0, .source = 0, .mappings = marks.list.items, .names = marks.names.items }},
+                    .end_line = true,
+                });
+                const footer = try std.fmt.allocPrint(scratch, "//# sourceMappingURL={s}.map\n", .{std.fs.path.basenamePosix(out)});
+                try e.produce(out, try std.mem.concat(scratch, u8, &.{ compact, footer }), origin);
+                return e.produceOwned(map_file, map, origin);
+            }
         }
-        try e.produce(out, bytes, origin);
+        try e.produce(out, file.text, origin);
     }
 
     /// The markup runtime, copied iff a module written imports it

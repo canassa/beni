@@ -49,7 +49,7 @@ A command-line flag replaces the manifest's value, field by field. `check` alway
 | `out/about.html`, `out/blog/index.html` | a prerendered page per route, on `browser-inline` with `Browser.prerender` (`prerender.md`) |
 | `out/<Module>.mjs`, `out/Ui/Card.mjs` | your modules, one file each |
 | `out/_core/`, `out/_platform/` | core and the platform; only what the program reaches |
-| `*.mjs.map` | a source map beside every module, with the beni source inside; `--no-source-maps` drops them |
+| `*.mjs.map` | a source map beside every module, with the beni source inside; under `--release`, also beside a compacted hand-written `.js` file, with the `.js` text inside; `--no-source-maps` drops them |
 
 - Reserved names start with `_`; a module cannot take one.
 - `--release` drops dead bindings, shortens names, joins constants and prints compactly. It refuses
