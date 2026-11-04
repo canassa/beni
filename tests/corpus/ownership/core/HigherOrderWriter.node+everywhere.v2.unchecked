@@ -1,0 +1,5 @@
+HigherOrderWriter keepThenCall: lines 6-12 (not built: call)
+HigherOrderWriter wrapped: lines 15-15 (not built: call)
+HigherOrderWriter readonly: lines 18-18 (not built: local)
+HigherOrderWriter writes: lines 21-21 (not built: local)
+HigherOrderWriter unknownEffect: lines 24-24 (not built: local)

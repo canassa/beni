@@ -117,7 +117,8 @@ pub const magic = "BENIOWN\x00";
 /// 36 invalidates template-row reports: every entry word uses the direct protocol.
 /// 37 removes the path cut (§16.7 (c), #286): a path's length is a u32.
 /// 38 escapes only what a callback keeps of its supply, in the caller's cells (#749).
-pub const version: u32 = 38;
+// Version 39: portable callback argument effects (2026-11-04, #1825).
+pub const version: u32 = 39;
 
 /// A cache hit may skip enforcement only if its previous report was clean.
 /// Other platforms also compute reports, but can cache a rejected module.
@@ -971,6 +972,13 @@ fn writeSummary(w: *Writer, arena: Allocator, s: *const Summary) Allocator.Error
         try w.int(f.send);
         try w.int(@intCast(f.need_if.len));
         for (f.need_if) |writer| try w.int(writer);
+        try w.int(@intCast(f.effects.len));
+        for (f.effects) |e| {
+            try w.int(e.arg);
+            try w.byte(@as(u8, @intFromBool(e.unknown)) | @as(u8, @intFromBool(e.writes)) << 1);
+            try w.int(@intCast(e.callees.len));
+            for (e.callees) |dep| try w.int(dep);
+        }
     }
 
     try writeAtoms(w, arena, s.xreq);
@@ -1403,7 +1411,7 @@ fn readAtoms(r: *Reader) Error![]const XAtom {
             const groups = try r.arena.alloc([]Prov, try r.count(4 + 14));
             if (groups.len < 2) return error.Bad;
             for (groups) |*g| {
-                g.* = try r.arena.alloc(Prov, try r.count(14));
+                g.* = try r.arena.alloc(Prov, try r.count(18));
                 if (g.len == 0) return error.Bad;
                 for (g.*) |*p| p.* = try readProv(r);
             }
@@ -1501,6 +1509,16 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
         const guards = try r.arena.alloc(u32, try r.count(4));
         for (guards) |*writer| writer.* = try r.int();
         f.need_if = guards;
+        const effects = try r.arena.alloc(Ownership.EffectArg, try r.count(9));
+        for (effects) |*e| {
+            const arg = try r.int();
+            const effect_flags = try r.byte();
+            if (effect_flags > 3) return error.Bad;
+            const deps = try r.arena.alloc(u32, try r.count(4));
+            for (deps) |*dep| dep.* = try r.int();
+            e.* = .{ .arg = arg, .unknown = effect_flags & 1 != 0, .writes = effect_flags & 2 != 0, .callees = deps };
+        }
+        f.effects = effects;
     }
 
     const xreq = try readAtoms(r);
@@ -1585,6 +1603,34 @@ test "a block naming a constructor field past the constructor's arity is refused
     try o.seedPaths();
     var arena: std.heap.ArenaAllocator = .init(gpa);
     defer arena.deinit();
+    // Effect-only facts survive the same summary codec as ownership facts.
+    // A malformed flags byte or dependency count is a miss, never a proof.
+    const effect_sum: Summary = .{ .params = 3, .funs = &.{.{
+        .param = 0,
+        .calls = .once,
+        .effects = &.{.{ .arg = 0, .unknown = true, .writes = true, .callees = &.{ 1, 2 } }},
+    }} };
+    var ew: Writer = .{ .o = &o, .gpa = arena.allocator() };
+    try writeSummary(&ew, arena.allocator(), &effect_sum);
+    var unused: Block = undefined; // This summary has no path/table references.
+    var er: Reader = .{ .o = &o, .arena = arena.allocator(), .bytes = ew.out.items, .block = &unused };
+    const decoded = try readSummary(&er, 0);
+    try std.testing.expectEqual(ew.out.items.len, er.at);
+    try std.testing.expectEqual(@as(usize, 1), decoded.funs[0].effects.len);
+    const effect = decoded.funs[0].effects[0];
+    try std.testing.expect(effect.unknown and effect.writes);
+    try std.testing.expectEqual(@as(u32, 0), effect.arg);
+    try std.testing.expectEqualSlices(u32, &.{ 1, 2 }, effect.callees);
+    const flag_at = ew.out.items.len - 29;
+    try std.testing.expectEqual(@as(u8, 3), ew.out.items[flag_at]);
+    ew.out.items[flag_at] = 4;
+    er.at = 0;
+    try std.testing.expectError(error.Bad, readSummary(&er, 0));
+    ew.out.items[flag_at] = 3;
+    @memset(ew.out.items[flag_at + 1 ..][0..4], 255);
+    er.at = 0;
+    try std.testing.expectError(error.Bad, readSummary(&er, 0));
+
     // A block of no rows and one path, `#C.k`.
     const bytes = struct {
         fn of(a: Allocator, k: u32) ![]u8 {

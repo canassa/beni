@@ -1,0 +1,15 @@
+-- The writer calls work with the list retained by the reader.
+pub foreign pure callbacks : { turn : (once (List Int → List Int), borrowed List Int → List Int) }
+
+
+keepThenCall :
+      { keep : List Int → a, call : (List Int → List Int), List Int → List Int }
+    , List Int
+    , (List Int → List Int)
+    → a × List Int
+keepThenCall actions value work =
+    kept = (actions.keep) value
+    ( kept, (actions.call) work value )
+
+
+pub wrapped keep call work = keepThenCall { keep = keep, call = call } [] work

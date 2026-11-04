@@ -1,0 +1,6 @@
+import Rt
+import Rt.Events as Events
+
+
+pub delegate : String → ⊤
+delegate name = Events.delegate Rt.protocol name

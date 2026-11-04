@@ -829,7 +829,17 @@ pub const SupplyEntry = struct {
 
 pub const Calls = enum(u8) { zero, once, many };
 
+/// Effect-only proof for an argument supplied to this callback.
+/// No ownership or value-flow consumer may read this fact.
+pub const EffectArg = struct {
+    arg: u32,
+    unknown: bool = false,
+    writes: bool = false,
+    callees: []const u32 = &.{},
+};
+
 pub const FunFacts = struct {
+    effects: []const EffectArg = &.{},
     param: u32,
     /// Owned result required if any named callback may write a list.
     need_if: []const u32 = &.{},
@@ -2436,7 +2446,9 @@ fn summaryDeepEql(o: *Ownership, x_in: Summary, y_in: Summary) Allocator.Error!b
         var bb = b;
         aa.need_if = &.{};
         bb.need_if = &.{};
-        if (!std.meta.eql(aa, bb) or !std.mem.eql(u32, a.need_if, b.need_if)) return false;
+        aa.effects = &.{};
+        bb.effects = &.{};
+        if (!std.meta.eql(aa, bb) or !std.mem.eql(u32, a.need_if, b.need_if) or !effectsEql(a.effects, b.effects)) return false;
     }
     for (x.xreq, y.xreq) |a, b| if (!a.eql(b)) return false;
     if (x.rxreq.len != y.rxreq.len) return false;
@@ -2755,13 +2767,61 @@ pub fn cloneSummary(o: *Ownership, s: *const Summary) Allocator.Error!*const Sum
     out.objs = objs;
     out.rsupply = rsupply;
     const funs = try keep.dupe(FunFacts, s.funs);
-    for (funs) |*f| f.need_if = try keep.dupe(u32, f.need_if);
+    for (funs) |*f| {
+        f.need_if = try keep.dupe(u32, f.need_if);
+        f.effects = try mergeEffects(keep, f.effects, &.{});
+    }
     out.funs = funs;
     out.xreq = try dupeAtoms(keep, s.xreq);
     out.rxreq = try dupeAtoms(keep, s.rxreq);
     out.slots = try keep.dupe([2]u32, s.slots);
     out.klasses = klasses;
     return out;
+}
+
+fn effectsEql(x: []const EffectArg, y: []const EffectArg) bool {
+    if (x.len != y.len) return false;
+    for (x, y) |a, b| if (a.arg != b.arg or a.unknown != b.unknown or a.writes != b.writes or !std.mem.eql(u32, a.callees, b.callees)) return false;
+    return true;
+}
+
+fn joinEffects(a: Allocator, x: []const EffectArg, xc: Calls, y: []const EffectArg, yc: Calls) Allocator.Error![]const EffectArg {
+    const out = try mergeEffects(a, x, y);
+    const copy = try a.dupe(EffectArg, out);
+    for (copy) |*e| {
+        if (xc != .zero and for (x) |f| {
+            if (f.arg == e.arg) break false;
+        } else true) e.unknown = true;
+        if (yc != .zero and for (y) |f| {
+            if (f.arg == e.arg) break false;
+        } else true) e.unknown = true;
+    }
+    return copy;
+}
+
+fn mergeEffects(a: Allocator, x: []const EffectArg, y: []const EffectArg) Allocator.Error![]const EffectArg {
+    const all = try a.alloc(EffectArg, x.len + y.len);
+    @memcpy(all[0..x.len], x);
+    @memcpy(all[x.len..], y);
+    std.mem.sort(EffectArg, all, {}, struct {
+        fn less(_: void, p: EffectArg, q: EffectArg) bool {
+            return p.arg < q.arg;
+        }
+    }.less);
+    var n: usize = 0;
+    for (all) |e| {
+        if (n > 0 and all[n - 1].arg == e.arg) {
+            const p = &all[n - 1];
+            p.unknown = p.unknown or e.unknown;
+            p.writes = p.writes or e.writes;
+            p.callees = try unionGuards(a, p.callees, e.callees);
+        } else {
+            all[n] = e;
+            all[n].callees = try unionGuards(a, e.callees, &.{});
+            n += 1;
+        }
+    }
+    return all[0..n];
 }
 
 fn summaryEql(x: Summary, y: Summary) bool {
@@ -2780,7 +2840,9 @@ fn summaryEql(x: Summary, y: Summary) bool {
         var bb = b;
         aa.need_if = &.{};
         bb.need_if = &.{};
-        if (!std.meta.eql(aa, bb) or !std.mem.eql(u32, a.need_if, b.need_if)) return false;
+        aa.effects = &.{};
+        bb.effects = &.{};
+        if (!std.meta.eql(aa, bb) or !std.mem.eql(u32, a.need_if, b.need_if) or !effectsEql(a.effects, b.effects)) return false;
     }
     if (x.xreq.len != y.xreq.len) return false;
     for (x.xreq, y.xreq) |a, b| if (!a.eql(b)) return false;
@@ -3467,6 +3529,7 @@ fn normalizeRaw(o: *Ownership, s_in: Summary) Allocator.Error!Summary {
     for (funs) |f| {
         if (nf > 0 and funs[nf - 1].param == f.param) {
             const p = &funs[nf - 1];
+            p.effects = try joinEffects(keep, p.effects, p.calls, f.effects, f.calls);
             p.calls = @fromBackingInt(@max(@backingInt(p.calls), @backingInt(f.calls)));
             p.sends = (p.need or f.need) and (!p.need or p.sends) and (!f.need or f.sends);
             p.need = p.need or f.need;
@@ -3477,6 +3540,7 @@ fn normalizeRaw(o: *Ownership, s_in: Summary) Allocator.Error!Summary {
         }
         funs[nf] = f;
         funs[nf].need_if = try unionGuards(keep, f.need_if, &.{});
+        funs[nf].effects = try mergeEffects(keep, f.effects, &.{});
         nf += 1;
     }
     for (funs[0..nf]) |*f| if (f.need) {
@@ -8019,6 +8083,7 @@ const PatSite = struct { list: Inst.Index, index: u32, spread: bool, scrut: AV =
 
 /// What the walk learns about a function-typed parameter (§16.2).
 const FnState = struct {
+    effects: std.ArrayList(EffectArg) = .empty,
     need_if: std.ArrayList(u32) = .empty,
     is_fn: bool = false,
     calls: Calls = .zero,
@@ -13097,9 +13162,11 @@ const Walker = struct {
             if (w.frame != 0) return w.single(.{ .kind = .top, .a = 0 });
             w.fn_state.items[j].calls = .many;
             w.cb_args[function.int() - w.decl.inst_start.int()] = try w.unionOf(avs);
-            for (avs, 0..) |av, k| if (av.len != 0) {
+            for (avs, 0..) |av, k| {
+                try w.noteEffect(j, @intCast(k), av);
+                if (av.len == 0) continue;
                 try w.supplies.append(w.a, .{ .fun = j, .k = @intCast(k), .path = eps, .av = av, .probe = none, .owned = false, .cond = try w.deepCond(av), .rcond = try w.rdeepCond(av) });
-            };
+            }
             return w.single(.{ .kind = .cbres, .a = j, .b = function.int() });
         }
         const classes = try w.classesOf(f);
@@ -15770,6 +15837,7 @@ const Walker = struct {
         st.calls = if (w.recursive or st.calls != .zero) .many else .once;
         w.cb_args[inst.int() - w.decl.inst_start.int()] = try w.unionOf(avs);
         for (avs, 0..) |av, k| {
+            try w.noteEffect(j, @intCast(k), av);
             if (av.len == 0) continue;
             var others: std.ArrayList(AV) = .empty;
             for (avs, 0..) |x, i| if (i != k) try others.append(w.a, x);
@@ -15878,7 +15946,10 @@ const Walker = struct {
                 more[k] = if (k < ec.more.len) ec.more[k] else &.{};
                 owneds[k] = k >= ec.owned.len or ec.owned[k];
                 takens[k] = k < ec.taken.len and ec.taken[k];
-                if (av.len == 0) continue;
+                if (av.len == 0) {
+                    if (outer == null) try w.noteEffect(ec.j, @intCast(k), av);
+                    continue;
+                }
                 var owned = owneds[k];
                 var taken = takens[k];
                 var from: std.ArrayList(u32) = .empty;
@@ -15902,6 +15973,7 @@ const Walker = struct {
                     takens[k] = taken;
                     continue;
                 }
+                try w.noteEffect(ec.j, @intCast(k), cells);
                 const rprobe2 = if (owned and cells.len > 0) try w.recordProbe(ctx.inst, cells, others.items) else none;
                 try w.supplies.append(w.a, .{ .fun = ec.j, .k = @intCast(k), .path = eps, .av = cells, .probe = probe, .probe2 = probe2, .more = more[k], .owned = owned, .cond = try w.deepCond(cells), .rcond = try w.rdeepCond(cells), .taken = taken, .rprobe = rprobe2 });
             }
@@ -15909,7 +15981,7 @@ const Walker = struct {
                 try w.env_calls.append(w.a, .{ .closure = oc, .j = ec.j, .inst = ec.inst, .args = args, .probes = probes, .more = more, .owned = owneds, .taken = takens, .many = many });
                 continue;
             }
-            st.calls = if (w.recursive or st.calls != .zero or many) .many else .once;
+            w.fn_state.items[ec.j].calls = if (w.recursive or w.fn_state.items[ec.j].calls != .zero or many) .many else .once;
         }
     }
 
@@ -18968,17 +19040,65 @@ const Walker = struct {
         });
     }
 
-    /// A callback with no list write cannot be the writer of a keep edge.
-    /// Unknown classes and callbacks called through its own parameters keep
-    /// the conservative requirement.
-    fn mayWrite(w: *Walker, actual: AV) Allocator.Error!bool {
+    /// Only conditional writer need resolution consumes these facts.
+    fn effectOf(w: *Walker, arg: u32, actual: AV) Allocator.Error!EffectArg {
+        if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |j|
+            return .{ .arg = arg, .callees = try w.a.dupe(u32, &.{j}) };
+        var out: EffectArg = .{ .arg = arg };
+        const classes = try w.classesOf(actual);
+        if (classes.len == 0) out.unknown = true;
+        var deps: std.ArrayList(u32) = .empty;
+        for (classes) |cls| {
+            const c = (try w.classSummary(cls)) orelse {
+                out.unknown = true;
+                continue;
+            };
+            out.writes = out.writes or c.writesAny();
+            out.unknown = out.unknown or c.limit != .none;
+            for (c.funs) |f| if (f.calls != .zero or !f.seen) {
+                out.unknown = true;
+            };
+            if (cls == .closure) {
+                const ci = cls.closure;
+                if (w.closures.items[ci].cb_avs.len != 0) out.unknown = true;
+                for (w.env_calls.items) |ec| if (ec.closure == ci) {
+                    try deps.append(w.a, ec.j);
+                };
+                for (w.env_passes.items) |ep| if (ep[0] == ci) {
+                    try deps.append(w.a, ep[1]);
+                };
+            }
+        }
+        out.callees = try unionGuards(w.a, deps.items, &.{});
+        return out;
+    }
+
+    fn noteEffect(w: *Walker, j: u32, arg: u32, actual: AV) Allocator.Error!void {
+        const fact = try w.effectOf(arg, actual);
+        // slotOf may grow fn_state: acquire its pointer afterwards.
+        try w.fn_state.items[j].effects.append(w.a, fact);
+    }
+
+    fn mayWrite(w: *Walker, s: *const Summary, avs: []const AV, writer: u32, depth: u32) Allocator.Error!bool {
+        if (depth >= 32) return true;
+        const actual = (try w.actualOf(s, avs, writer)) orelse return true;
         if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |_| return true;
         const classes = try w.classesOf(actual);
         if (classes.len == 0) return true;
         for (classes) |cls| {
             const c = (try w.classSummary(cls)) orelse return true;
             if (c.limit != .none or c.writesAny()) return true;
-            for (c.funs) |f| if (f.calls != .zero or !f.seen) return true;
+            for (c.funs) |f| {
+                if (!f.seen) return true;
+                if (f.calls == .zero) continue;
+                if (f.param >= c.params) return true;
+                const caller = s.funOf(writer) orelse return true;
+                const effect = for (caller.effects) |e| {
+                    if (e.arg == f.param) break e;
+                } else return true;
+                if (effect.unknown or effect.writes) return true;
+                for (effect.callees) |dep| if (try w.mayWrite(s, avs, dep, depth + 1)) return true;
+            }
         }
         return false;
     }
@@ -18986,11 +19106,7 @@ const Walker = struct {
     fn resolveNeed(w: *Walker, s: *const Summary, avs: []const AV, facts: FunFacts) Allocator.Error!FunFacts {
         var ff = facts;
         for (facts.need_if) |writer| {
-            const actual = (try w.actualOf(s, avs, writer)) orelse {
-                ff.need = true;
-                break;
-            };
-            if (try w.mayWrite(actual)) {
+            if (try w.mayWrite(s, avs, writer, 0)) {
                 ff.need = true;
                 break;
             }
@@ -19033,10 +19149,30 @@ const Walker = struct {
             };
             if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |mapped| {
                 if (std.mem.indexOfScalar(u32, deps.items, mapped) == null) try deps.append(w.a, mapped);
-            } else if (try w.mayWrite(actual)) ff.need = true;
+            } else if (try w.mayWrite(s, avs, writer, 0)) ff.need = true;
+        }
+        var effects: std.ArrayList(EffectArg) = .empty;
+        for (facts.effects) |e| {
+            var mapped = e;
+            var callees: std.ArrayList(u32) = .empty;
+            for (e.callees) |dep| {
+                const actual = (try w.actualOf(s, avs, dep)) orelse {
+                    mapped.unknown = true;
+                    continue;
+                };
+                const ef = try w.effectOf(e.arg, actual);
+                mapped.unknown = mapped.unknown or ef.unknown;
+                mapped.writes = mapped.writes or ef.writes;
+                try callees.appendSlice(w.a, ef.callees);
+            }
+            mapped.callees = try unionGuards(w.a, callees.items, &.{});
+            try effects.append(w.a, mapped);
         }
         {
             const st = &w.fn_state.items[jj];
+            const joined = try joinEffects(w.a, st.effects.items, st.calls, effects.items, ff.calls);
+            st.effects = .empty;
+            try st.effects.appendSlice(w.a, joined);
             // §23.3: a function parameter handed on to a send position.
             if (ff.send != none and st.send == none) st.send = ff.send;
             st.calls = @fromBackingInt(@min(2, @as(u8, @backingInt(st.calls)) + @as(u8, @backingInt(ff.calls))));
@@ -22481,7 +22617,7 @@ const Walker = struct {
                         }
                     }
                 }
-                try funs.append(keep, .{ .param = @intCast(j), .calls = st.calls, .need_if = try keep.dupe(u32, st.need_if.items), .need = need, .rneed = rneed, .seen = st.seen, .send = st.send, .sends = need and !edit });
+                try funs.append(keep, .{ .param = @intCast(j), .calls = st.calls, .need_if = try keep.dupe(u32, st.need_if.items), .effects = try mergeEffects(keep, st.effects.items, &.{}), .need = need, .rneed = rneed, .seen = st.seen, .send = st.send, .sends = need and !edit });
             }
         } else {
             // A lambda's own function parameters: its class does not follow

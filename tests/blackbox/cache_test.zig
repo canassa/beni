@@ -6022,3 +6022,49 @@ test "checked data witnesses retain native and generic shapes through cached int
         }
     }
 }
+
+test "cached higher-order writer effects preserve read-only acceptance and writing refusal" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTree("tests/corpus/ownership/core/HigherOrderWriterImported", "_expected.");
+    const readonly =
+        \\import Writer
+        \\
+        \\pub run ⊤ = Writer.wrapped (λxs → ( xs, 1 )) Writer.callbacks.turn λxs → xs
+        \\
+    ;
+    const writing =
+        \\import Writer
+        \\
+        \\pub run ⊤ = Writer.wrapped (λxs → ( xs, 1 )) Writer.callbacks.turn λxs → List.push xs 9
+        \\
+    ;
+    const args = [_][]const u8{ "check", "--core", "--ownership-everywhere", "--platform=node", "--diagnostics=json", "--cache-dir=cache", "--root=.", "." };
+    try w.write("Main.beni", readonly);
+    const cold = try w.runWith(&args, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), cold.exit_code);
+    // Recheck only Main. Writer's worded field and effect dependencies must
+    // be installed from its cache entry, for both possible callback effects.
+    for ([_][]const u8{ writing, readonly ++ "\n-- a fresh consumer\n" }, 0..) |source, i| {
+        try w.write("Main.beni", source);
+        const warm = try runCounted(&w, arena, &args, "writer-hit.json");
+        const plain = try w.runWith(&.{ "check", "--core", "--ownership-everywhere", "--platform=node", "--diagnostics=json", "--no-cache", "--root=.", "." }, .{ .raw_diagnostics = true });
+        try testing.expectEqual(@as(u8, if (i == 0) 1 else 0), plain.exit_code);
+        if (i == 0) try testing.expect(std.mem.indexOf(u8, plain.stderr, "\"code\":\"list_still_used\"") != null);
+        try testing.expectEqual(plain.exit_code, warm.result.exit_code);
+        try testing.expectEqualStrings(plain.stderr, warm.result.stderr);
+        try testing.expect(warm.counters.hits > 0);
+        try testing.expectEqual(@as(u64, 1), warm.counters.checked);
+    }
+    // The interface hash includes the portable effect facts. Scheduling
+    // changes neither those bytes nor the ownership verdict text.
+    const one = try w.runWith(&.{ "check", "--core", "--ownership-everywhere", "--platform=node", "--iface-hash", "--no-cache", "--jobs=1", "--root=.", "." }, .{ .raw_diagnostics = true });
+    const eight = try w.runWith(&.{ "check", "--core", "--ownership-everywhere", "--platform=node", "--iface-hash", "--no-cache", "--jobs=8", "--root=.", "." }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), one.exit_code);
+    try testing.expectEqual(one.exit_code, eight.exit_code);
+    try testing.expectEqualStrings(one.stdout, eight.stdout);
+    try testing.expectEqualStrings(one.stderr, eight.stderr);
+}

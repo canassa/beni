@@ -4495,6 +4495,24 @@ built, for the declaration's own frame:
   `π1.expect#Expect.1` from `transfer`'s `π7#Expect.1`), and a function value there is called through its class.
   Not in a recursive group, whose rounds would number the slots apart, and not inside a lambda
   (*withdrawn 2026-10-16*, §30.9 rule 1: inside a lambda a slot is the declaration's, as a parameter is).
+- **Higher-order writer effects** (*amended 2026-11-04, Part of #1825*). A
+  conditional result-ownership need is discharged only when every callback
+  the potential writer may call has known effects, and none writes a list.
+  Resolve the actual supplied callbacks through the existing class and supply
+  facts, including a supplied foreign record's worded function fields;
+  calling a callback by itself is not evidence that it writes a list. A
+  direct list write or captured-list write keeps the need. Unknown classes,
+  unavailable supplies, unresolved recursive effects or the analysis bound
+  also keep today's refusal. This changes precision, not the obligations of
+  borrowed values or the meaning of a word. Portable effect-only facts record,
+  per supplied argument, direct writes, unknown effects and dependencies on
+  the enclosing declaration’s callback parameters or field slots. Only writer
+  need resolution reads them; they grant no ownership, result, alias,
+  freshness or escape fact. Alternatives join by union, with unknown dominant.
+  Missing facts, cycles and a 32-step resolution bound keep the need. Facts
+  and their dependencies are sorted and deduplicated. Summary block version
+  39, cache entry version 15 and interface version 24 invalidate old bytes,
+  including imported cache hits; the frontend artifact layout is unchanged.
 - **Carried lambdas.** A lambda the result holds keeps its class in the summary, with what each capture held in the
   declaration's vocabulary, when calling it needs nothing but its result and its reads: its class writes nothing,
   escapes nothing, relies on nothing (§18.4) and is not once, and no capture holds a function value. Where the call
