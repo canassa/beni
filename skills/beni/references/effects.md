@@ -88,6 +88,9 @@ apart left right =
   waits until it is set, `Deferred.poll d`.
 - `Clock.now ⊤` is the time in milliseconds on the calling fiber's clock. A test can run a fiber on
   a virtual clock with `Clock.run`.
+- `Clock.elapsed ⊤` is a `Float` of milliseconds since a start that the host chooses. It never goes
+  back, so `Clock.elapsed ⊤ - start` is how long the work took. Compare it only with another
+  `elapsed` reading. On a virtual clock it is that clock's reading.
 - `Duration`: `Duration.millis n`, `Duration.seconds n`, `Duration.minutes n`.
 
 A block value that a call makes has one type for a type variable inside a cell, a named type other
@@ -268,4 +271,4 @@ save ms =
         Log.warn "saving took ${ms} ms"
 ```
 
-Sources: `docs/design/transparent-effects-proposal.md` §2, §14.7, §16, §17.3, §17.5, §17.7, §17.9; `docs/design/checker-v2.md` §8.4; `core/Task.beni`; `core/Semaphore.beni`; `core/Queue.beni`; `core/Latch.beni`; `core/Log.beni`; `platforms/node/Io.beni`.
+Sources: `docs/design/transparent-effects-proposal.md` §2, §14.7, §16, §17.3, §17.5, §17.6, §17.7, §17.9; `docs/design/checker-v2.md` §8.4; `core/Task.beni`; `core/Clock.beni`; `core/Semaphore.beni`; `core/Queue.beni`; `core/Latch.beni`; `core/Log.beni`; `platforms/node/Io.beni`.

@@ -1,0 +1,18 @@
+-- run: `Clock.elapsed` never goes back (transparent-effects-proposal.md
+-- §17.6, amended 2026-11-05). The test platform makes the host's
+-- `performance.now()` answer 5.5, 10.25, 7 and 12. `elapsed` answers
+-- 10.25 for the third reading, the highest it gave, and 12 for the fourth.
+import Clock
+import HostClock
+import Io
+import Node exposing (Program)
+
+
+main : Program
+main = Io.run λ⊤ →
+    HostClock.goesBack [ 5.5, 10.25, 7, 12 ]
+    a = Clock.elapsed ⊤
+    b = Clock.elapsed ⊤
+    c = Clock.elapsed ⊤
+    d = Clock.elapsed ⊤
+    Node.print (String.join (List.map [ a, b, c, d ] String.fromFloat) ", ")

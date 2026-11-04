@@ -1,0 +1,31 @@
+-- run: `Clock.elapsed` (transparent-effects-proposal.md §17.6, amended
+-- 2026-11-05) on a virtual clock reads the clock's own time as a `Float`:
+-- what `Clock.virtual` set, then that plus each `adjust`, whatever the
+-- host's clock does. A fiber that sleeps on the clock reads the time it
+-- woke at. On the real clock, two readings in a row do not go back.
+import Clock
+import Duration
+import Io
+import Node exposing (Program)
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    clock = Clock.virtual 1500
+    _ = Debug.log "at first" (Clock.run clock Clock.elapsed)
+    sleeper = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
+            Task.sleep (Duration.millis 40)
+            Clock.elapsed ⊤
+    Clock.adjust clock (Duration.millis 250)
+    _ = Debug.log "the sleeper woke at" (Task.join sleeper)
+    _ = Debug.log "after 250 ms" (Clock.run clock Clock.elapsed)
+    _ =
+        Debug.log
+            "same as now"
+            (Clock.run clock Clock.elapsed == toFloat (Clock.run clock Clock.now))
+    first = Clock.elapsed ⊤
+    second = Clock.elapsed ⊤
+    _ = Debug.log "the real clock went back" (second < first)
+    Node.print "done"
