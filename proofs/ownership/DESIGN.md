@@ -589,5 +589,6 @@ Not modelled yet: `W{F}` and per-field reads through summaries, the hoist, a
 record field written through a constructor's payload (§31.5), messages and
 sends (§31.6), and the entry's checks (§31.8). The generator, the targeted
 enumerator and the mutation controls draw no record object, and the bridge
-skips one (`record-object`).
+skips one (`record-object`). The proof in the flat fragment is #1871; field
+sets, the bridge and the controls are #1872.
 
