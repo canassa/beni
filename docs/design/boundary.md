@@ -5847,8 +5847,9 @@ specified, with these findings:
 #### 9.8.21 Dates: the calendar, time zones and ISO 8601 (2026-11-04)
 
 *Added 2026-11-04, #1912, for #239; built the same day (`core/Date.beni`,
-`run/DateCalendar`). Where it lives is the owner's decision (dashboard `conduit-fixes-q1`): (a)
-is the recommendation and what is built. Nothing else here depends on that answer.*
+`run/DateCalendar`). **Decided 2026-11-04 by the owner (Cesar, dashboard `conduit-fixes-q1`):**
+a new core module, for every platform, as (a) says. The other answer was the browser's `Time`,
+as in Elm, which gives only pages a calendar.*
 
 A program can print a moment as a date only if it can parse the text that a server sends, know the
 reader's time zone, and get the year, the month and the day of the moment in that zone. Core and the
