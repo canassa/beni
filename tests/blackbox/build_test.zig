@@ -6938,21 +6938,20 @@ test "the release specialiser writes every independent function called once in o
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    // And `total`, called once, and since slice 6 (#676) core `List`'s
-    // length setter, written into the loop that calls it once the liveness
-    // read-off has left that loop's body small; and since 2026-10-23 (#877)
-    // the two single-call functions the `node` platform's beni `printLines`
-    // reaches, `String.join` and the list reader it calls.
-    try testing.expectEqual(@as(u64, n + 4), c.spec_inlined);
+    // All 260 library functions are written. The two additional writes
+    // are List.isEmpty and String.join, reached by typed Node.printLines.
+    // List.offset and List.done are now intrinsics, and String.elements
+    // retains its scalar-view branch. Master's four helper writes were
+    // offset, elements, join and done; total was never one of that four.
+    try testing.expectEqual(@as(u64, n + 2), c.spec_inlined);
     try testing.expectEqual(@as(u64, 0), c.spec_inline_capped);
     try testing.expectEqual(@as(u64, 0), c.spec_inline_waits);
-    // Since #781 the 260 are written before the first solve. The length
-    // setter waits for the liveness read-off, so it takes the pass after
-    // that solve, with a solve of its own and its two counts; then the
-    // count of the pass that found nothing to do.
-    try testing.expectEqual(@as(u64, 1), c.spec_passes);
-    try testing.expectEqual(@as(u64, 2), c.spec_solves);
-    try testing.expectEqual(@as(u64, 5), c.spec_inline_scans);
+    // Every candidate is written before the first solve. The length
+    // setter is now intrinsic, so no later inline pass or second solve
+    // is needed; the three counts include the final unchanged scan.
+    try testing.expectEqual(@as(u64, 0), c.spec_passes);
+    try testing.expectEqual(@as(u64, 1), c.spec_solves);
+    try testing.expectEqual(@as(u64, 3), c.spec_inline_scans);
 }
 
 test "the release specialiser leaves a function whose call a write just copied for the next pass" {
@@ -7036,13 +7035,11 @@ test "the release specialiser leaves a function whose call a write just copied f
     // Since #781 the first pass runs before the first solve, so `h`'s
     // pass is the one pass after it.
     try testing.expectEqual(@as(u64, 1), c.spec_passes);
-    // `g`, `k`, `twice` and, a pass later, `h`: every one of them; and since
-    // slice 6 (#676) core `List`'s length setter, written into the loop
-    // that calls it (647 → 631 bytes). Since 2026-10-23 (#877) the `node`
-    // platform's `printLines` is beni over `Js`, and the two single-call
-    // functions it reaches — `String.join` and the list reader it calls —
-    // are written into it: 5 → 7.
-    try testing.expectEqual(@as(u64, 7), c.spec_inlined);
+    // g and k, then h, are written; twice remains at its expression call.
+    // Typed Node.printLines adds List.isEmpty and String.join. The old
+    // offset/elements/join/done helper set contributed four writes; the
+    // typed primitives and scalar-view reader now contribute these two.
+    try testing.expectEqual(@as(u64, 5), c.spec_inlined);
 }
 
 test "the release specialiser does not ask a declined call again while neither module changed" {
@@ -11017,7 +11014,9 @@ test "the checker v2 stores a joined position's κ under each inner's own node" 
     // the hash, not the size.
     // Version 14 (#1335) changes the hash only. Version 15 (#1485): each
     // position carries its fold obligation on its own, one word for each of
-    // the 26 (1 796 → 1 900 bytes).
+    // the 26 (1 796 → 1 900 bytes). Unnamed leaves now use the no-type
+    // sentinel instead of real type 0 (2026-11-03): the separate empty
+    // name adds one string-table word (1 900 → 1 904 bytes).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -11032,7 +11031,7 @@ test "the checker v2 stores a joined position's κ under each inner's own node" 
     );
     const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  block: 1900 bytes, hash 019f542663260235\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  block: 1904 bytes, hash 503cc6fa6a8bff67\n") != null);
 }
 
 test "the checker v2 refuses every write after the escapes in the same branch" {
