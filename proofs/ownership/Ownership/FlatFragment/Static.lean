@@ -36,7 +36,7 @@ theorem primType_dictEmpty_success {t type : Ty} (run : primType (.dictEmpty t) 
 theorem primType_dictSize_success {ty type : Ty} (flat : FlatType ty)
     (run : primType .dictSize [ty] = .ok type) : ∃ t, ty = .dict t ∧ type = .int := by
   cases flat with
-  | dict t _ _ =>
+  | dict t _ =>
     simp [primType] at run
     exact ⟨t, rfl, by cases run; rfl⟩
   | _ => simp [primType] at run
@@ -44,7 +44,7 @@ theorem primType_dictSize_success {ty type : Ty} (flat : FlatType ty)
 theorem primType_dictGet_success {tR tK type : Ty} (flat : FlatType tR)
     (run : primType .dictGet [tR, tK] = .ok type) : ∃ t, tR = .dict t ∧ tK = .int ∧ type = .result .int t := by
   cases flat with
-  | dict t _ _ =>
+  | dict t _ =>
     cases tK <;> simp [primType] at run
     exact ⟨t, rfl, rfl, by cases run; rfl⟩
   | _ => simp [primType] at run
@@ -52,7 +52,7 @@ theorem primType_dictGet_success {tR tK type : Ty} (flat : FlatType tR)
 theorem primType_dictRemove_success {tR tK type : Ty} (flat : FlatType tR)
     (run : primType .dictRemove [tR, tK] = .ok type) : ∃ t, tR = .dict t ∧ tK = .int ∧ type = .dict t := by
   cases flat with
-  | dict t _ _ =>
+  | dict t _ =>
     cases tK <;> simp [primType] at run
     exact ⟨t, rfl, rfl, by cases run; rfl⟩
   | _ => simp [primType] at run
@@ -61,7 +61,7 @@ theorem primType_dictInsert_success {tR tK tI type : Ty} (flat : FlatType tR)
     (run : primType .dictInsert [tR, tK, tI] = .ok type) :
     ∃ t, tR = .dict t ∧ tK = .int ∧ tI = t ∧ type = .dict t := by
   cases flat with
-  | dict t flatT _ =>
+  | dict t flatT =>
     cases tK <;> simp [primType] at run
     split at run
     · rename_i same
@@ -438,11 +438,11 @@ theorem flat_type_of_typed {declarations : List Decl} {self : Decl} {e : Expr} (
     intro tenv type types typed
     obtain ⟨_, yesTyped, _⟩ := exprType_branch_success typed
     exact ihYes tenv type types yesTyped
-  | @literal args t elemT elemFree =>
+  | @literal args t elemT =>
     intro tenv type types typed
     obtain ⟨_, _, primTyped⟩ := exprType_prim_success typed
     obtain ⟨rfl, _⟩ := primType_literal_success primTyped
-    exact .list t elemT elemFree
+    exact .list t elemT
   | @push receiver item =>
     intro tenv type types typed
     obtain ⟨_, atomsTyped, primTyped⟩ := exprType_prim_success typed
@@ -525,10 +525,10 @@ theorem flat_type_of_typed {declarations : List Decl} {self : Decl} {e : Expr} (
     intro tenv type types typed
     obtain ⟨t, _, receiverTyped, rfl⟩ := exprType_prepend_success (fun _ _ h => atom_type_flat types h) typed
     exact atom_type_flat types receiverTyped
-  | @dictEmpty t flatT freeT =>
+  | @dictEmpty t flatT =>
     intro tenv type types typed
     rw [exprType_dictEmpty_success typed]
-    exact .dict t flatT freeT
+    exact .dict t flatT
   | @dictInsert receiver key item =>
     intro tenv type types typed
     obtain ⟨t, receiverTyped, _, _, rfl⟩ :=
@@ -544,7 +544,7 @@ theorem flat_type_of_typed {declarations : List Decl} {self : Decl} {e : Expr} (
     obtain ⟨t, receiverTyped, _, rfl⟩ :=
       exprType_dictGet_success (fun _ _ h => atom_type_flat types h) typed
     cases atom_type_flat types receiverTyped with
-    | dict _ flatT _ => exact .result _ _ .int flatT
+    | dict _ flatT => exact .result _ _ .int flatT
   | @dictSize receiver =>
     intro tenv type types typed
     obtain ⟨t, _, rfl⟩ := exprType_dictSize_success (fun _ _ h => atom_type_flat types h) typed
@@ -650,7 +650,7 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     intro origin escaped
     rw [nextEq, join_escapes]
     exact escaped_mono _ (yesMono origin escaped)
-  | @literal args t elemT elemFree =>
+  | @literal args t elemT =>
     intro aenv tenv before next type bound after site result inferenceFuel ctx
       static typed _ _ defaultConfig accepted
     obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
@@ -668,7 +668,7 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
       have shape := (fields i ty a types_i as_i).2
       rw [ty_equal_flat_right elemT (allT ty (List.mem_of_getElem? types_i))] at shape
       exact shape
-    refine ⟨.list t elemT elemFree, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
+    refine ⟨.list t elemT, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
     rw [← first]
     exact .list _ _ _ _ (by simp) (flatAbstract_fold_join shapesA .bottom (.bottom t))
   | @push receiver item =>
@@ -689,9 +689,6 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     have elemT : FlatType t := by
       cases static_atom_type static headTyped with
       | list _ elemT => exact elemT
-    have elemFree : DictFree t := by
-      cases static_atom_type static headTyped with
-      | list _ _ free => exact free
     obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
     obtain ⟨r, rest1, receiverRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
     obtain ⟨it, rest2, itemRun, restRun', shape2⟩ := except_mapM_cons_success restRun
@@ -708,7 +705,7 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
       have equal := Except.ok.inj run
       have first : Abstract.bottom = result := congrArg Prod.fst equal
       have second : next = before := (congrArg Prod.snd equal).symm
-      refine ⟨.list t elemT elemFree, ?_, ?_⟩
+      refine ⟨.list t elemT, ?_, ?_⟩
       · rw [← first]; exact .bottom _
       · rw [second]; exact fun _ escaped => escaped
     · have demanded := primitive_push_demand_run run
@@ -718,7 +715,7 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
       have resultEq := primitive_push_result_values
         (show ({ctx with escaped := union ctx.escaped before.facts.escapes} : Context).config = {} from
           defaultConfig) run
-      refine ⟨.list t elemT elemFree, ?_, by rw [escapesEq]; exact fun _ escaped => escaped⟩
+      refine ⟨.list t elemT, ?_, by rw [escapesEq]; exact fun _ escaped => escaped⟩
       rw [resultEq]
       exact .list _ _ _ _ noUnk (flatAbstract_join elementShape itemShape)
   | @length receiver =>
@@ -1051,9 +1048,6 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     have elemT : FlatType t := by
       cases static_atom_type static receiverTyped with
       | list _ elemT => exact elemT
-    have elemFree : DictFree t := by
-      cases static_atom_type static receiverTyped with
-      | list _ _ free => exact free
     obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
     obtain ⟨r, rest1, receiverRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
     obtain ⟨ix, rest2, indexRun, restRun', shape2⟩ := except_mapM_cons_success restRun
@@ -1092,9 +1086,6 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     have elemT : FlatType t := by
       cases static_atom_type static receiverTyped with
       | list _ elemT => exact elemT
-    have elemFree : DictFree t := by
-      cases static_atom_type static receiverTyped with
-      | list _ _ free => exact free
     obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
     obtain ⟨r, rest1, receiverRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
     obtain ⟨ix, rest2, indexRun, restRun', shape2⟩ := except_mapM_cons_success restRun
@@ -1112,7 +1103,7 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
       have equal := Except.ok.inj run
       have first : Abstract.bottom = result := congrArg Prod.fst equal
       have second : next = before := (congrArg Prod.snd equal).symm
-      refine ⟨.list t elemT elemFree, ?_, ?_⟩
+      refine ⟨.list t elemT, ?_, ?_⟩
       · rw [← first]; exact .bottom _
       · rw [second]; exact fun _ escaped => escaped
     · have demanded := primitive_set_demand_run run
@@ -1122,7 +1113,7 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
       have resultEq := primitive_set_result_values
         (show ({ctx with escaped := union ctx.escaped before.facts.escapes} : Context).config = {} from
           defaultConfig) run
-      refine ⟨.list t elemT elemFree, ?_, by rw [escapesEq]; exact fun _ escaped => escaped⟩
+      refine ⟨.list t elemT, ?_, by rw [escapesEq]; exact fun _ escaped => escaped⟩
       rw [resultEq]
       exact .list _ _ _ _ noUnk (flatAbstract_join elementShape itemShape)
   | @copy receiver =>
@@ -1134,9 +1125,6 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     have elemT : FlatType t := by
       cases static_atom_type static receiverTyped with
       | list _ elemT => exact elemT
-    have elemFree : DictFree t := by
-      cases static_atom_type static receiverTyped with
-      | list _ _ free => exact free
     obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
     obtain ⟨r, rest1, receiverRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
     have restNil' := except_mapM_nil_success restRun
@@ -1149,12 +1137,12 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
       have equal := Except.ok.inj run
       have first : Abstract.bottom = result := congrArg Prod.fst equal
       have second : next = before := (congrArg Prod.snd equal).symm
-      refine ⟨.list t elemT elemFree, ?_, ?_⟩
+      refine ⟨.list t elemT, ?_, ?_⟩
       · rw [← first]; exact .bottom _
       · rw [second]; exact fun _ escaped => escaped
     · rw [primitive_copy_run] at run
       obtain ⟨first, second⟩ := Prod.mk.inj (Except.ok.inj run)
-      refine ⟨.list t elemT elemFree, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
+      refine ⟨.list t elemT, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
       rw [← first]
       exact .list _ _ _ _ (by simp) elementShape
   | @prepend item receiver =>
@@ -1166,9 +1154,6 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     have elemT : FlatType t := by
       cases static_atom_type static receiverTyped with
       | list _ elemT => exact elemT
-    have elemFree : DictFree t := by
-      cases static_atom_type static receiverTyped with
-      | list _ _ free => exact free
     obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
     obtain ⟨it, rest1, itemRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
     obtain ⟨r, rest2, receiverRun, restRun', shape2⟩ := except_mapM_cons_success restRun
@@ -1184,7 +1169,7 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
       have equal := Except.ok.inj run
       have first : Abstract.bottom = result := congrArg Prod.fst equal
       have second : next = before := (congrArg Prod.snd equal).symm
-      refine ⟨.list t elemT elemFree, ?_, ?_⟩
+      refine ⟨.list t elemT, ?_, ?_⟩
       · rw [← first]; exact .bottom _
       · rw [second]; exact fun _ escaped => escaped
     · rw [primitive_prepend_run_values _ (show ({ctx with escaped := union ctx.escaped before.facts.escapes} :
@@ -1195,10 +1180,10 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
         rcases mem_union_cases _ _ _ member with fresh | old
         · simp at fresh
         · exact noUnk old
-      refine ⟨.list t elemT elemFree, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
+      refine ⟨.list t elemT, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
       rw [← first]
       exact .list _ _ _ _ noUnkNew (flatAbstract_join itemShape elementShape)
-  | @dictEmpty t flatT freeT =>
+  | @dictEmpty t flatT =>
     intro aenv tenv before next type bound after site result inferenceFuel ctx
       static typed _ _ defaultConfig accepted
     rw [exprType_dictEmpty_success typed]
@@ -1208,7 +1193,7 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
     rw [primitive_dictEmpty_run] at run
     obtain ⟨first, second⟩ := Prod.mk.inj (Except.ok.inj run)
-    refine ⟨.dict t flatT freeT, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
+    refine ⟨.dict t flatT, ?_, by rw [← second]; exact fun _ escaped => escaped⟩
     rw [← first]
     exact .dict _ _ _ _ (by simp) (.bottom _)
   | @dictInsert receiver key item =>
@@ -1278,7 +1263,7 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
       exprType_dictGet_success (fun _ _ h => static_atom_type static h) typed
     have flatT : FlatType t := by
       cases static_atom_type static receiverTyped with
-      | dict _ flatT _ => exact flatT
+      | dict _ flatT => exact flatT
     obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
     obtain ⟨r, rest1, receiverRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
     obtain ⟨k, rest2, _, restRun', shape2⟩ := except_mapM_cons_success restRun

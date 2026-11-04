@@ -20,7 +20,10 @@ namespace Ownership.FlatFragment.State
     admits no function value (`FlatType` has no `fn` case, `FlatAbstract` no
     function abstract), so no lemma here meets that case. A fragment that
     admits closures must read their captures through their declarations'
-    types (`captureTypes`) first. -/
+    types (`captureTypes`) first. The fragment does not ask it of a type
+    (#1840); a representation holds no dictionary (`dictFree_entryType`), and
+    a case with no dictionary in its result type converts its result with it
+    (`success_of_dictFree`). -/
 inductive DictFree : Ty → Prop where
   | int : DictFree .int
   | list (t : Ty) : DictFree t → DictFree (.list t)
@@ -32,17 +35,17 @@ inductive DictFree : Ty → Prop where
   | fn (parameters : List Ty) (result : Ty) : DictFree (.fn parameters result)
 
 /-- The types of the flat fragment: integers, lists of flat types, integer
-chains, records, results and dictionaries (#522). A list can hold results and
-chains. A list element and a dictionary's value hold no dictionary; a record
-or a result can hold one. -/
+chains, records, results and dictionaries of flat types (#522). A list can
+hold results, chains and dictionaries; a dictionary's value can be a
+dictionary (#1840). -/
 inductive FlatType : Ty → Prop where
   | int : FlatType .int
-  | list (t : Ty) : FlatType t → DictFree t → FlatType (.list t)
+  | list (t : Ty) : FlatType t → FlatType (.list t)
   | chainInt : FlatType (.chain .int)
   | record (ts : List Ty) : (∀ t ∈ ts, FlatType t) → FlatType (.record ts)
   | result (error success : Ty) : FlatType error → FlatType success →
       FlatType (.result error success)
-  | dict (t : Ty) : FlatType t → DictFree t → FlatType (.dict t)
+  | dict (t : Ty) : FlatType t → FlatType (.dict t)
 
 mutual
 /-- The type of a value's concrete representation: a dictionary of `t` is a
@@ -122,20 +125,21 @@ theorem primitive_scalar_run {op : Prim} (sop : ScalarOp op) (ctx : Context) (si
 
 /-- The expression fragment. Operands are atoms. Typing fixes the scalar
 operands, indexes, branch conditions and chain heads to integers. Lists hold
-any flat type, including records, results, chains and further lists. A literal
+any flat type, including records, results, chains, dictionaries and further
+lists. A literal
 names its flat element type. List reads, writes and copies use that type.
 Records and field projections preserve the type structure. Result constructors
 name a flat type for the unused slot; a result case binds the active payload.
 Integer chains support construction and a case that binds the head and tail.
 Dictionaries (#522) support the empty dictionary, an insert, a remove, a
-lookup and the size; typing fixes their keys to integers. A dictionary focus
+lookup and the size; typing fixes their keys to integers, and a value can be
+any flat type, a dictionary too (#1840). A dictionary focus
 is outside the fragment: the checker summarises its body as a scope.
 Each branch or case arm is itself a fragment expression. -/
 inductive FlatANF0 : Expr → Prop where
   | atom : FlatANF0 (.atom a)
   | letE : FlatANF0 rhs → FlatANF0 rest → FlatANF0 (.letE v rhs rest)
-  | literal (t : Ty) : Ownership.FlatFragment.State.FlatType t → Ownership.FlatFragment.State.DictFree t →
-      FlatANF0 (.prim (.literal t) args)
+  | literal (t : Ty) : Ownership.FlatFragment.State.FlatType t → FlatANF0 (.prim (.literal t) args)
   | push : FlatANF0 (.prim .push [receiver, item])
   | length : FlatANF0 (.prim .length [receiver])
   | shared : FlatANF0 (.prim .shared [value])
@@ -154,8 +158,7 @@ inductive FlatANF0 : Expr → Prop where
   | set : FlatANF0 (.prim .set [receiver, index, item])
   | copy : FlatANF0 (.prim .copy [receiver])
   | prepend : FlatANF0 (.prim .prepend [item, receiver])
-  | dictEmpty (t : Ty) : Ownership.FlatFragment.State.FlatType t → Ownership.FlatFragment.State.DictFree t →
-      FlatANF0 (.prim (.dictEmpty t) [])
+  | dictEmpty (t : Ty) : Ownership.FlatFragment.State.FlatType t → FlatANF0 (.prim (.dictEmpty t) [])
   | dictInsert : FlatANF0 (.prim .dictInsert [receiver, key, item])
   | dictRemove : FlatANF0 (.prim .dictRemove [receiver, key])
   | dictGet : FlatANF0 (.prim .dictGet [receiver, key])
@@ -681,6 +684,17 @@ theorem entryAbstract_list (ds : List Decl) (t : Ty) (cs : List Origin) (x : Abs
     (ex : Certificate) : ∃ y, entryAbstract ds t (.list cs x ex) = .list cs y ex := by
   cases t <;> exact ⟨_, rfl⟩
 
+theorem entryAbstract_list_list (ds : List Decl) (t : Ty) (cs : List Origin) (x : Abstract)
+    (ex : Certificate) : entryAbstract ds (.list t) (.list cs x ex) = .list cs (entryAbstract ds t x) ex := rfl
+
+theorem entryAbstract_dict_list (ds : List Decl) (t : Ty) (cs : List Origin) (x : Abstract)
+    (ex : Certificate) :
+    entryAbstract ds (.dict t) (.list cs x ex) = .list cs (.record [.scalar, entryAbstract ds t x]) ex := rfl
+
+theorem entryType_list (t : Ty) : entryType (.list t) = .list (entryType t) := rfl
+
+theorem entryType_dict (t : Ty) : entryType (.dict t) = .list (.record [.int, entryType t]) := rfl
+
 theorem entryAbstract_record (ds : List Decl) (t : Ty) (xs : List Abstract) :
     ∃ ys, entryAbstract ds t (.record xs) = .record ys := by
   cases t <;> exact ⟨_, rfl⟩
@@ -805,7 +819,7 @@ decreasing_by
 theorem flatType_entryType {t : Ty} (flat : FlatType t) : FlatType (entryType t) := by
   induction flat with
   | int => exact .int
-  | list t _ free ih => rw [entryType_of_dictFree (.list t free)]; exact .list t ‹_› free
+  | list t _ ih => exact .list _ ih
   | chainInt => exact .chainInt
   | record ts _ ih =>
     refine .record _ ?_
@@ -819,8 +833,8 @@ theorem flatType_entryType {t : Ty} (flat : FlatType t) : FlatType (entryType t)
       cases Option.some.inj found
       exact ih t0 (List.mem_of_getElem? original)
   | result e a _ _ ihE ihA => exact .result _ _ ihE ihA
-  | dict t _ free ih =>
-    refine .list _ (.record _ ?_) (dictFree_entryType (.dict t) |> fun d => by cases d; assumption)
+  | dict t _ ih =>
+    refine .list _ (.record _ ?_)
     intro t' member
     simp only [List.mem_cons, List.not_mem_nil, or_false] at member
     rcases member with rfl | rfl
@@ -1467,7 +1481,7 @@ theorem flatExpr_default_uses (flat : FlatANF0 expression) :
   | set => simp_all [usesWith, uses, usesArms, Config.has]
   | copy => simp_all [usesWith, uses, usesArms, Config.has]
   | prepend => simp_all [usesWith, uses, usesArms, Config.has]
-  | dictEmpty _ _ _ => simp_all [usesWith, uses, usesArms, Config.has]
+  | dictEmpty _ _ => simp_all [usesWith, uses, usesArms, Config.has]
   | dictInsert => simp_all [usesWith, uses, usesArms, Config.has]
   | dictRemove => simp_all [usesWith, uses, usesArms, Config.has]
   | dictGet => simp_all [usesWith, uses, usesArms, Config.has]
@@ -1807,8 +1821,8 @@ theorem flatAbstract_atPath {tk ty : Ty} {a : Abstract} {p : Path}
 
 end Ownership.FlatFragment.Fields
 
-/-! The live clause through the type (#1796). A flat type has no dictionary,
-so at a live path of a flat binding the typed abstract is the abstract. -/
+/-! The live clause through the type (#1796). At a live path whose type has
+no dictionary, the typed abstract is the abstract. -/
 
 namespace Ownership.FlatFragment.VariableFacts
 
@@ -1954,9 +1968,5 @@ theorem success_of_dictFree {declarations : List Decl} {depth : Nat}
   intro value vs' run
   rw [entryType_of_dictFree free, entryAbstract_of_dictFree free shape]
   exact success value vs' run
-
-theorem dictFree_of_flat_list {t : Ty} (flat : FlatType (.list t)) : DictFree (.list t) := by
-  cases flat with
-  | list _ _ free => exact .list _ free
 
 end Ownership.FlatFragment.State

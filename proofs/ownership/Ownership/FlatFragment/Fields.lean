@@ -3511,7 +3511,9 @@ theorem flat_atom_integer {declarations : List Decl} {vs : ValueSemantics.State}
 
 /-- A `List t`-typed atom whose uses are live is an allocated array of shaped
 and described elements on the heap side, the list of their observations on the
-value side, and a named flat list in the checker. -/
+value side, and a named flat list in the checker. The heap facts of the
+elements are at the element's representation (#1796, #1840): its type
+`entryType t` and its abstract `entryAbstract declarations t element`. -/
 theorem flat_atom_list_path {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {atom : Atom} {t : Ty}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
     (typed : atomType tenv atom = .ok (.list t))
@@ -3520,42 +3522,44 @@ theorem flat_atom_list_path {declarations : List Decl} {vs : ValueSemantics.Stat
       (certificate : Certificate),
       hs.heap[root]? = some ys ∧
       named gamma roots root ∧ Origin.unknown ∉ roots ∧
-      FlatType t ∧ (∀ y ∈ ys, ResultTags t element y ∧
-        (∀ o, Corresponds hs.heap o y → ChainTags t element o) ∧ TagsDeep hs.heap t element y) ∧
+      FlatType t ∧ (∀ y ∈ ys, ResultTags (entryType t) (entryAbstract declarations t element) y ∧
+        (∀ o, Corresponds hs.heap o y → ChainTags (entryType t) (entryAbstract declarations t element) o) ∧
+        TagsDeep hs.heap (entryType t) (entryAbstract declarations t element) y) ∧
       FlatAbstract t element ∧
-      (∀ y ∈ ys, AllocatedFlatValue hs.heap y t) ∧
-      (∀ y ∈ ys, Describes gamma hs.heap element y) ∧
+      (∀ y ∈ ys, AllocatedFlatValue hs.heap y (entryType t)) ∧
+      (∀ y ∈ ys, Describes gamma hs.heap (entryAbstract declarations t element) y) ∧
       os.length = ys.length ∧
       (∀ o ∈ os, obsTyped declarations o t = true) ∧
       (∀ (i : Nat) (o : Observation) (y : Value), os[i]? = some o → ys[i]? = some y → Corresponds hs.heap o y) ∧
       Corresponds hs.heap (.list os) (.ref root) ∧
-      Describes gamma hs.heap (.list roots element certificate) (.ref root) ∧
+      Describes gamma hs.heap (.list roots (entryAbstract declarations t element) certificate) (.ref root) ∧
       ValueSemantics.atom (valueEnv env) atom = .ok (.list os) ∧
       InPlaceSemantics.atom (heapEnv env) atom = .ok (.ref root) ∧
       abstractAtom aenv atom = .ok (.list roots element certificate) := by
-  have free : DictFree (.list t) := by
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, flatList, _⟩ := flat_atom_entry inv typed covered
+  obtain ⟨o, w, a, valueRun, heapRun, abstractRun, paired, described, observed, _, flatList, shape, allocated,
+    tags, _, deep⟩ := flat_atom_entry inv typed covered
+  have elemT : FlatType t := by
     cases flatList with
-    | list _ _ elementFree => exact .list _ elementFree
-  obtain ⟨o, w, a, valueRun, heapRun, abstractRun, paired, described, observed, _, flatList, shape, allocated, tags, _, deep⟩ :=
-    flat_atom_values inv typed covered free
-  cases tags with
-  | list _ roots element certificate _ =>
+    | list _ elemT => exact elemT
+  cases shape with
+  | bottom _ =>
+    rw [entryAbstract_bottom] at tags
+    cases tags
+  | list _ roots element certificate noUnk elemShape =>
+    change Describes gamma hs.heap (.list roots (entryAbstract declarations t element) certificate) w at described
+    change TagsDeep hs.heap (.list (entryType t)) (.list roots (entryAbstract declarations t element) certificate) w
+      at deep
+    change AllocatedFlatValue hs.heap w (.list (entryType t)) at allocated
     cases allocated with
     | list root ys _ lookup elements =>
-      cases shape with
-      | list _ _ _ _ noUnk elemShape =>
-        obtain ⟨os, rfl, lenO, pointwise⟩ := corresponds_list_elements lookup paired
-        have names := described.1.1 [] root (.here _)
-        rw [list_root_names] at names
-        have elemT : FlatType t := by
-          cases flatList with
-          | list _ elemT => exact elemT
-        exact ⟨root, ys, os, roots, element, certificate, lookup, named_union_nil names, noUnk,
-          elemT, tagsDeep_elements deep lookup, elemShape,
-          elements, fun y member => describes_element noUnk lookup member described, lenO,
-          obsTyped_list_elements observed, pointwise, paired,
-          described, valueRun, heapRun, abstractRun⟩
+      obtain ⟨os, rfl, lenO, pointwise⟩ := corresponds_list_elements lookup paired
+      have names := described.1.1 [] root (.here _)
+      rw [list_root_names] at names
+      exact ⟨root, ys, os, roots, element, certificate, lookup, named_union_nil names, noUnk,
+        elemT, tagsDeep_elements deep lookup, elemShape,
+        elements, fun y member => describes_element noUnk lookup member described, lenO,
+        obsTyped_list_elements observed, pointwise, paired,
+        described, valueRun, heapRun, abstractRun⟩
 
 /-! ### A list described through its elements (slice 2b of #522) -/
 
@@ -4025,13 +4029,13 @@ theorem ty_equal_int (equal : (ty == Ty.int) = true) : ty = .int := by
 theorem ty_equal_flat {t b : Ty} (flat : FlatType t) (equal : Ty.equal t b = true) : t = b := by
   induction flat generalizing b with
   | int => cases b <;> simp [Ty.equal] at equal ⊢
-  | list t element _ ih =>
+  | list t element ih =>
     cases b with
     | list e =>
       simp [Ty.equal] at equal
       rw [ih equal]
     | _ => simp [Ty.equal] at equal
-  | dict t value _ ih =>
+  | dict t value ih =>
     cases b with
     | dict e =>
       simp [Ty.equal] at equal
@@ -4079,13 +4083,13 @@ theorem ty_equal_flat {t b : Ty} (flat : FlatType t) (equal : Ty.equal t b = tru
 theorem ty_equal_flat_right {t b : Ty} (flat : FlatType b) (equal : Ty.equal t b = true) : t = b := by
   induction flat generalizing t with
   | int => cases t <;> simp [Ty.equal] at equal ⊢
-  | list b element _ ih =>
+  | list b element ih =>
     cases t with
     | list e =>
       simp [Ty.equal] at equal
       rw [ih equal]
     | _ => simp [Ty.equal] at equal
-  | dict b value _ ih =>
+  | dict b value ih =>
     cases t with
     | dict e =>
       simp [Ty.equal] at equal
@@ -5037,7 +5041,7 @@ theorem primType_link_success {ta tb type : Ty} (flatB : FlatType tb)
   | list _ _ => simp [primType] at run
   | record _ _ => simp [primType] at run
   | result _ _ _ _ => simp [primType] at run
-  | dict _ _ _ => simp [primType] at run
+  | dict _ _ => simp [primType] at run
   | chainInt =>
     simp only [primType] at run
     by_cases same : (ta == Ty.int) = true
@@ -5294,7 +5298,7 @@ theorem flat_uses_typed {declarations : List Decl} {self : Decl} {e : Expr} (fla
       obtain ⟨tk, t, declared, at_p⟩ := ihRest _ ty restTyped x p filtered.1
       rw [lookup_cons_other _ _ _ different] at declared
       exact ⟨tk, t, declared, at_p⟩
-  | @literal args _ _ =>
+  | @literal args _ =>
     intro tenv ty typed x p use
     obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
     exact atoms_use_typed atomsTyped use
@@ -5402,7 +5406,7 @@ theorem flat_uses_typed {declarations : List Decl} {self : Decl} {e : Expr} (fla
     intro tenv ty typed x p use
     obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
     exact atoms_use_typed atomsTyped use
-  | @dictEmpty t _ _ =>
+  | @dictEmpty t _ =>
     intro tenv ty typed x p use
     obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
     exact atoms_use_typed atomsTyped use
@@ -5422,5 +5426,401 @@ theorem flat_uses_typed {declarations : List Decl} {self : Decl} {e : Expr} (fla
     intro tenv ty typed x p use
     obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
     exact atoms_use_typed atomsTyped use
+
+/-! ### The checker's store tests through the representation (#1840)
+
+`entryAbstract` keeps every cell list of a flat abstract, in order, and it
+keeps whether each path is a container path (record fields only): a
+dictionary's entry adds a field step only below an element step. So every
+test of the checker that reads only cell lists, container paths and
+certificates gives the same answer on an abstract and on its representation
+(`cells`, `separatedPaths`, `deepExclusive`, `storeExclusive`,
+`storeSpines`). The list and dictionary cases run the checker's tests on the
+source abstracts and reason at the representation with these lemmas. -/
+
+/-- The cell lists of an abstract's paths, each with whether its path is a
+    container path. -/
+def pathKinds (a : Abstract) : List (Bool × List Origin) :=
+  a.paths.map fun pc => (containerPath pc.1, pc.2)
+
+theorem pathKinds_bottom : pathKinds .bottom = [] := by
+  simp [pathKinds, Abstract.paths]
+
+theorem pathKinds_scalar : pathKinds .scalar = [] := by
+  simp [pathKinds, Abstract.paths]
+
+theorem pathKinds_list (cs : List Origin) (x : Abstract) (ex : Certificate) :
+    pathKinds (.list cs x ex) = (true, cs) :: (pathKinds x).map (fun k => (false, k.2)) := by
+  simp [pathKinds, Abstract.paths, containerPath, List.map_map, Function.comp_def]
+
+theorem attach_zipIdx_flatMap {α β : Type} (xs : List α) (f : α → List β) :
+    (xs.attach.zipIdx).flatMap (fun p => f p.1.val) = xs.flatMap f := by
+  have fsts : (xs.attach.zipIdx).map (fun p => p.1.val) = xs := by
+    have h : ∀ (ys : List { x // x ∈ xs }) (k : Nat), (ys.zipIdx k).map (fun p => p.1.val) = ys.map Subtype.val := by
+      intro ys
+      induction ys with
+      | nil => intro k; rfl
+      | cons y ys ih => intro k; simp [List.zipIdx_cons, ih]
+    rw [h, List.attach_map_subtype_val]
+  conv => rhs; rw [← fsts]
+  rw [List.flatMap_map]
+
+theorem pathKinds_record (xs : List Abstract) :
+    pathKinds (.record xs) = xs.flatMap pathKinds := by
+  unfold pathKinds
+  simp only [Abstract.paths, List.map_flatMap, List.map_map]
+  have inner : (fun a : { x // x ∈ xs } × Nat =>
+      List.map ((fun pc => (containerPath pc.fst, pc.snd)) ∘ fun x => (Step.field a.snd :: x.fst, x.snd))
+        a.fst.val.paths) = fun a => pathKinds a.1.val := by
+    funext a
+    simp [pathKinds, Function.comp_def, containerPath, List.all_cons]
+  rw [inner, attach_zipIdx_flatMap]
+  rfl
+
+/-- Fields read through their types keep the cell lists and the container
+    kinds of the fields, field by field. -/
+theorem flatMap_pathKinds_entryFields {ds : List Decl} :
+    ∀ (ts : List Ty) (as : List Abstract), ts.length = as.length →
+      (∀ (i : Nat) (t : Ty) (a : Abstract), ts[i]? = some t → as[i]? = some a →
+        pathKinds (entryAbstract ds t a) = pathKinds a) →
+      (entryFields ds ts as).flatMap pathKinds = as.flatMap pathKinds
+  | [], [], _, _ => rfl
+  | t :: ts, a :: as, lengths, fields => by
+    show (entryAbstract ds t a :: entryFields ds ts as).flatMap pathKinds = (a :: as).flatMap pathKinds
+    rw [List.flatMap_cons, List.flatMap_cons, fields 0 t a rfl rfl,
+      flatMap_pathKinds_entryFields ts as (by simpa using lengths)
+        (fun i t' a' ht ha => fields (i + 1) t' a' ht ha)]
+  | [], _ :: _, lengths, _ => by simp at lengths
+  | _ :: _, [], lengths, _ => by simp at lengths
+
+/-- The representation of a flat abstract has the abstract's cell lists, in
+    order, each with the same container kind. -/
+theorem pathKinds_entryAbstract {ds : List Decl} {t : Ty} {a : Abstract} (shape : FlatAbstract t a) :
+    pathKinds (entryAbstract ds t a) = pathKinds a := by
+  induction shape with
+  | bottom ty => rw [entryAbstract_bottom]
+  | int => rfl
+  | list t roots element certificate _ _ ih =>
+    show pathKinds (.list roots (entryAbstract ds t element) certificate) = _
+    rw [pathKinds_list, pathKinds_list, ih]
+  | dict t roots value certificate _ _ ih =>
+    show pathKinds (.list roots (.record [.scalar, entryAbstract ds t value]) certificate) = _
+    rw [pathKinds_list, pathKinds_list, pathKinds_record]
+    simp [pathKinds_scalar, ih]
+  | chainBottom roots certificate => rfl
+  | chainScalar roots certificate => rfl
+  | record ts as lengths _ ih =>
+    show pathKinds (.record (entryFields ds ts as)) = _
+    rw [pathKinds_record, pathKinds_record]
+    exact flatMap_pathKinds_entryFields ts as lengths ih
+  | result error success ae aa _ _ ihError ihSuccess =>
+    show pathKinds (.record [entryAbstract ds .int .scalar, entryAbstract ds error ae,
+      entryAbstract ds success aa]) = _
+    rw [pathKinds_record, pathKinds_record]
+    simp [ihError, ihSuccess]
+    rfl
+
+/-- The cell lists of an abstract's paths are its kinds' cell lists. -/
+theorem paths_snd_eq (a : Abstract) : a.paths.map Prod.snd = (pathKinds a).map Prod.snd := by
+  simp [pathKinds, List.map_map, Function.comp_def]
+
+/-- An abstract's cells read only the cell lists of its paths. -/
+theorem cells_eq_fold (a : Abstract) : a.cells = (a.paths.map Prod.snd).foldl union [] := by
+  unfold Abstract.cells
+  rw [List.foldl_map]
+
+theorem cells_entryAbstract {ds : List Decl} {t : Ty} {a : Abstract} (shape : FlatAbstract t a) :
+    (entryAbstract ds t a).cells = a.cells := by
+  rw [cells_eq_fold, cells_eq_fold, paths_snd_eq, paths_snd_eq, pathKinds_entryAbstract shape]
+
+/-- The checker's separation test reads only the cell lists. -/
+theorem separatedPaths_of_snd {xs ys : List (Path × List Origin)} (same : xs.map Prod.snd = ys.map Prod.snd) :
+    separatedPaths xs = separatedPaths ys := by
+  have reading : ∀ zs : List (Path × List Origin), separatedPaths zs =
+      ((zs.map Prod.snd).zipIdx).all fun (cs, i) =>
+        ((zs.map Prod.snd).drop (i + 1)).all fun ds => !cellOverlap cs ds := by
+    intro zs
+    unfold separatedPaths
+    rw [List.zipIdx_map, List.all_map]
+    apply List.all_congr rfl
+    intro entry
+    obtain ⟨⟨p, cs⟩, i⟩ := entry
+    show ((zs.drop (i + 1)).all fun x => !cellOverlap cs x.snd) =
+      ((zs.map Prod.snd).drop (i + 1)).all fun ds => !cellOverlap cs ds
+    rw [← List.map_drop, List.all_map]
+    rfl
+  rw [reading xs, reading ys, same]
+
+theorem separatedPaths_entryAbstract {ds : List Decl} {t : Ty} {a : Abstract} (shape : FlatAbstract t a) :
+    separatedPaths (entryAbstract ds t a).paths = separatedPaths a.paths := by
+  apply separatedPaths_of_snd
+  rw [paths_snd_eq, paths_snd_eq, pathKinds_entryAbstract shape]
+
+/-- The container cell lists of an abstract are its container kinds' cell lists. -/
+theorem containers_snd_eq (a : Abstract) :
+    (containers a).map Prod.snd = ((pathKinds a).filter Prod.fst).map Prod.snd := by
+  unfold containers pathKinds
+  rw [List.filter_map, List.map_map]
+  rfl
+
+theorem containers_snd_entryAbstract {ds : List Decl} {t : Ty} {a : Abstract} (shape : FlatAbstract t a) :
+    (containers (entryAbstract ds t a)).map Prod.snd = (containers a).map Prod.snd := by
+  rw [containers_snd_eq, containers_snd_eq, pathKinds_entryAbstract shape]
+
+theorem deepExclusive_list (cs : List Origin) (x : Abstract) (ex : Certificate) :
+    (Abstract.list cs x ex).deepExclusive = (ex.deep && x.deepExclusive) := by
+  simp [Abstract.deepExclusive]
+
+theorem deepExclusive_record (xs : List Abstract) :
+    (Abstract.record xs).deepExclusive = xs.all Abstract.deepExclusive := by
+  simp only [Abstract.deepExclusive]
+  apply Bool.eq_iff_iff.mpr
+  simp [List.all_eq_true]
+
+/-- Fields read through their types keep deep exclusivity, field by field. -/
+theorem all_deepExclusive_entryFields {ds : List Decl} :
+    ∀ (ts : List Ty) (as : List Abstract), ts.length = as.length →
+      (∀ (i : Nat) (t : Ty) (a : Abstract), ts[i]? = some t → as[i]? = some a →
+        (entryAbstract ds t a).deepExclusive = a.deepExclusive) →
+      (entryFields ds ts as).all Abstract.deepExclusive = as.all Abstract.deepExclusive
+  | [], [], _, _ => rfl
+  | t :: ts, a :: as, lengths, fields => by
+    show (entryAbstract ds t a :: entryFields ds ts as).all Abstract.deepExclusive =
+      (a :: as).all Abstract.deepExclusive
+    rw [List.all_cons, List.all_cons, fields 0 t a rfl rfl,
+      all_deepExclusive_entryFields ts as (by simpa using lengths)
+        (fun i t' a' ht ha => fields (i + 1) t' a' ht ha)]
+  | [], _ :: _, lengths, _ => by simp at lengths
+  | _ :: _, [], lengths, _ => by simp at lengths
+
+/-- Reading through the type keeps deep exclusivity. -/
+theorem deepExclusive_entryAbstract {ds : List Decl} {t : Ty} {a : Abstract} (shape : FlatAbstract t a) :
+    (entryAbstract ds t a).deepExclusive = a.deepExclusive := by
+  induction shape with
+  | bottom ty => rw [entryAbstract_bottom]
+  | int => rfl
+  | list t roots element certificate _ _ ih =>
+    show (Abstract.list roots (entryAbstract ds t element) certificate).deepExclusive = _
+    rw [deepExclusive_list, deepExclusive_list, ih]
+  | dict t roots value certificate _ _ ih =>
+    show (Abstract.list roots (.record [.scalar, entryAbstract ds t value]) certificate).deepExclusive = _
+    rw [deepExclusive_list, deepExclusive_list, deepExclusive_record]
+    simp [ih, Abstract.deepExclusive]
+  | chainBottom roots certificate => rfl
+  | chainScalar roots certificate => rfl
+  | record ts as lengths _ ih =>
+    show (Abstract.record (entryFields ds ts as)).deepExclusive = _
+    rw [deepExclusive_record, deepExclusive_record]
+    exact all_deepExclusive_entryFields ts as lengths ih
+  | result error success ae aa _ _ ihError ihSuccess =>
+    show (Abstract.record [entryAbstract ds .int .scalar, entryAbstract ds error ae,
+      entryAbstract ds success aa]).deepExclusive = _
+    rw [deepExclusive_record, deepExclusive_record]
+    simp [ihError, ihSuccess]
+    rfl
+
+theorem all_congr_mem {α : Type} {l : List α} {p q : α → Bool} (h : ∀ a ∈ l, p a = q a) :
+    l.all p = l.all q := by
+  induction l with
+  | nil => rfl
+  | cons a rest ih =>
+    rw [List.all_cons, List.all_cons, h a (by simp), ih (fun b m => h b (List.mem_cons_of_mem _ m))]
+
+theorem flatMap_congr_mem {α β : Type} {l : List α} {f g : α → List β} (h : ∀ a ∈ l, f a = g a) :
+    l.flatMap f = l.flatMap g := by
+  induction l with
+  | nil => rfl
+  | cons a rest ih =>
+    rw [List.flatMap_cons, List.flatMap_cons, h a (by simp), ih (fun b m => h b (List.mem_cons_of_mem _ m))]
+
+/-- The separation test of values that keep their paths' cell lists and
+    their cells. -/
+theorem separatedValues_map {as : List Abstract} {f : Abstract → Abstract}
+    (sep : ∀ a ∈ as, separatedPaths (f a).paths = separatedPaths a.paths)
+    (cells : ∀ a ∈ as, (f a).cells = a.cells) :
+    separatedValues (as.map f) = separatedValues as := by
+  unfold separatedValues
+  rw [List.zipIdx_map, List.all_map]
+  apply all_congr_mem
+  intro entry member
+  obtain ⟨x, i⟩ := entry
+  have xMember : x ∈ as := List.fst_mem_of_mem_zipIdx member
+  show (separatedPaths (f x).paths && ((as.map f).drop (i + 1)).all fun y => !cellOverlap (f x).cells y.cells) =
+    (separatedPaths x.paths && (as.drop (i + 1)).all fun y => !cellOverlap x.cells y.cells)
+  rw [sep x xMember, cells x xMember, ← List.map_drop, List.all_map]
+  congr 1
+  apply all_congr_mem
+  intro y yMember
+  show (!cellOverlap x.cells (f y).cells) = !cellOverlap x.cells y.cells
+  rw [cells y (List.mem_of_mem_drop yMember)]
+
+/-- The exclusivity test of stored values that keep their cell lists, in
+    order, and their deep exclusivity. -/
+theorem storeExclusive_map {ctx : Context} {as : List Abstract} {f : Abstract → Abstract}
+    (kinds : ∀ a ∈ as, pathKinds (f a) = pathKinds a)
+    (deep : ∀ a ∈ as, (f a).deepExclusive = a.deepExclusive) (later other : List Origin) (oldBuilder : Bool) :
+    storeExclusive ctx (as.map f) later other oldBuilder = storeExclusive ctx as later other oldBuilder := by
+  have cells : ∀ a ∈ as, (f a).cells = a.cells := fun a member => by
+    rw [cells_eq_fold, cells_eq_fold, paths_snd_eq, paths_snd_eq, kinds a member]
+  have sep : ∀ a ∈ as, separatedPaths (f a).paths = separatedPaths a.paths := fun a member => by
+    apply separatedPaths_of_snd
+    rw [paths_snd_eq, paths_snd_eq, kinds a member]
+  unfold storeExclusive
+  simp only []
+  rw [separatedValues_map sep cells, List.all_map, List.all_map, List.all_map]
+  have deepAll : as.all (Abstract.deepExclusive ∘ f) = as.all Abstract.deepExclusive :=
+    all_congr_mem (fun a member => deep a member)
+  have comp : ∀ (g : Abstract → Bool), (∀ a ∈ as, g (f a) = g a) → as.all (g ∘ f) = as.all g :=
+    fun g h => all_congr_mem h
+  rw [deepAll, comp _ (fun a member => by simp only [cells a member]),
+    comp _ (fun a member => by simp only [cells a member])]
+
+/-- The spine test of stored values that keep their cell lists, in order,
+    with their container kinds. -/
+theorem storeSpines_map {ctx : Context} {as : List Abstract} {f : Abstract → Abstract}
+    (kinds : ∀ a ∈ as, pathKinds (f a) = pathKinds a) (later other : List Origin) :
+    storeSpines ctx (as.map f) later other = storeSpines ctx as later other := by
+  have containersSnd : ((as.map f).flatMap containers).map Prod.snd = (as.flatMap containers).map Prod.snd := by
+    rw [List.map_flatMap, List.map_flatMap, List.flatMap_map]
+    apply flatMap_congr_mem
+    intro a member
+    rw [containers_snd_eq, containers_snd_eq, kinds a member]
+  have inner : ∀ cs : List Origin,
+      ((as.map f).all fun a => a.paths.all fun (p, ds) => containerPath p || !cellOverlap cs ds) =
+        (as.all fun a => a.paths.all fun (p, ds) => containerPath p || !cellOverlap cs ds) := by
+    intro cs
+    rw [List.all_map]
+    apply all_congr_mem
+    intro a member
+    have reading : ∀ b : Abstract, (b.paths.all fun (p, ds) => containerPath p || !cellOverlap cs ds) =
+        (pathKinds b).all fun k => k.1 || !cellOverlap cs k.2 := by
+      intro b
+      unfold pathKinds
+      rw [List.all_map]
+      rfl
+    show ((f a).paths.all _) = _
+    rw [reading, reading, kinds a member]
+  unfold storeSpines
+  simp only []
+  rw [separatedPaths_of_snd containersSnd]
+  congr 1
+  have allSnd : ∀ (zs : List (Path × List Origin)) (q : List Origin → Bool),
+      (zs.all fun (_, cs) => q cs) = (zs.map Prod.snd).all q := by
+    intro zs q
+    rw [List.all_map]
+    rfl
+  rw [allSnd _ (fun cs => individuallyOwned ctx cs && !cellOverlap cs (union later other) &&
+      (as.map f).all fun a => a.paths.all fun (p, ds) => containerPath p || !cellOverlap cs ds),
+    allSnd _ (fun cs => individuallyOwned ctx cs && !cellOverlap cs (union later other) &&
+      as.all fun a => a.paths.all fun (p, ds) => containerPath p || !cellOverlap cs ds),
+    containersSnd]
+  apply List.all_congr rfl
+  intro cs
+  rw [inner cs]
+
+/-- The receiver's container test at a store, for values that keep their
+    cells and container cell lists. -/
+theorem containersOwned_map {ctx : Context} {element item element' item' : Abstract}
+    (containersSame : (containers element').map Prod.snd = (containers element).map Prod.snd)
+    (cellsSame : item'.cells = item.cells) :
+    ((containers element').all fun (_, old) => individuallyOwned ctx old && !cellOverlap old item'.cells) =
+      ((containers element).all fun (_, old) => individuallyOwned ctx old && !cellOverlap old item.cells) := by
+  have allSnd : ∀ (zs : List (Path × List Origin)) (q : List Origin → Bool),
+      (zs.all fun (_, cs) => q cs) = (zs.map Prod.snd).all q := by
+    intro zs q
+    rw [List.all_map]
+    rfl
+  rw [allSnd _ (fun old => individuallyOwned ctx old && !cellOverlap old item'.cells),
+    allSnd _ (fun old => individuallyOwned ctx old && !cellOverlap old item.cells), containersSame, cellsSame]
+
+/-- The store tests on the representations of stored flat values give the
+    tests' answers on the values. -/
+theorem storeExclusive_entry {ctx : Context} {ds : List Decl} {t : Ty} {as : List Abstract}
+    (shapes : ∀ a ∈ as, FlatAbstract t a) (later other : List Origin) (oldBuilder : Bool) :
+    storeExclusive ctx (as.map (entryAbstract ds t)) later other oldBuilder =
+      storeExclusive ctx as later other oldBuilder :=
+  storeExclusive_map (fun a member => pathKinds_entryAbstract (shapes a member))
+    (fun a member => deepExclusive_entryAbstract (shapes a member)) later other oldBuilder
+
+theorem storeSpines_entry {ctx : Context} {ds : List Decl} {t : Ty} {as : List Abstract}
+    (shapes : ∀ a ∈ as, FlatAbstract t a) (later other : List Origin) :
+    storeSpines ctx (as.map (entryAbstract ds t)) later other = storeSpines ctx as later other :=
+  storeSpines_map (fun a member => pathKinds_entryAbstract (shapes a member)) later other
+
+/-- Reading through the type commutes with a fold of joins of flat abstracts
+    (a literal's element). -/
+theorem entryAbstract_fold_join {ds : List Decl} {t : Ty} {as : List Abstract}
+    (shapes : ∀ a ∈ as, FlatAbstract t a) :
+    ∀ start, FlatAbstract t start →
+      entryAbstract ds t (as.foldl Abstract.join start) =
+        (as.map (entryAbstract ds t)).foldl Abstract.join (entryAbstract ds t start) := by
+  induction as with
+  | nil => intro start _; rfl
+  | cons a rest ih =>
+    intro start shape
+    simp only [List.foldl_cons, List.map_cons]
+    rw [ih (fun b member => shapes b (List.mem_cons_of_mem _ member)) _
+        (flatAbstract_join shape (shapes a (by simp))),
+      entryAbstract_join shape (shapes a (by simp))]
+
+/-- The certificate of a value stored into a list (a push, a set, a prepend,
+    an insert), read through the type: the store tests give the same answers
+    on the representations of the element and the item. -/
+theorem storeCertificate_entry {ds : List Decl} {t : Ty} {ctx : Context} {later : List Origin}
+    {element item : Abstract} {certificate : Certificate}
+    (shapeE : FlatAbstract t element) (shapeI : FlatAbstract t item) :
+    (⟨certificate.deep && storeExclusive ctx [item] later element.cells,
+      certificate.spine && storeSpines ctx [item] later element.cells &&
+        (containers element).all (fun (_, old) => individuallyOwned ctx old && !cellOverlap old item.cells)⟩ :
+      Certificate) =
+    ⟨certificate.deep && storeExclusive ctx [entryAbstract ds t item] later (entryAbstract ds t element).cells,
+      certificate.spine && storeSpines ctx [entryAbstract ds t item] later (entryAbstract ds t element).cells &&
+        (containers (entryAbstract ds t element)).all
+          (fun (_, old) => individuallyOwned ctx old && !cellOverlap old (entryAbstract ds t item).cells)⟩ := by
+  have shapes : ∀ a ∈ [item], FlatAbstract t a := fun a member => by
+    rw [List.mem_singleton] at member
+    subst member
+    exact shapeI
+  have exclusive := storeExclusive_entry (ctx := ctx) (ds := ds) shapes later element.cells false
+  have spines := storeSpines_entry (ctx := ctx) (ds := ds) shapes later element.cells
+  simp only [List.map_cons, List.map_nil] at exclusive spines
+  rw [cells_entryAbstract shapeE, exclusive, spines]
+  congr 2
+  exact (containersOwned_map (containers_snd_entryAbstract shapeE) (cells_entryAbstract shapeI)).symm
+
+/-- A store's result in a list, read through the type. -/
+theorem entryAbstract_stored {ds : List Decl} {t : Ty} {ctx : Context} {later roots : List Origin}
+    {element item x x' result : Abstract} {certificate : Certificate}
+    (shapeE : FlatAbstract t element) (shapeI : FlatAbstract t item) (joined : entryAbstract ds t x = x')
+    (resultEq : result = .list roots x
+      ⟨certificate.deep && storeExclusive ctx [item] later element.cells,
+       certificate.spine && storeSpines ctx [item] later element.cells &&
+         (containers element).all (fun (_, old) => individuallyOwned ctx old && !cellOverlap old item.cells)⟩) :
+    entryAbstract ds (.list t) result = .list roots x'
+      ⟨certificate.deep && storeExclusive ctx [entryAbstract ds t item] later (entryAbstract ds t element).cells,
+       certificate.spine && storeSpines ctx [entryAbstract ds t item] later (entryAbstract ds t element).cells &&
+         (containers (entryAbstract ds t element)).all
+           (fun (_, old) => individuallyOwned ctx old && !cellOverlap old (entryAbstract ds t item).cells)⟩ := by
+  rw [resultEq, entryAbstract_list_list, joined]
+  exact congrArg (Abstract.list roots x') (storeCertificate_entry shapeE shapeI)
+
+/-- An insert's result in a dictionary, read through the type: the entry's
+    value is the join of the representations, and the certificate the store
+    tests on them. -/
+theorem entryAbstract_stored_dict {ds : List Decl} {t : Ty} {ctx : Context} {later roots : List Origin}
+    {element item result : Abstract} {certificate : Certificate}
+    (shapeE : FlatAbstract t element) (shapeI : FlatAbstract t item)
+    (resultEq : result = .list roots (element.join item)
+      ⟨certificate.deep && storeExclusive ctx [item] later element.cells,
+       certificate.spine && storeSpines ctx [item] later element.cells &&
+         (containers element).all (fun (_, old) => individuallyOwned ctx old && !cellOverlap old item.cells)⟩) :
+    entryAbstract ds (.dict t) result =
+      .list roots (.record [.scalar, (entryAbstract ds t element).join (entryAbstract ds t item)])
+      ⟨certificate.deep && storeExclusive ctx [entryAbstract ds t item] later (entryAbstract ds t element).cells,
+       certificate.spine && storeSpines ctx [entryAbstract ds t item] later (entryAbstract ds t element).cells &&
+         (containers (entryAbstract ds t element)).all
+           (fun (_, old) => individuallyOwned ctx old && !cellOverlap old (entryAbstract ds t item).cells)⟩ := by
+  rw [resultEq, entryAbstract_dict_list, entryAbstract_join shapeE shapeI]
+  exact congrArg (Abstract.list roots _) (storeCertificate_entry shapeE shapeI)
 
 end Ownership.FlatFragment.Fields

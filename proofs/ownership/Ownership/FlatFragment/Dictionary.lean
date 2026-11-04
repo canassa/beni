@@ -9,8 +9,9 @@ representation, a list of entry records (`entryType`, `entryAbstract`, #1796).
 So each dictionary form is a list form on the entries: the size is a length,
 the empty dictionary a fresh empty array, a lookup an element read, an insert
 a push or an in-place set of one entry, a remove a filter of the entries. A
-dictionary's value holds no dictionary (`FlatType.dict`), so its value is its
-own representation. -/
+dictionary's value can be any flat type, a dictionary too (#1840): each case
+reads the value at its representation, and the checker's store tests on the
+value give the same answers there (`entryAbstract_stored_dict`). -/
 
 namespace Ownership.FlatFragment.Dictionary
 
@@ -36,18 +37,6 @@ theorem obsTyped_dict_elements {ds : List Decl} {os : List Observation} {t : Ty}
   change os.attach.all (fun item => obsTyped ds item.val (.record [.int, t])) = true at typed
   intro o member
   exact List.all_eq_true.mp typed ⟨o, member⟩ (List.mem_attach _ _)
-
-/-- The representation of a dictionary whose value holds no dictionary. -/
-theorem entryType_dict {t : Ty} (free : DictFree t) : entryType (.dict t) = .list (.record [.int, t]) := by
-  show Ty.list (.record [.int, entryType t]) = _
-  rw [entryType_of_dictFree free]
-
-theorem entryAbstract_dict {ds : List Decl} {t : Ty} {roots : List Origin} {value : Abstract}
-    {certificate : Certificate} (free : DictFree t) (shape : FlatAbstract t value) :
-    entryAbstract ds (.dict t) (.list roots value certificate) =
-      .list roots (.record [.scalar, value]) certificate := by
-  show Abstract.list roots (.record [.scalar, entryAbstract ds t value]) certificate = _
-  rw [entryAbstract_of_dictFree free shape]
 
 /-- The entry record's type is flat, and its abstract is a flat abstract of it. -/
 theorem flatType_entry {t : Ty} (flat : FlatType t) : FlatType (.record [.int, t]) := by
@@ -75,7 +64,9 @@ theorem flatAbstract_entryRecord {t : Ty} {value : Abstract} (shape : FlatAbstra
 
 /-- A `Dict t`-typed atom whose uses are live: an allocated array of entry
 records on the heap side, the list of their observations on the value side,
-and a named flat dictionary in the checker, read through its representation. -/
+and a named flat dictionary in the checker, read through its representation:
+an entry is a record of the key and the value's representation (#1796,
+#1840). -/
 theorem flat_atom_dict_path {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {atom : Atom} {t : Ty}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
     (typed : atomType tenv atom = .ok (.dict t))
@@ -84,18 +75,20 @@ theorem flat_atom_dict_path {declarations : List Decl} {vs : ValueSemantics.Stat
       (certificate : Certificate),
       hs.heap[root]? = some ys ∧
       named gamma roots root ∧ Origin.unknown ∉ roots ∧
-      FlatType t ∧ DictFree t ∧
-      (∀ y ∈ ys, ResultTags (.record [.int, t]) (.record [.scalar, value]) y ∧
-        (∀ o, Corresponds hs.heap o y → ChainTags (.record [.int, t]) (.record [.scalar, value]) o) ∧
-        TagsDeep hs.heap (.record [.int, t]) (.record [.scalar, value]) y) ∧
+      FlatType t ∧
+      (∀ y ∈ ys, ResultTags (.record [.int, entryType t]) (.record [.scalar, entryAbstract declarations t value]) y ∧
+        (∀ o, Corresponds hs.heap o y →
+          ChainTags (.record [.int, entryType t]) (.record [.scalar, entryAbstract declarations t value]) o) ∧
+        TagsDeep hs.heap (.record [.int, entryType t]) (.record [.scalar, entryAbstract declarations t value]) y) ∧
       FlatAbstract t value ∧
-      (∀ y ∈ ys, AllocatedFlatValue hs.heap y (.record [.int, t])) ∧
-      (∀ y ∈ ys, Describes gamma hs.heap (.record [.scalar, value]) y) ∧
+      (∀ y ∈ ys, AllocatedFlatValue hs.heap y (.record [.int, entryType t])) ∧
+      (∀ y ∈ ys, Describes gamma hs.heap (.record [.scalar, entryAbstract declarations t value]) y) ∧
       os.length = ys.length ∧
       (∀ o ∈ os, obsTyped declarations o (.record [.int, t]) = true) ∧
       (∀ (i : Nat) (o : Observation) (y : Value), os[i]? = some o → ys[i]? = some y → Corresponds hs.heap o y) ∧
       Corresponds hs.heap (.list os) (.ref root) ∧
-      Describes gamma hs.heap (.list roots (.record [.scalar, value]) certificate) (.ref root) ∧
+      Describes gamma hs.heap (.list roots (.record [.scalar, entryAbstract declarations t value]) certificate)
+        (.ref root) ∧
       ValueSemantics.atom (valueEnv env) atom = .ok (.list os) ∧
       InPlaceSemantics.atom (heapEnv env) atom = .ok (.ref root) ∧
       abstractAtom aenv atom = .ok (.list roots value certificate) := by
@@ -103,24 +96,21 @@ theorem flat_atom_dict_path {declarations : List Decl} {vs : ValueSemantics.Stat
     tags, _, deep⟩ := flat_atom_entry inv typed covered
   have flatT : FlatType t := by
     cases flatDict with
-    | dict _ flatT _ => exact flatT
-  have freeT : DictFree t := by
-    cases flatDict with
-    | dict _ _ freeT => exact freeT
-  rw [entryType_dict freeT] at allocated tags deep
+    | dict _ flatT => exact flatT
+  rw [entryType_dict] at allocated tags deep
   cases shape with
   | bottom _ =>
     rw [entryAbstract_bottom] at tags
     cases tags
   | dict _ roots value certificate noUnk valueShape =>
-    rw [entryAbstract_dict freeT valueShape] at described tags deep
+    rw [entryAbstract_dict_list] at described tags deep
     cases allocated with
     | list root ys _ lookup elements =>
       obtain ⟨os, rfl, lenO, pointwise⟩ := corresponds_list_elements lookup paired
       have names := described.1.1 [] root (.here _)
       rw [list_root_names] at names
       exact ⟨root, ys, os, roots, value, certificate, lookup, named_union_nil names, noUnk,
-        flatT, freeT, tagsDeep_elements deep lookup, valueShape,
+        flatT, tagsDeep_elements deep lookup, valueShape,
         elements, fun y member => describes_element noUnk lookup member described, lenO,
         obsTyped_dict_elements observed, pointwise, paired,
         described, valueRun, heapRun, abstractRun⟩
@@ -203,7 +193,7 @@ theorem dictSize_preserved {declarations : List Decl} {vs : ValueSemantics.State
           (.prim .dictSize [receiver])).run hs = .error actualMessage) := by
   obtain ⟨t, receiverTyped, intType⟩ := exprType_dictSize_success (fun _ _ h => flat_atom_type inv h) typed
   subst intType
-  obtain ⟨root, ys, os, roots, value, certificate, lookup, _, _, _, _, _, _, _, _, len, _, _, _, _,
+  obtain ⟨root, ys, os, roots, value, certificate, lookup, _, _, _, _, _, _, _, len, _, _, _, _,
     valueAtom, heapAtom, abstractReceiver⟩ := flat_atom_dict_path inv receiverTyped covered
   have abstractAtoms : [receiver].mapM (m := Except String) (abstractAtom aenv) =
       .ok [.list roots value certificate] := except_mapM_cons abstractReceiver rfl
@@ -415,20 +405,20 @@ theorem dictGet_runtime_deep {declarations : List Decl} {vs : ValueSemantics.Sta
 
 /-- What the lookup finds: nothing on either side, or one entry's value on
 both, with its facts. -/
-theorem dictGet_found {gamma : Naming} {heap : Heap} {t : Ty} {value : Abstract} {declarations : List Decl}
+theorem dictGet_found {gamma : Naming} {heap : Heap} {t u : Ty} {value : Abstract} {declarations : List Decl}
     {os : List Observation} {ys : List Value} (k : Int)
     (lenO : os.length = ys.length)
     (pointwise : ∀ (i : Nat) (o : Observation) (y : Value), os[i]? = some o → ys[i]? = some y → Corresponds heap o y)
-    (shaped : ∀ y ∈ ys, AllocatedFlatValue heap y (.record [.int, t]))
+    (shaped : ∀ y ∈ ys, AllocatedFlatValue heap y (.record [.int, u]))
     (typedObs : ∀ o ∈ os, obsTyped declarations o (.record [.int, t]) = true)
     (described : ∀ y ∈ ys, Describes gamma heap (.record [.scalar, value]) y)
-    (tags : ∀ y ∈ ys, ResultTags (.record [.int, t]) (.record [.scalar, value]) y ∧
-      (∀ o, Corresponds heap o y → ChainTags (.record [.int, t]) (.record [.scalar, value]) o) ∧
-      TagsDeep heap (.record [.int, t]) (.record [.scalar, value]) y) :
+    (tags : ∀ y ∈ ys, ResultTags (.record [.int, u]) (.record [.scalar, value]) y ∧
+      (∀ o, Corresponds heap o y → ChainTags (.record [.int, u]) (.record [.scalar, value]) o) ∧
+      TagsDeep heap (.record [.int, u]) (.record [.scalar, value]) y) :
     (getObs os k = none ∧ getVal ys k = none) ∨
     ∃ ov v, getObs os k = some ov ∧ getVal ys k = some v ∧ Corresponds heap ov v ∧
-      AllocatedFlatValue heap v t ∧ obsTyped declarations ov t = true ∧ Describes gamma heap value v ∧
-      ResultTags t value v ∧ ChainTags t value ov ∧ TagsDeep heap t value v := by
+      AllocatedFlatValue heap v u ∧ obsTyped declarations ov t = true ∧ Describes gamma heap value v ∧
+      ResultTags u value v ∧ ChainTags u value ov ∧ TagsDeep heap u value v := by
   rcases dictFind_corresponds k os ys lenO pointwise
       (fun y member => by obtain ⟨k', v, rfl, _⟩ := entry_shape (shaped y member); exact ⟨k', v, rfl⟩) with
     ⟨noneO, noneV⟩ | ⟨o, y, foundO, foundV, member, paired⟩
@@ -446,11 +436,11 @@ theorem dictGet_found {gamma : Naming} {heap : Heap} {t : Ty} {value : Abstract}
     · simp [obsTyped] at typedEntry
       exact typedEntry
     · cases tagsY with
-      | record _ _ _ _ fields => exact fields 1 t value v rfl rfl rfl
+      | record _ _ _ _ fields => exact fields 1 u value v rfl rfl rfl
     · cases chainsY _ paired with
-      | record _ _ _ _ fields => exact fields 1 t value ov rfl rfl rfl
+      | record _ _ _ _ fields => exact fields 1 u value ov rfl rfl rfl
     · cases deepY with
-      | record _ _ _ _ fields => exact fields 1 t value v rfl rfl rfl
+      | record _ _ _ _ fields => exact fields 1 u value v rfl rfl rfl
 
 /-- The lookup case: a read of the entries whose result is `ok v` with the
 found value, described by the dictionary's value, or `err 0`. -/
@@ -462,7 +452,7 @@ theorem dictGet_preserved {declarations : List Decl} {vs : ValueSemantics.State}
     (defaultConfig : ctx.config = {})
     (accepted : (inferExpr inferenceFuel ctx aenv (.prim .dictGet [receiver, key]) after site).run before =
       .ok (result, next)) :
-    DictFree type ∧ next.facts.escapes = before.facts.escapes ∧ FlatAbstract type result ∧
+    FlatType type ∧ next.facts.escapes = before.facts.escapes ∧ FlatAbstract type result ∧
     (∀ value vs',
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .dictGet [receiver, key])).run vs = .ok (value, vs') →
@@ -471,10 +461,13 @@ theorem dictGet_preserved {declarations : List Decl} {vs : ValueSemantics.State}
           (.prim .dictGet [receiver, key])).run hs = .ok (actual, hs') ∧
         FlatInvariant declarations vs' hs' env live aenv tenv next.facts.escapes gamma' ∧
         hs.heap.size ≤ hs'.heap.size ∧
-        Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
+        Corresponds hs'.heap value actual ∧
+        Describes gamma' hs'.heap (entryAbstract declarations type result) actual ∧
         obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-        AllocatedFlatValue hs'.heap actual type ∧
-        ResultTags type result actual ∧ ChainTags type result value ∧ TagsDeep hs'.heap type result actual) ∧
+        AllocatedFlatValue hs'.heap actual (entryType type) ∧
+        ResultTags (entryType type) (entryAbstract declarations type result) actual ∧
+        ChainTags (entryType type) (entryAbstract declarations type result) value ∧
+        TagsDeep hs'.heap (entryType type) (entryAbstract declarations type result) actual) ∧
     (∀ message,
       (ValueSemantics.eval depth declarations none (valueEnv env)
         (.prim .dictGet [receiver, key])).run vs = .error message →
@@ -483,7 +476,7 @@ theorem dictGet_preserved {declarations : List Decl} {vs : ValueSemantics.State}
           (.prim .dictGet [receiver, key])).run hs = .error actualMessage) := by
   obtain ⟨t, receiverTyped, keyTyped, rfl⟩ :=
     exprType_dictGet_success (fun _ _ h => flat_atom_type inv h) typed
-  obtain ⟨root, ys, os, roots, value, certificate, lookup, _, _, flatT, freeT, entryTags, valueShape,
+  obtain ⟨root, ys, os, roots, value, certificate, lookup, _, _, flatT, entryTags, valueShape,
     entriesShaped, entriesDescribed, lenO, entriesTyped, pointwise, _, _, valueReceiver, heapReceiver,
     abstractReceiver⟩ := flat_atom_dict_path inv receiverTyped coveredR
   obtain ⟨k, valueKey, heapKey, abstractKey⟩ := flat_atom_integer inv keyTyped coveredK
@@ -494,6 +487,9 @@ theorem dictGet_preserved {declarations : List Decl} {vs : ValueSemantics.State}
   rw [primitive_dictGet_run] at run
   have equal := Except.ok.inj run
   have resultEq : result = .record [.scalar, .scalar, value] := (congrArg Prod.fst equal).symm
+  have resultRep : entryAbstract declarations (.result .int t) result =
+      .record [.scalar, .scalar, entryAbstract declarations t value] := by
+    rw [resultEq]; rfl
   have nextState : next = {before with facts := {before.facts with
       reads := union before.facts.reads ((union roots value.cells).filter external)}} :=
     (congrArg Prod.snd equal).symm
@@ -503,7 +499,7 @@ theorem dictGet_preserved {declarations : List Decl} {vs : ValueSemantics.State}
       .ok [.list os, .int k] := except_mapM_cons valueReceiver (except_mapM_cons valueKey rfl)
   have heapAtoms : [receiver, key].mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
       .ok [.ref root, .int k] := except_mapM_cons heapReceiver (except_mapM_cons heapKey rfl)
-  have found := dictGet_found (gamma := gamma) (declarations := declarations) k lenO pointwise entriesShaped
+  have found := dictGet_found (gamma := gamma) (declarations := declarations) (t := t) k lenO pointwise entriesShaped
     entriesTyped entriesDescribed entryTags
   have readPaired : Corresponds hs.heap ((getObs os k).getD (.int 0)) ((getVal ys k).getD (.int 0)) := by
     rcases found with ⟨noneO, noneV⟩ | ⟨ov, v, someO, someV, pairedV, _⟩
@@ -519,11 +515,12 @@ theorem dictGet_preserved {declarations : List Decl} {vs : ValueSemantics.State}
     rcases found with ⟨noneO, _⟩ | ⟨ov, v, someO, _, _, _, typedV, _⟩
     · rw [noneO]; simp [ValueSemantics.maybe, obsTyped]
     · rw [someO]; simpa [ValueSemantics.maybe, obsTyped] using typedV
-  have allocated : AllocatedFlatValue hs.heap (InPlaceSemantics.maybe (getVal ys k)) (.result .int t) := by
+  have allocated : AllocatedFlatValue hs.heap (InPlaceSemantics.maybe (getVal ys k))
+      (.result .int (entryType t)) := by
     rcases found with ⟨_, noneV⟩ | ⟨ov, v, _, someV, _, allocatedV, _⟩
-    · rw [noneV]; exact .err .int t (.int 0) (.int 0)
-    · rw [someV]; exact .ok .int t v allocatedV
-  have described : Describes gamma hs.heap (.record [.scalar, .scalar, value])
+    · rw [noneV]; exact .err .int _ (.int 0) (.int 0)
+    · rw [someV]; exact .ok .int _ v allocatedV
+  have described : Describes gamma hs.heap (.record [.scalar, .scalar, entryAbstract declarations t value])
       (InPlaceSemantics.maybe (getVal ys k)) := by
     rcases found with ⟨_, noneV⟩ | ⟨ov, v, _, someV, _, _, _, describedV, _⟩
     · rw [noneV]
@@ -537,22 +534,22 @@ theorem dictGet_preserved {declarations : List Decl} {vs : ValueSemantics.State}
       · exact integer_described_any _ 1
       · exact integer_described_any _ 0
       · exact describedV
-  have tagsR : ResultTags (.result .int t) (.record [.scalar, .scalar, value])
+  have tagsR : ResultTags (.result .int (entryType t)) (.record [.scalar, .scalar, entryAbstract declarations t value])
       (InPlaceSemantics.maybe (getVal ys k)) := by
     rcases found with ⟨_, noneV⟩ | ⟨ov, v, _, someV, _, _, _, _, tagsV, _⟩
-    · rw [noneV]; exact .err .int t .scalar .scalar value (.int 0) (by simp) (.int 0)
-    · rw [someV]; exact .ok .int t .scalar .scalar value v (resultTags_ne_bottom tagsV) tagsV
-  have chainsR : ChainTags (.result .int t) (.record [.scalar, .scalar, value])
+    · rw [noneV]; exact .err .int _ .scalar .scalar _ (.int 0) (by simp) (.int 0)
+    · rw [someV]; exact .ok .int _ .scalar .scalar _ v (resultTags_ne_bottom tagsV) tagsV
+  have chainsR : ChainTags (.result .int (entryType t)) (.record [.scalar, .scalar, entryAbstract declarations t value])
       (ValueSemantics.maybe (getObs os k)) := by
     rcases found with ⟨noneO, _⟩ | ⟨ov, v, someO, _, _, _, _, _, _, chainsV, _⟩
-    · rw [noneO]; exact .err .int t .scalar .scalar value (.int 0) (.int _ _)
-    · rw [someO]; exact .ok .int t .scalar .scalar value ov chainsV
-  have deepR : TagsDeep hs.heap (.result .int t) (.record [.scalar, .scalar, value])
-      (InPlaceSemantics.maybe (getVal ys k)) := by
+    · rw [noneO]; exact .err .int _ .scalar .scalar _ (.int 0) (.int _ _)
+    · rw [someO]; exact .ok .int _ .scalar .scalar _ ov chainsV
+  have deepR : TagsDeep hs.heap (.result .int (entryType t))
+      (.record [.scalar, .scalar, entryAbstract declarations t value]) (InPlaceSemantics.maybe (getVal ys k)) := by
     rcases found with ⟨_, noneV⟩ | ⟨ov, v, _, someV, _, _, _, _, _, _, deepV⟩
-    · rw [noneV]; exact .err .int t .scalar .scalar value (.int 0) (.int _ _)
-    · rw [someV]; exact .ok .int t .scalar .scalar value v deepV
-  refine ⟨.result _ _ .int freeT, nextEscapes, by rw [resultEq]; exact .result _ _ _ _ .int valueShape, ?_, ?_⟩
+    · rw [noneV]; exact .err .int _ .scalar .scalar _ (.int 0) (.int _ _)
+    · rw [someV]; exact .ok .int _ .scalar .scalar _ v deepV
+  refine ⟨.result _ _ .int flatT, nextEscapes, by rw [resultEq]; exact .result _ _ _ _ .int valueShape, ?_, ?_⟩
   · intro value' vs' run
     by_cases noDepth : depth = 0
     · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run
@@ -574,10 +571,10 @@ theorem dictGet_preserved {declarations : List Decl} {vs : ValueSemantics.State}
             unfold heapRead; rw [heapObserved_heap]
           refine ⟨InPlaceSemantics.maybe (getVal ys k), heapRead hs ((getObs os k).getD (.int 0)) vs.kept.toList,
             gamma, heapRun, ?_, Nat.le_of_eq (congrArg Array.size heapSame.symm),
-            by rw [heapSame]; exact paired, by rw [heapSame, resultEq]; exact described, observed,
+            by rw [heapSame]; exact paired, by rw [heapSame, resultRep]; exact described, observed,
             by rw [heapSame]; exact valueTyped_of_corresponds paired observed, by rw [heapSame]; exact allocated,
-            by rw [resultEq]; exact tagsR, by rw [resultEq]; exact chainsR,
-            by rw [heapSame, resultEq]; exact deepR⟩
+            by rw [resultRep]; exact tagsR, by rw [resultRep]; exact chainsR,
+            by rw [heapSame, resultRep]; exact deepR⟩
           rw [nextEscapes]; exact read_post_invariant inv _
   · intro message failed
     by_cases noDepth : depth = 0
@@ -629,7 +626,6 @@ theorem dictEmpty_runtime_success {declarations : List Decl} {vs : ValueSemantic
 /-- The empty dictionary: a fresh, empty array of entries, named by the site,
 described through its representation. -/
 theorem dictEmpty_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {inferenceFuel : Nat} {ctx : Context} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract} {self : Decl} {type : Ty} {t : Ty}
-    (freeT : DictFree t)
     (inv : FlatInvariant declarations vs hs env live aenv tenv before.facts.escapes gamma)
     (typed : exprType declarations self tenv (.prim (.dictEmpty t) []) = .ok type)
     (defaultConfig : ctx.config = {})
@@ -668,7 +664,7 @@ theorem dictEmpty_preserved {declarations : List Decl} {vs : ValueSemantics.Stat
     rw [resultEq]
     show Abstract.list [.site site 0] (.record [.scalar, entryAbstract declarations t .bottom]) true = _
     rw [entryAbstract_bottom]
-  rw [typedResult, entryType_dict freeT]
+  rw [typedResult, entryType_dict]
   constructor
   · intro value vs' run'
     by_cases noDepth : depth = 0
@@ -688,7 +684,8 @@ theorem dictEmpty_preserved {declarations : List Decl} {vs : ValueSemantics.Stat
         have rootNamed : named gamma' [.site site 0] hs.heap.size := ⟨.site site 0, by simp, fresh⟩
         have pairedNew : Corresponds (hs.heap.push []) (.list []) (.ref hs.heap.size) :=
           corresponds_integer_ref (integers := []) lookupNew
-        have shapedNew : AllocatedFlatValue (hs.heap.push []) (.ref hs.heap.size) (.list (.record [.int, t])) :=
+        have shapedNew : AllocatedFlatValue (hs.heap.push []) (.ref hs.heap.size)
+            (.list (.record [.int, entryType t])) :=
           .list _ [] _ lookupEmpty (by intro w member; simp at member)
         have observedNew : obsTyped declarations (.list []) (.dict t) = true := by simp [obsTyped]
         refine ⟨.ref hs.heap.size, heapObserved (heapAllocated hs []) vs.kept.toList, gamma', heapRun,
@@ -924,7 +921,7 @@ theorem dictRemove_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
       next.facts.escapes result type := by
   obtain ⟨t, receiverTyped, keyTyped, rfl⟩ :=
     exprType_dictRemove_success (fun _ _ h => flat_atom_type inv h) typed
-  obtain ⟨root, ys, os, roots, value, certificate, lookup, receiverNamed, noUnk, _, freeT, entryTags,
+  obtain ⟨root, ys, os, roots, value, certificate, lookup, receiverNamed, noUnk, _, entryTags,
     valueShape, entriesShaped, entriesDescribed, lenO, entriesTyped, pointwise, pairedList, described,
     valueReceiver, heapReceiver, abstractReceiver⟩ := flat_atom_dict_path inv receiverTyped coveredR
   obtain ⟨k, valueKey, heapKey, abstractKey⟩ := flat_atom_integer inv keyTyped coveredK
@@ -948,7 +945,7 @@ theorem dictRemove_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
       .ok [.ref root, .int k] := except_mapM_cons heapReceiver (except_mapM_cons heapKey rfl)
   constructor
   · intro result' vs' run'
-    rw [entryAbstract_dict freeT valueShape, entryType_dict freeT]
+    rw [entryAbstract_dict_list, entryType_dict]
     by_cases noDepth : depth = 0
     · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run'
       simp [noDepth] at run'
@@ -974,17 +971,17 @@ theorem dictRemove_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
           fun y member => element_agree_after_write represented0 lookup member
         have shapedZ : ∀ z ∈ dictDrop InPlaceSemantics.entryKey ys k,
             AllocatedFlatValue (hs.heap.set! root (dictDrop InPlaceSemantics.entryKey ys k)) z
-              (.record [.int, t]) :=
+              (.record [.int, entryType t]) :=
           fun z member => allocated_of_agree (entriesShaped z (keptOld z member)) (agreeOld z (keptOld z member))
         have shapedNew : AllocatedFlatValue (hs.heap.set! root (dictDrop InPlaceSemantics.entryKey ys k))
-            (.ref root) (.list (.record [.int, t])) := .list root _ _ lookupNew shapedZ
+            (.ref root) (.list (.record [.int, entryType t])) := .list root _ _ lookupNew shapedZ
         have describedZ : ∀ z ∈ dictDrop InPlaceSemantics.entryKey ys k,
             Describes gamma (hs.heap.set! root (dictDrop InPlaceSemantics.entryKey ys k))
-              (.record [.scalar, value]) z :=
+              (.record [.scalar, entryAbstract declarations t value]) z :=
           fun z member => describes_of_agree (agreeOld z (keptOld z member)) (entriesDescribed z (keptOld z member))
-        have oldCert := described.1.2 [] roots (.record [.scalar, value]) certificate (.ref root) rfl (.here _)
+        have oldCert := described.1.2 [] roots (.record [.scalar, entryAbstract declarations t value]) certificate (.ref root) rfl (.here _)
         have describedNew : Describes gamma (hs.heap.set! root (dictDrop InPlaceSemantics.entryKey ys k))
-            (.list roots (.record [.scalar, value]) certificate) (.ref root) :=
+            (.list roots (.record [.scalar, entryAbstract declarations t value]) certificate) (.ref root) :=
           list_described_of_elements receiverNamed noUnk lookupNew shapedNew describedZ
             (fun d => filtered_footprint_nodup (fun e => InPlaceSemantics.entryKey e != some k) lookup lookupNew
               represented0 agreeOld (fun n o fp rep => (oldCert n o fp rep).1 d))
@@ -1000,7 +997,7 @@ theorem dictRemove_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
         have observedNew : obsTyped declarations (.list (dictDrop ValueSemantics.entryKey os k)) (.dict t) = true :=
           obsTyped_dict_of_elements (fun o member => entriesTyped o (List.mem_filter.mp member).1)
         have deepNew : TagsDeep (hs.heap.set! root (dictDrop InPlaceSemantics.entryKey ys k))
-            (.list (.record [.int, t])) (.list roots (.record [.scalar, value]) certificate) (.ref root) :=
+            (.list (.record [.int, entryType t])) (.list roots (.record [.scalar, entryAbstract declarations t value]) certificate) (.ref root) :=
           tagsDeep_list lookupNew (fun z member =>
             elementTags_of_agree (entryTags z (keptOld z member)) (agreeOld z (keptOld z member)))
         refine ⟨.ref root, heapObserved (heapStored hs root ys (dictDrop InPlaceSemantics.entryKey ys k))
@@ -1367,23 +1364,32 @@ theorem dictInsert_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
       next.facts.escapes result type := by
   obtain ⟨t, receiverTyped, keyTyped, itemTyped, rfl⟩ :=
     exprType_dictInsert_success (fun _ _ h => flat_atom_type inv h) typed
-  obtain ⟨root, ys, os, roots, value, certificate, lookup, receiverNamed, noUnk, _, freeT, entryTags,
-    valueShape, entriesShaped, entriesDescribed, lenO, entriesTyped, pointwise, pairedList, described,
+  obtain ⟨root, ys, os, roots, value0, certificate, lookup, receiverNamed, noUnk, _, entryTags,
+    valueShape0, entriesShaped, entriesDescribed, lenO, entriesTyped, pointwise, pairedList, described,
     valueReceiver, heapReceiver, abstractReceiver⟩ := flat_atom_dict_path inv receiverTyped coveredR
   obtain ⟨k, valueKey, heapKey, abstractKey⟩ := flat_atom_integer inv keyTyped coveredK
-  obtain ⟨o, w, aN, valueItem, heapItem, abstractItem, pairedN, describedN, observedN, _, _, shapeN,
-    allocatedN, tagsN, chainsN, deepN⟩ := flat_atom_values inv itemTyped coveredV freeT
+  obtain ⟨o, w, aN0, valueItem, heapItem, abstractItem, pairedN, describedN, observedN, _, _, shapeN0,
+    allocatedN, tagsN, chainsN, deepN⟩ := flat_atom_entry inv itemTyped coveredV
   have abstractAtoms : [receiver, key, item].mapM (m := Except String) (abstractAtom aenv) =
-      .ok [.list roots value certificate, .scalar, aN] :=
+      .ok [.list roots value0 certificate, .scalar, aN0] :=
     except_mapM_cons abstractReceiver (except_mapM_cons abstractKey (except_mapM_cons abstractItem rfl))
   obtain ⟨childFuel, _, scope, run⟩ := infer_primitive_success defaultConfig abstractAtoms accepted
   have demanded := primitive_dictInsert_demand_run run
   rw [show ({ctx with escaped := union ctx.escaped before.facts.escapes} : Context).config = {} from
     defaultConfig, liveCellsWith_default] at demanded
+  rw [← cells_entryAbstract (ds := declarations) valueShape0, ← cells_entryAbstract (ds := declarations) shapeN0]
+    at demanded
   have escapesEq := demand_success_escapes demanded
   have resultEq := primitive_dictInsert_result
     (show ({ctx with escaped := union ctx.escaped before.facts.escapes} : Context).config = {} from
       defaultConfig) run
+  have resultRep := entryAbstract_stored_dict (ds := declarations) valueShape0 shapeN0 resultEq
+  -- From here the value and the item are read at their representation (#1840).
+  have valueShape := flatAbstract_entry (ds := declarations) valueShape0
+  have shapeN := flatAbstract_entry (ds := declarations) shapeN0
+  obtain ⟨value, valueDef⟩ : ∃ x, x = entryAbstract declarations t value0 := ⟨_, rfl⟩
+  obtain ⟨aN, aNDef⟩ : ∃ x, x = entryAbstract declarations t aN0 := ⟨_, rfl⟩
+  simp only [← valueDef, ← aNDef] at entryTags entriesDescribed described describedN tagsN chainsN deepN valueShape shapeN demanded resultRep
   obtain ⟨footprint, represented⟩ := inv.observers
   have rootOutside : root ∉ footprint :=
     demand_success_observer_footprint inv.toInvariant demanded receiverNamed represented
@@ -1392,7 +1398,6 @@ theorem dictInsert_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
   have itemApartRoot : ¬ Reaches hs.heap w (.ref root) :=
     value_apart_root shapeN describedN.1.1 receiverNamed (demand_success_disjoint inv.separating demanded)
       (fun o' member => mem_union _ _ _ (Or.inr member))
-  subst resultEq
   have valueAtoms : [receiver, key, item].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
       .ok [.list os, .int k, o] :=
     except_mapM_cons valueReceiver (except_mapM_cons valueKey (except_mapM_cons valueItem rfl))
@@ -1401,7 +1406,7 @@ theorem dictInsert_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
     except_mapM_cons heapReceiver (except_mapM_cons heapKey (except_mapM_cons heapItem rfl))
   constructor
   · intro result' vs' run'
-    rw [entryAbstract_dict freeT (flatAbstract_join valueShape shapeN), entryType_dict freeT]
+    rw [resultRep, entryType_dict]
     by_cases noDepth : depth = 0
     · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run'
       simp [noDepth] at run'
@@ -1437,14 +1442,14 @@ theorem dictInsert_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
         have agreeItem : ∀ c, Reaches hs.heap (.record [.int k, w]) (.ref c) →
             (hs.heap.set! root stored)[c]? = hs.heap[c]? :=
           fun c reach => agreeW c (reaches_entry reach)
-        have allocatedE : AllocatedFlatValue hs.heap (.record [.int k, w]) (.record [.int, t]) :=
+        have allocatedE : AllocatedFlatValue hs.heap (.record [.int k, w]) (.record [.int, entryType t]) :=
           entry_allocated allocatedN
-        have shapedZ : ∀ z ∈ stored, AllocatedFlatValue (hs.heap.set! root stored) z (.record [.int, t]) := by
+        have shapedZ : ∀ z ∈ stored, AllocatedFlatValue (hs.heap.set! root stored) z (.record [.int, entryType t]) := by
           intro z member
           rcases memStored z member with old | rfl
           · exact allocated_of_agree (entriesShaped z old) (agreeOld z old)
           · exact allocated_of_agree allocatedE agreeItem
-        have shapedNew : AllocatedFlatValue (hs.heap.set! root stored) (.ref root) (.list (.record [.int, t])) :=
+        have shapedNew : AllocatedFlatValue (hs.heap.set! root stored) (.ref root) (.list (.record [.int, entryType t])) :=
           .list root _ _ lookupNew shapedZ
         have rootApart : ∀ z ∈ stored, ¬ Reaches (hs.heap.set! root stored) z (.ref root) := by
           intro z member reach
@@ -1463,7 +1468,7 @@ theorem dictInsert_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
               entryShapeNew (Or.inl (describes_of_agree (agreeOld z old) (entriesDescribed z old)))
           · exact describes_join (allocated_of_agree allocatedE agreeItem) entryShapeOld entryShapeNew
               (Or.inr (describes_of_agree agreeItem (entry_described describedN)))
-        have tagsZ : ∀ z ∈ stored, ElementTags (hs.heap.set! root stored) (.record [.int, t])
+        have tagsZ : ∀ z ∈ stored, ElementTags (hs.heap.set! root stored) (.record [.int, entryType t])
             (.record [.scalar, value.join aN]) z := by
           intro z member
           rw [← entry_join value aN]
