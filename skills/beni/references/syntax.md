@@ -114,7 +114,7 @@ area r =
 
 ## Lambdas
 
-`λx y → e` is the only lambda. `\x -> e` is the error `backslash_lambda_removed`. A lambda's
+`λx y → e` and `\x y -> e` are accepted lambda spellings. A lambda's
 parameters are irrefutable patterns: a name, `_`, `⊤`, a tuple.
 
 The last argument of a call can be a lambda without parentheses. Its body runs to the end of the
@@ -154,13 +154,13 @@ describe xs =
 
 - `⊤` (U+22A4) is the unit type and its one value: `log : String → ⊤`, `λ⊤ → e`, `f ⊤`.
 - `⊥` (U+22A5) is the type with no values. `never : ⊥ → a` uses one.
-- `()` is the error `unit_spelling_removed`; `Never` is `never_spelling_removed`.
+- `()` is an accepted synonym for `⊤`; prelude `Never` is an accepted name for `⊥`.
 
 ## The Unicode notation
 
-One spelling per symbol. The ASCII form is the error `ascii_symbol_removed`.
+Both spellings are accepted. Plain `beni fmt` preserves each token spelling.
 
-| Write | For Elm's | Code point |
+| Unicode | ASCII synonym | Code point |
 |---|---|---|
 | `→` | `->` | U+2192 |
 | `←` | `<-` | U+2190 |
@@ -169,11 +169,11 @@ One spelling per symbol. The ASCII form is the error `ascii_symbol_removed`.
 | `▷` | `\|>` | U+25B7 |
 | `◁` | `<\|` | U+25C1 |
 | `…` | `...` (a spread) | U+2026 |
-| `×` | a tuple type `( a, b )` | U+00D7 |
+| `×` | `*` in a type | U+00D7 |
 | `λ` | `\` | U+03BB |
 
-`&&`, `||`, `==`, `++`, `+ - * /` stay ASCII. `beni fmt --migrate-unicode <file>` rewrites a file
-that still has the ASCII forms. A type `Int × String` is one pair; `a × b × c` is one flat 3-tuple;
+`&&`, `||`, `==`, `++`, `+ - * /` stay ASCII. `beni fmt --to-unicode <file>` converts code spellings and formats the file.
+`beni fmt --check --to-unicode <file>` checks conversion and formatting. A type `Int × String` is one pair; `a × b × c` is one flat 3-tuple;
 `Int, Int → Int` takes two arguments where `Int × Int → Int` takes one pair.
 
 ## Records
@@ -250,12 +250,12 @@ first xs =
             0
 ```
 
-```beni refused=ascii_symbol_removed
+```beni
 pub twice : Int -> Int
 twice n = n * 2
 ```
 
-```beni refused=unit_spelling_removed
+```beni
 pub start : () → Int
 start () = 0
 ```
@@ -269,9 +269,9 @@ area r =
     3.14159 * squared
 ```
 
-```beni refused=backslash_lambda_removed
+```beni
 pub doubled : List Int → List Int
-doubled xs = List.map xs (\x → x * 2)
+doubled xs = List.map xs \x → x * 2
 ```
 
 Sources: `docs/design/language.md` §0, §2, §4, §5, §6.3, §6.4, §6.6, §12, Appendix A;

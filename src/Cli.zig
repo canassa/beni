@@ -83,6 +83,7 @@ pub const usage =
     \\fmt options:
     \\  --check                   exit 1 if any file would change; write nothing
     \\  --stdout                  print the formatted text instead of writing it
+    \\  --to-unicode              convert ASCII notation to Unicode while formatting
     \\
     \\dump options:
     \\  --stage=tokens|ast|bir|interface|raw|types|graph|dispatch|writes|ownership
@@ -517,9 +518,6 @@ pub const Fmt = struct {
     /// `--migrate-cons`, hidden: rewrite `::` in the list syntax
     /// (`Format.migrateCons`) instead of formatting.
     migrate_cons: bool = false,
-    /// `--migrate-lambda`, hidden: write the `\` that begins every lambda
-    /// as `λ` (`Format.migrateLambda`) instead of formatting.
-    migrate_lambda: bool = false,
     /// `--migrate-names`, hidden: write `modBy`, `remainderBy` and
     /// `logBase` as `Int.mod`, `Int.rem` and `Float.log`
     /// (`Format.migrateNames`) instead of formatting.
@@ -532,13 +530,9 @@ pub const Fmt = struct {
     /// kept so a branch written before can be migrated with the flag its
     /// mechanical commit names.
     migrate_trailing_lambda: bool = false,
-    /// `--migrate-unicode`, hidden: write every old ASCII spelling as its
-    /// symbol and every comma tuple type with `×` (`Format.migrateUnicode`)
-    /// instead of formatting.
-    migrate_unicode: bool = false,
-    /// `--migrate-top`, hidden: write `()` as `⊤`, the prelude's `Never`
-    /// as `⊥`, drop `else ⊤`, and delete the `_ = ` of each line
-    /// `--discards` names (`Format.migrateTop`, frontend.md §11.9).
+    /// Convert accepted ASCII notation to Unicode while formatting.
+    to_unicode: bool = false,
+    /// Drop redundant unit else branches and the unit discards named by `--discards`.
     migrate_top: bool = false,
     /// `--migrate-init`, hidden: write the `init = e` of every program
     /// record `init = λ⊤ → e` (`Format.migrateInit`, frontend.md §11.10).
@@ -1284,11 +1278,10 @@ const FmtSpecific = struct {
     check: bool = false,
     stdout: bool = false,
     migrate_cons: bool = false,
-    migrate_lambda: bool = false,
     migrate_names: bool = false,
     migrate_let: bool = false,
     migrate_trailing_lambda: bool = false,
-    migrate_unicode: bool = false,
+    to_unicode: bool = false,
     migrate_top: bool = false,
     migrate_init: bool = false,
     discards: ?[]const u8 = null,
@@ -1305,9 +1298,9 @@ const FmtSpecific = struct {
         } else if (std.mem.eql(u8, name, "--discards")) {
             self.discards = value orelse return needsValue(name, "<file>");
             self.consumed = true;
-        } else if (std.mem.eql(u8, name, "--migrate-unicode")) {
+        } else if (std.mem.eql(u8, name, "--to-unicode")) {
             if (value != null) return noValue(name);
-            self.migrate_unicode = true;
+            self.to_unicode = true;
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--migrate-trailing-lambda")) {
             if (value != null) return noValue(name);
@@ -1320,10 +1313,6 @@ const FmtSpecific = struct {
         } else if (std.mem.eql(u8, name, "--migrate-let")) {
             if (value != null) return noValue(name);
             self.migrate_let = true;
-            self.consumed = true;
-        } else if (std.mem.eql(u8, name, "--migrate-lambda")) {
-            if (value != null) return noValue(name);
-            self.migrate_lambda = true;
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--migrate-cons")) {
             if (value != null) return noValue(name);
@@ -1358,16 +1347,15 @@ fn parseFmt(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
         return .{ .usage = .init("beni: fmt --check and --stdout are mutually exclusive", .{}) };
     }
     const migrations = @as(u8, @intFromBool(s.specific.migrate_cons)) +
-        @intFromBool(s.specific.migrate_lambda) +
         @intFromBool(s.specific.migrate_names) +
         @intFromBool(s.specific.migrate_let) +
         @intFromBool(s.specific.migrate_trailing_lambda) +
-        @intFromBool(s.specific.migrate_unicode) +
+        @intFromBool(s.specific.to_unicode) +
         @intFromBool(s.specific.migrate_top) +
         @intFromBool(s.specific.migrate_init);
     if (migrations > 1) {
         s.positionals.deinit(gpa);
-        return .{ .usage = .init("beni: fmt's --migrate-* flags are mutually exclusive", .{}) };
+        return .{ .usage = .init("beni: fmt's conversion and migration flags are mutually exclusive", .{}) };
     }
     if (s.specific.discards != null and !s.specific.migrate_top) {
         s.positionals.deinit(gpa);
@@ -1378,11 +1366,10 @@ fn parseFmt(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
         .check = s.specific.check,
         .stdout = s.specific.stdout,
         .migrate_cons = s.specific.migrate_cons,
-        .migrate_lambda = s.specific.migrate_lambda,
         .migrate_names = s.specific.migrate_names,
         .migrate_let = s.specific.migrate_let,
         .migrate_trailing_lambda = s.specific.migrate_trailing_lambda,
-        .migrate_unicode = s.specific.migrate_unicode,
+        .to_unicode = s.specific.to_unicode,
         .migrate_top = s.specific.migrate_top,
         .migrate_init = s.specific.migrate_init,
         .discards = s.specific.discards,
@@ -1596,6 +1583,9 @@ test "check: usage errors" {
 }
 
 test "fmt: flags in any order" {
+    try expectCommand(.{ .fmt = .{ .check = true, .to_unicode = true, .paths = &.{"a.beni"} } }, &.{ "fmt", "--check", "--to-unicode", "a.beni" });
+    try expectUsage("beni: unknown option '--migrate-unicode'; run 'beni help' for usage", &.{ "fmt", "--migrate-unicode", "a.beni" });
+    try expectUsage("beni: unknown option '--migrate-lambda'; run 'beni help' for usage", &.{ "fmt", "--migrate-lambda", "a.beni" });
     try expectCommand(.{ .fmt = .{ .paths = &.{"src"} } }, &.{ "fmt", "src" });
     try expectCommand(.{ .fmt = .{ .check = true, .paths = &.{ "a.beni", "b.beni" } } }, &.{ "fmt", "a.beni", "--check", "b.beni" });
     try expectCommand(.{ .fmt = .{

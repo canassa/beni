@@ -264,7 +264,6 @@ pub fn parse(
     try p.extra.ensureTotalCapacityPrecise(gpa, estimatedExtraCount(tokens.len));
 
     try p.parseModule();
-    try p.reportAsciiSymbols();
 
     // Source order for the report: an `unclosed_delimiter` is detected after
     // the errors inside its brackets, doc-comment errors when the next
@@ -295,27 +294,6 @@ pub fn parse(
 inline fn col(p: *const Parse, i: TokenIndex) u32 {
     if (p.cols.len != 0) return p.cols[i];
     return p.starts[i] - p.line_starts[p.lines[i]] + 1;
-}
-
-/// The old ASCII spellings left the language (language.md §12.7): each one
-/// the lexer read is `ascii_symbol_removed` at its token, every occurrence,
-/// the message naming its symbol — and the parse has already gone on as
-/// that symbol (`readTags`), so one stale token costs one message. A
-/// `...` the parser found where no spread may stand was reported as a stray
-/// spread; that report becomes this one.
-fn reportAsciiSymbols(p: *Parse) Allocator.Error!void {
-    if (p.tags.ptr == p.raw_tags.ptr) return;
-    for (p.raw_tags, 0..) |tag, i| {
-        if (!tag.isAscii()) continue;
-        var item = p.itemAtToken(.ascii_symbol_removed, @intCast(i));
-        item.expected = tag.canonical();
-        for (p.errors.items) |*e| {
-            if (e.start == item.start and e.code == .unexpected_token and e.construct == .stray_spread) {
-                e.* = item;
-                break;
-            }
-        } else try p.errors.append(p.gpa, item);
-    }
 }
 
 /// `raw` as the parser reads it (`Parse.tags`): `raw` itself when no token
@@ -1890,12 +1868,6 @@ fn parseProduct(p: *Parse) Allocator.Error!Index {
     while (p.peek() == .times or p.peek() == .op_star) {
         const before = p.tok_i;
         defer p.assertProgress(before);
-        if (p.peek() == .op_star) {
-            @branchHint(.cold);
-            var item = p.itemAt(.unexpected_token);
-            item.construct = .star_in_type;
-            _ = try p.report(item);
-        }
         _ = p.next();
         try p.pushScratch(try p.parseTypeApp());
     }
@@ -2174,16 +2146,9 @@ fn reportTupleType(p: *Parse, open: TokenIndex, as_argument: bool) Allocator.Err
     return @intCast(p.errors.items.len - 1);
 }
 
-/// `()` left the language (language.md §12.10): `unit_spelling_removed`,
-/// from its `(` to its `)`, and the unit leaf it was is built as before, so
-/// the parse goes on as `⊤`. `close` is the `)`.
+/// Both unit spellings build the same leaf (language.md §12.10).
 fn unitLeaf(p: *Parse, tag: Node.Tag, open: TokenIndex, close: TokenIndex) Allocator.Error!Index {
-    @branchHint(.cold);
-    var item = p.itemAtToken(.unit_spelling_removed, open);
-    item.end = p.tokenEnd(close);
-    // Every occurrence is reported, as `ascii_symbol_removed` is: each is an
-    // edit.
-    try p.errors.append(p.gpa, item);
+    _ = close;
     return p.leaf(tag, open);
 }
 
@@ -3670,17 +3635,6 @@ fn parseLambdaWith(p: *Parse, trailing_indent: ?u32) Allocator.Error!Index {
     }
     const arrow = p.tok_i;
     _ = try p.expectToken(.arrow);
-    if (p.tags[head] == .backslash) {
-        // `\` left the language (language.md §12.1): reported once per
-        // lambda, the message quoting the head from its parameters to its
-        // `->` so it can write it with `λ`, and parsed as before, so the
-        // rest of the file still parses and checks.
-        @branchHint(.cold);
-        var item = p.itemAtToken(.backslash_lambda_removed, head);
-        item.head_start = p.tokenEnd(head);
-        item.head_end = if (p.tags[arrow] == .arrow) p.tokenEnd(arrow) else item.head_start;
-        _ = try p.report(item);
-    }
     const body = if (trailing_indent) |indent| body: {
         if (p.rawTag() != .eof and p.lines[p.tok_i] > p.lines[arrow]) break :body try p.parseBody(.opens);
         // On the `->` line: bounded by *L*, with `block_col` cleared as

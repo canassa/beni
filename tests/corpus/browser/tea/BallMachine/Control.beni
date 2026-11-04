@@ -11,39 +11,39 @@ import Task
 import Trapdoor
 
 
-pub run : Machine → ⊤
+pub run : Machine -> ()
 run m =
     room = Semaphore.make 4
-    Task.scope λs →
-        _ = Task.spawnIn s λ⊤ → admit m room
-        _ = Task.spawnIn s λ⊤ → batch m
-        _ = Task.spawnIn s λ⊤ → finish m room
-        _ = Task.spawnIn s λ⊤ → retry m
+    Task.scope \s ->
+        _ = Task.spawnIn s \() -> admit m room
+        _ = Task.spawnIn s \() -> batch m
+        _ = Task.spawnIn s \() -> finish m room
+        _ = Task.spawnIn s \() -> retry m
         Machine.simulateIn s m room
-        Task.never ⊤
+        Task.never ()
 
 
-admit : Machine, Semaphore → ⊤
-admit m room = Task.forever λ⊤ →
+admit : Machine, Semaphore -> ()
+admit m room = Task.forever \() ->
     _ = Sensor.waitBall m.hopper
     Semaphore.acquire room 1
     Gate.pass m.entry
 
 
-batch : Machine → ⊤
-batch m = Task.forever λ⊤ →
+batch : Machine -> ()
+batch m = Task.forever \() ->
     Bucket.fill m.bucket (Machine.perBatch m) (Duration.millis 500)
     Trapdoor.drop m.trapdoor
 
 
-finish : Machine, Semaphore → ⊤
-finish m room = Task.forever λ⊤ →
+finish : Machine, Semaphore -> ()
+finish m room = Task.forever \() ->
     _ = Sensor.waitBall m.exit
     Semaphore.release room 1
 
 
-retry : Machine → ⊤
-retry m = Task.forever λ⊤ →
+retry : Machine -> ()
+retry m = Task.forever \() ->
     ball = Sensor.waitBall m.bay
     Task.sleep (Duration.millis (200 * 2 ^ ball.attempts))
     Gate.pass m.bayGate

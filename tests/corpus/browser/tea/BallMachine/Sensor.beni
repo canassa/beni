@@ -9,10 +9,10 @@ pub type alias Sensor =
     Queue Ball
 
 
-pub waitBall : Sensor → Ball
+pub waitBall : Sensor -> Ball
 waitBall sensor =
     case Queue.take sensor of
-        Just ball →
+        Just ball ->
             ball
-        Nothing →
-            Task.never ⊤
+        Nothing ->
+            Task.never ()

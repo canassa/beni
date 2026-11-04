@@ -1,0 +1,3 @@
+-- ASCII product syntax has the same flat 3-tuple tree as Unicode.
+pair : Int * String * Bool
+pair = ( 1, "a", True )

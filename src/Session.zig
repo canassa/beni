@@ -238,16 +238,9 @@ pub const Options = struct {
     /// `beni fmt --migrate-cons` (hidden): write each file's `::` chains in
     /// the list syntax and touch nothing else (`Format.migrateCons`).
     migrate_cons: bool = false,
-    /// `beni fmt --migrate-lambda` (hidden): write the `\` that begins
-    /// every lambda as `λ` and touch nothing else (`Format.migrateLambda`).
-    migrate_lambda: bool = false,
-    /// `beni fmt --migrate-unicode` (hidden): write every old ASCII
-    /// spelling as its symbol and every comma tuple type with `×`, and
-    /// touch nothing else (`Format.migrateUnicode`).
-    migrate_unicode: bool = false,
-    /// `beni fmt --migrate-top` (hidden): write `()` as `⊤`, the prelude's
-    /// `Never` as `⊥`, drop `else ⊤`, and delete the `_ = ` of each line
-    /// `top_discards` names (`Format.migrateTop`, frontend.md §11.9).
+    /// Convert accepted ASCII notation to Unicode while formatting.
+    to_unicode: bool = false,
+    /// Drop redundant unit else branches and the unit discards named by `--discards`.
     migrate_top: bool = false,
     /// `beni fmt --migrate-init` (hidden): write the `init = e` of every
     /// program record `init = λ⊤ → e` (`Format.migrateInit`, frontend.md
@@ -1305,10 +1298,7 @@ fn parsePhase(session: *Session, worker: *Worker, file: SourceStore.Index) anyer
     for (tree.errors) |item| {
         // `fmt --migrate-cons` is the fix for these: it rewrites them.
         if (session.options.migrate_cons and item.code == .cons_removed) continue;
-        if (session.options.migrate_lambda and item.code == .backslash_lambda_removed) continue;
-        if (session.options.migrate_unicode and (item.code == .ascii_symbol_removed or item.code == .tuple_type_removed)) continue;
         if (session.options.migrate_let and item.code == .let_removed) continue;
-        if (session.options.migrate_top and item.code == .unit_spelling_removed) continue;
         message.clearRetainingCapacity();
         try ParseDiagnostics.message(item, text, line_starts, &message.writer);
         try worker.report(
@@ -1849,9 +1839,6 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
     if (session.artifacts.lexDiagnostics(file).len != 0) return;
     const tree = session.artifacts.ast(file);
     if (tree.errors.len != 0 and !(session.options.migrate_cons and Format.onlyConsRemoved(tree)) and
-        !(session.options.migrate_lambda and Format.onlyBackslashLambdas(tree)) and
-        !(session.options.migrate_unicode and Format.onlyUnicodeRemoved(tree)) and
-        !(session.options.migrate_top and Format.onlyUnitRemoved(tree)) and
         !(session.options.migrate_let and Format.onlyLetRemoved(tree))) return;
 
     const gpa = session.gpa;
@@ -1954,67 +1941,8 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
             try worker.report(session, file, found.code, at, at, message.written());
             return;
         }
-    } else if (session.options.migrate_unicode) {
-        const problem = Format.migrateUnicode(
-            worker.arena.allocator(),
-            tree,
-            session.artifacts.tokens(file),
-            session.artifacts.comments(file),
-            text,
-            &out.writer,
-        ) catch |err| switch (err) {
-            error.SyntaxErrors => {
-                out.deinit();
-                return;
-            },
-            error.WriteFailed => return error.OutOfMemory,
-            else => |e| return e,
-        };
-        if (problem) |found| {
-            // frontend.md §11.8: the file is left alone and named.
-            out.deinit();
-            const line_starts = session.store.lineStarts(file);
-            const at = diagnostic.position(line_starts, text, found.start);
-            var message: Io.Writer.Allocating = .init(gpa);
-            defer message.deinit();
-            if (found.code) |code| {
-                try message.writer.print(
-                    "`beni fmt --migrate-unicode` left this file alone: with its symbols written in Unicode it does not parse ({t} here). Rewrite it by hand.",
-                    .{code},
-                );
-                try worker.report(session, file, code, at, at, message.written());
-            } else {
-                try message.writer.writeAll(
-                    "`beni fmt --migrate-unicode` left this file alone: this tuple type holds a comment, which joining its elements with `×` would have to move. Write it with `×` by hand, placing the comment yourself.",
-                );
-                try worker.report(session, file, .unexpected_token, at, at, message.written());
-            }
-            return;
-        }
-    } else if (session.options.migrate_lambda) {
-        const problem = Format.migrateLambda(worker.arena.allocator(), tree, session.artifacts.tokens(file), text, &out.writer) catch |err| switch (err) {
-            error.SyntaxErrors => {
-                out.deinit();
-                return;
-            },
-            error.WriteFailed => return error.OutOfMemory,
-            else => |e| return e,
-        };
-        if (problem) |found| {
-            // The rewrite does not parse (frontend.md §11.4): the file is
-            // left alone and named, with where the re-parse stopped.
-            out.deinit();
-            const line_starts = session.store.lineStarts(file);
-            const at = diagnostic.position(line_starts, text, found.start);
-            var message: Io.Writer.Allocating = .init(gpa);
-            defer message.deinit();
-            try message.writer.print(
-                "`beni fmt --migrate-lambda` left this file alone: with its lambdas written `λ` it does not parse ({t} here). Rewrite its lambdas by hand.",
-                .{found.code},
-            );
-            try worker.report(session, file, found.code, at, at, message.written());
-            return;
-        }
+    } else if (session.options.to_unicode) {
+        try Format.toUnicode(worker.arena.allocator(), tree, session.artifacts.tokens(file), session.artifacts.comments(file), text, session.store.lineStarts(file), &out.writer);
     } else (if (session.options.migrate_cons) Format.migrateCons(
         worker.arena.allocator(),
         tree,

@@ -6,8 +6,8 @@
 -- is `<-` and `1` (21:9) and not `<` and `-1`, and `x <-y` is `<-` and `y`
 -- (24:11) and not the comparison `x < -y`, which would have parsed clean.
 -- `x < -1` with the space is still a comparison; `parse/good/IfChains.beni`
--- pins that one. `<-` is the old spelling of `←` (§12.7), so each is also
--- ascii_symbol_removed at the same place, whose message says `x < -1`.
+-- pins that one. The rejected binds suggest `x < -1` with a space.
+-- ASCII bind arrows are otherwise accepted as synonyms of `←`.
 f x = x <- 1
 
 

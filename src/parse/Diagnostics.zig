@@ -842,53 +842,6 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             \\
             \\and `[ x, …xs ]` is the same list written in brackets.
         ),
-        .backslash_lambda_removed => if (item.head_end > item.head_start) {
-            try w.writeAll(
-                \\A lambda begins with `λ` now, not `\`. Write this one as:
-                \\
-                \\    λ
-            );
-            // The head from its first parameter to its `->`, on one line.
-            var space = false;
-            for (std.mem.trim(u8, head, " \t\r\n")) |c| {
-                if (c == ' ' or c == '\t' or c == '\r' or c == '\n') {
-                    space = true;
-                    continue;
-                }
-                if (space) try w.writeByte(' ');
-                space = false;
-                try w.writeByte(c);
-            }
-            try w.writeAll(
-                \\
-                \\
-                \\`beni fmt --migrate-lambda <file>` writes every lambda of a file this way.
-            );
-        } else try w.writeAll(
-            \\A lambda begins with `λ` now, not `\`: write `λ` where the `\` is.
-        ),
-        .ascii_symbol_removed => {
-            const symbol = Token.lexeme(item.expected).?;
-            try w.print(
-                \\`{s}` is written `{s}` now ({s}).
-                \\
-                \\`beni fmt --migrate-unicode <file>` writes every one of a file this way, and an
-                \\editor with beni support turns `{s}` into `{s}` as it is typed.
-            , .{ text, symbol, Token.symbolName(item.expected), text, symbol });
-            if (item.expected == .arrow_left) try w.writeAll(
-                \\
-                \\
-                \\If you meant less than a negative number, write `x < -1`, with a space.
-            );
-        },
-        .unit_spelling_removed => try w.writeAll(
-            \\`()` is written `⊤` now (U+22A4 DOWN TACK), as the unit type and as its one
-            \\value: `log : String → ⊤`, `else ⊤`, `λ⊤ → e`. I read this one as `⊤` and
-            \\went on.
-            \\
-            \\`beni fmt --migrate-top <file>` writes every one of a file this way, and an
-            \\editor with beni support turns `()` into `⊤` as it is typed.
-        ),
         .tuple_type_removed => {
             try w.writeAll(
                 \\A tuple type is written with `×` now (U+00D7 MULTIPLICATION SIGN). Write this
@@ -901,7 +854,7 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
             try w.writeAll(
                 \\
                 \\
-                \\`beni fmt --migrate-unicode <file>` writes every one of a file this way.
+                \\Write product types with `×` or `*`; tuple values still use commas.
             );
         },
         .let_removed => if (item.required_col > item.head_start and item.required_col < item.head_end) {
@@ -936,6 +889,9 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
         // Only the codes above are syntax errors; anything else means a
         // caller reused this record for another phase's code.
         else => try w.writeAll(diagnostic.title(item.code)),
+    }
+    if ((item.code == .unexpected_token or item.code == .expected_token) and std.mem.eql(u8, text, "<-")) {
+        try w.writeAll("\n\nIf you meant less than a negative number, write `x < -1`, with a space.");
     }
 }
 

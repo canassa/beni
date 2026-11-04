@@ -8,17 +8,17 @@ type Msg
     | Decrement
 
 
-update : Msg, Int → Int
+update : Msg, Int -> Int
 update msg count =
     case msg of
-        Increment →
+        Increment ->
             count + 1
 
-        Decrement →
+        Decrement ->
             count - 1
 
 
-view : Int → Html Msg
+view : Int -> Html Msg
 view count =
     <main>
         <button onClick={Decrement}>-</button>
@@ -28,4 +28,4 @@ view count =
 
 
 main : Tea.Program
-main = Tea.sandbox { init = λ⊤ → 0, update = update, view = view }
+main = Tea.sandbox { init = \() -> 0, update = update, view = view }

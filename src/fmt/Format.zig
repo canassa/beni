@@ -391,74 +391,14 @@ pub fn migrateCons(
     try w.writeAll(source[at..]);
 }
 
-/// Why `migrateLambda` left a file alone: its rewrite does not parse
+/// Why a structural migration left a file alone: its rewrite does not parse
 /// cleanly. `code` is the re-parse's first diagnostic and `start` its
 /// offset in the ORIGINAL source (the rewrite moves no line, so the line is
 /// the same).
-pub const LambdaProblem = struct {
+pub const RewriteProblem = struct {
     code: diagnostic.Code,
     start: u32,
 };
-
-/// `beni fmt --migrate-lambda` (frontend.md §11.4): `source` with the `\`
-/// that begins every lambda written `λ`, and nothing else touched — an
-/// edit, like `migrateCons`, not a formatting. Only the head token of a
-/// `lambda` node is rewritten, so a multiline string's `\\` and a string's
-/// or a character's escapes, which are not that token, are never touched.
-///
-/// `λ` is two bytes where `\` was one, but one column, as `\` is: a column
-/// counts code points (language.md §12.7), so no token moves. The output is
-/// still lexed and parsed again, and when it does not parse cleanly the
-/// file is written unchanged and the problem returned for the caller to
-/// name. A file with any syntax error but `backslash_lambda_removed` is left
-/// alone. One run reaches the fixed point.
-pub fn migrateLambda(
-    scratch: Allocator,
-    tree: *const Ast,
-    tokens: *const Token.TokenList,
-    source: [:0]const u8,
-    w: *Io.Writer,
-) Error!?LambdaProblem {
-    if (!onlyBackslashLambdas(tree)) return error.SyntaxErrors;
-    const tags = tokens.items(.tag);
-    const starts = tokens.items(.start);
-    var heads: std.ArrayList(u32) = .empty;
-    for (0..tree.nodes.len) |i| {
-        const node: Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
-        if (tree.nodeTag(node) != .lambda) continue;
-        const head = tree.nodeMainToken(node);
-        if (tags[head] == .backslash) try heads.append(scratch, starts[head]);
-    }
-    if (heads.items.len == 0) {
-        try w.writeAll(source);
-        return null;
-    }
-    std.mem.sort(u32, heads.items, {}, std.sort.asc(u32));
-
-    var out: std.ArrayList(u8) = .empty;
-    try out.ensureTotalCapacity(scratch, source.len + heads.items.len + 1);
-    var at: u32 = 0;
-    for (heads.items) |start| {
-        out.appendSliceAssumeCapacity(source[at..start]);
-        out.appendSliceAssumeCapacity(Token.lexeme(.lambda).?);
-        at = start + 1;
-    }
-    out.appendSliceAssumeCapacity(source[at..]);
-    const text = out.items;
-
-    if (try reparseProblem(scratch, try scratch.dupeSentinel(u8, text, 0))) |offset_and_code| {
-        // Map the offset back: each rewrite before it added one byte.
-        var shift: u32 = 0;
-        for (heads.items) |start| {
-            if (start + shift >= offset_and_code.start) break;
-            shift += 1;
-        }
-        try w.writeAll(source);
-        return .{ .code = offset_and_code.code, .start = offset_and_code.start - shift };
-    }
-    try w.writeAll(text);
-    return null;
-}
 
 /// What `migrateNames` could not rewrite, at `start` in the source. A
 /// `shadowed` or `alias_taken` note leaves the whole file alone; a
@@ -533,7 +473,7 @@ pub fn migrateNames(
     source: [:0]const u8,
     w: *Io.Writer,
     notes: *std.ArrayList(NamesNote),
-) Error!?LambdaProblem {
+) Error!?RewriteProblem {
     if (tree.errors.len != 0) return error.SyntaxErrors;
     const n = tree.nodes.len;
     var m: Measurer = .{
@@ -789,112 +729,84 @@ fn isStringLiteral(tree: *const Ast, node: Index) bool {
     };
 }
 
-/// Why `migrateUnicode` left a file alone, at `start` in the source: its
-/// rewrite does not parse (`code`, the re-parse's first diagnostic), or
-/// (`code == null`) a tuple type it would join holds a comment, which a
-/// hand edit must place.
-pub const UnicodeProblem = struct {
-    code: ?diagnostic.Code,
-    start: u32,
-};
-
-/// `beni fmt --migrate-unicode` (frontend.md §11.8): `source` with every old
-/// ASCII spelling — `->`, `<-`, `/=`, `<=`, `>=`, `|>`, `<|`, `...` — written
-/// as its symbol, and every tuple type written `( a, b )` written with `×`,
-/// and nothing else touched: an edit, like `migrateLambda`, so a file keeps
-/// its own layout.
-///
-/// Only tokens are rewritten, so a string, a character, a multiline string,
-/// a comment, a doc comment, markup text and a quoted attribute value keep
-/// their bytes, while the code in an interpolation, a markup hole or an
-/// attribute's `{…}` is reached like any other. A tuple type is its element
-/// types, each its own text rewritten the same way, joined by ` × ` on the
-/// tuple's first line, and parenthesised exactly where a product must be an
-/// atom — a type application's argument, a constructor's payload, `sync`'s
-/// operand, an operand of an enclosing product (language.md §12.8). One that
-/// holds a comment is left for a hand edit, and the file with it.
-///
-/// The output is parsed again; a file whose rewrite does not parse is
-/// written unchanged and the problem returned. One run reaches the fixed
-/// point.
-pub fn migrateUnicode(
+/// Convert code spellings, then format; literals and comments retain their bytes.
+/// Formatting first puts layout-sensitive branches on separate lines before
+/// arrows shrink. Scratch owns every intermediate (frontend.md §11.8).
+pub fn toUnicode(
     scratch: Allocator,
     tree: *const Ast,
     tokens: *const Token.TokenList,
     comments: []const Token.Comment,
     source: [:0]const u8,
+    line_starts: []const u32,
     w: *Io.Writer,
-) Error!?UnicodeProblem {
-    if (!onlyUnicodeRemoved(tree)) return error.SyntaxErrors;
-    const n = tree.nodes.len;
+) Error!void {
+    var canonical: Io.Writer.Allocating = .init(scratch);
+    try format(scratch, tree, tokens, comments, source, line_starts, &canonical.writer);
+    const text = try scratch.dupeSentinel(u8, canonical.written(), 0);
+    var interner: InternPool.Local = .empty;
+    var lexed: Tokenizer.Output = .empty;
+    try Tokenizer.tokenize(scratch, text, &interner, &lexed);
+    const parsed = try Parse.parse(scratch, scratch, text, lexed.tokens.slice(), lexed.comments.items, lexed.line_starts.items, lexed.diagnostics.items());
+    if (parsed.errors.len != 0) return error.SyntaxErrors;
     var m: Measurer = .{
-        .tree = tree,
-        .tags = tokens.items(.tag),
-        .starts = tokens.items(.start),
-        .tok_lines = tokens.items(.line),
-        .comments = comments,
-        .source = source,
-        .widths = try scratch.alloc(u32, n),
-        .firsts = try scratch.alloc(u32, n),
-        .lasts = try scratch.alloc(u32, n),
+        .tree = &parsed,
+        .tags = lexed.tokens.items(.tag),
+        .starts = lexed.tokens.items(.start),
+        .tok_lines = lexed.tokens.items(.line),
+        .comments = lexed.comments.items,
+        .source = text,
+        .widths = try scratch.alloc(u32, parsed.nodes.len),
+        .firsts = try scratch.alloc(u32, parsed.nodes.len),
+        .lasts = try scratch.alloc(u32, parsed.nodes.len),
         .scratch = scratch,
     };
-    defer m.stack.deinit(scratch);
     try m.measureRoot();
-    const tags = m.tags;
-
-    var u: UnicodeRewrite = .{ .m = &m, .scratch = scratch };
-    // Which nodes stand where a type must be an atom.
-    u.atom = try scratch.alloc(bool, n);
-    @memset(u.atom, false);
-    for (0..n) |i| {
+    const replacements = try scratch.alloc(?[]const u8, lexed.tokens.len);
+    @memset(replacements, null);
+    for (m.tags, 0..) |tag, i| {
+        if (tag.isAscii()) replacements[i] = Token.lexeme(tag.canonical()).?;
+        if (tag == .backslash) replacements[i] = "λ";
+    }
+    const never_shadowed = topNeverShadowed(&parsed, &m);
+    for (0..parsed.nodes.len) |i| {
         const node: Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
-        switch (tree.nodeTag(node)) {
-            .type_con, .constructor, .type_tuple => for (tree.children(node)) |c| {
-                u.atom[c.int()] = true;
+        const main = parsed.nodeMainToken(node);
+        switch (parsed.nodeTag(node)) {
+            .unit, .type_unit, .pat_unit => if (m.tags[main] == .l_paren) {
+                replacements[main] = "⊤";
+                replacements[main + 1] = "";
             },
-            .type_sync => u.atom[tree.operand(node).int()] = true,
+            .type_con => if (parsed.children(node).len == 0) {
+                const name = m.tokenText(main);
+                if ((!never_shadowed and std.mem.eql(u8, name, "Never")) or std.mem.eql(u8, name, "Basics.Never")) replacements[main] = "⊥";
+            },
+            .type_tuple => if (m.tags[main] != .l_paren) {
+                const operands = parsed.children(node);
+                for (operands[1..]) |operand| {
+                    const op = m.first(operand) - 1;
+                    if (m.tags[op] == .op_star) replacements[op] = "×";
+                }
+            },
             else => {},
         }
     }
-    for (tags, m.starts) |tag, start| {
-        if (tag.isAscii()) try u.tokens.append(scratch, start);
+    var rewritten: Io.Writer.Allocating = .init(scratch);
+    var at: u32 = 0;
+    for (replacements, 0..) |replacement, i| {
+        const value = replacement orelse continue;
+        const start = m.starts[i];
+        try rewritten.writer.writeAll(text[at..start]);
+        try rewritten.writer.writeAll(value);
+        at = Tokenizer.tokenEnd(text, m.tags[i], start);
     }
-    for (0..n) |i| {
-        const node: Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
-        if (tree.nodeTag(node) != .type_tuple or tags[tree.nodeMainToken(node)] != .l_paren) continue;
-        if (m.commentIn(m.first(node), m.last(node))) return u.leaveAlone(w, source, .{ .code = null, .start = m.starts[m.first(node)] });
-        try u.tuples.append(scratch, node);
-    }
-    if (u.tokens.items.len == 0 and u.tuples.items.len == 0) {
-        try w.writeAll(source);
-        return null;
-    }
-    // Tuples in source order: an outer one before the ones inside it.
-    std.mem.sort(Index, u.tuples.items, &m, struct {
-        fn lessThan(mm: *Measurer, a: Index, b: Index) bool {
-            return mm.starts[mm.first(a)] < mm.starts[mm.first(b)];
-        }
-    }.lessThan);
-
-    var out: std.ArrayList(u8) = .empty;
-    try u.emit(&out, 0, @intCast(source.len), true);
-    try out.append(scratch, 0);
-    const text = out.items[0 .. out.items.len - 1 :0];
-    if (try reparseProblem(scratch, text)) |found| {
-        return u.leaveAlone(w, source, .{ .code = found.code, .start = u.originalOffset(found.start) });
-    }
-    try w.writeAll(text);
-    return null;
-}
-
-/// Whether every syntax error of `tree` is one `--migrate-unicode` rewrites:
-/// an old ASCII spelling or a tuple type written with commas.
-pub fn onlyUnicodeRemoved(tree: *const Ast) bool {
-    for (tree.errors) |e| {
-        if (e.code != .ascii_symbol_removed and e.code != .tuple_type_removed) return false;
-    }
-    return true;
+    try rewritten.writer.writeAll(text[at..]);
+    const converted = try scratch.dupeSentinel(u8, rewritten.written(), 0);
+    var final_interner: InternPool.Local = .empty;
+    var final_lexed: Tokenizer.Output = .empty;
+    try Tokenizer.tokenize(scratch, converted, &final_interner, &final_lexed);
+    const final_tree = try Parse.parse(scratch, scratch, converted, final_lexed.tokens.slice(), final_lexed.comments.items, final_lexed.line_starts.items, final_lexed.diagnostics.items());
+    try format(scratch, &final_tree, &final_lexed.tokens, final_lexed.comments.items, converted, final_lexed.line_starts.items, w);
 }
 
 /// Why `migrateTop` left a file alone, at `start` in the source.
@@ -916,31 +828,13 @@ pub const TopProblem = struct {
     };
 };
 
-/// Whether every syntax error of `tree` is a `()` (`--migrate-top`'s input).
-pub fn onlyUnitRemoved(tree: *const Ast) bool {
-    for (tree.errors) |e| {
-        if (e.code != .unit_spelling_removed) return false;
-    }
-    return true;
-}
-
 /// A `unit_discarded` warning's start, 1-based, its column in code points
 /// (frontend.md §11.9, `--discards`).
 pub const DiscardAt = struct { line: u32, col: u32 };
 
-/// `beni fmt --migrate-top` (frontend.md §11.9): `source` with every `()`
-/// written `⊤`, every `Never` that is the prelude's written `⊥`, the
-/// `else ⊤` of an `if` dropped, and the `_ = ` of each `discards` line
-/// deleted — an edit, like `migrateUnicode`, so a file keeps its layout.
-///
-/// Only tokens and the nodes they make are rewritten, so a string, a
-/// character, a comment and markup text keep their bytes. `Never` is left
-/// when the file declares a type of that name or imports one by name from
-/// a module other than `Basics`. An `else ⊤` is kept when an `else`
-/// follows it, which dropping it would hand to this `if`, or when a comment
-/// lies in what it would delete. The output is parsed again; a file whose
-/// rewrite does not parse is written unchanged and the problem returned.
-/// One run reaches the fixed point.
+/// Structural unit migration (frontend.md §11.9): drop redundant unit else
+/// branches and the `_ =` of each warned discard. Preserve spelling and layout;
+/// keep an else that would capture another else, and preserve comments.
 pub fn migrateTop(
     scratch: Allocator,
     tree: *const Ast,
@@ -951,7 +845,7 @@ pub fn migrateTop(
     discards: []const DiscardAt,
     w: *Io.Writer,
 ) Error!?TopProblem {
-    for (tree.errors) |e| if (e.code != .unit_spelling_removed) return error.SyntaxErrors;
+    if (tree.errors.len != 0) return error.SyntaxErrors;
     const n = tree.nodes.len;
     var m: Measurer = .{
         .tree = tree,
@@ -979,30 +873,16 @@ pub fn migrateTop(
     var edits: std.ArrayList(Edit) = .empty;
     const ElseUnit = struct { last_then: TokenIndex, last_unit: TokenIndex };
     var elses: std.ArrayList(ElseUnit) = .empty;
-    const never_kept = topNeverShadowed(tree, &m);
     const matched = try scratch.alloc(bool, discards.len);
     @memset(matched, false);
 
     for (0..n) |i| {
         const node: Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
-        const main = tree.nodeMainToken(node);
         switch (tree.nodeTag(node)) {
-            .unit, .type_unit, .pat_unit => if (tags[main] == .l_paren) {
-                if (m.commentIn(main, main + 1)) {
-                    try w.writeAll(source);
-                    return .{ .kind = .unit_comment, .start = starts[main] };
-                }
-                try edits.append(scratch, .{ .start = starts[main], .end = end(&m, main + 1), .text = "⊤" });
-            },
-            .type_con => if (!never_kept and tree.children(node).len == 0) {
-                const name = m.tokenText(main);
-                if (std.mem.eql(u8, name, "Never") or std.mem.eql(u8, name, "Basics.Never")) {
-                    try edits.append(scratch, .{ .start = starts[main], .end = end(&m, main), .text = "⊥" });
-                }
-            },
             .@"if" => {
                 const i_full = tree.fullIf(node);
-                if (tree.nodeTag(i_full.else_expr.?) != .unit) continue;
+                const else_expr = i_full.else_expr orelse continue;
+                if (tree.nodeTag(else_expr) != .unit) continue;
                 const last_then = m.last(i_full.then_expr);
                 const last_unit = m.last(i_full.else_expr.?);
                 if (m.commentIn(last_then, last_unit)) continue;
@@ -1121,7 +1001,7 @@ pub fn migrateInit(
     comments: []const Token.Comment,
     source: [:0]const u8,
     w: *Io.Writer,
-) Error!?LambdaProblem {
+) Error!?RewriteProblem {
     if (tree.errors.len != 0) return error.SyntaxErrors;
     const n = tree.nodes.len;
     var m: Measurer = .{
@@ -1251,98 +1131,8 @@ fn topNeverShadowed(tree: *const Ast, m: *const Measurer) bool {
     return false;
 }
 
-/// `migrateUnicode`'s state: the edits, and how to write a range of the
-/// source with them applied.
-const UnicodeRewrite = struct {
-    m: *Measurer,
-    scratch: Allocator,
-    /// Per node: it stands where a type must be an atom.
-    atom: []bool = &.{},
-    /// The start of every old ASCII spelling, in source order.
-    tokens: std.ArrayList(u32) = .empty,
-    /// Every tuple type written with commas, in source order.
-    tuples: std.ArrayList(Index) = .empty,
-    /// Per top-level edit, where it ended in the source and in the output,
-    /// to map an output offset back.
-    ends: std.ArrayList(struct { source: u32, out: u32 }) = .empty,
-
-    fn leaveAlone(_: *UnicodeRewrite, w: *Io.Writer, source: []const u8, problem: UnicodeProblem) Error!?UnicodeProblem {
-        try w.writeAll(source);
-        return problem;
-    }
-
-    /// The source offset an output offset came from: inside an edit, the
-    /// edit's end; elsewhere, shifted by the edits before it.
-    fn originalOffset(u: *const UnicodeRewrite, out_offset: u32) u32 {
-        var shift_from: struct { source: u32, out: u32 } = .{ .source = 0, .out = 0 };
-        for (u.ends.items) |e| {
-            if (e.out > out_offset) break;
-            shift_from = .{ .source = e.source, .out = e.out };
-        }
-        return shift_from.source + (out_offset - shift_from.out);
-    }
-
-    fn tokenEnd(u: *const UnicodeRewrite, t: TokenIndex) u32 {
-        return Tokenizer.tokenEnd(u.m.source, u.m.tags[t], u.m.starts[t]);
-    }
-
-    /// Write `source[from..to]` to `out` with every edit inside it applied.
-    /// `top` records each edit's end for `originalOffset`.
-    fn emit(u: *UnicodeRewrite, out: *std.ArrayList(u8), from: u32, to: u32, top: bool) Error!void {
-        const source = u.m.source;
-        var at = from;
-        var ti = std.sort.lowerBound(u32, u.tokens.items, from, orderU32);
-        var qi: usize = 0;
-        while (qi < u.tuples.items.len and u.m.starts[u.m.first(u.tuples.items[qi])] < from) qi += 1;
-        while (true) {
-            while (ti < u.tokens.items.len and u.tokens.items[ti] < at) ti += 1;
-            while (qi < u.tuples.items.len and u.m.starts[u.m.first(u.tuples.items[qi])] < at) qi += 1;
-            const next_token: u32 = if (ti < u.tokens.items.len) u.tokens.items[ti] else std.math.maxInt(u32);
-            const next_tuple: u32 = if (qi < u.tuples.items.len) u.m.starts[u.m.first(u.tuples.items[qi])] else std.math.maxInt(u32);
-            const next = @min(next_token, next_tuple);
-            if (next >= to) break;
-            try out.appendSlice(u.scratch, source[at..next]);
-            if (next_tuple <= next_token) {
-                const tuple = u.tuples.items[qi];
-                try u.writeProduct(out, tuple);
-                at = u.tokenEnd(u.m.last(tuple));
-            } else {
-                const tag = u.m.tags[tokenAt(u.m.starts, next)];
-                try out.appendSlice(u.scratch, Token.lexeme(tag.canonical()).?);
-                at = next + @as(u32, @intCast(Token.lexeme(tag).?.len));
-            }
-            if (top) try u.ends.append(u.scratch, .{ .source = at, .out = @intCast(out.items.len) });
-        }
-        try out.appendSlice(u.scratch, source[at..to]);
-    }
-
-    /// The comma tuple type `tuple` written as a product.
-    fn writeProduct(u: *UnicodeRewrite, out: *std.ArrayList(u8), tuple: Index) Error!void {
-        const tree = u.m.tree;
-        if (u.atom[tuple.int()]) try out.append(u.scratch, '(');
-        for (tree.children(tuple), 0..) |element, i| {
-            if (i != 0) try out.appendSlice(u.scratch, " × ");
-            // An element that is itself a product is an operand of this one.
-            const wrap = tree.nodeTag(element) == .type_tuple and u.m.tags[tree.nodeMainToken(element)] == .times;
-            if (wrap) try out.append(u.scratch, '(');
-            try u.emit(out, u.m.starts[u.m.first(element)], u.tokenEnd(u.m.last(element)), false);
-            if (wrap) try out.append(u.scratch, ')');
-        }
-        if (u.atom[tuple.int()]) try out.append(u.scratch, ')');
-    }
-};
-
-fn orderU32(context: u32, item: u32) std.math.Order {
-    return std.math.order(context, item);
-}
-
-/// The token that starts at byte `start`.
-fn tokenAt(starts: []const u32, start: u32) TokenIndex {
-    return @intCast(std.sort.lowerBound(u32, starts, start, orderU32));
-}
-
 /// The first lexical or syntax diagnostic of `text`, if any.
-fn reparseProblem(scratch: Allocator, text: [:0]const u8) Allocator.Error!?LambdaProblem {
+fn reparseProblem(scratch: Allocator, text: [:0]const u8) Allocator.Error!?RewriteProblem {
     var interner: InternPool.Local = .empty;
     var lexed: Tokenizer.Output = .empty;
     try Tokenizer.tokenize(scratch, text, &interner, &lexed);
@@ -1351,15 +1141,6 @@ fn reparseProblem(scratch: Allocator, text: [:0]const u8) Allocator.Error!?Lambd
     const tree = try Parse.parse(scratch, scratch, text, lexed.tokens.slice(), lexed.comments.items, lexed.line_starts.items, lex_items);
     if (tree.errors.len != 0) return .{ .code = tree.errors[0].code, .start = tree.errors[0].start };
     return null;
-}
-
-/// Whether every syntax error of `tree` is a lambda written with `\`
-/// (`migrateLambda`'s input).
-pub fn onlyBackslashLambdas(tree: *const Ast) bool {
-    for (tree.errors) |e| {
-        if (e.code != .backslash_lambda_removed) return false;
-    }
-    return true;
 }
 
 /// Whether every syntax error of `tree` is a `let` (`--migrate-let`'s input).
@@ -1965,7 +1746,7 @@ const Measurer = struct {
             },
             // `a × b × c` (language.md §12.8, §12.9): its operands and ` × `
             // between them, on one line only when the author wrote it on one.
-            .type_tuple => if (m.tags[main] == .times) {
+            .type_tuple => if ((m.tags[main] == .times or m.tags[main] == .op_star)) {
                 const ops = tree.children(n);
                 var width: u32 = 0;
                 for (ops, 0..) |op, i| {
@@ -4600,7 +4381,7 @@ const Printer = struct {
                 try p.space();
                 try p.node(tree.operand(n), .type, indent);
             },
-            .type_tuple => if (p.tags[main] == .times) try p.product(n, indent) else try p.collection(n, tree.children(n), .type, indent),
+            .type_tuple => if ((p.tags[main] == .times or p.tags[main] == .op_star)) try p.product(n, indent) else try p.collection(n, tree.children(n), .type, indent),
             .type_record => try p.collection(n, tree.children(n), .type_field, indent),
             .type_record_ext => {
                 const r = tree.fullTypeRecordExt(n);
@@ -5757,165 +5538,6 @@ test "migrating `::` writes each chain in brackets and touches nothing else" {
         \\  _ → xs
         \\
     , 1);
-}
-
-fn lambdaOnce(a: Allocator, source: [:0]const u8) !struct { text: []const u8, problem: ?LambdaProblem } {
-    var interner: InternPool.Local = .empty;
-    var out: Tokenizer.Output = .empty;
-    try Tokenizer.tokenize(a, source, &interner, &out);
-    const tree = try Parse.parse(a, a, source, out.tokens.slice(), out.comments.items, out.line_starts.items, out.diagnostics.items());
-    var text: Io.Writer.Allocating = .init(a);
-    const problem = try migrateLambda(a, &tree, &out.tokens, source, &text.writer);
-    return .{ .text = text.written(), .problem = problem };
-}
-
-/// `migrateLambda` over `source` gives `expected`, which it then leaves
-/// alone (one run reaches the fixed point).
-fn expectLambdaMigrated(source: [:0]const u8, expected: [:0]const u8) !void {
-    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
-    defer arena_state.deinit();
-    const a = arena_state.allocator();
-    const first = try lambdaOnce(a, source);
-    try testing.expectEqual(@as(?LambdaProblem, null), first.problem);
-    try testing.expectEqualStrings(expected, first.text);
-    const again = try lambdaOnce(a, expected);
-    try testing.expectEqual(@as(?LambdaProblem, null), again.problem);
-    try testing.expectEqualStrings(expected, again.text);
-}
-
-test "migrating lambdas writes each head `λ` and touches nothing else" {
-    // An edit, not a formatting (frontend.md §11.4): the spacing, the
-    // layout and a `λ` already written are the author's.
-    try expectLambdaMigrated(
-        \\f=\x→x+1
-        \\g = List.map [ 1 ] (\ a →
-        \\      a*2)  -- \x
-        \\h = λa → \b → \⊤ → a + b
-        \\
-    ,
-        \\f=λx→x+1
-        \\g = List.map [ 1 ] (λ a →
-        \\      a*2)  -- \x
-        \\h = λa → λb → λ⊤ → a + b
-        \\
-    );
-}
-
-test "migrating lambdas never touches a multiline string's `\\\\`, an escape or a character" {
-    // The hazards §12.1 names: a `\\` line is a `multiline_line` and a
-    // backslash in a string or a character literal is an escape, never the
-    // token a lambda begins with — even when the text after it reads like
-    // one.
-    try expectLambdaMigrated(
-        \\a = \x →
-        \\    \\raw \x → x
-        \\    \\\y
-        \\b = "\\x → \n" ++ "${ f (\y → y) }"
-        \\c = '\\'
-        \\d = [ '\'', '\n' ]
-        \\
-    ,
-        \\a = λx →
-        \\    \\raw \x → x
-        \\    \\\y
-        \\b = "\\x → \n" ++ "${ f (λy → y) }"
-        \\c = '\\'
-        \\d = [ '\'', '\n' ]
-        \\
-    );
-}
-
-test "migrating lambdas reaches markup holes and attribute values" {
-    try expectLambdaMigrated(
-        \\v xs = <ul>{List.map xs (\i → <li onClick={\_ → i}>{i}</li>)}</ul>
-        \\
-    ,
-        \\v xs = <ul>{List.map xs (λi → <li onClick={λ_ → i}>{i}</li>)}</ul>
-        \\
-    );
-}
-
-test "migrating lambdas keeps a `case` branch on the `of` line after a lambda on its column" {
-    // language.md §12.7, *columns*: a column counts code points, so `λ` is
-    // as wide as the `\` it replaces and the first branch, which shares the
-    // `of` line, stays on the column of the branches aligned under it. By
-    // bytes it moved one right, and the migration had to leave the file.
-    try expectLambdaMigrated(
-        \\f m =
-        \\    case g (\x → x) of Just y → y
-        \\                       Nothing → 0
-        \\
-    ,
-        \\f m =
-        \\    case g (λx → x) of Just y → y
-        \\                       Nothing → 0
-        \\
-    );
-}
-
-test "migrating lambdas leaves a file with a syntax error alone" {
-    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
-    defer arena_state.deinit();
-    try testing.expectError(error.SyntaxErrors, lambdaOnce(arena_state.allocator(), "f = \\x →\n"));
-}
-
-/// `migrateUnicode` over `source`: its output and the problem it reports.
-fn unicodeOnce(a: Allocator, source: [:0]const u8) !struct { text: []const u8, problem: ?UnicodeProblem } {
-    var interner: InternPool.Local = .empty;
-    var out: Tokenizer.Output = .empty;
-    try Tokenizer.tokenize(a, source, &interner, &out);
-    const tree = try Parse.parse(a, a, source, out.tokens.slice(), out.comments.items, out.line_starts.items, out.diagnostics.items());
-    var text: Io.Writer.Allocating = .init(a);
-    const problem = try migrateUnicode(a, &tree, &out.tokens, out.comments.items, source, &text.writer);
-    return .{ .text = text.written(), .problem = problem };
-}
-
-test "migrating to Unicode joins a tuple type the author broke, nests products, and is a fixed point" {
-    // frontend.md §11.8: a tuple type is written on its first line; an
-    // element that is itself a tuple type is an operand of the product, so
-    // it takes parentheses, and so does a product as a constructor's payload
-    // or `sync`'s operand. A second run changes nothing.
-    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
-    defer arena_state.deinit();
-    const a = arena_state.allocator();
-    const source =
-        \\type T = T ( Int, Int ) | U (List ( a, b ))
-        \\f : ( Int
-        \\    , ( String, Bool )
-        \\    ) -> ( (Int -> Int), Int )
-        \\f = f
-        \\
-    ;
-    const expected =
-        \\type T = T (Int × Int) | U (List (a × b))
-        \\f : Int × (String × Bool) → (Int → Int) × Int
-        \\f = f
-        \\
-    ;
-    const first = try unicodeOnce(a, source);
-    try testing.expectEqual(@as(?UnicodeProblem, null), first.problem);
-    try testing.expectEqualStrings(expected, first.text);
-    const again = try unicodeOnce(a, expected);
-    try testing.expectEqual(@as(?UnicodeProblem, null), again.problem);
-    try testing.expectEqualStrings(expected, again.text);
-}
-
-test "migrating to Unicode leaves a file alone when a tuple type it would join holds a comment" {
-    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
-    defer arena_state.deinit();
-    const a = arena_state.allocator();
-    const source =
-        \\f : ( Int -- the count
-        \\    , String
-        \\    ) -> Int
-        \\f = f
-        \\
-    ;
-    const result = try unicodeOnce(a, source);
-    try testing.expectEqualStrings(source, result.text);
-    const problem = result.problem orelse return error.TestExpectedProblem;
-    try testing.expectEqual(@as(?diagnostic.Code, null), problem.code);
-    try testing.expectEqual(@as(u32, 4), problem.start);
 }
 
 test "strings, chars, numbers, interpolations and multiline strings are printed byte for byte" {
