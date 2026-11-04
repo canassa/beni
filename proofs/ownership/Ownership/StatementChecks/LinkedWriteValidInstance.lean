@@ -1,5 +1,5 @@
 -- Keep witness reductions in one import chain so generated private splitters stay available.
-import Ownership.LinkedWriteValid
+import Ownership.StatementChecks.LinkedWriteInstance
 
 /-! `LinkedWriteValid.linksValid_after_writeLinked` at two reachable states, from
 the review of PR #314 (note 2): the two-component state of `LinkedWriteInstance` (a write through a

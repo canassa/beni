@@ -134,8 +134,7 @@ theorem alloc_post_invariant {declarations : List Decl} {vs : ValueSemantics.Sta
     {vs' : ValueSemantics.State} {hs' : State}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
     (stored : List Value) (site : List Nat)
-    (heapEq : hs'.heap = hs.heap.push stored) (links : hs'.links = [])
-    (storedBounded : ∀ x ∈ stored, ∀ d, Reaches hs'.heap x (.ref d) → d < hs'.heap.size)
+    (heapEq : hs'.heap = hs.heap.push stored) (links : hs'.links = hs.links)
     (keptSame : hs'.kept = hs.kept) (valueKeptSame : vs'.kept = vs.kept)
     (reads : vs'.reads = hs'.reads) (external : vs'.externalReads = hs'.externalReads)
     (fuel : vs'.fuel = hs'.fuel)
@@ -149,17 +148,23 @@ theorem alloc_post_invariant {declarations : List Decl} {vs : ValueSemantics.Sta
       (fun origin address member => inv.namingBound origin address member) inv.separating site
   obtain ⟨footprint, represented⟩ := inv.observers
   refine ⟨gamma', ?_, (extension (.site site 0) hs.heap.size).mpr (Or.inr ⟨rfl, rfl⟩), old⟩
-  refine flatInvariant_heap_frame inv (hole := hs.heap.size) (footprint := footprint)
-    (fun _ member => member) (by rw [heapEq]; simp) ⟨stored, by rw [heapEq]; simp, storedBounded⟩ links ?_ ?_
+  have linksValid' : LinksValid hs' :=
+    Ownership.LinkClauses.linksValid_of_same (Ownership.LinkClauses.linksValid_push inv.toInvariant.linksValid stored)
+      heapEq links
+  have linkClosed' : Ownership.LinkClauses.LinkClosed hs'.links gamma' := by
+    rw [links]
+    exact Ownership.LinkClauses.linkClosed_of_old inv.toInvariant.linksValid inv.linkClosed old
+  refine flatInvariant_heap_frame inv (inside := (· = hs.heap.size)) (footprint := footprint)
+    (fun _ member => member) (by rw [heapEq]; simp) linksValid' linkClosed' ?_ ?_
     represented ?_ keptSame valueKeptSame old ?_ separating reads external fuel (fun _ escaped => escaped)
     heapKinds
   · intro c different
     rw [heapEq]
-    simp [Array.getElem?_push, different]
-  · intro x p _ o w w' binding projected q c located
+    simp [Array.getElem?_push, show c ≠ hs.heap.size from different]
+  · intro x p _ o w w' binding projected q c located same
     have := live_path_below inv x p o w w' binding projected q c located
     omega
-  · intro member
+  · intro c member same
     have bound := representsMany_bound represented _ member
     omega
   · rw [heapEq]
@@ -179,10 +184,7 @@ theorem literal_post_invariant {declarations : List Decl} {vs : ValueSemantics.S
       hs.heap.size ∈ gamma' (.site site 0) ∧
       (∀ origin cell, cell < hs.heap.size → (cell ∈ gamma' origin ↔ cell ∈ gamma origin)) :=
   alloc_post_invariant inv (heapInts integers) site (by rw [heapObserved_heap]; rfl)
-    (by rw [heapObserved_links]; exact inv.links)
-    (fun x member d reach => by
-      obtain ⟨i, _, rfl⟩ := List.mem_map.mp member
-      exact (int_reaches_nothing reach).elim)
+    (by rw [heapObserved_links]; rfl)
     (by rw [heapObserved_kept]; rfl)
     (by rw [valueObserved_kept]; rfl) (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
     (observed_external (valueTicked vs) (heapAllocated hs integers) inv.keptSize inv.external)
@@ -363,10 +365,7 @@ theorem literal_preserved {declarations : List Decl} {vs : ValueSemantics.State}
           state.of_alloc (hs' := heapObserved (heapAllocatedValues hs ws) vs.kept.toList)
             (ContentsKinded.list t ws itemsKinded) heapEq (by rw [heapObserved_links]; rfl)
         obtain ⟨gamma', postInvariant, fresh, old⟩ := alloc_post_invariant inv ws site heapEq
-          (by rw [heapObserved_links]; exact inv.links)
-          (fun w member d reach => by
-            rw [heapEq] at reach ⊢
-            exact allocated_reach_bound (shapedZ w member) reach)
+          (by rw [heapObserved_links]; rfl)
           (by rw [heapObserved_kept]; rfl) (by rw [valueObserved_kept]; rfl)
           (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
           (observed_external (valueTicked vs) (heapAllocatedValues hs ws) inv.keptSize inv.external)
@@ -1013,10 +1012,12 @@ theorem shared_post_invariant {declarations : List Decl} {vs : ValueSemantics.St
       described := by simpa only [heapSame] using inv.toInvariant.described
       named := by simpa only [heapSame] using inv.named
       separating := inv.separating
-      linksValid := Soundness.linksValid_of_empty _ (by unfold heapShared; rw [heapObserved_links]; exact inv.links)
-      linkNamed := Soundness.linkNamed_of_empty _ _ _ _ (by unfold heapShared; rw [heapObserved_links]; exact inv.links)
+      linksValid := Ownership.LinkClauses.linksValid_of_same inv.toInvariant.linksValid heapSame
+        (by unfold heapShared; rw [heapObserved_links])
+      linkNamed := Ownership.LinkClauses.linkNamed_of_closed
+        (by unfold heapShared; rw [heapObserved_links]; exact inv.linkClosed)
     }
-    links := by unfold heapShared; rw [heapObserved_links]; exact inv.links
+    linkClosed := by unfold heapShared; rw [heapObserved_links]; exact inv.linkClosed
     abstractKeys := inv.abstractKeys
     typeKeys := inv.typeKeys
     types := inv.types
@@ -1418,19 +1419,30 @@ theorem exprType_push_success {declarations : List Decl} {vs : ValueSemantics.St
 
 /-! ### Runtime -/
 
-def heapPushedValues (hs : State) (root : Nat) (ys : List Value) (item : Value) : State :=
+/-- The state after a counted write that put `stored` where `ys` was, with
+the heap `h` the linked write left (#169). -/
+def heapWrittenValues (hs : State) (h : Heap) (ys stored : List Value) : State :=
   { hs with
     fuel := hs.fuel - 1
-    heap := hs.heap.set! root (ys ++ [item])
-    writes := (if ys == ys ++ [item] then hs.writes else hs.writes + 1) }
+    heap := h
+    writes := (if ys == stored then hs.writes else hs.writes + 1) }
 
 theorem value_push_run_values (s : ValueSemantics.State) (os : List Observation) (o : Observation) :
     (ValueSemantics.prim .push [.list os, o]).run s = .ok (.list (os ++ [o]), s) := rfl
 
-theorem heap_push_run_values (s : State) (ys : List Value) (item : Value)
-    (lookup : s.heap[root]? = some ys) (links : s.links = []) :
-    (prim .push [.ref root, item]).run s = .ok (.ref root, {s with heap := s.heap.set! root (ys ++ [item]), writes := if ys == ys ++ [item] then s.writes else s.writes + 1}) := by
-  have written := writeCounted_empty_run (root := root) (stored := ys ++ [item]) s lookup links
+/-- The push of any value onto an allocated array, on a state with valid
+links: a counted linked write that does not shorten the array (#169). -/
+theorem heap_push_run_linked (s : State) (ys : List Value) (item : Value)
+    (lookup : s.heap[root]? = some ys) (valid : LinksValid s) :
+    ∃ h, (prim .push [.ref root, item]).run s = .ok (.ref root,
+        {s with heap := h, writes := if ys == ys ++ [item] then s.writes else s.writes + 1}) ∧
+      h.size = s.heap.size ∧ h[root]? = some (ys ++ [item]) ∧
+      (∀ a, ¬ Ownership.LinkedWriteFrame.LinkConnected s.links root a → h[a]? = s.heap[a]?) ∧
+      LinksValid {s with heap := h} ∧
+      Ownership.LinkedWriteRun.ComponentFrom s.links root (ys ++ [item]) s {s with heap := h} := by
+  obtain ⟨h, written, rest⟩ :=
+    Ownership.LinkedWriteRun.writeCounted_linked (stored := ys ++ [item]) valid lookup (by simp)
+  refine ⟨h, ?_, rest⟩
   simpa [prim, array, lookup, StateT.run, StateT.bind, StateT.get, Option.toExcept, Except.bind, Except.pure,
     bind, pure, get, getThe, MonadStateOf.get, StateT.pure, StateT.lift, liftM, monadLift,
     MonadLift.monadLift] using written
@@ -1469,33 +1481,38 @@ theorem push_runtime_success {declarations : List Decl} {vs : ValueSemantics.Sta
     (valueItem : ValueSemantics.atom (valueEnv env) item = .ok o)
     (heapItem : InPlaceSemantics.atom (heapEnv env) item = .ok w)
     (lookup : hs.heap[root]? = some ys)
-    (rootOutside : root ∉ footprint)
+    (rootOutside : ∀ c ∈ footprint, ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c)
     (represented : RepresentsMany hs.heap observationDepth hs.kept.toList vs.kept.toList footprint)
     (hasDepth : depth ≠ 0) (hasFuel : vs.fuel ≠ 0) :
-    (ValueSemantics.eval depth declarations none (valueEnv env) (.prim .push [receiver, item])).run vs =
-      .ok (.list (os ++ [o]), valueObserved (valueTicked vs)) ∧
-    (InPlaceSemantics.eval depth declarations none (heapEnv env) (.prim .push [receiver, item])).run hs =
-      .ok (.ref root, heapObserved (heapPushedValues hs root ys w) vs.kept.toList) := by
+    ∃ h, (ValueSemantics.eval depth declarations none (valueEnv env) (.prim .push [receiver, item])).run vs =
+        .ok (.list (os ++ [o]), valueObserved (valueTicked vs)) ∧
+      (InPlaceSemantics.eval depth declarations none (heapEnv env) (.prim .push [receiver, item])).run hs =
+        .ok (.ref root, heapObserved (heapWrittenValues hs h ys (ys ++ [w])) vs.kept.toList) ∧
+      h.size = hs.heap.size ∧ h[root]? = some (ys ++ [w]) ∧
+      (∀ a, ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root a → h[a]? = hs.heap[a]?) ∧
+      LinksValid {hs with heap := h} ∧
+      Ownership.LinkedWriteRun.ComponentFrom hs.links root (ys ++ [w]) hs {hs with heap := h} := by
+  obtain ⟨h, pushRun, hSize, hRoot, hFrame, hValid, hFrom⟩ :=
+    heap_push_run_linked (root := root) (heapTicked hs) ys w lookup
+      (Ownership.LinkClauses.linksValid_of_same inv.toInvariant.linksValid rfl rfl)
   have valueObservedRun := value_observeKept_run (valueTicked vs) represented
-  have framed : RepresentsMany (hs.heap.set! root (ys ++ [w])) observationDepth
-      hs.kept.toList vs.kept.toList footprint :=
-    representsMany_after_write (xs := ys ++ [w]) represented rootOutside
-  have heapObservedRun : InPlaceSemantics.observeKept.run (heapPushedValues hs root ys w) =
-      .ok ((), heapObserved (heapPushedValues hs root ys w) vs.kept.toList) :=
-    heap_observeKept_run (heapPushedValues hs root ys w) framed
+  have framed : RepresentsMany h observationDepth hs.kept.toList vs.kept.toList footprint :=
+    representsMany_frame represented (fun c member => hFrame c (rootOutside c member))
+  have heapObservedRun : InPlaceSemantics.observeKept.run (heapWrittenValues hs h ys (ys ++ [w])) =
+      .ok ((), heapObserved (heapWrittenValues hs h ys (ys ++ [w])) vs.kept.toList) :=
+    heap_observeKept_run (heapWrittenValues hs h ys (ys ++ [w])) framed
   have heapFuel : hs.fuel ≠ 0 := by simpa only [← inv.fuel] using hasFuel
   have valueAtoms : [receiver, item].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
       .ok [.list os, o] := except_mapM_cons valueReceiver (except_mapM_cons valueItem rfl)
   have heapAtoms : [receiver, item].mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
       .ok [.ref root, w] := except_mapM_cons heapReceiver (except_mapM_cons heapItem rfl)
-  have pushRun : (prim .push [.ref root, w]).run (heapTicked hs) =
-      .ok (.ref root, heapPushedValues hs root ys w) :=
-    heap_push_run_values (heapTicked hs) ys w lookup inv.links
-  constructor
+  have pushRun' : (prim .push [.ref root, w]).run (heapTicked hs) =
+      .ok (.ref root, heapWrittenValues hs h ys (ys ++ [w])) := pushRun
+  refine ⟨h, ?_, ?_, hSize, hRoot, hFrame, Ownership.LinkClauses.linksValid_of_same hValid rfl rfl, hFrom⟩
   · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms]
     simp [hasDepth, hasFuel, value_push_run_values, valueObservedRun, Except.bind, Except.pure, bind, pure]
   · rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
-    simp [hasDepth, heapFuel, pushRun, heapObservedRun, Except.bind, Except.pure, bind, pure]
+    simp [hasDepth, heapFuel, pushRun', heapObservedRun, Except.bind, Except.pure, bind, pure]
 
 theorem push_failure {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {receiver item : Atom} {os : List Observation} {ys : List Value} {o : Observation} {w : Value} {root : Nat} {footprint : List Nat} {depth : Nat} {message : String}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
@@ -1504,7 +1521,7 @@ theorem push_failure {declarations : List Decl} {vs : ValueSemantics.State} {hs 
     (valueItem : ValueSemantics.atom (valueEnv env) item = .ok o)
     (heapItem : InPlaceSemantics.atom (heapEnv env) item = .ok w)
     (lookup : hs.heap[root]? = some ys)
-    (rootOutside : root ∉ footprint)
+    (rootOutside : ∀ c ∈ footprint, ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c)
     (represented : RepresentsMany hs.heap observationDepth hs.kept.toList vs.kept.toList footprint)
     (failed : (ValueSemantics.eval depth declarations none (valueEnv env)
       (.prim .push [receiver, item])).run vs = .error message) :
@@ -1522,8 +1539,8 @@ theorem push_failure {declarations : List Decl} {vs : ValueSemantics.State} {hs 
       exact ⟨"in-place execution exhausted fuel", by
         rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
         simp [noDepth, heapFuel]⟩
-    · have success := (push_runtime_success inv valueReceiver heapReceiver valueItem heapItem lookup
-        rootOutside represented noDepth noFuel).1
+    · obtain ⟨_, success, _⟩ := push_runtime_success inv valueReceiver heapReceiver valueItem heapItem lookup
+        rootOutside represented noDepth noFuel
       rw [success] at failed
       contradiction
 
@@ -1585,13 +1602,34 @@ theorem push_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
   have resultRep := entryAbstract_stored (ds := declarations) elemShape0 shapeN0
     (entryAbstract_join elemShape0 shapeN0) resultEq
   obtain ⟨footprint, represented⟩ := inv.observers
-  have rootOutside : root ∉ footprint :=
-    demand_success_observer_footprint inv.toInvariant demanded receiverNamed represented
+  -- The written array's link component has the receiver's origins (#169).
+  have componentNamed : ∀ c, Ownership.LinkedWriteFrame.LinkConnected hs.links root c → named gamma roots c := by
+    intro c connected
+    obtain ⟨origin, originMember, rootIn⟩ := receiverNamed
+    exact ⟨origin, originMember,
+      (Ownership.LinkClauses.linkConnected_same_origins inv.linkClosed connected origin).mp rootIn⟩
+  have rootOutside : ∀ c ∈ footprint, ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
+    fun c member connected =>
+      demand_success_observer_footprint inv.toInvariant demanded (componentNamed c connected) represented member
   have separate := demand_success_live_separate inv.separating demanded
-  have apart := live_path_apart inv scope afterSub receiverNamed separate
+  have componentApart : ∀ x p, (x, p) ∈ after → ∀ o w w', env.lookup x = some (o, w) →
+      projectVal w p = some w' → ∀ q c, ArrayAt hs.heap w' q c →
+        ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
+    fun x p use o w w' binding projected q c located connected =>
+      live_path_apart inv scope afterSub (componentNamed c connected) separate x p use o w w' binding projected
+        q c located rfl
   have itemApartRoot : ¬ Reaches hs.heap w (.ref root) :=
     value_apart_root shapeN describedN.1.1 receiverNamed (demand_success_disjoint inv.separating demanded)
       (fun o' member => mem_union _ _ _ (Or.inr member))
+  have itemApart : ∀ c, Reaches hs.heap w (.ref c) → ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
+    fun c reach connected =>
+      value_apart_root shapeN describedN.1.1 (componentNamed c connected)
+        (demand_success_disjoint inv.separating demanded) (fun o' member => mem_union _ _ _ (Or.inr member)) reach
+  have elementApart : ∀ y ∈ ys, ∀ c, Reaches hs.heap y (.ref c) →
+      ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
+    fun y member c reach connected =>
+      value_apart_root elemShape (elemsDescribed y member).1.1 (componentNamed c connected)
+        (demand_success_disjoint inv.separating demanded) (fun o' m => mem_union _ _ _ (Or.inl m)) reach
   refine ⟨.list t elemT, escapesEq, by rw [resultEq]; exact .list _ _ _ _ noUnk (flatAbstract_join elemShape0 shapeN0),
     ?_, ?_⟩
   · intro value vs' run'
@@ -1603,31 +1641,27 @@ theorem push_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
     · by_cases noFuel : vs.fuel = 0
       · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run'
         simp [noDepth, noFuel] at run'
-      · obtain ⟨valueRun, heapRun⟩ := push_runtime_success inv valueReceiver heapReceiver valueItem
-          heapItem lookup rootOutside represented noDepth noFuel
+      · obtain ⟨next, valueRun, heapRun, sizeEq, lookupNew, nextFrame, nextValid, nextFrom⟩ :=
+          push_runtime_success inv valueReceiver heapReceiver valueItem heapItem lookup rootOutside represented
+            noDepth noFuel
         rw [valueRun] at run'
         cases run'
-        have valid : root < hs.heap.size := (Array.getElem?_eq_some_iff.mp lookup).1
-        have heapEq : (heapObserved (heapPushedValues hs root ys w) vs.kept.toList).heap =
-            hs.heap.set! root (ys ++ [w]) := by
+        have heapEq : (heapObserved (heapWrittenValues hs next ys (ys ++ [w])) vs.kept.toList).heap = next := by
           rw [heapObserved_heap]; rfl
-        have lookupNew : (hs.heap.set! root (ys ++ [w]))[root]? = some (ys ++ [w]) := by simp [valid]
-        have sizeEq : (hs.heap.set! root (ys ++ [w])).size = hs.heap.size := by simp
         obtain ⟨cs0, represented0⟩ := represents_of_snapshot _ _ _ (pairedList _ (Nat.le_refl _))
-        have agreeOld : ∀ y ∈ ys, ∀ c, Reaches hs.heap y (.ref c) →
-            (hs.heap.set! root (ys ++ [w]))[c]? = hs.heap[c]? :=
-          fun y member => element_agree_after_write represented0 lookup member
-        have agreeItem : ∀ c, Reaches hs.heap w (.ref c) → (hs.heap.set! root (ys ++ [w]))[c]? = hs.heap[c]? :=
-          fun c reach => lookup_set_other hs.heap root _ (fun same => itemApartRoot (same ▸ reach))
-        have shapedZ : ∀ z ∈ ys ++ [w], AllocatedFlatValue (hs.heap.set! root (ys ++ [w])) z (entryType t) := by
+        have agreeOld : ∀ y ∈ ys, ∀ c, Reaches hs.heap y (.ref c) → next[c]? = hs.heap[c]? :=
+          fun y member c reach => nextFrame c (elementApart y member c reach)
+        have agreeItem : ∀ c, Reaches hs.heap w (.ref c) → next[c]? = hs.heap[c]? :=
+          fun c reach => nextFrame c (itemApart c reach)
+        have shapedZ : ∀ z ∈ ys ++ [w], AllocatedFlatValue next z (entryType t) := by
           intro z member
           rcases List.mem_append.mp member with old | new
           · exact allocated_of_agree (elemsShaped z old) (agreeOld z old)
           · rw [List.mem_singleton.mp new]
             exact allocated_of_agree allocatedN agreeItem
-        have shapedNew : AllocatedFlatValue (hs.heap.set! root (ys ++ [w])) (.ref root) (.list (entryType t)) :=
+        have shapedNew : AllocatedFlatValue next (.ref root) (.list (entryType t)) :=
           .list root _ (entryType t) lookupNew shapedZ
-        have rootApart : ∀ z ∈ ys ++ [w], ¬ Reaches (hs.heap.set! root (ys ++ [w])) z (.ref root) := by
+        have rootApart : ∀ z ∈ ys ++ [w], ¬ Reaches next z (.ref root) := by
           intro z member reach
           rcases List.mem_append.mp member with old | new
           · exact no_element_reaches_root lookup old _ _ (Nat.le_refl _) _ _ represented0
@@ -1635,7 +1669,7 @@ theorem push_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
           · rw [List.mem_singleton.mp new] at reach
             exact itemApartRoot (reaches_of_agree_rev agreeItem reach)
         have elementsDescribed' : ∀ z ∈ ys ++ [w],
-            Describes gamma (hs.heap.set! root (ys ++ [w]))
+            Describes gamma next
               ((entryAbstract declarations t element).join (entryAbstract declarations t aN)) z := by
           intro z member
           rcases List.mem_append.mp member with old | new
@@ -1646,11 +1680,11 @@ theorem push_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
               (Or.inr (describes_of_agree agreeItem describedN))
         have lookup' : hs.heap[root]? = some (ys ++ [] ++ []) := by simpa using lookup
         have agreeOld' : ∀ y ∈ ys ++ [] ++ [], ∀ c, Reaches hs.heap y (.ref c) →
-            (hs.heap.set! root (ys ++ [w]))[c]? = hs.heap[c]? :=
+            next[c]? = hs.heap[c]? :=
           fun y member => agreeOld y (by simpa using member)
         have oldCert := described.1.2 [] roots (entryAbstract declarations t element) certificate (.ref root) rfl
           (.here _)
-        have describedNew : Describes gamma (hs.heap.set! root (ys ++ [w])) (entryAbstract declarations (.list t) result)
+        have describedNew : Describes gamma next (entryAbstract declarations (.list t) result)
             (.ref root) := by
           rw [resultRep]
           refine list_described_of_elements receiverNamed noUnk lookupNew shapedNew elementsDescribed' ?_ ?_
@@ -1689,7 +1723,7 @@ theorem push_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
                 exact cell_apart_of_covers inv.separating elemShape
                   (elemsDescribed y (by simpa using yMember)).1.1 ⟨o', inCs, a'⟩
                   (cellOverlap_union_right_false disjoint).2 reachY)
-        have deepNew : ∀ roots cert, TagsDeep (hs.heap.set! root (ys ++ [w])) (.list (entryType t))
+        have deepNew : ∀ roots cert, TagsDeep next (.list (entryType t))
             (.list roots ((entryAbstract declarations t element).join (entryAbstract declarations t aN)) cert)
             (.ref root) := by
           intro roots cert
@@ -1706,32 +1740,33 @@ theorem push_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
             kinded_list_inv (kinded_atom inv state receiverTyped coveredR heapReceiver)
           cases same0
           exact typed0
-        have state' : StateKinded kinds (heapObserved (heapPushedValues hs root ys w) vs.kept.toList) env tenv :=
-          state.of_write rootTyped (.list t _ fun z member => by
+        have state' : StateKinded kinds (heapObserved (heapWrittenValues hs next ys (ys ++ [w])) vs.kept.toList) env tenv :=
+          state.of_linked_write rootTyped (fun z member => by
               rcases List.mem_append.mp member with old | new
               · exact state.list_contents rootTyped lookup z old
               · rw [List.mem_singleton.mp new]; exact kinded_atom inv state itemTyped coveredI heapItem)
-            heapEq (by rw [heapObserved_links]; rfl)
-        refine ⟨.ref root, heapObserved (heapPushedValues hs root ys w) vs.kept.toList, gamma, heapRun, ?_,
+            (fun a outside => by rw [heapEq]; exact nextFrame a outside) (by rw [heapEq]; exact sizeEq)
+            (fun a zs z found member connected => by
+              rw [heapEq] at found
+              exact nextFrom a zs z found member connected)
+            (by rw [heapObserved_links]; rfl)
+        refine ⟨.ref root, heapObserved (heapWrittenValues hs next ys (ys ++ [w])) vs.kept.toList, gamma, heapRun, ?_,
           Nat.le_of_eq (by rw [heapEq, sizeEq]), ?_, ?_, ?_, ?_, ?_,
           by rw [resultRep]; exact .list _ _ _ _ _, .list _ _ _, by rw [heapEq, resultRep]; exact deepNew _ _,
           ⟨kinds, state', .list t root rootTyped⟩⟩
         · rw [escapesEq]
-          refine flatInvariant_heap_frame inv (hole := root) (footprint := footprint) afterSub
-            (by rw [heapEq, sizeEq]; exact Nat.le_refl _) ⟨ys ++ [w], by rw [heapEq]; exact lookupNew, ?_⟩
-            (by rw [heapObserved_links]; exact inv.links) ?_ apart represented rootOutside
+          refine flatInvariant_heap_frame inv (inside := Ownership.LinkedWriteFrame.LinkConnected hs.links root)
+            (footprint := footprint) afterSub
+            (by rw [heapEq, sizeEq]; exact Nat.le_refl _)
+            (Ownership.LinkClauses.linksValid_of_same nextValid (by rw [heapEq]) (by rw [heapObserved_links]; rfl))
+            (by rw [heapObserved_links]; exact inv.linkClosed)
+            (fun c outside => by rw [heapEq]; exact nextFrame c outside) componentApart represented rootOutside
             (by rw [heapObserved_kept]; rfl) (by rw [valueObserved_kept]; rfl) (fun _ _ _ => Iff.rfl)
             (by rw [heapEq, sizeEq]; exact inv.namingBound) inv.separating
             (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
-            (observed_external (valueTicked vs) (heapPushedValues hs root ys w) inv.keptSize inv.external)
-            (by rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapPushedValues, inv.fuel])
+            (observed_external (valueTicked vs) (heapWrittenValues hs next ys (ys ++ [w])) inv.keptSize inv.external)
+            (by rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapWrittenValues, inv.fuel])
             (fun _ escaped => escaped) ⟨kinds, state'⟩
-          · intro z member d reach
-            rw [heapEq] at reach ⊢
-            exact allocated_reach_bound (shapedZ z member) reach
-          · intro c different
-            rw [heapEq]
-            exact lookup_set_other hs.heap root _ different
         · rw [heapEq]
           exact corresponds_list_of_elements lookupNew (by simp [lenO])
             (pointwise_snoc lenO (fun i o' y os_i ys_i =>
@@ -2985,19 +3020,27 @@ theorem mem_setVals {ys : List Value} {index : Int} {w z : Value} (member : z �
 theorem value_set_run_values (s : ValueSemantics.State) (os : List Observation) (index : Int) (o : Observation) :
     (ValueSemantics.prim .set [.list os, .int index, o]).run s = .ok (.list (setObs os index o), s) := rfl
 
-theorem heap_set_run_values (s : State) (ys : List Value) (index : Int) (w : Value)
-    (lookup : s.heap[root]? = some ys) (links : s.links = []) :
-    (prim .set [.ref root, .int index, w]).run s = .ok (.ref root, {s with heap := s.heap.set! root (setVals ys index w), writes := if ys == setVals ys index w then s.writes else s.writes + 1}) := by
-  have written := writeCounted_empty_run (root := root) (stored := setVals ys index w) s lookup links
+theorem setVals_length (ys : List Value) (index : Int) (w : Value) :
+    (setVals ys index w).length = ys.length := by
+  unfold setVals
+  split <;> simp
+
+/-- A set of an allocated array on a state with valid links: a counted
+linked write that keeps the array's length (#169). -/
+theorem heap_set_run_linked (s : State) (ys : List Value) (index : Int) (w : Value)
+    (lookup : s.heap[root]? = some ys) (valid : LinksValid s) :
+    ∃ h, (prim .set [.ref root, .int index, w]).run s = .ok (.ref root,
+        {s with heap := h, writes := if ys == setVals ys index w then s.writes else s.writes + 1}) ∧
+      h.size = s.heap.size ∧ h[root]? = some (setVals ys index w) ∧
+      (∀ a, ¬ Ownership.LinkedWriteFrame.LinkConnected s.links root a → h[a]? = s.heap[a]?) ∧
+      LinksValid {s with heap := h} ∧
+      Ownership.LinkedWriteRun.ComponentFrom s.links root (setVals ys index w) s {s with heap := h} := by
+  obtain ⟨h, written, rest⟩ := Ownership.LinkedWriteRun.writeCounted_linked (stored := setVals ys index w)
+    valid lookup (by rw [setVals_length]; exact Nat.le_refl _)
+  refine ⟨h, ?_, rest⟩
   simpa [prim, array, lookup, setVals, StateT.run, StateT.bind, StateT.get, Option.toExcept, Except.bind,
     Except.pure, bind, pure, get, getThe, MonadStateOf.get, StateT.pure, StateT.lift, liftM, monadLift,
     MonadLift.monadLift] using written
-
-def heapSetValues (hs : State) (root : Nat) (ys : List Value) (index : Int) (w : Value) : State :=
-  { hs with
-    fuel := hs.fuel - 1
-    heap := hs.heap.set! root (setVals ys index w)
-    writes := (if ys == setVals ys index w then hs.writes else hs.writes + 1) }
 
 /-- The correspondence of two lists extends to one element replaced in each. -/
 theorem pointwise_set {heap : Heap} {os : List Observation} {ys : List Value} {o : Observation} {w : Value}
@@ -3040,20 +3083,26 @@ theorem set_runtime_success {declarations : List Decl} {vs : ValueSemantics.Stat
     (valueItem : ValueSemantics.atom (valueEnv env) item = .ok o)
     (heapItem : InPlaceSemantics.atom (heapEnv env) item = .ok w)
     (lookup : hs.heap[root]? = some ys)
-    (rootOutside : root ∉ footprint)
+    (rootOutside : ∀ c ∈ footprint, ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c)
     (represented : RepresentsMany hs.heap observationDepth hs.kept.toList vs.kept.toList footprint)
     (hasDepth : depth ≠ 0) (hasFuel : vs.fuel ≠ 0) :
-    (ValueSemantics.eval depth declarations none (valueEnv env) (.prim .set [receiver, index, item])).run vs =
-      .ok (.list (setObs os i o), valueObserved (valueTicked vs)) ∧
-    (InPlaceSemantics.eval depth declarations none (heapEnv env) (.prim .set [receiver, index, item])).run hs =
-      .ok (.ref root, heapObserved (heapSetValues hs root ys i w) vs.kept.toList) := by
+    ∃ h, (ValueSemantics.eval depth declarations none (valueEnv env) (.prim .set [receiver, index, item])).run vs =
+        .ok (.list (setObs os i o), valueObserved (valueTicked vs)) ∧
+      (InPlaceSemantics.eval depth declarations none (heapEnv env) (.prim .set [receiver, index, item])).run hs =
+        .ok (.ref root, heapObserved (heapWrittenValues hs h ys (setVals ys i w)) vs.kept.toList) ∧
+      h.size = hs.heap.size ∧ h[root]? = some (setVals ys i w) ∧
+      (∀ a, ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root a → h[a]? = hs.heap[a]?) ∧
+      LinksValid {hs with heap := h} ∧
+      Ownership.LinkedWriteRun.ComponentFrom hs.links root (setVals ys i w) hs {hs with heap := h} := by
+  obtain ⟨h, setRun, hSize, hRoot, hFrame, hValid, hFrom⟩ :=
+    heap_set_run_linked (root := root) (heapTicked hs) ys i w lookup
+      (Ownership.LinkClauses.linksValid_of_same inv.toInvariant.linksValid rfl rfl)
   have valueObservedRun := value_observeKept_run (valueTicked vs) represented
-  have framed : RepresentsMany (hs.heap.set! root (setVals ys i w)) observationDepth
-      hs.kept.toList vs.kept.toList footprint :=
-    representsMany_after_write (xs := setVals ys i w) represented rootOutside
-  have heapObservedRun : InPlaceSemantics.observeKept.run (heapSetValues hs root ys i w) =
-      .ok ((), heapObserved (heapSetValues hs root ys i w) vs.kept.toList) :=
-    heap_observeKept_run (heapSetValues hs root ys i w) framed
+  have framed : RepresentsMany h observationDepth hs.kept.toList vs.kept.toList footprint :=
+    representsMany_frame represented (fun c member => hFrame c (rootOutside c member))
+  have heapObservedRun : InPlaceSemantics.observeKept.run (heapWrittenValues hs h ys (setVals ys i w)) =
+      .ok ((), heapObserved (heapWrittenValues hs h ys (setVals ys i w)) vs.kept.toList) :=
+    heap_observeKept_run (heapWrittenValues hs h ys (setVals ys i w)) framed
   have heapFuel : hs.fuel ≠ 0 := by simpa only [← inv.fuel] using hasFuel
   have valueAtoms : [receiver, index, item].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
       .ok [.list os, .int i, o] :=
@@ -3061,14 +3110,13 @@ theorem set_runtime_success {declarations : List Decl} {vs : ValueSemantics.Stat
   have heapAtoms : [receiver, index, item].mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
       .ok [.ref root, .int i, w] :=
     except_mapM_cons heapReceiver (except_mapM_cons heapIndex (except_mapM_cons heapItem rfl))
-  have setRun : (prim .set [.ref root, .int i, w]).run (heapTicked hs) =
-      .ok (.ref root, heapSetValues hs root ys i w) :=
-    heap_set_run_values (heapTicked hs) ys i w lookup inv.links
-  constructor
+  have setRun' : (prim .set [.ref root, .int i, w]).run (heapTicked hs) =
+      .ok (.ref root, heapWrittenValues hs h ys (setVals ys i w)) := setRun
+  refine ⟨h, ?_, ?_, hSize, hRoot, hFrame, Ownership.LinkClauses.linksValid_of_same hValid rfl rfl, hFrom⟩
   · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms]
     simp [hasDepth, hasFuel, value_set_run_values, valueObservedRun, Except.bind, Except.pure, bind, pure]
   · rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
-    simp [hasDepth, heapFuel, setRun, heapObservedRun, Except.bind, Except.pure, bind, pure]
+    simp [hasDepth, heapFuel, setRun', heapObservedRun, Except.bind, Except.pure, bind, pure]
 
 theorem set_failure {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {receiver index item : Atom} {os : List Observation} {ys : List Value} {o : Observation} {w : Value} {root : Nat} {i : Int} {footprint : List Nat} {depth : Nat} {message : String}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
@@ -3079,7 +3127,7 @@ theorem set_failure {declarations : List Decl} {vs : ValueSemantics.State} {hs :
     (valueItem : ValueSemantics.atom (valueEnv env) item = .ok o)
     (heapItem : InPlaceSemantics.atom (heapEnv env) item = .ok w)
     (lookup : hs.heap[root]? = some ys)
-    (rootOutside : root ∉ footprint)
+    (rootOutside : ∀ c ∈ footprint, ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c)
     (represented : RepresentsMany hs.heap observationDepth hs.kept.toList vs.kept.toList footprint)
     (failed : (ValueSemantics.eval depth declarations none (valueEnv env)
       (.prim .set [receiver, index, item])).run vs = .error message) :
@@ -3098,8 +3146,8 @@ theorem set_failure {declarations : List Decl} {vs : ValueSemantics.State} {hs :
       exact ⟨"in-place execution exhausted fuel", by
         rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
         simp [noDepth, heapFuel]⟩
-    · have success := (set_runtime_success inv valueReceiver heapReceiver valueIndex heapIndex valueItem
-        heapItem lookup rootOutside represented noDepth noFuel).1
+    · obtain ⟨_, success, _⟩ := set_runtime_success inv valueReceiver heapReceiver valueIndex heapIndex valueItem
+        heapItem lookup rootOutside represented noDepth noFuel
       rw [success] at failed
       contradiction
 
@@ -3169,13 +3217,34 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
   obtain ⟨aN, aNDef⟩ : ∃ x, x = entryAbstract declarations t aN0 := ⟨_, rfl⟩
   simp only [← elementDef, ← aNDef] at elemTags elemsDescribed described describedN tagsN chainsN deepN elemShape shapeN demanded resultRep
   obtain ⟨footprint, represented⟩ := inv.observers
-  have rootOutside : root ∉ footprint :=
-    demand_success_observer_footprint inv.toInvariant demanded receiverNamed represented
+  -- The written array's link component has the receiver's origins (#169).
+  have componentNamed : ∀ c, Ownership.LinkedWriteFrame.LinkConnected hs.links root c → named gamma roots c := by
+    intro c connected
+    obtain ⟨origin, originMember, rootIn⟩ := receiverNamed
+    exact ⟨origin, originMember,
+      (Ownership.LinkClauses.linkConnected_same_origins inv.linkClosed connected origin).mp rootIn⟩
+  have rootOutside : ∀ c ∈ footprint, ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
+    fun c member connected =>
+      demand_success_observer_footprint inv.toInvariant demanded (componentNamed c connected) represented member
   have separate := demand_success_live_separate inv.separating demanded
-  have apart := live_path_apart inv scope afterSub receiverNamed separate
+  have componentApart : ∀ x p, (x, p) ∈ after → ∀ o w w', env.lookup x = some (o, w) →
+      projectVal w p = some w' → ∀ q c, ArrayAt hs.heap w' q c →
+        ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
+    fun x p use o w w' binding projected q c located connected =>
+      live_path_apart inv scope afterSub (componentNamed c connected) separate x p use o w w' binding projected
+        q c located rfl
   have itemApartRoot : ¬ Reaches hs.heap w (.ref root) :=
     value_apart_root shapeN describedN.1.1 receiverNamed (demand_success_disjoint inv.separating demanded)
       (fun o' member => mem_union _ _ _ (Or.inr member))
+  have itemOutside : ∀ c, Reaches hs.heap w (.ref c) → ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
+    fun c reach connected =>
+      value_apart_root shapeN describedN.1.1 (componentNamed c connected)
+        (demand_success_disjoint inv.separating demanded) (fun o' member => mem_union _ _ _ (Or.inr member)) reach
+  have elementOutside : ∀ y ∈ ys, ∀ c, Reaches hs.heap y (.ref c) →
+      ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
+    fun y member c reach connected =>
+      value_apart_root elemShape (elemsDescribed y member).1.1 (componentNamed c connected)
+        (demand_success_disjoint inv.separating demanded) (fun o' m => mem_union _ _ _ (Or.inl m)) reach
   refine ⟨.list t elemT, escapesEq, by rw [resultEq]; exact .list _ _ _ _ noUnk (flatAbstract_join elemShape0 shapeN0),
     ?_, ?_⟩
   · intro value vs' run'
@@ -3188,33 +3257,28 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
     · by_cases noFuel : vs.fuel = 0
       · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run'
         simp [noDepth, noFuel] at run'
-      · obtain ⟨valueRun, heapRun⟩ := set_runtime_success inv valueReceiver heapReceiver valueIndex
-          heapIndex valueItem heapItem lookup rootOutside represented noDepth noFuel
+      · obtain ⟨next, valueRun, heapRun, sizeEq, lookupNew, nextFrame, nextValid, nextFrom⟩ :=
+          set_runtime_success inv valueReceiver heapReceiver valueIndex heapIndex valueItem heapItem lookup
+            rootOutside represented noDepth noFuel
         rw [valueRun] at run'
         cases run'
-        have valid : root < hs.heap.size := (Array.getElem?_eq_some_iff.mp lookup).1
-        have heapEq : (heapObserved (heapSetValues hs root ys i w) vs.kept.toList).heap =
-            hs.heap.set! root (setVals ys i w) := by
+        have heapEq : (heapObserved (heapWrittenValues hs next ys (setVals ys i w)) vs.kept.toList).heap = next := by
           rw [heapObserved_heap]; rfl
-        have lookupNew : (hs.heap.set! root (setVals ys i w))[root]? = some (setVals ys i w) := by simp [valid]
-        have sizeEq : (hs.heap.set! root (setVals ys i w)).size = hs.heap.size := by simp
         obtain ⟨cs0, represented0⟩ := represents_of_snapshot _ _ _ (pairedList _ (Nat.le_refl _))
-        have agreeOld : ∀ y ∈ ys, ∀ c, Reaches hs.heap y (.ref c) →
-            (hs.heap.set! root (setVals ys i w))[c]? = hs.heap[c]? :=
-          fun y member => element_agree_after_write represented0 lookup member
-        have agreeItem : ∀ c, Reaches hs.heap w (.ref c) →
-            (hs.heap.set! root (setVals ys i w))[c]? = hs.heap[c]? :=
-          fun c reach => lookup_set_other hs.heap root _ (fun same => itemApartRoot (same ▸ reach))
-        have shapedZ : ∀ z ∈ setVals ys i w, AllocatedFlatValue (hs.heap.set! root (setVals ys i w)) z (entryType t) := by
+        have agreeOld : ∀ y ∈ ys, ∀ c, Reaches hs.heap y (.ref c) → next[c]? = hs.heap[c]? :=
+          fun y member c reach => nextFrame c (elementOutside y member c reach)
+        have agreeItem : ∀ c, Reaches hs.heap w (.ref c) → next[c]? = hs.heap[c]? :=
+          fun c reach => nextFrame c (itemOutside c reach)
+        have shapedZ : ∀ z ∈ setVals ys i w, AllocatedFlatValue next z (entryType t) := by
           intro z member
           rcases mem_setVals member with old | new
           · exact allocated_of_agree (elemsShaped z old) (agreeOld z old)
           · rw [new]
             exact allocated_of_agree allocatedN agreeItem
-        have shapedNew : AllocatedFlatValue (hs.heap.set! root (setVals ys i w)) (.ref root)
+        have shapedNew : AllocatedFlatValue next (.ref root)
             (.list (entryType t)) :=
           .list root _ (entryType t) lookupNew shapedZ
-        have rootApart : ∀ z ∈ setVals ys i w, ¬ Reaches (hs.heap.set! root (setVals ys i w)) z (.ref root) := by
+        have rootApart : ∀ z ∈ setVals ys i w, ¬ Reaches next z (.ref root) := by
           intro z member reach
           rcases mem_setVals member with old | new
           · exact no_element_reaches_root lookup old _ _ (Nat.le_refl _) _ _ represented0
@@ -3222,7 +3286,7 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
           · rw [new] at reach
             exact itemApartRoot (reaches_of_agree_rev agreeItem reach)
         have elementsDescribed' : ∀ z ∈ setVals ys i w,
-            Describes gamma (hs.heap.set! root (setVals ys i w)) (element.join aN) z := by
+            Describes gamma next (element.join aN) z := by
           intro z member
           rcases mem_setVals member with old | new
           · exact describes_join (allocated_of_agree (elemsShaped z old) (agreeOld z old)) elemShape shapeN
@@ -3272,7 +3336,7 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
               ((storeSpines_facts spines).2 (p, cs) (List.mem_filter.mpr ⟨entry, container⟩)).1
             exact cell_apart_of_covers inv.separating elemShape (elemsDescribed y yMember).1.1 ⟨o', inCs, a'⟩
               (cellOverlap_union_right_false disjoint).2 reachY
-        have describedNew : Describes gamma (hs.heap.set! root (setVals ys i w))
+        have describedNew : Describes gamma next
             (entryAbstract declarations (.list t) result) (.ref root) := by
           rw [resultRep]
           refine list_described_of_elements receiverNamed noUnk lookupNew shapedNew elementsDescribed' ?_ ?_
@@ -3288,7 +3352,7 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
                 rw [List.append_assoc, List.singleton_append, ← List.drop_eq_getElem_cons lt,
                   List.take_append_drop]
                 exact lookup
-              have lookupNew' : (hs.heap.set! root (setVals ys i w))[root]? =
+              have lookupNew' : next[root]? =
                   some (ys.take i.toNat ++ w :: ys.drop (i.toNat + 1)) := by
                 rw [lookupNew, decomposed]
               have oldMember : ∀ y ∈ ys.take i.toNat ++ [ys[i.toNat]] ++ ys.drop (i.toNat + 1), y ∈ ys := by
@@ -3296,7 +3360,7 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
                 rwa [List.append_assoc, List.singleton_append, ← List.drop_eq_getElem_cons lt,
                   List.take_append_drop] at member
               have rootApart' : ∀ z ∈ ys.take i.toNat ++ w :: ys.drop (i.toNat + 1),
-                  ¬ Reaches (hs.heap.set! root (setVals ys i w)) z (.ref root) := by
+                  ¬ Reaches next z (.ref root) := by
                 intro z member
                 rw [← decomposed] at member
                 exact rootApart z member
@@ -3310,14 +3374,16 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
                 split
                 · rfl
                 · exact List.set_eq_of_length_le (by omega)
-              have agreeAll : ∀ (c : Nat), (hs.heap.set! root (setVals ys i w))[c]? = hs.heap[c]? := by
-                intro c
-                by_cases same : c = root
-                · subst same
-                  rw [lookupNew, unchanged, lookup]
-                · exact lookup_set_other hs.heap root _ same
+              have agreeAll : ∀ (c : Nat), Reaches hs.heap (.ref root) (.ref c) → next[c]? = hs.heap[c]? := by
+                intro c reach
+                cases reach with
+                | refl => rw [lookupNew, unchanged, lookup]
+                | element lookup'' member rest =>
+                  rw [lookup] at lookup''
+                  cases lookup''
+                  exact agreeOld _ member c rest
               intro n o' fp rep
-              exact (oldCert n o' fp (represents_of_agree_rev (fun c _ => agreeAll c) rep)).1 oldDeep
+              exact (oldCert n o' fp (represents_of_agree_rev agreeAll rep)).1 oldDeep
           · intro sp
             have h := Bool.and_eq_true_iff.mp sp
             obtain ⟨oldSpine, spines⟩ := Bool.and_eq_true_iff.mp h.1
@@ -3331,7 +3397,7 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
                 rw [List.append_assoc, List.singleton_append, ← List.drop_eq_getElem_cons lt,
                   List.take_append_drop]
                 exact lookup
-              have lookupNew' : (hs.heap.set! root (setVals ys i w))[root]? =
+              have lookupNew' : next[root]? =
                   some (ys.take i.toNat ++ w :: ys.drop (i.toNat + 1)) := by
                 rw [lookupNew, decomposed]
               have oldMember : ∀ y ∈ ys.take i.toNat ++ [ys[i.toNat]] ++ ys.drop (i.toNat + 1), y ∈ ys := by
@@ -3339,7 +3405,7 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
                 rwa [List.append_assoc, List.singleton_append, ← List.drop_eq_getElem_cons lt,
                   List.take_append_drop] at member
               have rootApart' : ∀ z ∈ ys.take i.toNat ++ w :: ys.drop (i.toNat + 1),
-                  ¬ Reaches (hs.heap.set! root (setVals ys i w)) z (.ref root) := by
+                  ¬ Reaches next z (.ref root) := by
                 intro z member
                 rw [← decomposed] at member
                 exact rootApart z member
@@ -3352,16 +3418,18 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
                 split
                 · rfl
                 · exact List.set_eq_of_length_le (by omega)
-              have agreeAll : ∀ (c : Nat), (hs.heap.set! root (setVals ys i w))[c]? = hs.heap[c]? := by
-                intro c
-                by_cases same : c = root
-                · subst same
-                  rw [lookupNew, unchanged, lookup]
-                · exact lookup_set_other hs.heap root _ same
+              have agreeAll : ∀ (c : Nat), Reaches hs.heap (.ref root) (.ref c) → next[c]? = hs.heap[c]? := by
+                intro c reach
+                cases reach with
+                | refl => rw [lookupNew, unchanged, lookup]
+                | element lookup'' member rest =>
+                  rw [lookup] at lookup''
+                  cases lookup''
+                  exact agreeOld _ member c rest
               intro n o' fp rep p c container located
-              exact (oldCert n o' fp (represents_of_agree_rev (fun c _ => agreeAll c) rep)).2 oldSpine p c
-                container (atPath_of_agree_rev (fun c _ => agreeAll c) located)
-        have deepNew : ∀ roots cert, TagsDeep (hs.heap.set! root (setVals ys i w)) (.list (entryType t))
+              exact (oldCert n o' fp (represents_of_agree_rev agreeAll rep)).2 oldSpine p c
+                container (atPath_of_agree_rev agreeAll located)
+        have deepNew : ∀ roots cert, TagsDeep next (.list (entryType t))
             (.list roots (element.join aN) cert) (.ref root) := by
           intro roots cert
           apply tagsDeep_list lookupNew
@@ -3377,32 +3445,33 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
             kinded_list_inv (kinded_atom inv state receiverTyped coveredR heapReceiver)
           cases same0
           exact typed0
-        have state' : StateKinded kinds (heapObserved (heapSetValues hs root ys i w) vs.kept.toList) env tenv :=
-          state.of_write rootTyped (.list t _ fun z member => by
+        have state' : StateKinded kinds (heapObserved (heapWrittenValues hs next ys (setVals ys i w)) vs.kept.toList) env tenv :=
+          state.of_linked_write rootTyped (fun z member => by
               rcases mem_setVals member with old | new
               · exact state.list_contents rootTyped lookup z old
               · rw [new]; exact kinded_atom inv state itemTyped coveredV heapItem)
-            heapEq (by rw [heapObserved_links]; rfl)
-        refine ⟨.ref root, heapObserved (heapSetValues hs root ys i w) vs.kept.toList, gamma, heapRun, ?_,
+            (fun a outside => by rw [heapEq]; exact nextFrame a outside) (by rw [heapEq]; exact sizeEq)
+            (fun a zs z found member connected => by
+              rw [heapEq] at found
+              exact nextFrom a zs z found member connected)
+            (by rw [heapObserved_links]; rfl)
+        refine ⟨.ref root, heapObserved (heapWrittenValues hs next ys (setVals ys i w)) vs.kept.toList, gamma, heapRun, ?_,
           Nat.le_of_eq (by rw [heapEq, sizeEq]), ?_, ?_, ?_, ?_, ?_,
           by rw [resultRep]; exact .list _ _ _ _ _, .list _ _ _, by rw [heapEq, resultRep]; exact deepNew _ _,
           ⟨kinds, state', .list t root rootTyped⟩⟩
         · rw [escapesEq]
-          refine flatInvariant_heap_frame inv (hole := root) (footprint := footprint) afterSub
-            (by rw [heapEq, sizeEq]; exact Nat.le_refl _) ⟨setVals ys i w, by rw [heapEq]; exact lookupNew, ?_⟩
-            (by rw [heapObserved_links]; exact inv.links) ?_ apart represented rootOutside
+          refine flatInvariant_heap_frame inv (inside := Ownership.LinkedWriteFrame.LinkConnected hs.links root)
+            (footprint := footprint) afterSub
+            (by rw [heapEq, sizeEq]; exact Nat.le_refl _)
+            (Ownership.LinkClauses.linksValid_of_same nextValid (by rw [heapEq]) (by rw [heapObserved_links]; rfl))
+            (by rw [heapObserved_links]; exact inv.linkClosed)
+            (fun c outside => by rw [heapEq]; exact nextFrame c outside) componentApart represented rootOutside
             (by rw [heapObserved_kept]; rfl) (by rw [valueObserved_kept]; rfl) (fun _ _ _ => Iff.rfl)
             (by rw [heapEq, sizeEq]; exact inv.namingBound) inv.separating
             (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
-            (observed_external (valueTicked vs) (heapSetValues hs root ys i w) inv.keptSize inv.external)
-            (by rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapSetValues, inv.fuel])
+            (observed_external (valueTicked vs) (heapWrittenValues hs next ys (setVals ys i w)) inv.keptSize inv.external)
+            (by rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapWrittenValues, inv.fuel])
             (fun _ escaped => escaped) ⟨kinds, state'⟩
-          · intro z member d reach
-            rw [heapEq] at reach ⊢
-            exact allocated_reach_bound (shapedZ z member) reach
-          · intro c different
-            rw [heapEq]
-            exact lookup_set_other hs.heap root _ different
         · rw [heapEq]
           exact corresponds_list_of_elements lookupNew (setObs_length i lenO)
             (pointwise_set lenO (fun k o' y os_k ys_k =>
@@ -3552,12 +3621,7 @@ theorem copy_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
             cases same
             exact .list t ys (state.list_contents rootTyped lookup))
         obtain ⟨gamma', postInvariant, fresh, old⟩ := alloc_post_invariant inv ys site heapEq
-          (by rw [heapObserved_links]; exact inv.links)
-          (fun y member d reach => by
-            rw [heapEq] at reach ⊢
-            simp only [Array.size_push]
-            exact Nat.lt_succ_of_lt (allocated_reach_bound (elemsShaped y member)
-              (reaches_of_agree_rev (agree y member) reach)))
+          (by rw [heapObserved_links]; rfl)
           (by rw [heapObserved_kept]; rfl)
           (by rw [valueObserved_kept]; rfl) (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
           (observed_external (valueTicked vs) (heapAllocatedValues hs ys) inv.keptSize inv.external)
@@ -3830,10 +3894,7 @@ theorem prepend_preserved {declarations : List Decl} {vs : ValueSemantics.State}
               · exact kinded_atom inv state itemTyped coveredI heapItem
               · exact state.list_contents rootTyped lookup z old)
           obtain ⟨gamma', postInvariant, fresh, old⟩ := alloc_post_invariant inv (w :: ys) site heapEq
-            (by rw [heapObserved_links]; exact inv.links)
-            (fun z member d reach => by
-              rw [heapEq] at reach ⊢
-              exact allocated_reach_bound (shapedZ z member) reach)
+            (by rw [heapObserved_links]; rfl)
             (by rw [heapObserved_kept]; rfl) (by rw [valueObserved_kept]; rfl)
             (by rw [valueObserved_reads, heapObserved_reads]; simp [valuePrependedValues, heapPrependedValues, inv.reads])
             (observed_external (valuePrependedValues vs os) (heapPrependedValues hs ys os w) inv.keptSize inv.external)

@@ -177,10 +177,10 @@ theorem flatInvariant_state_frame
       described := by simpa only [heapSame] using inv.toInvariant.described
       named := by simpa only [heapSame] using inv.named
       separating := inv.separating
-      linksValid := Soundness.linksValid_of_empty _ (linksSame.trans inv.links)
-      linkNamed := Soundness.linkNamed_of_empty _ _ _ _ (linksSame.trans inv.links)
+      linksValid := Ownership.LinkClauses.linksValid_of_same inv.toInvariant.linksValid heapSame linksSame
+      linkNamed := Ownership.LinkClauses.linkNamed_of_closed (by rw [linksSame]; exact inv.linkClosed)
     }
-    links := linksSame.trans inv.links
+    linkClosed := by rw [linksSame]; exact inv.linkClosed
     abstractKeys := inv.abstractKeys
     typeKeys := inv.typeKeys
     types := inv.types
@@ -234,10 +234,10 @@ theorem flatInvariant_restrict_live
       described := fun name path member => inv.toInvariant.described name path (included _ member)
       named := inv.named
       separating := inv.separating
-      linksValid := Soundness.linksValid_of_empty _ (inv.links)
-      linkNamed := Soundness.linkNamed_of_empty _ _ _ _ (inv.links)
+      linksValid := inv.toInvariant.linksValid
+      linkNamed := Ownership.LinkClauses.linkNamed_of_closed inv.linkClosed
     }
-    links := inv.links
+    linkClosed := inv.linkClosed
     abstractKeys := inv.abstractKeys
     typeKeys := inv.typeKeys
     types := inv.types
@@ -402,38 +402,21 @@ theorem value_literal_run (s : ValueSemantics.State) (xs : List Int) :
     (ValueSemantics.prim (.literal .int) (valueInts xs)).run s =
       .ok (.list (valueInts xs), s) := rfl
 
-/-- Exact real counted write for the link-free fragment. The counter follows
-the runtime's Boolean equality test, without a new equality assumption. -/
+/-- Exact real counted write of an array that no link names: a plain
+write. The counter follows the runtime's Boolean equality test, without a
+new equality assumption. -/
 theorem writeCounted_empty_run (s : State)
-    (lookup : s.heap[root]? = some previous) (links : s.links = []) :
+    (lookup : s.heap[root]? = some previous)
+    (unlinked : ∀ v src f, (v, src, f) ∈ s.links → v ≠ root ∧ src ≠ root) :
     (writeCounted root stored).run s = .ok (.ref root,
-      {s with heap := s.heap.set! root stored, writes := if previous == stored then s.writes else s.writes + 1}) := by
-  have valid : root < s.heap.size := (Array.getElem?_eq_some_iff.mp lookup).1
-  have notDangling : ¬ root ≥ s.heap.size := by omega
-  dsimp [writeCounted, array, countWrite, writeLinked, write, StateT.run,
-    StateT.bind, StateT.map, StateT.get, StateT.set, StateT.modifyGet]
-  simp only [pure_bind]
-  rw [lookup]
-  dsimp [Option.toExcept]
-  simp only [pure_bind]
-  by_cases equal : (previous == stored) = true
-  · simp only [equal, Bool.not_true, Bool.false_eq_true, if_false, if_true]
-    dsimp [get, getThe, MonadStateOf.get, modifyGet, MonadStateOf.modifyGet, bind, pure, StateT.bind, StateT.get, StateT.map,
-      StateT.modifyGet, StateT.pure, modify]
-    simp [notDangling, links, Except.bind, Except.pure, StateT.bind,
-      StateT.modifyGet, StateT.pure, bind, pure]
-  · have different : (previous == stored) = false := by simpa using equal
-    simp only [different, Bool.not_false, Bool.true_eq_false, if_false, if_true]
-    dsimp [get, getThe, MonadStateOf.get, modifyGet, MonadStateOf.modifyGet, bind, pure, StateT.bind, StateT.get, StateT.map,
-      StateT.modifyGet, StateT.pure, modify]
-    simp [notDangling, links, Except.bind, Except.pure, StateT.bind,
-      StateT.modifyGet, StateT.pure, bind, pure]
+      {s with heap := s.heap.set! root stored, writes := if previous == stored then s.writes else s.writes + 1}) :=
+  Ownership.LinkedWriteRun.writeCounted_unlinked_run s lookup unlinked
 
 /-- Compose the actual counted write with the observer footprint already
 derived by Ownership.FlatFragment.Support.demand_success_observer_footprint. This is a local
 write premise, not a global prohibition on aliases in the heap. -/
 theorem counted_write_observer_contract (s : State)
-    (lookup : s.heap[root]? = some previous) (links : s.links = [])
+    (lookup : s.heap[root]? = some previous) (unlinked : ∀ v src f, (v, src, f) ∈ s.links → v ≠ root ∧ src ≠ root)
     (outside : RepresentsMany s.heap depth s.kept.toList observers outsideCells)
     (rootOutside : root ∉ outsideCells) :
     ∃ post, (writeCounted root stored).run s = .ok (.ref root, post) ∧
@@ -442,7 +425,7 @@ theorem counted_write_observer_contract (s : State)
       post.fuel = s.fuel ∧ post.reads = s.reads ∧ post.externalReads = s.externalReads := by
   let post := {s with heap := s.heap.set! root stored, writes := if previous == stored then s.writes else s.writes + 1}
   have kept := representsMany_after_write (xs := stored) outside rootOutside
-  exact ⟨post, writeCounted_empty_run s lookup links, kept,
+  exact ⟨post, writeCounted_empty_run s lookup unlinked, kept,
     snapshots_of_represents kept, rfl, rfl, rfl⟩
 
 end Ownership.FlatFragment.Runtime
@@ -459,11 +442,11 @@ namespace Ownership.FlatFragment.PushRuntime
 open InPlaceSemantics HeapProof Ownership.FlatFragment.Runtime
 
 theorem primitive_push_run (s : State) (xs : List Int) (item : Int)
-    (lookup : s.heap[root]? = some (heapInts xs)) (links : s.links = []) :
+    (lookup : s.heap[root]? = some (heapInts xs)) (unlinked : ∀ v src f, (v, src, f) ∈ s.links → v ≠ root ∧ src ≠ root) :
     (prim .push [.ref root, .int item]).run s = .ok (.ref root,
       {s with heap := s.heap.set! root (heapInts xs ++ [.int item]), writes := if heapInts xs == heapInts xs ++ [.int item] then s.writes else s.writes + 1}) := by
   have written := writeCounted_empty_run (root := root)
-    (stored := heapInts xs ++ [.int item]) s lookup links
+    (stored := heapInts xs ++ [.int item]) s lookup unlinked
   simpa [prim, array, lookup, StateT.run, StateT.bind, StateT.get,
     Option.toExcept, Except.bind, Except.pure, bind, pure, get, getThe,
     MonadStateOf.get, StateT.pure, StateT.lift, liftM, monadLift, MonadLift.monadLift] using written
@@ -475,10 +458,10 @@ theorem value_primitive_push_run (s : ValueSemantics.State) (xs : List Int) (ite
 
 /-- The push of any value onto any allocated array (slice 2b of #522). -/
 theorem primitive_push_run_values (s : State) (xs : List Value) (item : Value)
-    (lookup : s.heap[root]? = some xs) (links : s.links = []) :
+    (lookup : s.heap[root]? = some xs) (unlinked : ∀ v src f, (v, src, f) ∈ s.links → v ≠ root ∧ src ≠ root) :
     (prim .push [.ref root, item]).run s = .ok (.ref root,
       {s with heap := s.heap.set! root (xs ++ [item]), writes := if xs == xs ++ [item] then s.writes else s.writes + 1}) := by
-  have written := writeCounted_empty_run (root := root) (stored := xs ++ [item]) s lookup links
+  have written := writeCounted_empty_run (root := root) (stored := xs ++ [item]) s lookup unlinked
   simpa [prim, array, lookup, StateT.run, StateT.bind, StateT.get,
     Option.toExcept, Except.bind, Except.pure, bind, pure, get, getThe,
     MonadStateOf.get, StateT.pure, StateT.lift, liftM, monadLift, MonadLift.monadLift] using written
@@ -490,7 +473,7 @@ theorem value_primitive_push_run_values (s : ValueSemantics.State) (os : List Ob
 /-- The receiver can have dead aliases. Only the complete permanent observer
 footprint must exclude this receiver at the actual checked write site. -/
 theorem primitive_push_observer_contract (s : State) (xs : List Int) (item : Int)
-    (lookup : s.heap[root]? = some (heapInts xs)) (links : s.links = [])
+    (lookup : s.heap[root]? = some (heapInts xs)) (unlinked : ∀ v src f, (v, src, f) ∈ s.links → v ≠ root ∧ src ≠ root)
     (outside : RepresentsMany s.heap observationDepth s.kept.toList observers outsideCells)
     (rootOutside : root ∉ outsideCells) :
     ∃ post,
@@ -506,7 +489,7 @@ theorem primitive_push_observer_contract (s : State) (xs : List Int) (item : Int
   have storedInts : stored = heapInts (xs ++ [item]) := by
     simp [stored, heapInts]
   have kept := representsMany_after_write (xs := stored) outside rootOutside
-  refine ⟨post, primitive_push_run s xs item lookup links, ?_, kept,
+  refine ⟨post, primitive_push_run s xs item lookup unlinked, ?_, kept,
     snapshots_of_represents kept, rfl, rfl, rfl⟩
   apply Represents.ref (vs := heapInts (xs ++ [item]))
   · simp [post, storedInts, valid]

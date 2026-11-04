@@ -1,5 +1,6 @@
 -- Keep witness reductions in one import chain so generated private splitters stay available.
-import Ownership.StatementChecks.LinkedWriteInstance
+-- Since #169 this module comes before the flat fragment, which uses its lemmas.
+import Ownership.LinkClauses
 
 /-! `LinksValid` survives a successful `writeLinked` that does not shorten the
 written array (#169, the contents clause).

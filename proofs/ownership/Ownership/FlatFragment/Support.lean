@@ -1,8 +1,8 @@
-import Ownership.LinkClauses
+import Ownership.LinkedWriteRun
 
 /-! The fragment modules form one import chain. Its first link imports
-`LinkClauses`, which imports every other proof and executable module of the
-package. The audit rejects an equation lemma that two modules realize, so a
+`LinkedWriteRun`, after `LinkedWriteValid` and `LinkClauses`; `LinkClauses`
+imports every other proof and executable module of the package. The audit rejects an equation lemma that two modules realize, so a
 module that unfolds a model definition must see every earlier realization. -/
 
 /-! The first flat fragment: the predicate, demand and footprint support, the naming extension, flat descriptions, root names, live sets, live cells, and liveness bookkeeping. -/
@@ -1282,6 +1282,107 @@ theorem kindsAt_of_heap {hs hs' : InPlaceSemantics.State} {env : List (Var × Ob
   obtain ⟨heapTyping, state, typed⟩ := kinds
   exact ⟨heapTyping, state.of_heap (fun _ _ _ => by rw [heap]) links, typed⟩
 
+/-- Linked arrays have one type. -/
+theorem StateKinded.connected_kind {kinds : Nat → Option Ty} {hs : InPlaceSemantics.State}
+    {env : List (Var × Observation × Value)} {tenv : Env Ty}
+    (state : StateKinded kinds hs env tenv) {a b : Nat}
+    (connected : Ownership.LinkedWriteFrame.LinkConnected hs.links a b) : kinds a = kinds b := by
+  induction connected with
+  | refl => rfl
+  | edge member =>
+    obtain ⟨u, viewTyped, sourceTyped⟩ := state.links _ _ _ member
+    rw [viewTyped, sourceTyped]
+  | symm _ ih => exact ih.symm
+  | trans _ _ ih₁ ih₂ => exact ih₁.trans ih₂
+
+/-- A linked write of a list keeps the heap typing: every changed array is
+linked to the written one, so it is a list of the same type, and its new
+elements come from the stored list or from the old arrays of the component. -/
+theorem StateKinded.of_linked_write {kinds : Nat → Option Ty} {hs hs' : InPlaceSemantics.State}
+    {env : List (Var × Observation × Value)} {tenv : Env Ty}
+    (state : StateKinded kinds hs env tenv) {root : Nat} {t : Ty} {stored : List Value}
+    (typed : kinds root = some (.list t)) (storedTyped : ∀ x ∈ stored, Kinded kinds t x)
+    (frame : ∀ a, ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root a → hs'.heap[a]? = hs.heap[a]?)
+    (sizeEq : hs'.heap.size = hs.heap.size)
+    (contents : Ownership.LinkedWriteRun.ComponentFrom hs.links root stored hs hs')
+    (links : hs'.links = hs.links) : StateKinded kinds hs' env tenv := by
+  refine ⟨?_, ?_, state.env⟩
+  · intro c u typedC
+    by_cases connected : Ownership.LinkedWriteFrame.LinkConnected hs.links root c
+    · have same : kinds c = some (.list t) := (state.connected_kind connected).symm.trans typed
+      rw [typedC] at same
+      cases same
+      have lt : c < hs'.heap.size := by rw [sizeEq]; exact state.bound typedC
+      obtain ⟨xs, lookup⟩ : ∃ xs, hs'.heap[c]? = some xs := ⟨_, Array.getElem?_eq_getElem lt⟩
+      refine ⟨xs, lookup, .list t xs fun x member => ?_⟩
+      rcases contents c xs x lookup member connected with fromStored | ⟨d, zs, connectedD, lookupD, memberD⟩
+      · exact storedTyped x fromStored
+      · have typedD : kinds d = some (.list t) := (state.connected_kind connectedD).symm.trans typed
+        exact state.list_contents typedD lookupD x memberD
+    · rw [frame c connected]
+      exact state.heap c u typedC
+  · rw [links]
+    exact state.links
+
+/-- Everything a typed value reaches is allocated. -/
+theorem StateKinded.reach_bound {kinds : Nat → Option Ty} {hs : InPlaceSemantics.State}
+    {env : List (Var × Observation × Value)} {tenv : Env Ty}
+    (state : StateKinded kinds hs env tenv) {t : Ty} {w : Value} {d : Nat}
+    (typed : Kinded kinds t w) (reach : Reaches hs.heap w (.ref d)) : d < hs.heap.size := by
+  generalize target : Value.ref d = goal at reach
+  induction reach generalizing t with
+  | refl v =>
+    subst target
+    cases typed with
+    | list t c found => exact state.bound found
+    | chain t c found => exact state.bound found
+    | dict t c found => exact state.bound found
+  | @element c xs x w lookup member _ ih =>
+    cases typed with
+    | list u c found => exact ih (state.list_contents found lookup x member) target
+    | chain u c found => exact ih (state.chain_contents found lookup x member) target
+    | dict u c found =>
+      obtain ⟨k, v, rfl, typedV⟩ := state.dict_contents found lookup x member
+      refine ih (t := .record [.int, u]) (.record _ _ rfl ?_) target
+      intro i t' w' ts_i ws_i
+      cases i with
+      | zero =>
+        simp at ts_i ws_i
+        subst ts_i
+        subst ws_i
+        exact .int k
+      | succ i =>
+        cases i with
+        | zero =>
+          simp at ts_i ws_i
+          subst ts_i
+          subst ws_i
+          exact typedV
+        | succ i => simp at ts_i
+  | @field xs x w member _ ih =>
+    cases typed with
+    | record ts ws lengths fields =>
+      obtain ⟨i, ws_i⟩ := List.mem_iff_getElem?.mp member
+      obtain ⟨t', ts_i⟩ : ∃ t', ts[i]? = some t' := by
+        have lt : i < ts.length := by
+          rw [← lengths]
+          exact (List.getElem?_eq_some_iff.mp ws_i).1
+        exact ⟨ts[i], List.getElem?_eq_getElem lt⟩
+      exact ih (fields i t' x ts_i ws_i) target
+    | ok error success w' typedW =>
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at member
+      rcases member with rfl | rfl | rfl
+      · exact ih (.int 1) target
+      · exact ih (.int 0) target
+      · exact ih typedW target
+    | err error success w' typedW =>
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at member
+      rcases member with rfl | rfl | rfl
+      · exact ih (.int 0) target
+      · exact ih typedW target
+      · exact ih (.int 0) target
+  | capture member _ ih => cases typed
+
 /-- A projection along a field path has the type at that path. -/
 theorem kinded_project {kinds : Nat → Option Ty} :
     ∀ {p : Path} {ty t : Ty} {w w' : Value}, Kinded kinds ty w →
@@ -1414,7 +1515,7 @@ structure FlatInvariant (declarations : List Decl)
     (aenv : Env Abstract) (tenv : Env Ty)
     (escapes : List Origin) (gamma : Naming) : Prop where
   toInvariant : Invariant declarations vs hs env live aenv tenv escapes gamma
-  links : hs.links = []
+  linkClosed : Ownership.LinkClauses.LinkClosed hs.links gamma
   abstractKeys : env.map Prod.fst = aenv.map Prod.fst
   typeKeys : env.map Prod.fst = tenv.map Prod.fst
   types : ∀ x ty, tenv.lookup x = some ty → FlatType ty
@@ -1529,7 +1630,7 @@ theorem flatInvariant_initial (declarations : List Decl) (fuel : Nat)
       [] live [] [] escapes emptyNaming := by
   refine {
     toInvariant := invariant_initial declarations fuel live [] escapes emptyNaming emptyNaming_separating
-    links := rfl
+    linkClosed := Ownership.LinkClauses.linkClosed_of_empty _ _ rfl
     abstractKeys := rfl
     typeKeys := rfl
     types := ?_
