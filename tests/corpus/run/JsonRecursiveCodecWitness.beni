@@ -1,0 +1,39 @@
+-- Recursive derived codec arguments retain their endpoint witnesses
+-- (schema.md §12.10, checker-v2.md §33, checked-data evidence).
+import Node
+import Schema exposing (Codec)
+
+
+type Grove a
+    = Grove a (List (Grove a))
+
+
+codecOf : List a → Codec a
+    where a.codec : ⊤ → Codec a
+codecOf _ = a.codec ⊤
+
+
+grovesOf : List a → List (Grove a)
+grovesOf _ = []
+
+
+decodeGrove : List a, String → String
+    where a.codec : ⊤ → Codec a
+decodeGrove xs text =
+    case Schema.parse (codecOf (grovesOf xs)) text of
+        Ok _ →
+            "decoded"
+
+        Err _ →
+            "failed"
+
+
+ints : List Int
+ints = []
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ decodeGrove ints "{\"Grove\":[1,[]]}"
+        ]
