@@ -100,6 +100,13 @@ module Cmd
   value perform : ((Send msg) → ⊤) → Cmd msg  -- impure
   value task : (⊤ → a), (a → msg) → Cmd msg  -- impure
 module Dom
+  type Align
+    Start
+    Center
+    End
+    Nearest
+  alias Alignment
+    Alignment
   alias Box
     Box
   type Error
@@ -121,6 +128,7 @@ module Dom
   value rendered : ⊤ → ⊤  -- suspends
   value requestFullscreen : String → Result FullscreenError ⊤  -- suspends
   value scrollIntoView : String → Result Error ⊤  -- impure
+  value scrollIntoViewWith : String, Alignment → Result Error ⊤  -- impure
   value scrollTo : String, Float, Float → Result Error ⊤  -- impure
   value viewport : ⊤ → Viewport  -- impure
 module Hosted

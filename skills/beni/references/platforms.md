@@ -209,8 +209,8 @@ Tick`, `Browser.Events.onKeyDown`, `onKeyUp`, `onResize`, `onAnimationFrame`, `S
 
 - `Http.get { url, expect = Http.expectString }` waits and returns `Result Http.Error String`; `Http.post`,
   `Http.request`; `Http.expectJson` for a type with a `codec`. Call them inside a command's body.
-- `Dom.focus id`, `Dom.blur id`: `Result Dom.Error ⊤`, at once; after a render, inside
-  `Cmd.afterRender`.
+- `Dom.focus id`, `Dom.blur id`, `Dom.scrollIntoViewWith id { block = Dom.Nearest, inline = Dom.Nearest }` (`Start`,
+  `Center`, `End`, `Nearest`): `Result Dom.Error ⊤`, at once; after a render, inside `Cmd.afterRender`.
 - `Dom.requestFullscreen id : Result Dom.FullscreenError ⊤` waits. Call it in a body from a click's message: it needs
   that user activation. A refusal is `NoElement id`, `Unsupported` (an iPhone), `NotActivated` or `Refused reason`.
   `Dom.exitFullscreen ⊤` leaves; the subscription `Dom.onFullscreenChange Changed` sends each change, Escape too.
