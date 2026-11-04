@@ -779,7 +779,7 @@ pub fn toUnicode(
             },
             .type_con => if (parsed.children(node).len == 0) {
                 const name = m.tokenText(main);
-                if ((!never_shadowed and std.mem.eql(u8, name, "Never")) or std.mem.eql(u8, name, "Basics.Never")) replacements[main] = "⊥";
+                if ((!never_shadowed and std.mem.eql(u8, name, "Never")) or topQualifiedNever(&parsed, &m, name)) replacements[main] = "⊥";
             },
             .type_tuple => if (m.tags[main] != .l_paren) {
                 const operands = parsed.children(node);
@@ -1129,6 +1129,22 @@ fn topNeverShadowed(tree: *const Ast, m: *const Measurer) bool {
         }
     }
     return false;
+}
+
+/// Resolve a qualified empty-type name through explicit aliases before the
+/// prelude. A user module may itself be imported `as Basics`.
+fn topQualifiedNever(tree: *const Ast, m: *const Measurer, name: []const u8) bool {
+    const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return false;
+    if (!std.mem.eql(u8, name[dot + 1 ..], "Never")) return false;
+    const qualifier = name[0..dot];
+    for (tree.rootItems()) |item| {
+        if (tree.nodeTag(item) != .import) continue;
+        const imp = tree.fullImport(item);
+        const module = if (imp.name) |t| m.tokenText(t) else continue;
+        const alias = if (imp.alias) |t| m.tokenText(t) else module;
+        if (std.mem.eql(u8, alias, qualifier)) return std.mem.eql(u8, module, "Basics");
+    }
+    return std.mem.eql(u8, qualifier, "Basics");
 }
 
 /// The first lexical or syntax diagnostic of `text`, if any.

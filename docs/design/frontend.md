@@ -1766,7 +1766,9 @@ It replaces ASCII symbol tokens and backslash lambda heads; product separators
 are identified through type nodes, leaving multiplication alone. Unit nodes lose
 their parentheses and gain `⊤`, with interior comments retained. Type references
 `Never` become `⊥` unless `topNeverShadowed` finds a declaration or a non-Basics
-import; an explicit `Basics.Never` still converts. Literal text, characters,
+import. Qualified names resolve explicit module aliases before the prelude, so
+`import Basics as B` permits converting `B.Never`, while `import Other as Basics`
+keeps that module's `Basics.Never`. Literal text, characters,
 multiline strings, comments, markup text and quoted attributes keep their bytes.
 Interpolation and markup holes remain code. The formatter first normalizes
 layout so shortening arrows cannot misalign same-line case branches, then
