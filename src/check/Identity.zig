@@ -431,7 +431,7 @@ fn identityPrimitive(cx: *const Context, name: []const u8) bool {
     const module = cx.interner.slice(cx.graph.moduleName(cx.module));
     return (std.mem.eql(u8, module, "Js") and std.mem.eql(u8, name, "fingerprint")) or
         (std.mem.eql(u8, module, "Schema") and std.mem.eql(u8, name, "endpointIdentity")) or
-        ((std.mem.eql(u8, module, "Js.Any") and (std.mem.eql(u8, name, "pack") or std.mem.eql(u8, name, "unpack"))) or
+        ((std.mem.eql(u8, module, "Js.Any") and (std.mem.eql(u8, name, "pack") or std.mem.eql(u8, name, "unpack") or std.mem.eql(u8, name, "unpackOpt"))) or
             (std.mem.eql(u8, module, "Js.Data") and std.mem.eql(u8, name, "checkedGraph")));
 }
 

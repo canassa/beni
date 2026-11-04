@@ -8337,6 +8337,15 @@ ownership/core/JsArrayWords observes both a stored element's later use and a
 builder's later write after completion. Finishing a builder does not make its
 pre-existing elements fresh.
 
+**Manager approval, 2026-11-04:** `Js.Any.unpackOpt` borrows the Any and
+returns its existing payload only after the exact identity guard. It promises
+neither fresh nor exclusive ownership of that payload. Its v2 fixture refuses
+a write through an unknown decoded list. V1's pre-existing Opt projection hole
+is tracked in #1831 and kept red under `tests/pending/`; it must be fixed
+before a destructive list write can use v1's judgement. The shared Opt lowering
+block also emits this private operation; the existing Opt words still describe
+the same reads, writes and escapes, with no changed promise.
+
 **Manager approval, 2026-11-04:** `Browser.Host.Array.rendererTruncate` is a storage
 write with the same read/alias/write demand on its uniquely owned first
 argument as the other array writers. It stores nothing and returns unit,

@@ -351,3 +351,5 @@ scenario/TASK-GUARDS retained-runtime
 
 tests/pending/build/bad/CloudflareHostErasure BuildDidNotFail
 tests/pending/run/core/ModuleRefSuspends.beni dev: exit=0 stdout-differs
+
+tests/pending/build/bad/OptDefaultAlias BuildDidNotFail

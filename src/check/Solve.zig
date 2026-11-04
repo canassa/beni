@@ -106,7 +106,7 @@ pub const Which = enum { from, to, inspect, checked };
 
 /// A use of core's `Debug.toString` or `Debug.log` and the variable its
 /// copy was unified into (`debugs`, checker-v2.md §32).
-pub const OptUse = struct { inst: Bir.Inst.Index, copy: Var, some: bool };
+pub const OptUse = struct { inst: Bir.Inst.Index, copy: Var, some: bool, result: bool = false };
 
 pub const DebugUse = struct { inst: Bir.Inst.Index, copy: Var, which: Dispatch.DebugSite.Which };
 
@@ -439,8 +439,8 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
                         try s.noteCastImage(which, copy, decl);
                     }
                     if (@import("../js/JsIntrinsic.zig").of(s.cx.graph, s.cx.interfaces, s.cx.bir, node.region, s.cx.interner)) |which| {
-                        if (which == .some or which == .optMatch or which == .optWithDefault)
-                            try s.opt_uses.append(s.cx.gpa, .{ .inst = node.region, .copy = copy, .some = which == .some });
+                        if (which == .some or which == .optMatch or which == .optWithDefault or which == .any_unpack_opt)
+                            try s.opt_uses.append(s.cx.gpa, .{ .inst = node.region, .copy = copy, .some = which == .some, .result = which == .any_unpack_opt });
                     }
                     if (s.debugUse(node.region)) |which| try s.debugs.append(s.cx.gpa, .{
                         .inst = node.region,

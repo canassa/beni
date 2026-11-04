@@ -214,6 +214,17 @@ generic imports, helpers and local functions, only where Any is reached.
 Existing constrained identities retain their ordering; quantifier-only slots
 use the canonical scheme quantifier order. No method requirement is invented.
 
+**Manager approval, 2026-11-04 — allocation-free checked opening.**
+`Js.Any.unpackOpt : Any → Js.Opt a` is private to core and platforms.
+It checks the same compiler-supplied identity as `unpack`, for both boxes
+and fresh packets, then returns the raw payload or the existing NONE sentinel.
+The compiler emits the check in place, without a sibling call or a Maybe
+object, and emits a shared cold function for a first-class reference. At an
+unknown or nested Opt payload it uses the existing Opt escape rule; an empty
+payload remains distinguishable from a mismatch. It does not claim fresh
+ownership of the payload, and retains its callable and native facts. Ordinary
+builds that do not reach this operation emit no new runtime code.
+
 **Manager decision, 2026-11-03 — allocation-neutral packets.** If the argument
 of `Any.pack` is a record or tuple freshly allocated by the compiler at that
 call, and cannot already have an alias, the packet itself may be the Any. Its

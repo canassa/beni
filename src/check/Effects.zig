@@ -130,6 +130,7 @@ realm_edges: std.ArrayList(Pair) = .empty,
 stored: @import("AnyValues.zig").State = .{},
 storage_pack: ?u32 = null,
 storage_unpack: ?u32 = null,
+storage_unpack_opt: ?u32 = null,
 has_realm_edges: bool = false,
 // Read-only inspection never invokes the borrowed value or its callbacks.
 noninvoking: bool = false,

@@ -216,7 +216,7 @@ pub fn seed(e: *Effects, schemes: []const Var.Optional) Effects.Error!void {
         const f = Walk.function(e.store, scheme) orelse return;
         try merge(e, try value(e, f.params[0]), try value(e, f.result));
     };
-    if (e.storage_unpack) |decl| if (schemes[decl].unwrap()) |scheme| {
+    for ([_]?u32{ e.storage_unpack, e.storage_unpack_opt }) |operation| if (operation) |decl| if (schemes[decl].unwrap()) |scheme| {
         const f = Walk.function(e.store, scheme) orelse return;
         const args = Walk.positions(e.store, f.result);
         if (args.len == 1) try merge(e, try value(e, f.params[0]), try value(e, args[0]));

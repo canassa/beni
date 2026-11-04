@@ -30,3 +30,16 @@ safe ⊤ = Library.erase { numbers = [ 1, 2 ] }
 
 pub badPacket : ⊤ → Js.Value
 badPacket ⊤ = Library.erase (Any.pack { answer = 42 })
+
+
+-- Checked opening retains native and callable facts under the optional carrier.
+pub badNativeOpt box =
+    value : Js.Opt (Array.Array Int)
+    value = Any.unpackOpt box
+    Library.erase value
+
+
+pub badCallbackOpt box =
+    value : Js.Opt (Int → Int)
+    value = Any.unpackOpt box
+    Library.erase value

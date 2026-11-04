@@ -2386,6 +2386,7 @@ const Emitter = struct {
             }
         }
         if (e.graph().modulePackage(m) == .core and std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Schema") and std.mem.eql(u8, e.session.interner.slice(e.bir(m).symbol(d.name)), "endpointIdentity")) return true;
+        if (e.graph().modulePackage(m) == .core and std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Js.Any") and std.mem.eql(u8, e.session.interner.slice(e.bir(m).symbol(d.name)), "unpackOpt")) return true;
         if (e.graph().modulePackage(m) != .core or (!std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Js") and !std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Js.Array"))) return false;
         const which = std.meta.stringToEnum(@import("JsIntrinsic.zig").Which, e.session.interner.slice(e.bir(m).symbol(d.name))) orelse return false;
         return @import("JsIntrinsic.zig").compilerOnly(which);

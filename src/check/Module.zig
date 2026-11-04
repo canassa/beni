@@ -1271,7 +1271,7 @@ fn optPlainRows(gpa: Allocator, solver: *Solve) Error![]const Bir.Inst.Index {
     for (solver.opt_uses.items) |use| {
         const func = Walk.function(solver.cx.store, use.copy) orelse continue;
         if (func.params.len == 0) continue;
-        var element = func.params[0];
+        var element = if (use.result) func.result else func.params[0];
         if (!use.some) {
             const app = Walk.nominal(solver.cx.store, element) orelse continue;
             if (!solver.cx.types.isJsOptional(app.type) or app.args.len != 1) continue;

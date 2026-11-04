@@ -303,3 +303,7 @@ core Browser.Host.Element.styleText ownership/core/RendererSupportWords.beni - E
 core Browser.Host.Event.message ownership/core/RendererSupportWords.beni - Event.message
 core Browser.Host.Node.append ownership/core/RendererSupportWords.beni - Node.append
 core Browser.Host.Rejection.display ownership/core/RendererSupportWords.beni - Rejection.display
+
+# #1831: v1 cannot observe unsafe Opt result flips; the explicit v2 fixture
+# refuses its unknown payload, and the pre-existing v1 hole is pending.
+core Js.Any.unpackOpt ownership/core/AnyUnpackOpt.beni - Any.unpackOpt

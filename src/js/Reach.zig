@@ -1009,6 +1009,25 @@ pub const Builder = struct {
                 // instructions like a value's body (`schema.md` §6).
                 .value, .schema => {},
                 .foreign_value => {
+                    if (b.in.interner) |interner| if (b.in.graph.modulePackage(m) == .core and
+                        std.mem.eql(u8, interner.slice(b.in.graph.moduleName(m)), "Js.Any") and
+                        std.mem.eql(u8, interner.slice(bir.symbol(d.name)), "unpackOpt"))
+                    {
+                        // The inline guard shares Any's private packet Symbol.
+                        // A first-class generic opening also needs Opt's escape.
+                        for (bir.decls, 0..) |producer, index| {
+                            if (!std.mem.eql(u8, interner.slice(bir.symbol(producer.name)), "pack")) continue;
+                            try decl_targets.append(b.scratch, .{ .node = .{ .module = m, .kind = .decl, .index = @intCast(index) } });
+                        }
+                        if (b.opt_none) |sentinel| {
+                            try decl_targets.append(b.scratch, .{ .node = sentinel });
+                            const js_bir = b.in.birs[sentinel.module.int()];
+                            for (js_bir.decls, 0..) |escape, index| {
+                                if (!std.mem.eql(u8, interner.slice(js_bir.symbol(escape.name)), "some")) continue;
+                                try decl_targets.append(b.scratch, .{ .node = .{ .module = sentinel.module, .kind = .decl, .index = @intCast(index) } });
+                            }
+                        }
+                    };
                     if (b.in.interner) |interner| if (b.in.graph.modulePackage(m) == .core) {
                         if (@import("../native/Operations.zig").lookup(interner.slice(b.in.graph.moduleName(m)), interner.slice(bir.symbol(d.name)))) |row| {
                             if (@import("../native/Operations.zig").rendererNeedsOpt(row.recipe)) {

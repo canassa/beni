@@ -3532,6 +3532,7 @@ pub const Lowerer = struct {
 
     fn typedIntrinsicDecl(l: *Lowerer, decl: Bir.Decl) ?JsIntrinsic.Which {
         if (l.in.graph.modulePackage(l.in.module) == .core and std.mem.eql(u8, l.text(l.module_name), "Schema") and std.mem.eql(u8, l.text(l.bir.symbol(decl.name)), "endpointIdentity")) return .schemaIdentity;
+        if (l.in.graph.modulePackage(l.in.module) == .core and std.mem.eql(u8, l.text(l.module_name), "Js.Any") and std.mem.eql(u8, l.text(l.bir.symbol(decl.name)), "unpackOpt")) return .any_unpack_opt;
         if (l.in.graph.modulePackage(l.in.module) != .core or (!std.mem.eql(u8, l.text(l.module_name), "Js") and !std.mem.eql(u8, l.text(l.module_name), "Js.Array"))) return null;
         const which = std.meta.stringToEnum(JsIntrinsic.Which, l.text(l.bir.symbol(decl.name))) orelse return null;
         return if (JsIntrinsic.compilerOnly(which)) which else null;
@@ -11385,6 +11386,7 @@ pub const Lowerer = struct {
                 const yes = l.suspendsHere(l.in.dispatch.effectAt(inst).body);
                 return l.add(if (yes) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
             }
+            if (which == .any_unpack_opt) return l.anyUnpackOptCall(out, inst, arg_insts, roots, callee_inst, p);
             // Any's guard and payload stay typed; only an exact compiler
             // identity match can construct Just at the requested type.
             // ownership pin begin: pack
@@ -12154,11 +12156,51 @@ pub const Lowerer = struct {
     // ownership pin end: arraySet
     // ownership pin end: arrayAllocate
 
+    // ownership pin begin: unpackOpt
+    fn anyUnpackOptCall(l: *Lowerer, out: *StmtList, inst: Inst.Index, args: []const Inst.Index, roots: []const Dispatch.TermIndex, callee: Inst.Index, p: u32) !Node.Index {
+        if (roots.len == 0 or l.in.dispatch.term(roots[roots.len - 1]) != .identity) {
+            try l.reportEvidenceShape(inst);
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
+        const values = try l.orderedExprs(out, args, false);
+        const id = try l.identityValue(roots[roots.len - 1], p);
+        return l.anyUnpackOpt(out, id, values[0], l.optPlainAt(callee), p);
+    }
+
+    fn anyPackValue(l: *Lowerer, p: u32) !Node.Index {
+        const module_name = l.interner.global.find("Js.Any") orelse return l.missingCoreValue(p, "Js.Any", "pack", "the core module is missing");
+        const owner = l.in.graph.lookup(.core, module_name) orelse return l.missingCoreValue(p, "Js.Any", "pack", "the core module is missing");
+        const bir = l.in.birs[owner.int()];
+        for (bir.decls, 0..) |d, i| {
+            const symbol = bir.symbol(d.name);
+            if (!std.mem.eql(u8, l.text(symbol), "pack")) continue;
+            if (owner == l.in.module) return l.ident(try l.topName(@intCast(i)), p);
+            const needed: Needed = .{ .module = owner, .base = symbol.toOptional() };
+            try l.needName(needed);
+            return l.ident(try l.neededName(needed), p);
+        }
+        return l.missingCoreValue(p, "Js.Any", "pack", "the packet identity producer is missing");
+    }
+
+    fn anyUnpackOpt(l: *Lowerer, out: *StmtList, identity_: Node.Index, operand: Node.Index, plain: bool, p: u32) !Node.Index {
+        const box = try l.bindSubject(out, operand, p);
+        const producer = try l.member(try l.anyPackValue(p), try l.interner.getOrPut(l.gpa, "$packet"), p);
+        const key = try l.member(producer, try l.interner.getOrPut(l.gpa, "key"), p);
+        const packet_type = try l.bindSubject(out, try l.add(.index_get, p, box.int(), key.int()), p);
+        const is_packet = try l.binary(.strict_ne, packet_type, try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p);
+        const stored_type = try l.member(box, try l.interner.getOrPut(l.gpa, "type"), p);
+        const matched = try l.condOf(is_packet, try l.binary(.strict_eq, packet_type, identity_, p), try l.binary(.strict_eq, stored_type, identity_, p), p);
+        const payload = try l.condOf(is_packet, box, try l.member(box, try l.interner.getOrPut(l.gpa, "value"), p), p);
+        const present = if (plain) payload else try l.call(try l.optCoreValue("some", p), &.{payload}, p);
+        return l.condOf(matched, present, try l.optNone(p), p);
+    }
+    // ownership pin end: unpackOpt
+
     /// A first-class typed intrinsic, with no sibling export or import.
     fn jsTypedValue(l: *Lowerer, which: JsIntrinsic.Which, p: u32) !Node.Index {
         const arity: usize = switch (which) {
             .optMatch, .arraySet => 3,
-            .schemaIdentity, .optWithDefault, .arrayDone => 2,
+            .any_unpack_opt, .schemaIdentity, .optWithDefault, .arrayDone => 2,
             else => 1,
         };
         var names: [3]JsIr.NameIndex = undefined;
@@ -12166,6 +12208,12 @@ pub const Lowerer = struct {
         for (0..arity) |i| {
             names[i] = try l.fresh(l.well.temp);
             values[i] = try l.ident(names[i], p);
+        }
+        if (which == .any_unpack_opt) {
+            var body: StmtList = .empty;
+            const result = try l.anyUnpackOpt(&body, values[0], values[1], false, p);
+            try body.append(l.scratch, try l.returnStmt(result, p));
+            return l.arrowOf(names[0..arity], body.items, p);
         }
         if (which == .some) return l.optSomeArrow(names[0], values[0], p);
         if (which == .arrayAllocate or which == .arraySet or which == .arrayDone) {
@@ -12459,7 +12507,7 @@ pub const Lowerer = struct {
             // Answered at the call, before it gets here (`callExpr`).
             W.maySuspend => l.add(.true_lit, p, Node.Data.unused, Node.Data.unused),
             // Answered at the call, from its site (`callExpr`).
-            W.any_pack, W.any_unpack, W.fingerprint, W.schemaIdentity => l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
+            W.any_pack, W.any_unpack, W.any_unpack_opt, W.fingerprint, W.schemaIdentity => l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
             W.throw => blk: {
                 try out.append(l.scratch, try l.add(.throw_stmt, p, v[0].int(), Node.Data.unused));
                 break :blk l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);

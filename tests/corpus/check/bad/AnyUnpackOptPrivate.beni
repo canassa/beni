@@ -1,0 +1,5 @@
+-- The allocation-free opening is reserved for core and platform runtimes.
+import Js.Any exposing (unpackOpt)
+
+
+pub open = unpackOpt

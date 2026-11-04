@@ -1,4 +1,6 @@
 -- Core-only heterogeneous typed storage. Payloads never cross Js.Value.
+import Js
+
 
 pub foreign type Any
 
@@ -9,3 +11,7 @@ pub foreign pure pack : escaped a → fresh Any
 
 -- The compiler supplies the requested a's identity before this can read it.
 pub foreign pure unpack : borrowed Any → Maybe a
+
+
+-- A checked opening without a Maybe box; nested Opt keeps its escape depth.
+pub foreign pure unpackOpt : borrowed Any → Js.Opt a
