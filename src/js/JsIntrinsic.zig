@@ -49,6 +49,10 @@ pub const Which = enum {
     /// `/pattern/flags`, from two string literals.
     regExp,
     global,
+    /// `import * as m from "<specifier>"`, the namespace object of a host
+    /// built-in, the specifier a string literal written in place
+    /// (`boundary.md` §4.2, *`module`*, 2026-11-04).
+    module,
     get,
     set,
     call,
@@ -171,7 +175,7 @@ pub fn armOf(graph: *const Graph, interfaces: []const Interface, bir: *const Bir
 /// §30, amended 2026-10-02.
 pub fn inPlaceLiterals(which: Which) u8 {
     return switch (which) {
-        .global => 0b001,
+        .global, .module => 0b001,
         .get, .set => 0b010,
         .call => 0b110,
         .apply, .construct => 0b010,
@@ -180,6 +184,34 @@ pub fn inPlaceLiterals(which: Which) u8 {
         .typeIs => 0b010,
         else => 0,
     };
+}
+
+/// Whether `specifier` names a host built-in a `Js.module` may import
+/// (`boundary.md` §4.2; `backend.md` §9, *Host imports*): a `node:` or
+/// `cloudflare:` module, with a name after the colon.
+pub fn isHostBuiltin(specifier: []const u8) bool {
+    for ([_][]const u8{ "node:", "cloudflare:" }) |prefix| {
+        if (specifier.len > prefix.len and std.mem.startsWith(u8, specifier, prefix)) return true;
+    }
+    return false;
+}
+
+/// Null when `arg`, `Js.module`'s argument, is a string literal naming a
+/// host built-in; otherwise the instruction to report `invalid_js_module`
+/// at. The checker reports it; `Lower` relies on there being none.
+pub fn moduleFault(bir: *const Bir, arg: Inst.Index) ?Inst.Index {
+    if (bir.instTag(arg) != .string) return arg;
+    if (!isHostBuiltin(bir.bytes(arg))) return arg;
+    return null;
+}
+
+/// The base of the module-level name a `Js.module` of `specifier` binds:
+/// `$` and the specifier with every character that is not an identifier's
+/// written `_` — `$node_fs_promises` for `node:fs/promises`.
+pub fn moduleBindingBase(buf: []u8, specifier: []const u8) []const u8 {
+    buf[0] = '$';
+    for (specifier, 1..) |c, i| buf[i] = if (std.ascii.isAlphanumeric(c) or c == '_' or c == '$') c else '_';
+    return buf[0 .. specifier.len + 1];
 }
 
 /// What is wrong with `Js.object`'s argument (`boundary.md` §4.2), and the

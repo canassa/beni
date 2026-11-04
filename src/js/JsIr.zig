@@ -644,7 +644,9 @@ pub const Import = struct {
 /// sibling JavaScript file exports a foreign value under its BARE name
 /// (`add`, boundary.md §4) while the emitted module refers to it by its
 /// module-qualified one (`Basics$add`). When the two are equal the printer
-/// writes the name once.
+/// writes the name once. An `imported` of `none` is a namespace import,
+/// `import * as local from "…"` (`Js.module`, boundary.md §4.2), one per
+/// statement.
 pub const Specifier = struct {
     imported: NameIndex,
     local: NameIndex,
@@ -993,7 +995,12 @@ fn verifySpecs(ir: *const JsIr, range: SubRange) VerifyError!void {
     if (@backingInt(range.start) > @backingInt(range.end)) return error.OutOfBounds;
     if (@backingInt(range.end) > ir.extra.len) return error.OutOfBounds;
     if (range.len() % Specifier.words != 0) return error.OutOfBounds;
-    for (ir.extraSlice(range, NameIndex)) |n| try ir.verifyName(n, false);
+    // A namespace import, `import * as local`, has no `imported` half
+    // (`Js.module`, boundary.md §4.2).
+    for (ir.extraSlice(range, Specifier)) |spec| {
+        if (spec.imported != .none) try ir.verifyName(spec.imported, false);
+        try ir.verifyName(spec.local, false);
+    }
 }
 
 fn verifyNames(ir: *const JsIr, range: SubRange) VerifyError!void {

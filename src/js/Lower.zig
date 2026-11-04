@@ -1569,6 +1569,9 @@ pub const Lowerer = struct {
     /// The markup runtime's exports this module imports, in first-use
     /// order: the lowering's and the markup primitives'.
     markup_imports: std.ArrayList(JsIr.Specifier) = .empty,
+    /// `Js.module`'s specifiers, in first-use order, each bound once
+    /// (`hostModule`).
+    host_imports: std.ArrayList([]const u8) = .empty,
     /// The same exports by name, for `--release`'s cut of the runtime
     /// file to what the build imports (`backend.md` §9).
     markup_exports: std.ArrayList([]const u8) = .empty,
@@ -3845,6 +3848,11 @@ pub const Lowerer = struct {
     /// and spliced in front of the declarations by `lower`.
     fn importStatements(l: *Lowerer) ![]const Node.Index {
         var out: std.ArrayList(Node.Index) = .empty;
+        // Host built-ins first (`Js.module`, boundary.md §4.2): `import * as
+        // Rt$$node_path from "node:path"`, one per specifier.
+        for (l.host_imports.items) |specifier| {
+            try out.append(l.scratch, try l.importStatement(specifier, &.{.{ .imported = .none, .local = try l.hostModuleName(specifier) }}));
+        }
         // Foreign values first: `import { add as Basics$add } from "./Basics.js"`.
         var siblings: std.ArrayList(JsIr.Specifier) = .empty;
         for (l.bir.decls, 0..) |d, index| {
@@ -10884,6 +10892,30 @@ pub const Lowerer = struct {
         return l.add(.arrow, p, @backingInt(record), Node.arrow_method);
     }
 
+    /// The module-level name `Js.module specifier` binds, of this module.
+    fn hostModuleName(l: *Lowerer, specifier: []const u8) !JsIr.NameIndex {
+        var buf: [512]u8 = undefined;
+        if (specifier.len + 1 > buf.len) return error.OutOfMemory;
+        const base = JsIntrinsic.moduleBindingBase(&buf, specifier);
+        return l.name(.{ .module = l.module_name.toOptional(), .base = try l.interner.getOrPut(l.gpa, base), .tag = JsIr.Name.no_tag });
+    }
+
+    /// `Js.module "spec"`: the binding of the module's namespace import,
+    /// recorded for `importStatements` on first use (`boundary.md` §4.2).
+    /// The checker has refused a specifier that is not a literal naming a
+    /// host built-in (`invalid_js_module`).
+    fn hostModule(l: *Lowerer, args: []const Inst.Index, p: u32) !Node.Index {
+        if (args.len != 1 or JsIntrinsic.moduleFault(l.bir, args[0]) != null) {
+            try l.report(.internal, if (args.len != 0) args[0] else @fromBackingInt(@intCast(0)), "`Js.module` takes a string literal naming a `node:` or `cloudflare:` built-in.", .{});
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
+        const specifier = l.bir.bytes(args[0]);
+        var known = false;
+        for (l.host_imports.items) |s| known = known or std.mem.eql(u8, s, specifier);
+        if (!known) try l.host_imports.append(l.scratch, specifier);
+        return l.ident(try l.hostModuleName(specifier), p);
+    }
+
     fn regExpLiteral(l: *Lowerer, args: []const Inst.Index, p: u32) !Node.Index {
         if (args.len != 2 or l.bir.instTag(args[0]) != .string or l.bir.instTag(args[1]) != .string) {
             try l.report(.internal, if (args.len != 0) args[0] else @fromBackingInt(@intCast(0)), "`Js.regExp` takes its pattern and its flags as string literals.", .{});
@@ -11142,6 +11174,7 @@ pub const Lowerer = struct {
         if (which == .finally and args.len == 2) return (try l.finallyTry(out, args[0], args[1], .value, p)).?;
         if (which == .catchIf and args.len == 3) return (try l.catchTry(out, args[0], args[1], args[2], .value, p)).?;
         if (which == .regExp) return l.regExpLiteral(args, p);
+        if (which == .module) return l.hostModule(args, p);
         if (which == .typeIs) return l.typeIsTest(out, args, p);
         if (which == .object and args.len == 1) return l.objectLiteral(out, args[0], p);
         if (which == .method and args.len == 1) return l.methodFunc(out, args[0], p);
@@ -11230,7 +11263,7 @@ pub const Lowerer = struct {
             // `finallyTry`, a `catchIf` `catchTry`, a `regExp`
             // `regExpLiteral`, a `typeIs` `typeIsTest`, an `object`
             // `objectLiteral` and a `method` `methodFunc`, above.
-            W.each, W.finally, W.catchIf, W.regExp, W.typeIs, W.object, W.method => l.nullNode(p),
+            W.each, W.finally, W.catchIf, W.regExp, W.module, W.typeIs, W.object, W.method => l.nullNode(p),
             // `Js.pure` with a function that is not a lambda written in
             // place calls it.
             W.pure, W.suspending => l.call(v[0], &.{}, p),

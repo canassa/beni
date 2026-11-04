@@ -140,6 +140,15 @@ pub foreign pure regExp : pattern, flags → Value
 pub foreign impure global : name → Value
 
 
+--| `import * as m from "node:path"`: the namespace object of a host
+--| built-in, written as a static import at the top of the module that
+--| calls it, once per specifier. The specifier is a string literal naming
+--| a `node:` or `cloudflare:` built-in; `Js.get (Js.module "node:path")
+--| "basename"` is `m.basename`. Written with its literal or not at all:
+--| passed as a value, it is a defect.
+pub foreign impure module : specifier → Value
+
+
 --| `o.name`, or `o[name]` when the name is not a literal identifier.
 pub foreign impure get : Value, name → Value
 
