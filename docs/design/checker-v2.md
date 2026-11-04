@@ -5875,6 +5875,16 @@ pairs or the keys, and generates each pair's value against a fresh variable of i
 field list is generated as usual and reported once, `invalid_js_object`, by `Module` before any
 group is checked.)*
 
+*(Amended 2026-11-04, `boundary.md` §4.2, the owner's answer A to `runtime-in-beni-q3`: two more.
+`Js.module`'s specifier is a string literal written in place, typed as the others are; one that is
+not a literal, or does not begin with `node:` or `cloudflare:`, is `invalid_js_module`, reported
+once by `Module` as `invalid_js_object` is. `Js.method`'s argument, when it is a lambda written in
+place, is generated against an arrow of the lambda's own count — each parameter a `Js.Value`, the
+result a fresh variable — in place of the declaration's `sync (Value → a)`, and that arrow is
+marked `sync` as the declaration's is (§15.2 item 1), so a body that may suspend is still
+`sync_boundary`; a lambda of one parameter meets the declaration as before, and any other
+argument is generated as usual, which the backend refuses.)*
+
 ## 31. Amendment of 2026-10-02: `Basics.eq` dispatches
 
 *The owner's decision; `static-dispatch-spike.md` §3.1 and §3.4, `language.md` §6.5, amended the

@@ -716,7 +716,8 @@ close a cycle:
    (`internal`, as before).
 2. **A literal a `Js` call writes in place mints nothing** (`static-dispatch-spike.md` §6.8,
    amended): a string literal that is the name argument of `global`, `get`, `set` or `call`, either
-   argument of `regExp`, the type name of `typeIs` (*amended 2026-10-02*), and a list literal that
+   argument of `regExp`, the type name of `typeIs` (*amended 2026-10-02*), the specifier of
+   `module` (*amended 2026-11-04*), and a list literal that
    is the argument list of `call`, `apply`, `construct` or `array` — *amended 2026-10-02:* or the
    field list of `object`, with its pairs and their key strings (below). The backend writes each as JavaScript syntax — a property name, a
    regular expression literal, an argument list — so no `String` or `List` value exists at run time,
@@ -768,6 +769,41 @@ protocol makes a field and not a prototype method (`backend.md` §4, *What a rea
 rely on*) — and the optimiser keeps every object holding one whole, since the method reads and
 writes it through a receiver the optimiser cannot name (`backend.md` §4, *`Js.method` is a
 `function`*). Passed as a value, `Js.js`'s `method f` is `function () { return f(this) }`.
+
+*Amended 2026-11-04 (the owner's answer A to `runtime-in-beni-q3`; #1813, `plans/runtime-in-beni.md`
+step 17): the lambda may take parameters after its receiver.* `Js.method λself a b → body` is
+`function (a, b) { const self = this; return body }`, so `o.m(x, y)` hands `o` to the lambda as
+`self` and `x` and `y` as `a` and `b`; what JavaScript passes beyond them is dropped, as a
+`function` drops it. The declaration keeps its shape, `sync (Value → a) → Value`, and the
+checker types the lambda written in place by its own count (`checker-v2.md` §30): every
+parameter is a `Value`, the result the `a`, and the lambda is held `sync` as the declared
+callback is, so a body that may suspend is `sync_boundary` whatever the count. A lambda of one
+parameter is the form above, unchanged. The first use with parameters is the Durable Object
+class of `cloudflare`'s runtime module (§9.12 (e.11)): its constructor is one, `Js.method λself
+ctx env → …`, where `self.constructor` stands in for `new.target`, and so are `fetch`, `alarm`,
+`$beni` and the three WebSocket hooks.
+
+**`module : specifier → Value`** (impure, *added 2026-11-04*, the owner's answer A to
+`runtime-in-beni-q3`; #1813) is a static import of a host built-in: `Js.module "cloudflare:workers"`
+is the namespace object of `import * as m from "cloudflare:workers";`, so `Js.get (Js.module
+"cloudflare:workers") "DurableObject"` is `m.DurableObject`. The specifier is a string literal
+written in place (rule 2 below), and it names a `node:` or `cloudflare:` built-in — the two
+families `backend.md` §9's *Host imports* lets into the one scope-hoisted file, because a host
+built-in's evaluation is not observable to the program; any other literal is **`invalid_js_module`**,
+at the call, from the checker: a package could run anything when evaluated, and a relative path
+would name a file the output tree does not hold. The emitted module writes one `import * as
+<name> from "<specifier>";` per distinct specifier it calls, first among its statements, bound to
+a name of the module's own (`Rt$$cloudflare_workers` in a development build, a short name under
+`--release`), and every call with that specifier reads the one binding. A build writes the
+import wherever it writes the module; under `--release` the statement moves to the top of the
+one file, once per distinct specifier, beside the hand-written files' host imports (`backend.md`
+§9, *Host imports*, amended this date). `impure`: the import is the host's to evaluate, and a
+built-in the host lacks — a `cloudflare:` module under Node — fails the load in the host's words,
+as a hand-written file's import of it does; the program named it, and no wrapper can make it
+exist. Passed as a value, `Js.js` has no `module`: a static import cannot be a value, so
+`Js.module` is written with its literal or not at all, as `regExp` is. Its first use is
+`cloudflare`'s runtime module, whose Durable Object class is built over `DurableObject`, no global
+of the Worker.
 
 **A `()` crossing the wall is `null` or `undefined`** (2026-10-02, `backend.md` §4's *A `()` result
 is not written*). A release build writes no result for a function whose result is `()`, so a
