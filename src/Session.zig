@@ -924,14 +924,16 @@ fn isLazy(session: *const Session, file: SourceStore.Index) bool {
 
 /// Whether a manifest of the chain names the platform module `name`, so the
 /// compiler reaches it with no import: the module of `"program"`'s type,
-/// `"markup"`'s runtime `"module"`, its `"vocabulary"`, and the module of
-/// its `"type"` (`boundary.md` §5, §9.2). With no chain, every platform
-/// module is a root.
+/// `"markup"`'s runtime `"module"`, the top-level `"module"` (a runtime
+/// module without markup, §5.2, 2026-11-04), its `"vocabulary"`, and the
+/// module of its `"type"` (`boundary.md` §5, §9.2). With no chain, every
+/// platform module is a root.
 fn isPlatformRoot(session: *const Session, name: []const u8) bool {
     const chain = session.options.chain orelse return true;
     for (chain.layers) |layer| {
         const m = layer.manifest;
         if (m.program) |qualified| if (std.mem.eql(u8, moduleOf(qualified), name)) return true;
+        if (m.module) |module| if (std.mem.eql(u8, module, name)) return true;
         if (m.markup.type) |qualified| if (std.mem.eql(u8, moduleOf(qualified), name)) return true;
         if (m.markup.module) |module| if (std.mem.eql(u8, module, name)) return true;
         if (m.markup.vocabulary) |module| if (std.mem.eql(u8, module, name)) return true;
