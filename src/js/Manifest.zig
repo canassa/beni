@@ -25,7 +25,12 @@
 //!   declaration rather than a hardcoded one. Optional since 2026-10-02 when
 //!   `markup` names a `lowering` and a runtime `module` and no `runtime`
 //!   of its own: the module is then the whole runtime, `run` included
-//!   (§5.2, §9.2).
+//!   (§5.2, §9.2) — or, since 2026-11-04, when a top-level `module` names
+//!   one (below).
+//! - `module` — a beni module of this package that supplies `run` in a
+//!   chain that declares no markup `lowering` (§5.2, *A runtime module
+//!   without markup*). Refused beside `runtime` in one manifest, and in a
+//!   chain with a `lowering`, by `platform.resolveChain`.
 //! - `entry` — the name of the entry file itself, optional, defaulting to
 //!   `Emit.default_entry_file`. It completes the previous key: until
 //!   2026-09-21 the entry file's NAME was the one part of the output shape
@@ -84,6 +89,9 @@ platform: bool = false,
 name: ?[]const u8 = null,
 program: ?[]const u8 = null,
 runtime: ?[]const u8 = null,
+/// A beni module of this package that supplies `run` where the chain
+/// declares no markup lowering (§5.2, *A runtime module without markup*).
+module: ?[]const u8 = null,
 entry: ?[]const u8 = null,
 platforms: []const []const u8 = &.{},
 reexports: []const []const u8 = &.{},
@@ -162,6 +170,7 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         name: ?[]const u8 = null,
         program: ?[]const u8 = null,
         runtime: ?[]const u8 = null,
+        module: ?[]const u8 = null,
         entry: ?[]const u8 = null,
         platforms: ?[]const []const u8 = null,
         reexports: ?[]const []const u8 = null,
@@ -199,6 +208,7 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         .name = parsed.name,
         .program = parsed.program,
         .runtime = parsed.runtime,
+        .module = parsed.module,
         .entry = parsed.entry,
         .platforms = parsed.platforms orelse &.{},
         .reexports = parsed.reexports orelse &.{},
@@ -250,6 +260,16 @@ test "a manifest that declares a platform" {
     try testing.expectEqualStrings("runtime.js", m.runtime.?);
     // `entry` is optional; the emitter supplies `Emit.default_entry_file`.
     try testing.expectEqual(@as(?[]const u8, null), m.entry);
+}
+
+test "a manifest may name a runtime module in place of a runtime file" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const m = try parse(arena.allocator(),
+        \\{ "platform": true, "name": "probe", "program": "Rt.Program", "module": "Rt" }
+    );
+    try testing.expectEqualStrings("Rt", m.module.?);
+    try testing.expectEqual(@as(?[]const u8, null), m.runtime);
 }
 
 test "a manifest may name the entry file" {
