@@ -2895,6 +2895,64 @@ uses the existing String directly; several use the canonical checked tuple
 identity grammar. Release uses the same compact ids as every other packet.
 
 
+**Version 1.27** (*owner decision, 2026-11-04*, additive, gated on nothing;
+#1612): the `dom` lowering owns the producer/runtime operations that open its
+existential ABI: dispatching a block's paired kind and payload at mount/patch,
+constructing text/map kinds, and sending a handler's message through its map
+contexts to its root. The lowering emits these operations with the existing
+builder and hands their references to the Beni runtime in a **private typed
+protocol record**. Slots, row algorithms, controls and the scheduler remain in
+Beni. This does not add a `Js` primitive or change `Any.js`.
+
+`Lowering.runtime_protocol`, when present, names that record's source module,
+record type and opaque carrier types. Its default is absent. A lowering that
+uses the contract targets at least 1.27; existing lowerings and their source
+programs retain their behavior. The record is built with existing `Context`
+hoists and expression builders, not a factory evaluated by a view or a row.
+All helpers and constants belong to their independent emit/cache unit. No
+per-view or per-row helper factory, closure, wrapper, or extra input array is
+introduced. Existing fresh capture packets, checked identities and the shared
+`Any.unpack` path retain versions 1.24–1.26's proofs and refusals.
+
+The private `Html.Runtime` protocol distinguishes opaque `Payload`, `Context`,
+`Kind`, `Block` and `RowSite` carriers. They retain native/callable state and
+HostFree must recognize that fact, including through nominal/container paths;
+none is plain data or a `Js.Value` escape hatch. Source may pass a carrier only
+through the typed protocol. It cannot manufacture its representation, erase it,
+or cast a raw function to an `Any → Any` function. The compiler-generated
+bridge alone opens the checked producer's paired block/context representation.
+A carrier may represent its existing protocol's empty value; that is not a new
+sentinel. Native DOM nullable links still use the existing `Js.Opt` NONE adapter.
+
+`Instance` and `Slot` use the already specified nominal-over-`Js.Cell`
+representation. An instance's Source-visible prefix is exactly its start node,
+end node and primary slot; kind/payload, liveness and site-specific fields stay
+behind the producer protocol. An inline row keeps its real item and raw key in
+its existing row cell. A compiler-produced row-to-instance view proves that
+same cell has the instance prefix; it allocates no wrapper and does not erase a
+key. Row state is hidden at most once per site, never by packing individual
+rows. Row callbacks and arrays/maps remain typed. Captured row inputs travel as an optional existing checked packet;
+no captures is the existing NONE, with no extra array. Persistent row state is
+key-typed, so a change to an item's or callback's identity keeps the keyed nodes
+and invalidates their skips once per site. The last item's raw value stays in
+the same row cell behind `Payload`; the checked descriptor compares and updates
+it without a wrapper, and all rows are updated before restating them through
+the current descriptor. A key-type mismatch disposes through the previous
+site's typed callbacks before a new state is viewed. A site compares its checked
+item/environment identity once per render as in 1.26, including Show and
+positional rows.
+
+`CorePrivate`'s platform authority fences the carrier module and protocol. The
+bridge has an ordinary audited/pinned body; neither it nor the carriers receive
+an intrinsic ownership or HostFree exemption. Native host operations remain
+reviewed catalogue operations. The bridge preserves existing evaluation order,
+exception/defect behavior, static component grouping, and first-class program
+constructor behavior. It introduces no new refusal. Development/release emit
+and behavior fixtures pin the actual ABI before parallel runtime consumers are
+handed its frozen source signatures. The accepted helper timing debt remains
+#1819 and is not a waiver for another representation change.
+
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source
@@ -3026,6 +3084,17 @@ environment, and are compared once at the site rather than once per item.
   `tests/blackbox/external_platform_test.zig` builds and runs a program for it. The toy lowering,
   written against 1.0, hoists a function in `module`, reads it back in `root` with `cx.hoisted`,
   imports `platform_html`, and contributes start data; its runtime is also the program runtime.
+
+*Owner decision, 2026-11-04 (interface 1.27):* a compiled-in `dom` lowering
+may emit the private producer/runtime bridge of §9.4.6 with the existing
+builder. Its opaque carriers and typed protocol are Beni declarations, fenced
+by the existing CorePrivate platform authority. The bridge opens only the
+existential producer ABI; slots, rows, controls and scheduler behavior remain
+Beni. The bridge is ordinary pinned compiler/lowering code, covered by the
+build id and independent emit-unit cache keys, with no new `Js` primitive,
+`Any.js` change, HostFree exemption or per-view/per-row factory or closure.
+This is additive: another lowering need not declare a runtime protocol, and
+existing constructor and first-class uses gain no new refusal.
 
 ### 9.6 Determinism, and what the cache must know
 

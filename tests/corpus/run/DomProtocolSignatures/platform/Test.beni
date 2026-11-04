@@ -1,0 +1,76 @@
+import Browser.Host.Event as Event
+import Browser.Host.Node as Node
+import Html.Runtime as Runtime
+import Js
+import Js.Any as Any
+
+
+pub result : ⊤ → String
+result ⊤ = "protocol-signatures"
+
+
+-- Every consumer uses actual exported signatures; no Js.Value cast or
+-- foreign factory is used to fabricate an opaque carrier for this test.
+pub instanceHead : Runtime.Instance → Js.Opt Node.Node
+instanceHead value = Js.cellRead (Runtime.instanceCell value) .s
+
+
+pub slotContext : Runtime.Slot → Runtime.Context
+slotContext value = Js.cellRead (Runtime.slotCell value) .cx
+
+
+pub rowKey : Runtime.Row String → String
+rowKey value = Js.cellRead (Runtime.rowCell value) .k
+
+
+pub rowItem : Runtime.RowRecipe Int String, Runtime.Row String → Int
+rowItem recipe value = recipe.item value
+
+
+pub mountAndPatch :
+      Runtime.Protocol
+    , Runtime.RowRecipe Int String
+    , Runtime.Context
+    , Runtime.Block
+    → Runtime.Instance
+mountAndPatch protocol recipe context block =
+    row = recipe.m 7 "raw-key" 0 context
+    next = recipe.p row 8 1
+    recipe.setItem next 8
+    _ = recipe.sameItem next 8
+    recipe.r next
+    _ = recipe.same (Js.none ⊤) (Js.none ⊤)
+    _ = recipe.probe (Js.none ⊤)
+    _ = recipe.remember (Js.none ⊤)
+    protocol.patch (recipe.view next) block context
+
+
+pub site :
+      Runtime.Protocol
+    , Runtime.SiteProtocol
+    , Runtime.Payload
+    , Any.Any
+    , Runtime.Slot
+    → Runtime.RowSite
+site protocol callbacks scope payload slot =
+    value = protocol.makeSite callbacks scope payload
+    protocol.setSiteScope value scope
+    _ = protocol.siteData value
+    _ = protocol.siteHead value slot
+    _ = protocol.siteTail value slot
+    protocol.siteRestate value slot 0
+    value
+
+
+pub dispatch : Runtime.Protocol, Node.Node, Event.Event → ⊤
+dispatch protocol node event = protocol.fire node event "$$click" "$$clickX" 0
+
+
+-- The opaque step operations also let a consumer keep the chain walk in
+-- Source; the compiler bridge opens each checked f/up relationship.
+pub through : Runtime.Protocol, Runtime.Context, Runtime.Payload → Runtime.Payload
+through protocol context message =
+    if protocol.contextPresent context then
+        through protocol (protocol.contextParent context) (protocol.contextApply context message)
+    else
+        message

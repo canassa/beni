@@ -23,6 +23,7 @@ const entries = [_]Entry{
     .{ .module = "Browser.Host.Document", .name = "rendererBody", .access = .platform },
     .{ .module = "Browser.Host.Document", .name = "rendererText", .access = .platform },
     .{ .module = "Browser.Host.EventTarget", .name = "rendererFromNode", .access = .platform },
+    .{ .module = "Html.Runtime", .name = null, .access = .platform },
     .{ .module = "Browser.Worker", .name = "eventsPossible", .access = .platform },
     .{ .module = "Browser.Host.Worker", .name = "closeSelf", .access = .platform },
     .{ .module = "Js", .name = "Builder" },

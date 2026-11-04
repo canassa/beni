@@ -1,0 +1,211 @@
+--! The private typed producer/runtime ABI (boundary.md §9.4–9.5, 1.27).
+--! Only the compiled lowering opens the existential carriers. Source keeps
+--! slots, rows, controls and scheduling typed. No carrier crosses Js.Value.
+--! Helpers are emitted cold; this module creates no helper factory.
+
+import Browser.Host.Array as Array
+import Browser.Host.Event as Event
+import Browser.Host.Node as Node
+import Js
+import Js.Any as Any
+
+
+-- Carriers retain native/callable facts. Their representations are the
+-- lowering's existing payload, map context, kind, block and per-site state.
+pub foreign type Payload
+
+
+pub foreign type Context
+
+
+pub foreign type Kind
+
+
+pub foreign type Block
+
+
+pub foreign type RowSite
+
+
+-- The common, always-present instance prefix. A producer may keep other
+-- typed fields in the SAME object; Source does not guess their layout.
+pub type alias InstanceFields =
+    s : Js.Opt Node.Node
+    e : Js.Opt Node.Node
+    q : Js.Opt Slot
+
+
+pub opaque type Instance
+    = Instance (Js.Cell InstanceFields)
+
+
+pub instance : Js.Cell InstanceFields → Instance
+instance value = Instance value
+
+
+pub instanceCell : Instance → Js.Cell InstanceFields
+instanceCell (Instance value) = value
+
+
+pub type alias SlotFields =
+    p : Js.Opt Node.Node
+    m : Js.Opt Node.Node
+    cx : Context
+    i : Js.Opt Instance
+    u : Js.Opt (Array.Array Instance)
+    r : Js.Opt RowSite
+    l : Bool
+    w : Bool
+    v : Bool
+    j : Js.Opt String
+    k : Int
+
+
+pub opaque type Slot
+    = Slot (Js.Cell SlotFields)
+
+
+pub slot : Js.Cell SlotFields → Slot
+slot value = Slot value
+
+
+pub slotCell : Slot → Js.Cell SlotFields
+slotCell (Slot value) = value
+
+
+-- A row is its existing cell, with a raw key and the last item's raw value.
+-- The item is an opaque producer payload so changing an item's type need not
+-- remount rows whose key type stayed fixed. No Any/object is made per row.
+-- The checked descriptor reads/writes the item; a new item/environment identity
+-- invalidates skips once per site, and every row's item is updated before restate.
+-- A generated instance-prefix view is identity, with no second row wrapper.
+pub type alias RowFields key =
+    s : Js.Opt Node.Node
+    e : Js.Opt Node.Node
+    q : Js.Opt Slot
+    x : Payload
+    y : Int
+    k : key
+    kv : Int
+    rs : Int
+    n : Js.Opt (Row key)
+    kc : Js.Opt (Row key)
+    kt : Js.Opt (Row key)
+
+
+pub opaque type Row key
+    = Row (Js.Cell (RowFields key))
+
+
+pub row : Js.Cell (RowFields key) → Row key
+row value = Row value
+
+
+pub rowCell : Row key → Js.Cell (RowFields key)
+rowCell (Row value) = value
+
+
+-- Emitted once per markup site. The scope is the existing checked capture
+-- environment/descriptor, never a new input array for a site without captures.
+-- These callbacks enter generic Beni row helpers with checked hidden evidence.
+-- The bridge supplies sync callbacks; sync is a top-level annotation qualifier,
+-- so the aliases record their n-ary types without that contextual qualifier.
+pub type alias SiteProtocol =
+    head : (Payload, Any.Any, Slot → Js.Opt Node.Node)
+    tail : (Payload, Any.Any, Slot → Js.Opt Node.Node)
+    restate : (Payload, Any.Any, Slot, Int → ⊤)
+    dispose : (Payload, Any.Any, Slot → ⊤)
+
+
+-- Fields on the existing descriptor. The key is passed into mount, so its
+-- returned cell is fully initialized before Source can read it. Patch returns
+-- the same row or a fully initialized replacement. No function is made per row.
+pub type alias RowRecipe item key =
+    m : (item, key, Int, Context → Row key)
+    p : (Row key, item, Int → Row key)
+    r : (Row key → ⊤)
+    view : (Row key → Instance)
+    item : (Row key → item)
+    sameItem : (Row key, item → Bool)
+    setItem : (Row key, item → ⊤)
+    o : Bool
+    i : Bool
+    l : Bool
+    e : Bool
+    f : Js.Opt Block
+    j : Js.Opt String
+    same : (Js.Opt Any.Any, Js.Opt Any.Any → Bool)
+    remember : (Js.Opt Any.Any → Js.Opt Any.Any)
+    probe : (Js.Opt Any.Any → Js.Opt key)
+
+
+-- The lowering emits one private record per independent emit/cache unit.
+-- These functions open only the checked producer's paired native ABI.
+-- makeSite hides persistent typed row state once per site, never per row.
+-- first/last/moves/parentOf/childMaybe/restate/turn/dead/stop reference Beni
+-- algorithms through cold adapters; they are not moved into generated IR.
+-- hasRoot/hasHandler/handlerFlags read only compiler-owned producer metadata.
+pub type alias Protocol =
+    none : Context
+    unit : (Block, Context → Instance)
+    patch : (Instance, Block, Context → Instance)
+    again : (Instance → ⊤)
+    live : (Instance → Bool)
+    text : (String → Block)
+    map : (Block, Payload → Block)
+    fire : (Node.Node, Event.Event, String, String, Int → ⊤)
+    eventPayload : (Node.Node, Event.Event, String, String → Payload)
+    nodeContext : (Node.Node → Context)
+    contextPresent : (Context → Bool)
+    contextParent : (Context → Context)
+    contextApply : (Context, Payload → Payload)
+    sendRoot : (Node.Node, Payload → ⊤)
+    hasRoot : (Node.Node → Bool)
+    hasHandler : (Node.Node, String → Bool)
+    handlerFlags : (Node.Node, String → Int)
+    first : (Instance → Node.Node)
+    last : (Instance → Node.Node)
+    put : (Node.Node, Instance, Js.Opt Node.Node → ⊤)
+    drop : (Instance → ⊤)
+    swap : (Instance, Instance → ⊤)
+    parentOf : (Slot → Node.Node)
+    childMaybe : (Slot, Js.Opt Block → ⊤)
+    restate : (Slot → ⊤)
+    turn : (Bool, (⊤ → ⊤) → ⊤)
+    dead : (⊤ → Bool)
+    stop : (⊤ → ⊤)
+    makeSite : (SiteProtocol, Payload, Any.Any → RowSite)
+    siteScope : (RowSite → Payload)
+    setSiteScope : (RowSite, Payload → ⊤)
+    siteData : (RowSite → Any.Any)
+    siteHead : (RowSite, Slot → Js.Opt Node.Node)
+    siteTail : (RowSite, Slot → Js.Opt Node.Node)
+    siteRestate : (RowSite, Slot, Int → ⊤)
+    siteDispose : (RowSite, Slot → ⊤)
+
+
+-- The parallel row lane implements these exported functions. Persistent
+-- state depends on key, not the current item/capture type. A key-type mismatch
+-- disposes through the OLD site's typed callbacks before initializing anew.
+-- Changed item/capture identity with the same key type keeps nodes and patches
+-- all rows. Empty captures use NONE, never another array or packet.
+pub type alias RowsApi item key =
+    forKeyed :
+        (Protocol
+         , Slot
+         , List item
+         , (item → key)
+         , RowRecipe item key
+         , Js.Opt Any.Any
+         , SiteProtocol
+         , Payload
+         → ⊤
+        )
+    forPosition :
+        (Protocol, Slot, List item, RowRecipe item ⊤, Js.Opt Any.Any, SiteProtocol, Payload → ⊤)
+    show : (Protocol, Slot, key, Block, Js.Opt String, SiteProtocol, Payload → ⊤)
+    hide : (Protocol, Slot, Js.Opt Block → ⊤)
+    head : (Protocol, RowRecipe item key, Any.Any, Slot → Js.Opt Node.Node)
+    tail : (Protocol, RowRecipe item key, Any.Any, Slot → Js.Opt Node.Node)
+    restate : (Protocol, RowRecipe item key, Any.Any, Slot, Int → ⊤)
+    dispose : (Protocol, RowRecipe item key, Any.Any, Slot → ⊤)

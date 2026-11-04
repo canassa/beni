@@ -1,5 +1,5 @@
 //! The markup lowering interface (docs/design/boundary.md §9.4), version
-//! 1.26: what the compiler hands a platform's markup lowering, and everything
+//! 1.27: what the compiler hands a platform's markup lowering, and everything
 //! the lowering may do with it.
 //!
 //! A lowering imports this module as `beni_markup` and nothing of the
@@ -80,7 +80,13 @@ const std = @import("std");
 /// (manager, 2026-11-03). They share the capture tuple, and identity_reads
 /// makes their changes visible to each dependency guard. Row.identity_key
 /// gives a row site the same checked environment key, compared once per site.
-pub const version: Version = .{ .major = 1, .minor = 26 };
+/// Version 1.27 records the owner-approved producer/runtime boundary
+/// (2026-11-04, boundary.md §9.4–9.5). runtime_protocol names private typed
+/// Source carriers/record; the lowering emits block/context/message dispatch
+/// with existing builders. Slots, rows, controls and scheduling stay in Beni.
+/// Native/callable facts, CorePrivate authority and an ordinary body pin apply;
+/// no new Js primitive, Any.js change, refusal, exemption or hot-path factory.
+pub const version: Version = .{ .major = 1, .minor = 27 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -133,6 +139,11 @@ pub const Lowering = struct {
     /// The evidence needed to close typed capture packets. Only a lowering
     /// that consumes this evidence requests it; other modules keep their ABI.
     operand_evidence: EvidenceKinds = .{},
+    /// 1.27: private Source ABI for compiler-emitted operations which open
+    /// this lowering's existential producer representation. No runtime helper
+    /// factory is implied: use existing hoists/builders and pass one typed
+    /// record. Carriers retain native/callable facts and platform authority.
+    runtime_protocol: ?RuntimeProtocol = null,
     /// Runs once per module that has a surviving markup root, before any of
     /// its roots: hoists what the module needs.
     module: *const fn (cx: *Context, tree: *const Tree) Error!void,
@@ -683,11 +694,24 @@ pub const RuntimeExport = struct {
     arity: u8,
 };
 
+/// The private Source record and carriers of the owner-approved 1.27 ABI.
+/// These are declarations, not new Js primitives. The lowering emits the
+/// ordinary pinned bridge once per independent emit unit. CorePrivate fences
+/// the module; HostFree retains native/callable facts for its carriers.
+pub const RuntimeProtocol = struct {
+    module: []const u8,
+    record: []const u8,
+    carriers: []const []const u8,
+};
+
 /// The compile-time half of §9.4.6's check: a lowering written against a
 /// major version this interface is not, or a newer minor, does not compile
 /// into beni. The registry `build.zig` generates calls it for every
 /// lowering it lists.
 pub fn checkTargets(comptime l: Lowering) void {
+    if (l.runtime_protocol != null and l.targets.minor < 27) {
+        @compileError("a private markup runtime protocol requires interface 1.27");
+    }
     if (l.targets.major != version.major or l.targets.minor > version.minor) {
         @compileError(std.fmt.comptimePrint(
             "the markup lowering '{s}' targets interface {d}.{d}, and this beni has interface {d}.{d}",

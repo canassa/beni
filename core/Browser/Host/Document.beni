@@ -1,8 +1,6 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
-import Browser.Host.Event as Event
-
-
 import Browser.Host.Element as Element
+import Browser.Host.Event as Event
 import Browser.Host.Node as Node
 import Browser.Host.Promise as Promise
 
