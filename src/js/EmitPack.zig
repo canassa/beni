@@ -810,20 +810,21 @@ test "a row round-trips through its bytes" {
     try testing.expectEqualSlices(u8, bytes, bytes2);
 }
 
-test "a key depends on the module key and on each option" {
+test "a key depends on its module and is stable for every available option" {
     const a: Key.Key = @splat(0x11);
     const b: Key.Key = @splat(0x22);
-    var seen: [4]Key.Key = undefined;
+    try testing.expect(every_options.len != 0);
+    var seen: [2 * every_options.len]Key.Key = undefined;
     var n: usize = 0;
     for ([_]Key.Key{ a, b }) |module| {
         for (every_options) |options| {
             const k = key(module, options);
+            try testing.expectEqualSlices(u8, &k, &key(module, options));
             for (seen[0..n]) |s| try testing.expect(!std.mem.eql(u8, &s, &k));
             seen[n] = k;
             n += 1;
         }
     }
-    try testing.expectEqualSlices(u8, &key(a, every_options[1]), &key(a, every_options[1]));
 }
 
 test "malformed rows are refused" {
