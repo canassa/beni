@@ -678,7 +678,7 @@ dictionary forms in the flat fragment.
   `DictFree t`: a list element and a dictionary's value hold no dictionary.
   A record or a result can hold one. No type that the fragment admitted
   before leaves it. A list of dictionaries and a dictionary of dictionaries
-  stay outside the fragment (#522). `FlatANF0` gets `dictEmpty t` (with `DictFree t`),
+  stay outside the fragment (#522; lifted by #1840, below). `FlatANF0` gets `dictEmpty t` (with `DictFree t`),
   `dictInsert`, `dictRemove`, `dictGet` and `dictSize`; `literal t` also asks
   `DictFree t`.
 - `FlatInvariant` keeps its static clauses at the source type and states its
@@ -704,3 +704,34 @@ dictionary forms in the flat fragment.
 - `dictFocus` stays out: the checker summarises its body with `inferScope`
   and `applyScope` (canonical origins), as for the list focus; its proof needs
   #165 step 3. `accepted_flat_anf_traces_agree` keeps its statement.
+
+As built (2026-11-04, #1840, part of #522): nested dictionaries. A list
+element and a dictionary's value can be a dictionary; `DictFree` stays only as
+a property of a type, which `success_of_dictFree` reads for a result type
+with no dictionary.
+
+- `FlatType.list t`, `FlatType.dict t`, `FlatANF0.literal t` and
+  `FlatANF0.dictEmpty t` ask only `FlatType t` (`Support.lean`).
+- `flat_atom_list_path` and `flat_atom_dict_path` give an element's heap
+  facts at its representation: `entryType t` and `entryAbstract ds t a`.
+- The list cases (`literal`, `push`, `at`, `set`, `copy`, `prepend`) and the
+  dictionary cases (`dictEmpty`, `dictInsert`, `dictRemove`, `dictGet`)
+  conclude at the result's representation, as `Preserved` asks.
+  `flat_preserved` no longer converts their results.
+- The checker runs its tests on the source abstracts. `entryAbstract` keeps
+  every cell list of a flat abstract, in order, with its container kind
+  (`pathKinds_entryAbstract`, `Fields.lean`), and deep exclusivity. So the
+  store tests give the same answers on the representations
+  (`storeExclusive_entry`, `storeSpines_entry`, `storeCertificate_entry`), and
+  the runtime part of each case is the proof it had, at the representation.
+- `ValueTyped` of a list result comes from `Corresponds` and `obsTyped` at the
+  source type (`valueTyped_of_corresponds`), since the shape is at the
+  representation.
+- Probes `listOfDicts`, `listOfDictsAlias`, `dictOfDicts`,
+  `dictOfDictsAlias`, `dictListDicts` and `dictListDictsAlias`
+  (`Trace.lean`); `listOfDicts_traces_agree` and `dictOfDicts_traces_agree`
+  apply `accepted_flat_anf_traces_agree`.
+- The checker, both interpreters, `Covers`, `CertifiedExclusive`,
+  `Describes`, `FlatInvariant`, `Preserved` and the statement of
+  `accepted_flat_anf_traces_agree` do not change. `dictFocus` stays out
+  (#165 step 3).
