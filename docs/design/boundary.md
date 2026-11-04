@@ -5902,7 +5902,12 @@ time zone database gives the offset for each moment.
 - `here ⊤` is `named` of the name that `Intl.DateTimeFormat().resolvedOptions().timeZone`
   gives. A host that gives no name, or a name it does not know, gives `utc`.
 - `named "UTC"` is `utc`. `named s` makes the host's formatter for `s` once, with `timeZone: s`
-  and `timeZoneName: "longOffset"`. ECMA-402 throws a `RangeError` for a name it does not know;
+  and `timeZoneName: "longOffset"`, and the zone is the name that the formatter resolves `s` to
+  (`resolvedOptions().timeZone`). So a name in any case and an old link are one zone
+  (`us/eastern` is `America/New_York`), `Etc/UTC` is `utc`, and an offset name (`+01:00`), which
+  ECMA-402 accepts, is `Nothing`: an offset is not a name of the database. The canonical name is
+  the host's: Node 24 resolves `Asia/Kolkata` to `Asia/Calcutta`, as ICU does, and an engine
+  that keeps the link's name gives `Asia/Kolkata`. *Added 2026-11-05, from the review of #1929.* ECMA-402 throws a `RangeError` for a name it does not know;
   that one error is `Nothing`, and every other error is thrown again (rule 9). `Date` keeps one
   formatter per name, made on the first `named` of it, so `toParts` makes none. A `Zone` is plain
   data (`Utc` or a name), so `eq` and `compare` derive: two zones are `==` when their names are. A
@@ -5910,7 +5915,8 @@ time zone database gives the offset for each moment.
   declares (`static-dispatch-spike.md` §11), here `Posix`, `Month` and `Weekday` too.
 - `toParts t utc` is arithmetic in beni (Howard Hinnant's `civil_from_days`). `toParts t z` for a
   named zone asks the zone's formatter for one part, the offset at `t` (`GMT`, `GMT+01:00`, or with
-  seconds, `GMT+00:53:28`, for a local mean time), through `Js.pure`, and then does the same
+  seconds, `GMT+00:53:28`, for a local mean time; a text of another form is a defect, never an
+  offset of 0), through `Js.pure`, and then does the same
   arithmetic on `t` plus the offset. The answer depends only on `t`, the name and the host's
   database. The offset is asked of the host because only the host has the database; the
   calendar is not, so the parts of every moment come from one piece of code.

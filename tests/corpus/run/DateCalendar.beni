@@ -4,7 +4,11 @@
 -- two round-trip at both ends of the host's range. `toParts` in UTC is
 -- arithmetic; in a named zone each moment gets the offset of its own side
 -- of a DST change (2026: New York on 8 March, Berlin on 29 March and 25
--- October). An unknown zone name is `Nothing`. `here` is the harness's
+-- October). A zone is known by its canonical name, so a name in any case
+-- and an old link (`US/Eastern`) are one zone; an unknown name and an
+-- offset (`+01:00`) are `Nothing`. The canonical name is the host's:
+-- Node 24 writes `Asia/Kolkata` as `Asia/Calcutta`, as ICU does. `here` is
+-- the harness's
 -- zone, which the harness pins to UTC (§9.8.21 (e)), so the last line is
 -- the same on every machine.
 import Date exposing (Apr, Aug, Dec, Feb, Fri, Jan, Jul, Jun, Mar, May, Mon, Month, Nov, Oct, Parts, Sat, Sep, Sun, Thu, Tue, Wed, Weekday)
@@ -183,6 +187,10 @@ main = Io.run λ⊤ →
         , inZone "Pacific/Kiritimati" "2016-02-18T23:00:00Z"
         , inZone "Europe/Berlin" "+275760-09-13T00:00:00.000Z"
         , inZone "UTC" "2016-02-18T03:22:56.637Z"
+        , inZone "europe/berlin" "2016-02-18T23:00:00Z"
+        , inZone "US/Eastern" "2016-02-18T23:00:00Z"
+        , inZone "Etc/UTC" "2016-02-18T23:00:00Z"
+        , inZone "+01:00" "2016-02-18"
         , inZone "Not/AZone" "2016-02-18"
         , inZone "" "2016-02-18"
         , "-- equality"
@@ -191,6 +199,11 @@ main = Io.run λ⊤ →
           else
             "two zones"
         , if Date.named "UTC" == Just Date.utc then "UTC is utc" else "UTC is not utc"
+        , if Date.named "europe/berlin" == Date.named "Europe/Berlin" then
+            "a name in any case is one zone"
+          else
+            "case makes two zones"
+        , if Date.named "Etc/UTC" == Just Date.utc then "Etc/UTC is utc" else "Etc/UTC is not utc"
         , "-- here"
         , Date.name (Date.here ⊤)
         ]
