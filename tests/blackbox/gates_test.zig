@@ -96,8 +96,8 @@ fn expectProbe(mode: []const u8, exit_code: u8, stderr: []const u8) !void {
     if (exit_code == 0) try testing.expectEqualStrings(stderr, r.stderr) else try testing.expect(std.mem.indexOf(u8, r.stderr, stderr) != null);
 }
 
-test "a crashing test fails at once and names itself: a bad pointer, a stack overflow, a crash while stderr is held" {
-    for ([_][]const u8{ "segv", "overflow", "locked" }) |mode| {
+test "a crashing test fails at once and names itself: a bad pointer, a stack overflow, a crash while stderr or the debug info is held, on a test thread and on the main thread" {
+    for ([_][]const u8{ "segv", "overflow", "locked", "selfinfo", "main-segv", "main-overflow" }) |mode| {
         var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
         defer arena_state.deinit();
         const arena = arena_state.allocator();
