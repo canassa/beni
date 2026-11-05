@@ -1,0 +1,1257 @@
+-- run: the conformance of `Html.Markdown` to CommonMark 0.31.2
+-- (docs/design/markdown.md §8). Written by tests/markdown/generate.mjs from
+-- the spec's 652 examples (tests/markdown/spec.txt, CC BY-SA 4.0); do not edit
+-- it by hand. A line is `<n> ok` when `Ssr.render (Html.Markdown.fromString
+-- md)` is the spec's HTML in `Ssr.render`'s form. The 72 examples of
+-- tests/markdown/differences.txt differ on purpose, and their line is the
+-- rendering, which the golden pins.
+import Html.Markdown
+import Node exposing (Program)
+import Ssr
+
+
+examples : List (Int × String × Maybe String)
+examples =
+    [ ( 1, "\tfoo\tbaz\t\tbim\n", Just "<pre><code>foo\tbaz\t\tbim\n</code></pre>" )
+    , ( 2, "  \tfoo\tbaz\t\tbim\n", Just "<pre><code>foo\tbaz\t\tbim\n</code></pre>" )
+    , ( 3, "    a\ta\n    ὐ\ta\n", Just "<pre><code>a\ta\nὐ\ta\n</code></pre>" )
+    , ( 4, "  - foo\n\n\tbar\n", Just "<ul><li><p>foo</p><p>bar</p></li></ul>" )
+    , ( 5
+      , "- foo\n\n\t\tbar\n"
+      , Just "<ul><li><p>foo</p><pre><code>  bar\n</code></pre></li></ul>"
+      )
+    , ( 6, ">\t\tfoo\n", Just "<blockquote><pre><code>  foo\n</code></pre></blockquote>" )
+    , ( 7, "-\t\tfoo\n", Just "<ul><li><pre><code>  foo\n</code></pre></li></ul>" )
+    , ( 8, "    foo\n\tbar\n", Just "<pre><code>foo\nbar\n</code></pre>" )
+    , ( 9
+      , " - foo\n   - bar\n\t - baz\n"
+      , Just "<ul><li>foo<ul><li>bar<ul><li>baz</li></ul></li></ul></li></ul>"
+      )
+    , ( 10, "#\tFoo\n", Just "<h1>Foo</h1>" )
+    , ( 11, "*\t*\t*\t\n", Just "<hr>" )
+    , ( 12
+      , "\\!\\\"\\#\\\$\\%\\&\\'\\(\\)\\*\\+\\,\\-\\.\\/\\:\\;\\<\\=\\>\\?\\@\\[\\\\\\]\\^\\_\\`\\{\\|\\}\\~\n"
+      , Just "<p>!\"#\$%&amp;'()*+,-./:;&lt;=>?@[\\]^_`{|}~</p>"
+      )
+    , ( 13, "\\\t\\A\\a\\ \\3\\φ\\«\n", Just "<p>\\\t\\A\\a\\ \\3\\φ\\«</p>" )
+    , ( 14
+      , "\\*not emphasized*\n\\<br/> not a tag\n\\[not a link](/foo)\n\\`not code`\n1\\. not a list\n\\* not a list\n\\# not a heading\n\\[foo]: /url \"not a reference\"\n\\&ouml; not a character entity\n"
+      , Just
+          "<p>*not emphasized*\n&lt;br/> not a tag\n[not a link](/foo)\n`not code`\n1. not a list\n* not a list\n# not a heading\n[foo]: /url \"not a reference\"\n&amp;ouml; not a character entity</p>"
+      )
+    , ( 15, "\\\\*emphasis*\n", Just "<p>\\<em>emphasis</em></p>" )
+    , ( 16, "foo\\\nbar\n", Just "<p>foo<br>bar</p>" )
+    , ( 17, "`` \\[\\` ``\n", Just "<p><code>\\[\\`</code></p>" )
+    , ( 18, "    \\[\\]\n", Just "<pre><code>\\[\\]\n</code></pre>" )
+    , ( 19, "~~~\n\\[\\]\n~~~\n", Just "<pre><code>\\[\\]\n</code></pre>" )
+    , ( 20
+      , "<https://example.com?find=\\*>\n"
+      , Just "<p><a href=\"https://example.com?find=%5C*\">https://example.com?find=\\*</a></p>"
+      )
+    , ( 21, "<a href=\"/bar\\/)\">\n", Nothing )
+    , ( 22
+      , "[foo](/bar\\* \"ti\\*tle\")\n"
+      , Just "<p><a href=\"/bar*\" title=\"ti*tle\">foo</a></p>"
+      )
+    , ( 23
+      , "[foo]\n\n[foo]: /bar\\* \"ti\\*tle\"\n"
+      , Just "<p><a href=\"/bar*\" title=\"ti*tle\">foo</a></p>"
+      )
+    , ( 24
+      , "``` foo\\+bar\nfoo\n```\n"
+      , Just "<pre><code class=\"language-foo+bar\">foo\n</code></pre>"
+      )
+    , ( 25
+      , "&nbsp; &amp; &copy; &AElig; &Dcaron;\n&frac34; &HilbertSpace; &DifferentialD;\n&ClockwiseContourIntegral; &ngE;\n"
+      , Just "<p>  &amp; © Æ Ď\n¾ ℋ ⅆ\n∲ ≧̸</p>"
+      )
+    , ( 26, "&#35; &#1234; &#992; &#0;\n", Just "<p># Ӓ Ϡ �</p>" )
+    , ( 27, "&#X22; &#XD06; &#xcab;\n", Just "<p>\" ആ ಫ</p>" )
+    , ( 28
+      , "&nbsp &x; &#; &#x;\n&#87654321;\n&#abcdef0;\n&ThisIsNotDefined; &hi?;\n"
+      , Just
+          "<p>&amp;nbsp &amp;x; &amp;#; &amp;#x;\n&amp;#87654321;\n&amp;#abcdef0;\n&amp;ThisIsNotDefined; &amp;hi?;</p>"
+      )
+    , ( 29, "&copy\n", Just "<p>&amp;copy</p>" )
+    , ( 30, "&MadeUpEntity;\n", Just "<p>&amp;MadeUpEntity;</p>" )
+    , ( 31, "<a href=\"&ouml;&ouml;.html\">\n", Nothing )
+    , ( 32
+      , "[foo](/f&ouml;&ouml; \"f&ouml;&ouml;\")\n"
+      , Just "<p><a href=\"/f%C3%B6%C3%B6\" title=\"föö\">foo</a></p>"
+      )
+    , ( 33
+      , "[foo]\n\n[foo]: /f&ouml;&ouml; \"f&ouml;&ouml;\"\n"
+      , Just "<p><a href=\"/f%C3%B6%C3%B6\" title=\"föö\">foo</a></p>"
+      )
+    , ( 34
+      , "``` f&ouml;&ouml;\nfoo\n```\n"
+      , Just "<pre><code class=\"language-föö\">foo\n</code></pre>"
+      )
+    , ( 35, "`f&ouml;&ouml;`\n", Just "<p><code>f&amp;ouml;&amp;ouml;</code></p>" )
+    , ( 36, "    f&ouml;f&ouml;\n", Just "<pre><code>f&amp;ouml;f&amp;ouml;\n</code></pre>" )
+    , ( 37, "&#42;foo&#42;\n*foo*\n", Just "<p>*foo*\n<em>foo</em></p>" )
+    , ( 38, "&#42; foo\n\n* foo\n", Just "<p>* foo</p><ul><li>foo</li></ul>" )
+    , ( 39, "foo&#10;&#10;bar\n", Just "<p>foo\n\nbar</p>" )
+    , ( 40, "&#9;foo\n", Just "<p>\tfoo</p>" )
+    , ( 41, "[a](url &quot;tit&quot;)\n", Just "<p>[a](url \"tit\")</p>" )
+    , ( 42, "- `one\n- two`\n", Just "<ul><li>`one</li><li>two`</li></ul>" )
+    , ( 43, "***\n---\n___\n", Just "<hr><hr><hr>" )
+    , ( 44, "+++\n", Just "<p>+++</p>" )
+    , ( 45, "===\n", Just "<p>===</p>" )
+    , ( 46, "--\n**\n__\n", Just "<p>--\n**\n__</p>" )
+    , ( 47, " ***\n  ***\n   ***\n", Just "<hr><hr><hr>" )
+    , ( 48, "    ***\n", Just "<pre><code>***\n</code></pre>" )
+    , ( 49, "Foo\n    ***\n", Just "<p>Foo\n***</p>" )
+    , ( 50, "_____________________________________\n", Just "<hr>" )
+    , ( 51, " - - -\n", Just "<hr>" )
+    , ( 52, " **  * ** * ** * **\n", Just "<hr>" )
+    , ( 53, "-     -      -      -\n", Just "<hr>" )
+    , ( 54, "- - - -    \n", Just "<hr>" )
+    , ( 55
+      , "_ _ _ _ a\n\na------\n\n---a---\n"
+      , Just "<p>_ _ _ _ a</p><p>a------</p><p>---a---</p>"
+      )
+    , ( 56, " *-*\n", Just "<p><em>-</em></p>" )
+    , ( 57, "- foo\n***\n- bar\n", Just "<ul><li>foo</li></ul><hr><ul><li>bar</li></ul>" )
+    , ( 58, "Foo\n***\nbar\n", Just "<p>Foo</p><hr><p>bar</p>" )
+    , ( 59, "Foo\n---\nbar\n", Just "<h2>Foo</h2><p>bar</p>" )
+    , ( 60, "* Foo\n* * *\n* Bar\n", Just "<ul><li>Foo</li></ul><hr><ul><li>Bar</li></ul>" )
+    , ( 61, "- Foo\n- * * *\n", Just "<ul><li>Foo</li><li><hr></li></ul>" )
+    , ( 62
+      , "# foo\n## foo\n### foo\n#### foo\n##### foo\n###### foo\n"
+      , Just "<h1>foo</h1><h2>foo</h2><h3>foo</h3><h4>foo</h4><h5>foo</h5><h6>foo</h6>"
+      )
+    , ( 63, "####### foo\n", Just "<p>####### foo</p>" )
+    , ( 64, "#5 bolt\n\n#hashtag\n", Just "<p>#5 bolt</p><p>#hashtag</p>" )
+    , ( 65, "\\## foo\n", Just "<p>## foo</p>" )
+    , ( 66, "# foo *bar* \\*baz\\*\n", Just "<h1>foo <em>bar</em> *baz*</h1>" )
+    , ( 67, "#                  foo                     \n", Just "<h1>foo</h1>" )
+    , ( 68, " ### foo\n  ## foo\n   # foo\n", Just "<h3>foo</h3><h2>foo</h2><h1>foo</h1>" )
+    , ( 69, "    # foo\n", Just "<pre><code># foo\n</code></pre>" )
+    , ( 70, "foo\n    # bar\n", Just "<p>foo\n# bar</p>" )
+    , ( 71, "## foo ##\n  ###   bar    ###\n", Just "<h2>foo</h2><h3>bar</h3>" )
+    , ( 72
+      , "# foo ##################################\n##### foo ##\n"
+      , Just "<h1>foo</h1><h5>foo</h5>"
+      )
+    , ( 73, "### foo ###     \n", Just "<h3>foo</h3>" )
+    , ( 74, "### foo ### b\n", Just "<h3>foo ### b</h3>" )
+    , ( 75, "# foo#\n", Just "<h1>foo#</h1>" )
+    , ( 76
+      , "### foo \\###\n## foo #\\##\n# foo \\#\n"
+      , Just "<h3>foo ###</h3><h2>foo ###</h2><h1>foo #</h1>"
+      )
+    , ( 77, "****\n## foo\n****\n", Just "<hr><h2>foo</h2><hr>" )
+    , ( 78, "Foo bar\n# baz\nBar foo\n", Just "<p>Foo bar</p><h1>baz</h1><p>Bar foo</p>" )
+    , ( 79, "## \n#\n### ###\n", Just "<h2></h2><h1></h1><h3></h3>" )
+    , ( 80
+      , "Foo *bar*\n=========\n\nFoo *bar*\n---------\n"
+      , Just "<h1>Foo <em>bar</em></h1><h2>Foo <em>bar</em></h2>"
+      )
+    , ( 81, "Foo *bar\nbaz*\n====\n", Just "<h1>Foo <em>bar\nbaz</em></h1>" )
+    , ( 82, "  Foo *bar\nbaz*\t\n====\n", Just "<h1>Foo <em>bar\nbaz</em></h1>" )
+    , ( 83, "Foo\n-------------------------\n\nFoo\n=\n", Just "<h2>Foo</h2><h1>Foo</h1>" )
+    , ( 84
+      , "   Foo\n---\n\n  Foo\n-----\n\n  Foo\n  ===\n"
+      , Just "<h2>Foo</h2><h2>Foo</h2><h1>Foo</h1>"
+      )
+    , ( 85
+      , "    Foo\n    ---\n\n    Foo\n---\n"
+      , Just "<pre><code>Foo\n---\n\nFoo\n</code></pre><hr>"
+      )
+    , ( 86, "Foo\n   ----      \n", Just "<h2>Foo</h2>" )
+    , ( 87, "Foo\n    ---\n", Just "<p>Foo\n---</p>" )
+    , ( 88, "Foo\n= =\n\nFoo\n--- -\n", Just "<p>Foo\n= =</p><p>Foo</p><hr>" )
+    , ( 89, "Foo  \n-----\n", Just "<h2>Foo</h2>" )
+    , ( 90, "Foo\\\n----\n", Just "<h2>Foo\\</h2>" )
+    , ( 91
+      , "`Foo\n----\n`\n\n<a title=\"a lot\n---\nof dashes\"/>\n"
+      , Just "<h2>`Foo</h2><p>`</p><h2>&lt;a title=\"a lot</h2><p>of dashes\"/></p>"
+      )
+    , ( 92, "> Foo\n---\n", Just "<blockquote><p>Foo</p></blockquote><hr>" )
+    , ( 93, "> foo\nbar\n===\n", Just "<blockquote><p>foo\nbar\n===</p></blockquote>" )
+    , ( 94, "- Foo\n---\n", Just "<ul><li>Foo</li></ul><hr>" )
+    , ( 95, "Foo\nBar\n---\n", Just "<h2>Foo\nBar</h2>" )
+    , ( 96, "---\nFoo\n---\nBar\n---\nBaz\n", Just "<hr><h2>Foo</h2><h2>Bar</h2><p>Baz</p>" )
+    , ( 97, "\n====\n", Just "<p>====</p>" )
+    , ( 98, "---\n---\n", Just "<hr><hr>" )
+    , ( 99, "- foo\n-----\n", Just "<ul><li>foo</li></ul><hr>" )
+    , ( 100, "    foo\n---\n", Just "<pre><code>foo\n</code></pre><hr>" )
+    , ( 101, "> foo\n-----\n", Just "<blockquote><p>foo</p></blockquote><hr>" )
+    , ( 102, "\\> foo\n------\n", Just "<h2>> foo</h2>" )
+    , ( 103, "Foo\n\nbar\n---\nbaz\n", Just "<p>Foo</p><h2>bar</h2><p>baz</p>" )
+    , ( 104, "Foo\nbar\n\n---\n\nbaz\n", Just "<p>Foo\nbar</p><hr><p>baz</p>" )
+    , ( 105, "Foo\nbar\n* * *\nbaz\n", Just "<p>Foo\nbar</p><hr><p>baz</p>" )
+    , ( 106, "Foo\nbar\n\\---\nbaz\n", Just "<p>Foo\nbar\n---\nbaz</p>" )
+    , ( 107
+      , "    a simple\n      indented code block\n"
+      , Just "<pre><code>a simple\n  indented code block\n</code></pre>"
+      )
+    , ( 108, "  - foo\n\n    bar\n", Just "<ul><li><p>foo</p><p>bar</p></li></ul>" )
+    , ( 109, "1.  foo\n\n    - bar\n", Just "<ol><li><p>foo</p><ul><li>bar</li></ul></li></ol>" )
+    , ( 110
+      , "    <a/>\n    *hi*\n\n    - one\n"
+      , Just "<pre><code>&lt;a/>\n*hi*\n\n- one\n</code></pre>"
+      )
+    , ( 111
+      , "    chunk1\n\n    chunk2\n  \n \n \n    chunk3\n"
+      , Just "<pre><code>chunk1\n\nchunk2\n\n\n\nchunk3\n</code></pre>"
+      )
+    , ( 112
+      , "    chunk1\n      \n      chunk2\n"
+      , Just "<pre><code>chunk1\n  \n  chunk2\n</code></pre>"
+      )
+    , ( 113, "Foo\n    bar\n\n", Just "<p>Foo\nbar</p>" )
+    , ( 114, "    foo\nbar\n", Just "<pre><code>foo\n</code></pre><p>bar</p>" )
+    , ( 115
+      , "# Heading\n    foo\nHeading\n------\n    foo\n----\n"
+      , Just
+          "<h1>Heading</h1><pre><code>foo\n</code></pre><h2>Heading</h2><pre><code>foo\n</code></pre><hr>"
+      )
+    , ( 116, "        foo\n    bar\n", Just "<pre><code>    foo\nbar\n</code></pre>" )
+    , ( 117, "\n    \n    foo\n    \n\n", Just "<pre><code>foo\n</code></pre>" )
+    , ( 118, "    foo  \n", Just "<pre><code>foo  \n</code></pre>" )
+    , ( 119, "```\n<\n >\n```\n", Just "<pre><code>&lt;\n >\n</code></pre>" )
+    , ( 120, "~~~\n<\n >\n~~~\n", Just "<pre><code>&lt;\n >\n</code></pre>" )
+    , ( 121, "``\nfoo\n``\n", Just "<p><code>foo</code></p>" )
+    , ( 122, "```\naaa\n~~~\n```\n", Just "<pre><code>aaa\n~~~\n</code></pre>" )
+    , ( 123, "~~~\naaa\n```\n~~~\n", Just "<pre><code>aaa\n```\n</code></pre>" )
+    , ( 124, "````\naaa\n```\n``````\n", Just "<pre><code>aaa\n```\n</code></pre>" )
+    , ( 125, "~~~~\naaa\n~~~\n~~~~\n", Just "<pre><code>aaa\n~~~\n</code></pre>" )
+    , ( 126, "```\n", Just "<pre><code></code></pre>" )
+    , ( 127, "`````\n\n```\naaa\n", Just "<pre><code>\n```\naaa\n</code></pre>" )
+    , ( 128
+      , "> ```\n> aaa\n\nbbb\n"
+      , Just "<blockquote><pre><code>aaa\n</code></pre></blockquote><p>bbb</p>"
+      )
+    , ( 129, "```\n\n  \n```\n", Just "<pre><code>\n  \n</code></pre>" )
+    , ( 130, "```\n```\n", Just "<pre><code></code></pre>" )
+    , ( 131, " ```\n aaa\naaa\n```\n", Just "<pre><code>aaa\naaa\n</code></pre>" )
+    , ( 132, "  ```\naaa\n  aaa\naaa\n  ```\n", Just "<pre><code>aaa\naaa\naaa\n</code></pre>" )
+    , ( 133
+      , "   ```\n   aaa\n    aaa\n  aaa\n   ```\n"
+      , Just "<pre><code>aaa\n aaa\naaa\n</code></pre>"
+      )
+    , ( 134, "    ```\n    aaa\n    ```\n", Just "<pre><code>```\naaa\n```\n</code></pre>" )
+    , ( 135, "```\naaa\n  ```\n", Just "<pre><code>aaa\n</code></pre>" )
+    , ( 136, "   ```\naaa\n  ```\n", Just "<pre><code>aaa\n</code></pre>" )
+    , ( 137, "```\naaa\n    ```\n", Just "<pre><code>aaa\n    ```\n</code></pre>" )
+    , ( 138, "``` ```\naaa\n", Just "<p><code> </code>\naaa</p>" )
+    , ( 139, "~~~~~~\naaa\n~~~ ~~\n", Just "<pre><code>aaa\n~~~ ~~\n</code></pre>" )
+    , ( 140, "foo\n```\nbar\n```\nbaz\n", Just "<p>foo</p><pre><code>bar\n</code></pre><p>baz</p>" )
+    , ( 141
+      , "foo\n---\n~~~\nbar\n~~~\n# baz\n"
+      , Just "<h2>foo</h2><pre><code>bar\n</code></pre><h1>baz</h1>"
+      )
+    , ( 142
+      , "```ruby\ndef foo(x)\n  return 3\nend\n```\n"
+      , Just "<pre><code class=\"language-ruby\">def foo(x)\n  return 3\nend\n</code></pre>"
+      )
+    , ( 143
+      , "~~~~    ruby startline=3 \$%@#\$\ndef foo(x)\n  return 3\nend\n~~~~~~~\n"
+      , Just "<pre><code class=\"language-ruby\">def foo(x)\n  return 3\nend\n</code></pre>"
+      )
+    , ( 144, "````;\n````\n", Just "<pre><code class=\"language-;\"></code></pre>" )
+    , ( 145, "``` aa ```\nfoo\n", Just "<p><code>aa</code>\nfoo</p>" )
+    , ( 146
+      , "~~~ aa ``` ~~~\nfoo\n~~~\n"
+      , Just "<pre><code class=\"language-aa\">foo\n</code></pre>"
+      )
+    , ( 147, "```\n``` aaa\n```\n", Just "<pre><code>``` aaa\n</code></pre>" )
+    , ( 148
+      , "<table><tr><td>\n<pre>\n**Hello**,\n\n_world_.\n</pre>\n</td></tr></table>\n"
+      , Nothing
+      )
+    , ( 149
+      , "<table>\n  <tr>\n    <td>\n           hi\n    </td>\n  </tr>\n</table>\n\nokay.\n"
+      , Nothing
+      )
+    , ( 150, " <div>\n  *hello*\n         <foo><a>\n", Nothing )
+    , ( 151, "</div>\n*foo*\n", Nothing )
+    , ( 152, "<DIV CLASS=\"foo\">\n\n*Markdown*\n\n</DIV>\n", Nothing )
+    , ( 153, "<div id=\"foo\"\n  class=\"bar\">\n</div>\n", Nothing )
+    , ( 154, "<div id=\"foo\" class=\"bar\n  baz\">\n</div>\n", Nothing )
+    , ( 155, "<div>\n*foo*\n\n*bar*\n", Nothing )
+    , ( 156, "<div id=\"foo\"\n*hi*\n", Nothing )
+    , ( 157, "<div class\nfoo\n", Nothing )
+    , ( 158, "<div *???-&&&-<---\n*foo*\n", Nothing )
+    , ( 159, "<div><a href=\"bar\">*foo*</a></div>\n", Nothing )
+    , ( 160, "<table><tr><td>\nfoo\n</td></tr></table>\n", Nothing )
+    , ( 161, "<div></div>\n``` c\nint x = 33;\n```\n", Nothing )
+    , ( 162, "<a href=\"foo\">\n*bar*\n</a>\n", Nothing )
+    , ( 163, "<Warning>\n*bar*\n</Warning>\n", Nothing )
+    , ( 164, "<i class=\"foo\">\n*bar*\n</i>\n", Nothing )
+    , ( 165, "</ins>\n*bar*\n", Nothing )
+    , ( 166, "<del>\n*foo*\n</del>\n", Nothing )
+    , ( 167, "<del>\n\n*foo*\n\n</del>\n", Nothing )
+    , ( 168, "<del>*foo*</del>\n", Nothing )
+    , ( 169
+      , "<pre language=\"haskell\"><code>\nimport Text.HTML.TagSoup\n\nmain :: IO ()\nmain = print \$ parseTags tags\n</code></pre>\nokay\n"
+      , Nothing
+      )
+    , ( 170
+      , "<script type=\"text/javascript\">\n// JavaScript example\n\ndocument.getElementById(\"demo\").innerHTML = \"Hello JavaScript!\";\n</script>\nokay\n"
+      , Nothing
+      )
+    , ( 171, "<textarea>\n\n*foo*\n\n_bar_\n\n</textarea>\n", Nothing )
+    , ( 172
+      , "<style\n  type=\"text/css\">\nh1 {color:red;}\n\np {color:blue;}\n</style>\nokay\n"
+      , Nothing
+      )
+    , ( 173, "<style\n  type=\"text/css\">\n\nfoo\n", Nothing )
+    , ( 174, "> <div>\n> foo\n\nbar\n", Nothing )
+    , ( 175, "- <div>\n- foo\n", Nothing )
+    , ( 176, "<style>p{color:red;}</style>\n*foo*\n", Nothing )
+    , ( 177, "<!-- foo -->*bar*\n*baz*\n", Nothing )
+    , ( 178, "<script>\nfoo\n</script>1. *bar*\n", Nothing )
+    , ( 179, "<!-- Foo\n\nbar\n   baz -->\nokay\n", Nothing )
+    , ( 180, "<?php\n\n  echo '>';\n\n?>\nokay\n", Nothing )
+    , ( 181, "<!DOCTYPE html>\n", Nothing )
+    , ( 182
+      , "<![CDATA[\nfunction matchwo(a,b)\n{\n  if (a < b && a < 0) then {\n    return 1;\n\n  } else {\n\n    return 0;\n  }\n}\n]]>\nokay\n"
+      , Nothing
+      )
+    , ( 183, "  <!-- foo -->\n\n    <!-- foo -->\n", Nothing )
+    , ( 184, "  <div>\n\n    <div>\n", Nothing )
+    , ( 185, "Foo\n<div>\nbar\n</div>\n", Nothing )
+    , ( 186, "<div>\nbar\n</div>\n*foo*\n", Nothing )
+    , ( 187, "Foo\n<a href=\"bar\">\nbaz\n", Nothing )
+    , ( 188, "<div>\n\n*Emphasized* text.\n\n</div>\n", Nothing )
+    , ( 189, "<div>\n*Emphasized* text.\n</div>\n", Nothing )
+    , ( 190, "<table>\n\n<tr>\n\n<td>\nHi\n</td>\n\n</tr>\n\n</table>\n", Nothing )
+    , ( 191
+      , "<table>\n\n  <tr>\n\n    <td>\n      Hi\n    </td>\n\n  </tr>\n\n</table>\n"
+      , Nothing
+      )
+    , ( 192
+      , "[foo]: /url \"title\"\n\n[foo]\n"
+      , Just "<p><a href=\"/url\" title=\"title\">foo</a></p>"
+      )
+    , ( 193
+      , "   [foo]: \n      /url  \n           'the title'  \n\n[foo]\n"
+      , Just "<p><a href=\"/url\" title=\"the title\">foo</a></p>"
+      )
+    , ( 194
+      , "[Foo*bar\\]]:my_(url) 'title (with parens)'\n\n[Foo*bar\\]]\n"
+      , Just "<p><a href=\"my_(url)\" title=\"title (with parens)\">Foo*bar]</a></p>"
+      )
+    , ( 195
+      , "[Foo bar]:\n<my url>\n'title'\n\n[Foo bar]\n"
+      , Just "<p><a href=\"my%20url\" title=\"title\">Foo bar</a></p>"
+      )
+    , ( 196
+      , "[foo]: /url '\ntitle\nline1\nline2\n'\n\n[foo]\n"
+      , Just "<p><a href=\"/url\" title=\"\ntitle\nline1\nline2\n\">foo</a></p>"
+      )
+    , ( 197
+      , "[foo]: /url 'title\n\nwith blank line'\n\n[foo]\n"
+      , Just "<p>[foo]: /url 'title</p><p>with blank line'</p><p>[foo]</p>"
+      )
+    , ( 198, "[foo]:\n/url\n\n[foo]\n", Just "<p><a href=\"/url\">foo</a></p>" )
+    , ( 199, "[foo]:\n\n[foo]\n", Just "<p>[foo]:</p><p>[foo]</p>" )
+    , ( 200, "[foo]: <>\n\n[foo]\n", Just "<p><a href=\"\">foo</a></p>" )
+    , ( 201, "[foo]: <bar>(baz)\n\n[foo]\n", Nothing )
+    , ( 202
+      , "[foo]: /url\\bar\\*baz \"foo\\\"bar\\baz\"\n\n[foo]\n"
+      , Just "<p><a href=\"/url%5Cbar*baz\" title=\"foo&quot;bar\\baz\">foo</a></p>"
+      )
+    , ( 203, "[foo]\n\n[foo]: url\n", Just "<p><a href=\"url\">foo</a></p>" )
+    , ( 204, "[foo]\n\n[foo]: first\n[foo]: second\n", Just "<p><a href=\"first\">foo</a></p>" )
+    , ( 205, "[FOO]: /url\n\n[Foo]\n", Just "<p><a href=\"/url\">Foo</a></p>" )
+    , ( 206, "[ΑΓΩ]: /φου\n\n[αγω]\n", Just "<p><a href=\"/%CF%86%CE%BF%CF%85\">αγω</a></p>" )
+    , ( 207, "[foo]: /url\n", Just "" )
+    , ( 208, "[\nfoo\n]: /url\nbar\n", Just "<p>bar</p>" )
+    , ( 209, "[foo]: /url \"title\" ok\n", Just "<p>[foo]: /url \"title\" ok</p>" )
+    , ( 210, "[foo]: /url\n\"title\" ok\n", Just "<p>\"title\" ok</p>" )
+    , ( 211
+      , "    [foo]: /url \"title\"\n\n[foo]\n"
+      , Just "<pre><code>[foo]: /url \"title\"\n</code></pre><p>[foo]</p>"
+      )
+    , ( 212
+      , "```\n[foo]: /url\n```\n\n[foo]\n"
+      , Just "<pre><code>[foo]: /url\n</code></pre><p>[foo]</p>"
+      )
+    , ( 213, "Foo\n[bar]: /baz\n\n[bar]\n", Just "<p>Foo\n[bar]: /baz</p><p>[bar]</p>" )
+    , ( 214
+      , "# [Foo]\n[foo]: /url\n> bar\n"
+      , Just "<h1><a href=\"/url\">Foo</a></h1><blockquote><p>bar</p></blockquote>"
+      )
+    , ( 215, "[foo]: /url\nbar\n===\n[foo]\n", Just "<h1>bar</h1><p><a href=\"/url\">foo</a></p>" )
+    , ( 216, "[foo]: /url\n===\n[foo]\n", Just "<p>===\n<a href=\"/url\">foo</a></p>" )
+    , ( 217
+      , "[foo]: /foo-url \"foo\"\n[bar]: /bar-url\n  \"bar\"\n[baz]: /baz-url\n\n[foo],\n[bar],\n[baz]\n"
+      , Just
+          "<p><a href=\"/foo-url\" title=\"foo\">foo</a>,\n<a href=\"/bar-url\" title=\"bar\">bar</a>,\n<a href=\"/baz-url\">baz</a></p>"
+      )
+    , ( 218
+      , "[foo]\n\n> [foo]: /url\n"
+      , Just "<p><a href=\"/url\">foo</a></p><blockquote></blockquote>"
+      )
+    , ( 219, "aaa\n\nbbb\n", Just "<p>aaa</p><p>bbb</p>" )
+    , ( 220, "aaa\nbbb\n\nccc\nddd\n", Just "<p>aaa\nbbb</p><p>ccc\nddd</p>" )
+    , ( 221, "aaa\n\n\nbbb\n", Just "<p>aaa</p><p>bbb</p>" )
+    , ( 222, "  aaa\n bbb\n", Just "<p>aaa\nbbb</p>" )
+    , ( 223
+      , "aaa\n             bbb\n                                       ccc\n"
+      , Just "<p>aaa\nbbb\nccc</p>"
+      )
+    , ( 224, "   aaa\nbbb\n", Just "<p>aaa\nbbb</p>" )
+    , ( 225, "    aaa\nbbb\n", Just "<pre><code>aaa\n</code></pre><p>bbb</p>" )
+    , ( 226, "aaa     \nbbb     \n", Just "<p>aaa<br>bbb</p>" )
+    , ( 227, "  \n\naaa\n  \n\n# aaa\n\n  \n", Just "<p>aaa</p><h1>aaa</h1>" )
+    , ( 228
+      , "> # Foo\n> bar\n> baz\n"
+      , Just "<blockquote><h1>Foo</h1><p>bar\nbaz</p></blockquote>"
+      )
+    , ( 229, "># Foo\n>bar\n> baz\n", Just "<blockquote><h1>Foo</h1><p>bar\nbaz</p></blockquote>" )
+    , ( 230
+      , "   > # Foo\n   > bar\n > baz\n"
+      , Just "<blockquote><h1>Foo</h1><p>bar\nbaz</p></blockquote>"
+      )
+    , ( 231
+      , "    > # Foo\n    > bar\n    > baz\n"
+      , Just "<pre><code>> # Foo\n> bar\n> baz\n</code></pre>"
+      )
+    , ( 232, "> # Foo\n> bar\nbaz\n", Just "<blockquote><h1>Foo</h1><p>bar\nbaz</p></blockquote>" )
+    , ( 233, "> bar\nbaz\n> foo\n", Just "<blockquote><p>bar\nbaz\nfoo</p></blockquote>" )
+    , ( 234, "> foo\n---\n", Just "<blockquote><p>foo</p></blockquote><hr>" )
+    , ( 235
+      , "> - foo\n- bar\n"
+      , Just "<blockquote><ul><li>foo</li></ul></blockquote><ul><li>bar</li></ul>"
+      )
+    , ( 236
+      , ">     foo\n    bar\n"
+      , Just "<blockquote><pre><code>foo\n</code></pre></blockquote><pre><code>bar\n</code></pre>"
+      )
+    , ( 237
+      , "> ```\nfoo\n```\n"
+      , Just "<blockquote><pre><code></code></pre></blockquote><p>foo</p><pre><code></code></pre>"
+      )
+    , ( 238, "> foo\n    - bar\n", Just "<blockquote><p>foo\n- bar</p></blockquote>" )
+    , ( 239, ">\n", Just "<blockquote></blockquote>" )
+    , ( 240, ">\n>  \n> \n", Just "<blockquote></blockquote>" )
+    , ( 241, ">\n> foo\n>  \n", Just "<blockquote><p>foo</p></blockquote>" )
+    , ( 242
+      , "> foo\n\n> bar\n"
+      , Just "<blockquote><p>foo</p></blockquote><blockquote><p>bar</p></blockquote>"
+      )
+    , ( 243, "> foo\n> bar\n", Just "<blockquote><p>foo\nbar</p></blockquote>" )
+    , ( 244, "> foo\n>\n> bar\n", Just "<blockquote><p>foo</p><p>bar</p></blockquote>" )
+    , ( 245, "foo\n> bar\n", Just "<p>foo</p><blockquote><p>bar</p></blockquote>" )
+    , ( 246
+      , "> aaa\n***\n> bbb\n"
+      , Just "<blockquote><p>aaa</p></blockquote><hr><blockquote><p>bbb</p></blockquote>"
+      )
+    , ( 247, "> bar\nbaz\n", Just "<blockquote><p>bar\nbaz</p></blockquote>" )
+    , ( 248, "> bar\n\nbaz\n", Just "<blockquote><p>bar</p></blockquote><p>baz</p>" )
+    , ( 249, "> bar\n>\nbaz\n", Just "<blockquote><p>bar</p></blockquote><p>baz</p>" )
+    , ( 250
+      , "> > > foo\nbar\n"
+      , Just
+          "<blockquote><blockquote><blockquote><p>foo\nbar</p></blockquote></blockquote></blockquote>"
+      )
+    , ( 251
+      , ">>> foo\n> bar\n>>baz\n"
+      , Just
+          "<blockquote><blockquote><blockquote><p>foo\nbar\nbaz</p></blockquote></blockquote></blockquote>"
+      )
+    , ( 252
+      , ">     code\n\n>    not code\n"
+      , Just
+          "<blockquote><pre><code>code\n</code></pre></blockquote><blockquote><p>not code</p></blockquote>"
+      )
+    , ( 253
+      , "A paragraph\nwith two lines.\n\n    indented code\n\n> A block quote.\n"
+      , Just
+          "<p>A paragraph\nwith two lines.</p><pre><code>indented code\n</code></pre><blockquote><p>A block quote.</p></blockquote>"
+      )
+    , ( 254
+      , "1.  A paragraph\n    with two lines.\n\n        indented code\n\n    > A block quote.\n"
+      , Just
+          "<ol><li><p>A paragraph\nwith two lines.</p><pre><code>indented code\n</code></pre><blockquote><p>A block quote.</p></blockquote></li></ol>"
+      )
+    , ( 255, "- one\n\n two\n", Just "<ul><li>one</li></ul><p>two</p>" )
+    , ( 256, "- one\n\n  two\n", Just "<ul><li><p>one</p><p>two</p></li></ul>" )
+    , ( 257, " -    one\n\n     two\n", Just "<ul><li>one</li></ul><pre><code> two\n</code></pre>" )
+    , ( 258, " -    one\n\n      two\n", Just "<ul><li><p>one</p><p>two</p></li></ul>" )
+    , ( 259
+      , "   > > 1.  one\n>>\n>>     two\n"
+      , Just
+          "<blockquote><blockquote><ol><li><p>one</p><p>two</p></li></ol></blockquote></blockquote>"
+      )
+    , ( 260
+      , ">>- one\n>>\n  >  > two\n"
+      , Just "<blockquote><blockquote><ul><li>one</li></ul><p>two</p></blockquote></blockquote>"
+      )
+    , ( 261, "-one\n\n2.two\n", Just "<p>-one</p><p>2.two</p>" )
+    , ( 262, "- foo\n\n\n  bar\n", Just "<ul><li><p>foo</p><p>bar</p></li></ul>" )
+    , ( 263
+      , "1.  foo\n\n    ```\n    bar\n    ```\n\n    baz\n\n    > bam\n"
+      , Just
+          "<ol><li><p>foo</p><pre><code>bar\n</code></pre><p>baz</p><blockquote><p>bam</p></blockquote></li></ol>"
+      )
+    , ( 264
+      , "- Foo\n\n      bar\n\n\n      baz\n"
+      , Just "<ul><li><p>Foo</p><pre><code>bar\n\n\nbaz\n</code></pre></li></ul>"
+      )
+    , ( 265, "123456789. ok\n", Just "<ol start=\"123456789\"><li>ok</li></ol>" )
+    , ( 266, "1234567890. not ok\n", Just "<p>1234567890. not ok</p>" )
+    , ( 267, "0. ok\n", Just "<ol start=\"0\"><li>ok</li></ol>" )
+    , ( 268, "003. ok\n", Just "<ol start=\"3\"><li>ok</li></ol>" )
+    , ( 269, "-1. not ok\n", Just "<p>-1. not ok</p>" )
+    , ( 270
+      , "- foo\n\n      bar\n"
+      , Just "<ul><li><p>foo</p><pre><code>bar\n</code></pre></li></ul>"
+      )
+    , ( 271
+      , "  10.  foo\n\n           bar\n"
+      , Just "<ol start=\"10\"><li><p>foo</p><pre><code>bar\n</code></pre></li></ol>"
+      )
+    , ( 272
+      , "    indented code\n\nparagraph\n\n    more code\n"
+      , Just
+          "<pre><code>indented code\n</code></pre><p>paragraph</p><pre><code>more code\n</code></pre>"
+      )
+    , ( 273
+      , "1.     indented code\n\n   paragraph\n\n       more code\n"
+      , Just
+          "<ol><li><pre><code>indented code\n</code></pre><p>paragraph</p><pre><code>more code\n</code></pre></li></ol>"
+      )
+    , ( 274
+      , "1.      indented code\n\n   paragraph\n\n       more code\n"
+      , Just
+          "<ol><li><pre><code> indented code\n</code></pre><p>paragraph</p><pre><code>more code\n</code></pre></li></ol>"
+      )
+    , ( 275, "   foo\n\nbar\n", Just "<p>foo</p><p>bar</p>" )
+    , ( 276, "-    foo\n\n  bar\n", Just "<ul><li>foo</li></ul><p>bar</p>" )
+    , ( 277, "-  foo\n\n   bar\n", Just "<ul><li><p>foo</p><p>bar</p></li></ul>" )
+    , ( 278
+      , "-\n  foo\n-\n  ```\n  bar\n  ```\n-\n      baz\n"
+      , Just
+          "<ul><li>foo</li><li><pre><code>bar\n</code></pre></li><li><pre><code>baz\n</code></pre></li></ul>"
+      )
+    , ( 279, "-   \n  foo\n", Just "<ul><li>foo</li></ul>" )
+    , ( 280, "-\n\n  foo\n", Just "<ul><li></li></ul><p>foo</p>" )
+    , ( 281, "- foo\n-\n- bar\n", Just "<ul><li>foo</li><li></li><li>bar</li></ul>" )
+    , ( 282, "- foo\n-   \n- bar\n", Just "<ul><li>foo</li><li></li><li>bar</li></ul>" )
+    , ( 283, "1. foo\n2.\n3. bar\n", Just "<ol><li>foo</li><li></li><li>bar</li></ol>" )
+    , ( 284, "*\n", Just "<ul><li></li></ul>" )
+    , ( 285, "foo\n*\n\nfoo\n1.\n", Just "<p>foo\n*</p><p>foo\n1.</p>" )
+    , ( 286
+      , " 1.  A paragraph\n     with two lines.\n\n         indented code\n\n     > A block quote.\n"
+      , Just
+          "<ol><li><p>A paragraph\nwith two lines.</p><pre><code>indented code\n</code></pre><blockquote><p>A block quote.</p></blockquote></li></ol>"
+      )
+    , ( 287
+      , "  1.  A paragraph\n      with two lines.\n\n          indented code\n\n      > A block quote.\n"
+      , Just
+          "<ol><li><p>A paragraph\nwith two lines.</p><pre><code>indented code\n</code></pre><blockquote><p>A block quote.</p></blockquote></li></ol>"
+      )
+    , ( 288
+      , "   1.  A paragraph\n       with two lines.\n\n           indented code\n\n       > A block quote.\n"
+      , Just
+          "<ol><li><p>A paragraph\nwith two lines.</p><pre><code>indented code\n</code></pre><blockquote><p>A block quote.</p></blockquote></li></ol>"
+      )
+    , ( 289
+      , "    1.  A paragraph\n        with two lines.\n\n            indented code\n\n        > A block quote.\n"
+      , Just
+          "<pre><code>1.  A paragraph\n    with two lines.\n\n        indented code\n\n    > A block quote.\n</code></pre>"
+      )
+    , ( 290
+      , "  1.  A paragraph\nwith two lines.\n\n          indented code\n\n      > A block quote.\n"
+      , Just
+          "<ol><li><p>A paragraph\nwith two lines.</p><pre><code>indented code\n</code></pre><blockquote><p>A block quote.</p></blockquote></li></ol>"
+      )
+    , ( 291
+      , "  1.  A paragraph\n    with two lines.\n"
+      , Just "<ol><li>A paragraph\nwith two lines.</li></ol>"
+      )
+    , ( 292
+      , "> 1. > Blockquote\ncontinued here.\n"
+      , Just
+          "<blockquote><ol><li><blockquote><p>Blockquote\ncontinued here.</p></blockquote></li></ol></blockquote>"
+      )
+    , ( 293
+      , "> 1. > Blockquote\n> continued here.\n"
+      , Just
+          "<blockquote><ol><li><blockquote><p>Blockquote\ncontinued here.</p></blockquote></li></ol></blockquote>"
+      )
+    , ( 294
+      , "- foo\n  - bar\n    - baz\n      - boo\n"
+      , Just "<ul><li>foo<ul><li>bar<ul><li>baz<ul><li>boo</li></ul></li></ul></li></ul></li></ul>"
+      )
+    , ( 295
+      , "- foo\n - bar\n  - baz\n   - boo\n"
+      , Just "<ul><li>foo</li><li>bar</li><li>baz</li><li>boo</li></ul>"
+      )
+    , ( 296
+      , "10) foo\n    - bar\n"
+      , Just "<ol start=\"10\"><li>foo<ul><li>bar</li></ul></li></ol>"
+      )
+    , ( 297, "10) foo\n   - bar\n", Just "<ol start=\"10\"><li>foo</li></ol><ul><li>bar</li></ul>" )
+    , ( 298, "- - foo\n", Just "<ul><li><ul><li>foo</li></ul></li></ul>" )
+    , ( 299
+      , "1. - 2. foo\n"
+      , Just "<ol><li><ul><li><ol start=\"2\"><li>foo</li></ol></li></ul></li></ol>"
+      )
+    , ( 300
+      , "- # Foo\n- Bar\n  ---\n  baz\n"
+      , Just "<ul><li><h1>Foo</h1></li><li><h2>Bar</h2>baz</li></ul>"
+      )
+    , ( 301
+      , "- foo\n- bar\n+ baz\n"
+      , Just "<ul><li>foo</li><li>bar</li></ul><ul><li>baz</li></ul>"
+      )
+    , ( 302
+      , "1. foo\n2. bar\n3) baz\n"
+      , Just "<ol><li>foo</li><li>bar</li></ol><ol start=\"3\"><li>baz</li></ol>"
+      )
+    , ( 303, "Foo\n- bar\n- baz\n", Just "<p>Foo</p><ul><li>bar</li><li>baz</li></ul>" )
+    , ( 304
+      , "The number of windows in my house is\n14.  The number of doors is 6.\n"
+      , Just "<p>The number of windows in my house is\n14.  The number of doors is 6.</p>"
+      )
+    , ( 305
+      , "The number of windows in my house is\n1.  The number of doors is 6.\n"
+      , Just
+          "<p>The number of windows in my house is</p><ol><li>The number of doors is 6.</li></ol>"
+      )
+    , ( 306
+      , "- foo\n\n- bar\n\n\n- baz\n"
+      , Just "<ul><li><p>foo</p></li><li><p>bar</p></li><li><p>baz</p></li></ul>"
+      )
+    , ( 307
+      , "- foo\n  - bar\n    - baz\n\n\n      bim\n"
+      , Just "<ul><li>foo<ul><li>bar<ul><li><p>baz</p><p>bim</p></li></ul></li></ul></li></ul>"
+      )
+    , ( 308, "- foo\n- bar\n\n<!-- -->\n\n- baz\n- bim\n", Nothing )
+    , ( 309, "-   foo\n\n    notcode\n\n-   foo\n\n<!-- -->\n\n    code\n", Nothing )
+    , ( 310
+      , "- a\n - b\n  - c\n   - d\n  - e\n - f\n- g\n"
+      , Just "<ul><li>a</li><li>b</li><li>c</li><li>d</li><li>e</li><li>f</li><li>g</li></ul>"
+      )
+    , ( 311
+      , "1. a\n\n  2. b\n\n   3. c\n"
+      , Just "<ol><li><p>a</p></li><li><p>b</p></li><li><p>c</p></li></ol>"
+      )
+    , ( 312
+      , "- a\n - b\n  - c\n   - d\n    - e\n"
+      , Just "<ul><li>a</li><li>b</li><li>c</li><li>d\n- e</li></ul>"
+      )
+    , ( 313
+      , "1. a\n\n  2. b\n\n    3. c\n"
+      , Just "<ol><li><p>a</p></li><li><p>b</p></li></ol><pre><code>3. c\n</code></pre>"
+      )
+    , ( 314
+      , "- a\n- b\n\n- c\n"
+      , Just "<ul><li><p>a</p></li><li><p>b</p></li><li><p>c</p></li></ul>"
+      )
+    , ( 315, "* a\n*\n\n* c\n", Just "<ul><li><p>a</p></li><li></li><li><p>c</p></li></ul>" )
+    , ( 316
+      , "- a\n- b\n\n  c\n- d\n"
+      , Just "<ul><li><p>a</p></li><li><p>b</p><p>c</p></li><li><p>d</p></li></ul>"
+      )
+    , ( 317
+      , "- a\n- b\n\n  [ref]: /url\n- d\n"
+      , Just "<ul><li><p>a</p></li><li><p>b</p></li><li><p>d</p></li></ul>"
+      )
+    , ( 318
+      , "- a\n- ```\n  b\n\n\n  ```\n- c\n"
+      , Just "<ul><li>a</li><li><pre><code>b\n\n\n</code></pre></li><li>c</li></ul>"
+      )
+    , ( 319
+      , "- a\n  - b\n\n    c\n- d\n"
+      , Just "<ul><li>a<ul><li><p>b</p><p>c</p></li></ul></li><li>d</li></ul>"
+      )
+    , ( 320
+      , "* a\n  > b\n  >\n* c\n"
+      , Just "<ul><li>a<blockquote><p>b</p></blockquote></li><li>c</li></ul>"
+      )
+    , ( 321
+      , "- a\n  > b\n  ```\n  c\n  ```\n- d\n"
+      , Just
+          "<ul><li>a<blockquote><p>b</p></blockquote><pre><code>c\n</code></pre></li><li>d</li></ul>"
+      )
+    , ( 322, "- a\n", Just "<ul><li>a</li></ul>" )
+    , ( 323, "- a\n  - b\n", Just "<ul><li>a<ul><li>b</li></ul></li></ul>" )
+    , ( 324
+      , "1. ```\n   foo\n   ```\n\n   bar\n"
+      , Just "<ol><li><pre><code>foo\n</code></pre><p>bar</p></li></ol>"
+      )
+    , ( 325
+      , "* foo\n  * bar\n\n  baz\n"
+      , Just "<ul><li><p>foo</p><ul><li>bar</li></ul><p>baz</p></li></ul>"
+      )
+    , ( 326
+      , "- a\n  - b\n  - c\n\n- d\n  - e\n  - f\n"
+      , Just
+          "<ul><li><p>a</p><ul><li>b</li><li>c</li></ul></li><li><p>d</p><ul><li>e</li><li>f</li></ul></li></ul>"
+      )
+    , ( 327, "`hi`lo`\n", Just "<p><code>hi</code>lo`</p>" )
+    , ( 328, "`foo`\n", Just "<p><code>foo</code></p>" )
+    , ( 329, "`` foo ` bar ``\n", Just "<p><code>foo ` bar</code></p>" )
+    , ( 330, "` `` `\n", Just "<p><code>``</code></p>" )
+    , ( 331, "`  ``  `\n", Just "<p><code> `` </code></p>" )
+    , ( 332, "` a`\n", Just "<p><code> a</code></p>" )
+    , ( 333, "` b `\n", Just "<p><code> b </code></p>" )
+    , ( 334, "` `\n`  `\n", Just "<p><code> </code>\n<code>  </code></p>" )
+    , ( 335, "``\nfoo\nbar  \nbaz\n``\n", Just "<p><code>foo bar   baz</code></p>" )
+    , ( 336, "``\nfoo \n``\n", Just "<p><code>foo </code></p>" )
+    , ( 337, "`foo   bar \nbaz`\n", Just "<p><code>foo   bar  baz</code></p>" )
+    , ( 338, "`foo\\`bar`\n", Just "<p><code>foo\\</code>bar`</p>" )
+    , ( 339, "``foo`bar``\n", Just "<p><code>foo`bar</code></p>" )
+    , ( 340, "` foo `` bar `\n", Just "<p><code>foo `` bar</code></p>" )
+    , ( 341, "*foo`*`\n", Just "<p>*foo<code>*</code></p>" )
+    , ( 342, "[not a `link](/foo`)\n", Just "<p>[not a <code>link](/foo</code>)</p>" )
+    , ( 343, "`<a href=\"`\">`\n", Just "<p><code>&lt;a href=\"</code>\">`</p>" )
+    , ( 344, "<a href=\"`\">`\n", Nothing )
+    , ( 345, "`<https://foo.bar.`baz>`\n", Just "<p><code>&lt;https://foo.bar.</code>baz>`</p>" )
+    , ( 346
+      , "<https://foo.bar.`baz>`\n"
+      , Just "<p><a href=\"https://foo.bar.%60baz\">https://foo.bar.`baz</a>`</p>"
+      )
+    , ( 347, "```foo``\n", Just "<p>```foo``</p>" )
+    , ( 348, "`foo\n", Just "<p>`foo</p>" )
+    , ( 349, "`foo``bar``\n", Just "<p>`foo<code>bar</code></p>" )
+    , ( 350, "*foo bar*\n", Just "<p><em>foo bar</em></p>" )
+    , ( 351, "a * foo bar*\n", Just "<p>a * foo bar*</p>" )
+    , ( 352, "a*\"foo\"*\n", Just "<p>a*\"foo\"*</p>" )
+    , ( 353, "* a *\n", Just "<p>* a *</p>" )
+    , ( 354
+      , "*\$*alpha.\n\n*£*bravo.\n\n*€*charlie.\n"
+      , Just "<p>*\$*alpha.</p><p>*£*bravo.</p><p>*€*charlie.</p>"
+      )
+    , ( 355, "foo*bar*\n", Just "<p>foo<em>bar</em></p>" )
+    , ( 356, "5*6*78\n", Just "<p>5<em>6</em>78</p>" )
+    , ( 357, "_foo bar_\n", Just "<p><em>foo bar</em></p>" )
+    , ( 358, "_ foo bar_\n", Just "<p>_ foo bar_</p>" )
+    , ( 359, "a_\"foo\"_\n", Just "<p>a_\"foo\"_</p>" )
+    , ( 360, "foo_bar_\n", Just "<p>foo_bar_</p>" )
+    , ( 361, "5_6_78\n", Just "<p>5_6_78</p>" )
+    , ( 362, "пристаням_стремятся_\n", Just "<p>пристаням_стремятся_</p>" )
+    , ( 363, "aa_\"bb\"_cc\n", Just "<p>aa_\"bb\"_cc</p>" )
+    , ( 364, "foo-_(bar)_\n", Just "<p>foo-<em>(bar)</em></p>" )
+    , ( 365, "_foo*\n", Just "<p>_foo*</p>" )
+    , ( 366, "*foo bar *\n", Just "<p>*foo bar *</p>" )
+    , ( 367, "*foo bar\n*\n", Just "<p>*foo bar\n*</p>" )
+    , ( 368, "*(*foo)\n", Just "<p>*(*foo)</p>" )
+    , ( 369, "*(*foo*)*\n", Just "<p><em>(<em>foo</em>)</em></p>" )
+    , ( 370, "*foo*bar\n", Just "<p><em>foo</em>bar</p>" )
+    , ( 371, "_foo bar _\n", Just "<p>_foo bar _</p>" )
+    , ( 372, "_(_foo)\n", Just "<p>_(_foo)</p>" )
+    , ( 373, "_(_foo_)_\n", Just "<p><em>(<em>foo</em>)</em></p>" )
+    , ( 374, "_foo_bar\n", Just "<p>_foo_bar</p>" )
+    , ( 375, "_пристаням_стремятся\n", Just "<p>_пристаням_стремятся</p>" )
+    , ( 376, "_foo_bar_baz_\n", Just "<p><em>foo_bar_baz</em></p>" )
+    , ( 377, "_(bar)_.\n", Just "<p><em>(bar)</em>.</p>" )
+    , ( 378, "**foo bar**\n", Just "<p><strong>foo bar</strong></p>" )
+    , ( 379, "** foo bar**\n", Just "<p>** foo bar**</p>" )
+    , ( 380, "a**\"foo\"**\n", Just "<p>a**\"foo\"**</p>" )
+    , ( 381, "foo**bar**\n", Just "<p>foo<strong>bar</strong></p>" )
+    , ( 382, "__foo bar__\n", Just "<p><strong>foo bar</strong></p>" )
+    , ( 383, "__ foo bar__\n", Just "<p>__ foo bar__</p>" )
+    , ( 384, "__\nfoo bar__\n", Just "<p>__\nfoo bar__</p>" )
+    , ( 385, "a__\"foo\"__\n", Just "<p>a__\"foo\"__</p>" )
+    , ( 386, "foo__bar__\n", Just "<p>foo__bar__</p>" )
+    , ( 387, "5__6__78\n", Just "<p>5__6__78</p>" )
+    , ( 388, "пристаням__стремятся__\n", Just "<p>пристаням__стремятся__</p>" )
+    , ( 389
+      , "__foo, __bar__, baz__\n"
+      , Just "<p><strong>foo, <strong>bar</strong>, baz</strong></p>"
+      )
+    , ( 390, "foo-__(bar)__\n", Just "<p>foo-<strong>(bar)</strong></p>" )
+    , ( 391, "**foo bar **\n", Just "<p>**foo bar **</p>" )
+    , ( 392, "**(**foo)\n", Just "<p>**(**foo)</p>" )
+    , ( 393, "*(**foo**)*\n", Just "<p><em>(<strong>foo</strong>)</em></p>" )
+    , ( 394
+      , "**Gomphocarpus (*Gomphocarpus physocarpus*, syn.\n*Asclepias physocarpa*)**\n"
+      , Just
+          "<p><strong>Gomphocarpus (<em>Gomphocarpus physocarpus</em>, syn.\n<em>Asclepias physocarpa</em>)</strong></p>"
+      )
+    , ( 395, "**foo \"*bar*\" foo**\n", Just "<p><strong>foo \"<em>bar</em>\" foo</strong></p>" )
+    , ( 396, "**foo**bar\n", Just "<p><strong>foo</strong>bar</p>" )
+    , ( 397, "__foo bar __\n", Just "<p>__foo bar __</p>" )
+    , ( 398, "__(__foo)\n", Just "<p>__(__foo)</p>" )
+    , ( 399, "_(__foo__)_\n", Just "<p><em>(<strong>foo</strong>)</em></p>" )
+    , ( 400, "__foo__bar\n", Just "<p>__foo__bar</p>" )
+    , ( 401, "__пристаням__стремятся\n", Just "<p>__пристаням__стремятся</p>" )
+    , ( 402, "__foo__bar__baz__\n", Just "<p><strong>foo__bar__baz</strong></p>" )
+    , ( 403, "__(bar)__.\n", Just "<p><strong>(bar)</strong>.</p>" )
+    , ( 404, "*foo [bar](/url)*\n", Just "<p><em>foo <a href=\"/url\">bar</a></em></p>" )
+    , ( 405, "*foo\nbar*\n", Just "<p><em>foo\nbar</em></p>" )
+    , ( 406, "_foo __bar__ baz_\n", Just "<p><em>foo <strong>bar</strong> baz</em></p>" )
+    , ( 407, "_foo _bar_ baz_\n", Just "<p><em>foo <em>bar</em> baz</em></p>" )
+    , ( 408, "__foo_ bar_\n", Just "<p><em><em>foo</em> bar</em></p>" )
+    , ( 409, "*foo *bar**\n", Just "<p><em>foo <em>bar</em></em></p>" )
+    , ( 410, "*foo **bar** baz*\n", Just "<p><em>foo <strong>bar</strong> baz</em></p>" )
+    , ( 411, "*foo**bar**baz*\n", Just "<p><em>foo<strong>bar</strong>baz</em></p>" )
+    , ( 412, "*foo**bar*\n", Just "<p><em>foo**bar</em></p>" )
+    , ( 413, "***foo** bar*\n", Just "<p><em><strong>foo</strong> bar</em></p>" )
+    , ( 414, "*foo **bar***\n", Just "<p><em>foo <strong>bar</strong></em></p>" )
+    , ( 415, "*foo**bar***\n", Just "<p><em>foo<strong>bar</strong></em></p>" )
+    , ( 416, "foo***bar***baz\n", Just "<p>foo<em><strong>bar</strong></em>baz</p>" )
+    , ( 417
+      , "foo******bar*********baz\n"
+      , Just "<p>foo<strong><strong><strong>bar</strong></strong></strong>***baz</p>"
+      )
+    , ( 418
+      , "*foo **bar *baz* bim** bop*\n"
+      , Just "<p><em>foo <strong>bar <em>baz</em> bim</strong> bop</em></p>"
+      )
+    , ( 419, "*foo [*bar*](/url)*\n", Just "<p><em>foo <a href=\"/url\"><em>bar</em></a></em></p>" )
+    , ( 420, "** is not an empty emphasis\n", Just "<p>** is not an empty emphasis</p>" )
+    , ( 421
+      , "**** is not an empty strong emphasis\n"
+      , Just "<p>**** is not an empty strong emphasis</p>"
+      )
+    , ( 422, "**foo [bar](/url)**\n", Just "<p><strong>foo <a href=\"/url\">bar</a></strong></p>" )
+    , ( 423, "**foo\nbar**\n", Just "<p><strong>foo\nbar</strong></p>" )
+    , ( 424, "__foo _bar_ baz__\n", Just "<p><strong>foo <em>bar</em> baz</strong></p>" )
+    , ( 425, "__foo __bar__ baz__\n", Just "<p><strong>foo <strong>bar</strong> baz</strong></p>" )
+    , ( 426, "____foo__ bar__\n", Just "<p><strong><strong>foo</strong> bar</strong></p>" )
+    , ( 427, "**foo **bar****\n", Just "<p><strong>foo <strong>bar</strong></strong></p>" )
+    , ( 428, "**foo *bar* baz**\n", Just "<p><strong>foo <em>bar</em> baz</strong></p>" )
+    , ( 429, "**foo*bar*baz**\n", Just "<p><strong>foo<em>bar</em>baz</strong></p>" )
+    , ( 430, "***foo* bar**\n", Just "<p><strong><em>foo</em> bar</strong></p>" )
+    , ( 431, "**foo *bar***\n", Just "<p><strong>foo <em>bar</em></strong></p>" )
+    , ( 432
+      , "**foo *bar **baz**\nbim* bop**\n"
+      , Just "<p><strong>foo <em>bar <strong>baz</strong>\nbim</em> bop</strong></p>"
+      )
+    , ( 433
+      , "**foo [*bar*](/url)**\n"
+      , Just "<p><strong>foo <a href=\"/url\"><em>bar</em></a></strong></p>"
+      )
+    , ( 434, "__ is not an empty emphasis\n", Just "<p>__ is not an empty emphasis</p>" )
+    , ( 435
+      , "____ is not an empty strong emphasis\n"
+      , Just "<p>____ is not an empty strong emphasis</p>"
+      )
+    , ( 436, "foo ***\n", Just "<p>foo ***</p>" )
+    , ( 437, "foo *\\**\n", Just "<p>foo <em>*</em></p>" )
+    , ( 438, "foo *_*\n", Just "<p>foo <em>_</em></p>" )
+    , ( 439, "foo *****\n", Just "<p>foo *****</p>" )
+    , ( 440, "foo **\\***\n", Just "<p>foo <strong>*</strong></p>" )
+    , ( 441, "foo **_**\n", Just "<p>foo <strong>_</strong></p>" )
+    , ( 442, "**foo*\n", Just "<p>*<em>foo</em></p>" )
+    , ( 443, "*foo**\n", Just "<p><em>foo</em>*</p>" )
+    , ( 444, "***foo**\n", Just "<p>*<strong>foo</strong></p>" )
+    , ( 445, "****foo*\n", Just "<p>***<em>foo</em></p>" )
+    , ( 446, "**foo***\n", Just "<p><strong>foo</strong>*</p>" )
+    , ( 447, "*foo****\n", Just "<p><em>foo</em>***</p>" )
+    , ( 448, "foo ___\n", Just "<p>foo ___</p>" )
+    , ( 449, "foo _\\__\n", Just "<p>foo <em>_</em></p>" )
+    , ( 450, "foo _*_\n", Just "<p>foo <em>*</em></p>" )
+    , ( 451, "foo _____\n", Just "<p>foo _____</p>" )
+    , ( 452, "foo __\\___\n", Just "<p>foo <strong>_</strong></p>" )
+    , ( 453, "foo __*__\n", Just "<p>foo <strong>*</strong></p>" )
+    , ( 454, "__foo_\n", Just "<p>_<em>foo</em></p>" )
+    , ( 455, "_foo__\n", Just "<p><em>foo</em>_</p>" )
+    , ( 456, "___foo__\n", Just "<p>_<strong>foo</strong></p>" )
+    , ( 457, "____foo_\n", Just "<p>___<em>foo</em></p>" )
+    , ( 458, "__foo___\n", Just "<p><strong>foo</strong>_</p>" )
+    , ( 459, "_foo____\n", Just "<p><em>foo</em>___</p>" )
+    , ( 460, "**foo**\n", Just "<p><strong>foo</strong></p>" )
+    , ( 461, "*_foo_*\n", Just "<p><em><em>foo</em></em></p>" )
+    , ( 462, "__foo__\n", Just "<p><strong>foo</strong></p>" )
+    , ( 463, "_*foo*_\n", Just "<p><em><em>foo</em></em></p>" )
+    , ( 464, "****foo****\n", Just "<p><strong><strong>foo</strong></strong></p>" )
+    , ( 465, "____foo____\n", Just "<p><strong><strong>foo</strong></strong></p>" )
+    , ( 466
+      , "******foo******\n"
+      , Just "<p><strong><strong><strong>foo</strong></strong></strong></p>"
+      )
+    , ( 467, "***foo***\n", Just "<p><em><strong>foo</strong></em></p>" )
+    , ( 468, "_____foo_____\n", Just "<p><em><strong><strong>foo</strong></strong></em></p>" )
+    , ( 469, "*foo _bar* baz_\n", Just "<p><em>foo _bar</em> baz_</p>" )
+    , ( 470
+      , "*foo __bar *baz bim__ bam*\n"
+      , Just "<p><em>foo <strong>bar *baz bim</strong> bam</em></p>"
+      )
+    , ( 471, "**foo **bar baz**\n", Just "<p>**foo <strong>bar baz</strong></p>" )
+    , ( 472, "*foo *bar baz*\n", Just "<p>*foo <em>bar baz</em></p>" )
+    , ( 473, "*[bar*](/url)\n", Just "<p>*<a href=\"/url\">bar*</a></p>" )
+    , ( 474, "_foo [bar_](/url)\n", Just "<p>_foo <a href=\"/url\">bar_</a></p>" )
+    , ( 475, "*<img src=\"foo\" title=\"*\"/>\n", Nothing )
+    , ( 476, "**<a href=\"**\">\n", Nothing )
+    , ( 477, "__<a href=\"__\">\n", Nothing )
+    , ( 478, "*a `*`*\n", Just "<p><em>a <code>*</code></em></p>" )
+    , ( 479, "_a `_`_\n", Just "<p><em>a <code>_</code></em></p>" )
+    , ( 480
+      , "**a<https://foo.bar/?q=**>\n"
+      , Just "<p>**a<a href=\"https://foo.bar/?q=**\">https://foo.bar/?q=**</a></p>"
+      )
+    , ( 481
+      , "__a<https://foo.bar/?q=__>\n"
+      , Just "<p>__a<a href=\"https://foo.bar/?q=__\">https://foo.bar/?q=__</a></p>"
+      )
+    , ( 482, "[link](/uri \"title\")\n", Just "<p><a href=\"/uri\" title=\"title\">link</a></p>" )
+    , ( 483, "[link](/uri)\n", Just "<p><a href=\"/uri\">link</a></p>" )
+    , ( 484, "[](./target.md)\n", Just "<p><a href=\"./target.md\"></a></p>" )
+    , ( 485, "[link]()\n", Just "<p><a href=\"\">link</a></p>" )
+    , ( 486, "[link](<>)\n", Just "<p><a href=\"\">link</a></p>" )
+    , ( 487, "[]()\n", Just "<p><a href=\"\"></a></p>" )
+    , ( 488, "[link](/my uri)\n", Just "<p>[link](/my uri)</p>" )
+    , ( 489, "[link](</my uri>)\n", Just "<p><a href=\"/my%20uri\">link</a></p>" )
+    , ( 490, "[link](foo\nbar)\n", Just "<p>[link](foo\nbar)</p>" )
+    , ( 491, "[link](<foo\nbar>)\n", Nothing )
+    , ( 492, "[a](<b)c>)\n", Just "<p><a href=\"b)c\">a</a></p>" )
+    , ( 493, "[link](<foo\\>)\n", Just "<p>[link](&lt;foo>)</p>" )
+    , ( 494, "[a](<b)c\n[a](<b)c>\n[a](<b>c)\n", Nothing )
+    , ( 495, "[link](\\(foo\\))\n", Just "<p><a href=\"(foo)\">link</a></p>" )
+    , ( 496, "[link](foo(and(bar)))\n", Just "<p><a href=\"foo(and(bar))\">link</a></p>" )
+    , ( 497, "[link](foo(and(bar))\n", Just "<p>[link](foo(and(bar))</p>" )
+    , ( 498, "[link](foo\\(and\\(bar\\))\n", Just "<p><a href=\"foo(and(bar)\">link</a></p>" )
+    , ( 499, "[link](<foo(and(bar)>)\n", Just "<p><a href=\"foo(and(bar)\">link</a></p>" )
+    , ( 500, "[link](foo\\)\\:)\n", Just "<p><a href=\"foo):\">link</a></p>" )
+    , ( 501
+      , "[link](#fragment)\n\n[link](https://example.com#fragment)\n\n[link](https://example.com?foo=3#frag)\n"
+      , Just
+          "<p><a href=\"#fragment\">link</a></p><p><a href=\"https://example.com#fragment\">link</a></p><p><a href=\"https://example.com?foo=3#frag\">link</a></p>"
+      )
+    , ( 502, "[link](foo\\bar)\n", Just "<p><a href=\"foo%5Cbar\">link</a></p>" )
+    , ( 503, "[link](foo%20b&auml;)\n", Just "<p><a href=\"foo%20b%C3%A4\">link</a></p>" )
+    , ( 504, "[link](\"title\")\n", Just "<p><a href=\"%22title%22\">link</a></p>" )
+    , ( 505
+      , "[link](/url \"title\")\n[link](/url 'title')\n[link](/url (title))\n"
+      , Just
+          "<p><a href=\"/url\" title=\"title\">link</a>\n<a href=\"/url\" title=\"title\">link</a>\n<a href=\"/url\" title=\"title\">link</a></p>"
+      )
+    , ( 506
+      , "[link](/url \"title \\\"&quot;\")\n"
+      , Just "<p><a href=\"/url\" title=\"title &quot;&quot;\">link</a></p>"
+      )
+    , ( 507, "[link](/url \"title\")\n", Just "<p><a href=\"/url%C2%A0%22title%22\">link</a></p>" )
+    , ( 508
+      , "[link](/url \"title \"and\" title\")\n"
+      , Just "<p>[link](/url \"title \"and\" title\")</p>"
+      )
+    , ( 509
+      , "[link](/url 'title \"and\" title')\n"
+      , Just "<p><a href=\"/url\" title=\"title &quot;and&quot; title\">link</a></p>"
+      )
+    , ( 510
+      , "[link](   /uri\n  \"title\"  )\n"
+      , Just "<p><a href=\"/uri\" title=\"title\">link</a></p>"
+      )
+    , ( 511, "[link] (/uri)\n", Just "<p>[link] (/uri)</p>" )
+    , ( 512, "[link [foo [bar]]](/uri)\n", Just "<p><a href=\"/uri\">link [foo [bar]]</a></p>" )
+    , ( 513, "[link] bar](/uri)\n", Just "<p>[link] bar](/uri)</p>" )
+    , ( 514, "[link [bar](/uri)\n", Just "<p>[link <a href=\"/uri\">bar</a></p>" )
+    , ( 515, "[link \\[bar](/uri)\n", Just "<p><a href=\"/uri\">link [bar</a></p>" )
+    , ( 516
+      , "[link *foo **bar** `#`*](/uri)\n"
+      , Just "<p><a href=\"/uri\">link <em>foo <strong>bar</strong> <code>#</code></em></a></p>"
+      )
+    , ( 517
+      , "[![moon](moon.jpg)](/uri)\n"
+      , Just "<p><a href=\"/uri\"><img src=\"moon.jpg\" alt=\"moon\"></a></p>"
+      )
+    , ( 518, "[foo [bar](/uri)](/uri)\n", Just "<p>[foo <a href=\"/uri\">bar</a>](/uri)</p>" )
+    , ( 519
+      , "[foo *[bar [baz](/uri)](/uri)*](/uri)\n"
+      , Just "<p>[foo <em>[bar <a href=\"/uri\">baz</a>](/uri)</em>](/uri)</p>"
+      )
+    , ( 520
+      , "![[[foo](uri1)](uri2)](uri3)\n"
+      , Just "<p><img src=\"uri3\" alt=\"[foo](uri2)\"></p>"
+      )
+    , ( 521, "*[foo*](/uri)\n", Just "<p>*<a href=\"/uri\">foo*</a></p>" )
+    , ( 522, "[foo *bar](baz*)\n", Just "<p><a href=\"baz*\">foo *bar</a></p>" )
+    , ( 523, "*foo [bar* baz]\n", Just "<p><em>foo [bar</em> baz]</p>" )
+    , ( 524, "[foo <bar attr=\"](baz)\">\n", Nothing )
+    , ( 525, "[foo`](/uri)`\n", Just "<p>[foo<code>](/uri)</code></p>" )
+    , ( 526
+      , "[foo<https://example.com/?search=](uri)>\n"
+      , Just
+          "<p>[foo<a href=\"https://example.com/?search=%5D(uri)\">https://example.com/?search=](uri)</a></p>"
+      )
+    , ( 527
+      , "[foo][bar]\n\n[bar]: /url \"title\"\n"
+      , Just "<p><a href=\"/url\" title=\"title\">foo</a></p>"
+      )
+    , ( 528
+      , "[link [foo [bar]]][ref]\n\n[ref]: /uri\n"
+      , Just "<p><a href=\"/uri\">link [foo [bar]]</a></p>"
+      )
+    , ( 529, "[link \\[bar][ref]\n\n[ref]: /uri\n", Just "<p><a href=\"/uri\">link [bar</a></p>" )
+    , ( 530
+      , "[link *foo **bar** `#`*][ref]\n\n[ref]: /uri\n"
+      , Just "<p><a href=\"/uri\">link <em>foo <strong>bar</strong> <code>#</code></em></a></p>"
+      )
+    , ( 531
+      , "[![moon](moon.jpg)][ref]\n\n[ref]: /uri\n"
+      , Just "<p><a href=\"/uri\"><img src=\"moon.jpg\" alt=\"moon\"></a></p>"
+      )
+    , ( 532
+      , "[foo [bar](/uri)][ref]\n\n[ref]: /uri\n"
+      , Just "<p>[foo <a href=\"/uri\">bar</a>]<a href=\"/uri\">ref</a></p>"
+      )
+    , ( 533
+      , "[foo *bar [baz][ref]*][ref]\n\n[ref]: /uri\n"
+      , Just "<p>[foo <em>bar <a href=\"/uri\">baz</a></em>]<a href=\"/uri\">ref</a></p>"
+      )
+    , ( 534, "*[foo*][ref]\n\n[ref]: /uri\n", Just "<p>*<a href=\"/uri\">foo*</a></p>" )
+    , ( 535, "[foo *bar][ref]*\n\n[ref]: /uri\n", Just "<p><a href=\"/uri\">foo *bar</a>*</p>" )
+    , ( 536, "[foo <bar attr=\"][ref]\">\n\n[ref]: /uri\n", Nothing )
+    , ( 537, "[foo`][ref]`\n\n[ref]: /uri\n", Just "<p>[foo<code>][ref]</code></p>" )
+    , ( 538
+      , "[foo<https://example.com/?search=][ref]>\n\n[ref]: /uri\n"
+      , Just
+          "<p>[foo<a href=\"https://example.com/?search=%5D%5Bref%5D\">https://example.com/?search=][ref]</a></p>"
+      )
+    , ( 539
+      , "[foo][BaR]\n\n[bar]: /url \"title\"\n"
+      , Just "<p><a href=\"/url\" title=\"title\">foo</a></p>"
+      )
+    , ( 540, "[ẞ]\n\n[SS]: /url\n", Just "<p><a href=\"/url\">ẞ</a></p>" )
+    , ( 541, "[Foo\n  bar]: /url\n\n[Baz][Foo bar]\n", Just "<p><a href=\"/url\">Baz</a></p>" )
+    , ( 542
+      , "[foo] [bar]\n\n[bar]: /url \"title\"\n"
+      , Just "<p>[foo] <a href=\"/url\" title=\"title\">bar</a></p>"
+      )
+    , ( 543
+      , "[foo]\n[bar]\n\n[bar]: /url \"title\"\n"
+      , Just "<p>[foo]\n<a href=\"/url\" title=\"title\">bar</a></p>"
+      )
+    , ( 544
+      , "[foo]: /url1\n\n[foo]: /url2\n\n[bar][foo]\n"
+      , Just "<p><a href=\"/url1\">bar</a></p>"
+      )
+    , ( 545, "[bar][foo\\!]\n\n[foo!]: /url\n", Just "<p>[bar][foo!]</p>" )
+    , ( 546, "[foo][ref[]\n\n[ref[]: /uri\n", Just "<p>[foo][ref[]</p><p>[ref[]: /uri</p>" )
+    , ( 547
+      , "[foo][ref[bar]]\n\n[ref[bar]]: /uri\n"
+      , Just "<p>[foo][ref[bar]]</p><p>[ref[bar]]: /uri</p>"
+      )
+    , ( 548, "[[[foo]]]\n\n[[[foo]]]: /url\n", Just "<p>[[[foo]]]</p><p>[[[foo]]]: /url</p>" )
+    , ( 549, "[foo][ref\\[]\n\n[ref\\[]: /uri\n", Just "<p><a href=\"/uri\">foo</a></p>" )
+    , ( 550, "[bar\\\\]: /uri\n\n[bar\\\\]\n", Just "<p><a href=\"/uri\">bar\\</a></p>" )
+    , ( 551, "[]\n\n[]: /uri\n", Just "<p>[]</p><p>[]: /uri</p>" )
+    , ( 552, "[\n ]\n\n[\n ]: /uri\n", Just "<p>[\n]</p><p>[\n]: /uri</p>" )
+    , ( 553
+      , "[foo][]\n\n[foo]: /url \"title\"\n"
+      , Just "<p><a href=\"/url\" title=\"title\">foo</a></p>"
+      )
+    , ( 554
+      , "[*foo* bar][]\n\n[*foo* bar]: /url \"title\"\n"
+      , Just "<p><a href=\"/url\" title=\"title\"><em>foo</em> bar</a></p>"
+      )
+    , ( 555
+      , "[Foo][]\n\n[foo]: /url \"title\"\n"
+      , Just "<p><a href=\"/url\" title=\"title\">Foo</a></p>"
+      )
+    , ( 556
+      , "[foo] \n[]\n\n[foo]: /url \"title\"\n"
+      , Just "<p><a href=\"/url\" title=\"title\">foo</a>\n[]</p>"
+      )
+    , ( 557
+      , "[foo]\n\n[foo]: /url \"title\"\n"
+      , Just "<p><a href=\"/url\" title=\"title\">foo</a></p>"
+      )
+    , ( 558
+      , "[*foo* bar]\n\n[*foo* bar]: /url \"title\"\n"
+      , Just "<p><a href=\"/url\" title=\"title\"><em>foo</em> bar</a></p>"
+      )
+    , ( 559
+      , "[[*foo* bar]]\n\n[*foo* bar]: /url \"title\"\n"
+      , Just "<p>[<a href=\"/url\" title=\"title\"><em>foo</em> bar</a>]</p>"
+      )
+    , ( 560, "[[bar [foo]\n\n[foo]: /url\n", Just "<p>[[bar <a href=\"/url\">foo</a></p>" )
+    , ( 561
+      , "[Foo]\n\n[foo]: /url \"title\"\n"
+      , Just "<p><a href=\"/url\" title=\"title\">Foo</a></p>"
+      )
+    , ( 562, "[foo] bar\n\n[foo]: /url\n", Just "<p><a href=\"/url\">foo</a> bar</p>" )
+    , ( 563, "\\[foo]\n\n[foo]: /url \"title\"\n", Just "<p>[foo]</p>" )
+    , ( 564, "[foo*]: /url\n\n*[foo*]\n", Just "<p>*<a href=\"/url\">foo*</a></p>" )
+    , ( 565, "[foo][bar]\n\n[foo]: /url1\n[bar]: /url2\n", Just "<p><a href=\"/url2\">foo</a></p>" )
+    , ( 566, "[foo][]\n\n[foo]: /url1\n", Just "<p><a href=\"/url1\">foo</a></p>" )
+    , ( 567, "[foo]()\n\n[foo]: /url1\n", Just "<p><a href=\"\">foo</a></p>" )
+    , ( 568
+      , "[foo](not a link)\n\n[foo]: /url1\n"
+      , Just "<p><a href=\"/url1\">foo</a>(not a link)</p>"
+      )
+    , ( 569, "[foo][bar][baz]\n\n[baz]: /url\n", Just "<p>[foo]<a href=\"/url\">bar</a></p>" )
+    , ( 570
+      , "[foo][bar][baz]\n\n[baz]: /url1\n[bar]: /url2\n"
+      , Just "<p><a href=\"/url2\">foo</a><a href=\"/url1\">baz</a></p>"
+      )
+    , ( 571
+      , "[foo][bar][baz]\n\n[baz]: /url1\n[foo]: /url2\n"
+      , Just "<p>[foo]<a href=\"/url1\">bar</a></p>"
+      )
+    , ( 572
+      , "![foo](/url \"title\")\n"
+      , Just "<p><img src=\"/url\" alt=\"foo\" title=\"title\"></p>"
+      )
+    , ( 573
+      , "![foo *bar*]\n\n[foo *bar*]: train.jpg \"train & tracks\"\n"
+      , Just "<p><img src=\"train.jpg\" alt=\"foo bar\" title=\"train &amp; tracks\"></p>"
+      )
+    , ( 574, "![foo ![bar](/url)](/url2)\n", Just "<p><img src=\"/url2\" alt=\"foo bar\"></p>" )
+    , ( 575, "![foo [bar](/url)](/url2)\n", Just "<p><img src=\"/url2\" alt=\"foo bar\"></p>" )
+    , ( 576
+      , "![foo *bar*][]\n\n[foo *bar*]: train.jpg \"train & tracks\"\n"
+      , Just "<p><img src=\"train.jpg\" alt=\"foo bar\" title=\"train &amp; tracks\"></p>"
+      )
+    , ( 577
+      , "![foo *bar*][foobar]\n\n[FOOBAR]: train.jpg \"train & tracks\"\n"
+      , Just "<p><img src=\"train.jpg\" alt=\"foo bar\" title=\"train &amp; tracks\"></p>"
+      )
+    , ( 578, "![foo](train.jpg)\n", Just "<p><img src=\"train.jpg\" alt=\"foo\"></p>" )
+    , ( 579
+      , "My ![foo bar](/path/to/train.jpg  \"title\"   )\n"
+      , Just "<p>My <img src=\"/path/to/train.jpg\" alt=\"foo bar\" title=\"title\"></p>"
+      )
+    , ( 580, "![foo](<url>)\n", Just "<p><img src=\"url\" alt=\"foo\"></p>" )
+    , ( 581, "![](/url)\n", Just "<p><img src=\"/url\" alt=\"\"></p>" )
+    , ( 582, "![foo][bar]\n\n[bar]: /url\n", Just "<p><img src=\"/url\" alt=\"foo\"></p>" )
+    , ( 583, "![foo][bar]\n\n[BAR]: /url\n", Just "<p><img src=\"/url\" alt=\"foo\"></p>" )
+    , ( 584
+      , "![foo][]\n\n[foo]: /url \"title\"\n"
+      , Just "<p><img src=\"/url\" alt=\"foo\" title=\"title\"></p>"
+      )
+    , ( 585
+      , "![*foo* bar][]\n\n[*foo* bar]: /url \"title\"\n"
+      , Just "<p><img src=\"/url\" alt=\"foo bar\" title=\"title\"></p>"
+      )
+    , ( 586
+      , "![Foo][]\n\n[foo]: /url \"title\"\n"
+      , Just "<p><img src=\"/url\" alt=\"Foo\" title=\"title\"></p>"
+      )
+    , ( 587
+      , "![foo] \n[]\n\n[foo]: /url \"title\"\n"
+      , Just "<p><img src=\"/url\" alt=\"foo\" title=\"title\">\n[]</p>"
+      )
+    , ( 588
+      , "![foo]\n\n[foo]: /url \"title\"\n"
+      , Just "<p><img src=\"/url\" alt=\"foo\" title=\"title\"></p>"
+      )
+    , ( 589
+      , "![*foo* bar]\n\n[*foo* bar]: /url \"title\"\n"
+      , Just "<p><img src=\"/url\" alt=\"foo bar\" title=\"title\"></p>"
+      )
+    , ( 590
+      , "![[foo]]\n\n[[foo]]: /url \"title\"\n"
+      , Just "<p>![[foo]]</p><p>[[foo]]: /url \"title\"</p>"
+      )
+    , ( 591
+      , "![Foo]\n\n[foo]: /url \"title\"\n"
+      , Just "<p><img src=\"/url\" alt=\"Foo\" title=\"title\"></p>"
+      )
+    , ( 592, "!\\[foo]\n\n[foo]: /url \"title\"\n", Just "<p>![foo]</p>" )
+    , ( 593
+      , "\\![foo]\n\n[foo]: /url \"title\"\n"
+      , Just "<p>!<a href=\"/url\" title=\"title\">foo</a></p>"
+      )
+    , ( 594
+      , "<http://foo.bar.baz>\n"
+      , Just "<p><a href=\"http://foo.bar.baz\">http://foo.bar.baz</a></p>"
+      )
+    , ( 595
+      , "<https://foo.bar.baz/test?q=hello&id=22&boolean>\n"
+      , Just
+          "<p><a href=\"https://foo.bar.baz/test?q=hello&amp;id=22&amp;boolean\">https://foo.bar.baz/test?q=hello&amp;id=22&amp;boolean</a></p>"
+      )
+    , ( 596
+      , "<irc://foo.bar:2233/baz>\n"
+      , Just "<p><a href=\"irc://foo.bar:2233/baz\">irc://foo.bar:2233/baz</a></p>"
+      )
+    , ( 597
+      , "<MAILTO:FOO@BAR.BAZ>\n"
+      , Just "<p><a href=\"MAILTO:FOO@BAR.BAZ\">MAILTO:FOO@BAR.BAZ</a></p>"
+      )
+    , ( 598, "<a+b+c:d>\n", Just "<p><a href=\"a+b+c:d\">a+b+c:d</a></p>" )
+    , ( 599
+      , "<made-up-scheme://foo,bar>\n"
+      , Just "<p><a href=\"made-up-scheme://foo,bar\">made-up-scheme://foo,bar</a></p>"
+      )
+    , ( 600, "<https://../>\n", Just "<p><a href=\"https://../\">https://../</a></p>" )
+    , ( 601
+      , "<localhost:5001/foo>\n"
+      , Just "<p><a href=\"localhost:5001/foo\">localhost:5001/foo</a></p>"
+      )
+    , ( 602, "<https://foo.bar/baz bim>\n", Just "<p>&lt;https://foo.bar/baz bim></p>" )
+    , ( 603
+      , "<https://example.com/\\[\\>\n"
+      , Just "<p><a href=\"https://example.com/%5C%5B%5C\">https://example.com/\\[\\</a></p>"
+      )
+    , ( 604
+      , "<foo@bar.example.com>\n"
+      , Just "<p><a href=\"mailto:foo@bar.example.com\">foo@bar.example.com</a></p>"
+      )
+    , ( 605
+      , "<foo+special@Bar.baz-bar0.com>\n"
+      , Just
+          "<p><a href=\"mailto:foo+special@Bar.baz-bar0.com\">foo+special@Bar.baz-bar0.com</a></p>"
+      )
+    , ( 606, "<foo\\+@bar.example.com>\n", Just "<p>&lt;foo+@bar.example.com></p>" )
+    , ( 607, "<>\n", Just "<p>&lt;></p>" )
+    , ( 608, "< https://foo.bar >\n", Just "<p>&lt; https://foo.bar ></p>" )
+    , ( 609, "<m:abc>\n", Just "<p>&lt;m:abc></p>" )
+    , ( 610, "<foo.bar.baz>\n", Just "<p>&lt;foo.bar.baz></p>" )
+    , ( 611, "https://example.com\n", Just "<p>https://example.com</p>" )
+    , ( 612, "foo@bar.example.com\n", Just "<p>foo@bar.example.com</p>" )
+    , ( 613, "<a><bab><c2c>\n", Nothing )
+    , ( 614, "<a/><b2/>\n", Nothing )
+    , ( 615, "<a  /><b2\ndata=\"foo\" >\n", Nothing )
+    , ( 616, "<a foo=\"bar\" bam = 'baz <em>\"</em>'\n_boolean zoop:33=zoop:33 />\n", Nothing )
+    , ( 617, "Foo <responsive-image src=\"foo.jpg\" />\n", Nothing )
+    , ( 618, "<33> <__>\n", Just "<p>&lt;33> &lt;__></p>" )
+    , ( 619, "<a h*#ref=\"hi\">\n", Just "<p>&lt;a h*#ref=\"hi\"></p>" )
+    , ( 620, "<a href=\"hi'> <a href=hi'>\n", Just "<p>&lt;a href=\"hi'> &lt;a href=hi'></p>" )
+    , ( 621
+      , "< a><\nfoo><bar/ >\n<foo bar=baz\nbim!bop />\n"
+      , Just "<p>&lt; a>&lt;\nfoo>&lt;bar/ >\n&lt;foo bar=baz\nbim!bop /></p>"
+      )
+    , ( 622, "<a href='bar'title=title>\n", Just "<p>&lt;a href='bar'title=title></p>" )
+    , ( 623, "</a></foo >\n", Nothing )
+    , ( 624, "</a href=\"foo\">\n", Just "<p>&lt;/a href=\"foo\"></p>" )
+    , ( 625, "foo <!-- this is a --\ncomment - with hyphens -->\n", Nothing )
+    , ( 626, "foo <!--> foo -->\n\nfoo <!---> foo -->\n", Nothing )
+    , ( 627, "foo <?php echo \$a; ?>\n", Nothing )
+    , ( 628, "foo <!ELEMENT br EMPTY>\n", Nothing )
+    , ( 629, "foo <![CDATA[>&<]]>\n", Nothing )
+    , ( 630, "foo <a href=\"&ouml;\">\n", Nothing )
+    , ( 631, "foo <a href=\"\\*\">\n", Nothing )
+    , ( 632, "<a href=\"\\\"\">\n", Just "<p>&lt;a href=\"\"\"></p>" )
+    , ( 633, "foo  \nbaz\n", Just "<p>foo<br>baz</p>" )
+    , ( 634, "foo\\\nbaz\n", Just "<p>foo<br>baz</p>" )
+    , ( 635, "foo       \nbaz\n", Just "<p>foo<br>baz</p>" )
+    , ( 636, "foo  \n     bar\n", Just "<p>foo<br>bar</p>" )
+    , ( 637, "foo\\\n     bar\n", Just "<p>foo<br>bar</p>" )
+    , ( 638, "*foo  \nbar*\n", Just "<p><em>foo<br>bar</em></p>" )
+    , ( 639, "*foo\\\nbar*\n", Just "<p><em>foo<br>bar</em></p>" )
+    , ( 640, "`code  \nspan`\n", Just "<p><code>code   span</code></p>" )
+    , ( 641, "`code\\\nspan`\n", Just "<p><code>code\\ span</code></p>" )
+    , ( 642, "<a href=\"foo  \nbar\">\n", Nothing )
+    , ( 643, "<a href=\"foo\\\nbar\">\n", Nothing )
+    , ( 644, "foo\\\n", Just "<p>foo\\</p>" )
+    , ( 645, "foo  \n", Just "<p>foo</p>" )
+    , ( 646, "### foo\\\n", Just "<h3>foo\\</h3>" )
+    , ( 647, "### foo  \n", Just "<h3>foo</h3>" )
+    , ( 648, "foo\nbaz\n", Just "<p>foo\nbaz</p>" )
+    , ( 649, "foo \n baz\n", Just "<p>foo\nbaz</p>" )
+    , ( 650, "hello \$.;'there\n", Just "<p>hello \$.;'there</p>" )
+    , ( 651, "Foo χρῆν\n", Just "<p>Foo χρῆν</p>" )
+    , ( 652, "Multiple     spaces\n", Just "<p>Multiple     spaces</p>" )
+    ]
+
+
+check : Int × String × Maybe String → String
+check ( n, markdown, wanted ) =
+    got = Ssr.render (Html.Markdown.fromString markdown)
+    case wanted of
+        Just html →
+            if got == html then
+                "${String.fromInt n} ok"
+            else
+                "${String.fromInt n} DIFFERS ${Debug.toString got} WANTED ${Debug.toString html}"
+
+        Nothing →
+            "${String.fromInt n} ${Debug.toString got}"
+
+
+main : Program
+main = Node.printLines (List.map examples check)
