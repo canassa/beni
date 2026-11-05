@@ -2382,7 +2382,7 @@ The review of #2045 found the two bullets above by the sanitiser (`creationAnswe
 callee may run it and no footprint says so. Otherwise a closure's holdings were not live at `List.update`, `Ref.update` or
 `Ref.modify`, directly or through a helper (`run/SanitiserRowCallbackHolds`, trapping on master too). It is a use of the local,
 not a read in a contract, and a frame's parameter has no such use: its caller makes that use, and a read there would be an
-operand at every pass, asking a `taken` row's elements plain.
+operand at every pass, asking a `taken` row's elements plain. That leaves a parameter's holdings not live at a row, which traps on master and here (#2050).
 
 *As built (2026-11-05).* `Called.zig`, `Made.zig`; a walk's `Called.Last` marks where each list's last call begins, zero
 for any other code, so that every reader takes `items[last..]` and no other code changes. `Groups.calledCodes` numbers
