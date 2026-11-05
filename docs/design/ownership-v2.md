@@ -2219,10 +2219,9 @@ label passed on inside a code run more than once keeps the slot, at the pass (`S
 an outer label is many, when two labels of that call have one function slot (`two h = ( h ⊤, h ⊤ )`, which `LabelChain.outwardMany` now
 adds up). What the callee holds across the run is judged too: a capture supplied, or an answer in a known code, has as operands what
 §2.11.3 *a capture written across the callee's run* gives a capture write (`Across.operands`), so `pair (λ⊤ → g y) y` and `both (λ⊤ → g1 y)
-(λ⊤ → g2 y)` keep the slot. For an answer, an argument a label marked `taken` takes is left out, with no slot kept: such a row reads its container only through
-itself (§2.13.6), so the answer's relation to it is what that label's `sep` and `below` ask (rule 3). Every other callee stays an operand:
-`pair2 l p = ( p l, l )` keeps `l`, and `sel xs p = case xs of [ h, …t ] → ( p h, t )` hands one element and holds the rest, and a contract
-does not tell that from a traversal. So `List.map xs λv → g (f v)` is refused, sound or not, until a contract records a traversal (#2046).
+(λ⊤ → g2 y)` keep the slot. No argument is left out for an answer: a callee keeps one (`pair2 l p = ( p l, l )`), hands one element and holds the rest (`sel xs p = case xs
+of [ h, …t ] → ( p h, t )`), or, as `List.update`, returns the other positions, and a contract tells none of these from a traversal. So
+`List.map xs λv → g (f v)` and `List.update xs i λv → g (f v)` are refused with `f` an identity, sound or not (#2046).
 
 Refused that a perfect checker accepts: an answer of a capture beside a held argument the capture is not (`( g (f x), x )` with `λ_ → k`);
 two answers of an identity over apart arguments, `( g (f x), g (f y) )` with `λw → w`, since only `fresh` is asked of a holder;

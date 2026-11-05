@@ -19,9 +19,6 @@ const LabelChain = @import("LabelChain.zig");
 const Eval = @import("Eval.zig");
 const FnRun = @import("FnRun.zig");
 const Across = @import("Across.zig");
-const RowEnv = @import("RowEnv.zig");
-const Contract = @import("Contract.zig");
-const Place = @import("Place.zig");
 
 const Error = Eval.Error;
 const none: u32 = Ids.none_int;
@@ -142,24 +139,6 @@ pub fn heldByClosure(e: *Eval.Evaluation, q: u32, aj: u32) bool {
     return LabelChain.outwardMany(e.chain(), q);
 }
 
-/// Whether label `lab` takes parameter `j`: a traversal's, whose container
-/// is read only through the traversal (§2.13.6), keeping none of it. A
-/// callee's own `[ h, …t ]` may hand one element and hold the rest.
-pub fn takes(c: LabelChain.Chain, lab: Contract.Label, j: usize) Error!bool {
-    if (lab.origin[2] & RowEnv.taken_origin == 0) return false;
-    var hit = false;
-    for (c.contracts.suppliesOf(lab.supplies)) |su| {
-        if (c.contracts.effectsOf(su.kept).len != 0) return false;
-        for ((try LabelChain.entriesOf(c, su.res_root)).items.items) |rs| for (rs.arrivals) |a| {
-            if (a.kind != .param or a.j != j) continue;
-            const ws = c.f.slots.relWords(a.slot);
-            if (ws.len > 1 or (ws.len == 1 and ws[0] != Place.Step.elem.word())) return false;
-            hit = true;
-        };
-    }
-    return hit;
-}
-
 /// What a part supplied at pass call `q` is judged against: the call's
 /// arguments for a part of argument `aj` (`none`: an answer in the callee,
 /// the callee's to judge), and, for a capture or an answer of a known code a
@@ -173,7 +152,7 @@ pub fn operandsOf(e: *Eval.Evaluation, q: u32, aj: u32) Error![]const u32 {
     if (aj != none) try out.appendSlice(e.ev.arena, call.args);
     var rest: std.ArrayList(u32) = .empty;
     defer rest.deinit(e.gpa());
-    if (aj == none) try Across.operands(e.chain(), q, takes, &rest) else try Across.operands(e.chain(), q, Across.none, &rest);
+    try Across.operands(e.chain(), q, &rest);
     try out.appendSlice(e.ev.arena, rest.items);
     return out.items;
 }
