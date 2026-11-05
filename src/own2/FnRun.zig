@@ -19,6 +19,7 @@ const std = @import("std");
 const Ids = @import("Ids.zig");
 const Contract = @import("Contract.zig");
 const LabelChain = @import("LabelChain.zig");
+const Origin = @import("Origin.zig");
 const RouteWalk = @import("RouteWalk.zig");
 const Relation = @import("Relation.zig");
 const Slots = @import("Slots.zig");
@@ -67,7 +68,7 @@ fn wantOf(ev: *Relation.Eval, cx: WalkContext.Context, closures: anytype, mode: 
     var out: std.ArrayList(u32) = .empty;
     for (closures) |c| if (frameSite(ev.contracts, cx, closures, c.inst)) try out.append(ev.arena, c.inst);
     std.mem.sort(u32, out.items, {}, std.sort.asc(u32));
-    return .{ .sites = out.items, .deep = mode == .run_deep };
+    return .{ .sites = out.items, .deep = mode == .run_deep, .fold = true };
 }
 
 /// Which function objects to give: every parameter function slot, and the
@@ -76,6 +77,9 @@ const Want = struct {
     sites: []const u32 = &.{},
     /// Every object the value reaches, not its own storage alone.
     deep: bool = false,
+    /// A run: a `var` slot is a fold's, as only a function runs: all it holds goes (§2.1).
+    fold: bool = false,
+    whole: bool = false, // In a `⊤`'s origin, likewise.
 };
 
 /// Whether `site` is one of the frame's closures `closures` (each with its
@@ -118,6 +122,8 @@ fn expanded(ev: *Relation.Eval, stack: *std.ArrayList(u32), want: Want, out: *st
     const gpa = ev.gpa();
     var seen: Ids.FixedDict(1) = .{};
     defer seen.deinit(gpa);
+    var origins: std.ArrayList(u32) = .empty;
+    defer origins.deinit(gpa);
     while (stack.pop()) |li| {
         if ((try seen.getOrPut(gpa, .{li})).found_existing) continue;
         try ev.charge(.inspection, 1);
@@ -127,6 +133,7 @@ fn expanded(ev: *Relation.Eval, stack: *std.ArrayList(u32), want: Want, out: *st
             continue;
         }
         switch (l.kind) {
+            .top => if (l.root != Value.none) try Origin.leaves(ev, l, &origins),
             .site => if (std.sort.binarySearch(u32, want.sites, l.atom, order) != null) try out.append(gpa, li),
             // A label's answer that runs: the answer has left where nobody says (`answer_left`).
             .ref => if (f.roots.items[l.root].kind == .cb) try out.append(gpa, li) else if (f.roots.items[l.root].kind == .param) {
@@ -136,6 +143,7 @@ fn expanded(ev: *Relation.Eval, stack: *std.ArrayList(u32), want: Want, out: *st
                 // the leaf whole: more than its function objects escape.
                 const whole = for (f.slots.elems(l.slots)) |s| {
                     if (Slots.isSub(s) and f.places.holds(f.places.pathPlace(Slots.pathOf(s))).closure) break true;
+                    if (want.whole or (want.fold and f.places.kind(f.places.pathPlace(Slots.pathOf(s))) == .@"var")) break true;
                     if (s & (Slots.sub_bit | Slots.not_bit) == 0 and f.places.kind(f.places.pathPlace(.from(s))) == .closure) try fs.append(gpa, s);
                 } else false;
                 if (whole) {
@@ -150,6 +158,10 @@ fn expanded(ev: *Relation.Eval, stack: *std.ArrayList(u32), want: Want, out: *st
             else => {},
         }
     }
+    if (origins.items.len == 0) return;
+    var whole = want;
+    whole.whole = true;
+    return expanded(ev, &origins, whole, out);
 }
 
 fn order(a: u32, b: u32) std.math.Order {

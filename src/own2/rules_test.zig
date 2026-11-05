@@ -76,6 +76,7 @@ const layers = [_]Entry{
     // The readers and the union of result trees, below the contracts (#1714).
     // A read's result slots as a column, for `ReadOff` and `Relation` (#1714).
     .{ .file = "FoldRead.zig", .layer = 3, .max_lines = 50 },
+    .{ .file = "Origin.zig", .layer = 3, .max_lines = 20 },
     .{ .file = "Dests.zig", .layer = 3, .max_lines = 200 },
     // The identity tree's one normal form, below `Contract` (#1714).
     .{ .file = "Normal.zig", .layer = 3, .max_lines = 40 },
@@ -559,7 +560,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 119), layers.len);
+    try testing.expectEqual(@as(usize, 120), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

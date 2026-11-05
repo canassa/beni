@@ -435,7 +435,7 @@ const Walker = struct {
                 }
                 // A step a place cannot name: a fold's `var`, a record row a template
                 // dropped, a schema member. Unknown, not nothing (§2.1); `cross` holds no object.
-                const p = (try fr.child(x.pos, kind, a, b)) orelse return if (fr.places.kind(fr.places.pathPlace(fr.pos.items[x.pos].slot)) == .cross) fr.scalar() else fr.top();
+                const p = (try fr.child(x.pos, kind, a, b)) orelse return if (fr.places.kind(fr.places.pathPlace(fr.pos.items[x.pos].slot)) == .cross) fr.scalar() else fr.mk(.{ .kind = .top, .site = v });
                 return fr.mk(.{ .kind = .ref, .root = x.root, .pos = p, .place = fr.places.pathPlace(fr.pos.items[p].slot) });
             },
             .built => {

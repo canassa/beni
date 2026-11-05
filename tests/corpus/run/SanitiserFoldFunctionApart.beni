@@ -1,0 +1,34 @@
+-- The twin of `SanitiserFoldFunction` (`ownership-v2.md` §2.1, #2069): a function
+-- past the fold that writes nothing runs in peace.
+import List
+import Node exposing (Program)
+import String
+
+
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+type alias F =
+    List Int → List Int
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+called : T F, List Int → List Int
+called t a =
+    case t of
+        Wrap (Leaf [ f ]) →
+            f a
+        _ →
+            a
+
+
+main : Program
+main =
+    k = [ 1 ]
+    x = called (Wrap (Leaf [ λv → List.copy v ])) k
+    Node.print (show x ++ "|" ++ show k)

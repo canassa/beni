@@ -128,7 +128,7 @@ pub const Form = enum(u8) {
 /// object is its storage, or `none`), `extra`. `ref`: `root`, `pos` and
 /// `family` (a slot set, or `Slots.empty` for the position's own subtree).
 /// `alt`: `head` the choice; kids are `(arm, value)` pairs. `shared`:
-/// `head` the module, `site` the declaration.
+/// `head` the module, `site` the declaration. `top`: `site` its origin (a `top` leaf's `root`, §2.3.4).
 pub const Val = struct {
     kind: Kind,
     /// The value's place, `.none` when unknown: a `⟲` projection of a
@@ -267,7 +267,7 @@ pub const Frame = struct {
         switch (v.kind) {
             .scalar, .bot => return .{ Leaves.empty, Leaves.empty },
             .top, .shared, .host => {
-                const x = try f.oneOf(if (v.kind == .shared) .{ .kind = .shared, .atom = v.head, .extra = v.site } else .{ .kind = if (v.kind == .top) .top else .host });
+                const x = try f.oneOf(if (v.kind == .shared) .{ .kind = .shared, .atom = v.head, .extra = v.site } else if (v.kind == .top) .{ .kind = .top, .root = v.site } else .{ .kind = .host });
                 return .{ x, x };
             },
             .ref => {

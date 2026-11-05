@@ -1,0 +1,75 @@
+-- A function past a non-regular type's fold (`ownership-v2.md` §2.1, *A step past
+-- a fold*, #2069): no slot names it, so it ran as unknown code and nothing said
+-- what it writes. What the fold holds now escapes at the run, so a caller's writer
+-- there is refused, called, handed to a helper or a row. Asked nothing, each
+-- writer edits the list `a` names in place.
+import List
+import Node exposing (Program)
+import String
+
+
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+type alias F =
+    List Int → List Int
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+ap : F, List Int → List Int
+ap f a = f a
+
+
+called : T F, List Int → List Int
+called t a =
+    case t of
+        Wrap (Leaf [ f ]) →
+            f a
+        _ →
+            a
+
+
+helper : T F, List Int → List Int
+helper t a =
+    case t of
+        Wrap (Leaf [ f ]) →
+            ap f a
+        _ →
+            a
+
+
+row : T F, List Int → List (List Int)
+row t a =
+    case t of
+        Wrap (Leaf fs) →
+            List.map fs λf → f a
+        _ →
+            []
+
+
+main : Program
+main =
+    k = [ 1 ]
+    x = called (Wrap (Leaf [ λv → List.push v 2 ])) k
+    m = [ 1 ]
+    y = helper (Wrap (Leaf [ λv → List.push v 2 ])) m
+    n = [ 1 ]
+    z = row (Wrap (Leaf [ λv → List.push v 2 ])) n
+    Node.print
+        (show x
+            ++ "|"
+            ++ show k
+            ++ "|"
+            ++ show y
+            ++ "|"
+            ++ show m
+            ++ "|"
+            ++ show n
+            ++ "|"
+            ++ String.fromInt (List.length z)
+        )

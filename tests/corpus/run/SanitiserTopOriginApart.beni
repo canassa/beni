@@ -1,0 +1,129 @@
+-- The reading twin of `SanitiserTopOrigin`: a reader in every shape is accepted.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+type Q r
+    = Q { r | a : List Int }
+
+
+type alias F =
+    List Int → List Int
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+apb : { g : F }, List Int → List Int
+apb r a = r.g a
+
+
+inRecord : T F, List Int → List Int
+inRecord t a =
+    case t of
+        Wrap (Leaf [ f ]) →
+            apb { g = f } a
+        _ →
+            a
+
+
+inLiteral : T F, List Int → List (List Int)
+inLiteral t a =
+    case t of
+        Wrap (Leaf [ f ]) →
+            List.map [ f ] λg → g a
+        _ →
+            []
+
+
+inRow : Q { g : F }, List Int → List Int
+inRow b a =
+    case b of
+        Q rec →
+            rec.g a
+
+
+each : T F, (F → b), b → b
+each t g d =
+    case t of
+        Wrap (Leaf [ f ]) →
+            g f
+        _ →
+            d
+
+
+supplied : T F, List Int → List Int
+supplied t a = each t (λf → f a) a
+
+
+inCell : T F, List Int → List Int
+inCell t a =
+    case t of
+        Wrap (Leaf [ f ]) →
+            r = Ref.make f
+            g = Ref.get r
+            g a
+        _ →
+            a
+
+
+captured : T F, List Int → List Int
+captured t a =
+    case t of
+        Wrap (Leaf [ f ]) →
+            r = { g = f }
+            h = λ⊤ → r.g a
+            h ⊤
+        _ →
+            a
+
+
+pick : T F, F → F
+pick t d =
+    case t of
+        Wrap (Leaf [ f ]) →
+            f
+        _ →
+            d
+
+
+returned : T F, List Int → List Int
+returned t a =
+    g = pick t List.copy
+    g a
+
+
+main : Program
+main =
+    w = λv → List.copy v
+    a = [ 1 ]
+    x1 = inRecord (Wrap (Leaf [ w ])) a
+    b = [ 1 ]
+    x2 = inLiteral (Wrap (Leaf [ λv → List.copy v ])) b
+    c = [ 1 ]
+    x3 = inRow (Q { a = [], g = λv → List.copy v }) c
+    d = [ 1 ]
+    x4 = supplied (Wrap (Leaf [ λv → List.copy v ])) d
+    e1 = [ 1 ]
+    x5 = inCell (Wrap (Leaf [ λv → List.copy v ])) e1
+    f = [ 1 ]
+    x6 = captured (Wrap (Leaf [ λv → List.copy v ])) f
+    g = [ 1 ]
+    x7 = returned (Wrap (Leaf [ λv → List.copy v ])) g
+    Node.printLines
+        [ show x1 ++ "|" ++ show a
+        , String.fromInt (List.length x2) ++ "|" ++ show b
+        , show x3 ++ "|" ++ show c
+        , show x4 ++ "|" ++ show d
+        , show x5 ++ "|" ++ show e1
+        , show x6 ++ "|" ++ show f
+        , show x7 ++ "|" ++ show g
+        ]

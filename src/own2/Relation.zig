@@ -382,7 +382,7 @@ pub const Eval = struct {
             const rest = words[it.at..];
             switch (x.kind) {
                 .scalar, .bot => {},
-                .top, .host => try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = if (x.kind == .host) .host else .top, .tags = it.tags }), .route = it.route }),
+                .top, .host => try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = if (x.kind == .host) .host else .top, .root = if (x.kind == .top) x.site else none, .tags = it.tags }), .route = it.route }),
                 .shared => try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .shared, .atom = x.head, .extra = x.site, .tags = it.tags }), .route = it.route }),
                 .alt => {
                     // Read deep whole: its leaf set, the leaves its arms give.
