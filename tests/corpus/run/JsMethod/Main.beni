@@ -1,4 +1,4 @@
--- `Js.method`, a function JavaScript calls on a receiver, written by a
+-- Host-owned receiver methods are supplied by the fixture sibling. A
 -- platform module: a counter's method writing its receiver, a receiver read
 -- through a nested arrow, a method's own object making one with a method of
 -- its own, and a method caching on its receiver.

@@ -1,0 +1,1 @@
+pub foreign impure install : sync (Int → ⊤) → ⊤

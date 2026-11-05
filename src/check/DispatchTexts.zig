@@ -700,8 +700,7 @@ pub fn constrainedConstant(
     try r.emitAt(.constrained_constant, region, token, &out);
 }
 
-/// The `pub` value of `module` closest to `name` by edit distance, for
-/// §10.1's did-you-mean.
+/// Apply the same private-value fence as resolution before offering a hint.
 fn availableValue(r: *const Reporter, module: Graph.Index, name: Symbol) bool {
     const privacy = @import("../resolve/CorePrivate.zig");
     return !privacy.denied(
@@ -715,6 +714,7 @@ fn availableValue(r: *const Reporter, module: Graph.Index, name: Symbol) bool {
     );
 }
 
+/// The public value closest by edit distance, after the access fence.
 fn nearestValue(r: *Reporter, module: Graph.Index, name: Symbol) ?Symbol {
     if (module.int() >= r.env.interfaces.len) return null;
     const iface = r.env.iface(module);

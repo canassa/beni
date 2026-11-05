@@ -3329,7 +3329,7 @@ callback (a shared higher-order `traverse` was measured first and costs `foldl` 
 
 ### 18.6 Function values handed to JavaScript
 
-A function value passed to a `foreign` with no summary (`Js.pure`, `Js.method`, …) escapes every cell it
+A function value passed to a `foreign` with no summary (`Js.pure`, …) escapes every cell it
 captured, at the call: the foreign may keep it and call it later (§15 decision 6). A parameter escaped only
 so is `J` in a summary — `E` for every other rule — and a rejection through either says it is this rule:
 "a function value that `Debug.toString` hands to JavaScript captured it, and JavaScript is taken to keep it".
@@ -4265,6 +4265,12 @@ prints as its parameter and path, `π1.expect#Expect.1 calls ≤1`, and what it 
 lambda a result carries prints `λ` at its path (§24.9).
 
 ### 24.8 The annotated surface
+
+Amendment 2026-11-05 (review of #2001), §24.8 body pins: reread the shared
+Lower spans for Js.cell, cellRead, cellWrite, none, some, optMatch and
+optWithDefault after removal of method dispatch. Their Cell/Opt branches
+and words are unchanged; only the unrelated method arm is removed.
+
 
 *Typed generic append (amended 2026-11-05, Closes #1807).* Core-private
 `Basics.appendTyped` takes two `aliased appendable` operands and returns a

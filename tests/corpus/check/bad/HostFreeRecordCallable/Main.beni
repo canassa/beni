@@ -1,4 +1,0 @@
-import Probe
-
-
-pub bad = Probe.bad

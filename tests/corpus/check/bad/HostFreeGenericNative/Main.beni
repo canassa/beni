@@ -1,5 +1,0 @@
-import Browser.Host.TextEncoder as Encoder
-import Probe
-
-
-pub bad = Probe.erase (Encoder.create ⊤)

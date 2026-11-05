@@ -354,7 +354,7 @@ test "HostFree renderer storage retains imported erasure obligations in platform
     try testing.expectEqual(@as(usize, 6), p.session.diagnostics.items.len);
     try testing.expect(std.mem.indexOf(u8, p.stderr.written(), "Browser.Host.Array.View") != null);
     try testing.expect(std.mem.indexOf(u8, p.stderr.written(), "Browser.Host.KeyMap.Map") != null);
-    try testing.expect(std.mem.indexOf(u8, p.stderr.written(), "erases a callable") != null);
+    try testing.expect(std.mem.indexOf(u8, p.stderr.written(), "contains a function") != null);
     try testing.expect(std.mem.indexOf(u8, p.stderr.written(), "Js.Any.Any") != null);
 }
 

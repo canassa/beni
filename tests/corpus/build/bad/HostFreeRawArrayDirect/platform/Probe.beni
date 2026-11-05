@@ -1,0 +1,8 @@
+import Browser.Host.TextEncoder as Encoder
+import Js
+
+
+pub bad = Js.array [ (λn → n + 1) ]
+
+
+pub badNative = Js.array [ (Encoder.create ⊤) ]

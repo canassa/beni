@@ -1,4 +1,4 @@
--- The former raw function cast is now refused; the ownership twin uses typed Any.
+-- The former raw function cast is refused; its ownership twin returns a typed function.
 import Js
 
 

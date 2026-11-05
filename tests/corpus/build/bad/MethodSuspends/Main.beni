@@ -1,0 +1,11 @@
+import Node
+-- The typed host callback remains synchronous after removal of Js.method.
+import Probe
+import Task
+
+
+pub bad = Probe.install λ_ → Task.yieldNow ⊤
+
+
+main : Node.Program
+main = Node.done

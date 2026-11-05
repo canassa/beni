@@ -1,6 +1,5 @@
--- A method must not erase a returned closure through Js.Value.
+-- A returned closure stays typed, including a captured host read.
 import Js
 
 
-pub later : Js.Value
-later = Js.method λself → Js.from λ⊤ → Js.get self "length"
+pub later self = Js.from λ⊤ → Js.get self "length"

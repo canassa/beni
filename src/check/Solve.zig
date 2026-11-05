@@ -99,7 +99,7 @@ pub const Append = struct { inst: Bir.Inst.Index, result: Var };
 
 /// A use of core's `Js.from` or `Js.to`, the variable its copy was unified
 /// into, and the declaration being solved (`casts`, checker-v2.md §28).
-pub const Cast = struct { inst: Bir.Inst.Index, copy: Var, decl: u32, which: Which };
+pub const Cast = struct { inst: Bir.Inst.Index, copy: Var, decl: u32, which: Which, parameter: u32 = 0, value: bool = false, call: ?Bir.Inst.Index = null };
 
 /// `from`'s parameter or `to`'s result is what JavaScript holds.
 pub const Which = enum { from, to, inspect, checked };
@@ -421,6 +421,14 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
                 try s.instantiated(node.region);
                 _ = try s.unify(@fromBackingInt(@intCast(node.a)), copy, node.region, node.category);
             },
+            .raw_host => {
+                const v: Var = @fromBackingInt(@intCast(node.a));
+                const decl = s.instantiate.decl orelse std.math.maxInt(u32);
+                const call_inst: Bir.Inst.Index = @fromBackingInt(@intCast(node.b));
+                const callee: Bir.Inst.Index = @fromBackingInt(@intCast(s.cx.bir.instData(call_inst).lhs));
+                try s.casts.append(s.cx.gpa, .{ .inst = node.region, .copy = v, .decl = decl, .which = .from, .value = true, .call = call_inst, .parameter = s.jsRawParameter(callee) orelse 0 });
+                try s.instantiate.noteCastRoot(decl, v);
+            },
             .reference => {
                 const target: Var = @fromBackingInt(@intCast(node.a));
                 s.instantiate.made.clearRetainingCapacity();
@@ -428,15 +436,18 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
                     const copy = try s.instantiate.copy(scheme);
                     try s.instantiated(node.region);
                     _ = try s.unify(target, copy, node.region, node.category);
-                    if (s.jsCast(node.region)) |which| {
+                    const raw_parameter = s.jsRawParameter(node.region);
+                    const cast_kind = s.jsCast(node.region) orelse if (raw_parameter != null) Which.from else null;
+                    if (cast_kind) |which| {
                         const decl = s.instantiate.decl orelse std.math.maxInt(u32);
                         try s.casts.append(s.cx.gpa, .{
                             .inst = node.region,
                             .copy = copy,
                             .decl = decl,
                             .which = which,
+                            .parameter = raw_parameter orelse 0,
                         });
-                        try s.noteCastImage(which, copy, decl);
+                        try s.noteCastImage(which, copy, decl, raw_parameter orelse 0);
                     }
                     if (@import("../js/JsIntrinsic.zig").of(s.cx.graph, s.cx.interfaces, s.cx.bir, node.region, s.cx.interner)) |which| {
                         if (which == .some or which == .optMatch or which == .optWithDefault or which == .any_unpack_opt)
@@ -722,13 +733,13 @@ fn isBasicsAppend(s: *Solve, inst: Bir.Inst.Index) bool {
 /// `to`'s result, or `from`'s parameter when it has one. `Instantiate.copy`
 /// records later copies of type variables reachable from it, while `decl`
 /// is solved (checker-v2.md §28).
-fn noteCastImage(s: *Solve, which: Which, copy: Var, decl: u32) Error!void {
+fn noteCastImage(s: *Solve, which: Which, copy: Var, decl: u32, parameter: u32) Error!void {
     const func = Walk.function(s.store(), copy) orelse {
         try s.instantiate.noteCastRoot(decl, null);
         return;
     };
     const relevant: ?Var = switch (which) {
-        .from, .inspect, .checked => if (func.params.len == 1) func.params[0] else null,
+        .from, .inspect, .checked => if (parameter < func.params.len) func.params[parameter] else null,
         .to => func.result,
     };
     try s.instantiate.noteCastRoot(decl, relevant);
@@ -753,6 +764,25 @@ fn jsCast(s: *Solve, inst: Bir.Inst.Index) ?Which {
     if (std.mem.eql(u8, module_name, "Js.Inspect")) return if (std.mem.eql(u8, name, "inspect")) .inspect else null;
     if (!std.mem.eql(u8, module_name, "Js")) return null;
     return std.meta.stringToEnum(Which, name);
+}
+
+/// Raw container fields, elements, argument lists and methods have the same
+/// representation boundary as from. Record the relevant parameter of the
+/// instantiated signature, so aliases and generic copies use the same facts.
+fn jsRawParameter(s: *Solve, inst: Bir.Inst.Index) ?u32 {
+    const bir = s.cx.bir;
+    if (inst.int() >= bir.insts.len or bir.instTag(inst) != .ext_value) return null;
+    const d = bir.instData(inst);
+    const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
+    if (module.int() >= s.cx.graph.count() or s.cx.graph.modulePackage(module) != .core) return null;
+    if (!std.mem.eql(u8, s.cx.interner.slice(s.cx.graph.moduleName(module)), "Js")) return null;
+    const iface = s.cx.iface(module);
+    if (d.rhs >= iface.values.len) return null;
+    const name = s.cx.interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]);
+    if (std.mem.eql(u8, name, "object") or std.mem.eql(u8, name, "array")) return 0;
+    if (std.mem.eql(u8, name, "apply") or std.mem.eql(u8, name, "construct")) return 1;
+    if (std.mem.eql(u8, name, "call")) return 2;
+    return null;
 }
 
 /// Whether the reference at `inst` is core's `Debug.toString` or
@@ -789,28 +819,6 @@ fn isProbe(s: *Solve, inst: Bir.Inst.Index) bool {
     const iface = s.cx.iface(module);
     if (d.rhs >= iface.values.len) return false;
     return std.mem.eql(u8, s.cx.interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]), "maySuspend");
-}
-
-/// Check a concrete append against its typed core operation. The BIR spelling
-/// remains ++; the existing dispatch/lowering keeps its established output.
-fn typedAppend(s: *Solve, node: Tree.Node, info: Tree.Call, args: []const Var) Error!void {
-    if (args.len != 2 or !s.isBasicsAppend(node.region)) return;
-    const content = s.store().resolvedContent(args[0]);
-    if (content != .structure or content.structure != .app) return;
-    const id = content.structure.app.type;
-    if (id == .none) return;
-    const owner: InternPool.WellKnown = if (id == s.cx.types.well_known.list) .List else if (id == s.cx.types.well_known.string) .String else return;
-    const module = s.cx.graph.lookup(.core, owner.symbol()) orelse return;
-    const iface = s.cx.iface(module);
-    for (iface.values, 0..) |value, i| {
-        if (iface.symbols[@backingInt(value.name)] != InternPool.WellKnown.append.symbol()) continue;
-        const callee: Bir.Inst.Index = @fromBackingInt(@intCast(s.cx.bir.instData(node.region).lhs));
-        s.instantiate.origin = callee;
-        const scheme = try s.instantiate.importedValue(module, @intCast(i)) orelse return;
-        const typed = try s.instantiate.copy(scheme);
-        _ = try s.unify(info.callee, typed, node.region, node.category);
-        return;
-    }
 }
 
 fn call(s: *Solve, node: Tree.Node) Error!void {
@@ -898,7 +906,6 @@ fn call(s: *Solve, node: Tree.Node) Error!void {
     // expectation: a method the callee's requirement finds
     // wrong is reported as that, and poisons its result, so the result's
     // mismatch — its consequence — is not reported beside it.
-    try s.typedAppend(node, info, args);
     if (s.readied()) try Decide.drain(s, s.frame().queue, false);
     // The variables the callee's result is made of, before a failed
     // unification poisons it (`failInstantiation`).

@@ -1,64 +1,30 @@
---! `Js.method` in a platform module (`backend.md` §4, *`Js.method` is a
---! `function`*): a field of a `Js.object` that JavaScript calls by name,
---! reading its receiver — directly, through a nested arrow, and through a
---! method of an object it makes — and caching on it, as a list's `$plain`
---! does.
-
+-- Host-owned methods stay in the sibling; beni checks receiver calls.
 import Js
 
 
---| A counter whose `bump` method reads and writes its receiver's `n`.
-pub counter : Int → Js.Value
-counter start =
-    Js.object
-        [ ( "n", Js.from start )
-        , ( "bump"
-          , Js.method λself →
-              n : Int
-              n = Js.to (Js.get self "n")
-              Js.set self "n" (Js.from (n + 1))
-              n + 1
-          )
-        ]
+pub foreign pure counter : Int → Js.Value
 
 
---| The counter's next value, by its method.
+foreign pure nestedObject : Int → Js.Value
+
+
+foreign pure outer : ⊤ → Js.Value
+
+
+foreign pure cachedObject : ⊤ → Js.Value
+
+
 pub bump : Js.Value → Int
 bump o = Js.to (Js.call o "bump" [])
 
 
---| A method whose receiver is read inside an arrow it makes and calls.
 pub nested : Int → Int
-nested k =
-    o =
-        Js.object
-            [ ( "k", Js.from k )
-            , ( "twice"
-              , Js.method λself →
-                  read = λ⊤ → Js.to (Js.get self "k")
-                  read ⊤ + read ⊤
-              )
-            ]
-    Js.to (Js.call o "twice" [])
+nested k = Js.to (Js.call (nestedObject k) "twice" [])
 
 
---| A method that makes an object with a method of its own: the inner
---| method's receiver is the inner object, the outer's the outer one.
 pub inner : ⊤ → String
 inner ⊤ =
-    outer =
-        Js.object
-            [ ( "name", Js.from "outer" )
-            , ( "make"
-              , Js.method λself →
-                  Js.object
-                      [ ( "name", Js.from "inner" )
-                      , ( "outerName", Js.get self "name" )
-                      , ( "own", Js.method λme → Js.get me "name" )
-                      ]
-              )
-            ]
-    made = Js.call outer "make" []
+    made = Js.call (outer ⊤) "make" []
     own : String
     own = Js.to (Js.call made "own" [])
     seen : String
@@ -66,27 +32,9 @@ inner ⊤ =
     "${own} ${seen}"
 
 
---| A method that caches what it computes on its receiver, written once.
 pub cached : ⊤ → String
 cached ⊤ =
-    o =
-        Js.object
-            [ ( "p", Js.null )
-            , ( "runs", Js.from 0 )
-            , ( "plain"
-              , Js.method λself →
-                  p = Js.get self "p"
-                  if Js.isNull p then
-                      before : Int
-                      before = Js.to (Js.get self "runs")
-                      Js.set self "runs" (Js.from (before + 1))
-                      made = Js.from "made"
-                      Js.set self "p" made
-                      made
-                  else
-                      p
-              )
-            ]
+    o = cachedObject ⊤
     a : String
     a = Js.to (Js.call o "plain" [])
     b : String

@@ -51,11 +51,14 @@ pub fn rows(
         stack.clearRetainingCapacity();
         // `from`'s parameter and `to`'s result: the `Value` on the other
         // side is JavaScript's own.
-        const func = Walk.function(store, cast.copy) orelse continue;
-        try stack.append(gpa, switch (cast.which) {
-            .from, .inspect, .checked => if (func.params.len == 1) func.params[0] else continue,
-            .to => func.result,
-        });
+        const seed = if (cast.value) cast.copy else seed: {
+            const func = Walk.function(store, cast.copy) orelse continue;
+            break :seed switch (cast.which) {
+                .from, .inspect, .checked => if (cast.parameter < func.params.len) func.params[cast.parameter] else continue,
+                .to => func.result,
+            };
+        };
+        try stack.append(gpa, seed);
         for (images.vars.items) |v| try stack.append(gpa, v);
         while (stack.pop()) |v| {
             const root = store.find(v);

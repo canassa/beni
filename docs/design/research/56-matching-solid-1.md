@@ -1,5 +1,8 @@
 # Matching Solid 1: why it beats beni, and what closes the gap
 
+> Historical note, 2026-11-05: `Js.method` was removed from core in #2001.
+> Receiver-method proposals below describe the earlier representation.
+
 **Commissioned by** the owner, 2026-10-04: *"Investigate why Solid beats beni and find a solution.
 Rules: idiomatic beni code, no hacks. Everything else is up for discussion, including architecture
 changes to beni and TEA. Solid 1 speed across all benchmarks is the bar."* The losses are the ones

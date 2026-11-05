@@ -1,0 +1,12 @@
+import Node
+import Probe
+
+
+pub bad = Probe.wrap λn → n + 1
+
+
+pub badNative = Probe.wrap (Probe.native ⊤)
+
+
+main : Node.Program
+main = Node.done

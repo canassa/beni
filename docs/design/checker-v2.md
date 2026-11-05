@@ -5407,7 +5407,7 @@ published; typing markup against them is the next slice. Where the text left a c
   same `E -> P`, and a non-`pub` beni extractor is kept, exported and imported as a non-`pub`
   `foreign` one is (`boundary.md` §9.3). *Amended 2026-10-26 (the review of #925):* **an
   extractor is held `sync`**, beni or `foreign`: a demand of kind `extractor` on its scheme (§27),
-  checked once the effects are inferred, as `Js.method`'s lambda is; one whose class may suspend —
+  checked once the effects are inferred, as any other sync callback is; one whose class may suspend —
   a beni body that waits, or a `foreign suspends` rung — is `sync_boundary` at the event whose `via`
   names it. A lowering calls the extractor while the event is dispatched, outside any fiber, where
   a suspension has nothing to resume into and throws (`boundary.md` §9.3).

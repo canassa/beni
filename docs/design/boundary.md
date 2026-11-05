@@ -1206,20 +1206,12 @@ headers, whose `$plain` and `length` a reader of a list relies on by name (`back
 reader of a list may rely on*). *Amended 2026-10-15:* with the trie withdrawn, its use there is the view header
 `{ $b, $o, length }` alone (`backend.md` §4, *The representation: a plain array*).
 
-**`method : sync (Value → a) → Value`** (pure, 2026-10-02, the owner's decision on research 50 §7)
-is a function JavaScript calls as a method: `Js.method λself → body` is `function () { const self
-= this; body }`, so `o.m()` hands `o` to the lambda as `self`. It is written with a lambda in place
-— anything else is refused (`internal`), as a non-literal argument list is — and is printed as a
-`function` expression, never an arrow, whose `this` is not the receiver's, and always with a block
-body; it takes no argument but its receiver. `sync`: JavaScript calls it and waits for nothing, so
-a body that may suspend is `sync_boundary`. `pure`: making a function changes nothing. *(Amended 2026-10-15: with `$plain()` withdrawn,
-`core/List` no longer uses it (`backend.md` §4, *The representation: a plain array*). S7 decides
-whether `Js` keeps it.)* Its one use
-is a field of a `Js.object` that a reader calls by name — a list header's `$plain`, which the
-protocol makes a field and not a prototype method (`backend.md` §4, *What a reader of a list may
-rely on*) — and the optimiser keeps every object holding one whole, since the method reads and
-writes it through a receiver the optimiser cannot name (`backend.md` §4, *`Js.method` is a
-`function`*). Passed as a value, `Js.js`'s `method f` is `function () { return f(this) }`.
+**`Js.method` is withdrawn (2026-11-05, review of #2001).** A beni
+callback cannot be hidden in an untyped host value. Core exports no such
+operation; typed platform siblings implement host-owned receiver methods.
+`Js.object`, `Js.array`, and the argument lists of `Js.call`, `Js.apply` and
+`Js.construct` check every supplied value through the same boundary as
+`Js.from`, including generic wrappers and cached imports.
 
 **A `()` crossing the wall is `null` or `undefined`** (2026-10-02, `backend.md` §4's *A `()` result
 is not written*). A release build writes no result for a function whose result is `()`, so a

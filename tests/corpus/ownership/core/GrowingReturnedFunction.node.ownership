@@ -1,12 +1,12 @@
 module GrowingReturnedFunction
-  21:7 List.push decoded: accepted call
-  32:15 List.push ys: rejected alias: xs holds it and is read at 32:13
-  49:7 List.push decoded: rejected unknown: it came from a call of a function the checker cannot identify, which may return a list something else holds (approx)
-  summary build: π2 RA; res λr{lost}, ◇ π2
-  summary outer: π1 RA; res .0 fresh3{excl π1}, .0[*] ~condition(fresh2) ~fresh2{excl π1}, .0[*][*] condition(fresh4) ~condition(fresh1) ~fresh1 π1, .1 ~condition(fresh6) π1, condition(fresh5){shared}
-  summary shared: π1 RAW[storage], π1[*] A; res .0 condition(fresh2) fresh2 ~fresh1 ~fresh{excl π1} π1{excl π1}, .0[*] ~condition(fresh3) ~fresh{excl π1} ~π1[*]{excl π1}, .1 ~condition(fresh5) π1, condition(fresh4){lost}; xreq excl π1
-  summary mixed: π2 RAw[storage], π3 RAw[storage]; res .0 condition(fresh6) ⊤call{lost}r{lost}, .0[*] ~condition(fresh2) ~fresh2 ~⊤call{lost}r{lost}, .0[*]⋆ ~condition(fresh4) ~fresh1 ~π2 ~π3, .0⋆ ~condition(fresh3) ~fresh1 ~π2 ~π3, .1 ~condition(fresh7) π3, condition(fresh5){lost}; π2 calls 0, unseen
+  20:7 List.push decoded: accepted call
+  31:15 List.push ys: rejected call: xs may hold it through the call at 26:9, and is read at 31:13 (approx)
+  48:7 List.push decoded: rejected unknown: it came from a call of a function the checker cannot identify, which may return a list something else holds (approx)
+  summary build: π2 RA; res λr{lost}, ◇ fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} ~fresh3{excl π2} ~fresh4{lost}r{lost} ~fresh5{lost} π2{lost}r{lost}, ◇[*] fresh2{excl π2}r{excl π2} ~fresh4{lost}r{lost} ~fresh5{lost} ~π2{lost}r{lost}, ◇[*]⋆ ~fresh4{lost}r{lost} ~π2{lost}r{lost}
+  summary outer: π1 RA; res .0 fresh4{lost}, .0[*] condition(fresh5) ~condition(fresh3) ~fresh1{lost} ~fresh3{lost} ~π1{lost}, .0[*]⋆ ~condition(fresh2) ~fresh1{lost} ~fresh2 ~π1{lost}, .1 ~condition(fresh7) π1{lost}, condition(fresh6){lost}
+  summary shared: π1 RAw[storage], π1[*] RAw[storage], π1[*][*] A; res .0 condition(fresh6) fresh6 ~fresh{lost} ~π1[*]{lost}, .0[*] ~condition(fresh2) ~fresh{lost} ~π1[*][*]{lost}, .0[*]⋆ ~condition(fresh3) ~fresh1{lost} ~π1{lost}, .0⋆ ~condition(fresh4) ~fresh1{lost} ~π1{lost}, .1 ~condition(fresh7) π1{lost}, condition(fresh5){lost}
+  summary mixed: π2 RAw[storage], π3 RAw[storage]; res .0 condition(fresh6) ⊤call{lost}r{lost}, .0[*] ~condition(fresh2) ~fresh2 ~⊤call{lost}r{lost}, .0[*]⋆ ~condition(fresh3) ~fresh1{lost} ~π2 ~π3{lost}, .0⋆ ~condition(fresh4) ~fresh1{lost} ~π2 ~π3{lost}, .1 ~condition(fresh7) π3{lost}, condition(fresh5){lost}; π2 calls 0, unseen
   demands 3: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
 total 3: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
 cause unknown 1
-cause alias 1
+cause call 1

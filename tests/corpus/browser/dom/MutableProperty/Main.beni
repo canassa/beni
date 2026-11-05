@@ -1,0 +1,16 @@
+-- The exact same payload reference must be written twice after mutation.
+import Browser
+import Html exposing (Html)
+import Probe
+
+
+type Msg
+    = Run
+
+
+view : String → Html Msg
+view shown = <main><button id="run" onClick={Run}>run</button><p id="out">{shown}</p></main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → "ready", update = λ_ _ → Probe.run ⊤, view = view }

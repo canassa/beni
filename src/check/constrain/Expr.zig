@@ -416,11 +416,16 @@ fn call(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var,
     const in_place = if (which) |w| JsIntrinsic.inPlaceLiterals(w) else 0;
     for (args, arg_vars, 0..) |arg, v, i| {
         if (i < 8 and in_place & (@as(u8, 1) << @intCast(i)) != 0) {
-            if (which == .object) if (try objectFields(g, arg)) |c| {
+            if (which == .object) if (try objectFields(g, arg, inst)) |c| {
                 try parts.append(g.cx.scratch, c);
                 continue;
             };
-            if (try inPlaceLiteral(g, arg)) |c| {
+            if (try inPlaceLiteral(g, arg, inst, if (which) |w| switch (w) {
+                .array => i == 0,
+                .apply, .construct => i == 1,
+                .call => i == 2,
+                else => false,
+            } else false)) |c| {
                 try parts.append(g.cx.scratch, c);
                 continue;
             }
@@ -456,14 +461,17 @@ fn jsIntrinsic(g: *Generator, callee: Bir.Inst.Index) ?JsIntrinsic.Which {
 /// value is generated against a fresh variable of its own. Null when the
 /// argument is malformed (`JsIntrinsic.objectFault`), which `Module`
 /// reports as `invalid_js_object`; it is then generated as usual.
-fn objectFields(g: *Generator, arg: Bir.Inst.Index) Error!?Constraint {
+fn objectFields(g: *Generator, arg: Bir.Inst.Index, call_inst: Bir.Inst.Index) Error!?Constraint {
     const bir = g.cx.bir;
     if (JsIntrinsic.objectFault(bir, arg) != null) return null;
     const fields = bir.extraSlice(Bir.inlineRange(bir.instData(arg)), Bir.Inst.Index);
     var parts: std.ArrayList(Constraint) = .empty;
     defer parts.deinit(g.cx.scratch);
     for (fields, 0..) |field, i| {
-        try parts.append(g.cx.scratch, try expr(g, JsIntrinsic.objectValue(bir, field), try g.freshFlex(), .{ .tag = .list_entry, .index = @intCast(i + 1) }));
+        const value = JsIntrinsic.objectValue(bir, field);
+        const v = try g.freshFlex();
+        try parts.append(g.cx.scratch, try expr(g, value, v, .{ .tag = .list_entry, .index = @intCast(i + 1) }));
+        try parts.append(g.cx.scratch, try g.add(.raw_host, value, v.int(), call_inst.int(), .{ .tag = .general }));
     }
     return try g.conj(parts.items);
 }
@@ -472,7 +480,7 @@ fn objectFields(g: *Generator, arg: Bir.Inst.Index) Error!?Constraint {
 /// left its fresh argument variable, and a list's elements are generated
 /// against one fresh element variable while the list itself names no type.
 /// Null for any other argument, which is generated as usual.
-fn inPlaceLiteral(g: *Generator, arg: Bir.Inst.Index) Error!?Constraint {
+fn inPlaceLiteral(g: *Generator, arg: Bir.Inst.Index, call_inst: Bir.Inst.Index, raw: bool) Error!?Constraint {
     const bir = g.cx.bir;
     switch (bir.instTag(arg)) {
         .string => return try g.true_(),
@@ -483,6 +491,7 @@ fn inPlaceLiteral(g: *Generator, arg: Bir.Inst.Index) Error!?Constraint {
             defer parts.deinit(g.cx.scratch);
             for (elements, 0..) |el, i| {
                 try parts.append(g.cx.scratch, try expr(g, el, element, .{ .tag = .list_entry, .index = @intCast(i + 1) }));
+                if (raw) try parts.append(g.cx.scratch, try g.add(.raw_host, el, element.int(), call_inst.int(), .{ .tag = .general }));
             }
             return try g.conj(parts.items);
         },

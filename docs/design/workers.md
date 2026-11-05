@@ -308,6 +308,14 @@ modules. There is no opt-out or rollout flag: applications, core and every
 platform obey the same boundary. Native handles and callbacks stay in typed
 storage; existing private typed bridges retain their fences. This is a check
 only and changes no JavaScript emitted for an accepted program.
+**Alternate raw routes (amended 2026-11-05, review of #2001).** Every
+element of `Js.array`, field of `Js.object`, and argument of `Js.call`,
+`Js.apply` and `Js.construct` crosses the same checked boundary as `Js.from`.
+`Js.method` is removed: manufacturing an erased callback violates this boundary.
+Direct calls and generic wrappers
+retain the same obligations, including realm inference; raw storage is not an
+alternate way to hide a callback or native handle.
+
 Realm inference independently attributes stored callable uses to their writer,
 including the work passed to Task.start.
 Writes through Ref, Js.Ref, Deferred and Queue attribute stored callable

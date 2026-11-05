@@ -1,6 +1,6 @@
 --! `Js.object` in a platform module (`backend.md` §4, *`Js.object` is an
 --! object literal*): the keys read back by name, in the order written, the
---! values made in the order written, and a value of any type.
+--! values made in the order written, and heterogeneous plain-data values.
 
 import Js
 
@@ -50,10 +50,10 @@ pub mixed : ⊤ → String
 mixed ⊤ =
     o =
         Js.object
-            [ ( "n", Js.from 1 )
-            , ( "s", Js.from "two" )
-            , ( "b", Js.from True )
-            , ( "l", Js.from [ 4 ] )
+            [ ( "n", 1 )
+            , ( "s", "two" )
+            , ( "b", True )
+            , ( "l", [ 4 ] )
             ]
     none = Js.object []
     "${listed o} ${String.fromInt (List.length (keys none))}"

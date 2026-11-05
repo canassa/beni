@@ -1,6 +1,6 @@
 --! A write of `__proto__` assigns `[[Prototype]]` (`backend.md` §9, fact 3).
---! An arrow is not `Js.method`, so the object does not escape on its own.
---! `pad` is an ordinary key nothing reads.
+--! The sibling supplies host-owned coercion and setter functions.
+--! The inherited behavior must survive release optimization.
 
 import Js
 
@@ -14,7 +14,7 @@ counter = Js.ref 0
 pub coerced : ⊤ → Int
 coerced ⊤ =
     o = Js.object [ ( "pad", 1 ) ]
-    p = Js.object [ ( "valueOf", λ_ → 7 ) ]
+    p = Js.object [ ( "valueOf", seven ⊤ ) ]
     Js.set o "__proto__" p
     n : Int
     n = Js.to o
@@ -59,3 +59,6 @@ indexed ⊤ =
 
 
 foreign impure defineSetter : Js.Value, sync (⊤ → ⊤) → ⊤
+
+
+foreign pure seven : ⊤ → Js.Value
