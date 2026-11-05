@@ -45,8 +45,6 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
             _ = try Contract.Draft.addEffect(&d.reads, arena, .{ .j = a.j, .slot = a.slot, .deep = true });
         };
     }
-    // A label's function is run, so what it holds is read (#2048).
-    for (d.labels.items) |l| _ = try Contract.Draft.addEffect(&d.reads, arena, .{ .j = l.j, .slot = l.slot, .deep = true });
     d.req = try Graft.fold(&e.ev, v.req);
     for (f.cbs.items[w.last.cbs..], w.last.cbs..) |cb, ci| {
         if (cb.inst == none) continue;
