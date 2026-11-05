@@ -4851,7 +4851,9 @@ is reached, and not before.
   with a `.top` instruction that leg 2 reads (`Lower.resolveValue`), so a row adds an unguarded
   edge only when no instruction of the declaration names its target â a net under an invariant, not
   a source of edges.
-- **Exempt constructors are roots**, reached before the walk: every constructor of a type declared
+- **Exempt constructors are roots**, reached before the walk: a record alias's constructor, since any
+  record of its shape is a value of it and a literal names no constructor (#2058: `case r of Pt a b → a + b`
+  over `{ n = 1, m = 2 }` wrote `undefined`); every constructor of a type declared
   in `core` â the compiler writes `Bool`, `List`, `Order`, `Maybe` and `Result` values no
   instruction spells (an `if`, a list literal, a derived `compare`, `?`), and core's siblings build
   them; every constructor of a type that a `foreign`, `foreign type` or vocabulary declaration of
