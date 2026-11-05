@@ -7,6 +7,7 @@
 -- scheduled = false`. A cell that escapes — returned, or passed to a
 -- function — is `{ v }`, read as `.v` and written as `.v =`.
 -- Built with `--core`, which is what lets a root-package module import `Js`.
+import Browser.Host.Timers as Timers
 import Js
 
 
@@ -36,12 +37,9 @@ schedule ⊤ =
     else
         Js.write scheduled True
 
-        _ =
-            Js.apply (Js.global "queueMicrotask")
-                [ Js.from λ⊤ →
-                    if Js.read scheduled then
-                        flush ⊤
-                ]
+        Timers.queueMicrotask λ⊤ →
+            if Js.read scheduled then
+                flush ⊤
         ⊤
 
 

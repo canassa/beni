@@ -1,0 +1,10 @@
+-- A record's function field that a platform reads by a key made at run
+-- time, `r[name]`, and calls, is a function the program calls (#685):
+-- `--check-call-graph`, which the corpus's release pass builds with, makes
+-- the call throw if fact 3's call graph missed it. Expected `42`.
+import Node exposing (Program)
+import Probe
+
+
+main : Program
+main = Node.printLines [ String.fromInt (Probe.viaKey { f = λx → x + 1 } 41) ]

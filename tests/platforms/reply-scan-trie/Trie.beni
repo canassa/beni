@@ -17,7 +17,7 @@ run _ =
     n = 100
     values = List.foldl (List.range 1 n) [] λi xs → List.push xs (Object.local (String.fromInt i))
     -- Observation only; both scan arguments below retain their checked List type.
-    header = Js.typeIs (Js.get (Js.from values) "$plain") "function"
+    header = hasHeader values
     found = Object.replyIds values
     shortened = List.pop values
     generic = scan shortened
@@ -30,3 +30,7 @@ run _ =
         line "trie passed"
     else
         line "trie failed"
+
+
+-- Typed representation observation; does not retain the list or read its elements.
+foreign impure hasHeader : borrowed List a → Bool

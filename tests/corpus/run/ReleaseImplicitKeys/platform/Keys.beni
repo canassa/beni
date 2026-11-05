@@ -28,7 +28,11 @@ shown ⊤ =
 pub assigned : ⊤ → Int
 assigned ⊤ =
     o = Js.object [ ( "pad", 1 ) ]
-    Js.set o "valueOf" (Js.from λ_ → 7)
+    Js.set o "valueOf" (seven ⊤)
     n : Int
     n = Js.to o
     Js.bitAnd n 1
+
+
+-- Host-owned function; no program closure crosses Js.Value.
+foreign pure seven : ⊤ → Js.Value

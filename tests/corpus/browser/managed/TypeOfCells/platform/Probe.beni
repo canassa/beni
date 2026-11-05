@@ -18,7 +18,8 @@ nullObject = Js.ref Js.null
 
 
 writeFunction : Js.Ref Js.Value → ⊤
-writeFunction cell = Js.write cell (Js.from λ⊤ → ⊤)
+-- A host-provided function, not an erased beni callback.
+writeFunction cell = Js.write cell (Js.global "Object")
 
 
 writeObject : Js.Ref Js.Value → ⊤

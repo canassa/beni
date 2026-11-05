@@ -1,0 +1,4 @@
+import Basics
+
+
+pub bad = Basics.appendTyped [ 1 ] [ 2 ]

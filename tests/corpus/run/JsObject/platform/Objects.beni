@@ -41,7 +41,7 @@ listed o = String.join (keys o) ","
 --| `$plain`.
 pub called : Int → Int
 called n =
-    o = Js.object [ ( "length", n ), ( "twice", Js.from λk → k * 2 ) ]
+    o = Js.object [ ( "length", Js.from n ), ( "twice", twice ⊤ ) ]
     Js.to (Js.call o "twice" [ Js.get o "length" ])
 
 
@@ -57,3 +57,7 @@ mixed ⊤ =
             ]
     none = Js.object []
     "${listed o} ${String.fromInt (List.length (keys none))}"
+
+
+-- A host method fixture, with no beni value erased.
+foreign pure twice : ⊤ → Js.Value

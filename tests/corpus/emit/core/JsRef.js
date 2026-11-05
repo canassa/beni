@@ -1,3 +1,4 @@
+import { Browser$Host$Timers$queueMicrotask } from "./_core/Browser/Host/Timers.mjs";
 const JsRef$template = (html$1) => {
   let node$2 = null;
   return () => {
@@ -19,7 +20,7 @@ const JsRef$schedule = () => {
     return null;
   } else {
     JsRef$scheduled = true;
-    globalThis.queueMicrotask(() => JsRef$scheduled ? JsRef$flush() : null);
+    Browser$Host$Timers$queueMicrotask(() => JsRef$scheduled ? JsRef$flush() : null);
     return null;
   }
 };

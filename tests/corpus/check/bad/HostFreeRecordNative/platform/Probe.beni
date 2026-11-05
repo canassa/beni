@@ -1,0 +1,6 @@
+import Browser.Host.TextEncoder as Encoder
+import Js
+
+
+pub bad : Js.Value
+bad = Js.from ({ stored = Encoder.create ⊤ })

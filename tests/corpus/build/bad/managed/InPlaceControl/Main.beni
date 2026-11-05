@@ -1,3 +1,7 @@
+-- This used to test a mutable aggregate control via forged Runtime descriptors
+-- and an erased Rt.control. HostFree now refuses that private-ABI erasure.
+-- Public attributes accept scalar payloads; TypedControlOrder and the
+-- controlled-input pages cover real programs through the typed control chain.
 -- An aggregate property must be written again after mutation through the
 -- same reference; the setter observes both values, not just its identity.
 import Browser

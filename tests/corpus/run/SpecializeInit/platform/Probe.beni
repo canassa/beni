@@ -9,18 +9,18 @@ type alias V =
     Js.Value
 
 
-kind : V
-kind = Js.from { m = λ_ → Js.from { s = Js.from "node" } }
+kind : { m : Int → V }
+kind = { m = λ_ → Js.from { s = Js.from "node" } }
 
 
 block : V
-block = Js.from { t = kind }
+block = Js.from { t = "kind" }
 
 
 -- Every instance `m` makes gets `t` and `b` before anything reads them.
 unit : V → V
 unit b =
-    i = Js.call (Js.get b "t") "m" [ Js.from 0 ]
+    i = kind.m 0
 
     Js.set i "t" (Js.get b "t")
 
@@ -61,8 +61,8 @@ shown i =
 -- the write: the read sees it missing. The instance comes from a kind's
 -- method, as `unit`'s does, and `describe` is called twice, so that neither
 -- is written where it is called.
-other : V
-other = Js.from { m = λ_ → Js.from { s = Js.from "node" } }
+other : { m : Int → V }
+other = { m = λ_ → Js.from { s = Js.from "node" } }
 
 
 describe : V → String
@@ -75,7 +75,7 @@ describe i =
 
 described : ⊤ → V
 described ⊤ =
-    i = Js.call other "m" [ Js.from 0 ]
+    i = other.m 0
 
     Js.set i "c" (Js.from (describe i))
     i

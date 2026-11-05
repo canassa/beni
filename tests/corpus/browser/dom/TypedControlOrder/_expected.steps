@@ -1,0 +1,5 @@
+input #text "host-edit"
+click #next
+press #box
+input #text "second-edit"
+click #next

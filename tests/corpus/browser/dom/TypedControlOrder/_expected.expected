@@ -1,0 +1,49 @@
+-- load
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <input id="text" .value="v0">
+    <input id="box" type="checkbox" value="v0" .value="v0" .checked=true>
+  </main>
+</body>
+-- input #text "host-edit"
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <input id="text" .value="host-edit">
+    <input id="box" type="checkbox" value="v0" .value="v0" .checked=true>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <input id="text" .value="v1">
+    <input id="box" type="checkbox" value="v1" .value="v1" .checked=false>
+  </main>
+</body>
+-- press #box
+(a later listener ran)
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <input id="text" .value="v1">
+    <input id="box" type="checkbox" value="v1" .value="v1" .checked=true :focus>
+  </main>
+</body>
+-- input #text "second-edit"
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <input id="text" .value="second-edit">
+    <input id="box" type="checkbox" value="v1" .value="v1" .checked=true :focus>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="next">"next"</button>
+    <input id="text" .value="v2">
+    <input id="box" type="checkbox" value="v2" .value="v2" .checked=true :focus>
+  </main>
+</body>

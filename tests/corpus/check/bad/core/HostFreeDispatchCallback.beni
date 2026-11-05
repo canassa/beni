@@ -1,0 +1,6 @@
+-- A callback cannot cross the raw cast boundary; JsCasts keeps its data boundaries.
+import Js
+
+
+callback : ({ when : Int } → ⊤) → Js.Value
+callback f = Js.from f

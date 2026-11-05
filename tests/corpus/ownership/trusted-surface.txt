@@ -491,3 +491,6 @@ core Browser.Host.Element.querySelector ownership/core/InlineJobWords.beni - Ele
 core Browser.Host.Element.getAttribute ownership/core/InlineJobWords.beni - Element.getAttribute
 core Browser.Host.Element.host_querySelector ownership/core/InlineJobWords.beni - Element.querySelector
 core Browser.Host.Element.host_getAttribute ownership/core/InlineJobWords.beni - Element.getAttribute
+
+# Fresh outer concat; element aliases remain explicit in both operands.
+core Basics.appendTyped ownership/core/AppendTypedWords.beni 1:aliased>borrowed|2:aliased>borrowed

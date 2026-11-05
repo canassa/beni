@@ -1,0 +1,10 @@
+import Browser.Host.TextEncoder as Encoder
+import Js
+
+
+type Envelope a
+    = Wrapped a
+
+
+pub bad : Js.Value
+bad = Js.from (Wrapped (Encoder.create ⊤))

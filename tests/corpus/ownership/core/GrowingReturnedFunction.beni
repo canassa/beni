@@ -1,18 +1,21 @@
+-- The raw type-growing function bridge is pinned as HostFreeGrowingReturnedFunction.
+-- GrowingCast keeps the permitted data-growth control; this typed callback
+-- preserves fresh outer results, captured aliases and unknown alternatives.
 import Js
 
 
-pub build : Int, a → Js.Value
+pub build : Int, List Int → (List (List Int) → Js.Value)
 build n x =
     if n == 0 then
-        Js.from λy → Js.from [ x, y ]
+        λy → Js.from [ [ x ], y ]
     else
-        build (n - 1) [ x ]
+        build (n - 1) x
 
 
 pub outer : List Int → List (List (List Int)) × List Int
 outer xs =
     f : List (List Int) → Js.Value
-    f = Js.to (build 1 xs)
+    f = build 1 xs
     decoded : List (List (List Int))
     decoded = Js.to (f [ [] ])
     ( List.push decoded [], xs )
@@ -21,7 +24,7 @@ outer xs =
 pub shared : List Int → List Int × List Int
 shared xs =
     f : List (List Int) → Js.Value
-    f = Js.to (build 1 xs)
+    f = build 1 xs
     decoded : List (List (List Int))
     decoded = Js.to (f [ [] ])
     case decoded of
@@ -32,7 +35,7 @@ shared xs =
 
 
 -- A known root on one branch cannot hide an unknown callable alternative.
-pub mixed : Bool, Js.Value, List Int → List (List (List Int)) × List Int
+pub mixed : Bool, (List (List Int) → Js.Value), List Int → List (List (List Int)) × List Int
 mixed known host xs =
     encoded =
         if known then
@@ -40,7 +43,7 @@ mixed known host xs =
         else
             host
     f : List (List Int) → Js.Value
-    f = Js.to encoded
+    f = encoded
     decoded : List (List (List Int))
     decoded = Js.to (f [ [] ])
     ( List.push decoded [], xs )

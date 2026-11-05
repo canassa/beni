@@ -99,14 +99,6 @@ sharedStorage value =
     List.map rows λys → List.push ys 1
 
 
-pub intFunction : Js.Value → (Int → List Int)
-intFunction value = Js.to value
-
-
-pub stringFunction : Js.Value → (String → List Int)
-stringFunction value = Js.to value
-
-
 pub otherRecord : Js.Value → { parent : Js.Value, values : List String }
 otherRecord value = Js.to value
 

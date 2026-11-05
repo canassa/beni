@@ -1,0 +1,10 @@
+-- Callable full types cannot be restored through Js.Value; FullCast retains data casts.
+import Js
+
+
+pub intFunction : Js.Value → (Int → List Int)
+intFunction value = Js.to value
+
+
+pub stringFunction : Js.Value → (String → List Int)
+stringFunction value = Js.to value

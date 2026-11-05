@@ -22,7 +22,3 @@ viewPlain = Js.method λself →
 
 pub size : Js.Value
 size = Js.method λself → Js.get self "length"
-
-
-pub later : Js.Value
-later = Js.method λself → Js.from λ⊤ → Js.get self "length"

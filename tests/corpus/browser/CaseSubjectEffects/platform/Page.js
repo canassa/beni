@@ -11,3 +11,6 @@ export const addButton = (document, callback) => {
   document.body.appendChild(button);
   return null;
 };
+
+// Typed fixture Program constructor retains the callback without erasure.
+export const program = init => ({ $init: init });

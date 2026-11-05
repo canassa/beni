@@ -11,4 +11,8 @@ countedAlias = counted
 
 
 pub viaAlias : List Int → List Int
-viaAlias xs = Js.to (Js.call (Js.from xs) "map" [ Js.from λx → countedAlias x ])
+viaAlias xs = hostMap xs λx → countedAlias x
+
+
+-- The host still supplies index and array extras to the typed callback.
+foreign impure hostMap : List a, sync (a → b) → List b

@@ -1,0 +1,25 @@
+-- Plain data may cross the boundary; typed native/callable state stays local.
+import Node
+import Probe
+
+
+type Tag
+    = Label String
+
+
+main : Node.Program
+main =
+    value = Probe.echo { numbers = [ 1, 2, 3 ], optional = Just "ok", tag = Label "safe" }
+    text =
+        case ( value.tag, value.optional ) of
+            ( Label label, Just suffix ) →
+                label
+                    ++ ":"
+                    ++ String.fromInt (List.sum value.numbers)
+                    ++ ":"
+                    ++ suffix
+                    ++ ":"
+                    ++ String.fromInt (Probe.local "hé")
+            _ →
+                "bad data"
+    Node.print text

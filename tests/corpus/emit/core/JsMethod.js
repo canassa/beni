@@ -13,9 +13,5 @@ const JsMethod$size = function() {
   const self$1 = this;
   return self$1.length;
 };
-const JsMethod$later = function() {
-  const self$1 = this;
-  return () => self$1.length;
-};
-export { JsMethod$viewPlain, JsMethod$size, JsMethod$later };
+export { JsMethod$viewPlain, JsMethod$size };
 //# sourceMappingURL=JsMethod.mjs.map

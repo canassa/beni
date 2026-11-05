@@ -73,7 +73,7 @@ demo ⊤ =
     Js.set
         (Js.global "globalThis")
         "probeNode"
-        (Js.from { cloneNode = λ_ → Js.from { name = "cloned" } })
+        (prototype ⊤)
 
     proto = Js.get (Js.global "globalThis") "probeNode"
     [ firstNode (node proto)
@@ -84,3 +84,7 @@ demo ⊤ =
     , same (made ⊤) (made ⊤)
     , missing (Js.from { t = "kind" })
     ]
+
+
+-- A host-owned mock clone operation, not an erased beni method.
+foreign pure prototype : ⊤ → Js.Value

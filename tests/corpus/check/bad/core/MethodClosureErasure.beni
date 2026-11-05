@@ -1,0 +1,6 @@
+-- A method must not erase a returned closure through Js.Value.
+import Js
+
+
+pub later : Js.Value
+later = Js.method λself → Js.from λ⊤ → Js.get self "length"

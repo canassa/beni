@@ -2,6 +2,7 @@
 --! release optimiser may not make it inside the loop's head, whose own
 --! binding could take the name the function reads.
 
+import Browser.Host.Array as Array
 import Js
 
 
@@ -10,5 +11,5 @@ pub probe : Int → Int
 probe x =
     acc = Js.ref 0
     f = λ⊤ → x
-    Js.each (Js.array [ Js.from f ]) λg → Js.write acc (Js.read acc + Js.to (Js.apply g []))
+    Array.eachView (Array.fromList [ f ]) λg → Js.write acc (Js.read acc + g ⊤)
     Js.read acc

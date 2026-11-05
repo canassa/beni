@@ -2348,28 +2348,28 @@ test "worker metadata preserves identity and primitive boxing" {
         try writeWorkerPlatform(&w);
         try w.write("platform/Worker.beni",
             \\import Js
-            \\import Probe
             \\pub foreign type Program request reply state
             \\pub foreign type Handle request reply
             \\pub program : { init : (⊤, ⊤ → state), start : (state, ⊤ → ⊤), handle : (request, state, ⊤ → reply), stream : (⊤, state, ⊤, ⊤ → ⊤) } → Program request reply state
             \\program _ = make ⊤
             \\foreign impure make : ⊤ → Program request reply state
             \\pub run : Program request reply state → ⊤
-            \\run definition = Probe.inspect (Js.from definition)
+            \\run definition = inspect definition
+            \\foreign impure inspect : Program request reply state → ⊤
             \\pub open : Program request reply state → Result String (Handle request reply)
             \\open definition = nativeOpen definition
             \\foreign impure nativeOpen : Program request reply state → Result String (Handle request reply)
             \\
         );
         try w.write("platform/Worker.js", try std.fmt.allocPrint(w.arena.allocator(), "export const make = (_) => {{ globalThis.definition = {s}; return globalThis.definition; }};\nexport const nativeOpen = (definition) => ({{$: 'Err', a: 'unused'}});\n", .{case.value}));
-        try w.write("platform/Probe.beni", "import Js\npub foreign impure inspect : Js.Value → ⊤\n");
-        try w.write("platform/Probe.js",
+        try w.write("platform/Worker.js", try std.mem.concat(w.arena.allocator(), u8, &.{
+            try w.read("platform/Worker.js"),
             \\export const inspect = (value) => {
             \\  const datum = typeof value === 'function' ? value() : value.datum ?? Number(value);
             \\  console.log(typeof value, value === globalThis.definition, datum, Object.hasOwn(value, '$wire'));
             \\};
             \\
-        );
+        }));
         try w.write("Main.beni",
             \\import Page
             \\import Worker
