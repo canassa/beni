@@ -1,0 +1,7 @@
+# v2 refuses a writer a lambda's callee hands it: k read again, handed twice, a capture run twice (§2.11.3).
+54:9 list_still_used SanitiserSuppliedFunction.each
+56:9 list_still_used SanitiserSuppliedFunction.eachOf
+58:9 list_still_used SanitiserSuppliedFunction.rep
+58:9 list_still_used SanitiserSuppliedFunction.rep
+60:9 list_still_used SanitiserSuppliedFunction.mp
+62:9 list_may_be_shared SanitiserSuppliedFunction.folded
