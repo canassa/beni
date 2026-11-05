@@ -2,7 +2,8 @@
 -- article-body payloads of the RealWorld e2e suite
 -- (specs/e2e/xss-security.spec.ts:66) are text, so the page holds no
 -- `script`, no `on…` attribute and no element of the text's own, and a
--- script URL is an empty `href`. The text's Markdown is still Markdown.
+-- script URL is an empty `href`. A quote in a code block's language stays
+-- inside `class`. The text's Markdown is still Markdown.
 import Html exposing (Html)
 import Html.Markdown
 import Tea
@@ -19,6 +20,7 @@ body =
         , "Before payload: <a href=\"javascript:alert(1)\">click me</a> After payload"
         , "<div onmouseover=\"alert(1)\">hover me</div>"
         , "[a link](javascript:alert(1)) and [a safe one](https://example.com)"
+        , "```a\"onclick=alert(1)\ncode\n```"
         ]
         "\n\n"
 

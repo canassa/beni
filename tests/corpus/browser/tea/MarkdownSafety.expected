@@ -56,6 +56,9 @@
       </a>
       <!---->
     </p>
+    <pre>
+      <code class="language-a\"onclick=alert(1)">"code\n"</code>
+    </pre>
     <!---->
   </div>
 </body>
