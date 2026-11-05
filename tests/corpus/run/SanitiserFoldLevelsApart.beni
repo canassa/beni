@@ -1,0 +1,33 @@
+-- The twin of `SanitiserFoldLevels` (`ownership-v2.md` §2.1, #2062): a regular
+-- type is its own cycle. `Tree (Tree Int)`'s element is a `Tree Int`, one nominal
+-- type but no level, so what `spine` answers is apart from the element's list,
+-- and the write is accepted. The other write is of a list made here.
+import List
+import Node exposing (Program)
+import String
+
+
+type Tree a
+    = E
+    | N (Tree a) a (List Int)
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+spine : Tree (Tree Int) → List Int
+spine t =
+    case t of
+        N (N _ _ xs) _ _ →
+            List.copy xs
+        _ →
+            []
+
+
+main : Program
+main =
+    k = [ 1 ]
+    t = N (N E (N E 1 k) [ 5 ]) (N E 2 [ 6 ]) [ 7 ]
+    n = List.push (spine t) 9
+    Node.print (show n ++ "|" ++ show k)

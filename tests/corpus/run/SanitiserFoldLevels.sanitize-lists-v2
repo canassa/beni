@@ -1,0 +1,1 @@
+A level of a non-regular literal (ownership-v2.md §2.1, #2062): built again under --ownership=v2 and the sanitiser; each write is refused.

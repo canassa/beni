@@ -1,0 +1,1 @@
+A regular type's element of one nominal type is no level (ownership-v2.md §2.1, #2062): built again under --ownership=v2 and the sanitiser.

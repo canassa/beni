@@ -145,6 +145,16 @@ either a b c =
         )
 
 
+three : T (List Int) → List (List (List (List Int)))
+three t =
+    case t of
+        Wrap (Wrap (Wrap (Leaf ys))) →
+            ys
+
+        _ →
+            []
+
+
 cps : Int, a, (T a → r) → r
 cps n x k =
     if n == 0 then
@@ -176,6 +186,8 @@ main =
     k9 = [ 1 ]
     k10 = [ 1 ]
     k11 = [ 1 ]
+    k12 = [ [ [ [ 1 ] ] ] ]
+    deepest = List.push (three (Wrap (Wrap (Wrap (Leaf k12))))) []
     chosen =
         case either (Leaf []) (Wrap (Leaf [ k11 ])) False of
             [ y ] →
@@ -241,5 +253,6 @@ main =
         , show stepped ++ show k9
         , show param ++ show k10
         , show chosen ++ show k11
+        , String.fromInt (List.length deepest + List.length k12)
         ]
     Node.print (String.join lines "\n")

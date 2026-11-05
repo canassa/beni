@@ -23,6 +23,7 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const LevelCycle = @import("LevelCycle.zig");
 const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
@@ -456,7 +457,7 @@ pub const Eval = struct {
                             // A closure's environment: its captures, whole.
                             for (ks, 0..) |k, n| try stack.append(e.gpa(), .{ .v = k, .at = @intCast(words.len), .tags = it.tags, .route = try e.routeStep(it.route, @intCast(n)) });
                         },
-                        .level => try e.projectLevels(it.v, words[it.at + 1 ..], deep, it.tags, it.route, out),
+                        .level => try e.projectLevels(it.v, LevelCycle.of(e.places(), LevelCycle.rootOf(e.f, v), words[0..it.at], x.place), words[it.at + 1 ..], deep, it.tags, it.route, out),
                         else => {
                             // A step the literal cannot follow: every object of it.
                             try e.readAt(it.v, true, it.tags, try e.routeStep(it.route, none), out);
@@ -538,12 +539,11 @@ pub const Eval = struct {
         }
     }
 
-    /// `⟲` into a built value: the values one or more levels below, at the
+    /// `⟲` into a built value, at `place` (`LevelCycle`): the values one or more levels below, at the
     /// same place, through the parts that stay on its cycle; then `rest`
     /// from each (the experiment's fourth requirement). A part not built
     /// here gives its levels by its own slots, never its own storage.
-    fn projectLevels(e: *Eval, v: u32, rest: []const u32, deep: bool, tags: u32, route: u32, out: *std.ArrayList(Proj)) Error!void {
-        const place = e.f.val(v).place;
+    fn projectLevels(e: *Eval, v: u32, place: PlaceId, rest: []const u32, deep: bool, tags: u32, route: u32, out: *std.ArrayList(Proj)) Error!void {
         if (place == .none) {
             try e.readAt(v, true, tags, route, out);
             return;
