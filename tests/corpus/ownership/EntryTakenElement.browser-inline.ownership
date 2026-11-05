@@ -1,0 +1,23 @@
+module EntryTakenElement
+  19:13 call List.map rows[*]: accepted param (<lambda> writes what List.map supplies it)
+  19:32 List.push l: accepted callback-param (List.map supplies it owned)
+  23:16 call List.map m[*]: accepted param (<lambda> writes what List.map supplies it)
+  23:32 List.push l: accepted callback-param (List.map supplies it owned)
+  27:19 call EntryTakenElement.bump m[*]: accepted param (EntryTakenElement.bump writes π1[*])
+  32:58 call List.map m[*]: accepted param (<lambda> writes what List.map supplies it)
+  32:74 List.push l: accepted callback-param (List.map supplies it owned)
+  42:5 entry EntryTakenElement.update model[*]: rejected exclusive: the callee needs the list's elements not to share, and they may
+  48:5 entry EntryTakenElement.viaHelper model[*]: rejected exclusive: the callee needs the list's elements not to share, and they may
+  52:12 entry EntryTakenElement.view model[*]: rejected read-only: the runtime hands view the model to read only (§20.3)
+  summary bump: π1 R, π1[*] AW[storage], π1[*][*] A; res [*] ~condition(fresh1) ~fresh1{excl π1} ~π1[*], [*][*] ~condition(fresh2) ~π1[*][*], fresh3{excl π1}; xreq spine π1[*]
+  summary update: π2 R, π2[*] AW[storage], π2[*][*] A; res [*] ~condition(fresh1) ~fresh1{excl π2} ~π2[*], [*][*] ~condition(fresh2) ~π2[*][*], fresh3{excl π2}; xreq spine π2[*]
+  summary viaHelper: π2 R, π2[*] RAW[storage], π2[*][*] RA; res [*] ~condition(fresh1) ~fresh1{excl π2} ~π2[*], [*][*] ~condition(fresh2) ~π2[*][*], fresh3{excl π2}; xreq spine π2[*]
+  summary view: π1 R, π1[*] W[storage]; res ⟨render⟩ fresh1{lost}r{lost}; xreq spine π1[*]
+  summary plain: π1 R; res ⟨render⟩ fresh1{lost}r{lost}
+  summary direct: res ⊤{lost}r{lost}
+  summary helper: res ⊤{lost}r{lost}
+  summary inView: res ⊤{lost}r{lost}
+  demands 10: accepted 7 (fresh 0, call 0, param 4, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 10: accepted 7 (fresh 0, call 0, param 4, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause exclusive 2
+cause read-only 1

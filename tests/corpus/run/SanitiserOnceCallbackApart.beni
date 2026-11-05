@@ -1,0 +1,32 @@
+-- The twin of `SanitiserOnceCallbackShared` (`ownership-v2.md` §2.9.3, *a family
+-- behind a supply*): the same callbacks over lists of apart lists. v2 accepts
+-- every edit in place; the sanitised run prints what the plain run prints.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+push1 : List Int → List Int
+push1 l = List.push l 1
+
+
+app : a, (a → b) → b
+app v f = f v
+
+
+main : Program
+main =
+    Node.printLines
+        [ shows (app [ [ 1 ], [ 2 ] ] λl → List.map l push1)
+        , shows (Maybe.withDefault (Maybe.map (Just [ [ 1 ], [ 2 ] ]) λl → List.map l push1) [])
+        , shows (app [ [ 1 ], [ 2 ] ] λl → app l λm → List.map m push1)
+        , shows (app [ [ 1 ], [ 2 ] ] λl → List.update l 0 push1)
+        ]

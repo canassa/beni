@@ -1059,7 +1059,7 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
         const lab = e.contracts.labelsOf(e.contracts.head(call.contract).labels)[p[2]];
         for (e.contracts.suppliesOf(lab.supplies)) |su| {
             const sup = try d.labels.items[at].supplyOf(arena, su.k);
-            sup.cond = try Cond.conj(arena, f.account, sup.cond, try Distinct.instSelFeed(&e.ev, try e.contracts.cond(arena, su.cond), p[1], .{ .j = f.cbs.items[p[0]].j, .slot = f.cbs.items[p[0]].slot, .label = p[2] }));
+            sup.cond = try Cond.conj(arena, f.account, sup.cond, try Distinct.instSelFeed(&e.ev, try e.contracts.cond(arena, su.cond), p[1], .{ .j = f.cbs.items[p[0]].j, .slot = f.cbs.items[p[0]].slot, .label = p[2], .covered = Distinct.Fed.covering(&e.ev, try e.contracts.cond(arena, su.cond), call) }));
             if (pi * v.width + su.k < v.pass_cond.len) sup.cond = try Cond.conj(arena, f.account, sup.cond, v.pass_cond[pi * v.width + su.k]);
             // Passed on inside a known code, the outer labels' too (#1721).
             try Outward.passSupply(e, arena, p[1], su, sup);
@@ -1073,6 +1073,7 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
     for (flat.items) |x| if (!Eval.cellWrite(f.slots, x)) {
         d.flags.once = true;
     };
+    d.flags.taken_write, d.flags.entry = .{ d.flags.taken_write or e.marks.taken_write, d.flags.entry or e.marks.entry };
     // Each condition in its one spelling (§2.9.1, *One spelling of a subtree*).
     var nj: usize = 0;
     for (f.roots.items) |r| if (r.kind == .param) {

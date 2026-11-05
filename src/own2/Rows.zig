@@ -123,6 +123,7 @@ pub fn fromWords(env: Env, sig: Signature) Error!Contract.Id {
         const j: u32 = @intCast(k);
         const from = try env.root(p.place);
         const ws = p.words;
+        if (Env.has(ws, .entry)) d.flags.entry = true;
         if (env.places.kind(p.place) == .closure) {
             // A cell callback (`cellupdate`, `cellmodify`, §2.13.7): called
             // once, synchronously, on the contents taken out of `π1`'s `◆`.

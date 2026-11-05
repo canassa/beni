@@ -55,6 +55,7 @@ const Kept = @import("Kept.zig");
 const Deliver = @import("Deliver.zig");
 const Closures = @import("Closures.zig");
 const Outward = @import("Outward.zig");
+const EntryHeld = @import("EntryHeld.zig");
 const FnRun = @import("FnRun.zig");
 const Codes = @import("Codes.zig");
 const Bir = @import("../bir/Bir.zig");
@@ -1539,6 +1540,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             charging(mod, &r.account);
             mod.cur_locals = in.bir.decls[r.decl].locals_start;
             const e = &evals[i];
+            try EntryHeld.demands(e);
             try Outward.finishDemands(e);
             try Closures.escapedWrites(e);
             const got = try Resolve.resolve(e, &regions.items[k], ra, if (validating or !solver.used) null else &kg.tables[i]);

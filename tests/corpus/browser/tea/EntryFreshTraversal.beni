@@ -1,0 +1,27 @@
+-- The twin of `ownership/EntryTakenElement`: `update` traverses a list it made
+-- itself and edits the elements, so no `entry` argument is reached (§2.11.3,
+-- *a taken supply*). v2 accepts it in place, and the page counts as it does
+-- with a copy.
+import Browser
+import Html exposing (Html)
+import List
+import String
+import Tea
+
+
+type Msg
+    = Grow
+
+
+update : Msg, List (List Int) → List (List Int)
+update msg m =
+    fresh = List.map [ [ 1 ], [ 2 ] ] λl → List.push l 1
+    List.push m [ List.length fresh ]
+
+
+view : List (List Int) → Html Msg
+view m = <button id="b" onClick={Grow}>{String.fromInt (List.length m)}</button>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → [ [ 1 ] ], update = update, view = view }
