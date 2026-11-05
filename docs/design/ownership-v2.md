@@ -2391,10 +2391,42 @@ are not, their labels' supplies being `kept`, and `any` is not, as it reads with
    then reads `t` (`y = p h`, `shows t`) would read what the answer wrote. A capture keeps every argument as an operand: a capture
    is no element, and rule 3 of *An answer handed on* still asks what a repeated function answers.
 
-**Sound.** (E1–E3 at a caller.) Take a known code `K` applied at the caller to a label with an `each` supply, over positions `P` of the
+3. **The answers of distinct runs over apart elements are apart (#1978, #2007, #2031).** A result that holds a label's answers was `no`:
+   an answer is unknown code's, and a family of them is any object at all. A contract now keeps a second condition, `res_read`,
+   printed `answers ⇐ …`, only where `res_cond` is `no`: the result's separation with its answers **read**. Reading is a second run of
+   the distinct check (§2.9.3, `Answers.zig`), asked only where the first says `no` and met an answer, a `taken` element or a call with a `res_read`
+   on the way (`Relation.read_mode`). The first run, and every call inside it, is exactly the old one: a call that vouches
+   is read differently from one that does not, so a selection in place of `no` inside a check would refuse what the old check took apart.
+   Only the outcome `no` of a whole check can change, and only to a condition that also holds. A recursive code with no label and no `taken`
+   row publishes no `res_read`: it has no answer of its own, and `Schema.shapeOf` paid for its calls' reading over nine rounds, past its
+   limit. Such a result stays `no`, a precision gap, never a change of what is checked.
+
+   An answer is read as what its run was handed, deep, and the check gathers the **answers occurrence** `π_j{s!!k}` (`s!!` with no object
+   argument, `Contract.occAns`). A direct call's answer needs at most one object argument. A passed-on label's needs at most one object supply, `each`
+   or `once`: otherwise (`rep n x f = [ f x, …rep (n - 1) x f ]`) it stays an answer and meets everything. A `taken` element's and an `each`
+   supply's parts are read **apart**, entries of one family that are never compared; anything else is read plain, so `[ f x, f x ]` meets
+   itself. An answer met twice (`y = f ⊤; [ y, y ]`) is `no`, and so are the apart reads of two functions, whose occurrences would
+   each ask their family in a selection of their own. A `taken` element's expansion is not compared with its container's family in this
+   reading (the index obligation), so `reverse` and `filter` read `π1{[*]*}`.
+
+   The occurrence is decided at a caller (`Answers.at`), over every label of the function slot in **one** selection: at a label that
+   passes on it renames; at a known code `K` it asks `K`'s own result separation (`λ_ → ( a = [ 1 ]; [ a, a ] )` fails it) and reads `K`'s
+   result. `fresh` asks nothing. `K`'s argument `k` asks that supply's arrivals plain and deep, in the selection of the callee's other occurrences.
+   A capture that holds an object is `no`. A label `K` passes on renames, and one `K` applies is read the same way. Anything else is `no`. So
+   `List.map xs λ_ → [ 1 ]` holds whatever `xs` is (C.6), `List.map xs λl → l` asks `xs`'s elements apart, and `λ_ → k` is `no`.
+   A supply's `below` is never read: a pass that closes an entry relies on it staying `no` (*A pass closes what it describes*), and `comp f g x = g (f x)`
+   would otherwise hand a write below `[ s, s ]` to nothing that asks it (a generated sweep's 60 traps).
+   A result of nothing but fresh answers asks only that occurrence, so the check stops at the call (`Answers.allMade`): expanded, a tuple of
+   `n` answers costs `n`, and `wk f = ( w(k-1) f, w(k-1) f )` doubled with the depth.
+
+ Take a known code `K` applied at the caller to a label with an `each` supply, over positions `P` of the
 family. By induction on the walk's sources, each run gets a distinct position: one direct call's position and a pass's positions are disjoint
 by the case that allowed them, the pass's own by the callee's `each`, alternatives never both run, and a code run once a
-level hands on its one element. Then for license 1: a write by run `r` reaches, in the family, only objects at its written slot
+level hands on its one element. Then for license 3, by the case split. A run's answer holds only what it was handed and what it made, by the occurrence decided from `K`'s result.
+Made objects are new per run. What it was handed is one element, at a position no other run has, so two runs' parts are apart exactly under the family's
+plain condition, which the decision asks when and only when `K` answers it; a non-traversal answer's parts are compared as entries. Inside one run, `K`'s own
+separation keeps each object once. Against every other entry: an entry apart from what was handed is apart from the answer, and a made object from
+every object that existed before it. A capture answered is the one way the same object comes back, and it is refused. For license 1: a write by run `r` reaches, in the family, only objects at its written slot
 of its own element, each of which occurs once among the family and every apart occurrence, by the plain occurrence. So no other
 run's element, whatever else it shares, reaches the written object, and what the function holds is asked apart in that one selection.
 For license 2: `f`'s answer is one object of what `f` was handed or held. The callee's holders of the family after the run reach only other
@@ -8616,12 +8648,12 @@ taken result (`Taken.zig`), and `within` over the splits does not exist: the con
 | Row | As built |
 |---|---|
 | `List.map xs λl → List.push l 1` | **as specified**, over a parameter and a local; refused `later-use` when `xs` is read again |
-| `List.map xs (λ_ → [ 1 ])` | the map itself is accepted. **Not met:** an element write of its result is refused `disjoint` (approx): the slot domain has no rule for a many label's answers being one per invocation (C.3's `within(ι_m⋆)`) |
+| `List.map xs (λ_ → [ 1 ])` | **as specified** since #1978: `answers ⇐ sel π1{[*]*~} π2{ε!!1}`, the slot domain's `excl(ι_m⋆) ∧ within(ι_m⋆)`; the occurrence asks nothing of `xs` for a `fresh` code (§2.11.3, *a traversal's supply*, license 3) |
 | `List.map xs (λ_ → shared)` | **as specified**: refused `top-level` |
-| `List.map [ x, x ] λl → l` | **as specified** for the write of the result, refused, though by the same missing rule, not for the alias |
+| `List.map [ x, x ] λl → l` | **as specified**: the occurrence asks the supply plain, and `[ x, x ]` fails it |
 | `List.foldl xs [] λx acc → List.push acc x` | accepted over `Int` elements. **Not met** over lists: refused `disjoint` (approx), at the accumulator's supply, not the element's (§2.11.3, *a label's answer handed back to it*) |
 | the tuple accumulator, a captured `saved` | **as specified**: refused, each `disjoint` (approx) |
-| `edit list f` | **as specified** for the write inside `edit`. `p/EditAnsweredList`'s `patched` is refused at `bumpAll` by the same missing rule as row 2 |
+| `edit list f` | **as specified**: `ownership/EditAnsweredList`'s `patched` is accepted, its `shared` refused |
 
 ### C.7 Why the asserted rows are needed
 
