@@ -1,0 +1,63 @@
+-- A runtime catch for a traversal's callback that edits the elements of a list
+-- a cell holds (`ownership-v2.md` §2.11.3, *a taken supply*; §2.13.7). v2 keeps
+-- no slot state, so it reads what `Ref.make` was given, or an answer as the
+-- cell's own, and misses the sharing a store or an answer put there. A store,
+-- an answer, a parameter's cell and a field of the state each hold one list
+-- twice. Each edit is refused; asked of the stale contents, the sanitised runs
+-- trap on a stale read.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+push1 : List Int → List Int
+push1 l = List.push l 1
+
+
+viaParam : Ref (List (List Int)) → ⊤
+viaParam c = Ref.update c λr → List.map r push1
+
+
+main : Program
+main =
+    a = [ 1 ]
+    stored = Ref.make []
+    Ref.set stored [ a, a ]
+    Ref.update stored λr → List.map r push1
+    answered = Ref.make [ [ 1 ] ]
+    Ref.update answered λr →
+        case r of
+            [ h, …_ ] →
+                [ h, h ]
+
+            [] →
+                r
+    Ref.update answered λr → List.map r push1
+    b = [ 1 ]
+    param = Ref.make []
+    Ref.set param [ b, b ]
+    viaParam param
+    state = Ref.make { rows = [ [ 1 ] ] }
+    Ref.update state λs →
+        case s.rows of
+            [ h, …_ ] →
+                { s | rows = [ h, h ] }
+
+            [] →
+                s
+    Ref.update state λs → { s | rows = List.map s.rows push1 }
+    Node.printLines
+        [ shows (Ref.get stored)
+        , shows (Ref.get answered)
+        , shows (Ref.get param)
+        , shows (Ref.get state).rows
+        ]

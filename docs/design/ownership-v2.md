@@ -2139,9 +2139,11 @@ supply was kept, and `List.map xs λl → List.push l 1` was refused `call` even
 of a taken supply is a `callsite` demand on that argument, judged as any write of it. The element is the callback's
 exactly when the caller's list is dead after the call or fresh: a live holder is refused `later-use` or `alias`, as a
 direct write would be, and a parameter's list makes it the frame's own write of `π1[*]`, which its callers judge in
-turn. The write also relies on the supply's condition, which a kept supply never needed. For `List.map`, `indexedMap`,
-`filterMap`, `concatMap`, `foldl` and `foldr` it reads `sep ⇐ sel π1{ε,[*]*} π2{ε*~}` (a fold's has the accumulator
-and `fed` occurrences besides): `π1[*]*` plain, each object in an element once, so two positions of one list and a
+turn. The write also relies on the supply's condition, which a kept supply never needed. Each supply has its own
+condition: what judging that supply relied on. For `List.map`, `indexedMap`, `filterMap` and `concatMap` it reads
+`sep ⇐ sel π1{ε,[*]*} π2{ε*~}`, and for `foldl` and `foldr`'s element `π1{ε,[*]*} π2{ε*~} π3{ε*~,ε!2}`, while the
+accumulator's stays `π1{ε~,[*]*~} π2{ε*} π3{ε*~,ε!2}`, so a fold that reads its own list writes its accumulator in
+place (shared by the label, it was refused: `run/SanitiserTakenElementApart`). `π1[*]*` plain, each object in an element once, so two positions of one list and a
 part two rows share are refused; `π2ε*~`, what the function holds apart from them, so a capture of the list or of an
 element is refused. A taken supply is not the same as an owned one: if the condition fails the write is refused, and
 nothing is copied. `List.map2` stays kept: it reads with `at`, an `elementof` row, which makes no split (C.7).
@@ -2156,6 +2158,15 @@ that element, a part of the plain occurrence, which already asks each of its obj
 selected occurrences. What its closure holds is apart from them by the occurrence added. Nothing else reaches a code:
 a top-level value is never written, and `⊤` holds only what has escaped, and an escaped object is refused.
 
+**A cell's contents are not a list the condition can read.** v2 keeps no slot state (§2.13.7), so a condition over what
+a cell holds reads what `Ref.make` was given, or an answer as the cell's own, and misses what a store or an answer
+shared: after `Ref.set c [ a, a ]`, `Ref.update c λr → List.map r push1` pushed `a` twice. So a write that arrives through
+a `◆`, then a `[*]`, and that came through a traversal's element (a many label's parameter arrival at a `[*]`, at this
+level or inside the code, `Flags.many_write`) relies on `no` (`CellEdit.zig`, `run/SanitiserTakenElementCell`). An edit
+of the contents' own list or of a field stays accepted. The same trust without a traversal is an open defect on
+master, #1986: `List.update` through a cell. Refusing that too would refuse programs nothing shows unsound, so the fix is
+the slot state, S8-ref.
+
 Sound in full because every object a taken write reaches is judged. Against the callee, by the holders that keep it
 and by Lemma 1's split clause for the container (O9's pinned obligation on every body that reads a `taken` result: the
 seven loops of `core/List`). Between invocations, by `π1[*]*`: a write of one element reaches nothing another
@@ -2166,10 +2177,12 @@ instantiated at the pass, and the helper's own read of the list keeps the slot.
 Measured (2026-11-05, Debug, against master at `89acc9741`). Accepted: C.6's first row over a parameter and a local,
 its `edit` row, and the same shapes through `indexedMap`, `filterMap`, `concatMap`, `foldl`, `foldr`, a helper, nested
 maps, a field and a tuple's part, all in place (`run/SanitiserTakenElementApart`, refused on master). Refused:
-`run/SanitiserTakenElement`, whose probed shapes trap when the supply's condition is not asked. The oracle's 1 657
-probes and 68 new ones: 0 TRAP, 0 DIFF. The ledger of 2 277 roots: 11 positions refused → accepted, 1 accepted →
-refused, `Differential`'s `t42Repeated`, whose `[ tags, tags ]` master accepted only because it refused the write
-inside `t42`. Cost: growth unchanged everywhere, `Schema.shapeOf` +27 records of 229 045.
+`run/SanitiserTakenElement`, whose probed shapes trap when the supply's condition is not asked. The oracle's 2 042
+probes: 0 DIFF, and 3 TRAP, the three of #1986, which trap on master too and hold no traversal. The ledger of 2 280 roots:
+11 positions refused → accepted, 2 accepted → refused, each a call into a callee whose own write both sides refuse:
+`Differential`'s `t42Repeated`, whose `[ tags, tags ]` master accepted only because it refused the write inside `t42`, and
+`BallMachine`'s `Ref.modify` of `step`, refused at `Physics` 299:14. Cost: growth unchanged everywhere, `Schema.shapeOf`
+-8 records of 229 045.
 Refused that a perfect checker accepts: rows that share a part the callback does not write, because the condition is
 deep and plain and not per written slot, as `takenOccs` is for `List.update`; and an edit of the elements of a list
 `List.map` answered or `List.reverse` built, because a result's separation is another rule (Appendix C.6, *As built*).

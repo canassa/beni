@@ -3,8 +3,10 @@
 -- else reads, so the callback edits it in place. Through `List.map`,
 -- `indexedMap`, `filterMap`, `concatMap`, `foldl` and `foldr`, on a parameter
 -- and on a local, through a helper, nested, on a field and a tuple's part, and
--- with a capture apart from the list answered at some positions. v2 accepts
--- every edit; the sanitised run prints what the plain run prints.
+-- with a capture apart from the list answered at some positions. A fold that
+-- reads its own list still writes its accumulator in place: each supply has its
+-- own condition. v2 accepts every edit; the sanitised run prints what the plain
+-- run prints.
 import List
 import Node exposing (Program)
 import String
@@ -48,6 +50,8 @@ main =
     xss = [ [ [ 1 ] ], [ [ 2 ], [ 3 ] ] ]
     rows = [ { f = [ 1 ], g = [ 5 ] }, { f = [ 6 ], g = [ 2 ] } ]
     tuples = [ ( [ 1 ], [ 5 ] ), ( [ 6 ], [ 2 ] ) ]
+    ints = [ 1, 2, 3 ]
+    summed = List.foldl ints [] λx acc → List.push acc (x + List.length ints)
     Node.printLines
         [ shows (List.map local λl → List.push l 1)
         , shows (bump [ [ 3 ], [ 4, 5 ] ])
@@ -72,4 +76,5 @@ main =
         , shows (List.map [ [ 1 ], [ 2, 3 ] ] λl → if List.length l == 1 then d else List.push l 7)
             ++ " "
             ++ show d
+        , show summed ++ " " ++ show ints
         ]
