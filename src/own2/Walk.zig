@@ -1197,7 +1197,9 @@ pub fn walk(gpa: Allocator, arena: Allocator, account: *Ids.Account, places: *Pl
     if (code.called) |cd| {
         w.last = .{ .calls = @intCast(w.f.calls.items.len), .demands = @intCast(w.demands.items.len), .escapes = @intCast(w.escapes.items.len), .runs = @intCast(w.runs.items.len), .uses = @intCast(w.uses.items.len), .cbs = @intCast(w.f.cbs.items.len) };
         k.in_last = true;
-        result = try k.valueCall(body, try w.f.valueAt(result, cd.words), &.{}, own_vals.items, 0);
+        var fv = result;
+        for (cd.words) |wd| fv = try k.project(fv, .plain, wd, 0);
+        result = try k.valueCall(body, fv, &.{}, own_vals.items, 0);
     }
     w.result = result;
     w.walk_calls = @intCast(w.f.calls.items.len);

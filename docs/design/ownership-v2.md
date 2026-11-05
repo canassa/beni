@@ -2333,9 +2333,10 @@ closed over by `D`'s parameters and `self`, so what stays is what the call does.
 tuples (`{ run = λ⊤ → … }`). A slot's type has to be read to know its parameters, and a constructor's argument needs
 the type's definition instantiated: a function in a `Maybe`, or under a `[*]`, a `◆` or a `⟲`, has none and is what it
 was. Only a declaration's body has them: a local function's or a lambda's result is what it was. Each is a walk, so a
-declaration pays once per function slot of its result, and `D@s` of a called code does not exist: what a call of a
-function value answers is unknown code when it is called in turn. Each of these is a precision gap of the `⊤` kind, never
-a change of what is checked (#2039).
+declaration pays once per function slot of its result, and at most `below_min` (16) slots a declaration, by field rank:
+a tuple of tuples doubles its slots. `D@s` of a called code does not exist: what a call of a function value answers is
+unknown code when it is called in turn. Each of these is a precision gap of the `⊤` kind, never a change of what is
+checked (#2039).
 
 **Sound.** Take any call `g a` that runs a value `v` that `D(b)` returned at `s`. It runs a code `K` with `v`'s captures
 (§2.11.4). `D@s`'s last call is that run, with `own` for `a` and `D`'s parameters for `b`: every activation of `D` is one
