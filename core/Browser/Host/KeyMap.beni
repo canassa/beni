@@ -1,4 +1,7 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Js
+
+
 pub foreign type Map key value
 
 
@@ -8,7 +11,15 @@ pub foreign impure values : borrowed Map key value → List value
 pub foreign impure make : ⊤ → fresh Map key value
 
 
-pub foreign impure get : borrowed Map key value, borrowed key → Maybe value
+pub get : borrowed Map key value, borrowed key → Maybe value
+get a0 a1 =
+    if has a0 a1 then
+        Just (host_get a0 a1)
+    else
+        Nothing
+
+
+foreign impure host_get : borrowed Map key value, borrowed key → value
 
 
 pub foreign impure getOr : borrowed Map key value, borrowed key, returned value → value

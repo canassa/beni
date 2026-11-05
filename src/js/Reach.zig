@@ -1064,8 +1064,17 @@ pub const Builder = struct {
                     };
                     if (b.in.interner) |interner| if (b.in.graph.modulePackage(m) == .core) {
                         if (@import("../native/Operations.zig").lookup(interner.slice(b.in.graph.moduleName(m)), interner.slice(bir.symbol(d.name)))) |row| {
-                            if (@import("../native/Operations.zig").rendererNeedsOpt(row.recipe)) {
-                                if (b.opt_none) |sentinel| try decl_targets.append(b.scratch, .{ .node = sentinel });
+                            if (row.host_projection or @import("../native/Operations.zig").rendererNeedsOpt(row.recipe)) {
+                                if (b.opt_none) |sentinel| {
+                                    try decl_targets.append(b.scratch, .{ .node = sentinel });
+                                    if (row.host_projection and (row.recipe == .query_selector or row.recipe == .worker_create)) {
+                                        const js_bir = b.in.birs[sentinel.module.int()];
+                                        for (js_bir.decls, 0..) |escape, index| {
+                                            if (!std.mem.eql(u8, interner.slice(js_bir.symbol(escape.name)), "some")) continue;
+                                            try decl_targets.append(b.scratch, .{ .node = .{ .module = sentinel.module, .kind = .decl, .index = @intCast(index) } });
+                                        }
+                                    }
+                                }
                             }
                         }
                     };

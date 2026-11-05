@@ -33,7 +33,17 @@ pub fn seed(e: *Effects, cx: *const Context, schemes: []const TypeStore.Var.Opti
             continue;
         };
         const v = schemes[i].unwrap() orelse continue;
-        if (!@import("NativeBinding.zig").valid(cx, op, v) or !std.mem.eql(u8, @tagName(decl.rung), @tagName(op.effect))) {
+        var valid = @import("NativeBinding.zig").valid(cx, op, v);
+        if (op.host_projection) {
+            valid = false;
+            for (cx.bir.decls, 0..) |public, public_i| {
+                if (!std.mem.eql(u8, cx.interner.slice(cx.bir.symbol(public.name)), op.name)) continue;
+                const public_v = schemes[public_i].unwrap() orelse break;
+                valid = @import("NativeBinding.zig").valid(cx, op, public_v) and @import("NativeBinding.zig").validHost(cx, op, public_v, v);
+                break;
+            }
+        }
+        if (!valid or !std.mem.eql(u8, @tagName(decl.rung), @tagName(op.effect))) {
             report.at(@intCast(i));
             try report.emitText(.invalid_native_binding, decl.inst_start, decl.name_token, "This native binding does not match the pinned callable signature and effect metadata.");
             report.at(null);

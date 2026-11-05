@@ -2,6 +2,7 @@
 import Browser.Host.Headers as Headers
 import Browser.Host.Promise as Promise
 import Browser.Host.ReadableStreamDefaultReader as ReadableStreamDefaultReader
+import Js
 
 
 pub foreign type Response
@@ -25,6 +26,12 @@ pub foreign impure headers : aliased Response → Headers.Headers
 pub foreign impure text : escaped Response → Promise.Promise String
 
 
-pub foreign impure reader :
+pub reader :
       aliased Response
     → Maybe ReadableStreamDefaultReader.ReadableStreamDefaultReader
+reader a0 = Js.optMatch (host_reader a0) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_reader :
+      aliased Response
+    → Js.Opt ReadableStreamDefaultReader.ReadableStreamDefaultReader

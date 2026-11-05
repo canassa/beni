@@ -1,4 +1,7 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Js
+
+
 pub type SetError
     = QuotaExceeded
 
@@ -6,16 +9,32 @@ pub type SetError
 pub foreign type Storage
 
 
-pub foreign impure local : ⊤ → Maybe Storage
+pub local : ⊤ → Maybe Storage
+local a0 = Js.optMatch (host_local a0) (λ⊤ → Nothing) λpresent → Just present
 
 
-pub foreign impure session : ⊤ → Maybe Storage
+foreign impure host_local : ⊤ → Js.Opt Storage
 
 
-pub foreign impure get : borrowed Storage, String → Maybe String
+pub session : ⊤ → Maybe Storage
+session a0 = Js.optMatch (host_session a0) (λ⊤ → Nothing) λpresent → Just present
 
 
-pub foreign impure set : borrowed Storage, String, String → Result SetError ⊤
+foreign impure host_session : ⊤ → Js.Opt Storage
+
+
+pub get : borrowed Storage, String → Maybe String
+get a0 a1 = Js.optMatch (host_get a0 a1) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_get : borrowed Storage, String → Js.Opt String
+
+
+pub set : borrowed Storage, String, String → Result SetError ⊤
+set a0 a1 a2 = Js.optMatch (host_set a0 a1 a2) (λ⊤ → Err QuotaExceeded) λpresent → Ok present
+
+
+foreign impure host_set : borrowed Storage, String, String → Js.Opt ⊤
 
 
 pub foreign impure remove : borrowed Storage, String → ⊤
@@ -24,4 +43,8 @@ pub foreign impure remove : borrowed Storage, String → ⊤
 pub foreign impure length : borrowed Storage → Int
 
 
-pub foreign impure key : borrowed Storage, Int → Maybe String
+pub key : borrowed Storage, Int → Maybe String
+key a0 a1 = Js.optMatch (host_key a0 a1) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_key : borrowed Storage, Int → Js.Opt String

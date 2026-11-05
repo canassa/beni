@@ -166,6 +166,7 @@ pub fn valid(cx: *const Context, row: Operations.Row, v: Var) bool {
         .rejection_assign => a.len == 2 and native(cx, a[0], "Rejection") and named(cx, a[1], "Js", "Value") and unit(cx, r),
         .regexp_group => a.len == 3 and native(cx, a[0], "RegExp") and named(cx, a[1], "String", "String") and named(cx, a[2], "Basics", "Int") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |text| named(cx, text, "String", "String") else false),
         .map_make => a.len == 1 and unit(cx, a[0]) and mapItem(cx, r) != null,
+        .map_has => a.len == 2 and mapItem(cx, a[0]) != null and named(cx, a[1], "String", "String") and named(cx, r, "Basics", "Bool"),
         .map_get => blk: {
             if (a.len != 2 or !named(cx, a[1], "String", "String")) break :blk false;
             const item = mapItem(cx, a[0]) orelse break :blk false;
@@ -590,4 +591,68 @@ fn collectionCallback(cx: *const Context, collection: Var, module: []const u8, n
 
 fn listeners(cx: *const Context, v: Var) bool {
     return eventCallback(cx, argument(cx, v, "Browser.Host.Event", "EarlyListeners", 0) orelse return false);
+}
+
+/// Host projections replace Maybe/Result positions with the existing typed Opt.
+/// Check the public recipe first, then its projection: native identities,
+/// arity, callback shapes and shared type variables all remain checked.
+pub fn validHost(cx: *const Context, row: Operations.Row, public: Var, host: Var) bool {
+    var pairs: [64][2]Var = undefined;
+    var count: usize = 0;
+    const a = Walk.function(cx.store, public) orelse return false;
+    const b = Walk.function(cx.store, host) orelse return false;
+    if (a.params.len != b.params.len) return false;
+    for (a.params, b.params) |ap, bp| if (!hostShape(cx, ap, bp, &pairs, &count, 0)) return false;
+    if (row.recipe == .map_get or row.recipe == .key_map_get) {
+        const payload = argument(cx, a.result, "Maybe", "Maybe", 0) orelse return false;
+        return hostShape(cx, payload, b.result, &pairs, &count, 0);
+    }
+    if (row.recipe == .worker_create) {
+        const payload = argument(cx, a.result, "Result", "Result", 1) orelse return false;
+        var result = b.result;
+        for (0..3) |_| result = argument(cx, result, "Js", "Opt", 0) orelse return false;
+        return hostShape(cx, payload, result, &pairs, &count, 0);
+    }
+    return hostShape(cx, a.result, b.result, &pairs, &count, 0);
+}
+
+fn hostShape(cx: *const Context, public: Var, host: Var, pairs: *[64][2]Var, count: *usize, depth: usize) bool {
+    if (depth == 64) return false;
+    if (named(cx, public, "Maybe", "Maybe") or named(cx, public, "Result", "Result")) {
+        const is_result = named(cx, public, "Result", "Result");
+        const payload = argument(cx, public, if (is_result) "Result" else "Maybe", if (is_result) "Result" else "Maybe", if (is_result) 1 else 0) orelse return false;
+        const projected = argument(cx, host, "Js", "Opt", 0) orelse return false;
+        return hostShape(cx, payload, projected, pairs, count, depth + 1);
+    }
+    const a = cx.store.resolvedContent(public);
+    const b = cx.store.resolvedContent(host);
+    if (a == .flex or a == .rigid) {
+        if (b != .flex and b != .rigid) return false;
+        const fa = if (a == .flex) a.flex else a.rigid;
+        const fb = if (b == .flex) b.flex else b.rigid;
+        if (fa.kind != fb.kind or fa.equatable != fb.equatable) return false;
+        for (pairs[0..count.*]) |pair| {
+            if (cx.store.find(pair[0]) == cx.store.find(public)) return cx.store.find(pair[1]) == cx.store.find(host);
+            if (cx.store.find(pair[1]) == cx.store.find(host)) return false;
+        }
+        if (count.* == pairs.len) return false;
+        pairs[count.*] = .{ public, host };
+        count.* += 1;
+        return true;
+    }
+    if (a != .structure or b != .structure or std.meta.activeTag(a.structure) != std.meta.activeTag(b.structure)) return false;
+    if (a.structure == .func) {
+        const af = Walk.function(cx.store, public).?;
+        const bf = Walk.function(cx.store, host).?;
+        if (af.params.len != bf.params.len) return false;
+        for (af.params, bf.params) |ap, bp| if (!hostShape(cx, ap, bp, pairs, count, depth + 1)) return false;
+        return hostShape(cx, af.result, bf.result, pairs, count, depth + 1);
+    }
+    if (a.structure == .app and a.structure.app.type != b.structure.app.type) return false;
+    if (a.structure == .record) return false; // No reviewed projection takes a structural record.
+    const ap = Walk.positions(cx.store, public);
+    const bp = Walk.positions(cx.store, host);
+    if (ap.len != bp.len) return false;
+    for (ap, bp) |av, bv| if (!hostShape(cx, av, bv, pairs, count, depth + 1)) return false;
+    return true;
 }

@@ -2811,8 +2811,12 @@ test "native Map signatures preserve their element parameter" {
         try w.write("core/Browser/Host/Map.beni", try std.mem.replaceOwned(u8, w.arena.allocator(), original, change[0], change[1]));
         const result = try w.run(&.{ "check", "--core", "--core-root=core", "--no-cache", "Main.beni" });
         try testing.expectEqual(@as(u8, 1), result.exit_code);
-        try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
-        try testing.expectEqual(diagnostic.Code.invalid_native_binding, result.diagnostics[0].code);
+        const expected: []const diagnostic.Code = if (std.mem.eql(u8, change[0], "String → Maybe a"))
+            &.{ .type_mismatch, .invalid_native_binding }
+        else
+            &.{.invalid_native_binding};
+        try testing.expectEqual(expected.len, result.diagnostics.len);
+        for (result.diagnostics, expected) |item, code| try testing.expectEqual(code, item.code);
     }
 }
 

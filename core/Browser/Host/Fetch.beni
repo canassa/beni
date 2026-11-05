@@ -4,6 +4,7 @@ import Browser.Host.FormData as FormData
 import Browser.Host.Headers as Headers
 import Browser.Host.Promise as Promise
 import Browser.Host.Response as Response
+import Js
 
 
 pub foreign type Body
@@ -18,10 +19,27 @@ pub foreign pure textBody : String → Body
 pub foreign pure formBody : returned FormData.FormData → Body
 
 
-pub foreign impure init :
+pub init :
       String
     , aliased Headers.Headers
     , Maybe Body
+    , aliased AbortSignal.AbortSignal
+    , String
+    → Init
+init a0 a1 a2 a3 a4 =
+    optional =
+        case a2 of
+            Nothing →
+                Js.none ⊤
+            Just present →
+                Js.some present
+    host_init a0 a1 optional a3 a4
+
+
+foreign impure host_init :
+      String
+    , aliased Headers.Headers
+    , Js.Opt Body
     , aliased AbortSignal.AbortSignal
     , String
     → Init

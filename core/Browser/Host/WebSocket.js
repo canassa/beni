@@ -1,4 +1,4 @@
-export const tryCreate = (url, protocols) => { try { return { $: "Just", a: new globalThis.WebSocket(url, Array.isArray(protocols) ? protocols : (protocols.$plain ? protocols.$plain() : protocols.b.slice(protocols.o))) }; } catch (error) { if (!(error instanceof globalThis.DOMException) || error.name !== "SecurityError") throw error; return { $: "Nothing", a: null }; } };
+export const host_tryCreate = (url, protocols) => { try { return new globalThis.WebSocket(url, Array.isArray(protocols) ? protocols : (protocols.$plain ? protocols.$plain() : protocols.b.slice(protocols.o))); } catch (error) { if (!(error instanceof globalThis.DOMException) || error.name !== "SecurityError") throw error; return undefined; } };
 export const arrayBuffer = (socket) => { socket.binaryType = "arraybuffer"; return null; };
 export const readyState = (socket) => { return socket.readyState; };
 export const bufferedAmount = (socket) => { return socket.bufferedAmount; };
@@ -8,5 +8,5 @@ export const close = (socket, code, reason) => { socket.close(code, reason); ret
 export const closeWithoutCode = (socket) => { socket.close(); return null; };
 export const onOpen = (socket, callback) => { socket.addEventListener("open", () => callback(null)); return null; };
 export const onError = (socket, callback) => { socket.addEventListener("error", () => callback(null)); return null; };
-export const onText = (socket, callback) => { socket.addEventListener("message", event => callback(typeof event.data === "string" ? { $: "Just", a: event.data } : { $: "Nothing", a: null })); return null; };
+export const host_onText = (socket, callback) => { socket.addEventListener("message", callback); return null; };
 export const onClose = (socket, callback) => { socket.addEventListener("close", event => callback(event.code, event.reason)); return null; };

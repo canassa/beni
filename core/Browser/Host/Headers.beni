@@ -1,4 +1,7 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Js
+
+
 pub foreign type Headers
 
 
@@ -14,7 +17,11 @@ pub foreign impure has : borrowed Headers, String → Bool
 pub foreign impure set : borrowed Headers, String, String → ⊤
 
 
-pub foreign impure get : borrowed Headers, String → Maybe String
+pub get : borrowed Headers, String → Maybe String
+get a0 a1 = Js.optMatch (host_get a0 a1) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_get : borrowed Headers, String → Js.Opt String
 
 
 pub foreign impure entries : borrowed Headers → List (String × String)

@@ -25,7 +25,13 @@ pub foreign impure closeSelf : ⊤ → ⊤
 pub foreign impure supported : ⊤ → Bool
 
 
-pub foreign impure tryCreate : String, String, String → Result CreateError Worker
+pub tryCreate : String, String, String → Result CreateError Worker
+tryCreate a0 a1 a2 = Js.optMatch (host_tryCreate a0 a1 a2) (λ⊤ → Err SyntaxError) λsecurity →
+    Js.optMatch security (λ⊤ → Err SecurityError) λinvalid →
+        Js.optMatch invalid (λ⊤ → Err TypeError) λpresent → Ok present
+
+
+foreign impure host_tryCreate : String, String, String → Js.Opt (Js.Opt (Js.Opt Worker))
 
 
 pub foreign pure endpoint : returned Worker → Endpoint
@@ -34,7 +40,11 @@ pub foreign pure endpoint : returned Worker → Endpoint
 pub foreign impure self : ⊤ → Endpoint
 
 
-pub foreign impure post : borrowed Endpoint, Js.Value → Result PostError ⊤
+pub post : borrowed Endpoint, Js.Value → Result PostError ⊤
+post a0 a1 = Js.optMatch (host_post a0 a1) (λ⊤ → Err DataCloneError) λpresent → Ok present
+
+
+foreign impure host_post : borrowed Endpoint, Js.Value → Js.Opt ⊤
 
 
 pub foreign impure terminate : borrowed Worker → ⊤

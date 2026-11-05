@@ -1,5 +1,6 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
 import Browser.Host.Uint8Array as Uint8Array
+import Js
 
 
 pub foreign type ReadResult
@@ -8,4 +9,8 @@ pub foreign type ReadResult
 pub foreign impure done : borrowed ReadResult → Bool
 
 
-pub foreign impure value : aliased ReadResult → Maybe Uint8Array.Uint8Array
+pub value : aliased ReadResult → Maybe Uint8Array.Uint8Array
+value a0 = Js.optMatch (host_value a0) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_value : aliased ReadResult → Js.Opt Uint8Array.Uint8Array

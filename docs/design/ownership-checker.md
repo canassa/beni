@@ -4391,6 +4391,30 @@ model and one current view through typed refs, replacing each after its sync
 callback; its entry protocol still retains no earlier model. These pins will
 be re-audited when the separately owned DOM/Schema changes land.
 
+**Typed native host projections** (2026-11-05). Re-read the generated public
+beni wrappers, private host exports, `native/HostValues.zig`, `js/NativeHost.zig`
+and their entry/binding path in `js/Lower.zig`. Borrowed receivers are still
+read only; aliases returned by narrowing, event data/error and response readers
+still refer to the same native object or payload. Opt normalization and its
+shared empty escape chain neither copy nor grant editing permission to a
+payload. The public Maybe/Result shell is constructed by beni without retaining
+any additional receiver. Fetch's optional body conversion preserves the body,
+headers and signal references held by its init object. A native event listener
+retains its typed callback exactly as before; literal adapter bodies bind each
+payload once and execute synchronously, so their inlining changes no callback
+escape or invocation count. Private raw declarations inherit the same parameter
+bounds as the public rows. Public rows and their observable flips remain;
+private rows are reached through those public wrappers, whose explicit bounds
+shield consumer verdicts from an independently weaker private annotation.
+Their actual native bodies, lowering and projection table are pinned together.
+
+The existing cell/Opt primitive pins were re-read after exposing the compiler's
+sentinel lookup methods to the native recipe helper. Only compiler-method
+visibility changed there: cell creation, field reads/writes, selected-payload
+aliases and generic escape behavior are unchanged. Renderer primitive branches
+still return before the new host-projection branch and keep their existing
+borrowed native-handle behavior.
+
 **Private renderer native handles** (2026-11-04; #1822). The borrowed
 arguments of `Browser.Host.Node.rendererFirstChild`, `rendererNextSibling`,
 `rendererParent`, `rendererInsertBefore`, `rendererAppend`, `rendererRemove`,
