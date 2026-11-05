@@ -126,7 +126,7 @@ pub const CrossingUse = struct { inst: Bir.Inst.Index, decl: ?u32, v: Var };
 /// A scheme quantifier of this module (a declaration's or a `let`'s) and the
 /// variable one instantiation copied it to, in declaration `decl`
 /// (checker-v2.md §36): what `TypeKeys` follows when the quantifier crosses.
-pub const CopyPair = struct { quantifier: Var, copy: Var, decl: u32 };
+pub const CopyPair = struct { quantifier: Var, copy: Var, decl: u32, inst: Bir.Inst.OptionalIndex = .none };
 
 pub fn deinit(in: *Instantiate) void {
     in.copied.deinit(in.cx.gpa);
@@ -476,7 +476,7 @@ fn mapped(in: *Instantiate, r: Var) Error!TypeStore.Content {
             // copy must not share a row with its scheme.
             // A reference's quantifier and its copy, for the crossing bits
             // (`copies`, checker-v2.md §36).
-            if (in.copy_owner) |owner| try in.copies.append(in.cx.gpa, .{ .quantifier = r, .copy = store.copy(r).unwrap().?, .decl = owner });
+            if (in.copy_owner) |owner| try in.copies.append(in.cx.gpa, .{ .quantifier = r, .copy = store.copy(r).unwrap().?, .decl = owner, .inst = in.origin.toOptional() });
             var copied = flags;
             copied.constraints = try in.mappedConstraints(flags);
             copied.obls = .none;

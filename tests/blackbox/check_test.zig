@@ -2252,6 +2252,10 @@ test "explicit standalone ownership enforcement checks list sharing" {
     }}, enforced.diagnostics);
 }
 
+test "ownership words: typed append retains aliases from both operands" {
+    try expectFlips("ownership/core/AppendTypedWords.beni", &.{"--core"});
+}
+
 test "ownership words: typed cell and slot rows notice unsafe flips" {
     try expectFlips("ownership/core/JsCellOptWords.beni", &.{"--core"});
 }

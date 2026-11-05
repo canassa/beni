@@ -1,0 +1,5 @@
+-- A returned closure stays typed, including a captured host read.
+import Js
+
+
+pub later self = Js.from λ⊤ → Js.get self "length"

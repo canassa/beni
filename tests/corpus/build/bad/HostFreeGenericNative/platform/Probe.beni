@@ -1,0 +1,4 @@
+import Js
+
+
+pub erase value = Js.from value

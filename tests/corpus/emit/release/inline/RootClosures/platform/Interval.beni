@@ -2,7 +2,6 @@
 --! chain of `Task.sleep`s; a page's clock is one `setInterval` that lives while the subscription
 --! is in the set, and is cleared when it leaves.
 
-import Js
 import Sub exposing (Sub)
 
 
@@ -18,5 +17,15 @@ every ms tag = Sub.on (Every ms) (start ms _) λ_ → tag
 
 start : Int, sync (⊤ → ⊤) → (⊤ → ⊤)
 start ms send =
-    timer = Js.apply (Js.global "setInterval") [ Js.from λ⊤ → send ⊤, Js.from ms ]
-    λ⊤ → Js.to (Js.apply (Js.global "clearInterval") [ timer ])
+    timer = interval (λ⊤ → send ⊤) ms
+    λ⊤ → clear timer
+
+
+-- Typed fixture adapter: an interval, not the shipped one-shot timeout.
+foreign type Timer
+
+
+foreign impure interval : sync (⊤ → ⊤), Int → Timer
+
+
+foreign impure clear : Timer → ⊤

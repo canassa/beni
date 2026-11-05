@@ -586,7 +586,6 @@ module Js
   value le : a, a → bool
   value lt : a, a → bool
   value maySuspend : f → bool
-  value method : (Value → a) → Value
   value null : Value
   value object : fields → Value
   value pure : (⊤ → a) → a

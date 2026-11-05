@@ -2,3 +2,6 @@
 // (the free-name check), so the alias cases pin behaviour only; the shape is
 // `emit/release/core/EtaReduce`'s `aliasOnce` and `aliasTwice`.
 export const counted = (a) => a + 1000;
+
+export const hostMap = (xs, f) => xs.map(f);
+export const hostMethod = (f, value) => ({ tag: "o", f }).f(value);

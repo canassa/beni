@@ -15,7 +15,7 @@ parsedLoop xs n acc =
     else
         p = Js.global "parseInt"
         Io.sleep 0
-        ys = Js.to (Js.call (Js.from xs) "map" [ Js.from λs → Js.apply p [ Js.from s ] ])
+        ys = hostMap xs λs → Js.to (Js.apply p [ Js.from s ])
         parsedLoop xs (n - 1) (List.append acc ys)
 
 
@@ -29,5 +29,9 @@ maxedLoop xs n acc =
         acc
     else
         Io.sleep 0
-        ys = Js.to (Js.call (Js.from xs) "map" [ Js.from λx → Js.apply maxFn [ Js.from x ] ])
+        ys = hostMap xs λx → Js.to (Js.apply maxFn [ Js.from x ])
         maxedLoop xs (n - 1) (List.append acc ys)
+
+
+-- The host still supplies index and array extras to the typed callback.
+foreign impure hostMap : List a, sync (a → b) → List b

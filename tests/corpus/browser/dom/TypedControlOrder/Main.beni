@@ -1,0 +1,27 @@
+-- The model is the SAME typed mutable cell on every update. Control entries
+-- must still observe its new scalar fields, reconcile edits, and stay ordered.
+import Browser
+import Html exposing (Html)
+import Probe
+
+
+type Msg
+    = Next
+
+
+view : Probe.Model → Html Msg
+view model =
+    <main>
+        <button id="next" onClick={Next}>next</button>
+        <input id="text" value={Probe.text model} />
+        <input id="box" type="checkbox" value={Probe.text model} checked={Probe.checked model} />
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → Probe.make ⊤
+        , update = λ_ model → Probe.next model
+        , view = view
+        }

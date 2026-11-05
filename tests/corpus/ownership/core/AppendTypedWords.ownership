@@ -1,0 +1,10 @@
+module AppendTypedWords
+  10:13 List.push combined: rejected call: original may hold it through the call at 9:16, and is read at 11:5 (approx)
+  18:13 List.push inner: rejected call: combined⋆ may hold it through the call at 17:16, and is read at 19:5 (approx)
+  30:13 List.push inner: rejected call: combined⋆ may hold it through the call at 29:16, and is read at 31:5 (approx)
+  summary outer: unused
+  summary nested: unused
+  summary right: unused
+  demands 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause call 3

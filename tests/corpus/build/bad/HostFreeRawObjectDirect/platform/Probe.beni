@@ -1,0 +1,8 @@
+import Browser.Host.TextEncoder as Encoder
+import Js
+
+
+pub bad = Js.object [ ( "v", (λn → n + 1) ) ]
+
+
+pub badNative = Js.object [ ( "v", (Encoder.create ⊤) ) ]

@@ -16,14 +16,14 @@ import Js
 pub parsed : List String → List Int
 parsed xs =
     p = Js.global "parseInt"
-    Js.to (Js.call (Js.from xs) "map" [ Js.from λs → Js.apply p [ Js.from s ] ])
+    hostMap xs λs → Js.to (Js.apply p [ Js.from s ])
 
 
 pub parsedTwice : List String → List Int
 parsedTwice xs =
     p = Js.global "parseInt"
-    first = Js.to (Js.call (Js.from xs) "map" [ Js.from λs → Js.apply p [ Js.from s ] ])
-    second = Js.to (Js.call (Js.from xs) "map" [ Js.from λs → Js.apply p [ Js.from s ] ])
+    first = hostMap xs λs → Js.to (Js.apply p [ Js.from s ])
+    second = hostMap xs λs → Js.to (Js.apply p [ Js.from s ])
     List.append first second
 
 
@@ -32,7 +32,7 @@ maxFn = Js.get (Js.global "Math") "max"
 
 
 pub maxed : List Int → List Int
-maxed xs = Js.to (Js.call (Js.from xs) "map" [ Js.from λx → Js.apply maxFn [ Js.from x ] ])
+maxed xs = hostMap xs λx → Js.to (Js.apply maxFn [ Js.from x ])
 
 
 foreign pure counted : Int → Int
@@ -43,14 +43,14 @@ countedAlias = counted
 
 
 pub viaAlias : List Int → List Int
-viaAlias xs = Js.to (Js.call (Js.from xs) "map" [ Js.from λx → countedAlias x ])
+viaAlias xs = hostMap xs λx → countedAlias x
 
 
 pub viaLocalAlias : List Int → List Int
 viaLocalAlias xs =
     c = counted
-    first = Js.to (Js.call (Js.from xs) "map" [ Js.from λx → c x ])
-    second = Js.to (Js.call (Js.from xs) "map" [ Js.from λx → c x ])
+    first = hostMap xs λx → c x
+    second = hostMap xs λx → c x
     List.append first second
 
 
@@ -61,9 +61,7 @@ forward m = λx → Js.apply m [ x ]
 pub receiver : ⊤ → String
 receiver _ =
     toText = Js.get (Js.get (Js.global "Object") "prototype") "toString"
-    o = Js.object [ ( "tag", Js.from "o" ) ]
-    Js.set o "f" (Js.from (forward toText))
-    Js.to (Js.call o "f" [ Js.from 1 ])
+    Js.to (hostMethod (forward toText) (Js.from 1))
 
 
 store : Js.Ref (Int → Int)
@@ -77,3 +75,10 @@ viaRef _ =
     Js.write store λx → x * 10
     after = f 1
     [ before, after ]
+
+
+-- The host still supplies index and array extras to the typed callback.
+foreign impure hostMap : List a, sync (a → b) → List b
+
+
+foreign impure hostMethod : sync (Js.Value → Js.Value), Js.Value → Js.Value

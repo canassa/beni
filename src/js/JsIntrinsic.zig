@@ -64,10 +64,6 @@ pub const Which = enum {
     /// list literal of `( "key", value )` pairs (`backend.md` §4, *`Js.object`
     /// is an object literal*).
     object,
-    /// `function () { const self = this; … }`: a method JavaScript calls on
-    /// a receiver, its lambda handed the receiver (`backend.md` §4,
-    /// *`Js.method` is a `function`*).
-    method,
     at,
     setAt,
     throw,
@@ -89,6 +85,7 @@ pub const Which = enum {
     some,
     inlineMarkRoot,
     ssrText,
+    appendTyped,
     nodeUpgrade,
     browserBlock,
     browserInstallRoot,
@@ -291,6 +288,7 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
     const iface = &interfaces[module.int()];
     if (d.rhs >= iface.values.len) return null;
     const name = interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]);
+    if (same(module_name, "Basics") and same(name, "appendTyped")) return .appendTyped;
     if (same(module_name, "Js.Any")) {
         if (same(name, "pack")) return .any_pack;
         if (same(name, "unpack")) return .any_unpack;
@@ -327,15 +325,22 @@ pub fn localSsrText(graph: *const Graph, bir: *const Bir, module: Graph.Index, i
     return decl.kind == .foreign_value and same(interner.slice(bir.symbol(decl.name)), "ssrText");
 }
 
+pub fn localAppendTyped(graph: *const Graph, bir: *const Bir, module: Graph.Index, inst: Inst.Index, interner: anytype) bool {
+    if (graph.modulePackage(module) != .core or !same(interner.slice(graph.moduleName(module)), "Basics") or bir.instTag(inst) != .top) return false;
+    const index = bir.instData(inst).lhs;
+    return index < bir.decls.len and bir.decls[index].kind == .foreign_value and same(interner.slice(bir.symbol(bir.decls[index].name)), "appendTyped");
+}
+
 pub fn compilerOnly(which: Which) bool {
     return switch (which) {
-        .any_unpack_opt, .ssrText, .inlineMarkRoot, .browserBlock, .browserInstallRoot, .browserInstallFuzz, .kernelPack, .kernelRead, .schemaIdentity, .arrayAllocate, .arraySet, .arrayDone, .arrayGet, .arrayLength, .arrayWrite, .arraySort, .optNone, .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
+        .any_unpack_opt, .appendTyped, .ssrText, .inlineMarkRoot, .browserBlock, .browserInstallRoot, .browserInstallFuzz, .kernelPack, .kernelRead, .schemaIdentity, .arrayAllocate, .arraySet, .arrayDone, .arrayGet, .arrayLength, .arrayWrite, .arraySort, .optNone, .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
         else => false,
     };
 }
 
 pub fn needsOptNone(which: Which) bool {
-    return which == .any_unpack_opt or which == .none or which == .some or which == .optMatch or which == .optWithDefault;
+    for (@import("ImplicitHelpers.zig").intrinsic(which, false)) |helper| if (helper == .opt_none) return true;
+    return false;
 }
 
 pub fn browserBridge(name: []const u8) ?Which {

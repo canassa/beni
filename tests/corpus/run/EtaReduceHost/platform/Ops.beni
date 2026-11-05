@@ -7,4 +7,7 @@ import Js
 
 
 pub replaced : String, (String → String) → String
-replaced s f = Js.to (Js.call (Js.from s) "replaceAll" [ Js.from "-", Js.from λm → f m ])
+replaced s f = replaceAll s λm → f m
+
+
+foreign impure replaceAll : String, sync (String → String) → String

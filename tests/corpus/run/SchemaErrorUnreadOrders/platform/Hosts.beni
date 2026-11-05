@@ -49,18 +49,9 @@ logged v keys =
         if not (Js.to (Js.call (Js.global "Object") "hasOwn" [ Js.from v, Js.from k ])) then
             Js.undefined
         else
-            Js.call (Js.global "Object") "defineProperty"
-                [ out
-                , Js.from k
-                , Js.object
-                    [ ( "get"
-                      , Js.from λ⊤ →
-                          _ = Js.call log "push" [ Js.from k ]
-                          Js.get (Js.from v) k
-                      )
-                    , ( "enumerable", Js.from True )
-                    ]
-                ]
+            defineGetter out k λ⊤ →
+                _ = Js.call log "push" [ Js.from k ]
+                Js.get (Js.from v) k
     Js.to out
 
 
@@ -76,21 +67,12 @@ flaky v keys =
             Js.undefined
         else
             count = Js.array []
-            Js.call (Js.global "Object") "defineProperty"
-                [ out
-                , Js.from k
-                , Js.object
-                    [ ( "get"
-                      , Js.from λ⊤ →
-                          _ = Js.call count "push" [ Js.from 1 ]
-                          if Js.same (Js.get count "length") (Js.from 1) then
-                              Js.get (Js.from v) k
-                          else
-                              Js.from "flake"
-                      )
-                    , ( "enumerable", Js.from True )
-                    ]
-                ]
+            defineGetter out k λ⊤ →
+                _ = Js.call count "push" [ Js.from 1 ]
+                if Js.same (Js.get count "length") (Js.from 1) then
+                    Js.get (Js.from v) k
+                else
+                    Js.from "flake"
     Js.to out
 
 
@@ -110,3 +92,7 @@ logOf ⊤ =
         Js.get g "__validReads"
     else
         Js.get g "__validReads"
+
+
+-- Native property descriptor boundary; the getter callback stays typed.
+foreign impure defineGetter : Js.Value, String, sync (⊤ → Js.Value) → Js.Value

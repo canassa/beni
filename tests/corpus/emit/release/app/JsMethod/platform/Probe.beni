@@ -1,0 +1,32 @@
+import Js
+
+
+foreign pure viewPlain : ⊤ → Js.Value
+
+
+foreign pure size : ⊤ → Js.Value
+
+
+foreign pure later : ⊤ → Js.Value
+
+
+pub check : ⊤ → String
+check ⊤ =
+    o =
+        Js.object
+            [ ( "b", Js.from [ 1, 2 ] )
+            , ( "o", Js.from 1 )
+            , ( "p", Js.null )
+            , ( "length", Js.from 3 )
+            , ( "plain", viewPlain ⊤ )
+            , ( "size", size ⊤ )
+            , ( "later", later ⊤ )
+            ]
+    xs : List Int
+    xs = Js.to (Js.call o "plain" [])
+    n : Int
+    n = Js.to (Js.call o "size" [])
+    read = Js.call o "later" []
+    last : Int
+    last = Js.to (Js.apply read [])
+    "${String.fromInt (List.length xs)}:${String.fromInt n}:${String.fromInt last}"

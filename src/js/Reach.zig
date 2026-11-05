@@ -91,6 +91,7 @@
 //! on one thread.
 
 const std = @import("std");
+const ImplicitHelpers = @import("ImplicitHelpers.zig");
 const WorkerIntrinsic = @import("WorkerIntrinsic.zig");
 const Allocator = std.mem.Allocator;
 const Bir = @import("../bir/Bir.zig");
@@ -376,6 +377,17 @@ pub const Input = struct {
             if (bir.symbol(d.name) != symbol) continue;
             return .{ .module = m, .kind = .decl, .index = @intCast(i) };
         }
+        return null;
+    }
+
+    pub fn implicitHelper(in: Input, id: ImplicitHelpers.Id) ?Node {
+        const helper = ImplicitHelpers.get(id);
+        const pool = in.interner orelse return null;
+        const module_symbol = pool.find(helper.module) orelse return null;
+        const name = pool.find(helper.name) orelse return null;
+        const owner = in.graph.lookup(.core, module_symbol) orelse return null;
+        const bir = in.birOf(owner);
+        for (bir.decls, 0..) |d, i| if (d.kind.isValue() and bir.symbol(d.name) == name) return .{ .module = owner, .kind = .decl, .index = @intCast(i) };
         return null;
     }
 
@@ -968,7 +980,7 @@ pub const Builder = struct {
         return .{
             .in = in,
             .scratch = scratch,
-            .string_compare = in.coreDecl(.String, .compare),
+            .string_compare = in.implicitHelper(.string_compare),
             .opt_none = blk: {
                 const interner = in.interner orelse break :blk null;
                 const js = interner.find("Js") orelse break :blk null;
@@ -978,14 +990,14 @@ pub const Builder = struct {
                 }
                 break :blk null;
             },
-            .list_get = in.coreDecl(.List, .unsafeGet),
-            .list_view = in.coreDecl(.List, .view),
-            .list_base = in.coreDecl(.List, .base),
-            .list_offset = in.coreDecl(.List, .offset),
-            .list_slice = in.coreDecl(.List, .slice),
-            .list_close = in.coreDecl(.List, .close),
+            .list_get = in.implicitHelper(.list_get),
+            .list_view = in.implicitHelper(.list_view),
+            .list_base = in.implicitHelper(.list_base),
+            .list_offset = in.implicitHelper(.list_offset),
+            .list_slice = in.implicitHelper(.list_slice),
+            .list_close = in.implicitHelper(.list_close),
             .list_cons = in.coreDecl(.List, .cons),
-            .list_append = in.coreDecl(.List, .append),
+            .list_append = in.implicitHelper(.list_append),
             .read_valid = in.coreDeclNamed(.Schema, "readValid"),
             .valid_context = in.coreDeclNamed(.Schema, "validContext"),
             .valid_shape = in.coreDeclNamed(.Schema, "validShape"),
@@ -1043,53 +1055,22 @@ pub const Builder = struct {
                 // instructions like a value's body (`schema.md` §6).
                 .value, .schema => {},
                 .foreign_value => {
-                    if (b.in.interner) |interner| if (b.in.graph.isSsr(m) and
-                        std.mem.eql(u8, interner.slice(b.in.graph.moduleName(m)), "WebSocket") and
-                        std.mem.eql(u8, interner.slice(bir.symbol(d.name)), "fromUpgrade"))
-                    {
-                        if (b.opt_none) |sentinel| try decl_targets.append(b.scratch, .{ .node = sentinel });
-                    };
-                    if (b.in.interner) |interner| if (b.in.graph.modulePackage(m) == .core and
-                        std.mem.eql(u8, interner.slice(b.in.graph.moduleName(m)), "Js.Any") and
-                        std.mem.eql(u8, interner.slice(bir.symbol(d.name)), "unpackOpt"))
-                    {
-                        // The inline guard shares Any's private packet Symbol.
-                        // A first-class generic opening also needs Opt's escape.
-                        for (bir.decls, 0..) |producer, index| {
-                            if (!std.mem.eql(u8, interner.slice(bir.symbol(producer.name)), "pack")) continue;
-                            try decl_targets.append(b.scratch, .{ .node = .{ .module = m, .kind = .decl, .index = @intCast(index) } });
+                    if (b.in.interner) |interner| {
+                        const module_name = interner.slice(b.in.graph.moduleName(m));
+                        const name = interner.slice(bir.symbol(d.name));
+                        if (b.in.graph.isSsr(m) and std.mem.eql(u8, module_name, "WebSocket") and std.mem.eql(u8, name, "fromUpgrade")) {
+                            try b.implicitDependencies(&decl_targets, ImplicitHelpers.intrinsic(.nodeUpgrade, false));
                         }
-                        if (b.opt_none) |sentinel| {
-                            try decl_targets.append(b.scratch, .{ .node = sentinel });
-                            const js_bir = b.in.birs[sentinel.module.int()];
-                            for (js_bir.decls, 0..) |escape, index| {
-                                if (!std.mem.eql(u8, interner.slice(js_bir.symbol(escape.name)), "some")) continue;
-                                try decl_targets.append(b.scratch, .{ .node = .{ .module = sentinel.module, .kind = .decl, .index = @intCast(index) } });
+                        if (b.in.graph.modulePackage(m) == .core) {
+                            if (std.mem.eql(u8, module_name, "Js.Any") and std.mem.eql(u8, name, "unpackOpt")) {
+                                try b.implicitDependencies(&decl_targets, ImplicitHelpers.intrinsic(.any_unpack_opt, false));
+                            }
+                            if (@import("../native/Operations.zig").lookup(module_name, name)) |row| try b.implicitDependencies(&decl_targets, ImplicitHelpers.native(row));
+                            if (std.mem.eql(u8, module_name, "Js")) {
+                                if (std.meta.stringToEnum(JsIntrinsic.Which, name)) |which| try b.implicitDependencies(&decl_targets, ImplicitHelpers.intrinsic(which, false));
                             }
                         }
-                    };
-                    if (b.in.interner) |interner| if (b.in.graph.modulePackage(m) == .core) {
-                        if (@import("../native/Operations.zig").lookup(interner.slice(b.in.graph.moduleName(m)), interner.slice(bir.symbol(d.name)))) |row| {
-                            if (row.host_projection or @import("../native/Operations.zig").rendererNeedsOpt(row.recipe)) {
-                                if (b.opt_none) |sentinel| {
-                                    try decl_targets.append(b.scratch, .{ .node = sentinel });
-                                    if (row.host_projection and (row.recipe == .query_selector or row.recipe == .element_query or row.recipe == .worker_create)) {
-                                        const js_bir = b.in.birs[sentinel.module.int()];
-                                        for (js_bir.decls, 0..) |escape, index| {
-                                            if (!std.mem.eql(u8, interner.slice(js_bir.symbol(escape.name)), "some")) continue;
-                                            try decl_targets.append(b.scratch, .{ .node = .{ .module = sentinel.module, .kind = .decl, .index = @intCast(index) } });
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    };
-                    if (b.opt_none) |sentinel| if (sentinel.module == m) {
-                        const interner = b.in.interner.?;
-                        if (std.meta.stringToEnum(JsIntrinsic.Which, interner.slice(bir.symbol(d.name)))) |which| {
-                            if (JsIntrinsic.needsOptNone(which)) try decl_targets.append(b.scratch, .{ .node = sentinel });
-                        }
-                    };
+                    }
                     continue;
                 },
                 .type, .type_alias, .foreign_type, .annotation_only, .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => continue,
@@ -1298,7 +1279,7 @@ pub const Builder = struct {
         const replies = b.in.graph.isCloudflare(m);
         const marks = try b.scratch.alloc(bool, bir.insts.len);
         @memset(marks, false);
-        for (tags, data, 0..) |tag, d, i| if (tag == .call or tag == .ext_value or (replies and tag == .method_call)) switch (tag) {
+        for (tags, data, 0..) |tag, d, i| if (tag == .call or tag == .ext_value or tag == .top or (replies and tag == .method_call)) switch (tag) {
             .call => if (d.lhs < marks.len) {
                 // A `++` on lists calls `List.append` (`listEdges`), and
                 // its `Basics.append` is no reference.
@@ -1308,7 +1289,7 @@ pub const Builder = struct {
                     marks[d.lhs] = true;
                 } else if (WorkerIntrinsic.isReference(b.in.worker_events_module, m, b.in.interfaces, bir, @fromBackingInt(@intCast(d.lhs)), interner)) {
                     marks[d.lhs] = true;
-                } else if (JsIntrinsic.localSsrText(b.in.graph, bir, m, @fromBackingInt(@intCast(d.lhs)), interner)) {
+                } else if (JsIntrinsic.localSsrText(b.in.graph, bir, m, @fromBackingInt(@intCast(d.lhs)), interner) or JsIntrinsic.localAppendTyped(b.in.graph, bir, m, @fromBackingInt(@intCast(d.lhs)), interner)) {
                     marks[d.lhs] = true;
                 } else if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @fromBackingInt(@intCast(d.lhs)), interner)) |which| {
                     // Any packing and unpacking call their shared sibling.
@@ -1327,11 +1308,14 @@ pub const Builder = struct {
                     if (bir.subRange(@fromBackingInt(@intCast(d.rhs))).len() == which.arity()) marks[d.lhs] = true;
                 }
             },
+            .top => if (JsIntrinsic.localAppendTyped(b.in.graph, bir, m, @fromBackingInt(@intCast(i)), interner)) {
+                marks[i] = true;
+            },
             .method_call => if (replies and @import("../check/Wire.zig").replyMethod(b.in.graph, b.in.interfaces, bir, m, dispatch, @fromBackingInt(@intCast(i)), interner)) {
                 marks[i] = true;
             },
             .ext_value => if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @fromBackingInt(@intCast(i)), interner)) |which| {
-                if (which == .null or which == .undefined or which == .development or which == .testHooks) marks[i] = true;
+                if (which == .appendTyped or which == .null or which == .undefined or which == .development or which == .testHooks) marks[i] = true;
             },
             else => {},
         };
@@ -1377,12 +1361,17 @@ pub const Builder = struct {
     /// calls it (`backend.md` §8). Coarse by a little: a pattern that reads no
     /// element or binds no tail still keeps the two alive, which costs
     /// their export and never a wrong program.
+    fn implicitDependencies(b: *Builder, out: *std.ArrayList(Target), helpers: []const ImplicitHelpers.Id) Allocator.Error!void {
+        for (helpers) |helper| if (b.in.implicitHelper(helper)) |node| try out.append(b.scratch, .{ .node = node, .chain = 0 });
+    }
+
     fn listEdges(b: *Builder, m: Graph.Index, bir: *const Bir, d: Bir.Decl, out: *std.ArrayList(Target)) Allocator.Error!void {
         var pattern = false;
         var end = false;
         var cons = false;
         var append = false;
         var opt_none = false;
+        var implicit: std.EnumSet(ImplicitHelpers.Id) = .{};
         const dispatch = b.in.dispatchOf(m);
         const list = b.in.graph.lookup(.core, InternPool.WellKnown.List.symbol());
         var inst = d.inst_start.int();
@@ -1391,6 +1380,10 @@ pub const Builder = struct {
             const data = bir.instData(at);
             // `==`, not a switch with an `else` prong (`Bir.Inst.Tag.set`).
             const tag = bir.instTag(at);
+            if (b.in.interner) |interner| {
+                const which = if (JsIntrinsic.localAppendTyped(b.in.graph, bir, m, at, interner)) JsIntrinsic.Which.appendTyped else JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, at, interner);
+                if (which) |operation| for (ImplicitHelpers.intrinsic(operation, dispatch.optPlain(at))) |helper| implicit.insert(helper);
+            }
             if (tag == .ext_value) {
                 if (b.in.interner) |interner| if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, at, interner)) |which| {
                     opt_none = opt_none or JsIntrinsic.needsOptNone(which);
@@ -1398,7 +1391,7 @@ pub const Builder = struct {
             }
             if (tag == .ext_value or tag == .top) {
                 if (b.in.interner) |interner| if (@import("NativeIntrinsic.zig").of(b.in.graph, b.in.interfaces, bir, m, at, interner)) |native| {
-                    opt_none = opt_none or @import("../native/Operations.zig").rendererNeedsOpt(native.recipe);
+                    for (ImplicitHelpers.native(native)) |helper| implicit.insert(helper);
                 };
             }
             if (tag == .pat_list) {
@@ -1422,6 +1415,8 @@ pub const Builder = struct {
             .{ append, b.list_append },
             .{ opt_none, b.opt_none },
         };
+        var helpers = implicit.iterator();
+        while (helpers.next()) |helper| if (b.in.implicitHelper(helper)) |node| try out.append(b.scratch, .{ .node = node, .chain = 0 });
         for (picks) |pick| {
             if (!pick[0]) continue;
             if (pick[1]) |node| try out.append(b.scratch, .{ .node = node, .chain = 0 });
@@ -1907,16 +1902,9 @@ pub const Builder = struct {
             try b.evidenceTwins(m, dispatch.argsAt(site.evidence), decl, choice, guards.at(site.inst.int()), direct, twin);
         }
         if (protocol == .no) return;
-        const task = b.in.graph.lookup(.core, InternPool.WellKnown.Task.symbol()) orelse return;
-        const task_bir = b.in.birOf(task);
-        // `foreign` or written in beni alike (`backend.md` §4,
-        // *`Js.suspending` is its body*).
-        for (task_bir.decls, 0..) |td, i| {
-            const name = task_bir.symbol(td.name);
-            const spelling = if (b.in.interner) |pool| pool.slice(name) else "";
-            if (name != InternPool.WellKnown.isWaiting.symbol() and !std.mem.eql(u8, spelling, "chain")) continue;
-
-            const target: Target = .{ .node = .{ .module = task, .kind = .decl, .index = @intCast(i) } };
+        for (ImplicitHelpers.suspension) |helper| {
+            const node = b.in.implicitHelper(helper) orelse continue;
+            const target: Target = .{ .node = node };
             if (protocol == .yes) try direct.append(b.scratch, target) else try twin.append(b.scratch, .{ .decl = decl, .target = target });
         }
     }

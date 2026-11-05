@@ -1,0 +1,9 @@
+import Js
+
+
+type Envelope a
+    = Wrapped a
+
+
+pub bad : Js.Value
+bad = Js.from (Wrapped λ⊤ → ⊤)

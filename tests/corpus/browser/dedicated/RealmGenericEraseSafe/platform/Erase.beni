@@ -1,5 +1,3 @@
-import Js
-
-
-pub erase : a → Js.Value
-erase x = Js.from x
+-- Typed identity keeps callback/realm facts visible.
+pub erase : a → a
+erase x = x

@@ -122,13 +122,13 @@ core/Task.beni Task.entry b9c80b88dd93de378434884e581d3819cea426162c8a6145c66ab0
 core/Task.beni Task.requeue 1afd037bc8b6e28d482171d70cc8d55be370bc8f4cc128838efc7cef55e6b176
 core/Js/Runtime.js               Js.Runtime.parked        cd78ee9414dfa1aa0eb7a27df6392c884bd73f958da80bce43ef92115ef5e432
 core/Js/Runtime.js               Js.Runtime.defect        08aa1744d1ee477e6899bad6084889d9cf0ee880bd04f9dbffd4ec5768b7a5ce
-src/js/Lower.zig Js.cell 6867604a502abb2072870944b8eeea9afe2c6418d4f9769163879290bce498fe intrinsic:core
-src/js/Lower.zig Js.cellRead 37f0a62ee213bfff886da8c2bf372acf484799ac9d436096bfb0a37e863fdc4c intrinsic:core
-src/js/Lower.zig Js.cellWrite 42bc7f8691d8076019b1ef3cef4e352da322d3d018d89db022e0aee2d3bdbafd intrinsic:core
-src/js/Lower.zig Js.none 43fbf2b2fca1d623c18643b3859805f6789a05333731ef291e321dd809b3a984 intrinsic:core
-src/js/Lower.zig Js.some 01314db2759f53be8d23ec47f417586beb72464da5c86d7662abad95b69b0f05 intrinsic:core
-src/js/Lower.zig Js.optMatch 4d8fc0049b790ded4224595bdb1ddf64b8ad15aa38338b6d5d0acef14e3f562f intrinsic:core
-src/js/Lower.zig Js.optWithDefault cb7c4932468ff0cd28cbf1b3fc64a4f42d432d0ef650465d8fa9c79ac7d32849 intrinsic:core
+src/js/Lower.zig Js.cell e4e67769d40e8f867f14d48ae27beb43bca280786445b0ee1e1a261252324e92 intrinsic:core
+src/js/Lower.zig Js.cellRead a48da2ffd9db1c95195a223a122a6d4f6d179124e658aad9bd0cc38c50d8bbb6 intrinsic:core
+src/js/Lower.zig Js.cellWrite e2a04e522208d80034120512ffb416adf96c1d3c0dc505b826a476efe1dd90c8 intrinsic:core
+src/js/Lower.zig Js.none d3fe5c476b9cbadbdc43fb0574cc498324bde52811bd7d042a466c52cbb82384 intrinsic:core
+src/js/Lower.zig Js.some 02efa26897195741eb6aceeec012934ed40cb1c726c5660ff3a6fb5ee9853eb3 intrinsic:core
+src/js/Lower.zig Js.optMatch 4a45e00d8ca632370455fc1c03ecf830129b4de1323c29299c0b62f3d304b413 intrinsic:core
+src/js/Lower.zig Js.optWithDefault 013dfa25fb77d0b967b59d2d5fc736b52ca8a4ff0adcf26d075669a44820d510 intrinsic:core
 src/bir/Bir.zig Js.cellRead ff2e6c1c664e26923e024f3b4cef61134f0aa488706c506f055f50549a635c0b intrinsic:core
 src/bir/Bir.zig Js.cellWrite a2aa0b9d55af613668718a7c12398432183eefc1af95aeee0070c41050193306 intrinsic:core
 
@@ -757,3 +757,8 @@ src/js/Lower.zig Browser.Host.Element.host_getAttribute b3f3b93cbcdb23380cd1eb9d
 src/js/Lower.zig Ssr.ssrText f0c5f20c8818cf4c513675390e1ef7a864eca262f1e212fdd6534fdb2ce280be intrinsic:platforms/node
 src/js/Lower.zig WebSocket.fromUpgrade 43d4671f99bc2ab9fa574639a6070dd80aade2d8b306e3ce7b7ca350a21f2f86 intrinsic:platforms/node
 platforms/node/WebSocket.js WebSocket.fromUpgrade 71430084848c07628c987b3fb976e75cdfd05f11acdeee4b5d969bc69a3ed3e0
+
+src/js/Lower.zig Basics.appendTyped b9c0431a0adc2b40037e8d66eb4220e092422fd769f1689b6c77446d7d891cbd intrinsic:core
+core/Basics.beni Basics.plain 17d1ae60dfd79e606d8b8a985040cc57f1c77d6b59da629dbbcef98b766fdc0d
+
+tests/platforms/reply-scan-trie/Trie.js Trie.hasHeader 44f483d49e03ef06c8f950861b5387b2816489d1b3ff30363db6183d3d7a4d79

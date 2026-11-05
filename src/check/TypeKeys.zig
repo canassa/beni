@@ -209,7 +209,6 @@ pub const Input = struct {
     /// Whether to make the keys: an app module (§36). The crossing bits are
     /// made for every module.
     keyed: bool,
-    host_free: bool = false,
     report: ?*@import("Report.zig") = null,
     host_free_uses: []const Instantiate.CrossingUse = &.{},
 };
@@ -459,17 +458,13 @@ pub fn build(in: Input) Error!Output {
         artifact.args = try in.gpa.dupe(TypeKey, b.args.items);
         artifact.labels = try in.gpa.dupe(InternPool.Symbol, b.labels.items);
     }
-    var host_free: []const bool = &.{};
-    if (in.host_free) {
-        var host_input = in;
-        host_input.keyed = false;
-        host_input.uses = in.host_free_uses;
-        var host: Crossing = .{ .in = host_input, .b = &b, .checking_host_free = true };
-        defer host.deinit();
-        try host.run();
-        host_free = host.crossing;
-    }
-    return .{ .artifact = artifact, .crossing = c.crossing, .host_free = host_free };
+    var host_input = in;
+    host_input.keyed = false;
+    host_input.uses = in.host_free_uses;
+    var host: Crossing = .{ .in = host_input, .b = &b, .checking_host_free = true };
+    defer host.deinit();
+    try host.run();
+    return .{ .artifact = artifact, .crossing = c.crossing, .host_free = host.crossing };
 }
 
 /// The instructions that make a value with an identity of its own, by tag;
@@ -924,6 +919,9 @@ const Crossing = struct {
     checking_host_free: bool = false,
     host_free_state: ?@import("HostFree.zig").State = null,
     source_inst: ?Bir.Inst.Index = null,
+    source_call: ?Bir.Inst.Index = null,
+    source_parameter: ?u32 = null,
+    source_result: bool = false,
     in: Input,
     b: *Builder,
     wild: std.ArrayList(TypeKey) = .empty,
@@ -959,15 +957,25 @@ const Crossing = struct {
         // The seeds: every `Js.from`, every imported crossing quantifier.
         for (in.casts) |cast| {
             c.source_inst = cast.inst;
+            c.source_call = cast.call;
+            c.source_parameter = cast.parameter;
+            c.source_result = cast.which == .to;
+            if (cast.value) {
+                try c.cross(cast.copy, cast.decl, true);
+                continue;
+            }
             const func = Walk.function(in.store, cast.copy) orelse continue;
             switch (cast.which) {
-                .from => if (func.params.len == 1) try c.cross(func.params[0], cast.decl, true),
+                .from => if (cast.parameter < func.params.len) try c.cross(func.params[cast.parameter], cast.decl, true),
                 .inspect, .checked => if (!c.checking_host_free and func.params.len == 1) try c.cross(func.params[0], cast.decl, true),
                 // A `Js.to` adds its closed types to the wild set and crosses
                 // no quantifier (`backend.md` §9's table).
                 .to => if (in.keyed or c.checking_host_free) try c.cross(func.result, cast.decl, c.checking_host_free),
             }
         }
+        c.source_call = null;
+        c.source_parameter = null;
+        c.source_result = false;
         for (in.uses) |u| {
             c.source_inst = u.inst;
             try c.cross(u.v, u.decl orelse declOf(bir, u.inst) orelse continue, true);
@@ -980,9 +988,13 @@ const Crossing = struct {
         @memset(done, false);
         while (true) {
             c.queue.clearRetainingCapacity();
+            c.source_call = null;
+            c.source_parameter = null;
+            c.source_result = false;
             for (in.copies, done) |p, *d| {
                 if (d.* or p.quantifier.int() >= c.crossing.len or !c.crossing[p.quantifier.int()]) continue;
                 d.* = true;
+                c.source_inst = p.inst.unwrap();
                 if (p.decl < bir.decls.len) try c.cross(p.copy, p.decl, true);
             }
             // A method call that runs a declaration of this module whose
@@ -997,14 +1009,53 @@ const Crossing = struct {
                 if (decl >= bir.decls.len or bir.instTag(site.inst) != .method_call) continue;
                 if (!try c.declCrosses(decl)) continue;
                 const owner = declOf(bir, site.inst) orelse continue;
+                c.source_inst = site.inst;
+                c.source_parameter = null;
+                c.source_result = true;
                 try c.crossInst(site.inst, owner);
+                c.source_result = false;
+                c.source_parameter = 0;
                 const data = bir.instData(site.inst);
                 try c.crossInst(@fromBackingInt(@intCast(data.lhs)), owner);
                 const call = bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.MethodCall);
-                for (bir.extraSlice(.{ .start = call.args_start, .end = call.args_end }, Bir.Inst.Index)) |arg| try c.crossInst(arg, owner);
+                for (bir.extraSlice(.{ .start = call.args_start, .end = call.args_end }, Bir.Inst.Index), 0..) |arg, i| {
+                    c.source_parameter = @intCast(i + 1);
+                    try c.crossInst(arg, owner);
+                }
             }
             if (c.queue.items.len == 0) return;
         }
+    }
+
+    fn containsType(c: *Crossing, start: Var, needle: Var) Error!bool {
+        var stack: std.ArrayList(Var) = .empty;
+        defer stack.deinit(c.in.scratch);
+        try stack.append(c.in.scratch, start);
+        const mark = c.in.store.nextMark();
+        while (stack.pop()) |v| {
+            const root = c.in.store.find(v);
+            if (root == c.in.store.find(needle)) return true;
+            if (c.in.store.mark(root) == mark) continue;
+            c.in.store.setMark(root, mark);
+            var i: u32 = 0;
+            while (Walk.child(c.in.store, root, i, .structural)) |child| : (i += 1) try stack.append(c.in.scratch, child);
+        }
+        return false;
+    }
+
+    fn inputName(c: *Crossing, value: Var, origin: Bir.Inst.Index, name: []const u8) Error![]const u8 {
+        if (c.source_result) return "requested result";
+        var parameter = c.source_parameter;
+        if (parameter == null and origin.int() < c.in.inst_type.len) if (c.in.inst_type[origin.int()].unwrap()) |v| if (Walk.function(c.in.store, v)) |f| {
+            for (f.params, 0..) |p, i| if (try c.containsType(p, value)) {
+                parameter = @intCast(i);
+                break;
+            };
+            if (parameter == null and try c.containsType(f.result, value)) return "requested result";
+        };
+        const index = if (parameter) |p| p + 1 else return "input parameter";
+        const label: ?[]const u8 = if (std.mem.eql(u8, name, "Js.object")) "field values" else if (std.mem.eql(u8, name, "Js.array")) "elements" else if (std.mem.eql(u8, name, "Js.call") or std.mem.eql(u8, name, "Js.apply") or std.mem.eql(u8, name, "Js.construct")) "arguments" else if (std.mem.eql(u8, name, "Js.from")) "value" else null;
+        return if (label) |text| try std.fmt.allocPrint(c.in.scratch, "{s} parameter (argument {d})", .{ text, index }) else try std.fmt.allocPrint(c.in.scratch, "argument {d}", .{index});
     }
 
     fn declCrosses(c: *Crossing, decl: u32) Error!bool {
@@ -1037,7 +1088,12 @@ const Crossing = struct {
             if (c.in.report) |report| {
                 report.at(decl);
                 const inst = c.source_inst orelse c.in.bir.decls[decl].inst_start;
-                const message = try std.fmt.allocPrint(s, "This Js.Value conversion erases a {s} at `{s}`. Js.Value requires HostFree data. Keep the value in a typed container so its native identity and callback summary remain visible.", .{ @tagName(offense.kind), offense.path });
+                const origin = c.source_call orelse c.source_inst orelse inst;
+                const callee = report.texts.calleeOf(origin);
+                const reference: Bir.Inst.Index = if (c.in.bir.instTag(origin) == .call) @fromBackingInt(@intCast(c.in.bir.instData(origin).lhs)) else origin;
+                const name = if (c.in.bir.instTag(reference) == .ext_value) try std.fmt.allocPrint(s, "{s}.{s}", .{ c.in.interner.slice(c.in.cx.graph.moduleName(@fromBackingInt(@intCast(c.in.bir.instData(reference).lhs)))), callee.name }) else callee.name;
+                const input = try c.inputName(v, origin, name);
+                const message = try std.fmt.allocPrint(s, "The {s} of `{s}` contains {s} at `{s}`. Functions and browser or system objects must stay typed. Use a typed platform operation, or keep the value in a typed record or list.", .{ input, if (name.len == 0) "this operation" else name, if (offense.kind == .callable) "a function" else "a browser or system object", offense.path });
                 try report.emitText(.host_value_erasure, inst, null, message);
                 report.at(null);
             }

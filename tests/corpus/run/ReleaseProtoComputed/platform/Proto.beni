@@ -18,9 +18,7 @@ fromLet ⊤ =
     o = Js.object [ ( "pad", 1 ) ]
     p = Js.object [ ( "pad", 1 ) ]
     key = "__proto__"
-    _ =
-        Js.call p "__defineSetter__"
-            [ Js.from "n", Js.from λ_ → Js.write counter (Js.read counter + 1) ]
+    defineSetter p λ⊤ → Js.write counter (Js.read counter + 1)
     Js.setAt o key p
     Js.set o "n" (Js.from 1)
     Js.read counter
@@ -32,9 +30,7 @@ fromParam key =
     Js.write counter 0
     o = Js.object [ ( "pad", 1 ) ]
     p = Js.object [ ( "pad", 1 ) ]
-    _ =
-        Js.call p "__defineSetter__"
-            [ Js.from "n", Js.from λ_ → Js.write counter (Js.read counter + 1) ]
+    defineSetter p λ⊤ → Js.write counter (Js.read counter + 1)
     Js.setAt o key p
     Js.set o "n" (Js.from 1)
     Js.read counter
@@ -48,9 +44,7 @@ fromAppend ⊤ =
     o = Js.object [ ( "pad", 1 ) ]
     p = Js.object [ ( "pad", 1 ) ]
     key = String.append "__pro" "to__"
-    _ =
-        Js.call p "__defineSetter__"
-            [ Js.from "n", Js.from λ_ → Js.write counter (Js.read counter + 1) ]
+    defineSetter p λ⊤ → Js.write counter (Js.read counter + 1)
     Js.setAt o key p
     Js.set o "n" (Js.from 1)
     Js.read counter
@@ -67,3 +61,6 @@ inherited ⊤ =
     got : Int
     got = Js.to (Js.get o "x")
     got
+
+
+foreign impure defineSetter : Js.Value, sync (⊤ → ⊤) → ⊤

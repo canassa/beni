@@ -1020,6 +1020,14 @@ costs below hold. And by the manager's decision O6 (on the owner's delegation, r
 ys` on two lists calls `List.append` and costs what `[ ...xs, ...ys ]` does; only a `++` over
 `appendable` keeps `Basics.append`'s O(length of both).*
 
+**Typed append (amended 2026-11-05, Closes #1807).** A known-list ++ is
+checked as List.append and a known-string ++ as String.append. A generic
+appendable helper retains the public Basics.append signature; its implementation
+uses a core-private typed intrinsic, with no Js.Value conversion. Strings still
+concatenate with +, while its generic list path returns a fresh plain array,
+including empty operands, retaining the element aliases specified by backend.md §4
+*Identity*. HostFree has no exemption or opt-out for append.
+
 **A list is a plain array** (*amended 2026-10-15, the owner; specified, not built*). The owner's
 decision, verbatim: "I want the trie gone from the bundle. It might be included later as custom
 data structure (like Vector) if the developer want. List is regular array." `backend.md` §4, *The

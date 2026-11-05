@@ -1,7 +1,7 @@
 -- emit: a function whose result is `()` writes no result under `--release`
 -- (`backend.md` §4, *A `()` result is not written*). `place`, a `pub`
 -- function annotated `-> ()`, ends in its last statement; `each`'s loop
--- is a `while` that ends the function, so its exit writes nothing; the handler `watch` stores on a node — a lambda
+-- is a `while` that ends the function, so its exit writes nothing; the handler `watch` stores in a typed callback cell — a lambda
 -- whose every tail is a `Js.write` or a call of a `-> ()` declaration —
 -- ends without `return null;`, and so does the local function `tick`.
 -- `count` returns an `Int` and keeps its `return`.
@@ -26,7 +26,7 @@ each fs k =
         each fs (k + 1)
 
 
-pub watch : Js.Value, Js.Value → ⊤
+pub watch : Js.Cell { send : Js.Value → ⊤ }, Js.Value → ⊤
 watch node s =
     seen = Js.ref 0
 
@@ -35,13 +35,12 @@ watch node s =
             ⊤
         else
             place s (Js.from n)
-    Js.set
-        node
-        "$$send"
-        (Js.from λmsg →
+    Js.cellWrite node
+        (λmsg →
             tick (Js.read seen)
             Js.write seen (Js.to msg)
         )
+        .send
 
 
 pub count : Js.Value → Int

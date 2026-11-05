@@ -1,0 +1,5 @@
+import Js
+
+
+pub bad : Js.Value
+bad = Js.from ([ λ⊤ → ⊤ ])

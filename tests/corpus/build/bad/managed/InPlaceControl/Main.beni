@@ -1,0 +1,22 @@
+-- This used to test a mutable aggregate control via forged Runtime descriptors
+-- and an erased Rt.control. HostFree now refuses that private-ABI erasure.
+-- MutableProperty covers the mutable descriptor branch through typed
+-- Property/Payload adapters; TypedControlOrder covers public scalar controls.
+-- An aggregate property must be written again after mutation through the
+-- same reference; the setter observes both values, not just its identity.
+import Browser
+import Html exposing (Html)
+import Probe
+
+
+type Msg
+    = Idle
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → 0
+        , update = λ_ n → n
+        , view = λ_ → <p>{Probe.verify ⊤}</p>
+        }

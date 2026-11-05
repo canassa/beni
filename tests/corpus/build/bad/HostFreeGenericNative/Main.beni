@@ -1,0 +1,10 @@
+import Browser.Host.TextEncoder as Encoder
+import Node
+import Probe
+
+
+pub bad = Probe.erase (Encoder.create ⊤)
+
+
+main : Node.Program
+main = Node.done

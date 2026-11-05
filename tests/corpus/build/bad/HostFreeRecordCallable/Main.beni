@@ -1,0 +1,9 @@
+import Node
+import Probe
+
+
+pub bad = Probe.bad
+
+
+main : Node.Program
+main = Node.done

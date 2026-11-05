@@ -1,4 +1,4 @@
-GrowingReturnedFunction build: lines 4-9 (not built: local)
-GrowingReturnedFunction outer: lines 12-18 (not built: call)
-GrowingReturnedFunction shared: lines 21-31 (not built: call)
-GrowingReturnedFunction mixed: lines 35-46 (not built: call)
+GrowingReturnedFunction build: lines 6-11 (not built: local)
+GrowingReturnedFunction outer: lines 14-20 (not built: call)
+GrowingReturnedFunction shared: lines 23-33 (not built: call)
+GrowingReturnedFunction mixed: lines 37-48 (not built: call)

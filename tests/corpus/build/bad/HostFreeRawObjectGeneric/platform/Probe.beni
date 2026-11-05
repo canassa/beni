@@ -1,0 +1,8 @@
+import Browser.Host.TextEncoder as Encoder
+import Js
+
+
+pub wrap x = Js.object [ ( "v", x ) ]
+
+
+pub native = Encoder.create

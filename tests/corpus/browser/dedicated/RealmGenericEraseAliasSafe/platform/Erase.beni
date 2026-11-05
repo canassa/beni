@@ -1,4 +1,2 @@
-import Js
-
-
-pub erase = Js.from
+-- Typed identity alias keeps callback/realm facts visible.
+pub erase = identity

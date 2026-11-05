@@ -78,12 +78,20 @@ pub fn unknownMethod(
         // §10.1's hint. Capped, because a module's public surface can
         // be a hundred names and a message that scrolls is no message.
         const iface = r.env.iface(module);
-        if (iface.values.len != 0) {
+        var offered: [8]Symbol = undefined;
+        var count: usize = 0;
+        for (iface.values) |value| {
+            const symbol = iface.symbol(value.name);
+            if (!availableValue(r, module, symbol)) continue;
+            if (count < offered.len) offered[count] = symbol;
+            count += 1;
+        }
+        if (count != 0) {
             w.print("\nHint: `{s}` exposes:\n\n   ", .{module_text}) catch return error.OutOfMemory;
-            const shown = @min(iface.values.len, 8);
+            const shown = @min(count, offered.len);
             var column: usize = 3;
-            for (iface.values[0..shown], 0..) |value, i| {
-                const text = r.env.interner.slice(iface.symbol(value.name));
+            for (offered[0..shown], 0..) |symbol, i| {
+                const text = r.env.interner.slice(symbol);
                 if (column + text.len + 4 > 64) {
                     w.writeAll("\n   ") catch return error.OutOfMemory;
                     column = 3;
@@ -91,8 +99,8 @@ pub fn unknownMethod(
                 w.print(" `{s}`{s}", .{ text, if (i + 1 == shown) "" else "," }) catch return error.OutOfMemory;
                 column += text.len + 4;
             }
-            if (shown < iface.values.len) {
-                w.print(" and {d} more", .{iface.values.len - shown}) catch return error.OutOfMemory;
+            if (shown < count) {
+                w.print(" and {d} more", .{count - shown}) catch return error.OutOfMemory;
             }
             w.writeAll(".\n") catch return error.OutOfMemory;
         }
@@ -692,8 +700,21 @@ pub fn constrainedConstant(
     try r.emitAt(.constrained_constant, region, token, &out);
 }
 
-/// The `pub` value of `module` closest to `name` by edit distance, for
-/// §10.1's did-you-mean.
+/// Apply the same private-value fence as resolution before offering a hint.
+fn availableValue(r: *const Reporter, module: Graph.Index, name: Symbol) bool {
+    const privacy = @import("../resolve/CorePrivate.zig");
+    return !privacy.denied(
+        privacy.authority(r.env.graph.modulePackage(module), false, r.env.app_is_platform),
+        r.env.interner.slice(r.env.graph.moduleName(module)),
+        r.env.interner.slice(name),
+        true,
+        r.env.authority,
+        r.env.interner.slice(r.env.graph.moduleName(r.env.module)),
+        .{ .same_layer = r.env.graph.samePlatformLayer(module, r.env.module), .owner_cloudflare = r.env.graph.isCloudflare(module), .caller_cloudflare = r.env.graph.isCloudflare(r.env.module) },
+    );
+}
+
+/// The public value closest by edit distance, after the access fence.
 fn nearestValue(r: *Reporter, module: Graph.Index, name: Symbol) ?Symbol {
     if (module.int() >= r.env.interfaces.len) return null;
     const iface = r.env.iface(module);
@@ -703,6 +724,7 @@ fn nearestValue(r: *Reporter, module: Graph.Index, name: Symbol) ?Symbol {
     var best_distance: usize = std.math.maxInt(usize);
     for (iface.values) |value| {
         const symbol = iface.symbol(value.name);
+        if (!availableValue(r, module, symbol)) continue;
         const candidate = r.env.interner.slice(symbol);
         const d = editDistance(r.env.scratch, target, candidate) catch continue;
         if (d < best_distance) {

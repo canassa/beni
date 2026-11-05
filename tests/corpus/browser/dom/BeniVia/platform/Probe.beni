@@ -5,7 +5,6 @@
 --! shows which extractor ran.
 
 import Html exposing (Html)
-import Js
 
 
 --| The event object the extractors are handed.
@@ -34,9 +33,15 @@ pub event "onTagged" name "tagged" via tagged : String
 
 --| The event's `detail`, a `pub` extractor a program may call too.
 pub detail : Event → String
-detail ev = Js.to (Js.get (Js.from ev) "detail")
+detail ev = readDetail ev
 
 
 -- Not `pub`: only the event names it.
 tagged : Event → String
-tagged ev = Js.to (Js.get (Js.from ev) "type") ++ ":" ++ detail ev
+tagged ev = readType ev ++ ":" ++ detail ev
+
+
+foreign impure readDetail : Event → String
+
+
+foreign impure readType : Event → String

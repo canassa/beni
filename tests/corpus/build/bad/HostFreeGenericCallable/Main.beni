@@ -1,0 +1,9 @@
+import Node
+import Probe
+
+
+pub bad = Probe.erase λ⊤ → ⊤
+
+
+main : Node.Program
+main = Node.done

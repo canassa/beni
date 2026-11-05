@@ -1,0 +1,3 @@
+-- A private implementation spelling must not be suggested to an application.
+pub bad : Int → Int
+bad value = value.appendType

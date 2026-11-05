@@ -1,0 +1,1 @@
+const a=b=>({b:b+"\n"});const b=a=>{globalThis.process.stdout.write(a);return null};const c=d=>{globalThis.process.exitCode=d;return null};const d=a=>{let e=a.b;if(e!=="")b(e);c(0)};const e=a=>String(a);const f=a=>a(null);const g=a=>{let b=0,c=f(()=>a);for(let a of[c])b+=a;return b};const h=a(e(g(40)+g(1)));d(h);

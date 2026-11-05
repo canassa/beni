@@ -5,15 +5,12 @@
 -- a call guarded by `Js.isNullish` whose value nothing reads is an
 -- optional call, `h?.()` (item 5); and no block's last statement keeps
 -- its `;`.
+import Browser.Host.Timers as Timers
 import Js
 
 
 later : Js.Ref Bool → ⊤
-later scheduled =
-    Js.to
-        (Js.apply (Js.global "queueMicrotask")
-            [ Js.from λ⊤ → if Js.read scheduled then tick ⊤ ]
-        )
+later scheduled = Timers.queueMicrotask λ⊤ → if Js.read scheduled then tick ⊤
 
 
 tick : ⊤ → ⊤

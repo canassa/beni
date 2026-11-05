@@ -1,0 +1,14 @@
+import Browser.Host.TextEncoder as Encoder
+import Browser.Host.Uint8Array as Bytes
+import Js
+
+
+pub echo : a → a
+echo value = Js.to (Js.from value)
+
+
+pub local text =
+    encoder = Encoder.create ⊤
+    state =
+        { encoder = encoder, measure = λvalue → Bytes.byteLength (Encoder.encode encoder value) }
+    state.measure text

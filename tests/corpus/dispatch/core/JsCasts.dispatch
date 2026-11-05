@@ -3,7 +3,6 @@ module JsCasts
   decl read evidence=0 arity=1 convention=plain
   decl generic evidence=0 arity=1 convention=plain
   decl shape evidence=0 arity=1 convention=plain
-  decl callback evidence=0 arity=1 convention=plain
   derived 0 compare JsCasts.Shape context=0
     body 0 derived 2
       primitive num_compare
@@ -25,5 +24,3 @@ module JsCasts
   boundary read type Js.Value
   boundary shape type JsCasts.Shape
   boundary shape type Maybe.Maybe
-  boundary callback field when
-  boundary callback type Basics.Int

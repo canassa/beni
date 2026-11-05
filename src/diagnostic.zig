@@ -627,7 +627,7 @@ pub fn title(code: Code) []const u8 {
         .invalid_entry_kind => "INVALID ENTRY KIND",
         .worker_message_not_serializable => "WORKER MESSAGE NOT SERIALIZABLE",
         .worker_realm_violation => "WORKER REALM VIOLATION",
-        .host_value_erasure => "HOST VALUE ERASURE",
+        .host_value_erasure => "TYPED VALUE REQUIRED",
         .inspection_escape => "INSPECTION VIEW ESCAPES",
         .invalid_native_binding => "INVALID NATIVE BINDING",
         .obsolete_host_promise => "OBSOLETE HOST PROMISE",

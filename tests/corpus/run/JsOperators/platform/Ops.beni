@@ -43,7 +43,7 @@ kinds ⊤ =
     [ Js.to (Js.typeOf (Js.from "s"))
     , Js.to (Js.typeOf (Js.from 1))
     , Js.to (Js.typeOf (Js.from [ 1 ]))
-    , Js.to (Js.typeOf (Js.from λ⊤ → ⊤))
+    , Js.to (Js.typeOf (Js.global "Object"))
     ]
 
 
