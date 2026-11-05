@@ -2365,7 +2365,7 @@ are not, their labels' supplies being `kept`, and `any` is not, as it reads with
    (`fresh` and the parameter's slots arrive at it, E1).
 2. **What the callee holds of the family (#2046).** An answer in a known code run by a label is judged against what the callee may hold
    across the run (§2.11.3, *A capture handed to a label*). Now an argument `j` that a label **takes** is left out of those operands:
-   a `walk` supply hands it, and it reaches no result, store or escape of the callee (`Each.takes`). `List.map xs λv → g (f v)` with `f` an identity is
+   a `walk` supply hands its whole family, and it reaches no result, store or escape of the callee (`Each.takes`). `List.map xs λv → g (f v)` with `f` an identity is
    accepted. `sel` is not left out: its supply is no `walk`, as neither is a hand-written walker's, and a callee that hands `h` and
    then reads `t` (`y = p h`, `shows t`) would read what the answer wrote. A capture keeps every argument as an operand: a capture
    is no element, and rule 3 of *An answer handed on* still asks what a repeated function answers.
