@@ -8845,6 +8845,273 @@ not know lifts no restriction, so a misspelt one keeps the frame restricted. A f
 restrictions when it navigates, so the attribute's doc comment asks for text when `src` comes from
 a hole; #1911 checks the order of the two holes. Pinned by `tests/corpus/browser/tea/IframeSandbox`.
 
+### 9.14 The `node` platform runs a program (2026-11-05)
+
+*Added 2026-11-05, for issue #2015. Status: normative for the first slice, output captured whole.
+Three choices are the owner's, asked on the dashboard as `node-process-spawn-q1` (the shape of
+(a)), `q2` (the environment, (b)) and `q3` (the kill policy, (d)). All three are decided as
+recommended (Jayson, 2026-11-05); (i) records the answers.* A `node` program cannot start
+another program today. Rex web (`jaysonsantos/rex-web`) must call the installed `rex` CLI (`rex ls
+--json`, `rex api call …`) from a beni server. The `node` platform gains one module,
+**`ChildProcess`** (`platforms/node/ChildProcess.beni`), beni over `Js` with no sibling, as `Io` and
+`Http.Server` are. It wraps `node:child_process`'s `spawn` as `Io.readFile` wraps
+`fs.promises.readFile` (§4.1, `CLAUDE.md` rule 9): each failure Node documents is one constructor
+of a typed error, a cancelled fiber stops its child, and any other error is thrown again and is a
+defect.
+
+**(a) The API.** *(The shape — one record with a constructor, not separate functions — is the
+owner's decision `node-process-spawn-q1`, (i).)* A program describes the child with a record, starts it with `run`, and waits on
+its fiber until the child has exited and its output has ended.
+
+```elm
+module ChildProcess
+
+pub type alias Command =
+    { program : String       -- a path ("/usr/bin/rex", "./tool"), or a name looked up in PATH ("rex")
+    , args : List String     -- each one argument, as it is: no shell reads it
+    , cwd : Maybe String     -- the child's working directory; Nothing: the program's own
+    , env : Environment      -- the child's environment, (b)
+    , killAfter : Duration   -- the grace between SIGTERM and SIGKILL, (d); 1 s by default
+    , maxOutput : Int        -- the most bytes kept of standard output, and of standard error; 16 MiB by default
+    }
+
+pub type Environment
+    = Inherit                             -- the program's own environment, as it is
+    | Extend (List (String × String))     -- the program's own, with these variables set
+    | Only (List (String × String))       -- these variables, and no other
+
+pub type alias Output =
+    { status : Status
+    , stdout : String        -- standard output, decoded as UTF-8
+    , stderr : String        -- standard error, decoded as UTF-8
+    }
+
+pub type Status
+    = Exited Int             -- the child exited with this code, 0 to 255
+    | Signalled String       -- a signal ended the child: its name, "SIGTERM", "SIGSEGV", …
+
+pub type RunError
+    = NotFound | PermissionDenied | NotADirectory | ArgumentsTooLong | NameTooLong
+    | SymlinkLoop | FileBusy | BadExecutable | TooManyOpenFiles | TooManyProcesses
+    | OutOfMemory | InvalidArgument | OutputTooLarge     -- (e)
+
+pub command : String, List String → Command    -- the program and its arguments, every other field its default
+pub run : Command → Result RunError Output      -- suspends until the child has exited and its output has ended
+```
+
+The canonical program:
+
+```elm
+main : Program
+main = Io.run λ⊤ →
+    case ChildProcess.run (ChildProcess.command "rex" [ "ls", "--json" ]) of
+        Err error →
+            Node.exitWith "cannot run rex" 1
+
+        Ok output →
+            case output.status of
+                ChildProcess.Exited 0 →
+                    Node.print output.stdout
+
+                _ →
+                    Node.exitWith output.stderr 1
+```
+
+A program changes a default with record update: `{ ChildProcess.command "make" [] | cwd = Just
+"build" }`. `command` gives `cwd = Nothing`, `env = Inherit`, `killAfter = Duration.seconds 1` and
+`maxOutput = 16 777 216`. A field a later slice adds gets a default in `command`, so a program that
+builds its `Command` with `command` does not change.
+
+**There is no shell, and there is no string form.** `run` calls `spawn(program, args, { shell:
+false })`: the operating system starts `program` with exactly `args`, and no character of any
+argument has a meaning. A program that builds a command line from strings and hands it to a shell
+(`exec`, `shell: true`) runs whatever an attacker puts in those strings: that is command
+injection, and this module has no way to write it. A program that wants a shell starts one by
+name, as any other program — `ChildProcess.command "/bin/sh" [ "-c", script ]` — and the script is
+then its own text, written on purpose.
+
+- **The program** is a path when it holds a `/`, and a relative path is resolved from the child's
+  working directory (`cwd`, else the program's). Without a `/`, it is looked up in the `PATH` of
+  the **child's** environment, (b): under `Only` with no `PATH`, the operating system's default
+  path is searched (`/bin:/usr/bin` on Linux and macOS; measured on Node 24.19).
+- **Standard input** is `/dev/null` (Node's `"ignore"`): a child that reads it gets an end of
+  file at once and never waits for a terminal. Input to the child is a later slice, (j).
+- **The output** of each stream is kept whole, then decoded as UTF-8 when the child has ended;
+  an invalid sequence decodes to U+FFFD, and a byte order mark is kept, as the bytes are. More
+  than `maxOutput` bytes on either stream is `Err OutputTooLarge`, (e); `maxOutput` is the bound a
+  program sets, by rule 7, and is never more than the longest string the engine can hold
+  (`buffer.constants.MAX_STRING_LENGTH`): a larger one is taken as that, and a negative one as 0.
+- **When `run` returns.** On Node's `close` event: the child has exited and both of its output
+  pipes have reached their end. A descendant of the child that keeps a pipe open (`sh -c "server
+  &"`) keeps `run` waiting until it closes the pipe or exits (measured: `sh -c "sleep 1 &"` took one
+  second) — Node's `execFile` and Effect's `ChildProcessSpawner.string` wait the same way. A
+  program that starts a daemon redirects the daemon's output.
+- **A non-zero exit and a signal are values, not errors.** `run` answers `Ok` whenever the child
+  started and ended: `Exited 3` is how the child said it failed, and a program reads `stderr` to
+  learn why. `Signalled` keeps the output too, which is why it is a `Status` and not a
+  `RunError`: a child that crashes with `SIGSEGV` often explains itself on standard error first.
+  Effect makes a signal fail `exitCode`; here the output survives it.
+- **A timeout is a cancellation.** There is no `timeout` field: `Task.timeout (Duration.seconds 5)
+  λ⊤ → ChildProcess.run cmd` cancels the fiber at the deadline, and (d) stops the child.
+
+**(b) The environment.** *(The owner's decision `node-process-spawn-q2`, (i).)* `Inherit` passes `process.env` as it is when `run` is called. `Extend
+pairs` passes a copy of it with each pair set, in order, so a later pair of the same name wins.
+`Only pairs` passes the pairs and nothing else. A name that is empty or holds `=` is `Err
+InvalidArgument` and Node is not called: Node passes `A=B` as the variable `A` with the value
+`B=x` (measured), a silent wrong answer, so beni checks it first, as `Http.Server` checks
+`InvalidPort`. The default is `Inherit` because the typical child is a tool found on `PATH`;
+Node's and Effect's `env` replace the whole environment, and Effect's own documentation warns
+that the child then has no `PATH` (`ChildProcess.ts:383-396`). Reading the program's own
+environment as a value is #357's.
+
+**(c) The lifetime: the fiber that calls `run` owns the child.** `run` starts the child at once,
+inside the call, and parks its fiber on `Task.callback`. Nothing else holds the child: there is no
+handle to leak, and the child's end is the call's end. One fiber runs at a time (§17.1 item 3 of
+`transparent-effects-proposal.md`), so several fibers that each call `run` run their children at
+the same time, and each is answered when its own child ends.
+
+**(d) Cancellation, and the kill policy.** *(The signals, the grace and the process group are the
+owner's decision `node-process-spawn-q3`, (i).)* A fiber cancelled while its child runs (by
+`Task.cancel`, a `Task.timeout`, a lost `Task.race`, the end of its scope, or `Io.run`'s end) must
+not leave the child behind:
+
+1. The wait's canceller sends **`SIGTERM`** to the child, and arms a host timer of `killAfter`.
+2. The fiber's cleanup (a `Task.bracket` release) **waits until the child has exited**. When the
+   timer fires first, it sends **`SIGKILL`**, which no process can ignore, and the wait goes on to
+   the exit. So `Task.cancel` returns only after the child is gone, as Effect's scope release
+   waits for it, and a program that starts the same child again does not meet the first one.
+3. When the child has exited, the platform closes its ends of the two pipes, so a descendant that
+   holds them keeps nothing of beni waiting, and drops what was captured: a cancelled fiber gets
+   no value.
+
+The signal goes to the child's own process, not to a process group: the child is not `detached`
+and stays in beni's process group, so the terminal's Ctrl-C reaches it with the program. A
+descendant the child started is the child's to stop; a child that leaves descendants running
+when it gets `SIGTERM` leaves them running. Effect makes the child a group leader and signals the
+group instead; that waits for beni's own signal handling (#338), since a detached child does not
+get the terminal's Ctrl-C and a beni program cannot yet catch it to pass it on.
+
+At the end of `Io.run`, `Task.shutdown` gives cleanup 1 000 ms (§9.8.15 (c)), which is the default
+`killAfter`. A cleanup past that deadline is cut short at its wait, but the host timer is not a
+fiber's: it still sends `SIGKILL`, and Node's handle on the child keeps the process alive until the
+child has exited. So a program never exits leaving a child it started, unless it **crashes**: a
+defect ends Node at once (§16.5 *A defect on Node*), no cleanup runs, and a running child is left
+to the operating system, as an open socket is.
+
+**(e) Every failure Node documents, and what it becomes.** `spawn` reports a failure in one of
+two ways, and the platform handles both by the error's `code`: `EACCES`, `EAGAIN`, `EMFILE`,
+`ENFILE` and `ENOENT` arrive as the child's `error` event, and every other code is thrown from the
+`spawn` call itself (Node's `ChildProcess.prototype.spawn`; measured). The thrown ones are caught
+with `Js.catchIf`, which takes an `Error` whose `code` is in the table and throws everything else
+again. The names are the reader's, as `Io.FileError`'s are; where a name is `FileError`'s, it
+means the same.
+
+| Node's failure | Becomes |
+|---|---|
+| `ENOENT`, an `error` event: no such program (on `PATH`, or at its path), or no such working directory | `Err NotFound` |
+| `EACCES`, an `error` event: the program is not executable or is a directory, or the working directory may not be entered | `Err PermissionDenied` |
+| `EPERM`, thrown: the system forbids it (a set-user-ID file on a `nosuid` mount, a sandbox) | `Err PermissionDenied` |
+| `ENOTDIR`, thrown: the working directory, or a directory on a path, is a file | `Err NotADirectory` |
+| `E2BIG`, thrown: the arguments and the environment are longer than the system takes | `Err ArgumentsTooLong` |
+| `ENAMETOOLONG`, thrown: a path, or a name on it, is too long | `Err NameTooLong` |
+| `ELOOP`, thrown: a path has too many symbolic links to follow | `Err SymlinkLoop` |
+| `ETXTBSY`, thrown: the program's file is open for writing | `Err FileBusy` |
+| `ENOEXEC`, thrown: the file is in no format the system can run, and no shell took it | `Err BadExecutable` |
+| `EMFILE` or `ENFILE`, an `error` event: no file descriptor to spare for the pipes | `Err TooManyOpenFiles` |
+| `EAGAIN`, an `error` event: the user's or the system's process limit is reached | `Err TooManyProcesses` |
+| `ENOMEM`, thrown: no memory for a new process | `Err OutOfMemory` |
+| `ERR_INVALID_ARG_VALUE`, a thrown `TypeError`: the program is `""`, or a NUL character is in the program, an argument, `cwd` or the environment | `Err InvalidArgument` |
+| an environment name that is empty or holds `=` | `Err InvalidArgument`, checked in beni, (b); Node is not called |
+| more than `maxOutput` bytes on standard output or standard error | `Err OutputTooLarge`: the platform stops the child as (d) does — `SIGTERM`, `SIGKILL` after `killAfter` — and answers when it has exited |
+| any other code, thrown or as an `error` event before the child started | thrown again, whether or not a fiber still waits |
+| an `error` event after the child started (Node's `kill` failed with `EPERM`, say) | thrown again: nothing names it |
+| an `error` event of an output pipe | no listener: Node throws it, a defect |
+
+A file with no `#!` line and no format the system knows is run by `/bin/sh` on Linux (`execvp`'s
+`ENOEXEC` rule; measured: a file of bad bytes exits 126, `Ok (Exited 126)`), so `BadExecutable`
+comes only where the system's spawn has no such rule. After an `error` event Node still emits
+`close`, with a negative code and no `exit` (measured); the platform answers once, at the error.
+
+`NotFound` names a missing program and a missing working directory alike, and `PermissionDenied`
+a program that may not run and a directory that may not be entered: the child changes directory
+and then executes the program, and libuv reports either failure with the same errno and nothing
+else (measured: `cwd = "/nonexistent"` is `spawn /bin/echo ENOENT`). Effect checks `cwd` with a
+`stat` first; a check before the start can race the start, so this slice does not split them.
+
+**(f) Effect v4 parity.** Research 48 has no row for a child process; this is it. Effect's
+`unstable/process` (`ChildProcess.ts`, `ChildProcessSpawner.ts`, the Node spawner in
+`platform/node-shared`, at `4.0.0-rc.116`) builds a `Command` value (`make(cmd, args, options)`,
+`setCwd`, `setEnv`, `pipeTo`) and runs it with a scoped handle (`spawn`: `pid`, `exitCode`,
+`isRunning`, `kill`, `stdin`, `stdout`, `stderr`, `all`, extra descriptors, `unref`) or with a
+collector (`string`, `lines`, `exitCode`, `streamString`, `streamLines`). Copied: the command as a
+value with options (a); `cwd` and `env`; argv with no shell; each errno as a typed failure (Effect's
+`PlatformError` by `handleErrnoException`, here one constructor each); cancellation that stops the
+child and waits for its exit (d); `string`'s meaning for the output, waiting for the pipes' end.
+Changed (the first by `q2`, the second and third by `q3`, (i)): the environment inherits by default and extends by a case, (b), not by a second
+`extendEnv` field; `SIGKILL` follows `SIGTERM` by default, not only when `forceKillAfter` is set,
+because a child that ignores `SIGTERM` would otherwise outlive the fiber that owns it; the child is
+not a group leader, (d); a signal exit is a `Status`, (a). Left out of this slice, each later: a
+handle with streaming output and input (beni has no `Stream`, §17 decision 17); `pipeTo`, which a
+program writes as two `run`s or one `sh -c`; `shell`, by design; `detached`, `unref` and extra
+descriptors; a template-string command, which is a parser of command lines by another name.
+
+**(g) Order and determinism.** What a program observes depends on the children it starts and on
+the scheduler's FIFO, never on a pid or a timer: `run` gives no pid, the output is whole, and two
+children's answers reach their fibers in the order their `close` events arrive, which is the order
+they end. A fixture prints what its children wrote, never when.
+
+**(h) The fixtures**, by the rows of (e) and the parts above. Every child is `/bin/sh`, which
+Linux, macOS and NixOS all have at that path, or a name it finds on `PATH` (`sh`, `sleep`);
+none uses `/bin/echo`, which NixOS lacks.
+
+- (a), (b), (c): `ChildProcessRun` (standard output, standard error and an exit code; a program
+  found on `PATH`; `cwd`; each case of `Environment`, the later pair winning; a signal exit;
+  invalid UTF-8; two children at once).
+- (e), the failures a program can arrange: `ChildProcessErrors` (a missing program, at a path and
+  on `PATH`; a missing `cwd`; the fixture's own `.beni` file, which is not executable; a
+  directory; a `cwd` that is a file; a path through a file; an argument of 3 000 000 bytes; a
+  5 000-byte path; `""`; a NUL in the program, an argument, `cwd`, an environment value and an
+  environment name; an environment name with `=`, and an empty one; output over `maxOutput` on
+  each stream, output of exactly `maxOutput`, and a child that writes forever, which is stopped).
+- (e), the failures a program cannot arrange: `ChildProcessFaults`, whose test platform replaces
+  `child_process.spawn` with one that fails with the code named, by the route Node takes for it
+  (`ENOENT`, `EACCES`, `EAGAIN`, `EMFILE`, `ENFILE` as an event, with no pipes; `EPERM`, `ENOTDIR`,
+  `E2BIG`, `ENAMETOOLONG`, `ELOOP`, `ETXTBSY`, `ENOEXEC`, `ENOMEM` thrown);
+  `ChildProcessUnknownCode` (`EIO`, thrown) and `ChildProcessUnknownEvent` (`toString`, a key every
+  object inherits, as an event): each a defect, with a `.crash` golden.
+- (d): `ChildProcessCancelled` (a child that traps `SIGTERM` writes a file and exits; the file is
+  there when `Task.cancel` returns, and is not when the release does not wait — checked by hand
+  on the emitted JavaScript; then a `Task.timeout` ends a child that sleeps); `ChildProcessKillAfter` (a child that ignores `SIGTERM` is
+  killed after a `killAfter` of 50 ms; without `SIGKILL` the case would run into its hang
+  guard); `ChildProcessShutdown` (`Io.run` ends while a child sleeps 1 000 seconds; the program
+  exits at once).
+- The rows with no fixture: `OutputTooLarge`'s clamp to `MAX_STRING_LENGTH` (a string of 512 MiB
+  is no test); an `error` event after the start (no program can make Node's `kill` fail); an
+  output pipe's `error` (left to Node).
+
+**(i) The owner's decisions**, taken on the dashboard.
+
+- `node-process-spawn-q1`, the shape of (a): **one record, a constructor with defaults** (Jayson,
+  2026-11-05 15:57:41 UTC). `ChildProcess.command program args` gives a `Command` with defaults, a
+  program changes fields with record update, and `run` takes the record. Separate functions per
+  setting were offered and declined. The error type is named `RunError`, as `Io` names
+  `FileError` and `Http.Server` names `ListenError`.
+- `node-process-spawn-q2`, the environment of (b): **one field, three cases, inherit by default**
+  (Jayson, 2026-11-05 15:58:15 UTC): `env : Environment` with `Inherit`, `Extend pairs` and `Only
+  pairs`. Effect's `env` plus `extendEnv` was offered and declined.
+- `node-process-spawn-q3`, the kill policy of (d): **`SIGTERM`, then `SIGKILL` after a grace
+  period** (Jayson, 2026-11-05 15:58:44 UTC). `SIGTERM` to the child's own process; `SIGKILL` if it
+  has not exited after `killAfter`, a field of the command, 1 s by default. The child stays in
+  beni's process group, so Ctrl-C reaches it; process groups wait for #338. Effect's policy, a
+  group signal with no `SIGKILL` unless the program asks, was offered and declined. The capture of the output whole, with streaming later, is the issue's own scope and the
+coordinator's instruction of 2026-11-05.
+
+**(j) Not in this slice.** Standard input, a `String` written and closed, then a stream (#2023);
+streaming output and a handle (`pid`, `kill`, line by line), which waits for a `Stream` (§17
+decision 17; #2024); process groups and the signals they need (#338); output as bytes (with
+#335's bytes). Windows is not a target of the `node` platform's tests today: its signals are
+emulated and its `PATH` lookup has its own rules, and this section says nothing of it.
+
 ## Appendix — what is deliberately not done
 
 - **User-writable `foreign`.** It has never been made safe in any of the fourteen languages surveyed,

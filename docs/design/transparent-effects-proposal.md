@@ -2032,6 +2032,26 @@ so on). `IsADirectory` and `TooLarge` are never the answer, because `readdir` ca
 - Cancelling the fiber drops the answer; `fs.promises.readdir` takes no `AbortSignal`, so the
   listing finishes in the background and its result is ignored.
 
+*Amended 2026-11-05: `ChildProcess.run`* (#2015; `boundary.md` §9.14; `CLAUDE.md` rules 7 and 9).
+The `node` platform starts a program in a module of its own, `ChildProcess`, with the shape of
+`readFile`: one suspending call on the calling fiber, `run : Command → Result RunError Output`,
+one constructor per failure Node documents for `child_process.spawn`, any other error thrown
+again. It is the first primitive whose host operation **outlives its canceller**: a timer stops
+when it is cleared and a read when it is aborted, but a child process stops only when it exits,
+some time after it is signalled. So `run` is a `bracket` (§16.5's `Task.bracket`) and not a bare
+`callback`:
+
+- **acquire** (uninterruptible) calls `spawn`, which starts the child inside the call or fails;
+- **use** parks on `callback` until the child's `close` event; its canceller sends `SIGTERM` and
+  arms a host timer of the command's `killAfter` that sends `SIGKILL` (the owner's kill policy,
+  `node-process-spawn-q3`; `boundary.md` §9.14 (i));
+- **release**, told `Cancelled`, parks again until the child's `exit` event and then closes the
+  pipes. A cleanup may wait (§9.8.14 (f) of `boundary.md`), so `Task.cancel`, a lost `race` and a
+  `timeout` return only after the child is gone (§17.1 item 2's rule, held for a process as for a
+  fiber). Past the teardown's deadline that wait is cut short, and the host timer, which is no
+  fiber's, still sends `SIGKILL`: Node's handle on the child keeps the process alive until the
+  child has exited.
+
 **A defect on Node.** Nothing in `core/Task.js` or a Node primitive catches: a `foreign` that
 throws inside a fiber throws out of the scheduler's drain, a microtask, and a primitive's handler that
 re-throws rejects a promise no one handles. Node treats both alike under its default
@@ -2157,7 +2177,10 @@ No new `foreign` and no new sibling is introduced by this section.
 2. **A combinator returns only after the fibers it started have finished their cleanup** (A10).
    Every child a combinator starts lives in a `Task.scope` the combinator opens, so the scope's end
    cancels and awaits whatever is left, and a cancellation of the calling fiber reaches the
-   children first (A11).
+   children first (A11). *Amended 2026-11-05:* a platform primitive that starts a host resource
+   which outlives its canceller — a child process (`boundary.md` §9.14 (d)) — holds the same
+   rule: its release waits until the resource is gone, so a combinator that cancels it returns
+   after that, not after the signal.
 3. **One fiber runs at a time, and the runtime switches only at a suspension point** (§16.4). This
    is the fact `Ref.update`'s atomicity, every waiter list here and every "in order" below rest on:
    `Task.resume`, `Deferred.complete`, `Queue.offer` and the rest **queue** a woken fiber, never run
