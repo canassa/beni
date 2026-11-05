@@ -1,0 +1,38 @@
+-- A function passed as a value lends through a call with no instruction of
+-- its own: the loan is named by the argument that is the function (#2094).
+
+import List
+import Ref exposing (Ref)
+
+
+edit : List (List Int) → List (List Int)
+edit ls = List.map ls λl → List.push l 9
+
+
+byCore : List (Ref (List Int)) → List (List Int)
+byCore rs =
+    r = List.map rs Ref.get
+    edit r
+
+
+byLocal : List (Ref (List Int)) → List (List Int)
+byLocal rs =
+    g = Ref.get
+    r = List.map rs g
+    edit r
+
+
+read : Ref (List Int) → List Int
+read = Ref.get
+
+
+byAlias : List (Ref (List Int)) → List (List Int)
+byAlias rs =
+    r = List.map rs read
+    edit r
+
+
+byLambda : List (Ref (List Int)) → List (List Int)
+byLambda rs =
+    r = List.map rs λq → Ref.get q
+    edit r

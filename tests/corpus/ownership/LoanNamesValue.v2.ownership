@@ -1,0 +1,22 @@
+module LoanNamesValue
+  9:11 List.map ls[*]: accepted callback-param
+  9:28 List.push l: accepted param
+  15:5 LoanNamesValue.edit r[*]: rejected loan: `Ref.get` lent it, and the cell still holds it. Change a copy (`List.copy`)
+  22:5 LoanNamesValue.edit r[*]: rejected loan: `Ref.get` lent it, and the cell still holds it. Change a copy (`List.copy`)
+  32:5 LoanNamesValue.edit r[*]: rejected loan: `Ref.get` lent it, and the cell still holds it. Change a copy (`List.copy`)
+  38:5 LoanNamesValue.edit r[*]: rejected unknown: it came from a call of a function the checker cannot identify, which may return a list something else holds (approx)
+  account edit: source 21, baseline 1899, growth 0 of 65536, total 1899, continuation 1895 of 21504, demands 75, walks 2, rounds 3, liveness_index lanes 2, transfer_settlement lanes 2
+  summary edit: res ε fresh, [*] π1[*] fresh; nondup no; reads π1ε*; writes π1[*]; req ⇐ sel π1{ε,[*]}
+  account byCore: source 23, baseline 1300, growth 0 of 65536, total 1300, continuation 1294 of 23552, demands 11, walks 1, rounds 1, liveness_index lanes 2, transfer_settlement lanes 2
+  summary byCore: res ε fresh, [*] fresh ⊤, [*]… ⊤; nondup no; reads π1ε*
+  account byLocal: source 25, baseline 1316, growth 0 of 65536, total 1316, continuation 1305 of 25600, demands 11, walks 1, rounds 1, liveness_index lanes 3, transfer_settlement lanes 2
+  summary byLocal: res ε fresh, [*] fresh ⊤, [*]… ⊤; nondup no; reads π1ε*
+  account byAlias: source 23, baseline 1300, growth 0 of 65536, total 1300, continuation 1294 of 23552, demands 11, walks 1, rounds 1, liveness_index lanes 2, transfer_settlement lanes 2
+  summary byAlias: res ε fresh, [*] fresh ⊤, [*]… ⊤; nondup no; reads π1ε*
+  account byLambda: source 27, baseline 1750, growth 0 of 65536, total 1750, continuation 1742 of 27648, demands 33, walks 2, rounds 3, liveness_index lanes 3, transfer_settlement lanes 3
+  summary byLambda: res ε fresh, [*] fresh ⊤, [*]… ⊤; nondup no; reads π1ε*
+  block: 20 bytes, hash 4fd73b8a02e68d44
+  demands 6: accepted 2 (fresh 0, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 6: accepted 2 (fresh 0, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause unknown 1
+cause loan 3
