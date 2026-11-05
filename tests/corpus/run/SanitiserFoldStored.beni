@@ -1,0 +1,30 @@
+-- A fold's accumulator that is not what the next run writes alone
+-- (`ownership-v2.md` §2.11.3, *a fold's storage*): the initial list read after
+-- the fold, a run that writes the accumulator's elements, one that answers its
+-- element and pushes onto it next, one that answers a capture. Each is refused;
+-- with the slot's rule unasked, the sanitised runs trap or print the edit.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+main : Program
+main =
+    i = [ [ 3 ] ]
+    keeps = List.foldl [ [ 1 ] ] i λx acc → List.push acc x
+    elements = List.foldl [ [ 1 ], [ 2 ] ] [] λx acc → List.push (List.map acc λl → List.push l 2) x
+    p = [ [ 7 ] ]
+    swapped = List.foldl [ p, [ [ 2 ], [ 3 ] ] ] [] λx acc →
+        if List.length acc == 0 then x else List.push acc [ 5 ]
+    k = [ [ 4 ] ]
+    captured = List.foldl [ [ 1, 1 ], [ 2 ] ] [] λx acc →
+        if List.length x > 1 then k else List.push acc x
+    Node.printLines (List.map [ keeps, i, elements, swapped, p, captured, k ] shows)

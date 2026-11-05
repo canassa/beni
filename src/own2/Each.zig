@@ -72,7 +72,7 @@ pub fn takes(c: anytype, h: Contract.Head, lab: Contract.Label, j: u32) Error!bo
 /// Condition `c` of traversal supply `su`, its family's occurrences apart:
 /// a write asks its own slot plain (`RowEnv.takenOccs`), so a part rows
 /// share and the callback does not write is not asked once.
-fn relaxed(c: anytype, arena: Allocator, su: Contract.Supply, cond: Contract.Cond) Error!Contract.Cond {
+pub fn relaxed(c: anytype, arena: Allocator, su: Contract.Supply, cond: Contract.Cond) Error!Contract.Cond {
     if (cond.no) return cond;
     const fam = (try familyOf(c, su)) orelse return cond;
     const out = try arena.dupe(u64, cond.sel);

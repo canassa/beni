@@ -165,7 +165,7 @@ pub fn instSelFeed(e: *Eval, c0: Cond, call: u32, feed: ?Fed.Feed) Error!Cond {
     for (c0.sel) |o| own_n += @intFromBool(!Contract.isFed(o));
     for (c0.sel) |o| if (!Contract.isFed(o)) try rest.append(e.arena, o) else if (AnsOcc.is(o)) {
         if (!try AnswerCall.at(e, call, o, instCond, FedCall, &rest, &own, &fed)) return Cond.unprovable;
-    } else switch (try FedCall.at(e, call, o)) {
+    } else switch (try FedCall.at(e, call, o, null)) {
         .yes => {},
         .no => return Cond.unprovable,
         .occ => |x| try fed.append(e.arena, x),

@@ -41,7 +41,7 @@ pub const Got = union(enum) { yes, no, occ: u64 };
 /// the callee's function slot is one of the caller's parameters (the
 /// label passes on), `yes` when it is a known code whose answer holds only
 /// its argument `k` and fresh objects, else `no`.
-pub fn at(e: *Eval, call: u32, o: u64) Error!Got {
+pub fn at(e: *Eval, call: u32, o: u64, written: anytype) Error!Got {
     const c = e.contractOf(call) orelse return .no;
     const j = Contract.fedParam(o);
     const k = Contract.fedArg(o);
@@ -65,6 +65,7 @@ pub fn at(e: *Eval, call: u32, o: u64) Error!Got {
         var through: ?u64 = null;
         for (es.items.items) |rs| {
             if (!try holdsAt(e, root, es.wordsOf(rs))) continue;
+            if (@TypeOf(written) != @TypeOf(null) and !written.reaches(es.wordsOf(rs))) continue;
             for (rs.arrivals) |a| switch (a.kind) {
                 .param => if (a.j != k) {
                     const x = if (a.j < e.f.calls.items[vi].args.len) e.f.val(e.f.calls.items[vi].args[a.j]) else return .no;
