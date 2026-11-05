@@ -112,6 +112,8 @@ Open the file that your task needs. Each is short.
   `browser-inline`.
 - `references/websocket.md` — the `WebSocket` module: the shared operations, a server on `node` with
   `listenWith`, `accept` and `refuse`, and a page on `browser-tea` with `listen` and `send`.
+- `references/child-process.md` — `ChildProcess.run` on `node`: a program and its arguments with no
+  shell, the output and the exit status, `cwd` and `env`, the errors, cancellation.
 - `references/project.md` — `beni.json`, `beni new`, the output tree, `beni serve`.
 - `references/ownership-words.md` — the ownership words core and platform packages write,
   `misplaced_ownership_word`, and `@ownership_summary_size`.

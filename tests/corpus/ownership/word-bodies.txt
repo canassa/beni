@@ -320,6 +320,8 @@ platforms/browser-inline/Listen.beni             Listen.on                      
 platforms/browser-inline/Browser/Navigation.beni Browser.Navigation.listen        820c62297195fbdb4ee4b9328e8a2f98d511a51ef0bd38307d377ed48f3b9268
 platforms/browser-inline/Browser/Navigation.beni Browser.Navigation.listenOne     2f1113b901986deeebe9aaa54056bad80de223581546533695c0bc8b21628029
 platforms/cloudflare/Worker.beni                 Worker.listenForAbort            506b64fb3c116ce234e4324503beac1b5e544b14c5cd5e09fde0f5df4cbab422
+platforms/node/ChildProcess.beni                 ChildProcess.listen              a0fce93f990dd77a445cf00eb30cdc8b6e30fcda8dc40d8edf36279d0299a56e
+platforms/node/ChildProcess.beni                 ChildProcess.collectFrom         6af3da57c8500c065ede22e2b201cce489a9ba8e14ac094afe81193dd66cb024
 platforms/node/Http/Server.beni                  Http.Server.startListen          8a48bb866d7921809385bdfb392a78e3a78f7c53d0164856290cb0588c4ba926
 platforms/node/Http/Server.beni                  Http.Server.receive              a3a6dd58c88862430905da2039cb122afa617c3c46384fe8757b1a9c403ca531
 platforms/node/Http/Server.beni                  Http.Server.takeUpgrade          1825577fb408e1e152d476265dfc2b56d70b94a91e379c7b399e35fabd41f12e

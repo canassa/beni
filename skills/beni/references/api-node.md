@@ -9,6 +9,34 @@ one arrow: `List a, (a → b) → List b`. A `where` clause names the methods a 
 needs. Effects are inferred and never written; a value whose result reaches the host or may
 wait says so in a trailing comment, `-- impure` or `-- suspends`.
 ```text
+module ChildProcess
+  alias Command
+    Command
+  type Environment
+    Inherit
+    Extend
+    Only
+  alias Output
+    Output
+  type RunError
+    NotFound
+    PermissionDenied
+    NotADirectory
+    ArgumentsTooLong
+    NameTooLong
+    SymlinkLoop
+    FileBusy
+    BadExecutable
+    TooManyOpenFiles
+    TooManyProcesses
+    OutOfMemory
+    InvalidArgument
+    OutputTooLarge
+  type Status
+    Exited
+    Signalled
+  value command : String, List String → Command
+  value run : Command → Result RunError Output  -- suspends
 module Http.Server
   alias Address
     Address

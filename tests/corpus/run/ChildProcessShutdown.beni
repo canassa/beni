@@ -1,0 +1,20 @@
+-- run: when `Io.run`'s fiber ends, a child that is still running is
+-- stopped, and the program exits at once (boundary.md §9.14 (d),
+-- §9.8.15 (c)). Two fibers each wait for a child that sleeps 1 000
+-- seconds: one is a child of the main fiber, cancelled when it ends; one
+-- is in a root scope, cancelled by `Task.shutdown`. A child left running
+-- would keep Node alive, and the case would run into its hang guard.
+import ChildProcess
+import Io
+import Node exposing (Program)
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    root = Task.openRoot ⊤
+    sleeper = ChildProcess.command "/bin/sh" [ "-c", "exec sleep 1000" ]
+    _ = Task.spawnIn root λ⊤ → ChildProcess.run sleeper
+    _ = Task.spawn λ⊤ → ChildProcess.run sleeper
+    Task.yieldNow ⊤
+    Node.print "answered"

@@ -1,0 +1,21 @@
+missing: not found
+missing on PATH: not found
+missing cwd: not found
+not executable: permission denied
+directory: permission denied
+cwd is a file: not a directory
+through a file: not a directory
+long argument: arguments too long
+long name: name too long
+empty program: invalid argument
+nul in program: invalid argument
+nul in argument: invalid argument
+nul in cwd: invalid argument
+nul in a value: invalid argument
+nul in a name: invalid argument
+= in a name: invalid argument
+empty name: invalid argument
+stdout over the limit: output too large
+stderr over the limit: output too large
+at the limit: ran, stdout 0123456789
+writes forever: output too large

@@ -6,7 +6,7 @@ A type of your own with the same name is not the platform's Program. Name the pl
 
 | Platform | `main` | Runs where | Adds |
 |---|---|---|---|
-| `node` | `Node.Program` | Node | `Node`, `Io`, `Http.Server`, `WebSocket`, `Ssr`, `Random`, and `Html` |
+| `node` | `Node.Program` | Node | `Node`, `Io`, `ChildProcess`, `Http.Server`, `WebSocket`, `Ssr`, `Random`, and `Html` |
 | `browser` | `Browser.Program` | a page | `Browser`, `Cmd`, `Sub`, `Time`, `Dom`, `Http`, `WebSocket`, `Storage`, `Random`, `Browser.Events`, `Browser.Navigation`, and `Html` |
 | `browser-tea` | `Tea.Program` | a page | `Tea`, over everything `browser` has |
 | `browser-inline` | `Tea.Program` | a page | `Tea`, `Browser`, `Browser.Navigation`, `Cmd`, `Sub`, `Html`; compiled, no runtime loop |
@@ -26,7 +26,7 @@ WebSocket on a server and in a page.
 - `Http.Server.listen { host, port } handler` starts a server; the handler is `Request → Response`
   and runs once per request, in a fiber of its own. `Server.text status body` is a response;
   `Server.wait server` waits until it closes; `Server.close server` stops it.
-- `Ssr.render markup` renders an `Html msg` to a `String`.
+- `Ssr.render markup` renders an `Html msg` to a `String`. `ChildProcess.run` starts a program (`child-process.md`).
 - `Log` lines go to standard error, one `logfmt` line each.
 - Run the output with `node out/_main.mjs`.
 
@@ -296,4 +296,4 @@ payload each event carries (`onInput` gives the input's value as a `String`; `on
 `Html.map`, `Html.text`, `Html.preventDefault`, `Html.key`, `Html.targetSelection` (a text field's selection, in code
 points; `Dom.select id selection` sets one). A program never names this platform; the others include it.
 
-Sources: `docs/design/boundary.md` §5, §9.1, §9.8, §9.10, §9.12; `platforms/*/beni.json`; the modules' doc comments.
+Sources: `docs/design/boundary.md` §5, §9.1, §9.8, §9.10, §9.12, §9.14; `platforms/*/beni.json`; the modules' doc comments.
