@@ -4266,6 +4266,21 @@ lambda a result carries prints `λ` at its path (§24.9).
 
 ### 24.8 The annotated surface
 
+*Typed generic append (amended 2026-11-05, Closes #1807).* Core-private
+`Basics.appendTyped` takes two `aliased appendable` operands and returns a
+`fresh appendable`. Its string arm makes a string with `+`; its list arm calls
+`Basics.plain` on each operand and `concat`, allocating a new outer array even
+for an empty operand, while retaining element aliases. It claims no
+`exclusive` result. The lowering span and the plain-array helper are pinned.
+`AppendTypedWords` notices each unsafe aliased-to-borrowed flip independently;
+its conservative alias refusals do not promise exclusive element ownership or
+a precise outer-array alias summary. Fresh is justified by allocation, and
+strengthening it with exclusive does not discharge either explicit alias.
+
+| Declaration | Words | Body and misuse pins |
+|---|---|---|
+| `Basics.appendTyped` | `aliased appendable, aliased appendable → fresh appendable` | Lower.appendTyped; Basics.plain; AppendTypedWords left/right alias flips |
+
 *Native-host correction re-read, 2026-11-05 (#1941, fixes after #1937):*
 the shared `NativeHost.zig` span identifies worker-construction failures by
 DOMException with the documented name or TypeError, and passes successful native

@@ -1523,6 +1523,20 @@ day: `Basics.eq` is no longer one. The `undetermined` leaf it answered is `===` 
 since `Basics.eq` dispatches like `==` â `static-dispatch-spike.md` Â§3.1, amended â so a comparison
 reaches for `String.compare` alone.)*
 
+**Typed append (amended 2026-11-05, Closes #1807).** When checking knows
+that ++ takes lists or strings, it checks the typed List.append or String.append
+signature, matching the existing backend choice without importing an erasure
+obligation from Basics.append. A genuinely appendable-polymorphic call keeps
+Basics.append's public signature and its existing representation: string + for
+strings, otherwise plain-array concat, fresh even for an empty operand. Core's
+private compiler-owned appendTyped intrinsic takes aliased appendable operands
+and returns a fresh appendable result. Fresh describes the new outer array;
+contained mutable values still alias their inputs. No operand crosses Js.Value.
+The intrinsic is available only to core, with app/platform refusal fixtures and
+pinned lowering/helper bodies. Development and release JavaScript stay byte-identical.
+The existing CorePrivate fence also filters method-name hints and generated API
+references: an application is never offered this private implementation name.
+
 #### Identity: what an operation returns unchanged
 
 *Amended 2026-10-15 (*The representation: a plain array*, above):* the trie-header bullets below
@@ -4687,6 +4701,19 @@ uses `filter` and `indexedMap`, went 5 093 â 5 024 brotli in `--release` (1
 development), its `indexedMap` no longer reaching `range`, `length` and `map2`.
 
 ## 9. The optimiser, ranked by compressed bytes
+
+**Implicit core helpers (amended 2026-11-05, Closes #1807).** A compiler-owned
+intrinsic may call a core helper without a BIR reference. One registration owns
+the helper identity, dependency and whether its returned value is observed.
+Reach consumes that registration to keep the helper alive; Lower.findUnobserved
+consumes the same result-use fact so an implicit caller cannot lose the helper's
+returns. Selection remains specific to the intrinsic/recipe/protocol, not a
+global suppression of unread-result elimination. No artificial source read is
+needed. This includes generic append's Basics.plain, Opt sentinel/boxing helpers,
+Any's packet producer, and the suspension protocol; the existing implicit list
+reader/view/append helpers retain their registered result use. Conditional boxed
+Opt helpers are retained only on the paths that need them.
+
 
 Report 12 ranked these by what they are worth **after compression**, which inverts the raw-byte
 ranking. Build them in this order:

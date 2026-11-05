@@ -302,9 +302,14 @@ instantiation. An unreachable declaration does not reject an entry; an evaluated
 initializer does. Recursive call components use a monotone fixed point.
 
 Js.Value represents plain dynamic data, not erased native handles or callbacks.
-HostFree is currently off until typed Task storage (#1615) lands. Meanwhile,
-realm inference conservatively treats callable values erased by Js.from as
-called in the enclosing declaration, including the work passed to Task.start.
+**Default-on boundary (amended 2026-11-05, Closes #1807).** HostFree applies
+to ordinary check, build and serve commands, including imported and cached
+modules. There is no opt-out or rollout flag: applications, core and every
+platform obey the same boundary. Native handles and callbacks stay in typed
+storage; existing private typed bridges retain their fences. This is a check
+only and changes no JavaScript emitted for an accepted program.
+Realm inference independently attributes stored callable uses to their writer,
+including the work passed to Task.start.
 Writes through Ref, Js.Ref, Deferred and Queue attribute stored callable
 arrows to the writer. The obligation comes from the resolved callee's
 scheme, so qualified calls, dot calls and aliases follow the same rule.
@@ -324,9 +329,10 @@ preserve the obligation through generic wrappers and aliases. Interfaces
 publish it as a typed dependency path; every instantiation exposes the
 callable arrows in the substituted type, including records, nominal payloads
 and containers. Further unknowns retain the obligation transitively.
-This applies to generic erasure in Task.host and Hosted.host as well as
-storage wrappers, cold and warm. It changes neither purity nor suspension.
-HostFree remains off until typed storage lands.
+This applies to generic typed storage wrappers in Task and Hosted, cold and
+warm. It changes neither purity nor suspension. Cached interfaces publish
+HostFree obligations as well; entries checked before this invariant use a
+different cache-key domain. No unchecked pre-rollout interface is reused.
 
 HostFree is a structural type-graph check that excludes native objects and
 callables in reachable fields, containers and opaque representations. Js.from
