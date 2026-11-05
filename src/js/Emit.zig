@@ -8346,7 +8346,8 @@ const Emitter = struct {
         }
     }
     /// Read the owning producer's private connection facts. The semantic
-    /// ordered roles are this connection's contract; the layout strings are not.
+    /// role identities are this connection's contract; order and layout strings
+    /// are not.
     fn rootConnectionLayout(modules: []const Spec.Module, global: u32, props: *const std.StringHashMapUnmanaged(u32)) ?Spec.RootProps {
         const layout_id = props.get("$rootLayout") orelse return null;
         for (modules) |module| {
@@ -8361,12 +8362,20 @@ const Emitter = struct {
                 const fields = ir.extraSlice(JsIr.inlineRange(ir.data(layout)), JsIr.Node.Index);
                 if (fields.len != @typeInfo(Spec.RootProps).@"struct".field_names.len - 1) return null;
                 var result: Spec.RootProps = undefined;
-                inline for (@typeInfo(Spec.RootProps).@"struct".field_names, 0..) |role, index| {
+                inline for (@typeInfo(Spec.RootProps).@"struct".field_names) |role| {
                     if (comptime std.mem.eql(u8, role, "fragment_maker")) {
                         result.fragment_maker = props.get("createDocumentFragment") orelse Spec.none;
                     } else {
-                        const value = fields[index];
-                        if (ir.tag(value) != .string) return null;
+                        var matched: ?JsIr.Node.Index = null;
+                        for (fields) |field| {
+                            if (ir.tag(field) != .array) return null;
+                            const pair = ir.extraSlice(JsIr.inlineRange(ir.data(field)), JsIr.Node.Index);
+                            if (pair.len != 2 or ir.tag(pair[0]) != .string or ir.tag(pair[1]) != .string) return null;
+                            if (!std.mem.eql(u8, ir.bytes(pair[0]), role)) continue;
+                            if (matched != null) return null;
+                            matched = pair[1];
+                        }
+                        const value = matched orelse return null;
                         @field(result, role) = props.get(ir.bytes(value)) orelse Spec.none;
                     }
                 }
@@ -11546,4 +11555,42 @@ test "a shared nullary literal covers all fields and rejects conflicts" {
     try testing.expect(!nullaryCovers(&ir, tag, &ir, full));
     try testing.expect(!nullaryCovers(&ir, full, &ir, conflict));
     try testing.expect(!nullaryCovers(&ir, conflict, &ir, full));
+}
+
+test "root connection layout matches role identity independently of order" {
+    const gpa = testing.allocator;
+    const Index = JsIr.Node.Index;
+    const pos = JsIr.Node.no_pos;
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    const name = try b.intern(.local(@fromBackingInt(0)));
+    const layout_name = try b.intern(.local(@fromBackingInt(1)));
+    const roles = [_][]const u8{ "live", "end", "kind", "range", "patch", "start", "mount" };
+    var pairs: [7]Index = undefined;
+    var props: std.StringHashMapUnmanaged(u32) = .empty;
+    defer props.deinit(gpa);
+    try props.put(gpa, "$rootLayout", 7);
+    for (roles, 0..) |role, i| {
+        const r = try b.addString(role);
+        const role_node = try b.addParts(.string, pos, r[0], r[1]);
+        const value = try b.addString(role);
+        const value_node = try b.addParts(.string, pos, value[0], value[1]);
+        const pair = try b.addRange(&.{ role_node, value_node });
+        pairs[i] = try b.addParts(.array, pos, @backingInt(pair.start), @backingInt(pair.end));
+        try props.put(gpa, role, @intCast(i));
+    }
+    const fields = try b.addRange(&pairs);
+    const layout = try b.addParts(.array, pos, @backingInt(fields.start), @backingInt(fields.end));
+    const property = try b.addParts(.property, pos, layout_name.int(), layout.int());
+    const entries = try b.addRange(&.{property});
+    const connection = try b.addParts(.object, pos, @backingInt(entries.start), @backingInt(entries.end));
+    const declaration = try b.addParts(.const_decl, pos, name.int(), connection.int());
+    var ir = try b.toOwned(try b.addRange(&.{declaration}));
+    defer ir.deinit(gpa);
+    const modules = [_]Spec.Module{.{ .ir = &ir, .global = &.{ 0, Spec.none }, .prop = &.{ Spec.none, 7 } }};
+    const expected: Spec.RootProps = .{ .kind = 2, .mount = 6, .patch = 4, .start = 5, .end = 1, .range = 3, .live = 0 };
+    try testing.expectEqualDeep(expected, Emitter.rootConnectionLayout(&modules, 0, &props).?);
+    // Same length, duplicate role and missing original role must decline.
+    @constCast(ir.extra)[@backingInt(fields.start)] = pairs[1].int();
+    try testing.expectEqual(@as(?Spec.RootProps, null), Emitter.rootConnectionLayout(&modules, 0, &props));
 }

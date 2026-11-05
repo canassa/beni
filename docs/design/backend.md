@@ -13154,6 +13154,25 @@ The planned path must have fixtures for repeated paint with node identity,
 defect and shutdown, and a conditional-kind witness that detects removal of
 the same-kind requirement.
 
+*Amended 2026-11-05 (Part of #1861):* On an application with a proved root,
+ordinary specialization may spend its existing closed literal-array facts on
+the compiler-generated List base/offset reader: for an immutable, unescaped,
+unwritten plain array, base is that receiver and offset is zero. The receiver
+must be an inert name. This removes only the representation-reader dispatch;
+the tail-call fold traversal remains. Eager arguments, element reads, lookup,
+defects, return value and lifecycle retain their order. The existing scalar
+facts merge the counter's entry and backedge values, so they do not prove a
+single iteration. A new loop analysis for the remaining small byte saving is
+deferred (owner decision, #1861). Unknown/multiple mounts and
+unproved/inline applications retain their exact output. No new runtime operation,
+representation, declaration-name rule or analysis layer is licensed here.
+
+The producer's private layout facts identify each role by its field identity,
+never by the declaration order of the producer or the consumer's record. Every
+required role must occur exactly once. Array-length specialization requires an
+actual array literal, not merely an array allocation site: a constructed array
+has no literal item range.
+
 ### 15.11 The `browser` runtime: program, mount and render loop
 
 The owner's W28 answer is Solid 2's loop (`plans/browser-decisions.md`, W28; research 27 Â§3.1âÂ§3.6).
