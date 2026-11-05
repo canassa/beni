@@ -120,6 +120,7 @@ until the migrate step rewrites the examples.
 | `( Int, String )` as a type | `Int × String`; `a × b × c` is a 3-tuple, and `Int × Int → Int` takes one pair where `Int, Int → Int` takes two arguments (*2026-10-01, specified; built 2026-10-02*) | §12.8 |
 | `()`, the unit type and value; `Never` | `⊤` in both roles — `String → ⊤`, `else ⊤`, `λ⊤ → e`; `⊥` for the empty type (*2026-10-02, built*) | §12.10 |
 | `if c then a else ()` | `if c then a`: an `if` whose `then` branch is `⊤` may leave out its `else` (*2026-10-02, built*) | §12.10 |
+| `2 ^ 3 : number`, the type of its operands | `2 ^ 3 : Float` for any mix of `Int` and `Float`; `2 ^^ 3 : Int`, the exact integer power, and `2 ^^ -1` is `0` (*2026-11-05, the owner's decision*) | §6.5 |
 
 Everything else — application by juxtaposition, `case … of`, `if … then … else`, records, record
 update, lists, tuples, type aliases, custom types, `as` patterns, `.field` accessors — is Elm's.
@@ -761,13 +762,46 @@ non-associative operators reject a second operator of the same precedence withou
 | 5 | `++` | right (`::` stood here until 2026-10-01, §6.8) |
 | 6 | `+` `-` | left |
 | 7 | `*` `/` `//` | left |
-| 8 | `^` | right |
+| 8 | `^` `^^` | right |
 | — | `?` postfix, application, `.field`, `.0` | tighter than all of the above, in that order (tightest last) |
 
 *Amended 2026-10-01 (§12.7, built 2026-10-02):* `◁` and `▷` are written for `<|` and `|>` at
 precedence 0, and `≠`, `≤`, `≥` for `/=`, `<=`, `>=` at precedence 4, each with the binding power
 and associativity of the operator it replaces; both spellings are accepted (amended 2026-11-04). `||`, `&&`, `==`, `<`, `>`, `++` and the arithmetic operators do not
 change.
+
+*Amended 2026-11-05 (Jayson's decision, #1985):* **`^` gives a `Float`, and `^^` is the integer
+power.** An `Int` is a double (§2.5), and `^ : number, number → number` gave `2 ^ (0 - 1)` the type
+`Int` and the value `0.5`: a fraction in an `Int`. Now:
+
+| Operator | Function | Type | Value |
+|---|---|---|---|
+| `^` | `Basics.pow` | `number, number2 → Float` | `a ** b`, as before (`backend.md` §4, *Arithmetic is an operator*). The operands are `Int` or `Float` in any mix |
+| `^^` | `Basics.ipow` | `Int, Int → Int` | the integer power, below |
+
+- **A non-negative exponent** gives the exact power, computed with `*` (by squaring), never with
+  `Math.pow` or `**`: the ECMAScript specification does not require `Math.pow` to be exact.
+  `3 ^^ 4 == 81`, `x ^^ 0 == 1`. A power above 2⁵³ is as inexact as any `Int` there, and overflow
+  stays what it is for every `Int`: `2 ^^ 2000` can be `Infinity`.
+- **A negative exponent:** `x ^^ (-n)` is `1 // (x ^^ n)`. So `2 ^^ -1 == 0`, `1 ^^ -1 == 1`,
+  `(-1) ^^ -1 == -1`, and `0 ^^ -1 == 0`, because `1 // 0` is `0` (§2.5).
+- **A fractional exponent is cut toward zero** first. `^` can no longer make one, but a fractional
+  `Int` can still arrive (§6.8, *An index or a count that is not a whole number*).
+- **`^^` always finishes.** Squaring halves the exponent, and an exponent of `Infinity` never
+  reaches zero, so a non-finite exponent is answered before the loop, with one test per call
+  (Cesar's decision, 2026-11-05). For an exponent of `Infinity` or NaN, `x ^^ n` is what `x ** n`
+  is, so `^^` and `^` agree there: `Infinity` for `|x| > 1`, `0` for `x = 0`, and NaN for `x = 1`,
+  `x = -1` and every NaN exponent. For `-Infinity` the negative rule holds:
+  `x ^^ -Infinity` is `1 // (x ^^ Infinity)`, so `2 ^^ -Infinity` is `0` and `1 ^^ -Infinity` is
+  NaN. An exponent is `Infinity` or NaN only after an overflow.
+- **Where an `Int` is wanted and `^` gives a `Float`**, the type mismatch's hint names `^^`.
+
+**Where `^^` differs from Haskell's.** Haskell has three power operators: `^` (an integral
+exponent that must not be negative, the base any number), `^^` (an integral exponent, negative
+allowed, the base fractional: `2 ^^ (-1)` is `0.5`) and `**` (both floating). beni's `^` is
+Haskell's `**` for any mix of `Int` and `Float`. beni's `^^` takes an `Int` base and answers an
+`Int`, so a negative exponent is an integer division, `1 // (x ^^ n)`, where Haskell's `^^` answers
+a fraction and Haskell's `^` raises an error.
 
 | Rule | Detail |
 |---|---|
@@ -1343,9 +1377,9 @@ by §6.8's *A list is a plain array*: no thresholds, O(1) reads, and writes that
 or O(n) copies.
 
 **An index or a count that is not a whole number.** *Added 2026-11-05 (#988, #990).* An `Int` is a
-double (§2.5), so it can hold `2 ^ (0 - 1)`, which is `0.5`, and NaN. `core/List` and `core/String`
-give each such argument a defined answer, and the answer depends on what the argument is (a
-fraction is written below as a literal, for short; a literal `2.5` is a `Float`):
+double (§2.5), so it can hold `0.5`, and NaN. `core/List` and `core/String` give each such
+argument a defined answer, and the answer depends on what the argument is (a fraction is written
+below as a literal, for short; a literal `2.5` is a `Float`):
 
 | The argument is | Functions | A fraction | NaN |
 |---|---|---|---|
@@ -1358,6 +1392,14 @@ its elements are `lo`, `lo + 1`, … and each one is at most `hi`: `range 0 1.5 
 `range 0.5 2 == [ 0.5, 1.5 ]`. The length that `pad`, `padLeft` and `padRight` pad to is a count:
 `padLeft "1" 3.5 '.' == "..1"`, and `pad "1" 5.5 '.' == pad "1" 5 '.'`. A function whose argument
 is a count reads it once, before its loop, so the loop costs what it cost before.
+
+*Amended 2026-11-05 (#1985).* The first sentence above said that an `Int` can hold `2 ^ (0 - 1)`.
+Now `^` gives a `Float` (§6.5), so no beni arithmetic makes a fraction in an `Int`. A fraction
+arrives only from a `foreign` value whose JavaScript gives a fraction where its type says `Int`. No
+`foreign` of `core/` or of the shipped platforms does that, but a platform package can (§5.4). NaN
+still comes from an overflow, as in `2 ^^ 1024 - 2 ^^ 1024`. The rules above stay for such values.
+The fixtures `run/CoreListFractionalIndex` and `run/CoreListFractionalCount` get their `0.5` from a
+test platform's `foreign half : Int` (Cesar's decision, 2026-11-05).
 
 **A count too large for memory** (Jayson's decision, 2026-11-05, #990). A count that no list can
 hold — 2³² or more, or an infinity — stops the program, as any program that runs out of memory

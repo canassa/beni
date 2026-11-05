@@ -1,0 +1,22 @@
+-- check/bad: `^` always gives a `Float` (`language.md` §6.5, amended
+-- 2026-11-05), so each use below, where the result has to be an `Int`, is a
+-- `type_mismatch`. The hint is the point of the fixture: it names `^^`, the
+-- integer power, in place of the `toFloat`/`round` note that a `Float`
+-- against an `Int` gets elsewhere (`checker.md` §8.7, amended 2026-11-05).
+-- Three places: a body against its annotation, an argument, and the second
+-- operand of `≥`.
+
+cells : Int → Int
+cells depth = 2 ^ depth
+
+
+double : Int → Int
+double n = n * 2
+
+
+doubled : Int
+doubled = double (2 ^ 3)
+
+
+atLeast : Int, Int → Bool
+atLeast n s = n ≥ 2 ^ s

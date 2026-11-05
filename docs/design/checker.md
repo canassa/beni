@@ -1593,7 +1593,7 @@ instead: *"The body is a list of type: `List number` But the type annotation on 
 should be: `List String`"*.
 
 **The numbers-only hint needs an arithmetic operator.** *"`+`, `-`, `*` and `/` work on
-numbers only"* is printed only when the mismatch is an argument of `+`, `-`, `*`, `/`, `//` or `^`
+numbers only"* is printed only when the mismatch is an argument of `+`, `-`, `*`, `/`, `//`, `^` or `^^`
 (category `call_arg`, callee the operator). Elsewhere a `number` or `Int` against a `String` gets
 the conversion in the direction the value has to go, as Elm's `badFlexSuper` and `problemToHint`
 do (*"Try using `String.fromInt` to convert it to a string?"*, *"Want to convert a String into an
@@ -1608,7 +1608,17 @@ Hint: want to turn a number into a `String`? Use `String.fromInt` or
 Hint: to read a number out of text, use `String.toInt` or `String.toFloat`.
 ```
 
-The first when the `String` is what was needed, the second when the `String` is what was found. A
+The first when the `String` is what was needed, the second when the `String` is what was found.
+*Amended 2026-11-05 (`language.md` §6.5, #1985):* a `Float` where an `Int` is needed, when the
+`Float` is a call of `^` (core's `Basics.pow`), names the integer power in place of the
+`toFloat`/`round` note:
+
+```
+Hint: `^` always gives a `Float`. For an `Int` power, use `^^`: `2 ^^ 3` is
+the `Int` 8.
+```
+
+A
 `number` against anything else keeps *"One of those has to be a number — an `Int` or a `Float` —
 and it is not."* with no hint, where Elm says *"Only `Int` and `Float` values work as numbers."*
 
@@ -1872,6 +1882,8 @@ that is a contract too, not an accident, because a record-keyed `sortBy` depends
 - `Basics`: `equatable foreign type Int`, `Float`; `type Bool = True | False`; `type Order =
   LT | EQ | GT`; `type Never = JustOneMore Never`; the arithmetic, comparison and logic foreigns
   with `number` annotations (`add : number, number -> number`, `lt : number, number -> Bool`, …);
+  *amended 2026-11-05 (#1985):* `pow : number, number2 → Float` (`^`) and `ipow : Int, Int → Int`
+  (`^^`);
   `eq : equatable a, a -> Bool`; `append : appendable, appendable -> appendable`; `compare :
   number, number -> Order`; `max`, `min`, `clamp` on `number`; the numeric functions; `identity`,
   `always`, `never`, `not`, `xor`, `modBy`, `remainderBy`, `negate`, `abs`, `toFloat`, `round`,

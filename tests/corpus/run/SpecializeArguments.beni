@@ -40,7 +40,7 @@ either off n = off || Debug.log "or-right" n > 0
 
 
 square : Int → Int
-square b = b ^ 2
+square b = b ^^ 2
 
 
 quoted : String, String → String

@@ -579,8 +579,8 @@ tests/corpus/run/RefUpdateAcrossFibers.beni RefUpdateAcrossFibers 31:9 #0 :: Ref
 tests/corpus/run/RefUpdateAcrossFibers.beni RefUpdateAcrossFibers 32:9 #0 :: RefUpdateAcrossFibers.bumpRacily cell◆ :: absent :: accepted  v2 words `Ref.set` as a writer (#1079); v1 has no row; `bumpRacily` is checked since S3b slice 4a
 # Slice 4a: known limits.
 # Slice 4a: core's groups, solved.
-core List 1825:5 #1 :: List.unzipHelp <call> :: absent :: accepted  v2 finds the second builder or accumulator written too; v1's summary writes only the first
-core List 1839:17 #1 :: List.unzipHelp <call> :: absent :: accepted  v2 finds the second builder or accumulator written too; v1's summary writes only the first
+core List 1836:5 #1 :: List.unzipHelp <call> :: absent :: accepted  v2 finds the second builder or accumulator written too; v1's summary writes only the first
+core List 1850:17 #1 :: List.unzipHelp <call> :: absent :: accepted  v2 finds the second builder or accumulator written too; v1's summary writes only the first
 core Result 271:21 #1 :: Result.partitionHelp <literal> :: absent :: accepted  v2 finds the second builder or accumulator written too; v1's summary writes only the first
 # Slice 4d: a group solved since its port keeps no round that its last round covers.
 tests/corpus/run/TailModConsMerge.beni TailModConsMerge 27:18 #1 :: TailModConsMerge.split <literal> :: absent :: accepted  v2 finds the second accumulator written too (`split` swaps the two); v1's summary writes only the first
@@ -3353,7 +3353,7 @@ tests/corpus/workers/Yielding Main 39:21 #0 :: Ref.set Main.long◆ :: absent ::
 #
 # v2-core: 169
 bench/websocket/server Main 90:25 #0 :: Ref.make <literal> :: absent :: accepted  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract
-core List 1796:5 #1 :: List.partitionHelp <call> :: absent :: accepted  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract
+core List 1807:5 #1 :: List.partitionHelp <call> :: absent :: accepted  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract
 examples/bike-wars Game 159:11 #0 :: Bike.update <record>.current.trail :: absent :: rejected  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract
 examples/chat/server Main 33:24 #0 :: Ref.make <literal> :: absent :: accepted  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract
 examples/chat/server Main 42:17 #0 :: Deferred.complete server :: absent :: rejected  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract

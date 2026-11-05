@@ -66,6 +66,23 @@ There is no block comment.
 - `'c'` is a `Char`: one Unicode scalar value.
 - `Int` and `Float` are JavaScript doubles. `Int.mod n 2` and `Int.rem n 3` replace `modBy` and
   `remainderBy`. `import Int32` gives exact 32-bit arithmetic that wraps.
+- `^` always gives a `Float`, for `Int` and `Float` operands in any mix: `2 ^ 3` is the `Float` 8,
+  and `2 ^ -1` is `0.5`. `^^` is the integer power, `Int, Int → Int`: `2 ^^ 3` is `8`.
+  A negative exponent is an integer division: `2 ^^ -1` is `0`, because it is `1 // (2 ^^ 1)`.
+
+```beni
+pub area : Float → Float
+area r = 3.14 * r ^ 2
+
+
+pub cells : Int → Int
+cells depth = 2 ^^ depth
+```
+
+```beni refused=type_mismatch
+pub cells : Int → Int
+cells depth = 2 ^ depth
+```
 
 ```beni
 pub greeting : String, Int → String
@@ -274,5 +291,5 @@ pub doubled : List Int → List Int
 doubled xs = List.map xs \x → x * 2
 ```
 
-Sources: `docs/design/language.md` §0, §2, §4, §5, §6.3, §6.4, §6.6, §12, Appendix A;
+Sources: `docs/design/language.md` §0, §2, §4, §5, §6.3, §6.4, §6.5, §6.6, §12, Appendix A;
 `docs/design/ownership-checker.md` §31.

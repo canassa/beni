@@ -2900,7 +2900,7 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
         // the chain as `cons_removed`, and it lowers to the poison that
         // report stands for.
         .cons => return l.errorInst(.cons_removed),
-        .add, .sub, .mul, .div, .int_div, .pow, .append, .eq, .neq, .lt, .gt, .lte, .gte, .bool_and, .bool_or => {
+        .add, .sub, .mul, .div, .int_div, .pow, .int_pow, .append, .eq, .neq, .lt, .gt, .lte, .gte, .bool_and, .bool_or => {
             const b = l.tree.fullBinop(node);
             const lhs = try l.lowerExpr(b.lhs);
             const rhs = try l.lowerExpr(b.rhs);
@@ -3048,6 +3048,7 @@ fn operatorFunction(op: Token.Tag) OperatorFunction {
         .op_slash => .{ .module = .Basics, .function = .fdiv },
         .op_slash_slash => .{ .module = .Basics, .function = .idiv },
         .op_caret => .{ .module = .Basics, .function = .pow },
+        .op_caret_caret => .{ .module = .Basics, .function = .ipow },
         .op_plus_plus => .{ .module = .Basics, .function = .append },
         .op_eq_eq => .{ .module = .Basics, .function = .eq },
         .op_ne => .{ .module = .Basics, .function = .neq },
@@ -5598,7 +5599,7 @@ test "the operator table gives every operator a home module, Basics" {
         .op_plus,        .op_minus,   .op_star,      .op_slash,
         .op_slash_slash, .op_caret,   .op_plus_plus, .op_eq_eq,
         .op_ne,          .op_lt,      .op_gt,        .op_le,
-        .op_ge,          .op_and_and, .op_or_or,
+        .op_ge,          .op_and_and, .op_or_or,     .op_caret_caret,
     };
     for (ops) |op| {
         const f = operatorFunction(op);
