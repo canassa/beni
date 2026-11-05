@@ -102,6 +102,49 @@ viaCall xs =
             []
 
 
+wide : T (List Int), Bool → T (List Int)
+wide t c =
+    if c then
+        t
+    else
+        Leaf []
+
+
+type Pr a
+    = PL a
+    | PW (Pr (List a)) (List a)
+
+
+second : Pr (List Int) → List (List Int)
+second t =
+    case t of
+        PW (PW _ x) _ →
+            List.concat x
+
+        _ →
+            []
+
+
+throughWide : T (List Int) → List Int
+throughWide t =
+    case pick t of
+        [ y ] →
+            List.push y 2
+
+        _ →
+            []
+
+
+either : T (List Int), T (List Int), Bool → List (List Int)
+either a b c =
+    pick
+        (if c then
+            a
+         else
+            b
+        )
+
+
 cps : Int, a, (T a → r) → r
 cps n x k =
     if n == 0 then
@@ -129,6 +172,32 @@ main =
     k5 = [ 1 ]
     k6 = [ 1 ]
     k7 = [ 1 ]
+    k8 = [ 1 ]
+    k9 = [ 1 ]
+    k10 = [ 1 ]
+    k11 = [ 1 ]
+    chosen =
+        case either (Leaf []) (Wrap (Leaf [ k11 ])) False of
+            [ y ] →
+                List.push y 2
+
+            _ →
+                []
+    widened =
+        case pick (wide (Wrap (Leaf [ k8 ])) True) of
+            [ y ] →
+                List.push y 2
+
+            _ →
+                []
+    stepped =
+        case second (PW (PW (PL []) [ [ k9 ] ]) []) of
+            [ y ] →
+                List.push y 2
+
+            _ →
+                []
+    param = throughWide (wide (Wrap (Leaf [ k10 ])) True)
     called =
         case viaCall k7 of
             [ y ] →
@@ -168,5 +237,9 @@ main =
         , show back ++ show k5
         , show leaving ++ show k6
         , show called ++ show k7
+        , show widened ++ show k8
+        , show stepped ++ show k9
+        , show param ++ show k10
+        , show chosen ++ show k11
         ]
     Node.print (String.join lines "\n")
