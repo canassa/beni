@@ -7,26 +7,26 @@ module LoanNames
   24:21 List.push l: accepted param
   28:15 List.push <call Ref.get>: rejected loan: `Ref.get` lent it, and `r` still holds it. Change a copy (`List.copy`)
   32:15 List.map <call Ref.get>[*][*]: rejected loan: `Ref.get` lent it, and `r` still holds it. `List.copy` copies only the outer list, and the lists inside are still the cell's. Copy each level, down to the list you change
-  32:41 List.map m[*]: rejected call
+  32:41 List.map m[*]: accepted callback-param
   32:57 List.push l: accepted param
-  38:5 List.map c[*]: rejected call
+  38:5 List.map c[*]: rejected disjoint: another operand of the same operation reaches it (approx)
   38:21 List.push l: accepted param
   account get: source 19, baseline 165, growth 0 of 65536, total 165, continuation 159 of 19456, demands 6, walks 1, rounds 1, liveness_index lanes 2, transfer_settlement lanes 2
   summary get: res ε ⊤; nondup yes; reads π1ε
   account viaField: source 18, baseline 162, growth 0 of 65536, total 162, continuation 159 of 18432, demands 6, walks 1, rounds 1, liveness_index lanes 2, transfer_settlement lanes 1
   summary viaField: res ε ⊤; nondup yes; reads π1.c
-  account modify: source 21, baseline 771, growth 0 of 65536, total 771, continuation 764 of 21504, demands 98, walks 2, rounds 3, liveness_index lanes 3, transfer_settlement lanes 2
+  account modify: source 21, baseline 766, growth 0 of 65536, total 766, continuation 759 of 21504, demands 98, walks 2, rounds 3, liveness_index lanes 3, transfer_settlement lanes 2
   summary modify: res ε ⊤; nondup yes; reads π1ε; writes π1◆; req yes
-  account outerCopy: source 30, baseline 1766, growth 0 of 65536, total 1766, continuation 1758 of 30720, demands 84, walks 2, rounds 3, liveness_index lanes 3, transfer_settlement lanes 3
+  account outerCopy: source 30, baseline 1967, growth 0 of 65536, total 1967, continuation 1959 of 30720, demands 84, walks 2, rounds 3, liveness_index lanes 3, transfer_settlement lanes 3
   summary outerCopy: res ε fresh, [*] fresh ⊤; nondup no; reads π1ε
   account outerEdit: source 21, baseline 237, growth 0 of 65536, total 237, continuation 235 of 21504, demands 6, walks 1, rounds 1, liveness_index lanes 1, transfer_settlement lanes 1
   summary outerEdit: res ε ⊤, [*] fresh ⊤; nondup no; reads π1ε
-  account twoLevels: source 34, baseline 2089, growth 0 of 65536, total 2089, continuation 2083 of 34816, demands 93, walks 3, rounds 3, liveness_index lanes 3, transfer_settlement lanes 3
+  account twoLevels: source 34, baseline 2534, growth 0 of 65536, total 2534, continuation 2528 of 34816, demands 102, walks 3, rounds 3, liveness_index lanes 3, transfer_settlement lanes 3
   summary twoLevels: res ε fresh, [*] fresh, [*][*] fresh ⊤; nondup no; reads π1ε
-  account deepCopy: source 31, baseline 1736, growth 0 of 65536, total 1736, continuation 1728 of 31744, demands 90, walks 2, rounds 3, liveness_index lanes 3, transfer_settlement lanes 3
+  account deepCopy: source 31, baseline 1916, growth 0 of 65536, total 1916, continuation 1908 of 31744, demands 90, walks 2, rounds 3, liveness_index lanes 3, transfer_settlement lanes 3
   summary deepCopy: res ε fresh, [*] fresh; nondup no; reads π1ε
-  block: 20 bytes, hash b179c835e91e9b7c
-  demands 12: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
-total 12: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
-cause call 2
+  block: 20 bytes, hash 5d28126125435d6d
+  demands 12: accepted 5 (fresh 0, call 0, param 4, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 7
+total 12: accepted 5 (fresh 0, call 0, param 4, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 7
+cause disjoint 1
 cause loan 6

@@ -39,23 +39,3 @@ pub fn reachesParam(ev: *Relation.Eval, targets: []const u32) Relation.Error!boo
     }
     return false;
 }
-
-/// Whether a supply's write at `words` lands at an element of a list a cell
-/// holds: an arrival through its `◆`, then a `[*]`. v2 keeps no slot state,
-/// so nothing it can read says those elements are apart (#1986).
-pub fn elementEdit(es: *const Forest.Entries, slots: *const Slots.Table, words: []const u32) bool {
-    for (es.items.items) |rs| {
-        if (!std.mem.startsWith(u32, words, es.wordsOf(rs))) continue;
-        for (rs.arrivals) |a| {
-            if (a.kind != .param) continue;
-            var seen = false;
-            for (slots.relWords(a.slot)) |w| {
-                if (seen and Step.fromWord(w).kind == .elem) return true;
-                if (Step.fromWord(w).kind == .contents) seen = true;
-            }
-            if (!seen) continue;
-            for (words[rs.len..]) |w| if (Step.fromWord(w).kind == .elem) return true;
-        }
-    }
-    return false;
-}
