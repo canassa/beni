@@ -57,7 +57,7 @@ pub const Line = Kept.Line;
 
 pub const Result = struct {
     lines: []Line,
-    verdicts: Eval.Verdicts,
+    verdicts: Kept.Verdicts,
 };
 
 /// A holder's holds as `TagTree.Forest` reads them: each hold's tags.

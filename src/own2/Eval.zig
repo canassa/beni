@@ -610,20 +610,6 @@ pub const Sink = struct {
 /// A subtree being described at path `q` (`depth` steps from its root). `depth`: its serial number in the evaluation.
 pub const Builder = struct { q: PathId, depth: u32, res: Contract.Draft.Res = .{} };
 
-/// What `Resolve` tells the read-off: the accepted demands' reliance and each direct label's kept slots and condition.
-pub const Verdicts = struct {
-    req: Cond = .{},
-    /// Per frame label: the kept argument slots, as `(k, leaf)` pairs.
-    kept: []const [3]u32 = &.{},
-    /// Per frame label: the condition its supplies' check relied on.
-    supply_cond: []const Cond = &.{},
-    /// Per passed-on label (`passes`' index): the kept supply slots, as
-    /// `(pass, k, leaf, at)` (`at`: the leaf's slot in the supply), and
-    /// the condition its supplies' check relied on.
-    pass_kept: []const [4]u32 = &.{},
-    pass_cond: []const Cond = &.{},
-};
-
 // ===========================================================================
 // The group an evaluation is in (§2.12 step 2)
 // ===========================================================================
