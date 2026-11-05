@@ -1,0 +1,23 @@
+-- CallbackTakenWriter (Appendix B, S4): the green control of
+-- CallbackTakenDuplicate. `List.map` with a writer over an exclusive list
+-- relies on the input's own condition: accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+main : Program
+main =
+    xs = [ [ 1 ], [ 2 ] ]
+    zs = List.map xs λl → List.push l 9
+    Node.print (show zs)

@@ -1,0 +1,29 @@
+-- OnePairTwoPositions (Appendix B, S4; R-4.6.4, R-8.3): `r` is stored in the
+-- pair's second component twice, and once in its first. The first component
+-- is written while the second is dead: the sharing at `.1[*]` never answers
+-- `.0[*]`, so the write is accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+build : ⊤ → List (List Int)
+build ⊤ =
+    r = [ 1 ]
+    p = ( [ r ], [ r, r ] )
+    ( first, _ ) = p
+    List.update first 0 λl → List.push l 9
+
+
+main : Program
+main = Node.print (show (build ⊤))

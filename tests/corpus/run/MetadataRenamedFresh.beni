@@ -1,0 +1,29 @@
+-- MetadataRenamedFresh (Appendix B, S4): MetadataRenamedTypes's green twin. The
+-- renamed list holds two different lists, so the element write is accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+type alias Rows =
+    List (List Int)
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : Rows → String
+show xss = String.join (List.map xss ints) ";"
+
+
+two : List Int, List Int → Rows
+two x y = [ x, y ]
+
+
+main : Program
+main =
+    rows = List.update (two [ 1 ] [ 2 ]) 0 λl → List.push l 9
+    Node.print (show rows)

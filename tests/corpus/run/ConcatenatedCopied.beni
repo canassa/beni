@@ -1,0 +1,26 @@
+-- ConcatenatedCopied (Appendix B, S2b/S4): ConcatenatedAliasWrite's green twin.
+-- A copied base is a list of its own, so the write is accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+appendAlias : List Int, List Int → List Int
+appendAlias xs ys = xs ++ ys
+
+
+main : Program
+main =
+    a = [ 1 ]
+    b = appendAlias (List.copy a) [ 2 ]
+    Node.print "${ints b} ${String.fromInt (List.length a)}"

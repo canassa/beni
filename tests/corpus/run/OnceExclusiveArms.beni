@@ -1,0 +1,28 @@
+-- OnceExclusiveArms (Appendix B, S4): OnceThroughAlias's green twin. Two
+-- mutually exclusive arms call the same closure, so it runs at most once and
+-- its edit of the capture is accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+run : Bool → List Int
+run c =
+    xs = [ 1 ]
+    f = λ⊤ → List.push xs 2
+    g = f
+    if c then f ⊤ else g ⊤
+
+
+main : Program
+main = Node.print "${ints (run True)} ${ints (run False)}"

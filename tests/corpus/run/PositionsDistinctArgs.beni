@@ -1,0 +1,27 @@
+-- PositionsDistinctArgs (Appendix B, S4): the green twin of PositionsRepeatArg.
+-- `f x y` stores two different lists, so the element write is accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+f : List Int, List Int → List { a : List Int }
+f p q = [ { a = p }, { a = q } ]
+
+
+main : Program
+main =
+    x = [ 1 ]
+    y = [ 2 ]
+    r = List.update (f x y) 0 λel → { el | a = List.push el.a 9 }
+    Node.print (String.join (List.map r λel → ints el.a) ";")

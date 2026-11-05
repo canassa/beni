@@ -1,0 +1,27 @@
+-- BuilderCallbackSharing (Appendix B, S4; R-5.2.9, R-4.6.3): `List.map` of a
+-- callback that answers one shared top-level list. The inner write of its
+-- result is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+shared : List Int
+shared = [ 5 ]
+
+
+main : Program
+main =
+    ys = List.map [ 1, 2 ] λ_ → shared
+    zs = List.update ys 0 λl → List.push l 9
+    Node.print "${show zs} ${ints shared}"

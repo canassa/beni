@@ -1,0 +1,27 @@
+-- OnceThroughAlias (Appendix B, S4; R-5.4.2): `g = f`, then `f ⊤` and `g ⊤`
+-- are two calls of one closure that edits its capture in place. It is
+-- refused at both calls. The calls are compatible, so the alias gets no
+-- second turn.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+main : Program
+main =
+    xs = [ 1 ]
+    f = λ⊤ → List.push xs 2
+    g = f
+    a = f ⊤
+    b = g ⊤
+    Node.print "${ints a} ${ints b}"
