@@ -375,6 +375,7 @@ module Html
   attribute "spellcheck" : String
   attribute "spreadMethod" on "linearGradient" "radialGradient" : String
   attribute "src" on "audio" "embed" "iframe" "img" "input" "source" "track" "video" url : String
+  attribute "srcdoc" on "iframe" : String
   attribute "start" on "ol" : Int
   attribute "startOffset" on "textPath" : String
   attribute "stdDeviation" on "feDropShadow" "feGaussianBlur" : String

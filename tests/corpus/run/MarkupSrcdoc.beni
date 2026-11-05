@@ -1,0 +1,28 @@
+-- The `srcdoc` attribute of `iframe` (#2016) under the `ssr` lowering
+-- (backend.md §15.6): a frame's document is an attribute value, so it is
+-- escaped as one — `&`, `<` and `"` — as a constant and from a hole. Its
+-- markup, a `<script>` and an `</iframe>` included, never becomes markup of
+-- the page, and a browser reads the frame's document back as the program
+-- wrote it.
+import Html exposing (Html)
+import Node
+import Ssr
+
+
+view : String → Html msg
+view page =
+    <div>
+        <iframe
+            sandbox=""
+            srcdoc="<p title=\"a &amp; b\">x</p><script>alert(1)</script></iframe><b>"
+        />
+        <iframe sandbox="allow-scripts" srcdoc={page} />
+    </div>
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Ssr.render
+            (view "<p title=\"say &quot;hi&quot; & bye\">y</p></iframe><script>alert(2)</script>")
+        ]

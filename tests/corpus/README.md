@@ -614,6 +614,17 @@ project) against it, one step per line, `#` for a comment:
     timers                      log `(timers: <n>)`, the virtual clock's
                                 timers that have neither fired nor been
                                 cleared
+    posted                      wait in real time, 5 s at most, until
+                                every `iframe` of the page with a
+                                `srcdoc` has loaded, and 100 ms more;
+                                then log `(#<id> posted
+                                <json>)` for each message a frame posted
+                                to the page since the last `posted` (a
+                                frame with no id is `iframe <n>`), by
+                                frame in document order and, within one
+                                frame, in the order it came; or `(no
+                                frame posted)`. happy-dom runs no script
+                                of a frame (*known differences*, below)
     listeners <window|document> [<name>]
                                 log `(listeners: <n>)`, the listeners the
                                 page added to that target (for that event)
@@ -991,6 +1002,13 @@ compares instead of `.expected`. The differences known today:
   loading anything, so a fixture shows the address before such a click;
 - `history.back()`: happy-dom fires the `popstate` at once, in the step's
   task, Chrome in a later one; the `back` and `forward` steps wait for it.
+- frames: happy-dom loads a frame's `srcdoc` and fires its `load`, but it
+  runs no script of the frame, whatever the frame's `sandbox` says. It
+  loads no `src` and fires no `load` for a frame without a `srcdoc`. So
+  under the gates no frame posts, and `posted` logs `(no frame posted)`;
+  Chrome runs the scripts that the frame's `sandbox` lets run
+  (`browser/dom/IframeSrcdoc`). happy-dom also lets the page read a
+  sandboxed frame's document, which Chrome gives an opaque origin.
 
 **Run hashes** work as in `run/`, the digest covering the DOM's name and
 checksum, the driver and the steps as well. `test-browser` never skips and

@@ -22,6 +22,11 @@ from the `html` platform (`api-html.md` lists all of it); the language knows non
 - `<>…</>` is a fragment.
 - `class={[ ( "row", True ), ( "danger", isLate ) ]}` is a class list; `style={[ ( "--gap", "4px" ) ]}`
   a style list. A plain `String` works on both.
+- `<iframe sandbox="" srcdoc={page} />` shows a document from HTML text. The value is escaped, so
+  it never becomes markup of your page. The frame runs the document's scripts only when `sandbox`
+  holds `allow-scripts`. Write a constant `sandbox` without `allow-same-origin`: with that token,
+  or with no `sandbox`, the frame's scripts can read and change your page. A quoted `"srcdoc"` is
+  the error `untyped_srcdoc_attribute`.
 
 ```beni platform=html
 import Html exposing (Html)

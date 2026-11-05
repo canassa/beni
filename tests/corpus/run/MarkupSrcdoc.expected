@@ -1,0 +1,1 @@
+<div><iframe sandbox="" srcdoc="&lt;p title=&quot;a &amp; b&quot;>x&lt;/p>&lt;script>alert(1)&lt;/script>&lt;/iframe>&lt;b>"></iframe><iframe sandbox="allow-scripts" srcdoc="&lt;p title=&quot;say &amp;quot;hi&amp;quot; &amp; bye&quot;>y&lt;/p>&lt;/iframe>&lt;script>alert(2)&lt;/script>"></iframe></div>
