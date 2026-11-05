@@ -1,0 +1,21 @@
+import Cmd
+import Tea
+import Typo
+
+
+type Msg
+    = Seen Int
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none )
+        , update =
+            λmessage _ →
+                case message of
+                    Seen number →
+                        ( number, Cmd.none )
+        , view = λmodel → <p>{model}</p>
+        , subscriptions = λ_ → Typo.on Seen
+        }

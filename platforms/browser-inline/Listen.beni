@@ -9,6 +9,7 @@ import Browser.Host.Document as HostDocument
 import Browser.Host.Event as HostEvent
 import Browser.Host.Window as HostWindow
 import Inline
+import Js.Protocol as Protocol
 
 
 --| Read each native event inside dispatch, and return its exact remover.
@@ -17,5 +18,7 @@ on target name read send =
     handler = λevent → Inline.observe send event read
     if target == "window" then
         HostWindow.listen name handler
-    else
+    else if target == "document" then
         HostDocument.listen name handler
+    else
+        Protocol.defect "unknown listener target: ${target}"

@@ -3012,3 +3012,19 @@ test "inline root marker recognises a host root marked before boot" {
         try testing.expectEqualStrings(expected, rendered.stdout);
     }
 }
+
+// A user layer may select dom and its inherited Rt without stealing the
+// embedded browser's compiler-owned bridge declarations.
+test "an embedded browser keeps bridge ownership below a user dom layer" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTree("tests/fixtures/user-dom-owner", "_expected.");
+    for ([_]bool{ false, true }) |release| {
+        const built = try w.run(if (release)
+            &.{ "build", "--release", "--platform=platform", "Main.beni" }
+        else
+            &.{ "build", "--platform=platform", "Main.beni" });
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+    }
+}

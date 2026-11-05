@@ -1,0 +1,6 @@
+pub type Program
+    = Program Int
+
+
+pub page : Program
+page = Program 7

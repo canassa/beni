@@ -1,0 +1,14 @@
+import Listen
+import Sub exposing (Sub)
+
+
+type Key
+    = Typo
+
+
+pub on : (Int → msg) → Sub msg
+on tag = Sub.on Typo start tag
+
+
+pub start : sync (Int → ⊤) → (⊤ → ⊤)
+start send = Listen.on "Window" "click" (λ_ → 1) send

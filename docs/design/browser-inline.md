@@ -143,6 +143,13 @@ interface:
 ## 3. Subscriptions
 
 *Amended 2026-11-05 (Part of #1807): guarded native observation.* Core/platform-private
+**Listener boundary review (2026-11-05, Part of #1807).** Inline.observe,
+like guarded and unchanged, is private to core and platform code; applications
+cannot call it. Listen.on accepts exactly the target strings "window" and
+"document". Any other spelling is the named defect "unknown listener target:
+TARGET", through Protocol.defect and the existing fatal guard, before any host
+listener is installed. It never silently selects another event target.
+
 `Js.Dispatch.observe : sync (a → ⊤), b, sync (b → a) → ⊤` projects a native
 notification and calls its already-guarded sender immediately, under the existing fatal
 dispatch guard. `Listen.on` and `Navigation.live` use it through `Inline.observe`;
