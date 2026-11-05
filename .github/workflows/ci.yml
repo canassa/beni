@@ -414,9 +414,12 @@ jobs:
 
   # A job-local path filter: unrelated PRs keep the existing checks and
   # avoid installing Chromium. Pushes/nightlies run the whole corpus and
-  # the site check. `run` says whether the Chrome corpus runs, `pages`
-  # whether the site check (`zig build test-pages`, issue #244) runs; the
-  # `browser` job runs when one of them is true.
+  # the site check. Two outputs, one per step of `browser`: `run` says
+  # whether the Chrome corpus runs, `pages` whether the site check
+  # (`zig build test-pages`, issue #244) runs. The job runs when one of
+  # them is true, and each step has its own `if:`, so a pull request that
+  # changes only the examples runs only the site check (the owner,
+  # 2026-11-05).
   browser-plan:
     name: choose Chrome corpus
     runs-on: ubuntu-latest
@@ -472,8 +475,11 @@ jobs:
           echo "run=$run" >> "$GITHUB_OUTPUT"
           echo "pages=$pages" >> "$GITHUB_OUTPUT"
 
+  # A fixed name: on a skipped job, GitHub shows a name's `${{ }}` as it
+  # is written. The step `build and test Chrome fixtures` shows the corpus
+  # in its environment, `CORPUS`.
   browser:
-    name: Chrome (${{ needs.browser-plan.outputs.corpus }})
+    name: Chrome
     needs: browser-plan
     if: ${{ needs.browser-plan.outputs.run == 'true' || needs.browser-plan.outputs.pages == 'true' }}
     runs-on: ubuntu-latest
