@@ -1,6 +1,6 @@
 -- run: the limits of core's `Markdown.parse` (docs/design/markdown.md §7).
--- The nesting caps: 64 block quotes or lists, and 64 levels of emphasis
--- and images, are trees; a 65th marker stays as text (§7.2). Then cmark's 25 pathological
+-- The nesting caps: 64 block quotes or lists, mixed or not, and 64 levels
+-- of emphasis and images, are trees; a 65th marker stays as text (§7.2). Then cmark's 25 pathological
 -- inputs (cmark `test/pathological_tests.py`) at cmark's sizes, and two of
 -- them larger: a quadratic `[a](b` (the destination scan) or `<!--` (the
 -- comment scan) cannot finish them inside the 120-second hang guard (§7.1).
@@ -114,6 +114,8 @@ cases =
     , ( "65 nested lists", String.concat (List.map (List.range 0 64) λx → rep "  " x ++ "* a\n") )
     , ( "64 emphasis levels", rep "*a " 64 ++ "b" ++ rep " a*" 64 )
     , ( "65 emphasis levels", rep "*a " 65 ++ "b" ++ rep " a*" 65 )
+    , ( "64 quotes and lists, mixed", rep "> - " 32 ++ "a" )
+    , ( "66 quotes and lists, mixed", rep "> - " 33 ++ "a" )
     , ( "64 images and emphasis", rep "![*" 32 ++ "x" ++ rep "*](/u)" 32 )
     , ( "65 images and emphasis", rep "![*" 32 ++ "_x_" ++ rep "*](/u)" 32 )
     , ( "nested strong emph", rep "*a **a " 32500 ++ "b" ++ rep " a** a*" 32500 )
@@ -142,6 +144,7 @@ cases =
       )
     , ( "emph in deep blockquote", rep ">" 100000 ++ rep "a*" 100000 )
     , ( "nested inlines", rep "*" 20000 ++ "a" ++ rep "*" 20000 )
+    , ( "a label scan after each ]", rep ("x][" ++ rep "\\a" 499) 1000 )
     , ( "many references"
       , String.concat (List.map (List.range 1 80000) λx → "[" ++ String.fromInt x ++ "]: u\n")
           ++ rep "[0] " 5000

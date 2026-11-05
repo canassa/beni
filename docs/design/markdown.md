@@ -223,7 +223,10 @@ commit `077acadf`): a `script` tag, `img onerror`, `svg onload`, `iframe srcdoc`
 
 ### 7.1 Time
 
-`parse` is linear in the length of its input, for every input. The known traps are the inputs of
+`parse` is linear in the length of its input, for every input. *Amended 2026-11-05 (the review of
+#1950):* it reads the text with the host's patterns at a position, through `slice`, so linear time
+assumes that `slice` of a long string is O(1), as V8 (Node, Chrome) makes it with sliced strings.
+`Js.regExp` refuses the `y` flag, which would read at a position with no `slice`. The known traps are the inputs of
 cmark's pathological tests (cmark `test/pathological_tests.py`, commit `5290e3edfa`, 25 cases):
 many emphasis openers with no closer, many `[` with no `]`, deeply nested brackets, long runs
 of backticks of different lengths, many link reference definitions, and deeply nested block

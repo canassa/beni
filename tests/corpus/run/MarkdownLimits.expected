@@ -4,6 +4,8 @@
 65 nested lists: blocks 128, inlines 66, depth 0, chars 67
 64 emphasis levels: blocks 1, inlines 191, depth 64, chars 257
 65 emphasis levels: blocks 1, inlines 193, depth 64, chars 263
+64 quotes and lists, mixed: blocks 65, inlines 1, depth 0, chars 1
+66 quotes and lists, mixed: blocks 65, inlines 1, depth 0, chars 5
 64 images and emphasis: blocks 1, inlines 65, depth 64, chars 1
 65 images and emphasis: blocks 1, inlines 67, depth 64, chars 8
 nested strong emph: blocks 1, inlines 193, depth 64, chars 454809
@@ -28,4 +30,5 @@ empty lines in deeply nested lists: blocks 65, inlines 1, depth 0, chars 59873
 empty lines in deeply nested lists in blockquote: blocks 65, inlines 1, depth 0, chars 59875
 emph in deep blockquote: blocks 65, inlines 150000, depth 1, chars 199936
 nested inlines: blocks 1, inlines 67, depth 64, chars 39745
+a label scan after each ]: blocks 1, inlines 1, depth 0, chars 1001000
 many references: blocks 1, inlines 1, depth 0, chars 19999
