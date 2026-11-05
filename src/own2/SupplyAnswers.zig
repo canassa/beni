@@ -11,6 +11,7 @@
 const std = @import("std");
 const Ids = @import("Ids.zig");
 const Contract = @import("Contract.zig");
+const AnsOcc = @import("AnsOcc.zig");
 const Forest = @import("Forest.zig");
 const Eval = @import("Eval.zig");
 
@@ -31,7 +32,7 @@ pub fn staysOpen(x: anytype) bool {
 pub fn closesAtSite(e: *Eval.Evaluation, su: Contract.Supply, x: anytype, n_args: usize) Error!void {
     if (!std.debug.runtime_safety or !x.open) return;
     const c = try e.contracts.cond(e.ev.arena, su.below);
-    for (c.sel) |o| if (Contract.isFed(o)) return;
+    for (c.sel) |o| if (Contract.isFed(o) and !AnsOcc.is(o)) return;
     for (x.arrivals) |a| std.debug.assert(c.no or a.kind == .fresh or (a.kind == .param and a.j < n_args));
 }
 

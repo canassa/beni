@@ -2395,7 +2395,8 @@ are not, their labels' supplies being `kept`, and `any` is not, as it reads with
    an answer is unknown code's, and a family of them is any object at all. A contract now keeps a second condition, `res_read`,
    printed `answers ⇐ …`, only where `res_cond` is `no`: the result's separation with its answers **read**. Reading is a second run of
    the distinct check (§2.9.3, `Answers.zig`), asked only where the first says `no` and met an answer, a `taken` element or a call with a `res_read`
-   on the way (`Relation.read_mode`). The first run, and every call inside it, is exactly the old one: a call that vouches
+   on the way (`Relation.read_mode`). The memos of a call's condition and of the relation are kept per mode, since an ask outside a check may fall back to
+   reading (`Distinct.modeOf`). The first run, and every call inside it, is exactly the old one: a call that vouches
    is read differently from one that does not, so a selection in place of `no` inside a check would refuse what the old check took apart.
    Only the outcome `no` of a whole check can change, and only to a condition that also holds. A recursive code with no label and no `taken`
    row publishes no `res_read`: it has no answer of its own, and `Schema.shapeOf` paid for its calls' reading over nine rounds, past its

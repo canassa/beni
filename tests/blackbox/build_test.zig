@@ -14535,6 +14535,54 @@ fn dumpGenerated(w: *World, src: []const u8) ![]const u8 {
     return dump.stdout;
 }
 
+test "the checker v2 keeps a reading of a label's answers out of a result's condition" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11.3, *a traversal's supply*: the first run of the
+    // distinct check is exactly the old one. A write of one part of a call's
+    // result beside a holder of another asks the call's condition, may fall
+    // back to reading, and must leave no answer behind for `res_cond`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\pairUp v = ( v, [ 1 ] )
+        \\
+        \\
+        \\forced f x =
+        \\    p = pairUp (f x)
+        \\    h = p.0
+        \\    t2 = List.push p.1 2
+        \\    if List.length h + List.length t2 > 0 then p else p
+        \\
+        \\
+        \\comp f g x =
+        \\    p = pairUp (f x)
+        \\    h = p.0
+        \\    t2 = List.push p.1 2
+        \\    n = List.length h + List.length t2
+        \\    if n > 0 then g p.0 else []
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "--ownership-everywhere", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    const at = std.mem.indexOf(u8, dump.stdout, "summary forced:") orelse return error.TestUnexpectedResult;
+    const line = dump.stdout[at..][0 .. std.mem.indexOfScalar(u8, dump.stdout[at..], '\n') orelse return error.TestUnexpectedResult];
+    try testing.expect(std.mem.indexOf(u8, line, "; nondup no; answers ⇐ sel π2{ε*} π1{ε!!1}") != null);
+    // A supply's `below` is never read.
+    const cat = std.mem.indexOf(u8, dump.stdout, "summary comp:") orelse return error.TestUnexpectedResult;
+    const cline = dump.stdout[cat..][0 .. std.mem.indexOfScalar(u8, dump.stdout[cat..], '\n') orelse return error.TestUnexpectedResult];
+    try testing.expect(std.mem.indexOf(u8, cline, "below ⇐ sel π3{ε*} π1{ε!!1}") == null);
+}
+
 test "the checker v2 walks CallbackWrapperDag's doubling wrappers in records that stay flat in the depth" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

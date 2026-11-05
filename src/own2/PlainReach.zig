@@ -28,9 +28,9 @@ const mixed_on: u8 = 4;
 /// A cycle through it reads `no`, as `instCond`'s does (a fold's step fed
 /// its own answer asks it inside its arguments; #1723).
 pub fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32, instSel: anytype, _: void) Error!Cond {
-    if (e.cond_state.items[2 * call] & mixed_on != 0) return Cond.unprovable;
-    e.cond_state.items[2 * call] |= mixed_on;
-    defer e.cond_state.items[2 * call] &= ~mixed_on;
+    if (e.cond_state.items[3 * call] & mixed_on != 0) return Cond.unprovable;
+    e.cond_state.items[3 * call] |= mixed_on;
+    defer e.cond_state.items[3 * call] &= ~mixed_on;
     const g = e.gpa();
     const c = e.contractOf(call) orelse return Cond.unprovable;
     const h = e.contracts.head(c);
