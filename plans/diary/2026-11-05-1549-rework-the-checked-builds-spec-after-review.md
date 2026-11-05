@@ -1,4 +1,4 @@
-## 2026-11-05 21:25 CET — Rework the checked-builds spec after its review (#1999)
+## 2026-11-05 15:49 CET — Rework the checked-builds spec after its review (#1999)
 
 **What I did**
 - Read the independent review of #1999 and checked its WRONG findings against its evidence on dagon before changing text: the schema host-value result, `degrees 1e308`, the virtual clock past `M`, the Durable Object `ReferenceError`, the file input `InvalidStateError`, and the workerd counter-evidence. All held.
