@@ -8956,7 +8956,7 @@ dated amendment, before the code (rule 1).
 | A response body as bytes | `Http` (§9.8.12) | the failures that `Http` maps now | #1887 |
 | Random bytes | `browser`, `node` | none: the wrapper splits a request into calls of 65 536 bytes, so `QuotaExceededError` cannot happen | #1888 |
 | A monotonic clock | `core/Clock` | none | #1889 |
-| `sandbox` on `iframe` (*amended 2026-11-04*: `srcdoc` is not needed, below) | `html` (§9.3) | none: `sandbox` takes the standard's tokens as a type | #1890 |
+| `sandbox` on `iframe` (*amended 2026-11-04*: `srcdoc` is not needed, below; *amended 2026-11-05*: `srcdoc` comes with a rule, below) | `html` (§9.3) | none: `sandbox` takes the standard's tokens as a type | #1890 |
 | Messages between a page and its frame | `browser` | a message that its `Schema` refuses; a frame that is not in the document | #1891 |
 | The clipboard | `browser` | no clipboard (an insecure page); `NotAllowedError` | #1892 |
 | A scroll into view with `block` and `inline` options | `Dom` (§9.8.6) | the failures of `Dom.scrollIntoView` now | #1896 |
@@ -8992,6 +8992,8 @@ has no form for a set of tokens (§9.3), and no guarantee needs one: a token tha
 not know lifts no restriction, so a misspelt one keeps the frame restricted. A frame takes its
 restrictions when it navigates, so the attribute's doc comment asks for text when `src` comes from
 a hole; #1911 checks the order of the two holes. Pinned by `tests/corpus/browser/tea/IframeSandbox`.
+
+*Amended 2026-11-05, the owner's decision* (Cesar, 2026-11-05, html-iframe-srcdoc-q1/q2; #2016): `html` declares `srcdoc` on `iframe` as a `String`, for a program that shows a document it builds. The checker refuses it unless the same element has a constant `sandbox` without `allow-same-origin` (`srcdoc_without_sandbox`, `language.md` §11.5). The frame's origin is then opaque, so its scripts, when `allow-scripts` lets them run, cannot reach the page, and the rule of 2026-09-29 stays true. `sandbox` stays a `String` (q2), for the reason above. The quoted `"srcdoc"` stays `untyped_srcdoc_attribute`. Both lowerings write the value as an attribute value, so the text never becomes markup of the page: `dom` bakes a constant into the template with `&`, `<` and `"` escaped and writes a hole with `setAttribute`, and `ssr` escapes `&`, `<`, `"` and CR. A constant `sandbox` is in the template, so the frame has it before its document loads. Pinned by `tests/corpus/browser/dom/IframeSrcdoc` (in Chrome, a frame without `allow-scripts` runs no script and one with it does), `tests/corpus/run/MarkupSrcdoc`, `tests/corpus/emit/dom/DomIframeSrcdoc`, and `tests/corpus/check/bad/markup/SrcdocWithoutSandbox` with `check/good/markup/SrcdocWithSandbox`.
 
 ### 9.14 The `node` platform runs a program (2026-11-05)
 

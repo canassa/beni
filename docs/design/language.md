@@ -1659,6 +1659,7 @@ prerender_impure  prerender_failed  prerender_needs_node
 prerender_needs_origin  invalid_route
 prerender_needs_data  prerender_data_failed  prerender_data_invalid  prerender_data_ignored
 comparison_changes_value
+srcdoc_without_sandbox
 ```
 
 **Two of these codes have two sources.** `refutable_let_pattern` and `refutable_parameter_pattern`
@@ -1710,6 +1711,7 @@ name the constructors that are missing. `nesting_too_deep` is shared the same wa
 | `prerender_needs_origin`, `invalid_route` | routes of prerendered pages | appended on 2026-10-29, never inserted, with [`prerender.md`](prerender.md) §7 and §9 (slice P3). `build`'s, both errors: a prerendered `Tea.application` in a project whose `beni.json` names no `"build"."origin"`, against that file at `1:1`; and a route that breaks §7.4's rules, at `main`, naming the route and the rule. A route list that may be impure is `prerender_impure`, and two routes that write one file are `output_path_collision` |
 | `prerender_needs_data`, `prerender_data_failed`, `prerender_data_invalid`, `prerender_data_ignored` | build-time data of prerendered pages | the line before the last, appended on 2026-10-29, never inserted, with [`prerender.md`](prerender.md) §8 and §9 (slice P4). `build`'s: a program that says `Browser.prerenderData` in a project whose `beni.json` names no `"build"."data"`, against that file at `1:1`; a data program whose body gave `Err`, threw, gave a value its schema cannot encode, or ended without its records, at its `main`; a page's text the site's schema cannot decode, at the `Browser.prerenderData` call; and, the one warning, a `"build"."data"` a `main` that does not say `Browser.prerenderData` leaves unused, against `beni.json` |
 | `comparison_changes_value` | the ownership checker, for comparisons | the last line, appended on 2026-10-31, never inserted, with [`ownership-requirements.md`](ownership-requirements.md) R-5.13.1 and [`ownership-v2.md`](ownership-v2.md) §2.13.13 item 13. The checker's, an `error`, where the ownership codes are, and today only under the hidden `--ownership=v2`: a type's `eq` or `compare`, `pub` or not, that changes a value it is handed, at the write, or calls a function that does, at the call. `==`, `<` and everything that sorts or looks up call a comparison and expect it to change nothing, so this is a rule of the language, never a limit of the checker |
+| `srcdoc_without_sandbox` | markup again | the last line, appended on 2026-11-05, never inserted, with the owner's decision (Cesar, 2026-11-05, html-iframe-srcdoc-q1/q2) that the `html` vocabulary declares `srcdoc` on `iframe` (§11.5). The checker's, an `error`, at the name of a typed `srcdoc`: the same element writes no `sandbox`, a `sandbox` whose value is not a constant, or a constant `sandbox` with the token `allow-same-origin`. The frame's document would then run with the page's origin, and its scripts could read and change the page. The message says which of the three it is and writes a constant `sandbox` as the fix |
 
 > **Checker v2 (2026-09-24).** `method_needs_annotation` is retired as an ordering refusal by the owner's
 > decision that an own untyped method is checked at its use. A use of a module's own untyped method checks that method's group nested at the moment
@@ -1968,6 +1970,26 @@ frame's document is loaded from a URL instead. And a quoted `href`, `src`, `acti
 `formaction` or `xlink:href`, in any case, is a URL like the attribute a vocabulary declares
 `url`: a lowering refuses a script URL in it exactly as it does there (`checker-v2.md` §25.7
 records which escapes are URLs, `backend.md` §15).
+
+**A typed `srcdoc` comes only with a safe `sandbox`** (*amended 2026-11-05*, the owner's
+decision: Cesar, 2026-11-05, html-iframe-srcdoc-q1/q2). The `html` vocabulary declares `srcdoc`
+on `iframe` as a `String` (`boundary.md` §9.13). A frame shows that text as a document of its
+own and runs its scripts. Without a `sandbox`, or with the token `allow-same-origin` in it, the
+document has the page's origin, and its scripts can read and change the page. So an element that
+writes the typed attribute `srcdoc` must also write `sandbox` with a **constant** value (above)
+whose tokens do not hold `allow-same-origin`. The tokens split on ASCII whitespace and compare
+ASCII case-insensitively, as a browser reads them; a quoted value's character references are
+decoded first, as everywhere. The `sandbox` is the typed attribute or the quoted escape
+`"sandbox"`, in any case. Anything else is `srcdoc_without_sandbox`, at the `srcdoc` name: no
+`sandbox`, a `sandbox` from a value the compiler does not know (a hole that is not a string
+literal, an interpolation), or a `sandbox` with `allow-same-origin`. The value must be a constant
+for two reasons: only a constant can be checked, and a frame takes its restrictions when it
+loads a document, so only a value in the template is sure to be there before the document is.
+No other token is checked: with `allow-scripts`, the document runs its scripts in an opaque
+origin, where they cannot reach the page. The rule names the attribute, not the element, as the
+escape's rule does. The quoted `srcdoc` stays `untyped_srcdoc_attribute`, and its message now
+names the typed attribute with a constant `sandbox` as the fix. The rule of 2026-09-29 stays
+true: no `view` writes a document that runs with the page's origin.
 
 **Each attribute may be written once** (`duplicate_attribute`). *Amended 2026-09-29:* on an
 element, names are compared as HTML compares them, ASCII case folded, so `title` and `"TITLE"`
@@ -2604,6 +2626,7 @@ text safe to format (research 36 §6). *Whitespace* below is §11.4's.
 | duplicate attributes | the second would silently win | — |
 | markup with no vocabulary | there is nothing to type it against | name a platform |
 | a quoted attribute name beginning with `on`, in any case (`"onclick"=…`) | no script injection from a `view`: the page runs such an attribute's text as script (the owner's refusal, 2026-09-29) | the typed event attribute, `onClick={Clicked}` |
+| a typed `srcdoc` without a constant `sandbox` that is free of `allow-same-origin` (*added 2026-11-05*) | no script injection from a `view`: the frame's document would run with the page's origin (the owner's decision, 2026-11-05, §11.5) | `sandbox=""`, or `sandbox="allow-scripts"` for a document whose scripts must run |
 | a `foreign` building or reading markup in a platform that does not select the build's lowering | the value would be another lowering's representation (§11.13) | a markup primitive |
 
 **Forced, not chosen**: children are evaluated eagerly (§11.8), because beni is strict. **Warned
@@ -2632,7 +2655,7 @@ Appended to §10's catalogue, never inserted (§10). Syntax: `unclosed_element`,
 `unknown_form_attribute`, `missing_form_attribute`, `invalid_keyed` and `vocabulary_outside_platform`.
 The checker's ([`checker-v2.md`](checker-v2.md) §25.9): `no_markup_vocabulary`, `unknown_element`,
 `unknown_attribute`, `child_not_renderable`, `void_element_with_children`, `key_not_primitive`,
-`markup_type_in_foreign`, `untyped_event_attribute`, `untyped_srcdoc_attribute`, and the warnings `unkeyed_for` and `raw_markup_attribute`. A lowering's
+`markup_type_in_foreign`, `untyped_event_attribute`, `untyped_srcdoc_attribute`, `srcdoc_without_sandbox` (*amended 2026-11-05*, §11.5), and the warnings `unkeyed_for` and `raw_markup_attribute`. A lowering's
 own, reported during `build` against a markup node (`boundary.md` §9.4.7): `markup_restructured`.
 The manifest's (`boundary.md` §9.2): `unknown_markup_lowering`. Reused, not duplicated:
 `unexpected_token`, `expected_token`, `unclosed_delimiter`, `missing_field`, `unknown_field`,
