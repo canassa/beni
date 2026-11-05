@@ -1,0 +1,1 @@
+A walk over a cycle of a fold (ownership-v2.md §2.9.2, #2070): built again under --ownership=v2 and the sanitiser. It terminates and refuses the call; #2081 is the precision owed.

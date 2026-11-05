@@ -80,6 +80,7 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     // `abuse_test.zig`, `abuse_wide_test.zig`, `perf_test.zig` or
     // `build_test.zig`, whichever states its claim.
     .{ .name = "scenario/CK-316", .step = .fast },
+    .{ .name = "scenario/CK-323", .step = .perf },
 };
 
 const Step = enum { fast, perf };
@@ -375,4 +376,51 @@ test "scenario/CK-316: v1 checks a write-free tuple DAG under --ownership-everyw
     const r = try s.w.runWith(&.{ "check", "--diagnostics=json", "--ownership-everywhere", "--no-cache", "tests/corpus/check/good/OwnershipAnnotationDag.beni" }, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = 170_000 });
     if (r.exit_code == 0) return s.finish(.{ .green = true, .signature = "", .detail = "" });
     try s.finish(try s.failed(r));
+}
+
+// ┌─────────────────────────────────────────────────────────────────────────┐
+// │ CK-323: v1 on a doubling record (#1238)                                 │
+// └─────────────────────────────────────────────────────────────────────────┘
+
+// `perf_test.zig`'s "checking a doubling record under annotations is not
+// exponential in its depth", under the default checker: `w{i} = { a =
+// w{i-1}, b = w{i-1} }`, each value annotated with its `type alias W{i}`.
+// Its type and value are DAGs of `depth` nodes. The type checker and v2 are
+// far from exponential on it: about ×3 when the depth doubles, because each
+// annotation expands its own chain of aliases (#2074). v1 summarises the
+// record's 2^depth paths and grows ×4 a level, until its summary limit stops
+// it at depth 14; `check` does not enforce v1 off an in-place chain, so the
+// limit prints nothing. Calibration (ReleaseFast, master 2350de11b1, CPU): a
+// whole run at depth 8 / 13 / 16 takes 36 ms / 2.9 s / 9.9 s; here each run
+// at 16 is killed at twice the bound (at least 1 s), so red costs about 3 s.
+// Under `--ownership=v2`, depth 8 / 16 check in 12 / 12 ms. Goes with v1.
+test "scenario/CK-323: the default checker's check of a doubling record is not exponential in its depth" {
+    var s = try Scenario.init("CK-323");
+    defer s.deinit();
+    try s.w.write("R8.beni", try doublingRecord(s.arena(), 8, .annotated));
+    try s.w.write("R16.beni", try doublingRecord(s.arena(), 16, .annotated));
+    const check = [_][]const u8{ "check", "--no-cache", "--jobs=1", "--diagnostics=json" };
+    try s.finish(try s.ratioOf(&(check ++ [_][]const u8{"R8.beni"}), &(check ++ [_][]const u8{"R16.beni"}), 8));
+}
+
+/// `perf_test.zig`'s `doublingRecord`, its `.annotated` form only:
+/// `type alias W0 = { items : List Int }`, `type alias W{i} = { a : W{i-1},
+/// b : W{i-1} }`, and top-level `w{i} : W{i}`, `w{i} = { a = w{i-1}, b =
+/// w{i-1} }` up to `depth`, read once at the end of the left spine. Keep it
+/// byte for byte the same as that form: the scenario moves into
+/// `perf_test.zig` when it is green, and calls that copy then.
+fn doublingRecord(arena: std.mem.Allocator, depth: usize, form: enum { annotated }) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    switch (form) {
+        .annotated => {
+            try out.appendSlice(arena, "type alias W0 =\n    items : List Int\n\n\n");
+            for (1..depth + 1) |i| try out.print(arena, "type alias W{d} =\n    a : W{d}\n    b : W{d}\n\n\n", .{ i, i - 1, i - 1 });
+            try out.appendSlice(arena, "w0 : W0\nw0 =\n    { items = [ 1 ] }\n\n\n");
+            for (1..depth + 1) |i| try out.print(arena, "w{d} : W{d}\nw{d} =\n    {{ a = w{d}, b = w{d} }}\n\n\n", .{ i, i, i, i - 1, i - 1 });
+            try out.print(arena, "pub doubled : ⊤ → Int\ndoubled ⊤ =\n    List.length w{d}.", .{depth});
+        },
+    }
+    for (0..depth) |_| try out.appendSlice(arena, "a.");
+    try out.appendSlice(arena, "items\n");
+    return out.items;
 }

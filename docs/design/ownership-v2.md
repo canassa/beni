@@ -1804,7 +1804,8 @@ A call `k` of a code with contract `C` and argument values `a1…an`:
    caller is walked (a contract from an earlier group, an import, words; never a member of the caller's own
    group), its `res` is the identity tree on parameter `j` (`ε… π_j·ε` and nothing else, `Trees.identity`),
    it writes nothing of `π_j`, and `a_j` is at the call's own place, the call's result **is** `a_j`: the walk
-   gives the call the argument's value, with no per-slot instantiation. The call is still a call: its uses,
+   gives the call the argument's value, with no per-slot instantiation. A called code's closing call (`pick c = if c then idf else idf`) has
+   parameters for arguments and no argument expression, so no place to compare: it takes the ordinary path (#2076). The call is still a call: its uses,
    writes, `req`, escapes and labels are read from `C` as above. It is recognised by the contract's structure,
    never a name or an annotation, at any size, and it is exact: the result's objects at every slot are the
    argument's there, so its separation is the argument's own. A generic identity (`idt : a → a`,

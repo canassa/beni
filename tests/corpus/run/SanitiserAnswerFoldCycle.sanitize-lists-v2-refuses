@@ -1,0 +1,2 @@
+# v2 terminates here and refuses the call; before #2070 the compiler crashed.
+18:7 list_may_be_shared List.foldl

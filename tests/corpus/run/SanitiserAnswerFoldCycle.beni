@@ -1,0 +1,24 @@
+-- A compiler crash (`ownership-v2.md` §2.9.2 step 7, #2070): what a function may
+-- hold of a call's result walked the call's expansion, which reaches its own
+-- leaf again in a fold whose accumulator holds an answer. The walk is a charged
+-- worklist now, and each leaf is read once.
+import List
+import Node exposing (Program)
+import String
+
+
+run :
+      (List Int → List Int)
+    , (List Int → List Int)
+    , List (List Int)
+    , List Int
+    → List (List Int) × List Int
+run f w l zs =
+    y = w zs
+    ( List.foldl l [] λel acc → List.push acc (f el), y )
+
+
+main : Program
+main =
+    ( m, y ) = run (λ_ → [ 1 ]) (λv → v) [ [ 7 ] ] [ 1 ]
+    Node.print (String.fromInt (List.length m + List.length y))

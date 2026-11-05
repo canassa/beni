@@ -754,7 +754,11 @@
         <div class="row article-content">
           <div class="col-md-12">
             <div class="article-content">
-              <p>"It takes a Jacobian"</p>
+              <p>
+                "It takes a Jacobian"
+                <!---->
+              </p>
+              <!---->
             </div>
             <!---->
             <ul class="tag-list">
@@ -876,7 +880,11 @@
         <div class="row article-content">
           <div class="col-md-12">
             <div class="article-content">
-              <p>"It takes a Jacobian"</p>
+              <p>
+                "It takes a Jacobian"
+                <!---->
+              </p>
+              <!---->
             </div>
             <!---->
             <ul class="tag-list">

@@ -646,7 +646,7 @@
     <!---->
   </div>
 </body>
--- respond 5 200 "{\"article\":{\"slug\":\"how-to-train-your-dragon\",\"title\":\"How to train your dragon\",\"description\":\"Ever wonder how?\",\"body\":\"It takes a Jacobian\\n\\nAnd a dragon\",\"tagList\":[\"dragons\"],\"createdAt\":\"2016-02-18T03:22:56.637Z\",\"updatedAt\":\"2016-02-18T03:48:35.824Z\",\"favorited\":false,\"favoritesCount\":0,\"author\":{\"username\":\"jake\",\"bio\":null,\"image\":null,\"following\":false}}}" Content-Type: "application/json"
+-- respond 5 200 "{\"article\":{\"slug\":\"how-to-train-your-dragon\",\"title\":\"How to train your dragon\",\"description\":\"Ever wonder how?\",\"body\":\"## Training\\n\\nIt takes a *Jacobian*, a **saddle** and `dragon.fly()`:\\n\\n- a [map](https://example.com/map)\\n- patience\\n\\nAnd a dragon\",\"tagList\":[\"dragons\"],\"createdAt\":\"2016-02-18T03:22:56.637Z\",\"updatedAt\":\"2016-02-18T03:48:35.824Z\",\"favorited\":false,\"favoritesCount\":0,\"author\":{\"username\":\"jake\",\"bio\":null,\"image\":null,\"following\":false}}}" Content-Type: "application/json"
 <body>
   <div class="app">
     <nav class="navbar navbar-light">
@@ -719,8 +719,48 @@
         <div class="row article-content">
           <div class="col-md-12">
             <div class="article-content">
-              <p>"It takes a Jacobian"</p>
-              <p>"And a dragon"</p>
+              <h2>
+                "Training"
+                <!---->
+              </h2>
+              <p>
+                "It takes a "
+                <em>
+                  "Jacobian"
+                  <!---->
+                </em>
+                ", a "
+                <strong>
+                  "saddle"
+                  <!---->
+                </strong>
+                " and "
+                <code>"dragon.fly()"</code>
+                ":"
+                <!---->
+              </p>
+              <ul>
+                <li>
+                  "a "
+                  <a href="https://example.com/map">
+                    "map"
+                    <!---->
+                  </a>
+                  <!---->
+                  <!---->
+                </li>
+                <li>
+                  "patience"
+                  <!---->
+                  <!---->
+                </li>
+                <!---->
+              </ul>
+              <p>
+                "And a dragon"
+                <!---->
+              </p>
+              <!---->
             </div>
             <!---->
             <ul class="tag-list">
@@ -847,8 +887,48 @@
         <div class="row article-content">
           <div class="col-md-12">
             <div class="article-content">
-              <p>"It takes a Jacobian"</p>
-              <p>"And a dragon"</p>
+              <h2>
+                "Training"
+                <!---->
+              </h2>
+              <p>
+                "It takes a "
+                <em>
+                  "Jacobian"
+                  <!---->
+                </em>
+                ", a "
+                <strong>
+                  "saddle"
+                  <!---->
+                </strong>
+                " and "
+                <code>"dragon.fly()"</code>
+                ":"
+                <!---->
+              </p>
+              <ul>
+                <li>
+                  "a "
+                  <a href="https://example.com/map">
+                    "map"
+                    <!---->
+                  </a>
+                  <!---->
+                  <!---->
+                </li>
+                <li>
+                  "patience"
+                  <!---->
+                  <!---->
+                </li>
+                <!---->
+              </ul>
+              <p>
+                "And a dragon"
+                <!---->
+              </p>
+              <!---->
             </div>
             <!---->
             <ul class="tag-list">
@@ -915,7 +995,7 @@
 -- click .banner>.container>.article-meta>span>button:nth-child(2)
 (fetch 7: POST /api/articles/how-to-train-your-dragon/favorite {"authorization":"Token t0k3n"})
 (the DOM did not change)
--- respond 7 200 "{\"article\":{\"slug\":\"how-to-train-your-dragon\",\"title\":\"How to train your dragon\",\"description\":\"Ever wonder how?\",\"body\":\"It takes a Jacobian\\n\\nAnd a dragon\",\"tagList\":[\"dragons\"],\"createdAt\":\"2016-02-18T03:22:56.637Z\",\"updatedAt\":\"2016-02-18T03:48:35.824Z\",\"favorited\":true,\"favoritesCount\":1,\"author\":{\"username\":\"jake\",\"bio\":null,\"image\":null,\"following\":false}}}" Content-Type: "application/json"
+-- respond 7 200 "{\"article\":{\"slug\":\"how-to-train-your-dragon\",\"title\":\"How to train your dragon\",\"description\":\"Ever wonder how?\",\"body\":\"## Training\\n\\nIt takes a *Jacobian*, a **saddle** and `dragon.fly()`:\\n\\n- a [map](https://example.com/map)\\n- patience\\n\\nAnd a dragon\",\"tagList\":[\"dragons\"],\"createdAt\":\"2016-02-18T03:22:56.637Z\",\"updatedAt\":\"2016-02-18T03:48:35.824Z\",\"favorited\":true,\"favoritesCount\":1,\"author\":{\"username\":\"jake\",\"bio\":null,\"image\":null,\"following\":false}}}" Content-Type: "application/json"
 <body>
   <div class="app">
     <nav class="navbar navbar-light">
@@ -988,8 +1068,48 @@
         <div class="row article-content">
           <div class="col-md-12">
             <div class="article-content">
-              <p>"It takes a Jacobian"</p>
-              <p>"And a dragon"</p>
+              <h2>
+                "Training"
+                <!---->
+              </h2>
+              <p>
+                "It takes a "
+                <em>
+                  "Jacobian"
+                  <!---->
+                </em>
+                ", a "
+                <strong>
+                  "saddle"
+                  <!---->
+                </strong>
+                " and "
+                <code>"dragon.fly()"</code>
+                ":"
+                <!---->
+              </p>
+              <ul>
+                <li>
+                  "a "
+                  <a href="https://example.com/map">
+                    "map"
+                    <!---->
+                  </a>
+                  <!---->
+                  <!---->
+                </li>
+                <li>
+                  "patience"
+                  <!---->
+                  <!---->
+                </li>
+                <!---->
+              </ul>
+              <p>
+                "And a dragon"
+                <!---->
+              </p>
+              <!---->
             </div>
             <!---->
             <ul class="tag-list">
@@ -1126,8 +1246,48 @@
         <div class="row article-content">
           <div class="col-md-12">
             <div class="article-content">
-              <p>"It takes a Jacobian"</p>
-              <p>"And a dragon"</p>
+              <h2>
+                "Training"
+                <!---->
+              </h2>
+              <p>
+                "It takes a "
+                <em>
+                  "Jacobian"
+                  <!---->
+                </em>
+                ", a "
+                <strong>
+                  "saddle"
+                  <!---->
+                </strong>
+                " and "
+                <code>"dragon.fly()"</code>
+                ":"
+                <!---->
+              </p>
+              <ul>
+                <li>
+                  "a "
+                  <a href="https://example.com/map">
+                    "map"
+                    <!---->
+                  </a>
+                  <!---->
+                  <!---->
+                </li>
+                <li>
+                  "patience"
+                  <!---->
+                  <!---->
+                </li>
+                <!---->
+              </ul>
+              <p>
+                "And a dragon"
+                <!---->
+              </p>
+              <!---->
             </div>
             <!---->
             <ul class="tag-list">
@@ -1265,8 +1425,48 @@
         <div class="row article-content">
           <div class="col-md-12">
             <div class="article-content">
-              <p>"It takes a Jacobian"</p>
-              <p>"And a dragon"</p>
+              <h2>
+                "Training"
+                <!---->
+              </h2>
+              <p>
+                "It takes a "
+                <em>
+                  "Jacobian"
+                  <!---->
+                </em>
+                ", a "
+                <strong>
+                  "saddle"
+                  <!---->
+                </strong>
+                " and "
+                <code>"dragon.fly()"</code>
+                ":"
+                <!---->
+              </p>
+              <ul>
+                <li>
+                  "a "
+                  <a href="https://example.com/map">
+                    "map"
+                    <!---->
+                  </a>
+                  <!---->
+                  <!---->
+                </li>
+                <li>
+                  "patience"
+                  <!---->
+                  <!---->
+                </li>
+                <!---->
+              </ul>
+              <p>
+                "And a dragon"
+                <!---->
+              </p>
+              <!---->
             </div>
             <!---->
             <ul class="tag-list">
@@ -1403,8 +1603,48 @@
         <div class="row article-content">
           <div class="col-md-12">
             <div class="article-content">
-              <p>"It takes a Jacobian"</p>
-              <p>"And a dragon"</p>
+              <h2>
+                "Training"
+                <!---->
+              </h2>
+              <p>
+                "It takes a "
+                <em>
+                  "Jacobian"
+                  <!---->
+                </em>
+                ", a "
+                <strong>
+                  "saddle"
+                  <!---->
+                </strong>
+                " and "
+                <code>"dragon.fly()"</code>
+                ":"
+                <!---->
+              </p>
+              <ul>
+                <li>
+                  "a "
+                  <a href="https://example.com/map">
+                    "map"
+                    <!---->
+                  </a>
+                  <!---->
+                  <!---->
+                </li>
+                <li>
+                  "patience"
+                  <!---->
+                  <!---->
+                </li>
+                <!---->
+              </ul>
+              <p>
+                "And a dragon"
+                <!---->
+              </p>
+              <!---->
             </div>
             <!---->
             <ul class="tag-list">
