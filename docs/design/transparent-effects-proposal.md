@@ -2045,8 +2045,9 @@ some time after it is signalled. So `run` is a `bracket` (§16.5's `Task.bracket
 - **use** parks on `callback` until the child's `close` event; its canceller sends `SIGTERM` and
   arms a host timer of the command's `killAfter` that sends `SIGKILL` (the owner's kill policy,
   `node-process-spawn-q3`; `boundary.md` §9.14 (i));
-- **release**, told `Cancelled`, parks again until the child's `exit` event and then closes the
-  pipes. A cleanup may wait (§9.8.14 (f) of `boundary.md`), so `Task.cancel`, a lost `race` and a
+- **release**, told `Cancelled`, sends the signals too when the canceller has not (an interrupt
+  latched before the wait unwinds `callback` without calling its function, so there is no
+  canceller), parks again until the child's `exit` event and then closes the pipes. A cleanup may wait (§9.8.14 (f) of `boundary.md`), so `Task.cancel`, a lost `race` and a
   `timeout` return only after the child is gone (§17.1 item 2's rule, held for a process as for a
   fiber). Past the teardown's deadline that wait is cut short, and the host timer, which is no
   fiber's, still sends `SIGKILL`: Node's handle on the child keeps the process alive until the

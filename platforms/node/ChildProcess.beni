@@ -422,11 +422,16 @@ exited p =
 -- fires when a teardown has cut the fiber's cleanup short; Node's handle
 -- on the child keeps the process alive until then. `kill` on a child
 -- whose start failed signals nothing and returns `false` (measured).
+-- There is nothing to stop when `spawn` threw: no child.
 stop : Value → ⊤
 stop p =
-    if not (Js.to (Js.get p "exited")) && not (Js.to (Js.get p "stopping")) then
+    child = Js.get p "child"
+    if
+        not (Js.isNull child)
+            && not (Js.to (Js.get p "exited"))
+            && not (Js.to (Js.get p "stopping"))
+    then
         Js.set p "stopping" (Js.from True)
-        child = Js.get p "child"
         _ = Js.call child "kill" [ Js.from "SIGTERM" ]
         Js.set p
             "timer"
@@ -459,10 +464,15 @@ destroy stream =
         ⊤
 
 
--- The release of `run`'s bracket. A cancelled fiber's cleanup waits until
--- the child has exited — `stop` has sent the signals — then closes the
--- pipes (§9.14 (d)). A cleanup may wait; past a teardown's deadline the
--- wait is cut short and the `SIGKILL` timer still fires.
+-- The release of `run`'s bracket. A cancelled fiber's cleanup stops the
+-- child, waits until it has exited, then closes the pipes (§9.14 (d)).
+-- The wait's canceller has usually sent the signals already, but not
+-- when the interrupt was latched before the wait — a fiber cancelled
+-- while masked, then restored: `Task.callback` then unwinds without
+-- calling `wait`, and only this `stop` reaches the child
+-- (`run/ChildProcessCancelledLatched`). A cleanup may wait; past a
+-- teardown's deadline the wait is cut short and the `SIGKILL` timer
+-- still fires.
 release : Value, Exit (Result RunError Output) → ⊤
 release p exit =
     case exit of
@@ -470,6 +480,7 @@ release p exit =
             ⊤
 
         Task.Cancelled →
+            stop p
             if not (Js.to (Js.get p "exited")) then
                 Task.callback λresume → awaitExit p resume
             if not (Js.isNull (Js.get p "child")) then
