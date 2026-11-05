@@ -941,7 +941,7 @@ const Walker = struct {
         try k.w.sites.append(k.gpa, .{ .pending = try k.pendingRun(), .foot = .{} });
         // A settled callee (a contract at the walk: never the group's own) whose result is argument j's whole
         // subtree answers that value itself, read and written as usual (§2.11.2, *the identity control*).
-        if (fixed orelse k.ctx.contractOf(k.ctx.ctx, code)) |c| if (k.contracts.identityOf(c)) |j| if (j < vals.len and try k.placeOf(arg_insts[j]) == at) return vals[j];
+        if (fixed orelse k.ctx.contractOf(k.ctx.ctx, code)) |c| if (k.contracts.identityOf(c)) |j| if (j < arg_insts.len and try k.placeOf(arg_insts[j]) == at) return vals[j];
         if (!Slots.holdsAny(fr.places, fr.roots.items[root].path)) return fr.scalar();
         return fr.refRoot(root);
     }
