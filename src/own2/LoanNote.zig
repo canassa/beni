@@ -20,9 +20,9 @@ pub fn depth(places: *const Place.Table, p: Ids.PathId) u32 {
 }
 
 /// The text after `loan: `: `op` read the value out of `cell` ("" when the
-/// cell has no name to print). `deep`: the write is `deep` list levels below it.
+/// cell has no name to print, or a call's). `deep`: the write is `deep` list levels below it.
 pub fn write(w: *std.Io.Writer, op: []const u8, cell: []const u8, deep: u32) std.Io.Writer.Error!void {
-    if (cell.len != 0) {
+    if (cell.len != 0 and cell[0] != '<') {
         try w.print("`{s}` lent it, and `{s}` still holds it. ", .{ op, cell });
     } else try w.print("`{s}` lent it, and the cell still holds it. ", .{op});
     if (deep == 0) return w.writeAll("Change a copy (`List.copy`)");

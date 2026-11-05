@@ -2218,7 +2218,7 @@ fn pSyncWalk(arena: std.mem.Allocator, dir: []const u8, list: []const u8, ok: *b
         if (entry.kind == .directory and !std.mem.eql(u8, entry.name, "zig")) try pSyncWalk(arena, path, list, ok);
         if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
         const text = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, arena, .limited(1 << 24));
-        for ([_][]const u8{ "\"addEventListener\"", "\"on\"", "\"once\"" }) |word| {
+        for ([_][]const u8{ "\"addEventListener\"", "\"addListener\"", "\"prependListener\"", "\"on\"", "\"once\"" }) |word| {
             var at: usize = 0;
             while (std.mem.indexOfPos(u8, text, at, word)) |hit| : (at = hit + word.len) {
                 const decl = declAround(text, hit) orelse continue;
