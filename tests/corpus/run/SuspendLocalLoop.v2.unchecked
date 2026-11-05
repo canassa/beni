@@ -1,0 +1,2 @@
+SuspendLocalLoop total: lines 6-16 (not built: let_def)
+SuspendLocalLoop main: lines 19-20 (not built: call)

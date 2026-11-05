@@ -2489,10 +2489,14 @@ That is the whole analysis, because beni is lexically scoped: every reference to
 function that binds it or in a closure made inside that function. **A closure is not an escape.** A
 JavaScript closure captures the `let` binding itself and not its value, so a write through it is
 seen by every reader, exactly as a write through a shared cell is â `template`'s cloner reads and
-assigns its enclosing `let node`. A suspension needs no rule either (Â§16.3): its continuation is a
-closure, and a tail-call loop re-entered after one starts a new iteration, which evaluates its own
-`Js.ref` again as a fresh `let` in a fresh block, as a new cell would be. A binding inside a loop body
-is a `let` in the loop's block, one per iteration, for the same reason.
+assigns its enclosing `let node`. A statically lifted suspension frame captures values rather than lexical bindings.
+A ref owned by or captured through a surviving suspendable body therefore keeps its existing
+physical cell before initializers and inlining are lowered; frame helpers and source closures
+share that cell by identity. Polymorphic bodies whose suspendable twin is unreachable retain
+ordinary scalarisation. The normative protocol is
+[proposal §16.1](transparent-effects-proposal.md#161-the-protocol-one-sentinel-one-pending-suspension).
+A binding inside a loop body is a `let` in the loop's block, one per iteration.
+
 
 **A read of a `let` cell is not an atom.** `Lower.isAtom` answers no for its name, so wherever an
 operand is pinned before a later one hoists a statement (`orderedExprs`, `bindSubject`, a markup
@@ -2666,64 +2670,12 @@ typed completion frames; the following lowering change removes hidden CPS
 completion arguments and constructs frames only on the parked path.
 
 
-**Protocol lowering amendment, 2026-11-04 (#1719, #1907).** Suspendable
-functions use their ordinary arguments and return either their typed result or
-the unique parked sentinel; there is no hidden completion argument or completion
-accessor. At each non-tail suspension point the call runs first. Only its
-sentinel branch creates and stores a once-only frame for the remaining code;
-the synchronous branch continues in place without allocating a continuation,
-sink, join closure or wrapper. A tail call returns its result directly. Branch
-joins retain this same rule, and a parked loop frame re-enters the loop with
-its captured state. Functions which cannot suspend retain their prior output.
-
-The initial kernel-written bridge invokes the original typed work; user work
-is never packed directly as a frame. The existing kernel stack stores only
-kernel/compiler-written frames directly in the D3 Slot. During
-native-stack unwinding frames arrive innermost first in one reusable typed
-pending buffer. A scalar count records its live prefix; the driver transfers
-that prefix backwards onto the fiber's existing stack and clears each buffer
-slot before invoking any code. No user code runs between appending a frame and
-consuming that pending segment. No pending record, per-park array or extra
-Control field is introduced. The pending count and optional deeper stack are
-the only guards needed to consume frames; no separate framed-facility flag
-controls them. On resume the driver invokes the innermost frame, writes its
-ordinary result into the value slot and iterates; another sentinel consumes a
-new pending segment. An empty stack drives normal completion or the existing
-cancellation/finalizer state machine. Forced cancellation discards frames and
-bypasses masks as before. A sentinel without a matching pending operation is a
-kernel defect. Intrusive waits and host callbacks no longer store completion
-frames of their own. Direct never/yield parking needs no host wake closure.
-
-`Js.invoke work value` performs exactly one ordinary typed invocation and
-returns its raw value or sentinel to the driver. Resume/result payloads are
-never called as data. Frame and canceller invocations remain at their established
-typed endpoints; all stored callables retain their writer's realm obligation.
-Host identity epochs, synchronous callback delivery, post-registration self-halt,
-delivered-host-wait cancellation handoff, finalizer ordering and public Task
-transcripts are unchanged. This amendment supersedes the temporary typed
-completion convention described above, with no public API or syntax change.
-
-
-**Shared cold remainders.** A remainder containing more suspension points is
-lifted to a private static helper, with explicit live captures, and referenced
-by parked-path frames. Terminal remainders remain directly in their frame.
-This shares code instead of recursively duplicating both copies of every
-suffix. A non-loop synchronous path can tail-call a terminal or shared remainder helper when
-its captures pass directly, including already formed accessors; otherwise it
-continues inline. Loop fast paths always stay in place. No synchronous path
-allocates a frame or capture bridge. A scalar mutable binding is passed to a cold helper through a compiler-
-written read/write accessor, made only after parking; subsequent frames forward
-that accessor, preserving the original shared binding without wrapper chains.
-Capture parameters follow structural first-use order, independent of builder
-name indexes, so embedded and freshly checked core emit identical helpers.
-Private helpers belong to the enclosing declaration's emission/cache unit and
-retain its writer obligations. No hidden completion argument returns.
-**2026-11-05 — parked-frame capture placement (Part of #1719).** A frame
-binds the private static remainder helper to its explicit captured values with
-native `Function.prototype.bind`, only after the sentinel comparison. The
-resulting compiler-written callable does not capture a hot loop's lexical
-bindings. Compiler-owned loop re-entry parameters are copied by value; mutable
-source bindings retain shared accessors where required.
+**Raw-return protocol, 2026-11-05 (Part of #1719).** The normative contract is
+[transparent-effects-proposal.md §16.1](transparent-effects-proposal.md#161-the-protocol-one-sentinel-one-pending-suspension):
+the *Protocol lowering amendment*, *Review correction* and *Shared cold
+remainders* paragraphs there own sentinel returns, frame capture and branch
+join sharing. They supersede the temporary completion convention above.
+`Lower.zig`/`Suspend.zig` implement that contract; it is not duplicated here.
 
 
 **Owner layout decision, 2026-11-04 (#1917).** Raw-stepped user finalizer
@@ -2733,12 +2685,12 @@ no record in their linked Control/Scope graph contains raw user work. Finalizer
 nodes and deferred lists carry private integer keys into the typed stores.
 A store reuses cleared entries from a free-index stack; a removed finalizer is
 marked inactive before its key is released, and the typed work is detached
-before invocation, so reentrant cleanup cannot reuse a live token. Stores grow
-only with peak simultaneous registrations, not total historical registrations.
+before invocation, so reentrant cleanup cannot reuse a live token. Removed/executed registrations free their keys for reuse; global stores
+retain callbacks if an owner is lost without detaching them (#1946).
 These are existing native arrays, with no callback erasure, ownership/effect
 exemption or user work in the D3 Slot. The field-effect precision redesign is
 tracked by #1917. Measure this split separately in retained bytes per fiber and
-S1–S5 brotli; #1907 retains the original 3967 B S3 target and page-size recovery for the follow-up shared-body lowering work. The owner decision of 2026-11-05 permits this protocol change to land first with only S3 capped at its exact measured size; the follow-up is specified and prototyped before production compiler changes.
+S1–S5 brotli; #1907 retains the original 3967 B S3 target and page-size recovery before workers → master. The owner decision of 2026-11-05 permits this protocol change to land first with only S3 capped at its exact measured size. The shared-body loop prototype was rejected after measurement; future size work remains tracked by #1907.
 
 ### `Js.regExp` is a literal
 

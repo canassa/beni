@@ -4379,6 +4379,58 @@ pub const Lowerer = struct {
     /// The function body `stmts` with its markers split (`Suspend`), or
     /// `stmts` itself when it has none — every function that does not
     /// suspend.
+    /// Compiler frames make source ref identities escape their lexical body.
+    /// Plan that escape before any initializer or inlined factory is lowered.
+    fn boxFrameRefs(l: *Lowerer) !void {
+        const Pending = struct { inst: Inst.Index, suspends: bool };
+        var todo: std.ArrayList(Pending) = .empty;
+        var operands: std.ArrayList(Inst.Index) = .empty;
+        for (l.bir.decls, 0..) |decl, di| {
+            if (decl.kind != .value) continue;
+            const body = decl.body.unwrap() orelse continue;
+            const twin = if (l.in.live) |live| live.twin(l.in.module, @intCast(di)) else false;
+            const own = l.in.dispatch.effectDecl(@intCast(di)).own;
+            // A poly answer is synchronous in the direct body. A declaration
+            // with no surviving twin must keep its ordinary ref scalarisation.
+            try todo.append(l.scratch, .{ .inst = body, .suspends = own == .yes or (own == .poly and twin) });
+            while (todo.pop()) |pending| {
+                const inst = pending.inst;
+                const tag = l.bir.instTag(inst);
+                const data = l.bir.instData(inst);
+                var suspends = pending.suspends;
+                if (tag == .lambda) {
+                    const effect = l.in.dispatch.effectAt(inst).own;
+                    suspends = suspends or effect == .yes or (effect == .poly and twin);
+                }
+                if (tag == .let_def) {
+                    const def = l.bir.extraData(@fromBackingInt(data.lhs), Bir.LetDef);
+                    if (def.params_start != def.params_end) {
+                        const effect = l.in.dispatch.effectAt(inst).own;
+                        suspends = suspends or effect == .yes or (effect == .poly and twin);
+                    } else if (suspends and l.isRefCall(@fromBackingInt(data.rhs))) {
+                        const local = decl.locals_start + def.local;
+                        if (local < l.unboxed_locals.len) l.unboxed_locals[local] = false;
+                    }
+                }
+                if (tag == .local and suspends) {
+                    const local = decl.locals_start + data.lhs;
+                    if (local < l.unboxed_locals.len) l.unboxed_locals[local] = false;
+                }
+                if (tag == .call) if (l.jsIntrinsicOf(@fromBackingInt(data.lhs))) |which| {
+                    if (which == .pure or which == .suspending) suspends = false;
+                };
+                operands.clearRetainingCapacity();
+                try l.bir.operands(l.scratch, inst, &operands);
+                for (operands.items) |operand| try todo.append(l.scratch, .{ .inst = operand, .suspends = suspends });
+            }
+        }
+    }
+
+    fn protocolLocal(ctx: *anyopaque, candidate: JsIr.NameIndex) bool {
+        const l: *Lowerer = @ptrCast(@alignCast(ctx));
+        return std.mem.startsWith(u8, l.text(l.b.names.items[candidate.int()].base), "$");
+    }
+
     fn splitSuspensions(l: *Lowerer, stmts: []const Node.Index, loop: ?Suspend.Loop, mode: Suspend.Mode) ![]const Node.Index {
         if (l.markers == 0) return stmts;
         const names = try l.fiberNames();
@@ -4386,10 +4438,8 @@ pub const Lowerer = struct {
         const owner = l.b.names.items[l.protocol_owner.int()];
         const base = try std.fmt.allocPrint(l.scratch, "{s}$resume{d}", .{ l.text(owner.base), l.protocol_serial });
         const helper_base = try l.name(.{ .module = owner.module, .base = try l.interner.getOrPut(l.gpa, base), .tag = 0 });
-        const compiler_locals = try l.scratch.alloc(bool, l.b.names.items.len);
-        for (l.b.names.items, compiler_locals) |candidate_name, *local| local.* = std.mem.startsWith(u8, l.text(candidate_name.base), "$");
         const bind = try l.fixedName("bind");
-        var pass: Suspend.Pass = .{ .b = l.b, .scratch = l.scratch, .names = names, .loop = loop, .keep = &l.effect_keep, .helpers = l.protocol_out.?, .helper_base = helper_base, .compiler_locals = compiler_locals, .bind = bind };
+        var pass: Suspend.Pass = .{ .b = l.b, .scratch = l.scratch, .names = names, .loop = loop, .keep = &l.effect_keep, .helpers = l.protocol_out.?, .helper_base = helper_base, .compiler_ctx = l, .compilerLocal = protocolLocal, .bind = bind };
         try pass.prepare(stmts);
         return pass.rewrite(stmts, mode) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
@@ -13619,9 +13669,9 @@ pub const Lowerer = struct {
     /// stored, returned or compared, is an escape. A reference inside a
     /// closure is not one: the closure captures the `let` itself. A
     /// top-level candidate must also be one no other module can name (not
-    /// `pub`, not the entry, no dispatch answer's). A suspension needs no
-    /// rule: its continuation is a closure too (§16.3), and a re-entered
-    /// loop is a new iteration, which evaluates its `Js.ref` again.
+    /// `pub`, not the entry, no dispatch answer's). These are base candidates;
+    /// suspension lowering retains the cell when a suspendable body reads or
+    /// writes its slot, including a nested capture (§16.1).
     fn findRefs(l: *Lowerer) !void {
         const tags = l.bir.insts.items(.tag);
         const data = l.bir.insts.items(.data);
@@ -13693,6 +13743,7 @@ pub const Lowerer = struct {
                 }
             }
         }
+        try l.boxFrameRefs();
     }
 
     /// Which declarations are written where their one call is, under

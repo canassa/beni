@@ -1,5 +1,12 @@
 # Typed Task storage
 
+**Current protocol (2026-11-05, Part of #1719).** The normative raw-return and
+frame contract is `transparent-effects-proposal.md` §16.1's *Protocol lowering
+amendment*, *Review correction* and *Shared cold remainders*. It supersedes the
+completion-argument and separate-result-slot descriptions below, which record
+migration history. The live kernel uses the D3 frame/result slot; user finalizer
+and deferred work remains in its separate typed stores and is never put in D3.
+
 Draft for #1295 and #1612, following the owner's 2026-11-01 directive:
 build first, optimize later. No generated union or measurement prerequisite.
 
@@ -694,10 +701,11 @@ those consumers test the root entry flag before consulting root-only fields.
 The pending scalar distinguishes ordinary parking from forced self-cancellation,
 which remains effective inside masks and already-running cleanup.
 
-Finalizer nodes retain a synchronous typed step which invokes the original
-work with its current completion argument. It returns the original unit or
-parking sentinel directly, without converting it to a Boolean and back. The
-empty-stack driver needs no per-finalizer continuation closure.
+Finalizer nodes retain keys into the typed work store. The empty-stack driver
+detaches the original work before invoking it with its typed input through
+`Js.invoke`, and inspects the raw result or parked sentinel as specified by
+`transparent-effects-proposal.md` §16.1. There is no completion argument or
+per-finalizer driver closure.
 
 A nested scope keeps only its removable finalizer token. Its existing owner
 link supplies the Control when normal close removes that token; no redundant
@@ -735,9 +743,9 @@ no record in their linked Control/Scope graph contains raw user work. Finalizer
 nodes and deferred lists carry private integer keys into the typed stores.
 A store reuses cleared entries from a free-index stack; a removed finalizer is
 marked inactive before its key is released, and the typed work is detached
-before invocation, so reentrant cleanup cannot reuse a live token. Stores grow
-only with peak simultaneous registrations, not total historical registrations.
+before invocation, so reentrant cleanup cannot reuse a live token. Removed/executed registrations free their keys for reuse; global stores
+retain callbacks if an owner is lost without detaching them (#1946).
 These are existing native arrays, with no callback erasure, ownership/effect
 exemption or user work in the D3 Slot. The field-effect precision redesign is
 tracked by #1917. Measure this split separately in retained bytes per fiber and
-S1–S5 brotli; #1907 retains the original 3967 B S3 target and page-size recovery for the follow-up shared-body lowering work. The owner decision of 2026-11-05 permits this protocol change to land first with only S3 capped at its exact measured size; the follow-up is specified and prototyped before production compiler changes.
+S1–S5 brotli; #1907 retains the original 3967 B S3 target and page-size recovery before workers → master. The owner decision of 2026-11-05 permits this protocol change to land first with only S3 capped at its exact measured size. The shared-body loop prototype was rejected after measurement; future size work remains tracked by #1907.

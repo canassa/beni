@@ -1,0 +1,52 @@
+import Io
+import Node
+import Task
+
+
+type Box
+    = Box Int
+
+
+pub compare : Box, Box → Order
+compare (Box a) (Box b) = Basics.compare b a
+
+
+biggest : List a, a → a
+    where a.compare : a, a → Order
+biggest xs best =
+    case xs of
+        [] →
+            best
+
+        [ x, …rest ] →
+            Task.yieldNow ⊤
+            next = if x > best then x else best
+            biggest rest next
+
+
+sumWith : List Int → Int
+sumWith xs =
+    go ys acc =
+        case ys of
+            [] →
+                acc
+
+            [ y, …more ] →
+                bump k =
+                    Task.yieldNow ⊤
+                    k + acc
+                go more (bump y)
+    helper n =
+        Task.yieldNow ⊤
+        n * 2
+    first = helper 1
+    total = go xs first
+    total + helper 3
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    Box b = biggest [ Box 3, Box 1, Box 7 ] (Box 5)
+    i = biggest [ 3, 1, 7 ] 5
+    s = sumWith [ 1, 2, 3 ]
+    Node.print "biggest ${b} ${i} sum ${s}"

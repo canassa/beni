@@ -1857,18 +1857,42 @@ transcripts are unchanged. This amendment supersedes the temporary typed
 completion convention described above, with no public API or syntax change.
 
 
+**Review correction, 2026-11-05 (Part of #1719).** This §16.1 amendment is
+normative for the raw-return/frame protocol; backend.md and
+workers-task-storage.md reference it. A local tail-recursive function is an
+explicit live capture of every parked frame that re-enters its loop, alongside
+its state parameters and building destination. A non-loop branch join's rest
+is emitted once in a static helper: leaves call it directly with live captures
+on the fast path, and a parked leaf binds it as a frame. A non-loop join must not copy
+its rest into every leaf. Source values pass by value and mutable source cells
+pass by identity; the synchronous path never allocates a capture bridge. Capture
+analysis uses reusable source-sized sets rather than a fresh module-name-sized
+bitset for each suspension point. Before any source initializer is lowered, ref escape analysis retains the
+existing boxed `Js.ref` representation for cells owned by or captured through
+a suspending body, including nested closures and code later inlined into a
+caller. Explicit raw `Js.suspending`/`Js.pure` callback boundaries remain
+synchronous. Scalarising a cell that crosses a frame would require a capture
+bridge on a synchronous join. Immutable compiler join slots pass by value.
+This introduces no new representation or continuation allocation; refs confined
+to synchronous bodies remain eligible for scalarisation.
+
 **Shared cold remainders.** A remainder containing more suspension points is
 lifted to a private static helper, with explicit live captures, and referenced
-by parked-path frames. Terminal remainders remain directly in their frame.
+by parked-path frames. Terminal remainders also use the static helper, bound
+only after parking.
 This shares code instead of recursively duplicating both copies of every
-suffix. A non-loop synchronous path can tail-call that same static helper when
-its captures pass directly, including already formed accessors; otherwise it
-continues inline. Loop fast paths always stay in place. No synchronous path
-allocates a frame or capture bridge. A scalar mutable binding is passed to a cold helper through a compiler-
-written read/write accessor, made only after parking; subsequent frames forward
-that accessor, preserving the original shared binding without wrapper chains.
-Private helpers belong to the enclosing declaration's emission/cache unit and
-retain its writer obligations. No hidden completion argument returns.
+suffix. A non-loop synchronous path tail-calls that same static helper with
+its live values and source cell identities. Loop fast paths stay in place
+(the older loop-join expansion is tracked by #1942). No synchronous path
+allocates a frame or capture bridge; keeping source cells intact preserves
+shared mutation across user closures and resumed compiler helpers.
+Capture parameters follow structural first-use order, independent of builder
+name indexes, so embedded and freshly checked core emit identical helpers.
+Frames bind these static helpers with native `Function.prototype.bind` only
+after the sentinel comparison, so no hot lexical closure context is required.
+Compiler-owned loop state is copied by value; shared source cells keep
+their existing identities. Private helpers belong to the enclosing declaration's emission/cache
+unit and retain its writer obligations. No hidden completion argument returns.
 
 **Owner layout decision, 2026-11-04 (#1917).** Raw-stepped user finalizer
 and deferred-cleanup functions stay fully typed in separate kernel work-store
@@ -1877,12 +1901,12 @@ no record in their linked Control/Scope graph contains raw user work. Finalizer
 nodes and deferred lists carry private integer keys into the typed stores.
 A store reuses cleared entries from a free-index stack; a removed finalizer is
 marked inactive before its key is released, and the typed work is detached
-before invocation, so reentrant cleanup cannot reuse a live token. Stores grow
-only with peak simultaneous registrations, not total historical registrations.
+before invocation, so reentrant cleanup cannot reuse a live token. Removed/executed registrations free their keys for reuse; global stores
+retain callbacks if an owner is lost without detaching them (#1946).
 These are existing native arrays, with no callback erasure, ownership/effect
 exemption or user work in the D3 Slot. The field-effect precision redesign is
 tracked by #1917. Measure this split separately in retained bytes per fiber and
-S1–S5 brotli; #1907 retains the original 3967 B S3 target and page-size recovery for the follow-up shared-body lowering work. The owner decision of 2026-11-05 permits this protocol change to land first with only S3 capped at its exact measured size; the follow-up is specified and prototyped before production compiler changes.
+S1–S5 brotli; #1907 retains the original 3967 B S3 target and page-size recovery before workers → master. The owner decision of 2026-11-05 permits this protocol change to land first with only S3 capped at its exact measured size. The shared-body loop prototype was rejected after measurement; future size work remains tracked by #1907.
 
 ### 16.2 What the checker hands the backend
 

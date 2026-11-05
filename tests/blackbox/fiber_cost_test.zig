@@ -139,3 +139,34 @@ test "nested Opt representations survive warm dispatch round trips" {
         try w.expectProgram("out/_main.mjs", .{ .stdout = expected });
     }
 }
+
+test "twenty sequential suspending joins keep emitted size and compile work bounded" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var text: std.Io.Writer.Allocating = .init(w.arena.allocator());
+    const writer = &text.writer;
+    try writer.writeAll("import Io\nimport Node\nimport Task\nimport Js\n\nstep n =\n    Task.yieldNow ⊤\n    n\n\nvalues flag =\n    a0 = 0\n");
+    for (1..21) |i| try writer.print("    a{d} = if flag then step (a{d} + 1) else a{d} + 1\n", .{ i, i - 1, i - 1 });
+    try writer.writeAll("    a20\n\nstatements flag =\n");
+    for (0..20) |_| try writer.writeAll("    if flag then Task.yieldNow ⊤\n");
+    try writer.writeAll("    20\n\ncells flag =\n    cell = Js.ref 0\n    reader ⊤ = Js.read cell\n    run ⊤ =\n");
+    for (0..20) |_| try writer.writeAll("        if flag then Task.yieldNow ⊤\n        Js.write cell (Js.read cell + 1)\n");
+    try writer.writeAll("        reader ⊤\n    run\n\npolymorphic callback =\n    cell = Js.ref 0\n    run ⊤ =\n        callback ⊤\n        Js.write cell 1\n        if Js.read cell == 1 then callback ⊤\n        Js.read cell\n    run\n\nmain : Node.Program\nmain = Io.run λ⊤ →\n    a = values True\n    b = values False\n    c = statements True\n    d = statements False\n    cellParked = (cells True) ⊤\n    cellInline = (cells False) ⊤\n    polyParked = (polymorphic Task.yieldNow) ⊤\n    polyInline = (polymorphic (λ⊤ → ⊤)) ⊤\n    Node.print \"${a} ${b} ${c} ${d} ${cellParked} ${cellInline} ${polyParked} ${polyInline}\"\n");
+    try w.write("Main.beni", text.written());
+    for ([_]bool{ false, true }) |release| {
+        var args: std.ArrayList([]const u8) = .empty;
+        try args.appendSlice(w.arena.allocator(), &.{ "build", "--core", "--platform=node", "--no-source-maps", "--out=out", "Main.beni" });
+        if (release) try args.append(w.arena.allocator(), "--release");
+        const built = try w.runWith(args.items, .{ .timeout_ms = 30_000 });
+        if (built.exit_code != 0) std.debug.print("{s}\n", .{built.stderr});
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+        // A generous linear envelope for sixty written joins, independent of
+        // the Task runtime in development output. Before sharing, even twelve
+        // joins exceeded a megabyte; twenty exhausted the compile-time guard.
+        const output = try w.read(if (release) "out/_main.mjs" else "out/Main.mjs");
+        try testing.expect(output.len <= 30_000 + 60 * 2_000);
+        if (built.cpu_ms) |ms| try testing.expect(ms < 10_000);
+        try w.expectProgram("out/_main.mjs", .{ .stdout = "20 20 20 20 20 20 1 1\n" });
+    }
+}

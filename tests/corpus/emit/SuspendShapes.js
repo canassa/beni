@@ -11,22 +11,22 @@ const SuspendShapes$fetch = (n$1) => {
   }
   return SuspendShapes$fetch$resume1$1(n$1, $t$1);
 };
-function SuspendShapes$pick$resume1$1($t$3) {
-  const $t$2 = $t$3;
+function SuspendShapes$pick$resume1$1($t$2) {
   const m$2 = $t$2;
   return m$2 * 2;
+}
+function SuspendShapes$pick$resume1$2($t$3) {
+  return SuspendShapes$pick$resume1$1($t$3);
 }
 const SuspendShapes$pick = (n$1) => {
   if (n$1 > 0) {
     const $t$3 = SuspendShapes$fetch(n$1);
     if (Task$isWaiting($t$3)) {
-      return Task$chain($t$3, SuspendShapes$pick$resume1$1.bind(null));
+      return Task$chain($t$3, SuspendShapes$pick$resume1$2.bind(null));
     }
-    return SuspendShapes$pick$resume1$1($t$3);
+    return SuspendShapes$pick$resume1$2($t$3);
   } else {
-    const $t$2 = 0;
-    const m$2 = $t$2;
-    return m$2 * 2;
+    return SuspendShapes$pick$resume1$1(0);
   }
 };
 function SuspendShapes$total$resume1$1($in$0, rest$4, $in$1, acc$2, $t$1) {

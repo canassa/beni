@@ -17,9 +17,9 @@
 //!   - In a parked loop frame a `continue` re-enters the loop with captured
 //!     state. Building loops append their completed re-entry's list.
 //!
-//! Joins write their rest into the leaves, so no join closure is allocated
-//! on the fast path. The driver reverses each new frame segment once and
-//! resumes it iteratively. Functions that cannot suspend are unchanged.
+//! Non-loop joins share their rest in one static helper; each leaf calls it
+//! directly, so no join closure is allocated on the fast path. The driver
+//! reverses each new frame segment once and resumes it iteratively. Functions that cannot suspend are unchanged.
 //!
 //! **Nothing here guesses.** A marker in a statement list whose rest can
 //! fall through — the one shape lowering must never produce — is
@@ -68,6 +68,28 @@ pub const Loop = struct {
 
 pub const Mode = enum { closure, loop };
 
+/// Names of one source body are sparse in the module's name table. Reuse
+/// these sets across suspension points; no point clears a module-sized bitmap.
+const NameSet = struct {
+    b: *const JsIr.Builder = undefined,
+    bit_length: usize = 0,
+    members: std.AutoArrayHashMapUnmanaged(JsIr.Name, void) = .empty,
+
+    fn reset(s: *NameSet, b: *const JsIr.Builder) void {
+        s.b = b;
+        s.bit_length = b.names.items.len;
+        s.members.clearRetainingCapacity();
+    }
+
+    fn isSet(s: *const NameSet, index: usize) bool {
+        return index < s.bit_length and s.members.contains(s.b.names.items[index]);
+    }
+
+    fn set(s: *NameSet, gpa: Allocator, index: usize) Allocator.Error!void {
+        try s.members.put(gpa, s.b.names.items[index], {});
+    }
+};
+
 pub const Pass = struct {
     b: *JsIr.Builder,
     scratch: Allocator,
@@ -78,21 +100,24 @@ pub const Pass = struct {
     keep: ?*std.ArrayList(Node.Index) = null,
     helpers: *std.ArrayList(Node.Index),
     helper_base: NameIndex,
-    compiler_locals: []const bool,
+    compiler_ctx: *anyopaque,
+    compilerLocal: *const fn (ctx: *anyopaque, name: NameIndex) bool,
     bind: NameIndex,
     helper_next: u32 = 1,
-    local_next: u32 = 1,
-    mutable: std.DynamicBitSetUnmanaged = .{},
-    accessors: []const Capture = &.{},
+    mutable: NameSet = .{},
+    named: NameSet = .{},
+    bound: NameSet = .{},
+    written: NameSet = .{},
+    lifted: NameSet = .{},
     tails: std.ArrayList(Tail) = .empty,
 
-    const Capture = struct { name: NameIndex, param: NameIndex, mutable: bool };
+    const Capture = struct { name: NameIndex };
     const Tail = struct { list: []const Node.Index, input: NameIndex, name: NameIndex, captures: []const Capture };
 
     pub fn prepare(p: *Pass, list: []const Node.Index) Allocator.Error!void {
-        var bound = try std.DynamicBitSetUnmanaged.initEmpty(p.scratch, p.b.names.items.len);
-        p.mutable = try std.DynamicBitSetUnmanaged.initEmpty(p.scratch, p.b.names.items.len);
-        try p.bindingsIn(list, &bound, &p.mutable);
+        p.bound.reset(p.b);
+        p.mutable.reset(p.b);
+        try p.bindingsIn(list, &p.bound, &p.mutable);
     }
 
     // ---- Reading the builder's nodes ------------------------------------
@@ -313,7 +338,11 @@ pub const Pass = struct {
                 for (parked_suffix.captures, frame_args[1..]) |capture, *arg| arg.* = try p.captureExpr(capture, at);
                 const bound = try p.add(.member, at, (try p.ident(parked_suffix.name, at)).int(), @backingInt(p.bind));
                 const k = try p.call(bound, frame_args, at);
-                try out.append(p.scratch, try p.add(.const_decl, at, @backingInt(temp), call_node.int()));
+                const result_binding = try p.add(.const_decl, at, @backingInt(temp), call_node.int());
+                // This call may suspend or be impure. Optimisation must retain
+                // its evaluation even if every use of its unit result vanishes.
+                if (p.keep) |keep| try keep.append(p.scratch, result_binding);
+                try out.append(p.scratch, result_binding);
                 const result = try p.ident(temp, at);
                 const parked = try p.call(try p.ident(p.names.is_waiting, at), &.{result}, at);
                 const chained = try p.call(try p.ident(p.names.and_then, at), &.{ result, k }, at);
@@ -327,17 +356,12 @@ pub const Pass = struct {
                 });
                 try out.append(p.scratch, try p.add(.if_stmt, at, parked.int(), @backingInt(record)));
                 if (mode == .closure) if (shared) |suffix| {
-                    const direct = for (suffix.captures) |cap| {
-                        if (cap.mutable and p.accessor(cap.name) == null) break false;
-                    } else true;
-                    if (direct) {
-                        const fast_args = try p.scratch.alloc(Node.Index, suffix.captures.len + 1);
-                        for (suffix.captures, fast_args[0..suffix.captures.len]) |cap, *arg| arg.* = try p.captureExpr(cap, at);
-                        fast_args[suffix.captures.len] = try p.ident(temp, at);
-                        const resumed = try p.call(try p.ident(suffix.name, at), fast_args, at);
-                        try out.append(p.scratch, try p.ret(resumed, at));
-                        return out.items;
-                    }
+                    const fast_args = try p.scratch.alloc(Node.Index, suffix.captures.len + 1);
+                    for (suffix.captures, fast_args[0..suffix.captures.len]) |cap, *arg| arg.* = try p.captureExpr(cap, at);
+                    fast_args[suffix.captures.len] = try p.ident(temp, at);
+                    const resumed = try p.call(try p.ident(suffix.name, at), fast_args, at);
+                    try out.append(p.scratch, try p.ret(resumed, at));
+                    return out.items;
                 };
                 try out.appendSlice(p.scratch, try p.rewrite(remaining, mode));
                 return out.items;
@@ -354,7 +378,9 @@ pub const Pass = struct {
                 const tree = list[i + 1 .. close];
                 const rest = list[close + 1 ..];
                 if (!try p.terminates(rest) or !try p.terminates(tree)) return error.FallsThrough;
-                const inlined = try p.substituteJoin(tree, j, param, rest);
+                const identity = rest.len == 1 and p.isReturnOf(rest[0], param);
+                const shared = if (mode == .closure and !identity) try p.tail(rest, param, p.posOf(n)) else null;
+                const inlined = try p.substituteJoin(tree, j, param, rest, shared);
                 try out.appendSlice(p.scratch, try p.rewrite(inlined, mode));
                 return out.items;
             }
@@ -432,13 +458,30 @@ pub const Pass = struct {
 
     /// Loop mode's join: every `return $j(value)` of `tree` becomes `const
     /// $t = value;` and a copy of `rest`.
-    fn substituteJoin(p: *Pass, tree: []const Node.Index, j: NameIndex, param: NameIndex, rest: []const Node.Index) Error![]Node.Index {
+    fn substituteJoin(p: *Pass, tree: []const Node.Index, j: NameIndex, param: NameIndex, rest: []const Node.Index, shared: ?Tail) Error![]Node.Index {
         var out: std.ArrayList(Node.Index) = .empty;
         for (tree) |n| {
             if (p.joinValue(n, j)) |value| {
                 const at = p.posOf(n);
-                try out.append(p.scratch, try p.add(.const_decl, at, @backingInt(param), value.int()));
-                try out.appendSlice(p.scratch, try p.cloneList(rest));
+                if (rest.len == 1 and p.isReturnOf(rest[0], param)) {
+                    try out.append(p.scratch, try p.ret(value, at));
+                } else if (shared) |suffix| {
+                    const args = try p.scratch.alloc(Node.Index, suffix.captures.len + 1);
+                    for (suffix.captures, args[0..suffix.captures.len]) |cap, *arg| arg.* = try p.captureExpr(cap, at);
+                    args[suffix.captures.len] = value;
+                    try out.append(p.scratch, try p.ret(try p.call(try p.ident(suffix.name, at), args, at), at));
+                } else {
+                    // Loop fast paths retain their in-place continues (#1942).
+                    const binding = try p.add(.const_decl, at, @backingInt(param), value.int());
+                    // The joined value can be an impure call even when the
+                    // rest ignores its result (Worker.Object's cycle reply).
+                    switch (p.tag(value)) {
+                        .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .arrow => {},
+                        else => if (p.keep) |keep| try keep.append(p.scratch, binding),
+                    }
+                    try out.append(p.scratch, binding);
+                    try out.appendSlice(p.scratch, try p.cloneList(rest));
+                }
                 continue;
             }
             const d = p.data(n);
@@ -446,8 +489,8 @@ pub const Pass = struct {
             switch (p.tag(n)) {
                 .if_stmt => {
                     const i = p.ifOf(d.rhs);
-                    const then = try p.substituteJoin(try p.nodesOf(i.thenBody()), j, param, rest);
-                    const otherwise = try p.substituteJoin(try p.nodesOf(i.elseBody()), j, param, rest);
+                    const then = try p.substituteJoin(try p.nodesOf(i.thenBody()), j, param, rest, shared);
+                    const otherwise = try p.substituteJoin(try p.nodesOf(i.elseBody()), j, param, rest, shared);
                     const then_range = try p.b.addRange(then);
                     const else_range = try p.b.addRange(otherwise);
                     const record = try p.b.addRecord(JsIr.If{
@@ -459,7 +502,7 @@ pub const Pass = struct {
                     try out.append(p.scratch, try p.add(.if_stmt, at, d.lhs, @backingInt(record)));
                 },
                 .switch_stmt, .switch_case, .block_stmt => {
-                    const body = try p.substituteJoin(try p.nodesOf(p.rangeAt(d.rhs)), j, param, rest);
+                    const body = try p.substituteJoin(try p.nodesOf(p.rangeAt(d.rhs)), j, param, rest, shared);
                     try out.append(p.scratch, try p.block(p.tag(n), at, d.lhs, body));
                 },
                 else => try out.append(p.scratch, n),
@@ -491,10 +534,12 @@ pub const Pass = struct {
         var any = false;
         for (rest) |n| any = any or p.tag(n) == .func_decl;
         if (!any) return;
-        var named = try std.DynamicBitSetUnmanaged.initEmpty(p.scratch, p.b.names.items.len);
-        for (before) |n| try p.namesIn(n, &named, null);
-        try p.namesIn(call_node, &named, null);
-        var lifted = try std.DynamicBitSetUnmanaged.initEmpty(p.scratch, p.b.names.items.len);
+        p.named.reset(p.b);
+        const named = &p.named;
+        for (before) |n| try p.namesIn(n, named, null);
+        try p.namesIn(call_node, named, null);
+        p.lifted.reset(p.b);
+        const lifted = &p.lifted;
         var grew = true;
         while (grew) {
             grew = false;
@@ -502,8 +547,8 @@ pub const Pass = struct {
                 if (p.tag(n) != .func_decl) continue;
                 const name = p.data(n).lhs;
                 if (lifted.isSet(name) or !named.isSet(name)) continue;
-                lifted.set(name);
-                try p.namesIn(n, &named, null);
+                try lifted.set(p.scratch, name);
+                try p.namesIn(n, named, null);
                 grew = true;
             }
         }
@@ -524,7 +569,7 @@ pub const Pass = struct {
     }
 
     /// Every name an `ident` under `n` reads, functions included.
-    fn namesIn(p: *Pass, n: Node.Index, into: *std.DynamicBitSetUnmanaged, order: ?*std.ArrayList(NameIndex)) Allocator.Error!void {
+    fn namesIn(p: *Pass, n: Node.Index, into: *NameSet, order: ?*std.ArrayList(NameIndex)) Allocator.Error!void {
         var stack: std.ArrayList(Node.Index) = .empty;
         try stack.append(p.scratch, n);
         while (stack.pop()) |x| {
@@ -532,7 +577,7 @@ pub const Pass = struct {
             const d = p.data(x);
             switch (p.tag(x)) {
                 .ident => if (d.lhs < into.bit_length and !into.isSet(d.lhs)) {
-                    into.set(d.lhs);
+                    try into.set(p.scratch, d.lhs);
                     if (order) |names| try names.append(p.scratch, @fromBackingInt(@intCast(d.lhs)));
                 },
                 .const_decl, .assign_stmt, .index_get, .assign, .computed_property => {
@@ -597,49 +642,34 @@ pub const Pass = struct {
 
     // ---- Shared cold remainders ---------------------------------------------
 
-    fn local(p: *Pass) Error!NameIndex {
-        var name = p.b.names.items[p.helper_base.int()];
-        name.module = .none;
-        name.tag = p.local_next;
-        p.local_next += 1;
-        return p.b.intern(name);
-    }
-
-    fn accessor(p: *const Pass, name: NameIndex) ?NameIndex {
-        for (p.accessors) |item| if (item.name == name and item.mutable) return item.param;
-        return null;
-    }
-
     fn captureExpr(p: *Pass, item: Capture, at: u32) Error!Node.Index {
-        if (!item.mutable) return p.ident(item.name, at);
-        if (p.accessor(item.name)) |ref| return p.ident(ref, at);
-        const value = try p.local();
-        const write = try p.local();
-        const target = try p.ident(item.name, at);
-        const assigned = try p.add(.assign, at, target.int(), (try p.ident(value, at)).int());
-        const branches = try p.b.addRecord(JsIr.Cond{ .consequent = assigned, .alternate = try p.ident(item.name, at) });
-        const answer = try p.add(.cond, at, (try p.ident(write, at)).int(), @backingInt(branches));
-        return p.arrow(&.{ value, write }, &.{try p.ret(answer, at)}, at);
+        return p.ident(item.name, at);
     }
 
     fn tail(p: *Pass, list: []const Node.Index, input: NameIndex, at: u32) Error!Tail {
         for (p.tails.items) |item| if (item.input == input and std.mem.eql(Node.Index, item.list, list)) return item;
-        var named = try std.DynamicBitSetUnmanaged.initEmpty(p.scratch, p.b.names.items.len);
+        p.named.reset(p.b);
+        const named = &p.named;
         var ordered: std.ArrayList(NameIndex) = .empty;
-        for (list) |n| try p.namesIn(n, &named, &ordered);
+        for (list) |n| try p.namesIn(n, named, &ordered);
         if (p.loop) |lp| {
+            if (lp.callee.int() < named.bit_length and !named.isSet(lp.callee.int())) {
+                try named.set(p.scratch, lp.callee.int());
+                try ordered.append(p.scratch, lp.callee);
+            }
             for (lp.params) |param| if (param.int() < named.bit_length and !named.isSet(param.int())) {
-                named.set(param.int());
+                try named.set(p.scratch, param.int());
                 try ordered.append(p.scratch, param);
             };
             if (lp.root != .none and lp.root.int() < named.bit_length and !named.isSet(lp.root.int())) {
-                named.set(lp.root.int());
+                try named.set(p.scratch, lp.root.int());
                 try ordered.append(p.scratch, lp.root);
             }
         }
-        var bound = try std.DynamicBitSetUnmanaged.initEmpty(p.scratch, p.b.names.items.len);
-        var written = try std.DynamicBitSetUnmanaged.initEmpty(p.scratch, p.b.names.items.len);
-        try p.bindingsIn(list, &bound, &written);
+        p.bound.reset(p.b);
+        p.written.reset(p.b);
+        const bound = &p.bound;
+        try p.bindingsIn(list, bound, &p.written);
         var captures: std.ArrayList(Capture) = .empty;
         for (ordered.items) |variable| {
             const index = variable.int();
@@ -647,15 +677,16 @@ pub const Pass = struct {
             const name = p.b.names.items[index];
             const loop_parameter = if (p.loop) |lp| blk: {
                 for (lp.params) |param| if (param == variable) break :blk true;
-                break :blk lp.root == variable;
+                break :blk lp.root == variable or lp.callee == variable;
             } else false;
             const written_variable = index < p.mutable.bit_length and p.mutable.isSet(index);
             if (name.module != .none or name.tag == JsIr.Name.field or
                 (name.tag == JsIr.Name.no_tag and !loop_parameter and !written_variable and
-                    !(index < p.compiler_locals.len and p.compiler_locals[index]))) continue;
+                    !p.compilerLocal(p.compiler_ctx, variable))) continue;
             if (variable == p.names.marker or variable == p.names.join or variable == p.names.joined) continue;
-            const mutable = written_variable and !loop_parameter;
-            try captures.append(p.scratch, .{ .name = variable, .param = if (mutable) try p.local() else variable, .mutable = mutable });
+            // Beni values are immutable. Mutable source refs crossing this
+            // frame retain their cells; loop state is copied by value.
+            try captures.append(p.scratch, .{ .name = variable });
         }
         var name = p.b.names.items[p.helper_base.int()];
         name.tag = p.helper_next;
@@ -663,13 +694,10 @@ pub const Pass = struct {
         const helper = try p.b.intern(name);
         const item: Tail = .{ .list = list, .input = input, .name = helper, .captures = captures.items };
         try p.tails.append(p.scratch, item);
-        const outer = p.accessors;
-        p.accessors = item.captures;
-        defer p.accessors = outer;
         const rewritten = try p.rewrite(list, .closure);
         const body = try p.cloneList(rewritten);
         const params = try p.scratch.alloc(NameIndex, item.captures.len + 1);
-        for (item.captures, params[0..item.captures.len]) |cap, *param| param.* = cap.param;
+        for (item.captures, params[0..item.captures.len]) |cap, *param| param.* = cap.name;
         params[item.captures.len] = input;
         const param_range = try p.b.addNames(params);
         const body_range = try p.b.addRange(body);
@@ -684,35 +712,35 @@ pub const Pass = struct {
     }
 
     /// Bound names and writes, including captured writes inside nested functions.
-    fn bindingsIn(p: *Pass, list: []const Node.Index, bound: *std.DynamicBitSetUnmanaged, written: *std.DynamicBitSetUnmanaged) Allocator.Error!void {
+    fn bindingsIn(p: *Pass, list: []const Node.Index, bound: *NameSet, written: *NameSet) Allocator.Error!void {
         var stack: std.ArrayList(Node.Index) = .empty;
         try stack.appendSlice(p.scratch, list);
         while (stack.pop()) |n| {
             const d = p.data(n);
             if (p.markerArgs(n, p.names.marker)) |args| {
                 const temp = p.argName(args, 1);
-                if (temp.int() < bound.bit_length) bound.set(temp.int());
+                if (temp.int() < bound.bit_length) try bound.set(p.scratch, temp.int());
             }
             if (p.markerArgs(n, p.names.join)) |args| {
                 const join_name = p.argName(args, 0);
-                if (join_name.int() < bound.bit_length) bound.set(join_name.int());
+                if (join_name.int() < bound.bit_length) try bound.set(p.scratch, join_name.int());
             }
             if (p.markerArgs(n, p.names.joined)) |args| {
                 const temp = p.argName(args, 1);
-                if (temp.int() < bound.bit_length) bound.set(temp.int());
+                if (temp.int() < bound.bit_length) try bound.set(p.scratch, temp.int());
             }
             switch (p.tag(n)) {
-                .const_decl, .let_decl, .func_decl, .for_of => if (d.lhs < bound.bit_length) bound.set(d.lhs),
+                .const_decl, .let_decl, .func_decl, .for_of => if (d.lhs < bound.bit_length) try bound.set(p.scratch, d.lhs),
                 .assign, .assign_stmt => {
                     const target: Node.Index = @fromBackingInt(@intCast(d.lhs));
-                    if (p.tag(target) == .ident and p.data(target).lhs < written.bit_length) written.set(p.data(target).lhs);
+                    if (p.tag(target) == .ident and p.data(target).lhs < written.bit_length) try written.set(p.scratch, p.data(target).lhs);
                 },
                 else => {},
             }
             if (p.tag(n) == .func_decl or p.tag(n) == .arrow) {
                 const f = p.func(if (p.tag(n) == .func_decl) d.rhs else d.lhs);
                 for (try p.namesOf(f.params())) |name| if (name.int() < bound.bit_length) {
-                    bound.set(name.int());
+                    try bound.set(p.scratch, name.int());
                 };
             }
             try p.children(n, &stack);
@@ -815,16 +843,6 @@ pub const Pass = struct {
         const d = p.data(n);
         const t = p.tag(n);
         const at = p.posOf(n);
-        if (t == .ident) if (p.accessor(@fromBackingInt(@intCast(d.lhs)))) |ref| {
-            return p.call(try p.ident(ref, at), &.{ try p.add(.undefined_lit, at, 0, 0), try p.add(.false_lit, at, 0, 0) }, at);
-        };
-        if (t == .assign or t == .assign_stmt) {
-            const target: Node.Index = @fromBackingInt(@intCast(d.lhs));
-            if (p.tag(target) == .ident) if (p.accessor(@fromBackingInt(@intCast(p.data(target).lhs)))) |ref| {
-                const call_node = try p.call(try p.ident(ref, at), &.{ try p.clone(@fromBackingInt(@intCast(d.rhs))), try p.add(.true_lit, at, 0, 0) }, at);
-                return if (t == .assign_stmt) p.add(.expr_stmt, at, call_node.int(), 0) else call_node;
-            };
-        }
         switch (t) {
             .ident, .field_name, .number, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit, .break_stmt, .continue_stmt => return p.add(t, at, d.lhs, d.rhs),
             .string => {
@@ -838,7 +856,11 @@ pub const Pass = struct {
                 return copy;
             },
             .property => return p.add(t, at, d.lhs, (try p.clone(@fromBackingInt(@intCast(d.rhs)))).int()),
-            .let_decl => return p.add(t, at, d.lhs, try p.opt(d.rhs)),
+            .let_decl => {
+                const copy = try p.add(t, at, d.lhs, try p.opt(d.rhs));
+                if (p.keep) |keep| if (std.mem.indexOfScalar(Node.Index, keep.items, n) != null) try keep.append(p.scratch, copy);
+                return copy;
+            },
             .return_stmt => return p.add(t, at, try p.opt(d.lhs), d.rhs),
             .assign_stmt, .index_get, .assign, .computed_property => {
                 const lhs = try p.clone(@fromBackingInt(@intCast(d.lhs)));
