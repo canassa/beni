@@ -5,8 +5,9 @@
 -- spelling `safeUrl`'s pattern names, is written as "" (§6.2). A tab, a line
 -- end, a space or a NUL inside a destination is percent-encoded, so the URL
 -- has no scheme and a browser reads it as a relative path. A character
--- reference decodes to text, never to a tag (§6.3). A text nested far past
--- the cap renders 64 levels, with no runtime error (§7.2).
+-- reference decodes to text, never to a tag (§6.3). A quote in a code
+-- block's language is escaped inside `class`, so it adds no attribute. A text
+-- nested far past the cap renders 64 levels, with no runtime error (§7.2).
 import Html.Markdown
 import Node exposing (Program)
 import Ssr
@@ -53,6 +54,7 @@ main =
         , show
             "[l](&#32;javascript:alert(1)) ![m](java&#13;script:alert(1)) [n](\u{0}javascript:alert(1))"
         , show "123456789. a list that starts at 123456789"
+        , show "```a\"onclick=alert(1)\ncode\n```"
         , depth "100000 quotes" "${String.repeat quote 100000}x" "<blockquote>"
         , depth
             "50000 stars on each side"
