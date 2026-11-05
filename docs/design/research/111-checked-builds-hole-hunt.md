@@ -363,3 +363,27 @@ amendment where it said WRONG:
 
 What the review confirmed is not restated here: its table "Replayed PR and report 111 claims" has a
 row per hole.
+
+## 9. What the third review changed
+
+*Added 2026-11-05.* A third independent review, of `93605f92c`, formed its findings before it read the
+earlier two. Evidence: dagon, `~/worktree-evidence/beni-review3-1999/`. It ran today's behaviour and
+a logging prototype; no check fired anywhere. It found the proofs of §7 sound and the owner's
+decisions faithfully recorded. Its findings, all applied:
+
+- **A value generic over `number` has nowhere to take evidence.** Run: `big = 9007199254740991 + 2`
+  served `Int` and `Float` at once, in a `let` too, and `ops = { double = λx → x + x }` did the same.
+  The owner chose to hold such values (`language.md` §13.11, #2077).
+- **A crash under a program-made `Task.scheduler` leaves a page running.** Run, happy-dom. The owner
+  decided a program's scheduler contains nothing (`language.md` §13.6, #1994).
+- **The exact tests crash correct-looking code in the tree.** Prototype: 5 916 `Js.at` reads past the
+  end and 3 365 `undefined` `Bool` reads, in `Rt.beni` and `Inline.beni`. The first draft of
+  `language.md` §13.6 said such reads did not exist. The rules stand (rule 10), and a sweep is a step
+  of the order of work (#2078).
+- **The compiler has no type at the site** (#2079), **the evidence ABI depended on a body** (#2080),
+  and **`Js.cast` must be `Js.to` to every pass** (#2079).
+- **`language.md` §6's unspecified order is observable by a crash**, which is why the order is now
+  part of the checked contract.
+- Smaller: a `Float` written to a host, a `NaN` `For` key, `^^` by squaring, "unread" against
+  reachability, the named repairs, `Duration.times` as a named row, and five wording fixes in
+  `backend.md` §16.
