@@ -96,9 +96,13 @@ pub const Evaluation = struct {
     pub fn chain(e: *Evaluation) LabelChain.Chain {
         return .{ .f = &e.w.f, .virt = &e.w.virt, .contracts = e.contracts, .arena = e.ev.arena };
     }
-    /// Whether call `q` is its last call, or the code is no called code.
+    /// Whether call `q` is the walk's last call or a virtual call under it;
+    /// every call is, in any other code (`first` 0).
     pub fn inLast(e: *Evaluation, q: u32) bool {
-        return Called.inLast(e.chain(), e.w.last.calls, e.w.walk_calls, q);
+        if (e.w.last.calls == 0) return true;
+        var x = q;
+        while (x >= e.w.walk_calls) x = (LabelChain.virtualOuter(e.chain(), x) orelse return false)[0];
+        return x >= e.w.last.calls;
     }
     fn account(e: *Evaluation) *Ids.Account {
         return e.w.f.account;

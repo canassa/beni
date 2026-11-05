@@ -37,7 +37,7 @@ const Step = Place.Step;
 const Cond = Contract.Cond;
 const none: u32 = Ids.none_int;
 
-pub const fixed_bit = WalkContext.fixed_bit;
+pub const fixed_bit = Contract.fixed_bit;
 
 pub const Callee = WalkContext.Callee;
 pub const Context = WalkContext.Context;

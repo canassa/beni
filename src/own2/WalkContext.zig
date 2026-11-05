@@ -16,24 +16,7 @@ const Bir = @import("../bir/Bir.zig");
 const Error = Ids.ChargeError;
 const PlaceId = Ids.PlaceId;
 
-/// The high bit of a closure's `head`: a fixed contract, not a code.
-pub const fixed_bit: u32 = 1 << 31;
-
-/// What a call runs (`Context.callee`).
-pub const Callee = union(enum) {
-    /// The result and every argument cross: nothing to track.
-    harmless,
-    /// A constructor applied: `(ordinal, arity)`.
-    ctor: [2]u32,
-    /// A code of the module (`Groups`' numbering): its current contract.
-    code: u32,
-    /// A fixed contract: words, an import, a derived method, pessimistic.
-    contract: Contract.Id,
-    /// A function value: the head is evaluated.
-    value,
-    /// A record field of function type, `r.f x`: the receiver's field's value.
-    field,
-};
+pub const Callee = Contract.Callee;
 
 /// The module's services a walk reads (`Groups` implements them).
 pub const Context = struct {
