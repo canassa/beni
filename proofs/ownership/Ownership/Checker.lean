@@ -114,10 +114,52 @@ def demandProblem (cfg : Config) (escapes cs later others : List Origin) : Optio
   else if !cfg.has .disjoint && cellOverlap cs others then some "Disjoint: another operand path holds the written cell"
   else none
 
+/-- The `W{F}` rows after a whole write of the cells `ws`: none of them keeps
+    a field set (#1872). -/
+def wholeFieldWrites (rows : List (Origin × List Nat)) (ws : List Origin) : List (Origin × List Nat) :=
+  rows.filter fun (c, _) => !ws.any (·.base == c)
+
+/-- The `W{F}` rows after an update of the fields `fields` of the cells `ws`
+    (§31.7, #1872): a cell written whole before stays whole, a cell with a
+    field set joins `fields` into it, and a cell not written before gets
+    `fields`. -/
+def addFieldWrites (s : Summary) (ws : List Origin) (fields : List Nat) : List (Origin × List Nat) :=
+  (ws.map Origin.base).foldl (fun rows c =>
+    match rows.lookup c with
+    | some f => rows.map fun (d, g) => if d == c then (d, union f fields) else (d, g)
+    | none => if s.wroteBase c then rows else rows ++ [(c, fields)]) s.fieldWrites
+
 def demand (cfg : Config) (cs later others : List Origin) : CheckM Unit := do
   if !cfg.shapeOnly then
     if let some problem := demandProblem cfg (← getFacts).escapes cs later others then throw problem
-  modifyFacts fun s => { s with writes := union s.writes (cs.filter external) }
+  modifyFacts fun s => { s with writes := union s.writes (cs.filter external),
+                                fieldWrites := wholeFieldWrites s.fieldWrites (cs.filter external) }
+
+/-- A demand that writes only the fields `fields` of the record objects `cs`
+    (§31.3, §31.7, #1872): the four tests of `demand`, then the write with its
+    field set, so a summary publishes `W{F}`. The caller passes the live cells
+    that Dead reads per field (`recordLiveCells`). -/
+def recordDemand (cfg : Config) (cs : List Origin) (fields : List Nat) (later others : List Origin) :
+    CheckM Unit := do
+  if !cfg.shapeOnly then
+    if let some problem := demandProblem cfg (← getFacts).escapes cs later others then throw problem
+  modifyFacts fun s => { s with writes := union s.writes (cs.filter external),
+                                fieldWrites := addFieldWrites s (cs.filter external) fields }
+
+/-- The written fields of a callee's row `w` when every write of it is an
+    update of those fields (`W{F}`, §31.7, #1872). A consume row is whole. -/
+def fieldRow (s : Summary) (w : Origin) : Option (List Nat) :=
+  if s.consumes.contains w then none else s.fieldWrites.lookup w.base
+
+/-- One write or consume row of a callee at a call (§16.4 item 3): a `W{F}`
+    row is a record demand whose Dead test reads `dead fs cs`, the caller's
+    live cells per field; any other row is a whole demand against `later`. -/
+def rowDemand (cfg : Config) (s : Summary) (w : Origin) (cs later others : List Origin)
+    (dead : List Nat → List Origin → List Origin) : CheckM Unit :=
+  match fieldRow s w with
+  -- The `call-fields` control reads every field as kept at the call.
+  | some fs => recordDemand cfg cs fs (dead (if cfg.has .callFields then [] else fs) cs) others
+  | none => demand cfg cs later others
 
 def individuallyOwned (ctx : Context) (cs : List Origin) : Bool :=
   !cellOverlap (cs.map Origin.base) (ctx.escaped.map Origin.base) &&
@@ -269,6 +311,7 @@ def normalized (s : Summary) : Summary :=
   let locals := s.result.cells.filter isSite
   { s with escapes := s.escapes.filter external
            writes := externalBase s.writes
+           fieldWrites := s.fieldWrites.filter fun (c, _) => external c
            consumes := externalBase s.consumes
            reads := externalBase s.reads
            requiresExclusive := externalBase s.requiresExclusive
@@ -361,6 +404,9 @@ def usesWith (cfg : Config) (e : Expr) (resultRead : Bool := true) : Live :=
     union (atomsUses [src, init]) (removeVars [i, x, acc] (usesWith cfg body))
   | .focus src i x body | .dictFocus src i x body =>
     union (atomsUses [src, i]) (removeVars [x] (usesWith cfg body))
+  -- The `update-base` control: an update's base use reads nothing.
+  | .assign _ _ _ values => if cfg.has .updateBase then atomsUses values
+      else usesArms (!cfg.has .branchLive) (!cfg.has .branchClosure) (!cfg.has .prependBase) e
   | _ => usesArms (!cfg.has .branchLive) (!cfg.has .branchClosure) (!cfg.has .prependBase) e
 
 def closureCaps (cfg : Config) (env : Env Abstract) (body : Expr) (bound : List Var) : List (Var × Abstract) :=
@@ -836,7 +882,8 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
         demand ctx.config once later (actuals.flatMap Abstract.cells)
         let mut result := Abstract.bottom
         for (id, caps) in alternatives do
-          result := result.join (← callKnown f ctx id actuals caps site later)
+          result := result.join (← callKnown f ctx id actuals caps site later
+            (fun fs cs => union (recordLiveCells fs cs env after) ctx.pinned))
         pure result
       | _ => throw "abstract call"
     | .recur args =>
@@ -852,6 +899,7 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
       applyCall ctx ctx.recursiveSummary site actuals
         (if ctx.config.has .recursiveCapture then
           ctx.recursiveCaptures.map (·.mapOrigins fun _ _ => []) else ctx.recursiveCaptures) later
+        (fun fs cs => union (recordLiveCells fs cs env after) ctx.pinned)
     | .focus src index x body =>
       let input ← abstractAtom env src
       let _ ← abstractAtom env index
@@ -885,13 +933,15 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
         -- goes through an object into a field the update keeps is no use of
         -- it. A later read of a written field is a use: this core has no
         -- hoist (§31.14), so its in-place run would read the new value.
-        let dead := union (recordLiveCells written cs env after) ctx.pinned
+        -- The `record-dead` control reads every field as kept.
+        let dead := union (recordLiveCells (if ctx.config.has .recordDead then [] else written) cs env after)
+          ctx.pinned
         let kept := (fs.zipIdx.filter fun (_, i) => !written.contains i).map Prod.fst
         let keptCells := kept.foldl (fun xs a => union xs a.cells) []
         let newCells := vs.foldl (fun xs a => union xs a.cells) []
         -- Disjoint (item 3): no new value, and no field the object keeps,
-        -- holds the object.
-        demand ctx.config cs dead (union keptCells newCells)
+        -- holds the object. The write names its fields (`W{F}`, §31.7).
+        recordDemand ctx.config cs written dead (union keptCells newCells)
         -- The result is the base's object (§31.3), its kept fields and the
         -- new values. Its certificate is the old one over the kept fields,
         -- with the new values stored as a set stores one (§18.2).
@@ -1124,11 +1174,16 @@ decreasing_by all_goals simp_wf
 
 /-- A callee's (or the recursive candidate's) rows at a call: its writes and
     consumes become demands on the actual cells, its `xreq` an exclusivity
-    demand; the result is instantiated with the actual function values. -/
+    demand; the result is instantiated with the actual function values. A
+    `W{F}` row is a record demand whose Dead test reads the caller's later
+    uses per field (`dead`, §31.7): a use that goes through the object into a
+    field the callee keeps is no use of it. -/
 def applyCall (ctx : Context) (s : Summary) (site : List Nat) (args caps : List Abstract)
-    (later : List Origin) : CheckM Abstract := do
+    (later : List Origin) (dead : List Nat → List Origin → List Origin := fun _ _ => later) :
+    CheckM Abstract := do
   for w in s.writes ++ s.consumes do
-    demand ctx.config (instantiateOrigin site args caps w) later (otherPaths args (if ctx.config.has .calleeCapture then [] else caps) w)
+    rowDemand ctx.config s w (instantiateOrigin site args caps w) later
+      (otherPaths args (if ctx.config.has .calleeCapture then [] else caps) w) dead
   for x in s.requiresExclusive do
     let a := match x with
       | .parameter i p => (args[i]?.getD .bottom).atPath p
@@ -1186,7 +1241,8 @@ decreasing_by all_goals simp_wf; omega
     for the canonical inputs, with the actual function values in a new frame;
     then the guards it forwarded, its supplies and its calls are resolved. -/
 def callKnown (fuel : Nat) (ctx : Context) (id : Nat) (actuals caps : List Abstract)
-    (site : List Nat) (later : List Origin) : CheckM Abstract := do
+    (site : List Nat) (later : List Origin)
+    (dead : List Nat → List Origin → List Origin := fun _ _ => later) : CheckM Abstract := do
   if fuel = 0 then throw "limit: inference depth"
   else
     let f := fuel - 1
@@ -1240,7 +1296,7 @@ def callKnown (fuel : Nat) (ctx : Context) (id : Nat) (actuals caps : List Abstr
           for (id, fcaps) in alts do
             demandCallbackCaptures f ctx id fcaps site later
       | _ => pure ()
-    applyCall ctx s site actuals caps later
+    applyCall ctx s site actuals caps later dead
 termination_by (fuel, 2)
 decreasing_by all_goals simp_wf; omega
 

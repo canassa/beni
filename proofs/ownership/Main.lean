@@ -46,6 +46,11 @@ def main (args : List String) : IO UInt32 := do
   if mode == "falsify" then
     let a ← Falsify.invariantCampaign count seed (checker := { mutant })
     let b ← Falsify.summaryCampaign count seed (checker := { mutant })
+    -- Clause 4 (fields, #1872) on record objects: a v7 campaign. Its calls
+    -- must hold every clause, and clause 4 must apply to some of them.
+    let b7 ← Falsify.summaryCampaign (count / 4 + 1) seed (checker := { mutant }) (version := 7)
+    let fieldsOk := b7.violations == 0 && b7.splitViolations == 0 && b7.resultViolations == 0 && b7.fieldsChecked > 0
+    IO.println s!"falsify v7 calls={b7.calls} checked={b7.checked} fields-checked={b7.fieldsChecked} violations={b7.violations} ok={fieldsOk}"
     -- Vacuity is a failure past a stated bound: a call no summary describes
     -- for a reason other than one array at two input paths (the statement's
     -- documented exception) may be at most 0.5 % of calls, and that
@@ -55,7 +60,8 @@ def main (args : List String) : IO UInt32 := do
     if !vacuityOk then
       IO.println s!"FALSIFY summary_sound vacuous on too many calls: {otherVacuous} not described, {b.vacuousSeparating} one array at two paths, of {b.calls}"
     let clean := b.calls > 0 && a.hypothesisFalse == 0 && a.observational == 0 && a.errorClause == 0 &&
-      a.naming == 0 && a.uncoveredAccepted == 0 && b.resultsChecked > 0 && b.resultViolations == 0 && b.violations == 0 && b.splitViolations == 0 && vacuityOk
+      a.naming == 0 && a.uncoveredAccepted == 0 && b.resultsChecked > 0 && b.resultViolations == 0 && b.violations == 0 && b.splitViolations == 0 && vacuityOk &&
+      fieldsOk
     IO.println s!"falsify count={count} seed={seed} clean={clean}"
     return (if clean then 0 else 1)
   -- Every typed program of the enumeration grammar up to `bound` bindings
@@ -178,6 +184,13 @@ def main (args : List String) : IO UInt32 := do
       IO.println s!"CI FAILED: generator v6 ok={r6.ok} writes={r6.counts.withWrites}"
       return 1
     IO.println s!"v6 writes: {r6.counts.withWrites} of {r6.counts.accepted} accepted programs write in place"
+    -- Generator v7: record objects (#1872). No accepted program may disagree,
+    -- and some accepted programs must write.
+    let r7 ← Oracle.runWith { count := budget / 4, seed, version := 7, quiet := true, keepEvidence := true }
+    if !r7.ok || r7.counts.withWrites == 0 then
+      IO.println s!"CI FAILED: generator v7 ok={r7.ok} writes={r7.counts.withWrites}"
+      return 1
+    IO.println s!"v7 writes: {r7.counts.withWrites} of {r7.counts.accepted} accepted programs write in place"
     -- Every required control is required twice: through its fixed probe
     -- (`Fixtures.run` above), and through the generator alone within the
     -- budget (`Oracle.controls`; the stream is deterministic, so this is as

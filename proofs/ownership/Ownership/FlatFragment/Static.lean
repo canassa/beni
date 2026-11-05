@@ -1515,7 +1515,7 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
             exact static_atom_shape static atomTyped (valuesF j atom v values_j vs_j)
       · rw [show ({ctx with escaped := union ctx.escaped before.facts.escapes} : Context).config = {} from
           defaultConfig] at demanded
-        have escapesEq := Ownership.FlatFragment.Push.demand_success_escapes demanded
+        have escapesEq := (Ownership.FlatFragment.Support.recordDemand_success demanded).2
         rw [escapesEq]
         exact fun _ escaped => escaped
 

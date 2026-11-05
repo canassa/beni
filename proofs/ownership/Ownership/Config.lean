@@ -67,6 +67,10 @@ inductive Mutant where
   -- Constructions and views (the oracle review, 2026-10-15).
   | constructDisjoint   -- a construction's Disjoint ignores its other operands
   | viewAlias           -- a list pattern's spread binding forgets its source
+  -- Records written in place (#316, #1872).
+  | recordDead          -- an update's Dead test reads a written field as kept
+  | updateBase          -- an update's base use reads nothing
+  | callFields          -- a call's `W{F}` row writes no field
   deriving Repr, BEq, Inhabited
 
 def Mutant.all : List Mutant :=
@@ -75,7 +79,8 @@ def Mutant.all : List Mutant :=
    .callsEdge, .callbackWrites, .callbackAliases, .callbackEnv, .callbackEscapes,
    .callbackRequires, .requiresEdge, .forwardGuards, .transferSupplies, .onceThroughCall, .branchLive,
    .branchClosure, .shadowing, .sharedRoots, .sharedFn, .manyOff, .noScope, .setExclusive, .onceLive, .branchEscapes, .prependBase, .constructorArgs, .eventCapture, .resultPositions,
-   .taggerNeed, .captureEmpty, .forwardNeed, .foldInvariant, .modelInvariant, .constructDisjoint, .viewAlias]
+   .taggerNeed, .captureEmpty, .forwardNeed, .foldInvariant, .modelInvariant, .constructDisjoint, .viewAlias,
+   .recordDead, .updateBase, .callFields]
 
 def Mutant.name : Mutant → String
   | .initFrame => "init-frame"
@@ -107,6 +112,7 @@ def Mutant.name : Mutant → String
   | .branchEscapes => "branch-escapes"
   | .setExclusive => "set-exclusive" | .onceLive => "once-live"
   | .constructDisjoint => "construct-disjoint" | .viewAlias => "view-alias"
+  | .recordDead => "record-dead" | .updateBase => "update-base" | .callFields => "call-fields"
 
 def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
 
@@ -115,6 +121,7 @@ def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
 def Mutant.enumeratorRequired : Mutant → Bool
   | .initFrame => true
   | .constructDisjoint | .viewAlias => true
+  | .recordDead | .updateBase | .callFields => true
   | .initAuthority => true
   | .earlyErr | .recursivePayload | .initRetained | .initShared => true
   | .armResult | .blockResult | .captureRead | .foldLoan | .recursiveCapture | .calleeCapture => true
@@ -130,6 +137,7 @@ def Mutant.enumeratorRequired : Mutant → Bool
 def Mutant.generatorOptional : Mutant → Bool
   | .initFrame => true
   | .constructDisjoint | .viewAlias => true
+  | .recordDead | .updateBase | .callFields => true
   | .initAuthority => true
   | .earlyErr | .recursivePayload | .initRetained | .initShared => true
   | .armResult | .blockResult | .captureRead | .foldLoan | .recursiveCapture | .calleeCapture => true
@@ -143,6 +151,7 @@ def Mutant.generatorOptional : Mutant → Bool
 def Mutant.summaryRow : Mutant → Bool
   | .initFrame => true
   | .constructDisjoint | .viewAlias => true
+  | .recordDead | .updateBase | .callFields => true
   | .initAuthority => true
   | .earlyErr | .recursivePayload | .initRetained | .initShared => true
   | .armResult | .blockResult | .captureRead | .foldLoan | .recursiveCapture | .calleeCapture => true

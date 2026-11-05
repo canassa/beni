@@ -29,8 +29,9 @@ Proved **conditionally** on `invariant_preserved`: `accepted_traces_agree`, the
 main theorem; it adds only bookkeeping to that lemma.
 
 Unproved (`sorry`): `summary_sound` (Lemma 6.7 clauses 1–3, clause 2 as
-repaired), `map_summary_sound` (map's derived row), `invariant_preserved`
-(the step case of the prefix induction).
+repaired, and since 2026-11-05 the fields clause of `W{F}`, #1872),
+`map_summary_sound` (map's derived row), `invariant_preserved` (the step case
+of the prefix induction).
 
 Every clause that reads an abstract on the heap reads it through the value's
 type (`entryPath`, `entryAbstract`; #1796): a dictionary's value is field 1 of
@@ -470,8 +471,22 @@ structure CallSound (ds : List Decl) (s : Summary) (ins : List Abstract) (tys : 
       ArrayAt pre.heap (inputs[i]?.getD (.int 0)) (entryPath (tys[i]?.getD .int) p) c ∧
       (namesAt (entryAbstract ds rty s.result) q).any (·.base == inputOrigin nargs i p) = true) ∨
     (namesAt (entryAbstract ds rty s.result) q).any (fun o => o == .shared || o == .unknown) = true
-  -- Clause 4 (calls, supply, xres, xreq) is not stated: the interpreters do
-  -- not record callback invocations, so there is nothing to state it over.
+  /-- 4 (fields; Jayson, 2026-11-05, `own-record-bridge-q1`, #1872; not one of
+      Lemma 6.7's clauses, whose own clause 4 is the unstated one below). A record
+      object at a `W{F}` path keeps every field outside `F`: where the input's
+      array at `q` holds one record before the call and the summary's row for
+      that path has the field set `F` (`fieldRow`), the array holds one record
+      after the call, as long, whose fields outside `F` hold the same values.
+      The caller's Dead test reads its later uses of the object per field
+      (`rowDemand`, §31.7), which is sound only because of this clause. -/
+  fields : ∀ i q c (fs : List Nat) (xs : List Value), canonicalPath ins i q →
+    ArrayAt pre.heap (inputs[i]?.getD (.int 0)) (entryPath (tys[i]?.getD .int) q) c →
+    fieldRow s (inputOrigin nargs i q) = some fs → pre.heap[c]? = some [.record xs] →
+    ∃ ys, post.heap[c]? = some [.record ys] ∧ ys.length = xs.length ∧
+      ∀ g, g ∉ fs → ys[g]? = xs[g]?
+  -- Lemma 6.7's clause 4 (calls, supply, xres, xreq) is not stated: the
+  -- interpreters do not record callback invocations, so there is nothing to
+  -- state it over.
 
 /-- The concrete call of declaration `id` with closure captures `caps`. -/
 def callResult (ds : List Decl) (id : Nat) (args caps : List Value) (fuel : Nat) (pre : State) :

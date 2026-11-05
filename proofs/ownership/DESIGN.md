@@ -130,7 +130,8 @@ preceded it is frozen as `Reinfer.lean` (`--reinfer`, `--cross-check`).
   σ (its class), or, if the actual is itself a symbolic input of the caller,
   the caller's answer, recorded as the caller's guard.
 * **Rows.** A summary publishes `use` (reads R, result cells A, escapes E,
-  writes and consumes W), `res` and `xres` (the result value), `xreq`
+  writes and consumes W, and `W{F}` for a record object that only updates of
+  the fields F write, #1872), `res` and `xres` (the result value), `xreq`
   (`requiresExclusive`), and per function-typed input its `calls` (0, ≤1,
   many) and one `Supply` per call: what is passed, the callee's environment,
   σ, and the argument paths supplied owned (Known, Unescaped, Dead, Disjoint
@@ -184,7 +185,10 @@ in a heap by path relationally (`AtPath`, `Reaches`; no fuel), relates an
 abstract value to a concrete one path by path (`Describes`: the arrays at each
 path named by the cells at that path, each exclusive list's value repeating no
 array), states Lemma 6.7 (`CallSound`, clause 2 as repaired: the holders that
-outlive a call are its result and the permanent observers) and the main
+outlive a call are its result and the permanent observers; and since
+2026-11-05 a fourth clause, `fields`: an object at a `W{F}` path keeps every
+field outside `F`, which the caller's Dead test per field relies on; Jayson's
+decision, `own-record-bridge-q1`, #1872) and the main
 theorem over every fuel bound with an explicit `Invariant` that also relates
 the permanent observers of the two runs and the checker's recorded escapes.
 Both interpreters fail on observing a value deeper than `observationDepth`, so
@@ -560,8 +564,11 @@ Differences from the Zig checker, each one on purpose:
   changes what `accepted_traces_agree` claims. Jayson decided on 2026-11-04
   (#316): refuse, no hoist. No theorem changes, and the hoist stays tested by
   the Zig side only.
-- **No `W{F}`.** A summary's write names the object, not its fields (§31.7). A
-  caller's later read of a field that the callee keeps is therefore a use too.
+- **No read per field through a call.** A call argument is a whole use of
+  it. Zig reads the argument at the paths that the callee's summary reads
+  (item 5), so it accepts an update followed by a call that reads only kept
+  fields; this core refuses it. The refusal is sound, and a callee that reads
+  the written field makes the earlier write refused in both checkers.
 - **An update's base use is the fields that it keeps.** Zig reads the base of
   a later update as a whole use (item 5). Here `{ r | a = 1 }` and then
   `{ r | a = 2 }`, the first result dead, is accepted: the second update reads
@@ -574,7 +581,7 @@ a limit (function value below an input path) before Disjoint. So item 3 has no
 witness in this core.
 
 Checked, not proved (`RecordPrograms.lean`, `RecordProbes.lean`: `#guard`
-against `check` and both runs): #316's three two-holder shapes with accepted and
+against `check` and both runs; the calls of `W{F}` since #1872): #316's three two-holder shapes with accepted and
 refused controls (a stored payload read at a written or a kept field; one form
 at two model paths or two forms; a command that keeps the model whole or a
 field's value; a traversal that writes fresh rows, `[ r, r ]`, or rows read
@@ -583,8 +590,8 @@ alias, an update of every field with the old holder dead or captured), a
 top-level record, `Record.copy`, a nested update, two updates, a
 callee that writes its parameter, the write extent and its twin, and a closure
 that writes its captured record once or twice. Every accepted program's runs
-agree, and every refused program's runs differ, except `calleeKept`, which is
-refused by the missing `W{F}`. The frozen per-call checker refuses the record
+agree, and every refused program's runs differ, except `callbackKept`, which is
+refused because a write through a callback has no field set. The frozen per-call checker refuses the record
 forms as a limit. Since 2026-11-05 (#1871) the four forms are in `FlatANF0`,
 and the accepted programs without calls have trace theorems (*Proved in the
 flat fragment*, below).
@@ -622,10 +629,34 @@ Proved in the flat fragment (2026-11-05, #1871, slice 2 of #316):
   `storeExclusive` and `storeSpines` tests, one value at a time; between the
   two, the tests' disjointness from the kept fields' cells.
 
-Not modelled yet: `W{F}` and per-field reads through summaries, the hoist, a
-record field written through a constructor's payload (§31.5), messages and
-sends (§31.6), and the entry's checks (§31.8). The generator, the targeted
-enumerator and the mutation controls draw no record object, and the bridge
-skips one (`record-object`). Field sets, the bridge and the controls are
-#1872.
+Field sets in summaries, the bridge and the controls (2026-11-05, #1872,
+slice 3 of #316):
+
+- **`W{F}`** (§31.7). `Summary.fieldWrites` names, for a written record
+  object, the fields that its writes update. It refines `writes` and never
+  replaces it: every reader that does not read it takes the write as whole.
+  An update records its fields (`recordDemand`); a whole write of the cell
+  removes its entry (`demand`); two updates join their fields; a branch's
+  join keeps a set only where each arm that writes the cell has one
+  (`joinFieldWrites`); a consume row (a write through a callback) has none
+  (`fieldRow`). At a call, a row with a field set is a record demand whose
+  Dead test reads the caller's later uses per field (`rowDemand`, the
+  update's `recordLiveCells`). It reaches the caller's own summary when the
+  cell is its parameter. So `calleeKept` is accepted and its runs agree; a
+  later read of a written field, an update followed by a call that reads the
+  written field, and two calls in turn are refused, and their runs differ.
+- **The bridge** spells an object as a beni record, an update as
+  `{ r | f = v }` and compares the record lines at their sites (`BRIDGE.md`).
+  The probes are its fixed `record` family.
+- **Generated programs.** Generator v7 (opt-in) draws record objects and a
+  declaration that writes its object parameter. The targeted product has a
+  record part (`RecordPrograms.product`).
+- **Controls.** `record-dead` (Dead reads a written field as kept),
+  `update-base` (an update's base use reads nothing) and `call-fields` (a
+  call's `W{F}` row writes no field), each with a fixed witness in
+  `Sync.holes` and required through the targeted product.
+
+Not modelled yet: per-field reads through a call (above), the hoist, a record
+field written through a constructor's payload (§31.5), messages and sends
+(§31.6), and the entry's checks (§31.8).
 
