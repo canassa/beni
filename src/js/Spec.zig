@@ -3883,6 +3883,9 @@ const Spec = struct {
             const f = m.ir.extraData(decl.func.?, JsIr.Func);
             var kept: std.ArrayList(u32) = .empty;
             for (m.ir.extraSlice(f.params(), u32), flags) |n, gone| if (!gone) try kept.append(s.arena, n);
+            // And the places of the kept, in the same order.
+            for (m.ir.extraSlice(f.paramPos(), u32), flags) |n, gone| if (!gone) try kept.append(s.arena, n);
+            const kept_n: u32 = @intCast(kept.items.len / 2);
             const start = try m.append(s.gpa, kept.items);
             const at = @backingInt(decl.func.?);
             const fact3 = m.fact3;
@@ -3891,7 +3894,9 @@ const Spec = struct {
             try s.leave(m);
             if (kept_drop[g]) m.fact3 = fact3;
             m.extra.items[at] = start;
-            m.extra.items[at + 1] = start + @as(u32, @intCast(kept.items.len));
+            m.extra.items[at + 1] = start + kept_n;
+            m.extra.items[at + 4] = start + kept_n;
+            m.extra.items[at + 5] = start + 2 * kept_n;
             any = true;
         }
         if (!any) return false;
@@ -10340,7 +10345,11 @@ const Spec = struct {
         /// the body came back to the module it was written in. Only a map
         /// reads a position.
         fn posOf(c: *Copy, from: Index) Allocator.Error!u32 {
-            const at = c.src.ir.pos(from);
+            return c.posAt(c.src.ir.pos(from));
+        }
+
+        /// `posOf` for a `pos` of the source, a parameter's included.
+        fn posAt(c: *Copy, at: u32) Allocator.Error!u32 {
             if (!c.cross or at == Node.no_pos) return at;
             const where: JsIr.FarPos = if (Node.isFar(at)) c.src.far.items[at & ~Node.far_bit] else .{ .module = c.src.id, .offset = at };
             if (where.module == c.dst.id) return where.offset;
@@ -10393,14 +10402,24 @@ const Spec = struct {
             return .{ .start = @fromBackingInt(@intCast(start)), .end = @fromBackingInt(@intCast(start + @as(u32, @intCast(out.items.len)))) };
         }
 
+        /// A `Func` record, in `JsIr.Func`'s field order. Each parameter
+        /// keeps its place, as a node does (`posAt`). In one module the
+        /// copy shares the source's range of places, which no pass writes.
         fn func(c: *Copy, record_at: ExtraIndex, depth: u32) Allocator.Error!u32 {
             const f = c.src.ir.extraData(record_at, JsIr.Func);
             var params: std.ArrayList(u32) = .empty;
             for (try c.s.arena.dupe(NameIndex, c.src.ir.extraSlice(f.params(), NameIndex))) |p| try params.append(c.s.arena, (try c.binding(p)).int());
             const pstart = try c.dst.append(c.gpa(), params.items);
             const pend = pstart + @as(u32, @intCast(params.items.len));
+            var places = f.paramPos();
+            if (c.cross) {
+                var positions: std.ArrayList(u32) = .empty;
+                for (try c.s.arena.dupe(u32, c.src.ir.extraSlice(places, u32))) |at| try positions.append(c.s.arena, try c.posAt(at));
+                const at_start = try c.dst.append(c.gpa(), positions.items);
+                places = .{ .start = @fromBackingInt(at_start), .end = @fromBackingInt(at_start + @as(u32, @intCast(positions.items.len))) };
+            }
             const body = try c.list(f.body(), depth);
-            return c.dst.append(c.gpa(), &.{ pstart, pend, @backingInt(body.start), @backingInt(body.end) });
+            return c.dst.append(c.gpa(), &.{ pstart, pend, @backingInt(body.start), @backingInt(body.end), @backingInt(places.start), @backingInt(places.end) });
         }
 
         fn listed(c: *Copy, from: Index, to: Index, which: enum { keep, discards, unobserved }) Allocator.Error!void {
@@ -17986,7 +18005,7 @@ fn casedCase(gpa: Allocator, case: CasedCase) !bool {
             };
             const fbody = try b.addRange(&.{try specTestNode(&b, .return_stmt, inner.int(), 0)});
             const params = try b.addNames(&.{});
-            const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = fbody.start, .body_end = fbody.end });
+            const func = try b.addFunc(params, fbody);
             break :blk try specTestNode(&b, .arrow, @backingInt(func), Node.arrow_plain);
         },
     };
@@ -18333,7 +18352,7 @@ fn freshCase(gpa: Allocator, case: FreshCase) !bool {
     try stmts.append(gpa, try specTestNode(&b, .return_stmt, obj.int(), 0));
     const params = try b.addNames(if (case == .param) &.{p} else &.{});
     const body = try b.addRange(stmts.items);
-    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = body.start, .body_end = body.end });
+    const func = try b.addFunc(params, body);
     const arrow = try specTestNode(&b, .arrow, @backingInt(func), Node.arrow_plain);
     var ir = try b.toOwned(try b.addRange(&.{}));
     defer ir.deinit(gpa);
@@ -19905,7 +19924,7 @@ test "a const copy is an alias only when it is its name's one declaration" {
     const decl_d = try b.addParts(.const_decl, Node.no_pos, name_d.int(), read_a2.int());
     const params = try b.addNames(&.{name_d});
     const fbody = try b.addRange(&.{decl_d});
-    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = fbody.start, .body_end = fbody.end });
+    const func = try b.addFunc(params, fbody);
     const arrow = try b.addParts(.arrow, Node.no_pos, @backingInt(func), Node.arrow_plain);
     const stmt = try b.addParts(.expr_stmt, Node.no_pos, arrow.int(), 0);
     var ir = try b.toOwned(try b.addRange(&.{ decl_a, decl_b, decl_c, decl_c2, stmt }));
@@ -19974,7 +19993,7 @@ test "returnExpr reads its body after a nested conditional moved extra" {
     const outer_if = try b.addParts(.if_stmt, Node.no_pos, outer_test.int(), @backingInt(outer_rec));
     const params = try b.addNames(&.{name_a});
     const body = try b.addRange(&.{ outer_if, rets[2] });
-    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = body.start, .body_end = body.end });
+    const func = try b.addFunc(params, body);
     const arrow = try b.addParts(.arrow, Node.no_pos, @backingInt(func), Node.arrow_plain);
     const decl_f = try b.addParts(.const_decl, Node.no_pos, name_f.int(), arrow.int());
     var ir = try b.toOwned(try b.addRange(&.{decl_f}));
@@ -20013,7 +20032,7 @@ fn dropProgram(b: *JsIr.Builder, read_param: bool, object_arg: bool) !DropProgra
     const ret = try b.addParts(.return_stmt, Node.no_pos, value.int(), 0);
     const params = try b.addNames(&.{name_a});
     const body = try b.addRange(&.{ret});
-    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = body.start, .body_end = body.end });
+    const func = try b.addFunc(params, body);
     const arrow = try b.addParts(.arrow, Node.no_pos, @backingInt(func), Node.arrow_plain);
     const decl_f = try b.addParts(.const_decl, Node.no_pos, name_f.int(), arrow.int());
     const callee = try b.addParts(.ident, Node.no_pos, name_f.int(), 0);

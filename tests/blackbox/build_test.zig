@@ -4753,7 +4753,8 @@ test "a release build maps the one hoisted file back to each module's beni sourc
     // is one rule of *What the marks survive*: `spread`'s `doubled` is a
     // renamed local, `total`'s `rest` an initialiser the optimiser writes
     // at its one use, every top-level function's first byte carries its beni
-    // name, and `Debug.todo` is a body copied from `core/Debug` to its call,
+    // name and maps to its parameter, which is that byte (*Parameters*,
+    // amended 2026-11-05), and `Debug.todo` is a body copied from `core/Debug` to its call,
     // so its `throw` maps to the line of `Debug.beni` it came from
     // (*Deferred* item 2, amended 2026-11-04), and `Debug.beni` is a source
     // of the map after `Main.beni`, where its first mark is. `report` is
@@ -4873,18 +4874,18 @@ test "a release build maps the one hoisted file back to each module's beni sourc
         \\source beni:///platforms/node/Node.beni: embedded
         \\source ../src/Main.beni: its text
         \\source beni:///core/Debug.beni: embedded
-        \\q=|a=>{ -> Main.beni:24:13 spread
+        \\q=|a=>{ -> Main.beni:21:8 spread
         \\let b=a*7919 -> Main.beni:22:5
         \\let |b=a*7919 -> Main.beni:22:5 doubled
         \\b=|a*7919 -> Main.beni:23:9
         \\b+b*3 -> Main.beni:24:5
-        \\r=|a=>{if -> Main.beni:12:5 describe
+        \\r=|a=>{if -> Main.beni:11:10 describe
         \\return b(q( -> Main.beni:14:13
         \\throw new Error -> Debug.beni:43:5
-        \\s=|a=>a.length -> Main.beni:29:5 total
+        \\s=|a=>a.length -> Main.beni:28:7 total
         \\s(o(a)) -> Main.beni:34:17
         \\s(|o(a)) -> Main.beni:33:14
-        \\t=|a=>{let d=0 -> Main.beni:50:5 report
+        \\t=|a=>{let d=0 -> Main.beni:47:8 report
         \\for(let c=a -> Main.beni:49:9
         \\for(let |c=a -> Main.beni:49:9 i
         \\let |d=0 -> Main.beni:49:9 acc
@@ -5051,7 +5052,8 @@ test "a release library build writes a map beside every module" {
     // in development, and so does each compacted hand-written file
     // (*Hand-written JavaScript*, amended 2026-11-04). In `Lib.mjs`: two
     // exported functions carry their beni
-    // names at their first byte, a renamed local its own, and two calls in
+    // names at their first byte, which is their parameter and maps to it
+    // (*Parameters*, amended 2026-11-05), a renamed local its own, and two calls in
     // `label` map to their first tokens. The `export` is covered by the
     // last segment, which has no name: Node's own reader takes the name
     // before it unless the map ends the line (§11.2, *The join*).
@@ -5089,10 +5091,10 @@ test "a release library build writes a map beside every module" {
     try testing.expectEqualStrings(
         \\version 3, file Lib.mjs
         \\source ../Lib.beni: its text
-        \\d=|a=> -> Lib.beni:8:13 spread
+        \\d=|a=> -> Lib.beni:5:8 spread
         \\let |b -> Lib.beni:6:5 doubled
         \\b+b*3 -> Lib.beni:8:5
-        \\e=|f=> -> Lib.beni:13:5 label
+        \\e=|f=> -> Lib.beni:12:7 label
         \\a(|c(f -> Lib.beni:13:18
         \\b(d(f)) -> Lib.beni:13:36
         \\export{ -> Lib.beni:13:59 (6 before)
@@ -5548,6 +5550,135 @@ test "a release library map names the module a copied body came from" {
         \\source ../Aid.beni: its text
         \\
     , aid.stdout);
+}
+
+test "a release map gives each parameter the place where it is written and its beni name" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §11.2, *Parameters* (amended 2026-11-05). `before` and
+    // `after` each have a parameter `x`, at another place. `JsIr` holds one
+    // `NameIndex` for the two, because the tag of a local's name starts
+    // again in each declaration, so a table keyed by the name could not tell
+    // them apart. Each `x` maps to its own place, with `x` in `names` (one
+    // entry for the two), and so does each `y`. `twice`'s one parameter is
+    // its arrow's first token, `a=>`: its mark keeps the function's name,
+    // `twice`, and not `x`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Lib.beni",
+        \\pub before : Int, Int → Int
+        \\before x y =
+        \\    x - y
+        \\
+        \\
+        \\pub after : Int, Int → Int
+        \\after x y =
+        \\    y - x
+        \\
+        \\
+        \\pub twice : Int → Int
+        \\twice x =
+        \\    x * 2
+        \\
+    );
+    try w.write("check-release-map.mjs", check_release_map_script);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=node", "--release", "--library", "--source-maps", "--out=lib", "Lib.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const checked = try w.runNode(&.{ "check-release-map.mjs", "lib/Lib.mjs", "no", "a=(|b,c)=>b-c", "a=(b,|c)=>b-c", "b=(|a,c)=>c-a", "b=(a,|c)=>c-a", "c=|a=>a*2" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("", checked.stderr);
+    try testing.expectEqualStrings(
+        \\version 3, file Lib.mjs
+        \\source ../Lib.beni: its text
+        \\a=(|b,c)=>b-c -> Lib.beni:2:8 x
+        \\a=(b,|c)=>b-c -> Lib.beni:2:10 y
+        \\b=(|a,c)=>c-a -> Lib.beni:7:7 x
+        \\b=(a,|c)=>c-a -> Lib.beni:7:9 y
+        \\c=|a=>a*2 -> Lib.beni:12:7 twice
+        \\
+    , checked.stdout);
+    // One `names` entry for the two `x`, and one for the two `y`.
+    try testing.expect(std.mem.indexOf(u8, try w.read("lib/Lib.mjs.map"), "\"names\":[\"before\",\"x\",\"y\",\"after\",\"twice\"]") != null);
+}
+
+test "a release map gives a copied lambda's parameters their places in the module they came from" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §11.2, *Parameters* (amended 2026-11-05), with *Copied
+    // bodies*: whole-program specialisation writes `Aid.bumpAll`'s body in
+    // `main`, and the lambda in it with it. `List.indexedMap` has a second
+    // call, so it stays one function, and the body is small enough to copy.
+    // The copy's parameters `i` and `v` map to the place in `Aid.beni` where
+    // they are written; `main`'s own lambda's to `Main.beni`, with their
+    // names. A copy gives each local a fresh `$i` name, which has no `names`
+    // entry (item 5), so the copy's parameters have none (#1962).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Aid.beni",
+        \\pub bumpAll : List Int, Int → List Int
+        \\bumpAll xs n =
+        \\    List.indexedMap xs (λi v → v + i * n)
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import Aid
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines (List.indexedMap (Aid.bumpAll [ 1, 2, 3 ] 3) (λi v → String.fromInt (i + v)))
+        \\
+    );
+    try w.write("check-release-map.mjs", check_release_map_script);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=node", "--release", "--source-maps", "--out=out", "src" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const checked = try w.runNode(&.{
+        "check-release-map.mjs",
+        "out/_main.mjs",
+        "no",
+        "[1,2,3],|(a,d)=>d+a*3",
+        "[1,2,3],(|a,d)=>d+a*3",
+        "[1,2,3],(a,|d)=>d+a*3",
+        "(a,d)=>|d+a*3",
+        ",(|a,d)=>b(a+d)",
+        ",(a,|d)=>b(a+d)",
+    });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("", checked.stderr);
+    try testing.expectEqualStrings(
+        \\version 3, file _main.mjs
+        \\source beni:///platforms/node/Rt.beni: embedded
+        \\source beni:///core/String.beni: embedded
+        \\source beni:///platforms/node/Node.beni: embedded
+        \\source beni:///core/List.beni: embedded
+        \\source ../src/Main.beni: its text
+        \\source ../src/Aid.beni: its text
+        \\[1,2,3],|(a,d)=>d+a*3 -> Aid.beni:3:25
+        \\[1,2,3],(|a,d)=>d+a*3 -> Aid.beni:3:26
+        \\[1,2,3],(a,|d)=>d+a*3 -> Aid.beni:3:28
+        \\(a,d)=>|d+a*3 -> Aid.beni:3:32
+        \\,(|a,d)=>b(a+d) -> Main.beni:8:68 i
+        \\,(a,|d)=>b(a+d) -> Main.beni:8:70 v
+        \\
+    , checked.stdout);
 }
 
 test "--no-source-maps writes no map and no comment, and contradicting it is refused" {

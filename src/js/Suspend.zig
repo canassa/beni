@@ -137,6 +137,8 @@ pub const Pass = struct {
             .params_end = @fromBackingInt(@intCast(p.word(at + 1))),
             .body_start = @fromBackingInt(@intCast(p.word(at + 2))),
             .body_end = @fromBackingInt(@intCast(p.word(at + 3))),
+            .param_pos_start = @fromBackingInt(@intCast(p.word(at + 4))),
+            .param_pos_end = @fromBackingInt(@intCast(p.word(at + 5))),
         };
     }
 
@@ -168,12 +170,7 @@ pub const Pass = struct {
     fn arrow(p: *Pass, params: []const NameIndex, body: []const Node.Index, at: u32) Error!Node.Index {
         const params_range = try p.b.addNames(params);
         const body_range = try p.b.addRange(body);
-        const record = try p.b.addRecord(JsIr.Func{
-            .params_start = params_range.start,
-            .params_end = params_range.end,
-            .body_start = body_range.start,
-            .body_end = body_range.end,
-        });
+        const record = try p.b.addFunc(params_range, body_range);
         return p.add(.arrow, at, @backingInt(record), Node.arrow_plain);
     }
 
@@ -601,6 +598,8 @@ pub const Pass = struct {
         return p.b.addRange(copied);
     }
 
+    /// A copy of the function at `at`, whose parameters keep their places:
+    /// the copy shares the positions' range, which no pass writes.
     fn cloneFunc(p: *Pass, at: u32) Error!JsIr.ExtraIndex {
         const f = p.func(at);
         const params = try p.b.addNames(try p.namesOf(f.params()));
@@ -610,6 +609,8 @@ pub const Pass = struct {
             .params_end = params.end,
             .body_start = body.start,
             .body_end = body.end,
+            .param_pos_start = f.param_pos_start,
+            .param_pos_end = f.param_pos_end,
         });
     }
 

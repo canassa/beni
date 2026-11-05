@@ -2156,15 +2156,39 @@ const Printer = struct {
 
     fn paramList(p: *Printer, f: JsIr.Func, depth: bool, arrow: bool) Allocator.Error!void {
         const all = p.ir.extraSlice(f.params(), JsIr.NameIndex);
+        const places = p.ir.extraSlice(f.paramPos(), u32);
         const names = if (p.compact and !depth) all[0..try p.namedParams(f)] else all;
-        if (arrow and p.compact and !depth and names.len == 1) return p.name(names[0], .binding);
+        if (arrow and p.compact and !depth and names.len == 1) {
+            try p.markParam(places[0], names[0], true);
+            return p.name(names[0], .binding);
+        }
         try p.push("(");
         for (names, 0..) |n, i| {
             if (i != 0) try p.tok(", ", ",");
+            try p.markParam(places[i], n, false);
             try p.name(n, .binding);
             if (depth and i + 1 == names.len) try p.tok(" = 0", "=0");
         }
         try p.push(")");
+    }
+
+    /// Under `--release`, record that the parameter `index`, written at
+    /// `at` in the source, starts at the next byte, with its beni name
+    /// (`backend.md` §11.2, *Deferred* item 3, amended 2026-11-05). A
+    /// parameter that is its arrow's first token (`first`: `a=>…`) carries
+    /// no name of its own: the mapping at a function's first byte names its
+    /// stack frame, so it keeps the function's name or none, as a
+    /// hand-written file's does (*Hand-written JavaScript*). A development
+    /// build prints a parameter as written and marks none (§11.1).
+    fn markParam(p: *Printer, at: u32, index: JsIr.NameIndex, first: bool) Allocator.Error!void {
+        const marks = p.marks orelse return;
+        if (p.rename == null or at == Node.no_pos) return;
+        if (first) {
+            const carried = p.function_name;
+            p.function_name = SourceMap.Mapping.no_name;
+            return marks.add(p.joiner.length, at, carried);
+        }
+        try marks.add(p.joiner.length, at, try p.mapName(marks, index));
     }
 
     // ---- Expressions ------------------------------------------------------
@@ -3552,12 +3576,7 @@ const Fixture = struct {
     fn func(f: *Fixture, params: []const JsIr.NameIndex, body: []const Index) !Index {
         const param_range = try f.b.addNames(params);
         const body_range = try f.b.addRange(body);
-        const record = try f.b.addRecord(JsIr.Func{
-            .params_start = param_range.start,
-            .params_end = param_range.end,
-            .body_start = body_range.start,
-            .body_end = body_range.end,
-        });
+        const record = try f.b.addFunc(param_range, body_range);
         return f.node(.arrow, @backingInt(record), 0);
     }
 
