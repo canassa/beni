@@ -56,8 +56,6 @@ pub const Evaluation = struct {
     ev: Relation.Eval,
     contracts: *Contract.Table,
     ctx: Context,
-    /// A write came through a label called many times (`Flags.many_write`).
-    many_write: bool = false,
     /// The walk's demands, then the calls' (this evaluation's).
     demands: std.ArrayList(Demand) = .empty,
     escapes: std.ArrayList(Escape) = .empty,
