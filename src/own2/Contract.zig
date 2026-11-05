@@ -4,8 +4,7 @@
 //! in one table of flat runs; a contract is a record of ranges, immutable
 //! once committed. A join makes a new contract.
 //!
-//! Obligations kept here: none of §2.14's directly; `within` is §2.12's
-//! validation test.
+//! Obligations kept here: none of §2.14's directly; `within` is §2.12's validation test.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -48,8 +47,7 @@ pub const sortOccs = Conds.sortOccs;
 pub const ArrivalKind = Trees.ArrivalKind;
 pub const Arrival = Trees.Arrival;
 
-/// A read, write or escape (§2.10): parameter `j`'s slot, `deep` when it
-/// reaches every slot below.
+/// A read, write or escape (§2.10): parameter `j`'s slot, `deep` when it reaches every slot below.
 pub const Effect = struct {
     j: u32,
     slot: Rel,
@@ -107,8 +105,7 @@ pub const last_origin: u32 = 1 << 29;
 
 pub const Supply = struct {
     k: u32,
-    /// `res` as a result tree (§2.10, *a contract is a tree of shared
-    /// subtrees*): its root node.
+    /// `res` as a result tree (§2.10, *a contract is a tree of shared subtrees*): its root node.
     res_root: Node = 0,
     kept: Range,
     cond: StoredCond,
@@ -147,6 +144,8 @@ pub const Head = struct {
     /// `res` as a result tree: its root node.
     res_root: Node = 0,
     res_cond: StoredCond = .{},
+    /// Where `res_cond` is `no`, the result's separation with its labels' answers read (§2.11.3, *a traversal's supply*).
+    res_read: StoredCond = .{ .no = true },
     /// One tree a parameter (`Table.readsOf`).
     reads: Range = .{},
     /// One tree a parameter, as the reads (`Table.writesOf`, §2.11.2 *A
@@ -165,6 +164,7 @@ pub const Draft = struct {
     flags: Flags = .{},
     res: Res = .{},
     res_cond: Cond = .{},
+    res_read: Cond = .unprovable,
     reads: std.ArrayList(Effect) = .empty,
     writes: std.ArrayList(Effect) = .empty,
     req: Cond = .{},
@@ -205,14 +205,6 @@ pub const Draft = struct {
         calls: Calls = .none,
         answer_left: bool = false,
         supplies: std.ArrayList(DraftSupply) = .empty,
-
-        /// A block's supply word: `k`, its top bit the `each` mark.
-        pub fn supplyOfWord(l: *DraftLabel, arena: Allocator, w: u32) Allocator.Error!*DraftSupply {
-            const s = try l.supplyOf(arena, w & 0x3fff_ffff);
-            s.each = w >> 31 != 0;
-            s.walk = (w >> 30) & 1 != 0;
-            return s;
-        }
 
         pub fn supplyOf(l: *DraftLabel, arena: Allocator, k: u32) Allocator.Error!*DraftSupply {
             for (l.supplies.items) |*s| if (s.k == k) return s;
@@ -312,6 +304,11 @@ pub const Table = struct {
 
     pub fn head(t: *const Table, c: Id) Head {
         return t.heads.items[c];
+    }
+    /// Code `c`'s result separation; `read`: with its labels' answers read.
+    pub fn resCond(t: *const Table, arena: Allocator, c: Id, read: bool) Allocator.Error!Cond {
+        const h = t.heads.items[c];
+        return t.cond(arena, if (read and h.res_cond.no) h.res_read else h.res_cond);
     }
     pub fn calledOf(t: *const Table, c: Id, rel: Rel) ?Id {
         return t.called.get(.{ c, rel });
@@ -518,8 +515,7 @@ pub const Table = struct {
 
     /// The tree of a draft's result, its `cb` arrivals renumbered by
     /// `rank`: its arrivals as entries (sorted by their slots' canonical
-    /// keys, a plain run before an open one), its subtrees and its base
-    /// joined in.
+    /// keys, a plain run before an open one), its subtrees and its base joined in.
     pub fn putRes(t: *Table, gpa: Allocator, slots: *const Slots.Table, r: *const Draft.Res, rank: []const u32) Ids.IndexError!Node {
         var flat: std.ArrayList(Flat) = .empty;
         defer flat.deinit(gpa);
@@ -619,6 +615,7 @@ pub const Table = struct {
         // The result and the supplies name the labels by their sorted order.
         h.res_root = try t.putRes(gpa, slots, &d.res, rank);
         h.res_cond = try t.putCond(gpa, slots, d.res_cond);
+        h.res_read = try t.putCond(gpa, slots, if (d.res_cond.no) d.res_read else Cond.unprovable);
         h.reads = try t.putReads(gpa, slots, d.reads.items);
         h.writes = try t.putReads(gpa, slots, d.writes.items);
         h.req = try t.putCond(gpa, slots, d.req);
@@ -653,6 +650,7 @@ pub const Table = struct {
         var d: Draft = .{ .arity = h.arity, .flags = h.flags };
         d.res.base = h.res_root;
         d.res_cond = try t.cond(arena, h.res_cond);
+        d.res_read = try t.cond(arena, h.res_read);
         for (t.readsOf(h.reads)) |x| try d.reads.append(arena, .{ .j = x[0], .slot = Slots.root, .node = x[1] });
         for (t.writesOf(h.writes)) |x| try d.writes.append(arena, .{ .j = x[0], .slot = Slots.root, .node = x[1] });
         d.req = try t.cond(arena, h.req);
@@ -692,7 +690,10 @@ pub const Table = struct {
         d.flags.entry = d.flags.entry or hb.flags.entry;
         // A side that does not return says nothing of the result's condition.
         const bc = try t.cond(arena, hb.res_cond);
+        const br = try t.resCond(arena, b, true);
+        const dr = if (d.res_cond.no) d.res_read else d.res_cond;
         if (!a_returns) d.res_cond = bc else if (b_returns) d.res_cond = try weakest(arena, account, d.res_cond, bc);
+        d.res_read = if (!a_returns) br else if (b_returns) try weakest(arena, account, dr, br) else dr;
         d.req = try Cond.conj(arena, account, d.req, try t.cond(arena, hb.req));
         // Labels of `b`, matched to `d`'s by (j, slot, origin): `b`'s index → `d`'s.
         const map = try arena.alloc(u32, hb.labels.len);
@@ -737,7 +738,7 @@ pub const Table = struct {
         const x = t.heads.items[a];
         const y = t.heads.items[b];
         if (x.arity != y.arity or @as(u8, @bitCast(x.flags)) != @as(u8, @bitCast(y.flags))) return false;
-        if (!t.condEql(x.res_cond, y.res_cond) or !t.condEql(x.req, y.req)) return false;
+        if (!t.condEql(x.res_cond, y.res_cond) or !t.condEql(x.res_read, y.res_read) or !t.condEql(x.req, y.req)) return false;
         if (x.res_root != y.res_root) return false;
         if (!std.mem.eql([2]u32, t.readsOf(x.reads), t.readsOf(y.reads)) or !std.mem.eql([2]u32, t.writesOf(x.writes), t.writesOf(y.writes)) or !t.effectsEql(x.escapes, y.escapes)) return false;
         if (x.stores.len != y.stores.len or x.labels.len != y.labels.len) return false;

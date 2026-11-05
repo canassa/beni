@@ -36,6 +36,10 @@ pub fn width(f: *const Value.Frame, jobs: anytype) usize {
 /// known code, each outer label's its supply comes through.
 pub fn publish(e: *Eval.Evaluation, s: anytype, arena: Allocator, labelIndex: anytype) Error!void {
     const f = e.fr();
+    // A pass that closes an entry relies on `below` staying `no`
+    // (`SupplyAnswers.closesAtSite`): no answer is read here.
+    e.ev.read_mode = .strict;
+    defer e.ev.read_mode = .ask;
     for (f.cbs.items[e.w.last.cbs..], e.w.last.cbs..) |cb, ci| if (cb.inst != none) {
         const at = try labelIndex(s, @intCast(ci));
         for (cb.args, 0..) |a, k| {

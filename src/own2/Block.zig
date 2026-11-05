@@ -21,7 +21,7 @@ const BlockNames = @import("BlockNames.zig");
 const BlockCalled = @import("BlockCalled.zig");
 
 pub const magic: u32 = 0x324e574f;
-pub const version: u32 = 25;
+pub const version: u32 = 26;
 pub const Error = Ids.ChargeError || error{BadBlock};
 const Step = Place.Step;
 
@@ -134,7 +134,7 @@ const Writer = struct {
         defer index.deinit(w.gpa);
         try w.table(roots.items, &index);
         try w.word(nodeIndex(&index, h.res_root));
-        try w.cond(h.res_cond);
+        for ([_]Contract.StoredCond{ h.res_cond, h.res_read }) |x| try w.cond(x);
         for ([_]Ids.Range{ h.reads, h.writes }) |rr| {
             try w.word(rr.len);
             for (w.t.readsOf(rr)) |x| {
@@ -307,7 +307,7 @@ const Reader = struct {
         var nodes: std.ArrayList(Contract.Node) = .empty;
         try r.table(t, &nodes);
         d.res.base = try node(nodes.items, try r.next());
-        d.res_cond = try r.cond();
+        for ([_]*Contract.Cond{ &d.res_cond, &d.res_read }) |x| x.* = try r.cond();
         for ([_]*std.ArrayList(Contract.Effect){ &d.reads, &d.writes }) |list| for (0..try r.count()) |_| {
             const j = try r.next();
             try list.append(r.arena, .{ .j = j, .slot = Slots.root, .node = try node(nodes.items, try r.next()) });
@@ -330,7 +330,7 @@ const Reader = struct {
             d.labels.items[li].calls = @fromBackingInt(@intCast(calls & 3));
             d.labels.items[li].answer_left = calls >> 2 != 0;
             for (0..try r.count()) |_| {
-                const s = try d.labels.items[li].supplyOfWord(r.arena, try r.next());
+                const s = try BlockNames.supply(&d.labels.items[li], r.arena, try r.next());
                 s.res.base = try node(nodes.items, try r.next());
                 try r.effects(&s.kept);
                 s.cond = try r.cond();

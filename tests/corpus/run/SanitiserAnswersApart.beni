@@ -1,0 +1,63 @@
+-- The twin of `SanitiserAnswers` (`ownership-v2.md` §2.11.3, *a traversal's
+-- supply*): what a callback answers is one object a run, so an element of the
+-- answers is edited in place. Fresh answers, whatever the list repeats; an
+-- identity and a walker over apart lists; an element edit over `List.reverse`;
+-- a callee's list of one and two answers; a map through `List.copy` of a
+-- cell's lists; answers put in a cell. v2 accepts every edit; the sanitised run
+-- prints what the plain run prints.
+import List
+import Node exposing (Program)
+import Ref
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+pushAll : List (List Int), Int → List (List Int)
+pushAll ls n = List.map ls λl → List.push l n
+
+
+myMap : List a, (a → b) → List b
+myMap xs f =
+    case xs of
+        [ x, …rest ] →
+            [ f x, …myMap rest f ]
+
+        _ →
+            []
+
+
+one : (⊤ → List Int) → List (List Int)
+one f = [ f ⊤ ]
+
+
+two : (⊤ → List Int) → List (List Int)
+two f = [ f ⊤, f ⊤ ]
+
+
+fresh : Int → List (List Int)
+fresh n = List.map [ 1, 2 ] λj → [ j, n ]
+
+
+main : Program
+main =
+    a = [ 1 ]
+    repeated = pushAll (List.map [ a, a ] λ_ → [ 9 ]) 1
+    same = pushAll (List.map [ [ 1 ], [ 2 ] ] λl → l) 2
+    walker = pushAll (myMap [ [ 1 ], [ 2 ] ] λl → l) 3
+    reversed = pushAll (List.reverse [ [ 1 ], [ 2 ] ]) 4
+    single = List.update (one λ⊤ → [ 1 ]) 0 λl → List.push l 5
+    double = List.update (two λ⊤ → [ 1 ]) 1 λl → List.push l 6
+    cell = Ref.make (fresh 1)
+    copied = pushAll (List.map (Ref.get cell) List.copy) 8
+    Node.printLines
+        (List.map
+            [ repeated, same, walker, reversed, single, double, Ref.get cell, copied ]
+            shows
+        )

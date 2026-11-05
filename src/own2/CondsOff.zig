@@ -32,12 +32,12 @@ const Verdicts = @import("Kept.zig").Verdicts;
 /// The conditions of the code's contract, once its facts are in: its
 /// result's separation, what its writes rely on, its labels' supplies'
 /// conditions and kept slots, and `once` (§2.10 *Read-off*).
-pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
+pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts, recursive: bool) Error!void {
     const w = e.w;
     const f = e.fr();
     const s = &e.sink;
     const d = s.d;
-    if (d.flags.returns and !d.flags.cross) d.res_cond = try Distinct.sepOf(&e.ev, w.result);
+    if (d.flags.returns and !d.flags.cross) try Distinct.resConds(&e.ev, w.result, d, recursive);
     var arrs: std.ArrayList(Contract.Arrival) = .empty;
     for (d.res.items.items) |rs| {
         arrs.clearRetainingCapacity();
@@ -93,7 +93,7 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
         roots[r.a] = r.path;
     };
     const cx: Canon.Ctx = .{ .gpa = e.gpa(), .arena = arena, .account = f.account, .slots = f.slots, .places = f.places, .roots = roots };
-    d.res_cond = try Canon.canonical(cx, d.res_cond);
+    d.res_cond, d.res_read = .{ try Canon.canonical(cx, d.res_cond), try Canon.canonical(cx, d.res_read) };
     d.req = try Canon.canonical(cx, d.req);
     for (d.labels.items) |*l| for (l.supplies.items) |*sup| {
         sup.cond = try Canon.canonical(cx, sup.cond);

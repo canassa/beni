@@ -36,7 +36,7 @@ fn containerAt(f: *const Value.Frame, contracts: *const Contract.Table, root: u3
 }
 
 /// The root of the container leaf `l` takes an element out of, else `none`.
-fn containerRoot(f: *const Value.Frame, contracts: *const Contract.Table, l: Leaf) u32 {
+pub fn containerRoot(f: *const Value.Frame, contracts: *const Contract.Table, l: Leaf) u32 {
     if (l.kind != .ref) return none;
     const c = containerAt(f, contracts, l.root, l.pos);
     if (c == none) return none;

@@ -4,6 +4,8 @@
 //!
 //! Obligations kept here: none of §2.14's directly.
 
+const Contract = @import("Contract.zig");
+
 /// How the writer names a field rank, a top-level value and an origin, as
 /// string indices of the block's table.
 pub const Names = struct {
@@ -20,3 +22,9 @@ pub const Remap = struct {
     field: *const fn (ctx: *anyopaque, string: u32) ?u32,
     decl: *const fn (ctx: *anyopaque, string: u32) ?[2]u32,
 };
+
+pub fn supply(l: *Contract.Draft.DraftLabel, arena: @import("std").mem.Allocator, w: u32) !*Contract.Draft.DraftSupply {
+    const s = try l.supplyOf(arena, w & 0x3fff_ffff);
+    s.each, s.walk = .{ w >> 31 != 0, (w >> 30) & 1 != 0 };
+    return s;
+}

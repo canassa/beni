@@ -9,7 +9,7 @@ module LoanNames
   32:15 List.map <call Ref.get>[*][*]: rejected loan: `Ref.get` lent it, and `r` still holds it. `List.copy` copies only the outer list, and the lists inside are still the cell's. Copy each level, down to the list you change
   32:41 List.map m[*]: accepted callback-param
   32:57 List.push l: accepted param
-  38:5 List.map c[*]: rejected disjoint: another operand of the same operation reaches it (approx)
+  38:5 List.map c[*]: accepted callback-param
   38:21 List.push l: accepted param
   account get: source 19, baseline 165, growth 0 of 65536, total 165, continuation 159 of 19456, demands 6, walks 1, rounds 1, liveness_index lanes 2, transfer_settlement lanes 2
   summary get: res ε ⊤; nondup yes; reads π1ε
@@ -26,7 +26,6 @@ module LoanNames
   account deepCopy: source 31, baseline 1916, growth 0 of 65536, total 1916, continuation 1908 of 31744, demands 90, walks 2, rounds 3, liveness_index lanes 3, transfer_settlement lanes 3
   summary deepCopy: res ε fresh, [*] fresh; nondup no; reads π1ε
   block: 20 bytes, hash 5d28126125435d6d
-  demands 12: accepted 5 (fresh 0, call 0, param 4, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 7
-total 12: accepted 5 (fresh 0, call 0, param 4, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 7
-cause disjoint 1
+  demands 12: accepted 6 (fresh 0, call 0, param 4, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 6
+total 12: accepted 6 (fresh 0, call 0, param 4, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 6
 cause loan 6

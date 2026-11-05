@@ -1,7 +1,7 @@
 -- Appendix B's `LoanCopyDepth`, the `List` half (`ownership-v2.md` §2.13.7,
 -- *Copy depth and diagnostics*): `List.copy` copies one level, and the
 -- lists inside are still the cell's. An edit of one is refused, and the
--- refusal says to copy each level.
+-- refusal says to copy each level; `inner` does, and edits in place.
 import List
 import Node exposing (Program)
 import Ref exposing (Ref)
@@ -28,5 +28,13 @@ filtered ⊤ =
     "${lists d} ${lists (Ref.get r)}"
 
 
+inner : ⊤ → String
+inner ⊤ =
+    r = Ref.make [ [ 0 ] ]
+    c = List.map (Ref.get r) List.copy
+    d = List.map c λl → List.push l 1
+    "${lists d} ${lists (Ref.get r)}"
+
+
 main : Program
-main = Node.printLines [ outer ⊤, filtered ⊤ ]
+main = Node.printLines [ outer ⊤, filtered ⊤, inner ⊤ ]

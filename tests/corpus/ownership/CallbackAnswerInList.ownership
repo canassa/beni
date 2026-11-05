@@ -5,5 +5,9 @@ module CallbackAnswerInList
   21:12 List.update <call CallbackAnswerInList.two>: accepted call
   21:12 List.update <call CallbackAnswerInList.two>[*]: accepted call (<lambda> writes what List.update supplies it)
   21:48 List.push l: accepted callback-param (List.update supplies it owned)
+  summary one: π1 R; res [*] cb1{excl cb1}, fresh1{excl cb1}; π1 calls ≤1
+  summary two: π1 R; res [*] cb1{excl cb1} condition(fresh2), fresh1{excl cb1, sep cb1 cb1}; π1 calls many
+  summary viaOne: res [*] fresh4 ~fresh2, [*][*] ~fresh3, fresh1
+  summary viaTwo: res [*] condition(fresh4) fresh4 ~fresh2, [*][*] ~fresh3, fresh1
   demands 6: accepted 6 (fresh 0, call 4, param 0, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 0
 total 6: accepted 6 (fresh 0, call 4, param 0, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 0

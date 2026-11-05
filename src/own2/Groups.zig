@@ -59,6 +59,7 @@ const Called = @import("Called.zig");
 const CodeCaps = @import("CodeCaps.zig");
 const TypeVarParam = @import("TypeVarParam.zig");
 const CondsOff = @import("CondsOff.zig");
+const Answers = @import("Answers.zig");
 const Contents = @import("Contents.zig");
 const Within = @import("Within.zig");
 const Outward = @import("Outward.zig");
@@ -1601,7 +1602,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
                     l.outcome.cause = .comparison;
                 }
             };
-            try CondsOff.condsOff(e, ra, got.verdicts);
+            try CondsOff.condsOff(e, ra, got.verdicts, Answers.groupRecurses(evals, ids));
             const c = try mod.contracts.commit(gpa, &r.account, &mod.slots, &drafts[i]);
             const code = &mod.codes.items[id];
             if (validating) {

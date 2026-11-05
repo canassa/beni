@@ -37,9 +37,10 @@ pub fn within(t: *const Table, arena: Allocator, slots: *const Slots.Table, got:
     if (g.flags.returns and !c.flags.returns) return false;
     if (g.flags.once and !c.flags.once) return false;
     if ((g.flags.taken_write and !c.flags.taken_write) or (g.flags.entry and !c.flags.entry)) return false;
-    if (g.flags.returns and !c.res_cond.no) {
-        if (!(try t.cond(arena, g.res_cond)).weakerIn(slots, try t.cond(arena, c.res_cond))) return false;
-    }
+    for ([_]bool{ false, true }) |read| if (g.flags.returns) {
+        const cr = try t.resCond(arena, claim, read);
+        if (!cr.no and !(try t.resCond(arena, got, read)).weakerIn(slots, cr)) return false;
+    };
     if (!(try t.cond(arena, g.req)).weakerIn(slots, try t.cond(arena, c.req))) return false;
     if (!try readsWithin(t, arena, g.reads, c.reads) or !try readsWithin(t, arena, g.writes, c.writes) or !effectsWithin(t, slots, g.escapes, c.escapes)) return false;
     // A condition asked more is an escape more often.

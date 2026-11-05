@@ -1,0 +1,7 @@
+# v2 refuses an element write of answers that are not apart: a capture, a repeated element, one handed twice or kept for the next run, one answer held twice, two traversals (§2.11.3).
+59:16 list_may_be_shared SanitiserAnswers.pushAll
+61:15 list_may_be_shared SanitiserAnswers.pushAll
+62:14 list_may_be_shared SanitiserAnswers.pushAll
+63:11 list_may_be_shared SanitiserAnswers.pushAll
+64:12 list_may_be_shared SanitiserAnswers.pushAll
+65:12 list_may_be_shared SanitiserAnswers.pushAll

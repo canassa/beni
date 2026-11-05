@@ -90,7 +90,7 @@ pub fn at(e: *Eval, call: u32, o: u64) Error!Got {
 }
 
 /// Whether the place `words` below `root` may hold an object.
-fn holdsAt(e: *Eval, root: Ids.PathId, words: []const u32) Error!bool {
+pub fn holdsAt(e: *Eval, root: Ids.PathId, words: []const u32) Error!bool {
     var ps: std.ArrayList(u32) = .empty;
     defer ps.deinit(e.gpa());
     try Slots.replay(e.gpa(), e.account(), e.places(), root, words, &ps);
