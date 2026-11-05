@@ -4484,7 +4484,9 @@ occurrences, `finishDemands`; a passed-on label's outer supplies, from `ReadOff.
 RowEnv, LabelChain, Graft, Distinct, Eval). L12: `Codes` (a module's codes and one declaration's answer;
 Ids, Walk, Kept), out of `Groups`. `Walk`, `Groups` and `Eval` re-export what their readers named.*
 *Amended 2026-11-05 (#1772): `Captures` (L8: a closure's captures in what holds it, added to every parameter
-arrival through `Relation.Eval.routed` by `Eval`; Ids, Place, Value, Relation) is new beside `Routed`.*
+arrival through `Relation.Eval.routed` by `Eval`; Ids, Place, Value, Relation) is new beside `Routed`.
+`Verdicts`, what `Resolve` tells the read-off, moved from `Eval` to `Kept` (L11), beside the judgements it
+comes from: `Eval` never read it.*
 *Amended 2026-11-03 (#1773, #1775, #1776): L9 `FnRun` (a function value the frame cannot follow, §2.11.3: the one
 parameter function slot a value is, read in an evaluation or through the contracts settled at the walk, and the
 function objects of a value run by unknown code; Contract, LabelChain, RouteWalk, Relation, Value, WalkContext),

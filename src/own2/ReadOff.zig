@@ -40,7 +40,7 @@ const Cond = Contract.Cond;
 const none: u32 = Ids.none_int;
 const Evaluation = Eval.Evaluation;
 const Sink = Eval.Sink;
-const Verdicts = Eval.Verdicts;
+const Verdicts = @import("Kept.zig").Verdicts;
 
 const hooks: Eval.Hooks = .{ .demand = demandFacts, .escape = escapeFacts, .deliver = deliver };
 

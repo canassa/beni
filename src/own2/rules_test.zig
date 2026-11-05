@@ -472,7 +472,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 78), layers.len);
+    try testing.expectEqual(@as(usize, 79), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

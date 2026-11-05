@@ -31,6 +31,20 @@ const none: u32 = Ids.none_int;
 /// Every judgement is checked against a kept one (§2.12).
 pub const cross = std.debug.runtime_safety and @import("ownership_options").full_cross_check;
 
+/// What `Resolve` tells the read-off: the accepted demands' reliance and each direct label's kept slots and condition.
+pub const Verdicts = struct {
+    req: Cond = .{},
+    /// Per frame label: the kept argument slots, as `(k, leaf)` pairs.
+    kept: []const [3]u32 = &.{},
+    /// Per frame label: the condition its supplies' check relied on.
+    supply_cond: []const Cond = &.{},
+    /// Per passed-on label (`passes`' index): the kept supply slots, as
+    /// `(pass, k, leaf, at)` (`at`: the leaf's slot in the supply), and
+    /// the condition its supplies' check relied on.
+    pass_kept: []const [4]u32 = &.{},
+    pass_cond: []const Cond = &.{},
+};
+
 pub const HolderKind = enum(u8) { binding, pending };
 
 /// The holder a refusal names: a local (`who`) or a pending operand (its
