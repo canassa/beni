@@ -310,7 +310,7 @@ arrive : Relay msg, Any.Any → ⊤
 arrive live packet =
     case live of
         RelayStorage state →
-            _ = Chain.append state.queue packet
+            Chain.push state.queue packet
             if not (Js.read state.scheduled) then
                 Js.write state.scheduled True
                 queue λ⊤ → deliverQueued live

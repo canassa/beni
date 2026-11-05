@@ -1,0 +1,65 @@
+-- Initial sends queue before Listen.each starts reading. Processing the first
+-- value reentrantly queues two more, then yields. Cancellation and a reader
+-- defect must each remove the listener once and prevent later delivery.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Listen
+import Probe
+import Sub
+import Task
+import Tea
+
+
+type Msg
+    = Start
+    | Stop
+    | Burst
+    | Fail
+    | Heard Int
+
+
+listen : Cmd.Send Msg → ⊤
+listen send = Listen.each Probe.listen λvalue →
+    if value == 5 then
+        Debug.todo "listener queue defect"
+    else
+        send (Heard value)
+        if value == 1 then
+            Probe.burst ⊤
+        Task.yieldNow ⊤
+
+
+start : Cmd Msg
+start = Cmd.keyed "listener" Cmd.Restart listen
+
+
+update : Msg, String → String × Cmd Msg
+update msg seen =
+    case msg of
+        Start →
+            ( seen, start )
+        Stop →
+            ( seen, Cmd.cancel "listener" )
+        Burst →
+            ( seen, Cmd.do Probe.burst )
+        Fail →
+            ( seen, Cmd.do Probe.fail )
+        Heard value →
+            ( "${seen}${String.fromInt value},", Cmd.none )
+
+
+view : String → Html Msg
+view seen =
+    <main>
+        <p id="seen">{seen}</p>
+        <button id="start" onClick={Start}>start</button>
+        <button id="stop" onClick={Stop}>stop</button>
+        <button id="burst" onClick={Burst}>burst</button>
+        <button id="fail" onClick={Fail}>fail</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( "", start ), update = update, view = view, subscriptions = λ_ → Sub.none }

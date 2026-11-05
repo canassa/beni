@@ -569,7 +569,7 @@ mountRenderer node =
 
 scheduleRender : (⊤ → ⊤) → ⊤
 scheduleRender render =
-    _ = Chain.append (Js.read queued) render
+    Chain.push (Js.read queued) render
     if not (Js.read scheduled) then
         Js.write scheduled True
         if not (Js.read turning) then

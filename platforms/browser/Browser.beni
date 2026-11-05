@@ -345,7 +345,7 @@ host p send request flushing phase stop =
     dirty = Js.ref False
     shown = Js.ref Nothing
     self = TypedHost.make send λwork →
-        _ = Chain.append (Js.read later) work
+        Chain.push (Js.read later) work
         request skip
     apply =
         λmsg →
@@ -355,7 +355,7 @@ host p send request flushing phase stop =
     , update =
         λmsg _ →
             if Js.read dispatching then
-                _ = Chain.append inbox λ⊤ → apply msg
+                Chain.push inbox λ⊤ → apply msg
                 ⊤
             else
                 Js.write dispatching True

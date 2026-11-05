@@ -13547,6 +13547,17 @@ another (one render, at the outer one's end); and a message sent during the flus
 subscription (`Listen.on`, `Sub.on`) is not a turn yet: it is the platform's, not the runtime's, and
 the microtask it pays is the follow-up research 56 Â§8 question 3 leaves.
 
+**Token-free queue insertion (2026-11-05, Part of #1857).** Render jobs
+(`Rt.queued`), deferred work (`Browser.later`), nested updates
+(`Browser.inbox`), listener inboxes and relay payloads append with
+`Chain.push`: none keeps or removes a token. Render waiters and relay
+teardown entries retain `Chain.append` and their cancellation tokens.
+Storage remains Chain throughout. Render/deferred-work snapshots, waiter-before-work
+ordering, live reentrant drains and fatal cleanup are unchanged. A ring FIFO
+migration was rejected: it retains Chain for cancellation while adding ring
+storage and can grow the TEA page. This amendment changes no public interface,
+callback effect, ownership fact or payload identity.
+
 **What foreign JavaScript can see.** A microtask queued during a turn â by a host promise that
 settled, or by page script a handler's host call reached â ran before the render when the render
 was itself a microtask queued earlier, and now runs after it, since the render is no longer in the

@@ -65,7 +65,7 @@ open listener =
         λvalue →
             case Js.read waiting of
                 Nothing →
-                    _ = Chain.append queue value
+                    Chain.push queue value
                     ⊤
                 Just resume →
                     Js.write waiting Nothing

@@ -1,0 +1,7 @@
+pub foreign impure listen : sync (Int → ⊤) → (⊤ → ⊤)
+
+
+pub foreign impure burst : ⊤ → ⊤
+
+
+pub foreign impure fail : ⊤ → ⊤
