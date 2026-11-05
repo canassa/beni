@@ -202,7 +202,7 @@ const layers = [_]Entry{
     // A callee's hand-back is an escape too (#1709).
     .{ .file = "Closures.zig", .layer = 11, .max_lines = 140 },
     // A store that may hold one object twice escapes the cell's contents (#1984).
-    .{ .file = "Contents.zig", .layer = 11, .max_lines = 130 },
+    .{ .file = "Contents.zig", .layer = 11, .max_lines = 140 },
     // A group's judgements kept across its rounds (§2.12, #1714).
     .{ .file = "Kept.zig", .layer = 11, .max_lines = 420 },
     // What the labels outward of a virtual call add to its demands and to

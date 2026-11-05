@@ -55,7 +55,7 @@ pub fn check(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void {
             // rule, or of captures, at slots `Stored` escaped.
             const vh = e.contracts.head(f.calls.items[vi].contract);
             if (vh.res_cond.no) try taint(e, q, cs, vi);
-            if (!vh.flags.pessimistic) try moved(e, vi, try LabelChain.entriesOf(e.chain(), vh.res_root), h.flags.words and l.origin[2] == 1);
+            if (!vh.flags.pessimistic) try moved(e, vi, try LabelChain.entriesOf(e.chain(), vh.res_root), h.flags.words and l.origin[2] == 1, if (wholeEscape(e, h, cs)) q else none);
         }
     }
 }
@@ -63,8 +63,10 @@ pub fn check(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void {
 /// Virtual call `vi` stores what it was supplied at a slot not its own: the
 /// frame's names no longer say which object a slot holds, so whoever holds
 /// a moved object from before must be dead, as for an edit of it. `modify`:
-/// only `.1` is stored.
-fn moved(e: *Evaluation, vi: u32, es: *const Forest.Entries, modify: bool) Error!void {
+/// only `.1` is stored. `beside`: a call that escapes the whole cell, so
+/// neither its escape nor what it keeps is a holder from before, and every
+/// name stays escaped after.
+fn moved(e: *Evaluation, vi: u32, es: *const Forest.Entries, modify: bool, beside: u32) Error!void {
     const f = e.fr();
     for (es.items.items) |rs| {
         var ws = es.wordsOf(rs);
@@ -76,9 +78,20 @@ fn moved(e: *Evaluation, vi: u32, es: *const Forest.Entries, modify: bool) Error
         }
         for (rs.arrivals) |a| {
             if (a.kind != .param or a.j != 0 or std.mem.eql(u32, f.slots.relWords(a.slot), ws)) continue;
+            const n = e.demands.items.len;
             try Eval.callWrite(e, vi, .{ .j = 0, .slot = a.slot, .deep = true });
+            if (beside != none) for (e.demands.items[n..]) |*d| {
+                d.beside = beside;
+                d.kept = false;
+            };
         }
     }
+}
+
+/// Whether contract `h` escapes all of cell `cs`, deep.
+fn wholeEscape(e: *Evaluation, h: Contract.Head, cs: Contract.Arrival) bool {
+    for (e.contracts.effectsOf(h.escapes)) |x| if (x.j == cs.j and x.slot == cs.slot and x.deep) return true;
+    return false;
 }
 
 /// The handle below parameter slot `(j, cs)`'s `◆` of call `q`'s arguments.

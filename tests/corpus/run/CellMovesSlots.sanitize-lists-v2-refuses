@@ -5,3 +5,6 @@
 81:17 list_still_used Ref.modify
 95:13 list_still_used CellMovesSlots.swapIn
 104:5 list_still_used Ref.update
+141:5 list_still_used CellMovesSlots.partial
+141:5 list_still_used CellMovesSlots.partial
+142:5 list_still_used Ref.update

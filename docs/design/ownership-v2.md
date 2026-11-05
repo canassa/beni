@@ -2992,9 +2992,14 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
      right for everything read **after** the move, because they all moved together. So only a holder from before
      matters: each supplied slot the answer stores elsewhere gets a deep write at the call (`Contents.moved`), judged as
      an in-place edit of it, published to callers as one. A loan of it live after the call refuses the move
-     (`run/CellMovesSlots`); with none live the move is accepted and the slots stay editable. This is coarser than it
-     must be in one way: a loan held across a swap and only read refuses the swap, though nothing changes it, and
-     an in-place edit makes a closure `once`, so a closure that swaps a captured cell's slots is `once`.
+     (`run/CellMovesSlots`); with none live the move is accepted and the slots stay editable. **A slot already escaped
+     refuses the move** too, even if the cell is only read afterwards: an escape marks a name and does not follow its
+     object, so a capture moved to an unescaped name would be edited. Only one escape is no refusal: the call's own
+     that covers the whole cell, as a helper's passed-on callback publishes (`upd c f = Ref.update c f`). Every name
+     stays escaped after it, so nothing is lost. An escape of one slot is not excused (`helperEscapesOneSlot`).
+     Three refusals here are coarser than soundness needs, and a program can reach them: a loan held across a swap and
+     only read; a move of escaped contents that are only read after; and a closure that swaps a captured cell's
+     slots is `once`, because the move is an in-place edit.
    - **`.0` and `.1` read at the call.** `Loans.lends` asks whether a slot of the answer may hold an object. The code's
      own place may be generic, so `.0` is read at the call's result and `.1` at the cell's `◆` (`Loans.answer`). And a
      type variable that only scalars can instantiate holds no object: `[ 0 ]` is a `List number`, whose `[*]` is a
