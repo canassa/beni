@@ -5509,3 +5509,5 @@ tests/corpus/run/SanitiserRowCallbackHolds.beni SanitiserRowCallbackHolds 28:9 #
 tests/corpus/run/SanitiserRowCallbackHolds.beni SanitiserRowCallbackHolds 38:9 #0 :: List.push a :: accepted :: rejected  as above, a returned closure
 tests/corpus/run/SanitiserRowCallbackHolds.beni SanitiserRowCallbackHolds 45:9 #0 :: Ref.make <literal> :: absent :: accepted  v2 writes a cell by its `◆`, a line v1 has not
 tests/corpus/run/SanitiserRowCallbackHolds.beni SanitiserRowCallbackHolds 50:5 #0 :: Ref.update r◆ :: absent :: accepted  as above
+tests/corpus/run/SanitiserRowCallbackHolds.beni SanitiserRowCallbackHolds 67:9 #0 :: List.push a :: accepted :: rejected  as above, a closure in a record a helper's row runs
+tests/corpus/run/SanitiserRowCallbackHolds.beni SanitiserRowCallbackHolds 75:9 #0 :: List.push xs :: accepted :: rejected  as above, a local closure in a record

@@ -51,5 +51,32 @@ cell ⊤ =
     "${show y} ${show (Ref.get r)}"
 
 
+type alias Box =
+    f : List Int → List Int
+
+
+run : Box, List (List Int) → List (List Int)
+run b l = List.update l 0 b.f
+
+
+inRecord : ⊤ → String
+inRecord ⊤ =
+    g = mk ⊤
+    b = { f = g }
+    a = g []
+    y = List.push a 9
+    "${show y} ${show (List.concat (run b [ [ 7 ] ]))}"
+
+
+inRecordLocal : ⊤ → String
+inRecordLocal ⊤ =
+    xs = [ 1 ]
+    b = { f = λ_ → xs }
+    y = List.push xs 9
+    "${show y} ${show (List.concat (run b [ [ 7 ] ]))}"
+
+
 main : Program
-main = Node.print (String.join [ localTaken ⊤, returnedTaken ⊤, cell ⊤ ] "\n")
+main =
+    Node.print
+        (String.join [ localTaken ⊤, returnedTaken ⊤, cell ⊤, inRecord ⊤, inRecordLocal ⊤ ] "\n")

@@ -920,7 +920,7 @@ const Walker = struct {
             // frame holds is read here (#2048). A parameter's is its caller's, through the label.
             const v = fr.val(vals[n]);
             const local = v.kind != .ref or fr.roots.items[v.root].kind != .param;
-            const runs = local and fr.places.kind(try k.placeOf(a)) == .closure;
+            const runs = local and fr.places.holds(try k.placeOf(a)).closure;
             try k.use(a, i, if (runs) .whole else .call, .{ ci, @intCast(n) }, .{ code, fixed orelse none, @intCast(vals.len + captures.len) });
             k.pop(a);
         }
