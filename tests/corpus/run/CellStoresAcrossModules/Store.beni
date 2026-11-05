@@ -1,0 +1,38 @@
+-- A cell's helpers, read by the importer from this module's block.
+
+import List
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+pub pair : Ref (List Int × List Int) → String
+pair r =
+    case Ref.get r of
+        ( a, b ) →
+            "${ints a} ${ints b}"
+
+
+pub edit : Ref (List Int × List Int) → ⊤
+edit r = Ref.update r λp →
+    case p of
+        ( x, y ) →
+            ( List.push x 8, y )
+
+
+pub put : Ref a, a → ⊤
+put r x = Ref.set r x
+
+
+pub putTwice : Ref (List Int × List Int), List Int → ⊤
+putTwice r n = Ref.set r ( n, n )
+
+
+pub swapAnswer : Ref (a × a) → ⊤
+swapAnswer r = Ref.update r λp →
+    case p of
+        ( x, y ) →
+            ( y, x )

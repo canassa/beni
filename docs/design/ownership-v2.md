@@ -4044,6 +4044,15 @@ checker a build runs; a v2 word error in core or a platform is not carried eithe
 import as unknown (no block, or one that does not decode) says so in its report: `unknown block <Module>: its
 declarations read the pessimistic contract`.
 
+*As built (#1991): version 21, the cell facts' envelope.* After `escapes` a contract writes `stores`: a count, then
+each store's parameter, its `◆` slot and its condition. With `writes π◆`, `escapes`, a cell label's supply and the
+`lent` arrival (version 20), that is all a caller reads of a cell. **Regions and effect rungs are not written, and need
+not be.** A region exists to keep a loan from outliving its call. In v2 a loan is one frame's: the read-off publishes
+it as `⊤`, so it leaves no contract (§2.13.7, #1977). And v2 reads no effect rung: #1734's two rules replaced the
+suspension rule, so a contract carries no `effectAt` fact to serialise. The block version covers the facts as one
+envelope, as S3b's slice 3 did. `run/CellStoresAcrossModules` pins it: a helper's store judged at a call in another
+module. S6 completes the cache.
+
 ### 3.7 Inputs, outputs, and where the pass runs
 
 Inputs (R-1.6): the module's `Bir` with the new spread table (§2.13.2), `Check.Module` (`inst_type`, `local_type`,
