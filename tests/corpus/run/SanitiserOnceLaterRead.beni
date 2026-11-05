@@ -1,0 +1,54 @@
+-- A runtime catch for a closure that writes a capture and then reads it
+-- another way (`ownership-checker.md` §18.8, #1956): through a function that
+-- holds the list, through a local that holds it, through a lambda made there.
+-- Each prints the edited list's length and what was read: the list before the
+-- edit. Accepted, the sanitised run prints the edited list's length twice.
+import List
+import Node exposing (Program)
+import String
+
+
+viaFunction : List Int → List Int × Int
+viaFunction xs =
+    h = λ⊤ → List.length xs
+    f =
+        λ⊤ →
+            ( List.push xs 1, h ⊤ )
+    f ⊤
+
+
+viaLocal : List Int → List Int × Int
+viaLocal xs =
+    zs = xs
+    f =
+        λ⊤ →
+            ( List.push xs 1, List.length zs )
+    f ⊤
+
+
+viaLambda : List Int → List Int × Int
+viaLambda xs =
+    f =
+        λ⊤ →
+            ( List.push xs 1, (λ⊤ → List.length xs) ⊤ )
+    f ⊤
+
+
+viaNested : List Int → List Int × Int
+viaNested xs =
+    h = λ⊤ → List.length xs
+    f =
+        λ⊤ →
+            ( List.push xs 1, (λ⊤ → h ⊤) ⊤ )
+    f ⊤
+
+
+show : List Int × Int → String
+show p =
+    ( a, n ) = p
+    "${String.fromInt (List.length a)} ${String.fromInt n}"
+
+
+main : Program
+main =
+    Node.printLines [ show (viaFunction [ 5 ]), show (viaLocal [ 5 ]), show (viaLambda [ 5 ]), show (viaNested [ 5 ]) ]

@@ -27,7 +27,7 @@ module Main
 module Picks
   19:21 List.push q.c: accepted param
   summary ans: π1.b RA; res π1.b
-  summary wfirst: π1 R, π1#Node.0.kids R, π1⟨Tree⟩⁺#Node.0.c RAW[storage], π1⟨Tree⟩⁺#Node.0.c[*] A; res [*] ~π1⟨Tree⟩⁺#Node.0.c[*]{excl π1#Node.0.kids}r{excl π1#Node.0.kids}, fresh1 π1⟨Tree⟩⁺#Node.0.c{excl π1#Node.0.kids}; xreq excl π1#Node.0.kids
+  summary wfirst: π1 R, π1#Node.0.kids R, π1⟨Tree⟩⁺#Node.0.c RAW[storage], π1⟨Tree⟩⁺#Node.0.c[*] A; res [*] ~π1⟨Tree⟩⁺#Node.0.c[*]{excl π1#Node.0.kids}r{excl π1#Node.0.kids}, fresh1 π1⟨Tree⟩⁺#Node.0.c{excl π1#Node.0.kids}r{excl π1#Node.0.kids}; xreq excl π1#Node.0.kids
   summary deep3: π1 RA; res #Rose.0 condition(fresh6) π1{shared}r{shared}, #Rose.1 fresh4{shared}r{shared}, #Rose.1[*] condition(fresh2){shared}r{shared}, condition(fresh5){shared}r{shared}, ⟨Rose⟩⁺#Rose.0 condition(fresh3) π1{shared}r{shared}, ⟨Rose⟩⁺#Rose.1 fresh1{excl π1}r{excl π1}
   demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 total 10: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 9

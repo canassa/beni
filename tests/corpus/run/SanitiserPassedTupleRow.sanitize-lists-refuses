@@ -1,0 +1,7 @@
+# v1 refuses each callback edit of a list another row also holds, the helper's lambda included (#1959).
+61:66 list_still_used `List.push`
+63:71 list_still_used `List.push`
+65:67 list_still_used `List.push`
+67:67 list_still_used `List.push`
+69:71 list_still_used `List.push`
+72:16 list_still_used `List.push`
