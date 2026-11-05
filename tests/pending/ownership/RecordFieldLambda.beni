@@ -1,0 +1,15 @@
+-- CK-318: #2029. A lambda stored in a record field and called as `r.f ⊤` is
+-- unknown to v2, so the push of its answer is refused `unknown` (approx).
+-- The lambda is known where it is called, and `direct`, the same lambda bound
+-- to a name, is accepted (Appendix B RecordCallbackUnknown's known-lambda-field
+-- control). The golden claims the verdict lines and the totals.
+pub inField : ⊤ → List Int
+inField ⊤ =
+    r = { f = λ⊤ → [ 1 ] }
+    List.push (r.f ⊤) 1
+
+
+pub direct : ⊤ → List Int
+direct ⊤ =
+    h = λ⊤ → [ 1 ]
+    List.push (h ⊤) 1
