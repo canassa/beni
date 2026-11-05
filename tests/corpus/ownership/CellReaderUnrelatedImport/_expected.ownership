@@ -1,0 +1,7 @@
+module Main
+  summary h: π1 RA; res .0 condition(fresh1){shared}r{shared} condition(fresh5), .0.0 condition(fresh2) condition(fresh6) π1, .0.1 condition(fresh3) condition(fresh7) π1, .1 condition(fresh1){shared}r{shared} condition(fresh8), .1.0 condition(fresh2) condition(fresh9) π1, .1.1 condition(fresh10) condition(fresh3) π1, condition(fresh4){shared}r{shared}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module W
+  summary w1: π1 RA; res .0 condition(fresh2) π1, .1 condition(fresh3) π1, condition(fresh1){shared}r{shared}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

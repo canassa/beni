@@ -6172,3 +6172,52 @@ test "parked remainder helpers survive module cache reuse and parallel jobs" {
         }
     }
 }
+
+test "a restored Task Cell reader class is applied from the checked pack" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Task
+        \\
+        \\pub busy sched = Task.schedulerBusy sched
+        \\
+    );
+    const result = try runCounted(&w, arena_state.allocator(), &.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" }, "cell-pack.json");
+    try testing.expectEqual(@as(u8, 0), result.result.exit_code);
+    try testing.expectEqualStrings("", result.result.stderr);
+    try testing.expect(std.mem.indexOf(u8, result.result.stdout, "  summary busy: π1 R, π1#Scheduler.0 R\n") != null);
+    try testing.expectEqual(@as(u64, 1), result.counters.checked);
+    try testing.expect(result.counters.embedded_modules > 0);
+    try testing.expectEqual(result.counters.modules, result.counters.checked + result.counters.embedded_modules);
+}
+
+test "literal Cell reader source imports agree across parallel job counts" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Reader.beni",
+        \\import Js
+        \\
+        \\pub items : Js.Cell { items : List Int } → List Int
+        \\items cell = Js.cellRead cell .items
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Js
+        \\import Reader
+        \\
+        \\pub count : Js.Cell { items : List Int } → Int
+        \\count cell = List.length (Reader.items cell)
+        \\
+    );
+    const one = try w.run(&.{ "dump", "--stage=ownership", "--core", "--ownership=v2", "--ownership-everywhere", "--jobs=1", "--root=.", "." });
+    const eight = try w.run(&.{ "dump", "--stage=ownership", "--core", "--ownership=v2", "--ownership-everywhere", "--jobs=8", "--root=.", "." });
+    try testing.expectEqual(@as(u8, 0), one.exit_code);
+    try testing.expectEqual(one.exit_code, eight.exit_code);
+    try testing.expectEqualStrings("", one.stderr);
+    try testing.expectEqualStrings(one.stdout, eight.stdout);
+    try testing.expectEqualStrings(one.stderr, eight.stderr);
+    try testing.expect(std.mem.indexOf(u8, one.stdout, "  summary items: π1 R;") != null);
+    try testing.expect(std.mem.indexOf(u8, one.stdout, "  summary count: π1 R\n") != null);
+}
