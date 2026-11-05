@@ -1,0 +1,72 @@
+-- A step a place cannot name (`ownership-v2.md` §2.1, *A step past a fold*): a
+-- record row a template dropped, and a schema member in a nominal type. The
+-- step read as a scalar, so a write made no demand, or a caller read the
+-- result as fresh. Each write is refused; read as nothing, the sanitised run
+-- traps on a stale read.
+import List
+import Node exposing (Program)
+import String
+
+
+schema U =
+    tags : List Int
+    name : String
+
+
+type Q r
+    = Q { r | a : List Int }
+
+
+type B
+    = B U.Type
+
+
+type L
+    = L (List U.Type)
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+rowField : Q { b : List Int } → List Int
+rowField q =
+    case q of
+        Q rec →
+            rec.b
+
+
+member : B → List Int
+member b =
+    case b of
+        B u →
+            u.tags
+
+
+members : L → List U.Type
+members l =
+    case l of
+        L us →
+            us
+
+
+main : Program
+main =
+    k = [ 1 ]
+    k2 = [ 1 ]
+    k3 = [ 1 ]
+    n = List.push (rowField (Q { a = [], b = k })) 2
+    m = List.push (member (B { tags = k2, name = "n" })) 2
+    o =
+        case members (L [ { tags = k3, name = "n" } ]) of
+            [ u ] →
+                List.push u.tags 2
+
+            _ →
+                []
+    lines =
+        [ show n ++ show k
+        , show m ++ show k2
+        , show o ++ show k3
+        ]
+    Node.print (String.join lines "\n")

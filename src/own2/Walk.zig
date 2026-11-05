@@ -432,9 +432,9 @@ const Walker = struct {
                     const set = try fr.slots.sorted(k.gpa, fr.account, objs.items);
                     return fr.mk(.{ .kind = .ref, .root = x.root, .pos = x.pos, .family = set });
                 }
-                // A non-regular type's fold is a `var` place, which holds
-                // anything, and no slot says what is below it (§2.1).
-                const p = (try fr.child(x.pos, kind, a, b)) orelse return if (fr.places.kind(fr.places.pathPlace(fr.pos.items[x.pos].slot)) == .@"var") fr.top() else fr.scalar();
+                // A step a place cannot name: a fold's `var`, a record row a template
+                // dropped, a schema member. Unknown, not nothing (§2.1); `cross` holds no object.
+                const p = (try fr.child(x.pos, kind, a, b)) orelse return if (fr.places.kind(fr.places.pathPlace(fr.pos.items[x.pos].slot)) == .cross) fr.scalar() else fr.top();
                 return fr.mk(.{ .kind = .ref, .root = x.root, .pos = p, .place = fr.places.pathPlace(fr.pos.items[p].slot) });
             },
             .built => {
