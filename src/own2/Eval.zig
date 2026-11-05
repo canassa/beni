@@ -26,6 +26,7 @@ const Graft = @import("Graft.zig");
 const RowEnv = @import("RowEnv.zig");
 const Host = @import("Host.zig");
 const LabelChain = @import("LabelChain.zig");
+const Captures = @import("Captures.zig");
 const W = @import("Walk.zig");
 
 pub const Error = Ids.ChargeError;
@@ -92,7 +93,7 @@ pub const Evaluation = struct {
 /// Begin an evaluation of `w`: every call's contract read now, each
 /// callee's labels mapped or applied, the calls' demands and escapes made.
 pub fn evaluate(w: *Walk, contracts: *Contract.Table, ctx: Context, arena: Allocator, solver: ?*const Group, x: u32, e: *Evaluation) Error!void {
-    e.* = .{ .w = w, .ev = .{ .f = &w.f, .contracts = contracts, .arena = arena, .routed = Routed.paramLeaves }, .contracts = contracts, .ctx = ctx, .solver = solver, .x = x };
+    e.* = .{ .w = w, .ev = .{ .f = &w.f, .contracts = contracts, .arena = arena, .routed = paramLeaves }, .contracts = contracts, .ctx = ctx, .solver = solver, .x = x };
     if (solver) |sv| e.ev.live = sv.live;
     e.ev.code_sig = .{ .ctx = ctx.ctx, .of = ctx.codeSig };
     const f = &w.f;
@@ -122,6 +123,13 @@ pub fn evaluate(w: *Walk, contracts: *Contract.Table, ctx: Context, arena: Alloc
     q = 0;
     while (q < f.calls.items.len) : (q += 1) try callEffects(e, q);
     try onceDemands(e);
+}
+
+/// An arrival's leaves at a parameter's slot (`Routed.paramLeaves`), and a
+/// closure's captures where the argument is one (`Captures`, #1772).
+fn paramLeaves(ev: *Relation.Eval, v: u32, words: []const u32, deep: bool, path: u32, out: *std.ArrayList(u32)) Error!void {
+    try Routed.paramLeaves(ev, v, words, deep, path, out);
+    try Captures.add(ev, v, words, deep, out);
 }
 
 /// Map or apply the labels of call `q`'s callee (§2.11.3).

@@ -131,6 +131,8 @@ const layers = [_]Entry{
     // The labels a virtual call's supply comes through, outward, split
     // from `Eval` (#1758, #1760, #1721).
     .{ .file = "LabelChain.zig", .layer = 8, .max_lines = 145 },
+    // A closure's captures in what holds it, beside `Routed` (#1772).
+    .{ .file = "Captures.zig", .layer = 8, .max_lines = 55 },
     // A demand says whether it is a cell operation (#1727).
     .{ .file = "Walk.zig", .layer = 9, .max_lines = 1240 },
     // One entry of many objects; an answer apart from nothing (#1710,
@@ -468,7 +470,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 77), layers.len);
+    try testing.expectEqual(@as(usize, 78), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

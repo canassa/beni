@@ -4411,6 +4411,8 @@ Relation), out of `Fed`, which keeps what a pass reads of the frame's own answer
 occurrences, `finishDemands`; a passed-on label's outer supplies, from `ReadOff.condsOff`; Ids, Contract,
 RowEnv, LabelChain, Graft, Distinct, Eval). L12: `Codes` (a module's codes and one declaration's answer;
 Ids, Walk, Kept), out of `Groups`. `Walk`, `Groups` and `Eval` re-export what their readers named.*
+*Amended 2026-11-05 (#1772): `Captures` (L8: a closure's captures in what holds it, added to every parameter
+arrival through `Relation.Eval.routed` by `Eval`; Ids, Place, Value, Relation) is new beside `Routed`.*
 
 ```
 L13 Enforce
@@ -4475,6 +4477,7 @@ L0  Ids  Counters  Scratch
 | `WalkContext.zig` | 8 | the module's services a walk reads; `Groups` implements them (§2.6, §2.11.3) | Ids, Contract, Relation |
 | `LabelChain.zig` | 8 | the labels a virtual call's supply comes through, outward (§2.11.3, #1758, #1760, #1721) | Ids, Forest, Contract, RowEnv, Value |
 | `Outward.zig` | 11 | what the outward labels add: a demand's instantiated `req` and outer conditions, a passed-on label's outer supplies (§2.11.2 item 4, §2.11.3) | Ids, Contract, RowEnv, LabelChain, Graft, Distinct, Eval |
+| `Captures.zig` | 8 | a closure's captures in what holds it: a parameter arrival at an argument closure takes them, deep (§2.10, #1772) | Ids, Place, Value, Relation |
 | `Codes.zig` | 12 | a module's codes and one declaration's answer (§2.10, §2.12) | Ids, Walk, Kept |
 | `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Distinct, Walk, Cells |
 | `Holders.zig` | 8 | what resolution reads of a frame's leaves: their base keys, the escape index, the operand index (§2.8) | Ids, Place, Value, Relation, Distinct, Contract, Walk, Regions |
