@@ -4,6 +4,8 @@
 //! function, handed back as the label's argument `k` (a fold's
 //! accumulator), is read as what that call was handed as `k`, under a
 //! `fed` occurrence. `FedCall` reads that occurrence at a caller.
+//! The label's answer held by a builder handed on is read here too: covered
+//! by the elements it was taken from (§2.11.3, *a taken supply*).
 //!
 //! Obligations kept here: none of §2.14's directly (`Distinct.instSelFeed`
 //! asks the distinct check of the entries; `Resolve` judges the part).
@@ -29,7 +31,7 @@ pub const Feed = struct { j: u32, slot: Slots.Rel, label: u32, covered: u32 = no
 /// The argument of call `cl` whose elements condition `c` selects plain
 /// and deep (`π{[*]*}`), else `none`: an answer of the label to an element
 /// taken out of it holds that element (among them) or what the function
-/// holds (`replace` asks it apart), §2.11.3 *A taken supply*.
+/// holds (`replace` asks it apart), §2.11.3 *a taken supply*.
 pub fn covering(e: *Eval, c: Contract.Cond, cl: Value.Call) u32 {
     for (c.sel) |o| {
         if (Contract.isApart(o) or !Contract.isDeep(o) or Contract.isFed(o) or Contract.occParam(o) >= cl.args.len) continue;

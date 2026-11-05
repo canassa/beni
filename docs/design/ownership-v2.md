@@ -2120,6 +2120,60 @@ A capture of another cell than the arguments reach is accepted (`run/SanitiserCe
 `run/SanitiserCellReentry` (direct, through a helper, passed on to another function, a loan answered by another
 label, a list answered by another label; the sanitised runs printed the edited contents through the loan).
 
+*Amended 2026-11-05 (#1975): **a taken supply.*** A callee's supply is **kept** or **taken**, and the word says who
+may still read the object after the call. It is *kept* when a live holder of the callee, or another operand of the
+callback call, reaches the supplied object: a write of it is refused `call` at every caller, whatever the caller
+knows, because the callee reads it again (`filter`'s `x`, stored after the predicate answers). It is *taken* when
+no such holder is left: the callee never reads the object again, so a write of it is the caller's to judge.
+
+The one holder that does not count is the traversal's own container (§2.13.6, *the index obligation*). A call of a
+`taken` row (`traverseAt`) answers one element of its argument 1, and the body reads that container only through
+the traversal, once per index, for the rest of the frame. So the relation (§2.9.2) compares the taken result, read
+whole, with a leaf of its container's root as two leaves of that root at distinct places (`Taken.zig`): under the
+root's separation, the other leaf's slots apart and the element's plain, and never `may` by position. A holder of
+the container holds the others. Before this, `mapHelp`'s pending `a` met the element at `π1[*]`, so every traversal's
+supply was kept, and `List.map xs λl → List.push l 1` was refused `call` even over a fresh literal. A holder of the
+*element* (the local `x`, the taken result stored) meets it as before: that is the same leaf, not the container's.
+
+**What the caller's demand is.** The supply's arrival is the caller's own argument at `[*]`, so a known code's write
+of a taken supply is a `callsite` demand on that argument, judged as any write of it. The element is the callback's
+exactly when the caller's list is dead after the call or fresh: a live holder is refused `later-use` or `alias`, as a
+direct write would be, and a parameter's list makes it the frame's own write of `π1[*]`, which its callers judge in
+turn. The write also relies on the supply's condition, which a kept supply never needed. For `List.map`, `indexedMap`,
+`filterMap`, `concatMap`, `foldl` and `foldr` it reads `sep ⇐ sel π1{ε,[*]*} π2{ε*~}` (a fold's has the accumulator
+and `fed` occurrences besides): `π1[*]*` plain, each object in an element once, so two positions of one list and a
+part two rows share are refused; `π2ε*~`, what the function holds apart from them, so a capture of the list or of an
+element is refused. A taken supply is not the same as an owned one: if the condition fails the write is refused, and
+nothing is copied. `List.map2` stays kept: it reads with `at`, an `elementof` row, which makes no split (C.7).
+
+**The answer held by the builder.** A label's condition is instantiated at the recursive call that passes the label on
+(§2.11.3), and there `π6` is `put b i (f x)`: the builder holds the answer of the frame's own call, which §2.9.3 reads
+as any object at all, so the condition was `no`. An answer of the frame's label whose call's one object argument is an
+element taken out of an argument whose elements the condition selects plain and deep (`Fed.covering`) is dropped from
+the instantiation, through one level of a call that holds it, and the frame's function joins the condition, deep and
+apart. Sound because unknown code answers from what it was handed and what its closure holds. What it was handed is
+that element, a part of the plain occurrence, which already asks each of its objects to occur once among all the
+selected occurrences. What its closure holds is apart from them by the occurrence added. Nothing else reaches a code:
+a top-level value is never written, and `⊤` holds only what has escaped, and an escaped object is refused.
+
+Sound in full because every object a taken write reaches is judged. Against the callee, by the holders that keep it
+and by Lemma 1's split clause for the container (O9's pinned obligation on every body that reads a `taken` result: the
+seven loops of `core/List`). Between invocations, by `π1[*]*`: a write of one element reaches nothing another
+element holds, which the next invocation would read. Against the code's own holds, by `K.req` instantiated over the
+whole family. Against the caller, by the `callsite` demand. Through a helper, by §2.11.3's passes: the condition is
+instantiated at the pass, and the helper's own read of the list keeps the slot.
+
+Measured (2026-11-05, Debug, against master at `89acc9741`). Accepted: C.6's first row over a parameter and a local,
+its `edit` row, and the same shapes through `indexedMap`, `filterMap`, `concatMap`, `foldl`, `foldr`, a helper, nested
+maps, a field and a tuple's part, all in place (`run/SanitiserTakenElementApart`, refused on master). Refused:
+`run/SanitiserTakenElement`, whose probed shapes trap when the supply's condition is not asked. The oracle's 1 657
+probes and 68 new ones: 0 TRAP, 0 DIFF. The ledger of 2 277 roots: 11 positions refused → accepted, 1 accepted →
+refused, `Differential`'s `t42Repeated`, whose `[ tags, tags ]` master accepted only because it refused the write
+inside `t42`. Cost: growth unchanged everywhere, `Schema.shapeOf` +27 records of 229 045.
+Refused that a perfect checker accepts: rows that share a part the callback does not write, because the condition is
+deep and plain and not per written slot, as `takenOccs` is for `List.update`; and an edit of the elements of a list
+`List.map` answered or `List.reverse` built, because a result's separation is another rule (Appendix C.6, *As built*).
+
 #### 2.11.4 Closures
 
 A `lambda` (also `f a _`, which `Lower` makes a lambda) and a local function (`let_def` with parameters) are
@@ -8095,6 +8149,21 @@ and every round are the same, and so is the class. **v1**: the same rows for bot
 | `List.foldl xs ( [], [] ) λx ( cur, hist ) → if x == 0 then ( cur, List.push hist cur ) else ( List.push cur x, hist )` | Arm 1 keeps `cur` at `.0` and at `.1[*]`, so those two explicit paths name one cell; per-path κ cannot erase that sharing. Arm 2 writes π₂·`.0`. The feedback node's `.1[*]` gains the cell of `.0` (instantiated from arm 1). The supply-edge `callsite` demand runs on the caller's argument (§2.11 items 4–5), the literal `( [], [] )`, whose `.1[*]` is empty, so Disjoint passes there. The refusal is §2.12's *Recursive proofs*: the step must preserve "`.0` owned, held once", and arm 1, an outgoing feedback alternative, breaks it (R-5.3.2's "storing it at a second position") | refused, exact. v1's cause for the record twin is `supply` (`RecordFoldBelow.ownership`); S9's diff must map the two causes | refuse: stored at a second position (R-5.3.3; R-5.3.5's list twin) ✓ |
 | `List.foldl xs [] λx acc → if x == 0 then saved else List.push acc x`, `saved` captured | the lambda returns the capture and does not write it, so it is not `once`; the next call writes it. The instantiated feedback cells include `env saved`, and "an `env` … cell fails" (§2.11 item 5). (A lambda that writes `saved` itself is refused `once` earlier, §2.6, §2.11) | refused | refuse: replaced by a borrowed value (R-5.3.2) ✓ |
 | `edit list f = List.map list λrow → if c row then f row else row` | `within(ι_m⋆)` instantiates to `edit`'s own `cb f` label and the taken supply. That label is the caller's own `cb` label, so it carries the atoms to `edit`'s class (§2.2, last clause). They are discharged at `edit`'s caller | `editL` with a writer `f` is exclusive under `κ(list[*])`; with an `f` that answers a capture, one `env` cell twice fails | R-5.2.9 ✓ |
+
+*As built on the slot domain (2026-11-05, #1975).* C.2–C.5's supply is §2.11.3's *taken supply*, read from the slots:
+`label π2ε@47 many [1: ε… π1[*]* sep ⇐ sel π1{ε,[*]*} π2{ε*~}]`. Nothing says `taken` in the contract: a supply with
+no `kept` slot is taken. `excl π₁` is the plain deep `π1[*]*`, `others(π₁·ι_t)` is the container's leaf against the
+taken result (`Taken.zig`), and `within` over the splits does not exist: the condition selects the family. The rows:
+
+| Row | As built |
+|---|---|
+| `List.map xs λl → List.push l 1` | **as specified**, over a parameter and a local; refused `later-use` when `xs` is read again |
+| `List.map xs (λ_ → [ 1 ])` | the map itself is accepted. **Not met:** an element write of its result is refused `disjoint` (approx): the slot domain has no rule for a many label's answers being one per invocation (C.3's `within(ι_m⋆)`) |
+| `List.map xs (λ_ → shared)` | **as specified**: refused `top-level` |
+| `List.map [ x, x ] λl → l` | **as specified** for the write of the result, refused, though by the same missing rule, not for the alias |
+| `List.foldl xs [] λx acc → List.push acc x` | accepted over `Int` elements. **Not met** over lists: refused `disjoint` (approx), at the accumulator's supply, not the element's (§2.11.3, *a label's answer handed back to it*) |
+| the tuple accumulator, a captured `saved` | **as specified**: refused, each `disjoint` (approx) |
+| `edit list f` | **as specified** for the write inside `edit`. `p/EditAnsweredList`'s `patched` is refused at `bumpAll` by the same missing rule as row 2 |
 
 ### C.7 Why the asserted rows are needed
 
