@@ -1,0 +1,23 @@
+module LoanNames
+  10:5 List.push v: rejected unknown: the list came from JavaScript (approx)
+  14:14 List.push <call Ref.get>: rejected unknown: the list came from JavaScript (approx)
+  18:12 List.push <call Ref.modify>: rejected unknown: the list came from JavaScript (approx)
+  24:5 call List.map c[*]: rejected unknown: the list came from JavaScript (<lambda> writes what List.map supplies it) (approx)
+  24:21 List.push l: rejected exclusive: List.map hands its parameter 1 an element of c, whose elements may share one list (approx)
+  28:15 List.push <call Ref.get>: rejected unknown: the list came from JavaScript (approx)
+  32:15 call List.map <call Ref.get>[*][*]: rejected unknown: the list came from JavaScript (<lambda> writes what List.map supplies it) (approx)
+  32:41 call List.map m[*]: rejected exclusive: List.map hands its parameter 1 an element of <call Ref.get>, whose elements may share one list (approx)
+  32:57 List.push l: accepted callback-param (List.map supplies it owned)
+  38:5 call List.map c[*]: accepted call (<lambda> writes what List.map supplies it)
+  38:21 List.push l: rejected exclusive: List.map hands its parameter 1 an element of c, whose elements may share one list (approx)
+  summary get: π1#Ref.0 RE; res [*] ~⊤{lost}r{lost}, ⊤{lost}r{lost}
+  summary viaField: π1.c R, π1.c#Ref.0 RE; res [*] ~⊤{lost}r{lost}, ⊤{lost}r{lost}
+  summary modify: π1#Ref.0 RE; res [*] ~condition(fresh2) ~⊤{lost}r{lost}, condition(fresh1) ⊤{lost}r{lost}
+  summary outerCopy: π1#Ref.0 RE; res [*] ~condition(fresh1) ~fresh1{lost} ~⊤{lost}r{lost}, [*][*] ~condition(fresh2) ~fresh2{lost} ~⊤{lost}r{lost}, fresh3{lost}
+  summary outerEdit: π1#Ref.0 RE; res [*] ~condition(fresh1) ~fresh1 ~⊤{lost}r{lost}, ⊤{lost}r{lost}
+  summary twoLevels: π1#Ref.0 RE; res [*] ~condition(fresh1) ~fresh1{lost}, [*][*] ~condition(fresh2) ~fresh2{lost} ~⊤{lost}r{lost}, [*][*][*] ~condition(fresh3) ~⊤{lost}r{lost}, fresh4{lost}
+  summary deepCopy: π1#Ref.0 RE; res [*] ~condition(fresh1) ~fresh1{lost}r{lost}, [*][*] ~condition(fresh2) ~fresh2{lost}r{lost}, fresh3{lost}
+  demands 11: accepted 2 (fresh 0, call 1, param 0, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 9
+total 11: accepted 2 (fresh 0, call 1, param 0, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 9
+cause unknown 6
+cause exclusive 3

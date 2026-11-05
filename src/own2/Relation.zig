@@ -1137,14 +1137,14 @@ pub const Eval = struct {
             .param, .lent => {
                 if (a.j >= cl.args.len) return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
                 try e.routed(e, cl.args[a.j], words.items, a.deep, if (suffix.len == 0 and a.kind == .param) a.path else none, out);
-                if (a.kind == .lent) try e.lend(out, start, null);
+                if (a.kind == .lent) try e.lend(out, start, null, call);
             },
             .cb => {
                 if (e.known.get(.{ call, a.j })) |vc| try e.knownAnswer(vc, a.deep, words.items, out) else {
                     const fl = e.label_map.get(.{ call, a.j }) orelse return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
                     try out.append(e.gpa(), try e.f.leaf(.{ .kind = .answer, .atom = fl, .extra = try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), words.items) }));
                 }
-                if (e.lent.get(.{ call, a.j })) |i| if (e.lent_cells.items[i][0] < cl.args.len) try e.lend(out, start, .{ cl.args[e.lent_cells.items[i][0]], e.lent_cells.items[i][1] });
+                if (e.lent.get(.{ call, a.j })) |i| if (e.lent_cells.items[i][0] < cl.args.len) try e.lend(out, start, .{ cl.args[e.lent_cells.items[i][0]], e.lent_cells.items[i][1] }, call);
             },
         }
     }
@@ -1152,12 +1152,13 @@ pub const Eval = struct {
     /// The leaves `out[start..]` as loans of what a cell holds and, with
     /// `cell` (a value and the `◆` it holds at), a loan of all of it; `⊤` where
     /// there is nothing to lend (§2.13.7: a `Deferred` not yet completed).
-    fn lend(e: *Eval, out: *std.ArrayList(u32), start: usize, cell: ?[2]u32) Error!void {
+    /// A loan's `extra` is the call that lent it.
+    fn lend(e: *Eval, out: *std.ArrayList(u32), start: usize, cell: ?[2]u32, call: u32) Error!void {
         if (cell) |c| try e.routed(e, c[0], e.f.slots.relWords(c[1]), true, none, out);
         if (out.items.len == start) return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
         for (out.items[start..]) |*x| switch (e.f.leafAt(x.*).kind) {
             .top, .host, .loan => {},
-            else => x.* = try e.f.leaf(.{ .kind = .loan, .atom = x.*, .tags = e.f.leafAt(x.*).tags }),
+            else => x.* = try e.f.leaf(.{ .kind = .loan, .atom = x.*, .extra = call, .tags = e.f.leafAt(x.*).tags }),
         };
     }
 

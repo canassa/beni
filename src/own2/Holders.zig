@@ -39,12 +39,20 @@ pub const Facts = struct {
     unknown: bool = false,
     param: bool = false,
     host: bool = false,
+    /// The first call that lent an object here (§2.13.7), else `none`.
+    loan: u32 = none,
     shared: [2]u32 = .{ none, none },
 
     pub fn join(a: *Facts, b: Facts) void {
-        a.* = .{ .unknown = a.unknown or b.unknown, .param = a.param or b.param, .host = a.host or b.host, .shared = leastShared(a.shared, b.shared) };
+        a.* = .{ .unknown = a.unknown or b.unknown, .param = a.param or b.param, .host = a.host or b.host, .loan = @min(a.loan, b.loan), .shared = leastShared(a.shared, b.shared) };
     }
 };
+
+/// The callee of call `q` and its first argument, as instructions.
+pub fn calleeAndCell(f: *const Value.Frame, q: u32) [2]u32 {
+    const c = f.calls.items[q];
+    return .{ c.head, if (c.arg_insts.len != 0) c.arg_insts[0] else none };
+}
 
 /// Conditions gathered (§2.9.4): each met condition's occurrences appended,
 /// made one selection at the end by one sort, never merged one by one.
@@ -212,7 +220,8 @@ pub const Keys = struct {
                     fx.shared = leastShared(fx.shared, .{ l.atom, l.extra });
                     if (mode == .runs) try acc.append(g, .{ 3, l.atom, l.extra });
                 },
-                .answer, .top, .loan => fx.unknown = true,
+                .answer, .top => fx.unknown = true,
+                .loan => fx = .{ .unknown = true, .param = fx.param, .host = fx.host, .loan = @min(fx.loan, l.extra), .shared = fx.shared },
                 .host => fx.host = true,
                 .recons => unreachable,
             }

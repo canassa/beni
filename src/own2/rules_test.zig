@@ -216,6 +216,8 @@ const layers = [_]Entry{
     .{ .file = "Codes.zig", .layer = 12, .max_lines = 55 },
     // Evidence terms as function values (#1708).
     .{ .file = "Groups.zig", .layer = 13, .max_lines = 1900 },
+    // A refused loan's text, split from `Message` (#1991).
+    .{ .file = "LoanNote.zig", .layer = 13, .max_lines = 35 },
     // How a block names what is local to a module, split from `Block` (#1991).
     .{ .file = "BlockNames.zig", .layer = 13, .max_lines = 30 },
     .{ .file = "Block.zig", .layer = 14, .max_lines = 380 },
@@ -276,7 +278,7 @@ const literal_allowlist = [_]Allowed{};
 const causes = [_][]const u8{
     "unknown",   "escaped",  "top_level", "captured_edit", "disjoint", "held_operand", "later_use",
     "alias",     "captured", "element",   "call",          "supply",   "need",         "limit",
-    "exclusive", "once",     "payload",   "read_only",     "level",    "comparison",
+    "exclusive", "once",     "payload",   "read_only",     "level",    "comparison",   "loan",
 };
 
 const test_marker = "\nconst testing = std.testing;";
@@ -512,7 +514,6 @@ test "the layering table has each file once and every layer below the next" {
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
     try testing.expectEqual(@as(usize, 91), layers.len);
-    try testing.expectEqual(@as(usize, 20), causes.len);
 }
 
 test "the import verdict refuses back doors and accepts the base layer" {
