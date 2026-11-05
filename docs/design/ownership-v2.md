@@ -2317,6 +2317,63 @@ Refused that a perfect checker accepts: rows that share a part the callback does
 deep and plain and not per written slot, as `takenOccs` is for `List.update`; and an edit of the elements of a list
 `List.map` answered or `List.reverse` built, because a result's separation is another rule (Appendix C.6, *As built*).
 
+*Amended 2026-11-05 (#1979, #2046): **a traversal's supply.*** Nothing in a contract told a traversal from any other label: `map`'s
+supply and `app v f = f v`'s read alike, and so did `List.map` and `sel xs p = case xs of [ h, …t ] → ( p h, t )`. A supply now says
+so: printed `[1 each: …]`, the `each` mark on `Contract.Supply`, block version 24. It is derived from the walk, never from a name.
+
+**What `each` says.** In one activation of the callee, every run of the label is handed at `k` one element of one family
+`π_j·p[*]` of a parameter (E1), no position of that family is handed twice (E2), and no holder of the callee reaches the element
+after the run (E3). The claim is about positions: `[ a, a ]` has two positions, and whether the two hold one object is the
+family's own condition, which the caller asks. E3 is the supply having no `kept` slot.
+
+**How it is derived** (`Traversal.zig`, at the read-off, after the labels' kept slots). Supply `k` of a label of the frame is `each` when
+`kept` is empty, nothing but one parameter's arrivals at or below a `[*]` arrive at it, and its sources are these:
+
+- a **direct call** whose argument `k` is the result of a `taken` row, or a pattern's `front` position of a value. At most one direct call.
+- a **pass** to a callee's supply that is `each`, over a value of the frame: the source is that value (its own slot, or a `slice`
+  position of it). Two passes must walk one value: then they are alternatives, since a holder of that value at the first, the
+  second pass's argument, would have kept the first's supply. Inside a known code, the code must be run once by every label
+  outward, or its argument must be that label's `each` supply, level by level (`Traversal.runsEach`): `List.map rss λrs → List.map rs f`
+  is one traversal of `rss[*][*]`, and `List.map ys λ_ → List.map xs f` hands `xs` once per `ys`, and is none.
+- a known code that **hands on** its own argument: a pass whose callee label is `once`, keeps nothing, and has the code's own
+  parameter whole at its root, where the label running the code is `each` at that parameter (`mp rs f = List.map rs λv → f v`).
+
+A direct call and a pass together must name different positions: a `taken` element and a pass over its container whole are
+one traversal by the index obligation (§2.13.6, pinned); a pattern's `front` at `i` and a `slice` from `j > i` of the same value are
+apart by their positions (§2.3.2). Anything else is no traversal: `go xs f = case xs of [ x, …_ ] → [ f x, …go xs f ]` hands `x` again.
+In a group the mark starts from the first round's own sources and only falls, as a condition does (`within` refuses a claim
+of `each` a walk does not give; a join is the conjunction). So `mapHelp`, its sisters, and a hand-written `myMap` over `[ x, …rest ]` are `each`; `filter`, `partition` and `map2`
+are not, their labels' supplies being `kept`, and `any` is not, as it reads with `at`, which makes no split.
+
+**What it licenses, so far.**
+
+1. **A row's unwritten parts stay in the row (#1979).** A `callsite` write through an `each` supply asks of the family only what a `taken`
+   row's does (§2.13.6, `RowEnv.takenOccs`): the family's occurrences of `sep` and `below` are read apart (`Each.relaxed`), and the
+   written slot plain. All of it is **one selection**: instantiated one by one, the plain slot is never compared with what the
+   function holds, `π2{ε*~}`, and `List.map [ a, [ 2 ] ] λl → List.push l (List.length a)` reads the edited `a` (it did, in the first
+   build). So `List.map [ ( k, [ 1 ] ), ( k, [ 2 ] ) ] λ( a, b ) → ( a, List.push b 3 )` is accepted in place, and the same call writing `a` is
+   refused. Only a call that applies the code relaxes: at a pass the plain condition is instantiated on the argument and stored
+   as it is, so a callee's own `[ ( k, j ), ( k, j ) ]` handed to a parameter's function is `no` there, and its supply is not `each` anyway
+   (`fresh` and the parameter's slots arrive at it, E1).
+2. **What the callee holds of the family (#2046).** An answer in a known code run by a label is judged against what the callee may hold
+   across the run (§2.11.3, *A capture handed to a label*). Now an argument `j` that a label **takes** is left out of those operands:
+   an `each` supply walks it, and it reaches no result, store or escape of the callee (`Each.takes`). `List.map xs λv → g (f v)` with `f` an identity is
+   accepted, and `sel` is not left out, since its result holds `t`. A capture keeps every argument as an operand: a capture
+   is no element, and rule 3 of *An answer handed on* still asks what a repeated function answers.
+
+**Sound.** (E1–E3 at a caller.) Take a known code `K` applied at the caller to a label with an `each` supply, over positions `P` of the
+family. By induction on the walk's sources, each run gets a distinct position: one direct call's position and a pass's positions are disjoint
+by the case that allowed them, the pass's own by the callee's `each`, alternatives never both run, and a code run once a
+level hands on its one element. Then for license 1: a write by run `r` reaches, in the family, only objects at its written slot
+of its own element, each of which occurs once among the family and every apart occurrence, by the plain occurrence. So no other
+run's element, whatever else it shares, reaches the written object, and what the function holds is asked apart in that one selection.
+For license 2: `f`'s answer is one object of what `f` was handed or held. The callee's holders of the family after the run reach only other
+elements, and read each only to hand it over, once (E2); that element's run is judged at its own call, and a repeated
+`f` answers apart by rule 3. `takes` excludes every other way for the callee to reach the family after it returns.
+
+Fixtures: `run/SanitiserTraversalRows` (rows sharing a key, the written key refused and trapping without the rule) and
+`run/SanitiserTraversalAnswer` (`List.map xs λv → g (f v)` accepted; `THeadRest` refused).
+
 *Amended 2026-11-05 (#2028, #2029, #2030): **a function value in a result.*** A closure a declaration returns was
 followed by nobody: `res ε fresh π1ε` says what it holds and nothing of what it does, so at `g = mk xs` the call `g ⊤`
 was unknown code. Its answer was `⊤`, and whatever its code answered was refused `unknown` or `alias` at every write
@@ -4193,7 +4250,7 @@ Contract.Table (per module)
   effects   : Columns { j: u32, slot: Rel, flags: u8 (deep | fields) }   reads, writes and escapes
   conds     : []u64 occurrence words; a range with the `no` flag in `heads.flags` per condition
   labels    : Columns { j: u32, slot: Rel, origin: [3]u32, calls: u8, supplies: Range }
-  supplies  : Columns { k: u32, res: Range, kept: Range, cond: Range }
+  supplies  : Columns { k: u32, res: Range, kept: Range, cond: Range, each: bool }
 ```
 
 *Specified 2026-11-02 (#1714), not built (§2.10, contracts as trees):* `res` and a supply's `res` become one
@@ -4281,6 +4338,8 @@ v2 publishes no block for (a limit) has no row and is not a reason to refuse the
 checker a build runs; a v2 word error in core or a platform is not carried either. An importer that reads an
 import as unknown (no block, or one that does not decode) says so in its report: `unknown block <Module>: its
 declarations read the pessimistic contract`.
+
+*As built (#1979): version 24.* A supply's `k` word carries the `each` mark in its top bit (§2.11.3, *a traversal's supply*).
 
 *As built (#2028): version 23.* After a contract's labels, a count, then per function slot of its result the slot's
 steps and its called contract, written as a contract is, in the canonical order of the slots (§2.11.3).
@@ -5157,6 +5216,8 @@ L0  Ids  Counters  Scratch
 | `TypeVarParam.zig` | 12 | whether a parameter's annotated type is a type variable, split from `Groups` (§2.13.9) | Ids |
 | `Groups.zig` | 10 | the module: adapters, callees, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Worded, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver, Closures |
 | `Block.zig` | 11 | contracts ↔ words, format v-next, validation by re-encoding (§3.6) | Ids, Place, Slots, Contract, Groups |
+| `Each.zig` | 8 | what a traversal's supply says: its family, what its callee takes, what a write of it asks (§2.11.3) | Contract, LabelChain, Place |
+| `Traversal.zig` | 11 | which supplies are a traversal's, derived from the walk (§2.11.3) | Each, LabelChain, Taken, Eval, Forest |
 | `BlockCalled.zig` | 13 | a contract's called contracts in a block (§3.6, version 23) | Contract, Slots |
 | `SummaryText.zig` | 6 | a declaration's `summary` lines, its called contracts' after it (§2.11.3) | Place, Slots, Contract, ContractText |
 | `BlockNames.zig` | 13 | how a block names a field and a declaration (§3.6), split from `Block` | none |
