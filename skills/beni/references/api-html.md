@@ -85,6 +85,7 @@ module Html
   element "feDiffuseLighting" svg
   element "feDisplacementMap" svg
   element "feDistantLight" svg
+  element "feDropShadow" svg
   element "feFlood" svg
   element "feFuncA" svg
   element "feFuncB" svg
@@ -249,8 +250,8 @@ module Html
   attribute "download" on "a" "area" : String
   attribute "draggable" : String
   attribute "dur" on "animate" "animateMotion" "animateTransform" "set" : String
-  attribute "dx" on "text" "tspan" : String
-  attribute "dy" on "text" "tspan" : String
+  attribute "dx" on "feDropShadow" "feOffset" "text" "tspan" : String
+  attribute "dy" on "feDropShadow" "feOffset" "text" "tspan" : String
   attribute "edgeMode" on "feConvolveMatrix" "feGaussianBlur" : String
   attribute "elevation" on "feDistantLight" : String
   attribute "end" on "animate" "animateMotion" "animateTransform" "set" : String
@@ -277,13 +278,13 @@ module Html
   attribute "gradientTransform" on "linearGradient" "radialGradient" : String
   attribute "gradientUnits" on "linearGradient" "radialGradient" : String
   attribute "height" on "canvas" "embed" "iframe" "img" "input" "object" "video" : Int
-  attribute "height" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" "filter" "foreignObject" "image" "mask" "pattern" "rect" "svg" "symbol" "use" : String
+  attribute "height" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" "filter" "foreignObject" "image" "mask" "pattern" "rect" "svg" "symbol" "use" : String
   attribute "hidden" : Bool
   attribute "href" on "a" "area" "base" "link" url : String
   attribute "href" on "animate" "animateMotion" "animateTransform" "feImage" "filter" "image" "linearGradient" "mpath" "pattern" "radialGradient" "set" "textPath" "use" url : String
   attribute "id" : String
   attribute "image-rendering" : String
-  attribute "in" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feGaussianBlur" "feMergeNode" "feMorphology" "feOffset" "feSpecularLighting" "feTile" : String
+  attribute "in" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feGaussianBlur" "feMergeNode" "feMorphology" "feOffset" "feSpecularLighting" "feTile" : String
   attribute "in2" on "feBlend" "feComposite" "feDisplacementMap" : String
   attribute "innerHTML" property raw : String
   attribute "intercept" on "feFuncA" "feFuncB" "feFuncG" "feFuncR" : String
@@ -355,7 +356,7 @@ module Html
   attribute "repeatDur" on "animate" "animateMotion" "animateTransform" "set" : String
   attribute "required" on "input" "select" "textarea" : Bool
   attribute "restart" on "animate" "animateMotion" "animateTransform" "set" : String
-  attribute "result" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" : String
+  attribute "result" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" : String
   attribute "role" : String
   attribute "rotate" on "animateMotion" "text" "tspan" : String
   attribute "rows" on "textarea" : Int
@@ -375,7 +376,7 @@ module Html
   attribute "spreadMethod" on "linearGradient" "radialGradient" : String
   attribute "src" on "audio" "embed" "iframe" "img" "input" "source" "track" "video" url : String
   attribute "startOffset" on "textPath" : String
-  attribute "stdDeviation" on "feGaussianBlur" : String
+  attribute "stdDeviation" on "feDropShadow" "feGaussianBlur" : String
   attribute "step" on "input" : String
   attribute "stitchTiles" on "feTurbulence" : String
   attribute "stop-color" : String
@@ -413,15 +414,15 @@ module Html
   attribute "viewBox" on "marker" "pattern" "svg" "symbol" "view" : String
   attribute "visibility" : String
   attribute "width" on "canvas" "embed" "iframe" "img" "input" "object" "video" : Int
-  attribute "width" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" "filter" "foreignObject" "image" "mask" "pattern" "rect" "svg" "symbol" "use" : String
+  attribute "width" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" "filter" "foreignObject" "image" "mask" "pattern" "rect" "svg" "symbol" "use" : String
   attribute "word-spacing" : String
   attribute "writing-mode" : String
-  attribute "x" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "fePointLight" "feSpecularLighting" "feSpotLight" "feTile" "feTurbulence" "filter" "foreignObject" "image" "mask" "pattern" "rect" "svg" "symbol" "text" "tspan" "use" : String
+  attribute "x" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "fePointLight" "feSpecularLighting" "feSpotLight" "feTile" "feTurbulence" "filter" "foreignObject" "image" "mask" "pattern" "rect" "svg" "symbol" "text" "tspan" "use" : String
   attribute "x1" on "line" "linearGradient" : String
   attribute "x2" on "line" "linearGradient" : String
   attribute "xChannelSelector" on "feDisplacementMap" : String
   attribute "xlink:href" on "a" "animate" "animateMotion" "animateTransform" "feImage" "filter" "image" "linearGradient" "mpath" "pattern" "radialGradient" "set" "textPath" "use" url : String
-  attribute "y" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "fePointLight" "feSpecularLighting" "feSpotLight" "feTile" "feTurbulence" "filter" "foreignObject" "image" "mask" "pattern" "rect" "svg" "symbol" "text" "tspan" "use" : String
+  attribute "y" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "fePointLight" "feSpecularLighting" "feSpotLight" "feTile" "feTurbulence" "filter" "foreignObject" "image" "mask" "pattern" "rect" "svg" "symbol" "text" "tspan" "use" : String
   attribute "y1" on "line" "linearGradient" : String
   attribute "y2" on "line" "linearGradient" : String
   attribute "yChannelSelector" on "feDisplacementMap" : String
