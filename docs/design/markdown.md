@@ -2,8 +2,8 @@
 
 *2026-11-04, #240. **Specified, not built.** The contract for beni's Markdown library: which
 CommonMark it parses, where it lives, the tree it gives, how that tree becomes `Html msg`, and
-why no Markdown text can put script or markup of its own into a page. §9 holds the decisions that
-are the owner's, each with a recommendation; §10 holds the slices and what "done" means for each.
+why no Markdown text can put script or markup of its own into a page. §9 holds the owner's three
+decisions (taken 2026-11-04); §10 holds the slices and what "done" means for each.
 Section numbers are never renumbered (CLAUDE.md rule 2); a later change is a dated amendment in
 place.*
 
@@ -36,7 +36,8 @@ default as a property of the design, not as an option.
 
 ## 2. Where it lives
 
-*Open: §9 D1 (`conduit-fixes-q2`). The text below is the recommendation.*
+*Decided 2026-11-04 by the owner (Cesar, dashboard `conduit-fixes-q2`): "Core parser, `html`
+renderer", as below (§9 D1).*
 
 - **Core `Markdown`** parses a `String` to a tree of blocks and inlines (§4). It is pure, it
   imports nothing but core, and every platform has it. A build checks only the core modules it
@@ -59,7 +60,7 @@ is, and not hidden behind one function.
 |---|---|---|
 | 2.1–2.3 | characters, lines, tabs, insecure characters (U+0000 → U+FFFD) | yes |
 | 2.4 | backslash escapes | yes |
-| 2.5 | entity and numeric character references | numeric: yes; named: §9 D3 |
+| 2.5 | entity and numeric character references | yes: numeric, and all 2,125 names of HTML5 (§9 D3) |
 | 4.1 | thematic breaks | yes |
 | 4.2, 4.3 | ATX and setext headings | yes |
 | 4.4, 4.5 | indented and fenced code blocks, the info string | yes |
@@ -75,9 +76,9 @@ is, and not hidden behind one function.
 | 6.7, 6.8 | hard and soft line breaks | yes |
 | 6.9 | textual content | yes |
 
-So the subset is CommonMark less two things: raw HTML never becomes markup, and the named
-references are a table of §9 D3's size. Nothing else is left out, because each construct that is
-left out turns text that an author wrote as Markdown into literal `*`, `#` or `[` on the page.
+So the subset is CommonMark less one thing: raw HTML never becomes markup. Nothing else is left
+out, because each construct that is left out turns text that an author wrote as Markdown into
+literal `*`, `#` or `[` on the page.
 
 **Not here:** the extensions of GitHub Flavored Markdown (tables, strikethrough, task lists, bare
 URL autolinks, footnotes), smart punctuation, heading anchors and syntax highlighting. Each is a
@@ -175,7 +176,8 @@ attribute name (`language.md` §11.5). Its only attribute values that come from 
 
 ### 6.1 Raw HTML is parsed, and becomes text
 
-*Open: §9 D2 (`conduit-fixes-q3`). The text below is the recommendation.*
+*Decided 2026-11-04 by the owner (Cesar, dashboard `conduit-fixes-q3`): "Show it as text", as
+below (§9 D2).*
 
 CommonMark recognises HTML blocks (spec §4.6) and raw inline HTML (spec §6.6), and its renderer
 writes them to the page as they are. beni parses them by the same rules, so that the rest of the
@@ -243,8 +245,19 @@ at the cap.
 ### 7.3 Size
 
 The parser and the renderer are code that ships in each program that renders Markdown, plus the
-reference table of §9 D3. Slice M2 measures them on Conduit (`browser-tea --release`, brotli) and
-records the numbers here. Master `006f4a9e75`'s Conduit is 27,921 bytes brotli.
+reference table of §9 D3: 2,125 names, about 9.5 kB brotli in a simple form. Master
+`006f4a9e75`'s Conduit is 27,921 bytes brotli, so the table alone is about a third of it.
+
+- **Only a program that renders Markdown ships the table.** The table is one top-level value of
+  `core/Markdown`, read only by the parser's reference decoding, so reachability drops it from
+  every program that does not call `Markdown.parse` (`backend.md` §9). A build checks only the
+  core modules it reaches (`fast-compiler.md` §8), so a program that does not import `Markdown`
+  does not check it either. Slice M2 shows both: a program that does not import `Markdown` builds
+  to the same bytes as on master, and no name of the table is in its output.
+- **A baseline line.** Slice M2 adds a line for a program that renders Markdown to
+  `bench/size.mjs`, so a later change to the table's encoding has a number to beat. That change is
+  #1936, the owner's "measured cost to reduce later" (§9 D3); it must keep §8's reference examples
+  passing.
 
 ## 8. Tests
 
@@ -253,9 +266,9 @@ records the numbers here. Master `006f4a9e75`'s Conduit is 27,921 bytes brotli.
   each of the 652 examples' Markdown as input, and its HTML as the expected output, normalised to
   the `ssr` lowering's serialisation (attribute order, `<hr>` for `<hr />`, the whitespace between
   blocks). The program renders each example with `Ssr.render (Html.Markdown.fromString md)`. An
-  example that differs on purpose — raw HTML (§6.1), a named reference outside the table (§9 D3)
-  — has its beni output as its expected output and its number in `tests/markdown/differences.txt`,
-  with the reason. Every other example must match.
+  example that differs on purpose — raw HTML (§6.1), and nothing else — has its beni output as
+  its expected output and its number in `tests/markdown/differences.txt`, with the reason. Every
+  other example must match, the 17 of spec §2.5 (references, examples 25 to 41) included.
 - **Safety.** A `run/` fixture renders §6.4's payloads, the `javascript:` and `data:text/html`
   links in every spelling `safeUrl`'s pattern names, and `&lt;script&gt;`, and prints the HTML.
   A `browser/tea/` page renders them in a DOM, and its transcript shows the text and no element.
@@ -263,26 +276,34 @@ records the numbers here. Master `006f4a9e75`'s Conduit is 27,921 bytes brotli.
   parser cannot finish inside the 120-second hang guard, and the nesting at 64 and 65 levels.
 - **The tree.** A `run/` fixture prints `Debug.toString (Markdown.parse md)` for one document of
   each construct, so the tree's shape is pinned apart from the renderer.
+- **Size.** §7.3's two measurements: the `bench/size.mjs` line, and a program with no
+  `Markdown` that builds to master's bytes with no name of the table in it.
 - **Conduit.** `browser/tea/ConduitReader` gets an article body with a heading, a list, emphasis,
   a link and a code span, and its transcript shows the elements.
 
 ## 9. Decisions
 
-- **D1 — Where it lives** (`conduit-fixes-q2`). Recommended: §2, a core parser and the `html`
-  platform's renderer. The other answer: a module of the Conduit example, which only Conduit has.
-- **D2 — Raw HTML** (`conduit-fixes-q3`). Recommended: §6.1, shown as text, as Elm's default does.
-  The other answer: left out, as cmark's safe mode writes `<!-- raw HTML omitted -->`.
-- **D3 — Named references** (`conduit-fixes-q4`). Recommended: HTML 4.01's 252 names
-  (`&mdash;`, `&hellip;`, `&rsquo;`, the Latin-1 letters, Greek, arrows), about 1.2 kB brotli; a
-  name outside it stays as text, as an unknown name does in CommonMark. The other answer: HTML5's
-  2,125 names, full conformance, about 9.5 kB brotli (+34% of Conduit). Numeric references reach
-  every character in both.
+The owner took all three on 2026-11-04 (Cesar, dashboard).
+
+- **D1 — Where it lives** (`conduit-fixes-q2`, 23:38 UTC). **Decided: "Core parser, `html`
+  renderer"** (§2). The other answer was a module of the Conduit example, which only Conduit has.
+- **D2 — Raw HTML** (`conduit-fixes-q3`, 23:38 UTC). **Decided: "Show it as text"** (§6.1), as
+  Elm's default does. The other answer was to leave it out, as cmark's safe mode writes `<!-- raw
+  HTML omitted -->`.
+- **D3 — Named references** (`conduit-fixes-q4`, 23:39 UTC). **Decided: HTML5's 2,125 names.**
+  The owner: *"It's CommonMark, so be conformant and pass the spec's reference examples. A missing
+  name shows the author's text wrong. 9.5 kB is a measured cost to reduce later (compact table
+  encoding), not a reason to change behaviour now. Make sure only programs that render Markdown
+  ship it, and add a size line so the reduction has a baseline."* §7.3 holds the two size
+  conditions, and #1936 the reduction. The other answer was HTML 4.01's 252 names, about 1.2 kB
+  brotli, with a name outside them left as text.
 
 ## 10. Slices
 
-- **M1 — the parser.** `core/Markdown.beni`: §4's tree and `parse`, §7's limits. Fixtures: the tree,
-  the limits. `skills/beni/` and `zig build skill-api`.
+- **M1 — the parser.** `core/Markdown.beni`: §4's tree and `parse`, the HTML5 reference table,
+  §7's limits. Fixtures: the tree, the limits. `skills/beni/` and `zig build skill-api`.
 - **M2 — the renderer.** `Html.Markdown` (§5), the re-exports, the conformance fixture and
-  `tests/markdown/`, the safety fixtures. §7.3's numbers.
+  `tests/markdown/`, the safety fixtures. §7.3's two size measurements and the `bench/size.mjs`
+  line.
 - **M3 — Conduit.** `Article.body` renders the body with `Html.Markdown.view`; the `GAP` comment
   goes. `ConduitReader`'s new article and transcript (§8). Closes #240.
