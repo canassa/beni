@@ -1,0 +1,11 @@
+# v2 refuses each edit of a cell that may hold one object at two slots: the store made its contents escape (§2.13.7, #1984, #1986).
+44:5 list_still_used CellStoresTwice.edit
+54:5 list_still_used CellStoresTwice.edit
+64:5 list_still_used CellStoresTwice.edit
+75:5 list_still_used CellStoresTwice.edit
+85:5 list_still_used Ref.update
+85:5 list_still_used Ref.update
+93:5 list_still_used Ref.update
+105:5 list_still_used CellStoresTwice.edit
+115:5 list_still_used CellStoresTwice.edit
+132:9 list_still_used CellStoresTwice.editThenStore

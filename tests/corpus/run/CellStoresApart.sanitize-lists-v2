@@ -1,0 +1,2 @@
+A cell whose stores keep its slots apart (ownership-v2.md §2.13.7): built again under --ownership=v2 and the list
+stale-read sanitiser. v2 accepts every edit in place, and the sanitised run prints what the plain run prints.
