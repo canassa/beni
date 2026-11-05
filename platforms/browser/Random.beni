@@ -170,3 +170,6 @@ andThen = Pcg.andThen
 --| A generator made only when it is run: for one that refers to itself.
 pub lazy : (⊤ → Generator a) → Generator a
 lazy = Pcg.lazy
+
+
+-- Throwaway: CI cases of #1920.
