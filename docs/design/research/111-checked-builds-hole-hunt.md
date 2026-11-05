@@ -373,7 +373,7 @@ decisions faithfully recorded. Its findings, all applied:
 
 - **A value generic over `number` has nowhere to take evidence.** Run: `big = 9007199254740991 + 2`
   served `Int` and `Float` at once, in a `let` too, and `ops = { double = λx → x + x }` did the same.
-  The owner chose to hold such values (`language.md` §13.11, #2077).
+  This is pending the owner's decision, and the contract has no text for it yet.
 - **A crash under a program-made `Task.scheduler` leaves a page running.** Run, happy-dom. The owner
   decided a program's scheduler contains nothing (`language.md` §13.6, #1994).
 - **The exact tests crash correct-looking code in the tree.** Prototype: 5 916 `Js.at` reads past the

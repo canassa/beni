@@ -3784,8 +3784,7 @@ assumes a check would have passed** (`backend.md` §16.5).
 
 **Its baseline.** *Decided by the owner, 2026-11-05.* `--release` output changes only by named
 repairs, each a correctness fix that changes every build and is reviewed with its golden changes.
-**The named repairs are the repairs of `backend.md` §16.8 step 2**, with #1985's `^` and the
-value restriction of §13.11: `Duration`'s saturation, `Int.mod`'s exact answer, wide `Random.int`
+**The named repairs are the repairs of `backend.md` §16.8 step 2**, with #1985's `^`: `Duration`'s saturation, `Int.mod`'s exact answer, wide `Random.int`
 (#1992), stable `degrees` and `toPolar` (#2021), the clock and deadline answers (#2022),
 `Html.targetValue`'s type (#1993), the stop paths (#1994), the host wrappers (#1995, #2020), the
 Cloudflare import (#2019), the repairs of the predicate sweep, and the refusal of out-of-range
@@ -3898,52 +3897,12 @@ recommended. They are normative where the sections above use them.
   promises it (`Duration`).
 - **`Html.targetValue : Event → Maybe String`** (#1993): `Nothing` on an element with no string
   `value`.
-- **D7. A value is not generic over what it computes** (#1999's third review): option (a), hold
-  them. §13.11 is the rule.
 - **D8. What a crash stops** (#1994): a scheduler a program makes does not contain a defect; only
   a platform's per-request or per-object scheduler does. §13.6 defines "stops" per platform:
   a page, every program of it; Node, the process; a Worker, that request or object. This overrides
   `core/Task.beni`'s doc comment and `transparent-effects-proposal.md` §17.5.
 - **`Duration.times`** keeps its promised answers on a non-finite factor, as a named row of §13.4.
   The first draft kept them without saying so. This does not reopen D6.
-
-### 13.11 A value is not generic over what it computes
-
-*Decided by the owner, 2026-11-05 (D7), after the third review of #1999. Specified, not built (#2077);
-it refuses programs that compile today, with a guarantee behind the refusal (rule 7).* Numeric
-evidence (§13.10 D1) goes in a parameter, and a value has none. Today `big = 9007199254740991 + 2`
-serves `asInt : Int` and `asFloat : Float` at once, though it is one evaluation that must crash at
-`Int` and must not at `Float`. Making it a function of its evidence would run its right side at each
-read, which breaks §6's "evaluated once, where written". So this extends the value restriction
-(`checker-v2.md` §8.4):
-
-**The rule.** A **value binding**, at top level or in a block, is a binding with no parameters whose
-right side is not a lambda. Such a binding is generalised over a `number` variable only when its
-right side is **inert** at that variable: built from literals, constructors, record, tuple and list
-literals, and names of inert values. `zero = 0`, `xs = [ 1, 2 ]` and `p = ( zero, Just 1 )` stay
-generic: they compute nothing, and a literal is the same number at both types, so they take no
-evidence. Anything else at the variable **computes**, and the variable is **held**: an operator, a
-call, or a lambda or a generic function anywhere inside the right side, because a function stored in
-a value has nowhere to take evidence either.
-
-- **In a block**, a held variable belongs to the enclosing frame, as a held wanted does. Its uses fix
-  it, and a use at another type is `type_mismatch`, whichever is written first.
-- **At top level**, no frame encloses it and a declaration's group is checked before its users, so
-  it **defaults to `Int` when its group closes**. `asInt = big` type-checks and `big` crashes when
-  it evaluates. `asFloat = big + 0.5` is `type_mismatch`; write `big : Float`. Defaulting at the
-  group and not at the last use keeps the rule that declaration order never changes whether a program
-  checks (`ordering_test.zig`), and keeps a module's interface a function of that module.
-- **`ops = { double = λx → x + x }`** is a value holding a lambda, so its `number` is held:
-  `ops.double 1` and `ops.double 1.5` in one block are `type_mismatch`, and at top level `ops.double`
-  is `Int → Int`. `double = λx → x + x` and `double x = x + x` are function bindings, stay generic and
-  take evidence. A bare name, `f = twice`, is a callable alias of a function, computes nothing, and
-  takes what `twice` takes; `{ f = twice }` is not bare and is held.
-- **An annotation does not lift this.** `big : number` over a right side that computes, or `pick :
-  Maybe number` over `Just (M + 2)`, is `constrained_constant`, the existing refusal of a value that
-  would need evidence. Write `Int` or `Float`.
-- **An unresolved `number` at a monomorphic site means `Int`.** `show (twice 9007199254740991)`, with
-  `show : a → String`, fixes nothing, and evidence is `Int`, so it crashes. This is
-  `static-dispatch-spike.md` §8.6's rule for identities, applied to evidence.
 
 ## Appendix A. The prelude
 

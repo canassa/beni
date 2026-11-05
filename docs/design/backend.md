@@ -13626,9 +13626,6 @@ class.
   its evidence parameters" and numeric evidence is evidence.
 - **Unused evidence.** Reach or a later specialiser may drop a discriminator nothing reads in a closed
   build, never in a `--library` export.
-- **Values.** A value has no parameter. An inert value takes no evidence and any other value is not
-  generic over `number` (`language.md` §13.11, #2077). An unresolved `number` at a monomorphic site
-  means `Int`, the rule §8.6 already has for identities.
 - **Suspension.** A declaration's `name$s` form (`§4`, *`Js.suspending`*) receives the same evidence
   in the same order. A checked operation can fail, and failing is synchronous: **"may fail" is
   tracked apart from "may suspend"**, so adding a check changes no inferred effect rung and no
@@ -13765,9 +13762,6 @@ only: range analysis and evidence specialisation are step 6.
   consumer of a generic export; both the `sync` and the `$s` form of a generic function; the schema
   paths compiled and through the hidden `--schema-library`; JSON text and host-value encoding of
   `NaN`.
-- **Values** (`language.md` §13.11, #2077): `check/bad/` fixtures for a computing value used at two
-  types, at top level, in a block, annotated, and holding a lambda; `run/` fixtures that `zero = 0`
-  and `xs = [ 1, 2 ]` stay generic and that an unresolved `number` crashes as `Int`.
 - **Order** (`language.md` §6): two failing top-level values, two failing modules, and a tree whose
   two literal tests both meet a `NaN`, each reporting the same crash in both checked builds.
 - **Pages and workers.** A crash in each path of `language.md` §13.6: module load, a plain
@@ -13790,8 +13784,7 @@ guarantee is not. #1985 is a dependency of step 4.
    reviewed baseline change: `Int.mod`, wide `Random.int`, `Duration` (#1992); stable core math
    (#2021); clocks and deadlines (#2022); host reads and arguments (#1993, #1995, #2020); the
    Cloudflare development import (#2019); the browser startup and fiber stop paths (#1994). The literal
-   refusal and the value restriction (`language.md` §13.11, #2077) can land here, as deliberate
-   source-compatibility changes. **Run the exact predicates in logging form across the whole corpus
+   refusal can land here, as a deliberate source-compatibility change. **Run the exact predicates in logging form across the whole corpus
    and repair every hit before step 4 (#2078)**: a logging prototype found thousands of hits in
    `Rt.beni` and `Inline.beni` (`language.md` §13.9), so a builder who skips this finds the whole
    browser corpus red. These repairs are the named repairs of `language.md` §13.7. None of them is

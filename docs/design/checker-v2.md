@@ -1460,15 +1460,7 @@ then `Resolve.closeLet` in step 7):
   function of it, which would run its right-hand side at each read and break `language.md` §6
   *Evaluation order*'s "`let` bindings: in the order written", evaluated once where written — so it
   stays monomorphic, and `static-dispatch-spike.md` §6.2's `let t = decodeInto "zz" in label t`
-  is still pinned by its later use. A pattern binding is held for the same reason. *Amended
-  2026-11-05 (the owner's D7, `language.md` §13.11, #2077; specified, not built):* this restriction
-  applied only to a root carrying a wanted, and `number` is a kind, not a wanted, so `big = M + 2`
-  generalised and served `Int` and `Float` from one evaluation. **A value binding also holds a
-  `number` root unless its right side is inert at it** (literals, constructors, record, tuple and
-  list literals, names of inert values). A lambda or a generic function inside the right side is not
-  inert, so `ops = { double = λx → x + x }` is held. In a `let` frame the root goes to the enclosing
-  rank as above. At a top-level frame it defaults to `Int` when the group closes, and an annotation
-  that quantifies it is `constrained_constant`. A bare name of a function stays an alias. Rule 3 and the
+  is still pinned by its later use. A pattern binding is held for the same reason. Rule 3 and the
   value restriction are the two places a `let` is not HM(X), with the cap below; `type_mismatch`'s A.30 hint names
   which one held the binding (`Env.monomorphic` gains the reason). A header
   is a header wherever its `let` stands — inside a lambda or a `case`/`if` branch the generator
