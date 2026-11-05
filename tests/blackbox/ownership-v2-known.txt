@@ -23,6 +23,9 @@ tests/corpus/ownership/core/HeldIntoTypeVariable.beni [node] HeldIntoTypeVariabl
 tests/corpus/ownership/core/V2WordsHiddenFromV1.beni [node] V2WordsHiddenFromV1 17:12 #0 :: construction xs :: rejected :: accepted  the fixture's point: v1 reads none of v2's words
 tests/corpus/ownership/LevelLimit.beni [node] LevelLimit 27:23 #0 :: List.push xs :: rejected :: accepted  v1's documented `level` limit; v2 has no such cap
 tests/corpus/ownership/LevelLimit.beni [node] LevelLimit 56:15 #0 :: List.push a :: rejected :: accepted  v1's documented `level` limit; v2 has no such cap
+tests/corpus/ownership/ElementEdits.beni [node] ElementEdits 36:13 #0 :: List.map rows[*] :: rejected :: accepted  R-4.3.5 (#1072): `List.length rows` reads the outer list, not the element written (map's element is taken, #1975)
+tests/corpus/ownership/FoldKeepsInnerRefused.beni [node+everywhere] FoldKeepsInnerRefused 57:16 #0 :: List.map <literal>[*] :: rejected :: accepted  v2 refuses the write inside `keepRow` itself (54:5, escaped), so its callers rely on nothing; a direct call `keepRow [ [ 1 ] ]` is accepted `fresh` alike (#1975)
+tests/corpus/ownership/FoldKeepsInnerRefused.beni [node+everywhere] FoldKeepsInnerRefused 60:17 #0 :: List.indexedMap <literal>[*] :: rejected :: accepted  v2 refuses the write inside `keepRow` itself (54:5, escaped), so its callers rely on nothing; a direct call `keepRow [ [ 1 ] ]` is accepted `fresh` alike (#1975)
 #
 # v2 refuses where v1 accepted (S3a builds neither initialization transfer,
 # S7, nor record paths, S5).
@@ -4016,7 +4019,6 @@ tests/corpus/ownership/Callbacks.beni [node] Callbacks 40:15 #0 :: construction 
 tests/corpus/ownership/DictFocus.beni [node] DictFocus 29:26 #0 :: Maybe.map m#Just.0 :: rejected :: accepted  the refusal moved to the enclosing call: v2 refuses `Dict.update` at 29:5
 tests/corpus/ownership/DictFocus.beni [node] DictFocus 35:34 #0 :: Maybe.map m#Just.0 :: rejected :: accepted  the refusal moved to the enclosing call: v2 refuses `Dict.update` at 35:13
 tests/corpus/ownership/DictTupleFocusSharing.beni [node+everywhere] DictTupleFocusSharing 13:22 #0 :: List.append taps :: rejected :: accepted  the refusal moved to the enclosing call: v2 refuses `Dict.update` at 11:5
-tests/corpus/ownership/Differential.beni [node] Differential 114:18 #0 :: Differential.t42 <literal>[*].tags :: rejected :: accepted  v2 refuses the write inside `t42` (100:18, `List.map cards[*].tags`), so its callers rely on nothing
 tests/corpus/ownership/FoldElementPathAliases.beni [node+everywhere] FoldElementPathAliases 19:53 #0 :: FoldElementPathAliases.put acc[*].1 :: rejected :: accepted  the refusal moved to the fold: v2 refuses `List.foldl` at 19:5 (`disjoint`)
 tests/corpus/ownership/FoldElementPathAliases.beni [node+everywhere] FoldElementPathAliases 31:46 #0 :: FoldElementPathAliases.put acc[*].1 :: rejected :: accepted  the refusal moved to the fold: v2 refuses `List.foldl` at 31:5 (`disjoint`)
 tests/corpus/ownership/FoldElementPathAliases.beni [node+everywhere] FoldElementPathAliases 43:42 #0 :: FoldElementPathAliases.put acc[*].1 :: rejected :: accepted  the refusal moved to the fold: v2 refuses `List.foldl` at 43:5 (`disjoint`)
@@ -4068,16 +4070,12 @@ tests/corpus/ownership/BridgeResultPaths.beni [browser-inline] BridgeResultPaths
 tests/corpus/ownership/BridgeResultPaths.beni [browser-inline] BridgeResultPaths 57:5 #0 :: List.foldr <literal> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/BridgeResultPaths.beni [browser-inline] BridgeResultPaths 62:14 #0 :: List.foldl <literal> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/Callbacks.beni [node] Callbacks 30:10 #0 :: List.foldl <literal> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
-tests/corpus/ownership/Callbacks.beni [node] Callbacks 45:17 #0 :: List.map rows[*] :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/CapturedParam.beni [node] CapturedParam 21:17 #0 :: Set.foldl <literal> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
-tests/corpus/ownership/ConstructorDiscardedAlias.beni [node] ConstructorDiscardedAlias 25:5 #0 :: List.map next[*] :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/DictFocus.beni [node] DictFocus 22:5 #0 :: Dict.update d#Dict.0#Node.2 :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/DictFocus.beni [node] DictFocus 29:5 #0 :: Dict.update d#Dict.0#Node.2 :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/DictTupleFocus.beni [node+everywhere] DictTupleFocus 10:5 #0 :: Dict.update d#Dict.0#Node.2.1 :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
-tests/corpus/ownership/Differential.beni [node] Differential 100:18 #0 :: List.map cards[*].tags :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/Differential.beni [node] Differential 148:18 #0 :: Differential.t57 <literal>[*][*] :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/Differential.beni [node] Differential 154:18 #0 :: Differential.t57 <literal>[*][*] :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
-tests/corpus/ownership/ElementEdits.beni [node] ElementEdits 24:15 #0 :: List.map rows[*] :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/ElementEdits.beni [node] ElementEdits 44:18 #0 :: ElementEdits.addKid groups[*].kids :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/EntryInvariantCommand.beni [browser-inline] EntryInvariantCommand 34:19 #0 :: List.map kids[*]#Tree.0 :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/EntryInvariantCommand.beni [browser-tea+everywhere] EntryInvariantCommand 34:19 #0 :: List.map kids[*]#Tree.0 :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
@@ -4111,8 +4109,6 @@ tests/corpus/ownership/FoldKeepsInner.beni [node+everywhere] FoldKeepsInner 30:1
 tests/corpus/ownership/FoldKeepsInner.beni [node+everywhere] FoldKeepsInner 34:16 #0 :: List.foldl <literal> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/FoldKeepsInner.beni [node+everywhere] FoldKeepsInner 45:17 #0 :: List.foldl <literal> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/FoldKeepsInner.beni [node+everywhere] FoldKeepsInner 57:16 #0 :: List.foldl <record>.rows :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
-tests/corpus/ownership/FoldKeepsInner.beni [node+everywhere] FoldKeepsInner 71:16 #0 :: List.map <literal>[*] :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
-tests/corpus/ownership/FoldKeepsInner.beni [node+everywhere] FoldKeepsInner 74:17 #0 :: List.indexedMap <literal>[*] :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/FoldKeepsInner.beni [node+everywhere] FoldKeepsInner 79:20 #0 :: List.foldl <literal> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/FoldKeepsInner.beni [node+everywhere] FoldKeepsInner 79:20 #0 :: List.foldl <literal>[*] :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/FoldKeepsInnerRefused.beni [node+everywhere] FoldKeepsInnerRefused 64:18 #0 :: List.foldl <literal> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
@@ -4120,7 +4116,6 @@ tests/corpus/ownership/FoldKeepsInnerRefused.beni [node+everywhere] FoldKeepsInn
 tests/corpus/ownership/FoldKeepsInnerRefused.beni [node+everywhere] FoldKeepsInnerRefused 87:5 #0 :: List.foldl rows :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/FoldStringKeys.beni [node+everywhere] FoldStringKeys 20:12 #0 :: List.foldl <literal> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/FoldStringKeys.beni [node+everywhere] FoldStringKeys 20:12 #0 :: List.foldl <literal>[*].1 :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
-tests/corpus/ownership/ImportedSummaries [node] Lib 12:13 #0 :: List.map xs[*] :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/MergeCallbackCycle.beni [browser-inline] MergeCallbackCycle 27:22 #0 :: Dict.merge <literal> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/MergeCallbackCycle.beni [browser-inline] MergeCallbackCycle 39:12 #0 :: Dict.merge <literal> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/MergeCallbackCycle.beni [browser-inline] MergeCallbackCycle 47:15 #0 :: Dict.merge <literal> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
@@ -4136,7 +4131,6 @@ tests/corpus/ownership/T59.beni [node] T59 40:15 #0 :: List.update rows[*][*] ::
 tests/corpus/ownership/WriteExtents.beni [browser-inline] WriteExtents 56:7 #0 :: List.update xs :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/WriteExtents.beni [browser-inline] WriteExtents 56:7 #0 :: List.update xs[*] :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/core/CastOccurrence.beni [node] CastOccurrence 16:5 #0 :: List.map rows[*] :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
-tests/corpus/ownership/core/CastOccurrence.beni [node] CastOccurrence 45:13 #0 :: List.map rows[*] :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/core/CastOccurrence.beni [node] CastOccurrence 9:5 #0 :: List.map rows[*] :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/core/FullCast.beni [node] FullCast 99:5 #0 :: List.map rows[*] :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/run/ListForms.beni ListForms 106:24 #0 :: List.map others[*] :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)

@@ -107,6 +107,7 @@ const layers = [_]Entry{
     // Compatibility for one pair of points, split from `Liveness` (#1685).
     .{ .file = "Ancestry.zig", .layer = 6, .max_lines = 130 },
     .{ .file = "Relation.zig", .layer = 7, .max_lines = 1300 },
+    .{ .file = "Taken.zig", .layer = 7, .max_lines = 75 },
     // The distinct check's entries and rounds' state, split from `Distinct` (#1714).
     .{ .file = "Entries.zig", .layer = 7, .max_lines = 400 },
     // The atoms a result holds open already, for the read-off (#1716).
@@ -143,6 +144,7 @@ const layers = [_]Entry{
     .{ .file = "Cells.zig", .layer = 8, .max_lines = 150 },
     // A label's answer handed back to it, and its `fed` occurrence (#1713).
     .{ .file = "Fed.zig", .layer = 8, .max_lines = 140 },
+
     // The sources a frame's escapes reach, for the read-off's `host` (#1744).
     .{ .file = "Host.zig", .layer = 8, .max_lines = 120 },
     // A callee's `fed` occurrence at a call, split from `Fed` (#1721).

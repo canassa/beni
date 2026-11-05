@@ -19,6 +19,7 @@ const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Fed = @import("Fed.zig");
+const Taken = @import("Taken.zig");
 const FedCall = @import("FedCall.zig");
 const Entries = @import("Entries.zig");
 const RouteWalk = @import("RouteWalk.zig");
@@ -236,7 +237,9 @@ pub fn instSel(e: *Eval, c: Cond, call: u32) Error!Cond {
 /// `instSel` at a call that may pass the frame's label on (`feed`, §2.11.3,
 /// *a label's answer handed back to it*): `Fed` reads the label's own answer
 /// handed back as what its call was handed, and decides `fed` occurrences.
-pub fn instSelFeed(e: *Eval, c0: Cond, call: u32, feed: ?Fed.Feed) Error!Cond {
+pub fn instSelFeed(e: *Eval, c0: Cond, call: u32, feed0: ?Fed.Feed) Error!Cond {
+    var feed = feed0;
+    if (feed) |*fd| fd.covered = Fed.covering(e, c0, e.f.calls.items[call]);
     if (c0.no) return Cond.unprovable;
     if (c0.sel.len == 0) return Cond.yes;
     var fed: std.ArrayList(u64) = .empty;
@@ -617,6 +620,7 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
     if (x.kind == .host or t.kind == .host) return if (x.kind == t.kind) .may else .no;
     const xr = x.kind == .ref;
     const tr = t.kind == .ref;
+    if (Taken.side(e.f, e.contracts, x, t)) |w| return Taken.apartFromOthers(Ov, e, xi, ti, w, target, apartOf, overlap);
     // An unknown label's answer may be anything its closure was handed:
     // written, anything; holding the target, what it was supplied or its
     // label's function slot holds.
