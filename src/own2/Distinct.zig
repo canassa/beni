@@ -123,8 +123,9 @@ fn sepLeaf(e: *Eval, li: u32) Error!Cond {
 pub fn instCond(e: *Eval, call: u32) Error!Cond {
     try condStates(e);
     if (e.contractOf(call)) |c| if (!e.contracts.head(c).res_read.no) hoped(e);
-    // Each call twice: the reading of a label's answers has its own (§2.11.3).
-    const at = 2 * call + @intFromBool(e.read_mode == .reading);
+    // Each call once a mode: an ask may fall back to reading, and a strict
+    // run is exactly the check before it (§2.11.3).
+    const at = 3 * call + modeOf(e);
     switch (e.cond_state.items[at] & 3) {
         2 => return e.cond_of.items[at],
         1 => return Cond.unprovable,
@@ -138,7 +139,7 @@ pub fn instCond(e: *Eval, call: u32) Error!Cond {
 }
 
 fn condStates(e: *Eval) Error!void {
-    while (e.cond_state.items.len < 2 * e.f.calls.items.len) {
+    while (e.cond_state.items.len < 3 * e.f.calls.items.len) {
         try e.cond_state.append(e.gpa(), 0);
         try e.cond_of.append(e.gpa(), .{});
     }
@@ -302,6 +303,15 @@ fn answerMeets(f: *Value.Frame, ents: []const Ent, alive: []const bool, fresh: u
         }
     }
     return false;
+}
+
+/// The memos' mode: what a condition met in one must not answer another.
+fn modeOf(e: *const Eval) u32 {
+    return switch (e.read_mode) {
+        .ask => 0,
+        .strict, .hope => 1,
+        .reading => 2,
+    };
 }
 
 /// A `no` from here on may be another answer read (`distinct`).
@@ -534,7 +544,7 @@ fn check(e: *Eval, ps: []const Proj, routed: bool, read: ?*Answers.Reader) Error
 /// `target`: `t` is a shallow write target.
 pub fn overlap(e: *Eval, x: u32, t: u32, target: bool) Error!Ov {
     try e.charge(.cond, 1);
-    const key: [3]u32 = .{ x, t, @as(u32, @intFromBool(target)) | @as(u32, @intFromBool(e.keeping)) << 1 };
+    const key: [3]u32 = .{ x, t, @as(u32, @intFromBool(target)) | @as(u32, @intFromBool(e.keeping)) << 1 | modeOf(e) << 2 };
     const got = try e.ov_memo.getOrPut(e.gpa(), key);
     if (got.found_existing) {
         return if (got.value_ptr.* == none) Ov.no else e.ovs.items[got.value_ptr.*];
