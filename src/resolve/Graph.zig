@@ -115,6 +115,7 @@ cycle_members: []const Index,
 /// import, as a bit set (`Platforms.sees`). Empty with no platform chain.
 sees: []const u64 = &.{},
 cloudflare_layer: ?u8 = null,
+browser_owner: ?Index = null,
 /// The markup vocabulary the chain names (`boundary.md` §9.2), resolved.
 markup: Markup = .{},
 /// Set during the existing name-index build; no native pass on ordinary builds.
@@ -173,6 +174,7 @@ pub const Platforms = struct {
     /// platform it depends on, transitively.
     sees: []const u64 = &.{},
     cloudflare_layer: ?u8 = null,
+    browser_layer: ?u8 = null,
     /// The `"reexports"` of every package of the chain.
     reexports: []const Reexport = &.{},
     /// Whether the run has a platform at all.
@@ -483,6 +485,17 @@ pub fn build(
     }
     g.rows = try rows.toOwnedSlice(gpa);
     g.modules = modules.toOwnedSlice();
+    if (platforms.browser_layer) |layer| {
+        for (0..g.modules.len) |i| {
+            const index: Index = @fromBackingInt(@intCast(i));
+            if (g.modulePackage(index) == .platform and g.modules.items(.layer)[i] == layer and
+                std.mem.eql(u8, interner.slice(g.moduleName(index)), "Browser"))
+            {
+                g.browser_owner = index;
+                break;
+            }
+        }
+    }
     g.markup = try resolveMarkup(&g, gpa, artifacts, interner, platforms);
 
     // 2. Edges: one per import the module uses, then one per module that
@@ -1434,4 +1447,10 @@ pub fn isCloudflare(g: *const Graph, m: Index) bool {
 pub fn samePlatformLayer(g: *const Graph, a: Index, b: Index) bool {
     return g.modulePackage(a) == .platform and g.modulePackage(b) == .platform and
         g.modules.items(.layer)[a.int()] == g.modules.items(.layer)[b.int()];
+}
+
+/// The browser bridge belongs to the loaded browser layer, not its spelling.
+pub fn isBrowser(g: *const Graph, m: Index) bool {
+    const owner = g.browser_owner orelse return false;
+    return g.samePlatformLayer(m, owner);
 }

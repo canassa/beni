@@ -1,5 +1,5 @@
 //! Direct recipes are available only for generated core operations. Adapters
-//! that construct Result/Maybe stay in their generated, precisely typed sibling.
+//! that construct Result/Maybe stay in their generated, precisely typed beni wrapper.
 const Bir = @import("../bir/Bir.zig");
 const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");

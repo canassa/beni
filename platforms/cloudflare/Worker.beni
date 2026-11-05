@@ -40,7 +40,7 @@ import Browser.Host.Response as HostResponse
 import Browser.Host.Timers as Timers
 import Browser.Host.URL as URL
 import Js
-import Js.Chain as Chain
+import Js.Fifo as Fifo
 import Js.Protocol as Protocol
 import List
 import Maybe
@@ -210,7 +210,7 @@ chainNow ⊤ =
 
 
 type alias Trampoline =
-    tasks : Chain.Chain (⊤ → ⊤)
+    tasks : Js.Ref (Fifo.Fifo (⊤ → ⊤))
     wake : Js.Ref (Maybe (Promise.Resolvers ⊤))
     answer : Promise.Resolvers HostResponse.Response
     answered : Js.Ref Bool
@@ -259,7 +259,7 @@ serve :
     → Promise.Promise HostResponse.Response
 serve fetch request bindings ctx =
     d = Native.responseResolvers ⊤
-    t = { tasks = Chain.make ⊤, wake = Js.ref Nothing, answer = d, answered = Js.ref False }
+    t = { tasks = Js.ref (Fifo.make ⊤), wake = Js.ref Nothing, answer = d, answered = Js.ref False }
     arm t
     holder = Js.ref Nothing
     scheduler = Task.schedulerWith (runLater t _) (laterTurn t _) λ⊤ →
@@ -310,15 +310,22 @@ laterTurn t task =
 fire : Trampoline → ⊤
 fire t =
     arm t
-    -- Snapshot before invoking any job, matching the old array replacement.
-    tasks = Chain.toList t.tasks
-    Chain.clear t.tasks
-    each tasks λtask → Protocol.call task ⊤
+    -- Replace the queue before callbacks can append the next batch.
+    tasks = Js.read t.tasks
+    Js.write t.tasks (Fifo.make ⊤)
+    fireTasks tasks
+
+
+fireTasks : Fifo.Fifo (⊤ → ⊤) → ⊤
+fireTasks tasks =
+    if not (Fifo.empty tasks) then
+        Protocol.call (Fifo.shift tasks) ⊤
+        fireTasks tasks
 
 
 runLater : Trampoline, (⊤ → ⊤) → ⊤
 runLater t task =
-    _ = Chain.append t.tasks task
+    Fifo.push (Js.read t.tasks) task
     case Js.read t.wake of
         Nothing →
             ⊤

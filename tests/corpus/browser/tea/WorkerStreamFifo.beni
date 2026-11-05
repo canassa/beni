@@ -1,0 +1,75 @@
+-- A full stream wraps its ring, rejects overflow, reuses cleared capacity,
+-- and drains queued items before End. Queue storage must not change order.
+import Browser.WorkerStream as Stream
+import Cmd
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Done String
+
+
+fill : Stream.Stream String Int, Int, Int → Bool
+fill stream first last =
+    if first > last then
+        True
+    else if Stream.offer stream first then
+        fill stream (first + 1) last
+    else
+        False
+
+
+read : Stream.Stream String Int, Int, List Int → List Int
+read stream count values =
+    if count == 0 then
+        values
+    else
+        case Stream.next stream of
+            Ok (Stream.Item chunk) →
+                read stream (count - 1) [ …values, Stream.take chunk ]
+            _ →
+                values
+
+
+show : List Int → String
+show values = String.join (List.map values String.fromInt) ","
+
+
+run : ⊤ → String
+run ⊤ =
+    stream = Stream.make 8
+    firstFill = fill stream 1 8
+    first = read stream 3 []
+    wrapped = fill stream 9 11
+    full = not (Stream.offer stream 12)
+    second = read stream 8 []
+    reused = fill stream 12 19
+    Stream.end stream
+    closed = not (Stream.offer stream 20)
+    third = read stream 8 []
+    ended =
+        case Stream.next stream of
+            Ok Stream.End →
+                True
+            _ →
+                False
+    if firstFill && wrapped && full && reused && closed && ended then
+        "${show first}|${show second}|${show third}"
+    else
+        "incorrect stream state"
+
+
+view : String → Html Msg
+view text = <p>{text}</p>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( "waiting", Cmd.perform λsend → send (Done (run ⊤)) )
+        , update = λ(Done text) _ → ( text, Cmd.none )
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

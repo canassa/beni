@@ -1,8 +1,15 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Js
+
+
 pub foreign type WebSocket
 
 
-pub foreign impure tryCreate : String, List String → Maybe WebSocket
+pub tryCreate : String, List String → Maybe WebSocket
+tryCreate a0 a1 = Js.optMatch (host_tryCreate a0 a1) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_tryCreate : String, List String → Js.Opt WebSocket
 
 
 pub foreign impure arrayBuffer : borrowed WebSocket → ⊤
@@ -32,7 +39,11 @@ pub foreign impure onOpen : borrowed WebSocket, escaped sync (⊤ → ⊤) → �
 pub foreign impure onError : borrowed WebSocket, escaped sync (⊤ → ⊤) → ⊤
 
 
-pub foreign impure onText : borrowed WebSocket, escaped sync (Maybe String → ⊤) → ⊤
+pub onText : borrowed WebSocket, escaped sync (Maybe String → ⊤) → ⊤
+onText a0 a1 = host_onText a0 λtext → a1 (Js.optMatch text (λ⊤ → Nothing) λpresent → Just present)
+
+
+foreign impure host_onText : borrowed WebSocket, escaped sync (Js.Opt String → ⊤) → ⊤
 
 
 pub foreign impure onClose : borrowed WebSocket, escaped sync (Int, String → ⊤) → ⊤

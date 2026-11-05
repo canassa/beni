@@ -186,8 +186,28 @@ pub fn surface(arena: Allocator, line: []const u8) ![]const u8 {
             }
         }
     }
-    try out.appendSlice(arena, try replaceNever(arena, try stripClasses(arena, rest)));
+    try out.appendSlice(arena, try replaceNever(arena, try stripAtomParens(arena, try stripClasses(arena, rest))));
     try out.appendSlice(arena, comment);
+    return out.items;
+}
+
+/// Effect removal can leave a parenthesised single type atom.
+fn stripAtomParens(arena: Allocator, s: []const u8) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var i: usize = 0;
+    while (i < s.len) {
+        if (s[i] == '(') {
+            var end = i + 1;
+            while (end < s.len and (std.ascii.isAlphanumeric(s[end]) or s[end] == '_' or s[end] == '.')) end += 1;
+            if (end > i + 1 and end < s.len and s[end] == ')') {
+                try out.appendSlice(arena, s[i + 1 .. end]);
+                i = end + 1;
+                continue;
+            }
+        }
+        try out.append(arena, s[i]);
+        i += 1;
+    }
     return out.items;
 }
 
@@ -292,6 +312,9 @@ test "a dump line becomes beni's notation" {
         .{ "  value expectJson : Expect Error a !(impure | e1) where a.codec : ⊤ → Codec a !e1", "  value expectJson : Expect Error a where a.codec : ⊤ → Codec a  -- impure" },
         .{ "  value value : (Generator a !e1) → a !(impure | e1)", "  value value : (Generator a) → a  -- impure" },
         .{ "  value never : ⊥ → a", "  value never : ⊥ → a" },
+        .{ "  value page : ⊤ → (Program !impure)", "  value page : ⊤ → Program" },
+        .{ "  value control : Opt (Control !e1)", "  value control : Opt Control" },
+        .{ "  value any : (Any !e1) → (a → b !e2)", "  value any : Any → (a → b)" },
         .{ "module Maybe", "module Maybe" },
     };
     for (cases) |c| {

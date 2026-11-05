@@ -3530,7 +3530,7 @@ pub const Lowerer = struct {
     }
 
     fn typedIntrinsicDecl(l: *Lowerer, decl: Bir.Decl) ?JsIntrinsic.Which {
-        if (l.in.graph.modulePackage(l.in.module) == .platform and std.mem.eql(u8, l.text(l.module_name), "Browser.Bridge")) return JsIntrinsic.browserBridge(l.text(l.bir.symbol(decl.name)));
+        if (l.in.graph.isBrowser(l.in.module) and std.mem.eql(u8, l.text(l.module_name), "Browser.Bridge")) return JsIntrinsic.browserBridge(l.text(l.bir.symbol(decl.name)));
         if (l.in.graph.modulePackage(l.in.module) == .core and std.mem.eql(u8, l.text(l.module_name), "Schema") and std.mem.eql(u8, l.text(l.bir.symbol(decl.name)), "endpointIdentity")) return .schemaIdentity;
         if (l.in.graph.modulePackage(l.in.module) == .core and std.mem.eql(u8, l.text(l.module_name), "Js.Kernel")) {
             const kernel_name = l.text(l.bir.symbol(decl.name));
@@ -11452,6 +11452,52 @@ pub const Lowerer = struct {
         }
     }
 
+    // ownership pin begin: host_append
+    // ownership pin begin: host_asAnchor
+    // ownership pin begin: host_asElement
+    // ownership pin begin: host_asForm
+    // ownership pin begin: host_asInput
+    // ownership pin begin: host_asNode
+    // ownership pin begin: host_asOption
+    // ownership pin begin: host_asSelect
+    // ownership pin begin: host_asTextArea
+    // ownership pin begin: host_code
+    // ownership pin begin: host_dataOnly
+    // ownership pin begin: host_error
+    // ownership pin begin: host_errorMessage
+    // ownership pin begin: host_get
+    // ownership pin begin: host_group
+    // ownership pin begin: host_init
+    // ownership pin begin: host_key
+    // ownership pin begin: host_onText
+    // ownership pin begin: host_post
+    // ownership pin begin: host_reader
+    // ownership pin begin: host_selectionDirection
+    // ownership pin begin: host_selectionEnd
+    // ownership pin begin: host_selectionStart
+    // ownership pin begin: host_set
+    // ownership pin begin: host_setSelectionRange
+    // ownership pin begin: host_setValue
+    // ownership pin begin: host_target
+    // ownership pin begin: host_typeErrorMessage
+    // ownership pin begin: host_value
+    /// Literal native callback adapters use the same checked lambda binding
+    /// path as optMatch; no intermediate function is allocated or invoked.
+    pub fn nativePayloadCallback(l: *Lowerer, out: *StmtList, source: Inst.Index, callback: Node.Index, args: []const Node.Index, p: u32) Allocator.Error!Node.Index {
+        if (l.caughtLambda(source)) |function| {
+            const data = l.bir.instData(function);
+            const params = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(data.lhs))), Inst.Index);
+            std.debug.assert(params.len == args.len);
+            for (params, args) |param, value| try l.bindings(out, param, try l.bindSubject(out, value, p));
+            return l.expr(out, @fromBackingInt(@intCast(data.rhs)));
+        }
+        return l.call(callback, args, p);
+    }
+
+    pub fn nativeCallbackValue(l: *Lowerer, out: *StmtList, source: Inst.Index, callback: Node.Index, p: u32) Allocator.Error!Node.Index {
+        return if (l.caughtLambda(source) != null) callback else l.bindSubject(out, callback, p);
+    }
+
     // Keep native recipe temporaries out of the recursive ordinary-call frame.
     noinline fn nativeCallExpr(l: *Lowerer, out: *StmtList, callee_inst: Inst.Index, arg_insts: []const Inst.Index, p: u32) Allocator.Error!?Node.Index {
         if (@import("NativeIntrinsic.zig").of(l.in.graph, l.in.interfaces, l.bir, l.in.module, callee_inst, l.interner)) |native| {
@@ -11521,6 +11567,29 @@ pub const Lowerer = struct {
             // ownership pin end: rendererEarlyChecked
             // ownership pin end: rendererEarlySelectedIndex
 
+            if (native.host_projection) {
+                const callee = if (@import("NativeHost.zig").direct(native.recipe)) null else try l.expr(out, callee_inst);
+                // Literal payload adapters are lowered once, inside their native
+                // listener. Pre-lowering an unused arrow would also bind its
+                // source locals before the inline body gets those parameters.
+                var operands: std.ArrayList(Inst.Index) = .empty;
+                for (arg_insts, 0..) |arg, i| {
+                    if (@import("NativeHost.zig").payloadCallback(native.recipe, i) and l.caughtLambda(arg) != null) continue;
+                    try operands.append(l.scratch, arg);
+                }
+                const evaluated = try l.orderedExprs(out, operands.items, false);
+                const values = try l.scratch.alloc(Node.Index, arg_insts.len);
+                var next: usize = 0;
+                for (arg_insts, 0..) |arg, i| {
+                    if (@import("NativeHost.zig").payloadCallback(native.recipe, i) and l.caughtLambda(arg) != null) {
+                        values[i] = try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+                    } else {
+                        values[i] = evaluated[next];
+                        next += 1;
+                    }
+                }
+                return try @import("NativeHost.zig").emit(l, out, native, callee, values, arg_insts, p);
+            }
             if (native.recipe == .data_is_finite or native.recipe == .data_is_integer or native.recipe == .data_is_safe_integer) {
                 const values = try l.orderedExprs(out, arg_insts, false);
                 return try l.unary(switch (native.recipe) {
@@ -11535,7 +11604,7 @@ pub const Lowerer = struct {
                 .array_each => {},
                 .event_type, .event_isTrusted, .event_bubbles, .event_cancelBubble, .event_stop, .event_target, .target_node, .node_element, .node_contains, .element_local, .element_as_input, .input_value, .input_value_set, .input_checked, .input_checked_set, .input_disabled, .input_type, .input_name, .input_selectionStart, .input_selectionEnd, .input_selectionDirection, .input_selection_set, .input_node, .element_as_textarea, .textarea_value, .textarea_value_set, .textarea_disabled, .textarea_selectionStart, .textarea_selectionEnd, .textarea_selectionDirection, .textarea_selection_set, .textarea_node, .element_as_select, .select_value, .select_value_set, .select_selectedIndex, .select_selectedIndex_set, .select_disabled, .select_node, .element_as_option, .option_selected, .option_selected_set, .option_node, .element_as_form, .form_node, .select_options, .form_elements, .document_named, .document_active, .document_controls, .event_capture => {},
                 .array_make, .array_get_or, .array_set, .array_push, .array_size, .list_array_view, .array_view_get_or, .array_view_length, .array_view_slice, .key_map_values, .key_map_make, .key_map_get_or, .key_map_get, .key_map_set, .key_map_has, .key_map_remove, .key_map_clear, .key_map_size, .key_map_each, .document_body, .document_create_element, .node_append, .element_attribute, .event_message, .rejection_display => {},
-                .map_get, .map_set, .map_delete, .map_entries, .query_selector, .text_content, .timeout, .queue_microtask, .timer_start, .timer_clear, .message_channel, .message_port1, .message_port2, .post_unit, .on_message, .try_immediate, .date_now, .math_random, .listen_window, .listen_document, .event_prevent, .event_key, .event_code, .event_ctrlKey, .event_shiftKey, .event_altKey, .event_metaKey, .event_pointerId, .event_pointerType, .event_isPrimary, .event_clientX, .event_clientY, .event_box, .rect_left, .rect_top, .event_target_value, .event_target_checked, .event_prevented, .event_button, .event_path, .as_anchor, .anchor_has, .anchor_href, .anchor_protocol, .anchor_host, .anchor_target, .frame_request, .frame_cancel, .inner_width, .inner_height, .visibility_state, .document_title, .document_title_read, .event_listen, .process_stdout, .process_stderr, .process_exit_code, .process_before_exit, .promise_observe, .rejection_is_error, .rejection_name, .rejection_code, .rejection_raise, .abort_create, .abort_signal, .abort_call, .abort_aborted, .node_read_utf8, .node_read_dir, .dirent_name, .dirent_file, .dirent_directory, .dirent_link, .data_is_array, .data_is_finite, .data_is_integer, .data_is_safe_integer, .data_keys, .data_empty_object, .data_has_own, .json_parse, .json_stringify, .url_try_create, .url_href, .url_username, .url_password, .document_base_uri, .headers_create, .headers_append, .headers_has, .headers_set, .headers_get, .headers_entries, .form_create, .form_append, .fetch_text_body, .fetch_form_body, .fetch_init, .fetch_call, .response_url, .response_status, .response_status_text, .response_ok, .response_headers, .response_text, .response_reader, .reader_bytes, .read_result_done, .read_result_value, .decoder_create, .decoder_more, .decoder_finish, .dom_exception_create, .abort_with_reason, .abort_reason_is, .rejection_is_type_error, .regexp_create, .regexp_test, .regexp_replace, .storage_local, .storage_session, .storage_get, .storage_set, .storage_remove, .storage_length, .storage_key, .url_protocol, .url_set_protocol, .ws_create, .ws_binary, .ws_state, .ws_buffered, .ws_protocol, .ws_send, .ws_close, .ws_close_empty, .ws_open, .ws_error, .ws_message, .ws_closed, .console_warn, .document_by_id, .element_focus, .element_blur, .element_box, .element_scroll, .element_into_view, .rect_x, .rect_y, .rect_width, .rect_height, .window_scroll_x, .window_scroll_y, .element_fullscreen_supported, .element_fullscreen, .document_fullscreen_enabled, .document_fullscreen_id, .document_fullscreen_exit, .navigator_activated, .rejection_type_error_message, .data_same, .worker_supported, .worker_create, .worker_endpoint, .worker_self_endpoint, .worker_post, .worker_terminate, .worker_event_target, .global_event_target, .event_data_only, .event_error, .console_error_data, .rejection_abandoned, .global_is_page, .event_error_message, .rejection_create, .rejection_assign, .regexp_group, .worker_close_self, .cf_socketInitialize, .cf_unitResolvers, .cf_stringResolvers, .cf_dataResolvers, .cf_responseResolvers, .cf_program, .cf_definition, .cf_instance, .cf_namespace, .cf_service, .cf_variable, .cf_byName, .cf_idFromString, .cf_getStub, .cf_idName, .cf_requestPath, .cf_requestCopy, .cf_requestSignal, .cf_onAbort, .cf_responseCreate, .cf_responseCopy, .cf_stubFetch, .cf_serviceFetch, .cf_stubRpc, .cf_overloaded, .cf_reset, .cf_retryable, .cf_errorText, .cf_randomUUID, .cf_waitUntil, .cf_objectWaitUntil, .cf_objectAbort, .cf_alarmSet, .cf_alarmDelete, .cf_socketsTagged, .cf_acceptSocket, .cf_autoResponse, .cf_socketPair, .cf_socketClient, .cf_socketServer, .cf_socketResponse, .cf_socketCloseEmpty, .cf_consoleError, .cf_consoleLog, .cf_consoleReason, .promise_resolve, .promise_reject, .promise_after, .cf_socketEq, .cf_socketSend, .cf_socketClose, .cf_socketAttach, .cf_kv, .cf_kvGet, .cf_kvPut, .cf_kvDelete, .cf_kvKeys => {}, // Precise generated adapters.
+                .map_has, .map_get, .map_set, .map_delete, .map_entries, .query_selector, .text_content, .timeout, .queue_microtask, .timer_start, .timer_clear, .message_channel, .message_port1, .message_port2, .post_unit, .on_message, .try_immediate, .date_now, .math_random, .listen_window, .listen_document, .event_prevent, .event_key, .event_code, .event_ctrlKey, .event_shiftKey, .event_altKey, .event_metaKey, .event_pointerId, .event_pointerType, .event_isPrimary, .event_clientX, .event_clientY, .event_box, .rect_left, .rect_top, .event_target_value, .event_target_checked, .event_prevented, .event_button, .event_path, .as_anchor, .anchor_has, .anchor_href, .anchor_protocol, .anchor_host, .anchor_target, .frame_request, .frame_cancel, .inner_width, .inner_height, .visibility_state, .document_title, .document_title_read, .event_listen, .process_stdout, .process_stderr, .process_exit_code, .process_before_exit, .promise_observe, .rejection_is_error, .rejection_name, .rejection_code, .rejection_raise, .abort_create, .abort_signal, .abort_call, .abort_aborted, .node_read_utf8, .node_read_dir, .dirent_name, .dirent_file, .dirent_directory, .dirent_link, .data_is_array, .data_is_finite, .data_is_integer, .data_is_safe_integer, .data_keys, .data_empty_object, .data_has_own, .json_parse, .json_stringify, .url_try_create, .url_href, .url_username, .url_password, .document_base_uri, .headers_create, .headers_append, .headers_has, .headers_set, .headers_get, .headers_entries, .form_create, .form_append, .fetch_text_body, .fetch_form_body, .fetch_init, .fetch_call, .response_url, .response_status, .response_status_text, .response_ok, .response_headers, .response_text, .response_reader, .reader_bytes, .read_result_done, .read_result_value, .decoder_create, .decoder_more, .decoder_finish, .dom_exception_create, .abort_with_reason, .abort_reason_is, .rejection_is_type_error, .regexp_create, .regexp_test, .regexp_replace, .storage_local, .storage_session, .storage_get, .storage_set, .storage_remove, .storage_length, .storage_key, .url_protocol, .url_set_protocol, .ws_create, .ws_binary, .ws_state, .ws_buffered, .ws_protocol, .ws_send, .ws_close, .ws_close_empty, .ws_open, .ws_error, .ws_message, .ws_closed, .console_warn, .document_by_id, .element_focus, .element_blur, .element_box, .element_scroll, .element_into_view, .rect_x, .rect_y, .rect_width, .rect_height, .window_scroll_x, .window_scroll_y, .element_fullscreen_supported, .element_fullscreen, .document_fullscreen_enabled, .document_fullscreen_id, .document_fullscreen_exit, .navigator_activated, .rejection_type_error_message, .data_same, .worker_supported, .worker_create, .worker_endpoint, .worker_self_endpoint, .worker_post, .worker_terminate, .worker_event_target, .global_event_target, .event_data_only, .event_error, .console_error_data, .rejection_abandoned, .global_is_page, .event_error_message, .rejection_create, .rejection_assign, .regexp_group, .worker_close_self, .cf_socketInitialize, .cf_unitResolvers, .cf_stringResolvers, .cf_dataResolvers, .cf_responseResolvers, .cf_program, .cf_definition, .cf_instance, .cf_namespace, .cf_service, .cf_variable, .cf_byName, .cf_idFromString, .cf_getStub, .cf_idName, .cf_requestPath, .cf_requestCopy, .cf_requestSignal, .cf_onAbort, .cf_responseCreate, .cf_responseCopy, .cf_stubFetch, .cf_serviceFetch, .cf_stubRpc, .cf_overloaded, .cf_reset, .cf_retryable, .cf_errorText, .cf_randomUUID, .cf_waitUntil, .cf_objectWaitUntil, .cf_objectAbort, .cf_alarmSet, .cf_alarmDelete, .cf_socketsTagged, .cf_acceptSocket, .cf_autoResponse, .cf_socketPair, .cf_socketClient, .cf_socketServer, .cf_socketResponse, .cf_socketCloseEmpty, .cf_consoleError, .cf_consoleLog, .cf_consoleReason, .promise_resolve, .promise_reject, .promise_after, .cf_socketEq, .cf_socketSend, .cf_socketClose, .cf_socketAttach, .cf_kv, .cf_kvGet, .cf_kvPut, .cf_kvDelete, .cf_kvKeys => {}, // Precise generated adapters.
                 else => {
                     const ignores_unit = native.recipe == .document or native.recipe == .worker_self or native.recipe == .text_encoder or native.recipe == .map_make;
                     const values = if (ignores_unit) blk: {
@@ -11569,6 +11638,36 @@ pub const Lowerer = struct {
         }
         return null;
     }
+
+    // ownership pin end: host_append
+    // ownership pin end: host_asAnchor
+    // ownership pin end: host_asElement
+    // ownership pin end: host_asForm
+    // ownership pin end: host_asInput
+    // ownership pin end: host_asNode
+    // ownership pin end: host_asOption
+    // ownership pin end: host_asSelect
+    // ownership pin end: host_asTextArea
+    // ownership pin end: host_code
+    // ownership pin end: host_dataOnly
+    // ownership pin end: host_error
+    // ownership pin end: host_errorMessage
+    // ownership pin end: host_get
+    // ownership pin end: host_group
+    // ownership pin end: host_init
+    // ownership pin end: host_key
+    // ownership pin end: host_onText
+    // ownership pin end: host_post
+    // ownership pin end: host_reader
+    // ownership pin end: host_selectionDirection
+    // ownership pin end: host_selectionEnd
+    // ownership pin end: host_selectionStart
+    // ownership pin end: host_set
+    // ownership pin end: host_setSelectionRange
+    // ownership pin end: host_setValue
+    // ownership pin end: host_target
+    // ownership pin end: host_typeErrorMessage
+    // ownership pin end: host_value
 
     fn callExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
         // §7.2: a `call`'s callee is already in the Bir, so every site on
@@ -12359,11 +12458,11 @@ pub const Lowerer = struct {
     // ownership pin begin: some
     // ownership pin begin: optMatch
     // ownership pin begin: optWithDefault
-    fn optNone(l: *Lowerer, p: u32) !Node.Index {
+    pub fn optNone(l: *Lowerer, p: u32) !Node.Index {
         return l.optCoreValue("optNone", p);
     }
 
-    fn optCoreValue(l: *Lowerer, spelling: []const u8, p: u32) !Node.Index {
+    pub fn optCoreValue(l: *Lowerer, spelling: []const u8, p: u32) !Node.Index {
         const module_name = l.interner.global.find("Js") orelse return l.missingCoreValue(p, "Js", "optNone", "the core module is missing");
         const module = l.in.graph.lookup(.core, module_name) orelse return l.missingCoreValue(p, "Js", "optNone", "the core module is missing");
         const bir = l.in.birs[module.int()];

@@ -6,7 +6,11 @@ pub type ParseError
     = SyntaxError
 
 
-pub foreign impure parse : String → Result ParseError Js.Value
+pub parse : String → Result ParseError Js.Value
+parse a0 = Js.optMatch (host_parse a0) (λ⊤ → Err SyntaxError) λpresent → Ok present
+
+
+foreign impure host_parse : String → Js.Opt Js.Value
 
 
 pub foreign impure stringify : Js.Value → Js.Value

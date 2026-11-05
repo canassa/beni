@@ -1,0 +1,12 @@
+-- Compiler-only host projections cannot be taken as values, passed as
+-- arguments or partially applied by an application.
+import Browser.Host.Headers as Headers
+
+
+value = Headers.host_get
+
+
+argument = identity Headers.host_get
+
+
+placeholder = Headers.host_get _ "missing"

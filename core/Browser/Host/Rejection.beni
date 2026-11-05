@@ -17,7 +17,11 @@ pub foreign impure display : borrowed Rejection → String
 pub foreign impure setAbandoned : borrowed Rejection, Js.Value → ⊤
 
 
-pub foreign impure typeErrorMessage : borrowed Rejection → Maybe String
+pub typeErrorMessage : borrowed Rejection → Maybe String
+typeErrorMessage a0 = Js.optMatch (host_typeErrorMessage a0) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_typeErrorMessage : borrowed Rejection → Js.Opt String
 
 
 pub foreign impure isTypeError : borrowed Rejection → Bool
@@ -29,7 +33,11 @@ pub foreign impure isError : borrowed Rejection → Bool
 pub foreign impure name : borrowed Rejection → String
 
 
-pub foreign impure code : borrowed Rejection → Maybe String
+pub code : borrowed Rejection → Maybe String
+code a0 = Js.optMatch (host_code a0) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_code : borrowed Rejection → Js.Opt String
 
 
 pub foreign impure raise : escaped Rejection → fresh a

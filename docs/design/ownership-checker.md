@@ -4266,6 +4266,15 @@ lambda a result carries prints `λ` at its path (§24.9).
 
 ### 24.8 The annotated surface
 
+*Integration re-read, 2026-11-05 (#1941 with #1937):* the shared Lower span for
+`Js.cell`, `cellRead`, `cellWrite`, `none`, `some`, `optMatch` and `optWithDefault`
+now exposes `optNone`/`optCoreValue` to the native-host adapter. This changes Zig
+visibility only: the sentinel remains private core data, Cell reads/writes select
+the same typed fields, and Opt retains its alias/loan and at-most-once callback
+rules. The combined raw-return protocol and native host callers introduce no
+freshness promise or extra callback invocation. All seven bodies were re-read
+and re-pinned; the words and publication rules are unchanged.
+
 Every annotated declaration, and the reading of the code that justifies each word. `tests/corpus/ownership/trusted-surface.txt`
 names the fixture that pins each (§24.6).
 
@@ -4390,6 +4399,51 @@ the interpreter or any Schema compiler hook. Browser.host installs one current
 model and one current view through typed refs, replacing each after its sync
 callback; its entry protocol still retains no earlier model. These pins will
 be re-audited when the separately owned DOM/Schema changes land.
+
+**Typed native host projections** (2026-11-05). Re-read the generated public
+beni wrappers, private host exports, `native/HostValues.zig`, `js/NativeHost.zig`
+and their entry/binding path in `js/Lower.zig`. Borrowed receivers are still
+read only; aliases returned by narrowing, event data/error and response readers
+still refer to the same native object or payload. Opt normalization and its
+shared empty escape chain neither copy nor grant editing permission to a
+payload. The public Maybe/Result shell is constructed by beni without retaining
+any additional receiver. Fetch's optional body conversion preserves the body,
+headers and signal references held by its init object. A native event listener
+retains its typed callback exactly as before; literal adapter bodies bind each
+payload once and execute synchronously, so their inlining changes no callback
+escape or invocation count. Private raw declarations inherit the same parameter
+bounds as the public rows. Public rows and their observable flips remain;
+private rows are reached through those public wrappers, whose explicit bounds
+shield consumer verdicts from an independently weaker private annotation.
+Their actual native bodies, lowering and projection table are pinned together.
+
+The existing cell/Opt primitive pins were re-read after exposing the compiler's
+sentinel lookup methods to the native recipe helper. Only compiler-method
+visibility changed there: cell creation, field reads/writes, selected-payload
+aliases and generic escape behavior are unchanged. Renderer primitive branches
+still return before the new host-projection branch and keep their existing
+borrowed native-handle behavior.
+
+**Native projection review** (2026-11-05). `Map.has` has the same borrowed
+receiver contract as `KeyMap.has`: the native membership test only reads the
+map and returns Bool, without storing or returning the receiver. Its generated
+sibling is pinned and its typed summary has a dedicated fixture. The
+`ReadResult.host_value` identity still returns the exact same byte-array handle;
+removing its redundant undefined conditional changes no alias. Worker result
+normalization now tests the successful Worker handle instead of assuming a
+DOMException inherits Error. The three empty positions and the successful
+handle retain exactly their former ownership and allocation behavior. Re-read
+and re-pinned these bodies and the shared native recipe helper.
+
+**Projection/bridge merge review** (2026-11-05). Re-read the shared
+first-class intrinsic lowering after merging the typed Browser bridge. Its
+new bridge branches return before the existing cell and Opt branches; the
+only new arity case is `browserInstallRoot`. Cell creation still makes its
+own object, reads/writes still alias the same fields, and Opt matching and
+its sentinel escapes are unchanged. Re-pinned those seven moved shared
+bodies, retaining both the native projection and Browser bridge catalogue
+rows and their existing observable flips. Native projection call recipes
+remain separate from the nominally fenced browser intrinsics.
 
 **Private renderer native handles** (2026-11-04; #1822). The borrowed
 arguments of `Browser.Host.Node.rendererFirstChild`, `rendererNextSibling`,

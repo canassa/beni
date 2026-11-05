@@ -1,6 +1,6 @@
 -- Bounded, single-consumer event streams owned by the worker connection.
 import Js
-import Js.Chain as Chain
+import Js.Fifo as Fifo
 import Js.Protocol as Protocol
 import Task
 
@@ -12,7 +12,7 @@ pub type alias Stream error a =
 -- The generic carrier keeps payload and wake-up callback types intact.
 pub opaque type Storage error a
     = Storage
-        { queue : Chain.Chain a
+        { queue : Fifo.Fifo a
         , waiter : Js.Ref (Maybe (Task.Resume (Result (ReadError error) (Step a))))
         , failure : Js.Ref (Maybe error)
         , ended : Js.Ref Bool
@@ -44,7 +44,7 @@ pub type Step a
 pub make : Int → Stream error a
 make limit =
     Storage
-        { queue = Chain.make ⊤
+        { queue = Fifo.make ⊤
         , waiter = Js.ref Nothing
         , failure = Js.ref Nothing
         , ended = Js.ref False
@@ -66,10 +66,10 @@ offer ((Storage state) as stream) item =
                 acknowledge stream item
                 True
             Nothing →
-                if Chain.size state.queue ≥ state.limit then
+                if Fifo.size state.queue ≥ state.limit then
                     False
                 else
-                    _ = Chain.append state.queue item
+                    Fifo.push state.queue item
                     True
 
 
@@ -87,7 +87,7 @@ end (Storage state) =
 pub fail : Stream error a, error → ⊤
 fail (Storage state) error =
     Js.write state.failure (Just error)
-    Chain.clear state.queue
+    Fifo.clear state.queue
     Js.write state.ended True
     case Js.read state.waiter of
         Nothing →
@@ -107,17 +107,16 @@ next ((Storage state) as stream) =
                 Just error →
                     Err (Failed error)
                 Nothing →
-                    case Chain.shift state.queue of
-                        Just item →
-                            acknowledge stream item
-                            Ok (Item (Chunk item))
-                        Nothing →
-                            if Js.read state.ended then
-                                Ok End
-                            else
-                                Task.callback λresume →
-                                    Js.write state.waiter (Just resume)
-                                    λ⊤ → Js.write state.waiter Nothing
+                    if not (Fifo.empty state.queue) then
+                        item = Fifo.shift state.queue
+                        acknowledge stream item
+                        Ok (Item (Chunk item))
+                    else if Js.read state.ended then
+                        Ok End
+                    else
+                        Task.callback λresume →
+                            Js.write state.waiter (Just resume)
+                            λ⊤ → Js.write state.waiter Nothing
 
 
 pub value : Chunk a → a

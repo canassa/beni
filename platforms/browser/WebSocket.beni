@@ -36,6 +36,7 @@ import Browser.Host.WebSocket as Native
 import Cmd exposing (Cmd)
 import Js
 import Js.Chain as Chain
+import Js.Fifo as Fifo
 import Js.Protocol as Protocol
 import Sub exposing (Sub)
 import Task exposing (Resume)
@@ -45,7 +46,7 @@ import Task exposing (Resume)
 pub opaque type Socket
     = Socket
         { native : Native.WebSocket
-        , messages : Chain.Chain String
+        , messages : Fifo.Fifo String
         , readers : Chain.Chain (Resume (Result Close String))
         , opening : Js.Ref (Maybe (Resume Bool))
         , ending : Js.Ref (Maybe Close)
@@ -319,7 +320,7 @@ attach native url listened =
     socket =
         Socket
             { native = native
-            , messages = Chain.make ⊤
+            , messages = Fifo.make ⊤
             , readers = Chain.make ⊤
             , opening = Js.ref Nothing
             , ending = Js.ref Nothing
@@ -362,7 +363,7 @@ onMessage ((Socket s) as socket) data =
                             Just resume →
                                 Task.resume resume (Ok text)
                             Nothing →
-                                _ = Chain.append s.messages text
+                                Fifo.push s.messages text
                                 ⊤
                 Nothing →
                     url = s.url
@@ -450,20 +451,19 @@ waitOpen (Socket s) resume =
 
 take : Socket, Resume (Result Close String) → (⊤ → ⊤)
 take (Socket s) resume =
-    case Chain.shift s.messages of
-        Just text →
-            Task.resume resume (Ok text)
-            λ⊤ → ⊤
-        Nothing →
-            case Js.read s.ending of
-                Just why →
-                    Task.resume resume (Err why)
-                    λ⊤ → ⊤
-                Nothing →
-                    link = Chain.append s.readers resume
-                    λ⊤ →
-                        _ = Chain.remove s.readers link
-                        ⊤
+    if not (Fifo.empty s.messages) then
+        Task.resume resume (Ok (Fifo.shift s.messages))
+        λ⊤ → ⊤
+    else
+        case Js.read s.ending of
+            Just why →
+                Task.resume resume (Err why)
+                λ⊤ → ⊤
+            Nothing →
+                link = Chain.append s.readers resume
+                λ⊤ →
+                    _ = Chain.remove s.readers link
+                    ⊤
 
 
 stopped : Result ConnectError Socket → ⊤

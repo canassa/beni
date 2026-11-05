@@ -1157,8 +1157,9 @@ It declares a module **`Tea`** with the same API as `browser-tea`'s — `sandbox
 `document`, `application`, `Program`, `Document` — so **the same source builds for both**:
 `beni build --platform=browser-tea Main.beni` and `--platform=browser-direct Main.beni`, with no
 edit. `main : Browser.Program` stays the type (`program` may name a type of any module of the
-chain), and the direct `Tea.sandbox` produces a `Program` value of the shape `Browser.mountAt`
-and `programs` already rewrite (`{ a, n }`), so those two need no copy.
+chain). *Corrected 2026-11-05 (Part of #1807):* direct owns its compiled mount
+representation. Browser now uses an opaque beni list of closed typed mount jobs,
+not the historical `{ a, n }` records. Placement is a platform-specific protocol.
 
 **Shared, one copy** — the compiler and its analyses (§11); `core`; `html` (the vocabulary and
 the parser table); `browser`'s capability modules and siblings (`Http`, `Time`, `Dom`, `Storage`,
@@ -1628,8 +1629,10 @@ The platform half of S0 is built; the stats gate is separate work. What building
   needs: `Lowering.programs`, `Lowering.program`, the `Program` shapes, `cx.programInit`,
   `cx.programReport`, `cx.notImplemented`, `Lowering.no_markup_values` and
   `Lowering.placements`. §11.1's other calls arrive with the slices that consume them. A
-  constructor's call is compiled as the constructor applied to the mount, so `Tea.sandbox`'s
-  sibling makes the `{ a, n }` §12.1 names; the record is never evaluated as a value, and a `view`
+  constructor's call is compiled as the constructor applied to the mount.
+  *Corrected 2026-11-05 (Part of #1807):* this is direct's compiled mount
+  representation, independent of browser's closed typed jobs; the source record
+  is never evaluated as a value, and a `view`
   or `update` only a record names is not emitted.
 - **The runtime module is `Direct`, not `Rt`** (§12.1): a module's name is unique across the
   platform chain (`boundary.md` §9.1), and `browser`'s `Rt` is in `browser-direct`'s. Everything

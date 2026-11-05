@@ -1,4 +1,7 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Js
+
+
 pub type CreateError
     = SyntaxError
 
@@ -6,10 +9,18 @@ pub type CreateError
 pub foreign type RegExp
 
 
-pub foreign impure group : borrowed RegExp, String, Int → Maybe String
+pub group : borrowed RegExp, String, Int → Maybe String
+group a0 a1 a2 = Js.optMatch (host_group a0 a1 a2) (λ⊤ → Nothing) λpresent → Just present
 
 
-pub foreign impure create : String, String → Result CreateError RegExp
+foreign impure host_group : borrowed RegExp, String, Int → Js.Opt String
+
+
+pub create : String, String → Result CreateError RegExp
+create a0 a1 = Js.optMatch (host_create a0 a1) (λ⊤ → Err SyntaxError) λpresent → Ok present
+
+
+foreign impure host_create : String, String → Js.Opt RegExp
 
 
 pub foreign impure test : borrowed RegExp, String → Bool

@@ -77,6 +77,7 @@ pub fn check(e: *Effects, in: Input) Error!void {
     in.report.at(null);
     for (picked.items) |p| {
         const src = s.sources.items[p.source];
+        if (try sync.redundantHolder(src, picked.items)) continue;
         const text = (try sync.message(src)) orelse continue;
         defer in.cx.gpa.free(text);
         const code: diagnostic.Code = switch (src.demand.kind) {
@@ -355,6 +356,46 @@ const Sync = struct {
         }
         std.mem.reverse(Step, steps.items[mark..]);
         return end;
+    }
+
+    /// A held-value demand may repeat the specific callback at the same call.
+    /// Compare the whole causal path, not only its suspending terminal: two
+    /// independent callbacks can both call the same suspending helper.
+    fn redundantHolder(y: *Sync, src: Effects.Source, picked: []const Picked) Error!bool {
+        const d = src.demand;
+        if (d.kind != .argument or !d.holder or d.field != none) return false;
+        var held: std.ArrayList(Step) = .empty;
+        defer held.deinit(y.scratch);
+        const held_end = try y.chain(y.e.solved.find(src.node), &held);
+        if (held_end == .none) return false;
+        var has_path = false;
+        for (held.items) |step| {
+            if (step != .handed) has_path = true;
+        }
+        if (!has_path) return false;
+        for (picked) |p| {
+            const other = y.e.solved.sources.items[p.source];
+            const od = other.demand;
+            if (od.kind != .argument or od.site != d.site or od.field == none) continue;
+            var specific: std.ArrayList(Step) = .empty;
+            defer specific.deinit(y.scratch);
+            const specific_end = try y.chain(y.e.solved.find(other.node), &specific);
+            if (!std.meta.eql(held_end, specific_end)) continue;
+            var hi: usize = 0;
+            var si: usize = 0;
+            while (true) {
+                while (hi < held.items.len and held.items[hi] == .handed) hi += 1;
+                while (si < specific.items.len and specific.items[si] == .handed) si += 1;
+                if (hi == held.items.len or si == specific.items.len) {
+                    if (hi == held.items.len and si == specific.items.len) return true;
+                    break;
+                }
+                if (!std.meta.eql(held.items[hi], specific.items[si])) break;
+                hi += 1;
+                si += 1;
+            }
+        }
+        return false;
     }
 
     // ---- The message -----------------------------------------------------

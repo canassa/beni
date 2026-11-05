@@ -13024,10 +13024,10 @@ This is its contract for `browser`, whose one runtime file is both the program r
 markup runtime (`boundary.md` Â§9.2) â which is what lets a listener reach `send` â and for every
 platform layered on it; `browser-tea` adds no JavaScript.
 
-- **The program.** `browser`'s low-level `Program` is data: its constructor, a `foreign` of the
-  `Browser` module legal because `browser` names `dom` (`boundary.md` Â§9.3), returns the record it
-  was given â `init`, `update`, `view` and where to mount, whose final form waits on W9 (what `main`
-  is in a page; `document.body` until then). `run(program)` is the only code that reads it.
+- **The program.** *Amended 2026-11-05 (Part of #1807):* `browser`’s low-level
+  `Program` is opaque beni data containing closed typed mount jobs. Construction
+  captures `init`, `update` and `view` without evaluating them. Only the
+  platform-private `Browser.runMounts` inspects its representation at startup.
   *Settled 2026-09-29* (by the project's manager on the owner's delegation, reversible;
   `plans/browser-decisions.md`), Elm's rule: **a program is given the node it mounts at, and
   `document.body` is the default.** Two functions of `Browser`, and nothing else moves:
@@ -13038,8 +13038,11 @@ platform layered on it; `browser-tea` adds no JavaScript.
     started in list order, so a program may mount at an element an earlier one rendered.
 
   `main` stays one `Program` (Â§5.3's one entry point per build): a page of several programs is one
-  value. At run time a `Program` is an array of mounts `{ a, n }`, the record and the id or `null`
-  for the body; `Browser.program` makes one, `mountAt` rewrites every `n`, `programs` concatenates.
+  value. As amended 2026-11-05 (Part of #1807), `Program` is an opaque beni list of closed
+  mount jobs. Each job holds an optional element id and a typed `Boot, Node → ⊤` start
+  function. `Browser.program` closes over its typed callbacks; `mountAt` rewrites each id;
+  `programs` concatenates the jobs. `runMounts` resolves each root and starts it in order.
+  The private bridge preserves the view block representation and installs its typed sender.
   **A missing element, or one that holds a program already, is a fault of the page**: `run` throws
   before that program renders anything, as Elm's `init` does given no node. A program's element
   must be in the page when the entry module runs, which a module script's deferred execution
@@ -13308,10 +13311,12 @@ which beni cannot write, and none of it is on a page a build could specialise fu
 
 *Amended 2026-10-02 (`plans/runtime-in-beni.md`, the hosted loop).* **The hosted loop is
 `Browser.beni`'s**, written over `Js.finally` (Â§4, *`Js.finally` is `try â¦ finally`*): `hosted`,
-the mount record it makes (`Host` in the JavaScript), the after-render phase, the dispatcher's
-inbox, `flush` and `onRendered` are beni declarations, each guard a `Js.finally`, and `Browser.js`
-keeps only `mountAt` and `programs`. The protocol with `Rt` is unchanged â the mount is `{ h, n }`,
-`h(root, flush, setPhase)` â and so is every behaviour, a throw in `update`, a render or the
+the closed mount job it makes, the after-render phase, the dispatcher's
+inbox, `flush` and `onRendered` are beni declarations, each guard a `Js.finally`.
+There is no `Browser.js`. *Corrected 2026-11-05 (Part of #1807):*
+`Rt` hands `Browser.runMounts` typed boot services; each closed job receives those
+services and its resolved root. Hosted control uses a shared constant message and
+a typed request closure, without per-message allocation. Every behaviour remains, a throw in `update`, a render or the
 after-render phase included (`browser/tea/ThrowRecovers`). What a release build does with it that
 it could not with a sibling: the mount record's unread `init` key goes (fact 3), `hosted` is
 written into `main` (*Once the whole program is in view*), `flush` and `onRendered` are dropped

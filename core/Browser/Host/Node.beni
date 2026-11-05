@@ -98,10 +98,19 @@ pub foreign impure rendererRemove : borrowed Node → ⊤
 pub foreign impure rendererClone : borrowed Node → Node
 
 
-pub foreign impure append : borrowed Node, borrowed Node → Result MoveError ⊤
+pub append : borrowed Node, borrowed Node → Result MoveError ⊤
+append a0 a1 = Js.optMatch (host_append a0 a1) (λ⊤ → Err HierarchyRequestError) λpresent →
+    Ok present
 
 
-pub foreign impure textContent : Node → Maybe String
+foreign impure host_append : borrowed Node, borrowed Node → Js.Opt ⊤
+
+
+pub textContent : Node → Maybe String
+textContent a0 = Js.optMatch (host_textContent a0) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_textContent : Node → Js.Opt String
 
 
 pub foreign impure setTextContent : Node, String → ⊤

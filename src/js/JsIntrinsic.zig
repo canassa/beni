@@ -268,7 +268,7 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
     const d = bir.instData(inst);
     const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
     if (module.int() >= interfaces.len) return null;
-    if (graph.modulePackage(module) == .platform and same(interner.slice(graph.moduleName(module)), "Browser.Bridge")) {
+    if (graph.isBrowser(module) and same(interner.slice(graph.moduleName(module)), "Browser.Bridge")) {
         const iface_ = &interfaces[module.int()];
         if (d.rhs >= iface_.values.len) return null;
         return browserBridge(interner.slice(iface_.symbols[@backingInt(iface_.values[d.rhs].name)]));

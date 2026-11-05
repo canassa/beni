@@ -1,4 +1,7 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Js
+
+
 pub foreign type URL
 
 
@@ -8,7 +11,11 @@ pub foreign impure protocol : borrowed URL → String
 pub foreign impure setProtocol : borrowed URL, String → ⊤
 
 
-pub foreign impure tryCreate : String, String → Maybe URL
+pub tryCreate : String, String → Maybe URL
+tryCreate a0 a1 = Js.optMatch (host_tryCreate a0 a1) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_tryCreate : String, String → Js.Opt URL
 
 
 pub foreign impure href : borrowed URL → String

@@ -1,0 +1,9 @@
+import Browser.Bridge as Bridge
+
+
+pub type Program
+    = Program Int
+
+
+pub page : Program
+page = Program (Bridge.block 7)

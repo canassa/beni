@@ -6417,7 +6417,8 @@ test "a page build makes each module's edge lists once and lowers and prints eac
         .edge_lists = counters.modules_checked,
         .edge_lists_embedded = counters.embedded_modules,
         .reach_walks = 2,
-        .modules_lowered = maps,
+        // Browser.Bridge is lowered to per-site operations and writes no module.
+        .modules_lowered = maps + 1,
         .modules_printed = maps,
         .emit_units_embedded = counters.emit_units_embedded,
         .emit_units_lowered = counters.emit_units_lowered,
@@ -13922,6 +13923,30 @@ test "platform lifecycle hooks bypass the Task scheduler" {
     try testing.expect(w.exists("fiber-out/_core/Task.mjs"));
 }
 
+test "generated host wrappers keep Maybe and Result tags private in release" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/corpus/run/core/NativeHostValues.beni", w.arena.allocator(), .limited(world.max_stream_bytes));
+    try w.write("Main.beni", source);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.buildAndRun(&.{ "--core", "--release", "Main.beni" }, .{ .stdout = "yes\nmissing\nmapped\nmap missing\nnull\nundefined\nabsent\nparsed null\nsyntax error\n" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY                                  │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    const emitted = try w.read("out/_main.mjs");
+    for ([_][]const u8{ "\"Just\"", "\"Nothing\"", "\"Ok\"", "\"Err\"" }) |tag| {
+        try testing.expect(std.mem.find(u8, emitted, tag) == null);
+    }
+}
+
 test "typed browser bridge is identity code and fuzz registration is absent on normal pages" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -13953,4 +13978,116 @@ test "typed browser bridge is identity code and fuzz registration is absent on n
     try testing.expect(std.mem.indexOf(u8, runtime, "__beniFuzzSend") == null);
     try testing.expect(std.mem.indexOf(u8, ordinary, "__beniFuzzSend") == null);
     try testing.expect(std.mem.indexOf(u8, fuzzed, "__beniFuzzSend") != null);
+}
+
+test "typed browser mounts name a missing body and refuse render requests after stop" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    // The adapter is core code so it may exercise the private typed boot contract.
+    try w.write("Probe.beni",
+        \\import Browser
+        \\import Hosted
+        \\import Html
+        \\import Js
+        \\
+        \\
+        \\host : Js.Ref (Maybe (Browser.Host Int))
+        \\host = Js.ref Nothing
+        \\
+        \\
+        \\request : ⊤ → ⊤
+        \\request ⊤ =
+        \\    case Js.read host of
+        \\        Nothing →
+        \\            ⊤
+        \\        Just self →
+        \\            Hosted.afterRender self (Hosted.later λ_ → ⊤)
+        \\
+        \\
+        \\mounts : Browser.Program, Browser.Boot → ⊤
+        \\mounts = Browser.runMounts
+        \\
+        \\
+        \\page : Browser.Program
+        \\page =
+        \\    Browser.hosted
+        \\        { init =
+        \\            λself →
+        \\                Js.write host (Just self)
+        \\                0
+        \\        , update = λ_ _ n → n
+        \\        , settle = λ_ n → n
+        \\        , view = λ_ → Html.text "ok"
+        \\        }
+        \\
+        \\
+        \\pub operations = { mounts = mounts, page = page, request = request }
+    );
+    const expected = "the page has no body to mount a program at\nscheduled after stop: 0\n";
+    inline for (.{ false, true }) |release| {
+        const result = if (release)
+            try w.run(&.{ "build", "--core", "--library", "--release", "--platform=browser", "--out=dev", "Probe.beni" })
+        else
+            try w.run(&.{ "build", "--core", "--library", "--platform=browser", "--out=dev", "Probe.beni" });
+        try testing.expectEqual(@as(u8, 0), result.exit_code);
+        try testing.expectEqualStrings("", result.stderr);
+        try w.write("check.mjs",
+            \\globalThis.document = {body:null};
+            \\const {mounts,page,request}=Object.values(await import('./dev/Probe.mjs'))[0];
+            \\let stopped=false,scheduled=0;
+            \\const boot={hasRoot:()=>false,render:()=>()=>{},schedule:()=>{scheduled++},dead:()=>stopped,hosted:()=>{},flush:()=>{},phase:()=>false,stop:()=>{}};
+            \\try{mounts(page,boot);throw Error('missing expected defect')}catch(e){if(e.constructor!==Error||e.message!=='the page has no body to mount a program at')throw e;console.log(e.message)}
+            \\document.body={};
+            \\mounts(page,boot);
+            \\stopped=true;
+            \\request(null);
+            \\console.log('scheduled after stop: '+scheduled);
+        );
+        try w.expectProgram("check.mjs", .{ .stdout = expected });
+    }
+}
+
+test "a foreign platform Browser.Bridge keeps its own direct and first-class implementations" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("platform/beni.json",
+        \\{"platform":true,"name":"bridge-test","program":"Probe.Program","runtime":"runtime.js"}
+    );
+    try w.write("platform/runtime.js", "export const run = (main) => { console.log(main); };\n");
+    try w.write("platform/Browser/Bridge.beni", "pub foreign pure block : Int → Int\n");
+    try w.write("platform/Browser/Bridge.js", "export const block = (n) => n + 10;\n");
+    try w.write("platform/Probe.beni",
+        \\import Browser.Bridge as Bridge
+        \\
+        \\
+        \\pub foreign type Program
+        \\
+        \\
+        \\pub foreign pure program : Int → Program
+        \\
+        \\
+        \\apply : (Int → Int), Int → Int
+        \\apply f n = f n
+        \\
+        \\
+        \\pub page : Program
+        \\page = program (Bridge.block 7 + apply Bridge.block 3)
+    );
+    try w.write("platform/Probe.js", "export const program = (n) => n;\n");
+    try w.write("Main.beni",
+        \\import Probe
+        \\
+        \\
+        \\main : Probe.Program
+        \\main = Probe.page
+    );
+    for ([_]bool{ false, true }) |release| {
+        const built = try w.run(if (release)
+            &.{ "build", "--release", "--platform=./platform", "--out=out", "Main.beni" }
+        else
+            &.{ "build", "--platform=./platform", "--out=out", "Main.beni" });
+        try expectBuilt(built);
+        try testing.expectEqualStrings("", built.stderr);
+        try w.expectProgram("out/_main.mjs", .{ .stdout = "30\n" });
+    }
 }
