@@ -61,6 +61,8 @@ pub const Env = struct {
     interner: *const InternPool.Global,
     interfaces: []const Interface,
     module: Graph.Index,
+    authority: @import("../resolve/CorePrivate.zig").Authority = .app,
+    app_is_platform: bool = false,
     bir: *const Bir,
     /// Scheme variable per top-level declaration; `.none` for a type or for
     /// a value whose scheme is not built yet.

@@ -44,6 +44,7 @@
 //! every pass between.
 
 const std = @import("std");
+const ImplicitHelpers = @import("ImplicitHelpers.zig");
 const Allocator = std.mem.Allocator;
 const diagnostic = @import("diagnostic");
 const Bir = @import("../bir/Bir.zig");
@@ -3530,6 +3531,7 @@ pub const Lowerer = struct {
     }
 
     fn typedIntrinsicDecl(l: *Lowerer, decl: Bir.Decl) ?JsIntrinsic.Which {
+        if (l.in.graph.modulePackage(l.in.module) == .core and std.mem.eql(u8, l.text(l.module_name), "Basics") and std.mem.eql(u8, l.text(l.bir.symbol(decl.name)), "appendTyped")) return .appendTyped;
         if (l.in.graph.isSsr(l.in.module)) {
             const name_ = l.text(l.bir.symbol(decl.name));
             if (std.mem.eql(u8, l.text(l.module_name), "Ssr") and std.mem.eql(u8, name_, "ssrText")) return .ssrText;
@@ -4080,14 +4082,7 @@ pub const Lowerer = struct {
             if (std.mem.eql(u8, spelling, "stop") or std.mem.eql(u8, spelling, "stopped")) return true;
         }
         if (l.typedIntrinsicDecl(d) == .optNone) return true;
-        if (l.in.graph.lookup(.core, InternPool.WellKnown.Task.symbol()) == l.in.module) {
-            const spelling = l.text(l.bir.symbol(d.name));
-            return std.mem.eql(u8, spelling, "chain");
-        }
-        if (l.in.graph.lookup(.core, InternPool.WellKnown.List.symbol()) != l.in.module) return false;
-
-        if (!d.kind.isValue()) return false;
-        return corePrivateSlot(l.bir.symbol(d.name)) != null or std.mem.eql(u8, l.text(l.bir.symbol(d.name)), "isView");
+        return l.in.graph.modulePackage(l.in.module) == .core and ImplicitHelpers.needsExport(l.text(l.module_name), l.text(l.bir.symbol(d.name)));
     }
 
     /// The `import` statements, built once the reference list is complete
@@ -7941,6 +7936,7 @@ pub const Lowerer = struct {
             return if (l.isScalarRaw(inst)) offset else l.materialise(k, offset, p);
         };
         if (l.jsIntrinsicOf(inst)) |which| switch (which) {
+            .appendTyped => return l.appendTypedArrow(p),
             .null => return l.nullNode(p),
             .undefined => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
             .development => {
@@ -11997,6 +11993,7 @@ pub const Lowerer = struct {
     /// an ordinary function.
     /// The `Js` intrinsic `inst` names, or null (research 47).
     fn jsIntrinsicOf(l: *Lowerer, inst: Inst.Index) ?JsIntrinsic.Which {
+        if (JsIntrinsic.localAppendTyped(l.in.graph, l.bir, l.in.module, inst, l.interner)) return .appendTyped;
         if (JsIntrinsic.localSsrText(l.in.graph, l.bir, l.in.module, inst, l.interner)) return .ssrText;
         return JsIntrinsic.of(l.in.graph, l.in.interfaces, l.bir, inst, l.interner);
     }
@@ -12462,6 +12459,48 @@ pub const Lowerer = struct {
         return l.nullNode(p);
     }
 
+    // ownership pin begin: appendTyped
+    fn appendPlain(l: *Lowerer, value: Node.Index, p: u32) Allocator.Error!Node.Index {
+        const symbol = try l.interner.getOrPut(l.gpa, "plain");
+        const owner = l.in.graph.lookup(.core, InternPool.WellKnown.Basics.symbol()) orelse return l.missingCoreValue(p, "Basics", "plain", "the core module is missing");
+        const target = if (owner == l.in.module) target: {
+            for (l.bir.decls, 0..) |d, i| if (l.bir.symbol(d.name) == symbol) break :target try l.ident(try l.topName(@intCast(i)), p);
+            return l.missingCoreValue(p, "Basics", "plain", "the declaration is missing");
+        } else target: {
+            const index = l.in.interfaces[owner.int()].findValue(l.interner.global, symbol) orelse return l.missingCoreValue(p, "Basics", "plain", "the declaration is missing");
+            try l.need(owner, @backingInt(index));
+            break :target try l.ident(try l.externalName(owner, @backingInt(index)), p);
+        };
+        return l.call(target, &.{value}, p);
+    }
+
+    fn appendTypedResult(l: *Lowerer, a: Node.Index, b: Node.Index, p: u32) Allocator.Error!Node.Index {
+        const array = try l.appendPlain(a, p);
+        return l.call(try l.member(array, try l.interner.getOrPut(l.gpa, "concat"), p), &.{try l.appendPlain(b, p)}, p);
+    }
+
+    fn appendTypedArrow(l: *Lowerer, p: u32) Allocator.Error!Node.Index {
+        if (l.in.graph.lookup(.core, InternPool.WellKnown.Basics.symbol()) != l.in.module) return l.coreValue(.Basics, .append, p);
+        // Preserve append's established lexical bindings in both output modes.
+        var names: [4]JsIr.NameIndex = undefined;
+        for ([_][]const u8{ "a", "b", "s", "t" }, 0..) |name_, i| {
+            names[i] = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, name_), .tag = l.next_tag });
+            l.next_tag += 1;
+        }
+        const a = try l.ident(names[0], p);
+        const b = try l.ident(names[1], p);
+        const condition = try l.binary(.strict_eq, try l.unary(.type_of, a, p), try l.stringNode("string", p), p);
+        var yes: StmtList = .empty;
+        try l.constDecl(&yes, names[2], a, p);
+        try l.constDecl(&yes, names[3], b, p);
+        try yes.append(l.scratch, try l.returnStmt(try l.binary(.add, try l.ident(names[2], p), try l.ident(names[3], p), p), p));
+        const then_ = try l.b.addRange(yes.items);
+        const else_ = try l.b.addRange(&.{try l.returnStmt(try l.appendTypedResult(a, b, p), p)});
+        const record = try l.b.addRecord(JsIr.If{ .then_start = then_.start, .then_end = then_.end, .else_start = else_.start, .else_end = else_.end });
+        return l.arrowOf(names[0..2], &.{try l.add(.if_stmt, p, condition.int(), @backingInt(record))}, p);
+    }
+    // ownership pin end: appendTyped
+
     // ownership pin begin: cell
     // ownership pin begin: cellRead
     // ownership pin begin: cellWrite
@@ -12687,6 +12726,7 @@ pub const Lowerer = struct {
 
     /// A first-class typed intrinsic, with no sibling export or import.
     fn jsTypedValue(l: *Lowerer, which: JsIntrinsic.Which, p: u32) !Node.Index {
+        if (which == .appendTyped) return l.appendTypedArrow(p);
         const arity: usize = switch (which) {
             .nodeUpgrade, .optMatch, .arraySet, .arrayWrite => 3,
             .browserInstallRoot, .any_unpack_opt, .schemaIdentity, .optWithDefault, .arrayDone, .arrayGet, .arraySort => 2,
@@ -12914,6 +12954,7 @@ pub const Lowerer = struct {
             W.kernelPack, W.kernelRead => v[0],
             // ownership pin end: slotRead
             // ownership pin end: slotPack
+            W.appendTyped => l.call(try l.appendTypedArrow(p), v, p),
             W.ssrText => l.ssrText(v[0], p),
             W.nodeUpgrade => unreachable,
             W.inlineMarkRoot => l.inlineMarkRoot(out, v[0], p),
@@ -13781,11 +13822,10 @@ pub const Lowerer = struct {
                 if (SchemaGraph.isCompiledValue(l.text(l.bir.symbol(d.name)))) dispatched[i] = true;
             }
         }
-        // And `core/List`'s, whose calls the emitter writes in other
-        // modules' code (`emitterCalled`): no BIR here shows them, so a
-        // beni-bodied `close` would otherwise look uncalled.
+        // Compiler-owned calls have no BIR reference: the shared helper
+        // registration marks their results observed, alongside platform hooks.
         for (0..decls.len) |i| {
-            if (l.emitterCalled(@intCast(i))) dispatched[i] = true;
+            if (l.emitterCalled(@intCast(i)) or (l.in.graph.modulePackage(l.in.module) == .core and ImplicitHelpers.observesResult(l.text(l.module_name), l.text(l.bir.symbol(decls[i].name))))) dispatched[i] = true;
         }
         for (decls, 0..) |d, i| {
             const index: u32 = @intCast(i);

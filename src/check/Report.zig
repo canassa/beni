@@ -104,6 +104,8 @@ pub fn init(
         .interner = cx.interner,
         .interfaces = cx.interfaces,
         .module = cx.module,
+        .authority = cx.authority,
+        .app_is_platform = cx.app_is_platform,
         .bir = cx.bir,
         .decl_scheme = decl_scheme,
         .local_var = &.{},

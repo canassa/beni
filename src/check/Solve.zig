@@ -791,6 +791,28 @@ fn isProbe(s: *Solve, inst: Bir.Inst.Index) bool {
     return std.mem.eql(u8, s.cx.interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]), "maySuspend");
 }
 
+/// Check a concrete append against its typed core operation. The BIR spelling
+/// remains ++; the existing dispatch/lowering keeps its established output.
+fn typedAppend(s: *Solve, node: Tree.Node, info: Tree.Call, args: []const Var) Error!void {
+    if (args.len != 2 or !s.isBasicsAppend(node.region)) return;
+    const content = s.store().resolvedContent(args[0]);
+    if (content != .structure or content.structure != .app) return;
+    const id = content.structure.app.type;
+    if (id == .none) return;
+    const owner: InternPool.WellKnown = if (id == s.cx.types.well_known.list) .List else if (id == s.cx.types.well_known.string) .String else return;
+    const module = s.cx.graph.lookup(.core, owner.symbol()) orelse return;
+    const iface = s.cx.iface(module);
+    for (iface.values, 0..) |value, i| {
+        if (iface.symbols[@backingInt(value.name)] != InternPool.WellKnown.append.symbol()) continue;
+        const callee: Bir.Inst.Index = @fromBackingInt(@intCast(s.cx.bir.instData(node.region).lhs));
+        s.instantiate.origin = callee;
+        const scheme = try s.instantiate.importedValue(module, @intCast(i)) orelse return;
+        const typed = try s.instantiate.copy(scheme);
+        _ = try s.unify(info.callee, typed, node.region, node.category);
+        return;
+    }
+}
+
 fn call(s: *Solve, node: Tree.Node) Error!void {
     const info = s.tree.extraData(node.a, Tree.Call);
     const scratch = s.cx.scratch;
@@ -876,6 +898,7 @@ fn call(s: *Solve, node: Tree.Node) Error!void {
     // expectation: a method the callee's requirement finds
     // wrong is reported as that, and poisons its result, so the result's
     // mismatch — its consequence — is not reported beside it.
+    try s.typedAppend(node, info, args);
     if (s.readied()) try Decide.drain(s, s.frame().queue, false);
     // The variables the callee's result is made of, before a failed
     // unification poisons it (`failInstantiation`).
