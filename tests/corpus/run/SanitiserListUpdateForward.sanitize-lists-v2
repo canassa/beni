@@ -1,0 +1,3 @@
+List.update's callback passed on inside a lambda (ownership-v2.md §2.11.4, §2.13.6, taken): built again under
+--ownership=v2 and the list stale-read sanitiser. v2 refuses the edit of a list the rest of the row also holds;
+were the condition lost through the lambda, the sanitised run would show the stale read.

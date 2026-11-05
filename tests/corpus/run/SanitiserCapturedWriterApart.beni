@@ -1,0 +1,36 @@
+-- The safe twins of `SanitiserCapturedWriter` (`ownership-v2.md` §2.11.3,
+-- §2.11.4): a closure that calls a captured closure which edits its
+-- parameter in place, on a list nothing else holds — a fresh local, a
+-- parameter whose caller hands a fresh list, two apart lists through a
+-- callee's label, and two calls on two fresh lists. v2 accepts each edit in
+-- place, and the sanitised run prints the same.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+apply2 : a, a, (a → b) → b × b
+apply2 x y f = ( f x, f y )
+
+
+onParam : List Int → String
+onParam k =
+    g = λv → List.push v 5
+    h = λv → g v
+    show (h k)
+
+
+main : Program
+main =
+    g = λv → List.push v 6
+    h = λv → g v
+    k = [ 1 ]
+    a = h k
+    ( b, c ) = apply2 [ 2 ] [ 3 ] λv → g v
+    d1 = h [ 4 ]
+    d2 = h [ 5 ]
+    Node.printLines [ onParam [ 0 ], show a, show b, show c, show d1, show d2 ]

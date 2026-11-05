@@ -1,0 +1,41 @@
+-- A runtime catch for a callee that hands its own writer to its caller's
+-- callback (`ownership-v2.md` §2.11.3, *a function value goes where a value
+-- goes*): `withPush use = use λv → List.push v 5`, a named writer handed the
+-- same way, and a closure over the callee's parameter that the callback runs
+-- twice. A label's supply says which objects it hands, never which code, so
+-- the writer's edit and its count were checked by nobody. Each such writer
+-- escapes at the callback now, its edit refused; accepted, the sanitised run
+-- shows the stale read.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+bump : List Int → List Int
+bump v = List.push v 6
+
+
+withPush : ((List Int → List Int) → r) → r
+withPush use = use λv → List.push v 5
+
+
+withBump : ((List Int → List Int) → r) → r
+withBump use = use bump
+
+
+withBuf : List Int, ((⊤ → List Int) → r) → r
+withBuf buf use = use λ⊤ → List.push buf 7
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = withPush λp → p k
+    m = [ 2 ]
+    b = withBump λp → p m
+    ( c, d ) = withBuf [ 3 ] λp → ( p ⊤, p ⊤ )
+    Node.printLines [ show a, show k, show b, show m, show c, show d ]

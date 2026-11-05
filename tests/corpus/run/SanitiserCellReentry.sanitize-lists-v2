@@ -1,0 +1,4 @@
+A runtime catch for a callback run while its callee holds what it was handed (ownership-v2.md §2.11.3, §2.13.7,
+#1955): the callee holds a loan of a cell's contents, or another callback's answer, while the callback edits it in
+place through a capture. Built again under --ownership=v2 and the list stale-read sanitiser. v2 refuses each call;
+were it to accept one, the sanitised run would print the edited contents through the old loan.

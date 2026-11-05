@@ -392,17 +392,6 @@ pub const Options = struct {
     /// `--ownership-records-lost` (`Cli.Common`, `ownership-checker.md`
     /// §31.4 item 6): every record condition fails. Hidden and test-only.
     ownership_records_lost: bool = false,
-    /// `--ownership-order-check` (`Cli.Common`, `ownership-v2.md` §2.9):
-    /// v2's `propagate` checks its walk in both frontier orders. Hidden
-    /// and test-only.
-    ownership_order_check: bool = false,
-    /// `--ownership-rewalk-check` (`Cli.Common`, `ownership-v2.md` §8 S3b
-    /// slice 4): v2 walks each group member again at its fixpoint and
-    /// compares. Hidden and test-only.
-    ownership_rewalk_check: bool = false,
-    /// `--ownership-propagate` (`Cli.Common`, `ownership-v2.md` §2.9 *Fold
-    /// first*): v2's `propagate` prints a line per call. Hidden and test-only.
-    ownership_propagate: bool = false,
     /// `--ownership=v2` (`Cli.Common.ownership`, `ownership-v2.md` §8): the
     /// checker v2 runs in place of v1. Hidden and test-only.
     ownership_v2: bool = false,
@@ -410,7 +399,7 @@ pub const Options = struct {
     /// checker v2 formats what the dump prints and keeps each module's report
     /// (`ownership2_reports`), so the dump does not run it again (#1193).
     /// `summaries` false for `--ownership-totals`.
-    ownership_v2_dump: ?struct { summaries: bool } = null,
+    ownership_v2_dump: ?struct { summaries: bool, below: bool = false } = null,
     /// `--records-in-place` (`Cli.Build`, R-8.5): the build enforces on any
     /// chain, as an in-place one does, so that every module whose demands
     /// were all accepted has its records written in place. Hidden and

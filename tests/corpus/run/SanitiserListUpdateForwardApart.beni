@@ -1,0 +1,35 @@
+-- The safe twins of `SanitiserListUpdateForward` (`ownership-v2.md` §2.11.4,
+-- §2.13.6, `taken`): `List.update`'s callback passed on inside a lambda, on
+-- fresh elements and on rows that share only a key the callback does not
+-- write. v2 accepts each edit in place, and the sanitised run prints the
+-- same.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+rows : List (List Int × List Int) → String
+rows rs = String.join (List.map rs λ( k, vs ) → show k ++ ":" ++ show vs) ";"
+
+
+upd : List (List Int), (List Int → List Int) → List (List Int)
+upd rs f = List.update rs 0 λv → f v
+
+
+updRows :
+      List (List Int × List Int)
+    , (List Int × List Int → List Int × List Int)
+    → List (List Int × List Int)
+updRows rs f = List.update rs 1 λv → f v
+
+
+main : Program
+main =
+    fresh = upd [ [ 1 ], [ 1 ] ] λv → List.push v 2
+    key = [ 1 ]
+    keyed = updRows [ ( key, [ 0 ] ), ( key, [ 1 ] ) ] λ( k, vs ) → ( k, List.push vs 9 )
+    Node.printLines [ String.join (List.map fresh show) ";", rows keyed, show key ]

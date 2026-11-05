@@ -1,0 +1,50 @@
+-- A runtime catch for a cast that loses the sharing between two of its
+-- parts (`ownership-v2.md` §2.9.1, §2.9.3): `cast [ xs, xs ]` and
+-- `twinList xs` answer a list that holds `xs` twice. A cast is an identity
+-- at a type variable's or an opaque slot, whose one slot stands for every
+-- object below it; v2 asked only that slot's own object to be once, and
+-- at the opaque slot the two `xs` were one leaf, so the two elements were
+-- apart and the push of the first ran in place while the second was read.
+-- The sanitised run trapped; each push is refused now.
+import Cast
+import Node
+import String
+
+
+show : List Int → String
+show l =
+    case l of
+        [] →
+            "."
+
+        [ x, …rest ] →
+            String.fromInt x ++ "," ++ show rest
+
+
+viaCast : Int → String
+viaCast n =
+    xs = [ n ]
+    ls : List (List Int)
+    ls = Cast.cast [ xs, xs ]
+    case ls of
+        [ p, q ] →
+            a = List.push p 1
+            "${show a} ${show q}"
+
+        _ →
+            ""
+
+
+viaTwin : Int → String
+viaTwin n =
+    case Cast.twinList [ n ] of
+        [ p, q ] →
+            a = List.push p 2
+            "${show a} ${show q}"
+
+        _ →
+            ""
+
+
+main : Node.Program
+main = Node.print "${viaCast 5} ${viaTwin 6}"

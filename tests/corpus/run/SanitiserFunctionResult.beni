@@ -1,0 +1,77 @@
+-- A runtime catch for a function value that reaches a call through another
+-- call's result (`ownership-v2.md` §2.11.3, *a function value goes where a
+-- value goes*): `g = pick f 0`, a function out of `List.head`, a closure
+-- that answers `f`, a callback that answers it. The call `g v` was read as
+-- unknown code that labelled nothing, so the writer handed as `f` was
+-- accepted `param`, its write and its count checked by nobody. Each edit of
+-- a list read again, or of a capture run twice, is refused now; accepted,
+-- the sanitised run shows the stale read.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+pick : (List Int → List Int), Int → (List Int → List Int)
+pick f _ = f
+
+
+pickU : (⊤ → List Int), Int → (⊤ → List Int)
+pickU f _ = f
+
+
+first : List Int, (List Int → List Int) → List Int
+first v f =
+    g = pick f 0
+    g v
+
+
+viaHead : List Int, List (List Int → List Int) → List Int
+viaHead v fs =
+    case List.head fs of
+        Just g →
+            g v
+
+        Nothing →
+            v
+
+
+twice : (⊤ → List Int) → List Int × List Int
+twice f =
+    g = pickU f 0
+    ( g ⊤, g ⊤ )
+
+
+local : List Int, (List Int → List Int) → List Int
+local v f =
+    g = (λ⊤ → f) ⊤
+    g v
+
+
+answered : List Int, (Int → (List Int → List Int)) → List Int
+answered v f =
+    g = f 0
+    g v
+
+
+viaAnswer : List Int, (List Int → List Int) → List Int
+viaAnswer v w = answered v λ_ → w
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = first k λv → List.push v 5
+    m = [ 2 ]
+    b = viaHead m [ λv → List.push v 6 ]
+    n = [ 3 ]
+    ( c, d ) = twice λ⊤ → List.push n 7
+    p = [ 4 ]
+    q = local p λv → List.push v 8
+    r = [ 5 ]
+    s = viaAnswer r λv → List.push v 9
+    Node.printLines
+        [ show a, show k, show b, show m, show c, show d, show q, show p, show s, show r ]

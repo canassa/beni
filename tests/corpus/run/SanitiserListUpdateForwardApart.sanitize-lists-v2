@@ -1,0 +1,3 @@
+List.update's callback passed on inside a lambda, on fresh elements and on rows that share only a key the callback
+does not write (ownership-v2.md §2.11.4, §2.13.6, taken): built again under --ownership=v2 and the list stale-read
+sanitiser. v2 accepts each edit; the sanitised run prints the same.

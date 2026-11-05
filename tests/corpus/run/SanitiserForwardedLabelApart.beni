@@ -1,0 +1,37 @@
+-- The safe twin of `SanitiserForwardedLabel` (`ownership-v2.md` §2.11.3): a
+-- callback passed on inside a lambda that a hand-written `mapL` runs many
+-- times, on two apart lists. v2 accepts the edit in place, and the
+-- sanitised run prints the same.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+mapL : List a, (a → b) → List b
+mapL xs f =
+    case xs of
+        [] →
+            []
+
+        [ x, …rest ] →
+            [ f x, …mapL rest f ]
+
+
+viaUser : List (List Int), (List Int → List Int) → List (List Int)
+viaUser rs f = mapL rs λv → f v
+
+
+main : Program
+main =
+    k = [ 1 ]
+    k2 = [ 2 ]
+    b = viaUser [ k, k2 ] λv → List.push v 6
+    Node.printLines [ shows b ]

@@ -1,0 +1,88 @@
+-- A runtime catch for a callback run while its callee holds what it was
+-- handed (`ownership-v2.md` §2.11.3, *a capture written across the callee's
+-- run*; §2.13.7; #1955). The callee takes a loan of a cell's contents, or
+-- holds what another callback answered, then runs a callback that edits
+-- those contents in place through a capture; afterwards it reads its loan.
+-- The callback is run directly, through a named helper, passed on to
+-- another function, and the loan or list comes from
+-- another callback. Each prints the loan's length after the edit: the old
+-- contents.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+bump : Ref (List Int) → ⊤
+bump r = Ref.update r λxs → List.push xs 1
+
+
+apply : (⊤ → ⊤) → ⊤
+apply f = f ⊤
+
+
+reenter : Ref (List Int), (⊤ → ⊤) → Int
+reenter r f =
+    v = Ref.get r
+    f ⊤
+    List.length v
+
+
+passed : Ref (List Int), (⊤ → ⊤) → Int
+passed r f =
+    v = Ref.get r
+    apply f
+    List.length v
+
+
+answered : (⊤ → List Int), (⊤ → ⊤) → Int
+answered g f =
+    v = g ⊤
+    f ⊤
+    List.length v
+
+
+counted : (⊤ → List Int), (⊤ → Int) → Int
+counted g f =
+    v = g ⊤
+    n = f ⊤
+    n * 10 + List.length v
+
+
+direct : ⊤ → Int
+direct ⊤ =
+    r = Ref.make [ 0 ]
+    reenter r λ⊤ → Ref.update r λxs → List.push xs 1
+
+
+helper : ⊤ → Int
+helper ⊤ =
+    r = Ref.make [ 0 ]
+    reenter r λ⊤ → bump r
+
+
+passedOn : ⊤ → Int
+passedOn ⊤ =
+    r = Ref.make [ 0 ]
+    passed r λ⊤ → bump r
+
+
+loanAnswer : ⊤ → Int
+loanAnswer ⊤ =
+    r = Ref.make [ 0 ]
+    answered (λ⊤ → Ref.get r) λ⊤ → bump r
+
+
+listAnswer : ⊤ → Int
+listAnswer ⊤ =
+    l = [ 0 ]
+    counted (λ⊤ → l) λ⊤ → List.length (List.push l 1)
+
+
+main : Program
+main =
+    Node.print
+        (String.join
+            (List.map [ direct ⊤, helper ⊤, passedOn ⊤, loanAnswer ⊤, listAnswer ⊤ ] String.fromInt)
+            " "
+        )

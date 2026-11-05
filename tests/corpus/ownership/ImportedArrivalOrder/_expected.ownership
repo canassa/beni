@@ -1,0 +1,26 @@
+module Codec.Encode
+  summary encode: π1 R, π1#Array.0 R, π1#Object.0 R
+  summary string: unused
+  summary list: π1 R, π2 R; res #Array.0 fresh2{excl cb2, sep cb2 cb2}r{excl cb2, sep cb2 cb2}, #Array.0[*] ~cb2{excl cb2}r{excl cb2} ~condition(fresh1) ~fresh1{excl cb2, sep cb2 cb2}r{excl cb2, sep cb2 cb2}; π2 calls many, supply 1 π1[*] owned taken{excl π1}r{excl π1}
+  summary object: π1 RA; res #Object.0 π1
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Codec.Value
+  summary get: π1 R, π1#Object.0 R, π1#Object.0[*].1 RA; res #Just.0 π1#Object.0[*].1{excl π1#Object.0}r{excl π1#Object.0}
+  summary lookup: π1 R, π1[*].1 RA; res #Just.0 π1[*].1{excl π1}r{excl π1}
+  summary kind: π1 R, π1#Array.0 R, π1#Object.0 R
+  summary print: π1 R, π1#Array.0 R, π1#Object.0 R
+  summary printAt: π1 R, π1#Array.0 R, π1#Object.0 R
+  summary printField: π2 R, π2#Array.0 R, π2#Object.0 R
+  summary block: π1 R
+  summary printNumber: unused
+  summary quote: unused
+  summary escape: unused
+  summary hex: unused
+  summary same: π1 R, π1#Array.0 R, π1#Object.0 R, π2 R, π2#Array.0 R, π2#Object.0 R
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  14:40 ++ <literal>: accepted fresh
+  summary pairs: res [*].1#Array.0 fresh3, [*].1#Array.0[*] ~condition(fresh2) ~fresh2, fresh1
+  summary shown: unused
+  demands 1: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 1: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

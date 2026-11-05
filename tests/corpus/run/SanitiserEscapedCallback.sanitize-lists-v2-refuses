@@ -1,0 +1,3 @@
+# v2 refuses a callback that writes its own parameter and escapes to List.foldl's pessimistic contract (§2.11.4).
+20:9 list_may_be_shared List.foldl
+21:9 list_may_be_shared List.foldl

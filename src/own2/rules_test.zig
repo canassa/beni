@@ -33,6 +33,9 @@ const Entry = struct { file: []const u8, layer: u8, max_lines: u32 };
 
 /// §5's table. A new file is added here by the slice that adds it.
 const layers = [_]Entry{
+    // The slot domain (#1685) replaced the shape files: a file it added has
+    // its production lines with headroom as its target, set with it; a file
+    // master had keeps its target.
     // §5 says 600; the lane-charging forms, named limits and charge targets
     // the first review asked for live here and push it past that, so the
     // table is amended to 700 with the slice's design commit.
@@ -40,232 +43,173 @@ const layers = [_]Entry{
     // 900 since #1646 and the counters: `Columns`, a table with its columns hoisted.
     // 1 000 since #1646: `IdColumn`, a memo keyed by one dense id.
     // 1 120 since #1646: `Index` and `Interned`, open addressing over entry indices.
+    // #1685: an account's first reads of the module tables (§4.1, #1714);
+    // the chunks, the task queue and their ids, which nothing used, cut.
     .{ .file = "Ids.zig", .layer = 0, .max_lines = 1120 },
-    // The data-oriented measurement (S0): imported by any file, whatever its
-    // layer, and imports nothing of own2/.
-    // 570 since #1646: the walks' sparse sets' counts.
-    // 580 since #1646: an index's longest displacement.
     .{ .file = "Counters.zig", .layer = 0, .max_lines = 580 },
-    // #1646: a walk's sparse sets, in slots by walk depth.
-    .{ .file = "Scratch.zig", .layer = 0, .max_lines = 440 },
     // §5 says 1 100 since #1345: the fold targets and levels of a read on a
     // cycle, memoised per path.
     // 1 200 since #1253: one position, one name (`levelPaths`, `expandLevels`).
     // 1 210 since #1566: `equals` skips the pairs an earlier walk proved.
     // 1 220 since #1646: `path_index` reads its keys from the paths.
     .{ .file = "Place.zig", .layer = 1, .max_lines = 1220 },
-    // §5 says 900 since S3a: the containment relation (`below`, `stepsTo`)
-    // and a refinement's canonical position (`unrefined`) Demands reads.
-    // 1 180 since #1390: parts and splits of positions (§2.2 *Parts*).
-    // 1 200 since #1253: a refinement's parts at each level path.
-    // 1 240 since #1473: `listSide` and `positionsApart` (§2.9 *Two positions of one image*).
-    // 1 390 since #1485: `keysOverlap`, rule 4's overlap trie (§2.9 rule 4 (a′)).
-    .{ .file = "Cell.zig", .layer = 2, .max_lines = 1390 },
-    // §5 says 350 since S3a: the report's text line and its two spellings.
+    .{ .file = "Runs.zig", .layer = 1, .max_lines = 90 },
+    // A leaf's base keys as sets shared with its kids' (#1714).
+    .{ .file = "KeySets.zig", .layer = 1, .max_lines = 160 },
+    // The tags and routes of a leaf set (#1714), split from `Leaves`.
+    .{ .file = "Routes.zig", .layer = 1, .max_lines = 680 },
+    // Whether route sets hold together, split from `Routes` (#1714).
+    .{ .file = "Coexist.zig", .layer = 2, .max_lines = 240 },
     .{ .file = "Facts.zig", .layer = 2, .max_lines = 350 },
-    // 4e: stable images, below the shape table it is given as `anytype`.
-    .{ .file = "Stable.zig", .layer = 2, .max_lines = 500 },
-    .{ .file = "Prepass.zig", .layer = 3, .max_lines = 600 },
-    // §5 says 3 600 since #1372: map's knot test and the flattening choice
-    // join (§2.3); 3 350 since #1350, a view's instantiated place and a
-    // join's place.
-    // 3 820 since #1420: positions saturate at two, their count maps, the
-    // rebuild and the nodes it dropped (§2.3). 3 925 since #1467: a join's
-    // reach leaves out its own cells, checked under runtime safety (§2.3).
-    // 3 990 since 4e: `map`'s trail and its knot's move (§2.3, stable images).
-    // 4 025 since #1483: the atom rule, `isAtom` and `settle` (§2.3).
-    // 4 075 since #1485 part 2: C1, the saturation check.
-    // 4 100 since #1570: `interned` and `rawCopy`, a block's class kept raw.
-    // 4 110 since the counters (`Counters.zig`): the placeholders census.
-    .{ .file = "Shape.zig", .layer = 3, .max_lines = 4110 },
-    // 600 since #1308: the condition algebra, the lazy `inst` atoms and the
-    // text, split out of Cond (§5).
-    .{ .file = "CondAlgebra.zig", .layer = 3, .max_lines = 600 },
-    .{ .file = "Regions.zig", .layer = 4, .max_lines = 450 },
-    // 700 since #1308: κ storage, the radix maps and the trie of positions,
-    // split out of Cond (§5).
-    // 710 since the counters (`Counters.zig`): the κ map requests.
-    // 720 since #1646: the κ intern tables read their keys from their records.
-    .{ .file = "Kappa.zig", .layer = 4, .max_lines = 720 },
-    // 2 560 since #1308: κ reads (the machine, views, the crossing, the
-    // aggregates, `deep`, `sep`, `apart`, `lower`, the frontier), split out of
-    // Cond (§5).
-    // 2 620 since #1420: the check that a read implies what a rebuild
-    // dropped (`impliedBy`, §2.3 *The entries of a dropped node*).
-    // 2 730 since #1473, on top of #1420: §2.9 *Two positions of one image* in `apartImage` and `sep`, and the
-    // repeating split (`repeatingSplit`, `exclOf`, #1478).
-    // 2 980 since #1485: the fold certificate's readers, rule 4 and (d);
-    // 3 020 for its part 2: a certificate's class κ read at a position (`ClassPos`).
-    // 3 180 since #1559: rule 4 across the classes of one certificate
-    // (`ruleFourAgg`, `certClassesAggs`) and its check, `assertClassesSum`.
-    .{ .file = "KappaRead.zig", .layer = 5, .max_lines = 3180 },
+    // Holds read by their tags (#1714).
+    .{ .file = "TagTree.zig", .layer = 2, .max_lines = 250 },
+    // What a place graph says below a path, split from `Subtree` (#1714).
+    .{ .file = "PlaceBelow.zig", .layer = 2, .max_lines = 70 },
+    // One step of a position, the step relation and the index protocol the pairs and the indices share (#1963).
+    .{ .file = "Steps.zig", .layer = 2, .max_lines = 190 },
+    // A place graph's encoding and equality, split from `Place` (#1714).
+    .{ .file = "PlaceIdentity.zig", .layer = 2, .max_lines = 190 },
+    .{ .file = "Slots.zig", .layer = 2, .max_lines = 440 },
+    // A contract's result trees, hash-consed by node (#1714, §2.10).
+    .{ .file = "Trees.zig", .layer = 2, .max_lines = 200 },
+    // The readers and the union of result trees, below the contracts (#1714).
+    // A read's result slots as a column, for `ReadOff` and `Relation` (#1714).
+    .{ .file = "Dests.zig", .layer = 3, .max_lines = 200 },
+    // The identity tree's one normal form, below `Contract` (#1714).
+    .{ .file = "Normal.zig", .layer = 3, .max_lines = 40 },
+    .{ .file = "Forest.zig", .layer = 3, .max_lines = 380 },
+    // Conditions, split from `Contract` (#1714).
+    .{ .file = "Conds.zig", .layer = 3, .max_lines = 200 },
+    .{ .file = "Contract.zig", .layer = 4, .max_lines = 800 },
+    // A whole subtree held as a symbol (#1706): its readers, above `Slots`.
+    .{ .file = "Subtree.zig", .layer = 4, .max_lines = 350 },
+    // How large `below(p)` is, split from `Subtree` (#1714).
+    .{ .file = "BelowSize.zig", .layer = 4, .max_lines = 80 },
+    .{ .file = "Prepass.zig", .layer = 4, .max_lines = 600 },
+    // A selection in its one spelling of a subtree (#1714).
+    .{ .file = "Canon.zig", .layer = 5, .max_lines = 120 },
+    // A set met against a run of slots in one pass, for `Descent` (#1714).
+    .{ .file = "MeetRun.zig", .layer = 5, .max_lines = 70 },
+    // The environment rows are read in, split from `Rows` (#1752).
+    .{ .file = "RowEnv.zig", .layer = 5, .max_lines = 150 },
+    .{ .file = "Regions.zig", .layer = 5, .max_lines = 450 },
+    .{ .file = "ContractText.zig", .layer = 5, .max_lines = 160 },
+    // A value's leaf set (#1714): made with the value, read by `Relation`.
+    .{ .file = "Leaves.zig", .layer = 5, .max_lines = 600 },
+    // Worded contracts by declaration and places, one footprint a callee (#1714).
+    .{ .file = "Worded.zig", .layer = 5, .max_lines = 60 },
+    .{ .file = "Rows.zig", .layer = 6, .max_lines = 320 },
+    .{ .file = "Value.zig", .layer = 6, .max_lines = 480 },
     // §5 says 750 since #1214: a path's uses grouped for a filter, and a
     // child's range found by its one step.
-    .{ .file = "Liveness.zig", .layer = 5, .max_lines = 750 },
-    .{ .file = "Exits.zig", .layer = 5, .max_lines = 250 },
-    // 230 since #1510: the join index, a deep node's joins flattened once (§2.8 *As built*).
-    .{ .file = "Joins.zig", .layer = 5, .max_lines = 230 },
-    // #1543: `propagate` by §2.9 *Fold first* (the state graph, the cycle
-    // bit, positions by their set of states) and its reference, out of Cond.
-    // 1 350 since #1485: a widened knot's union sides keyed at a fold
-    // (`keySides`, `unionSides`).
-    // 1 390 since #1646: a call's indices in a slot by depth (`Working`).
-    .{ .file = "Propagate.zig", .layer = 5, .max_lines = 1390 },
-    // §5 says 1 805 since #1112: the observable-position frontier every κ
-    // reader walks, exact propagation states, the snapshot trie (its
-    // links, merges, folds and relabelling) and the one-alternative link.
-    // 2 550 since #1128: the path-multiset primitive (arrivals, aggregates by
-    // destination class, the fold conditions), which §3.4 puts in Cond.
-    // 2 700 since #1199: the read's summaryExcl and the cell set per key.
-    // 4 220 since #1335: `foldCondOf` by the cycle walk.
-    // §5 says 4 260 since #1372's review: a source with no entry reads
-    // `lost` where it shares an image (`Relabel.present`).
-    // 4 320 since #1390: a part runs with its anchor's split, and a part below
-    // another cell is `covered`.
-    // 4 460 since #1399: a join keys the members' entries where a reader
-    // looks (`leafEntries`, memoised) and checks it under `runtime_safety`;
-    // 4 500 with the memo.
-    // 4 560 since #1419: a read at another position takes its home's
-    // entry, and read-off maps κ per submap (`relabelMap`). 4 620 since
-    // #1372: propagate's per-call memos of a run's slice and a frontier,
-    // and their cross-check.
-    // 1 160 since #1308: the four-file split (§5) leaves here the columns,
-    // `init`/`deinit`, the bindings of the three parts' methods, `propagate`
-    // with its memos, and `widenValue`.
-    // #1447 removed `leafEntries`: a reader meets the joined DAG node by the
-    // projection correspondence (§2.9 *Keyed where a reader looks*).
-    // 1 290 since 4e: `widenValue` interns its image by canonical form,
-    // and its cross-check (§2.3, stable images).
-    // 1 300 since #1526: `propagate`'s order check (§2.9).
-    // 830 since #1543: `propagate` moved to `Propagate.zig` (§2.9 *Fold first*).
-    // 975 since #1485: the fold certificate's readers, rule 4 and (d).
-    .{ .file = "Cond.zig", .layer = 6, .max_lines = 975 },
-    // §5 says 1 500 since the write-back effects: the normal-form encoder, the
-    // κ-owning join, v1's print grammar and the funs' write-backs.
-    // 1 770 since S3b slice 4a: use shapes joined path by path (`UseMerge`,
-    // from Rows), which a group's port joins every round.
-    // 1 860 since 4d: a class join drops what the other side covers.
-    // 1 980 since #1485: the fold certificate's readers, rule 4 and (d).
-    .{ .file = "Summary.zig", .layer = 7, .max_lines = 1980 },
-    .{ .file = "Rows.zig", .layer = 8, .max_lines = 1200 },
-    // §5 says 1 900 since #1214: the holder index, below Demands, which reads
-    // it; with the frame types, the naive scan and the fallback hold listing.
-    // 2 010 since #1335: the same-path closure by the cycle walk; 2 030 since
-    // #1366: a candidate stops at a `◆` barrier; 2 070 since #1467: a pair
-    // whose holder has no later use walks no cover; 2 280 since #1510: closures
-    // and hold listings read from the join index, checked against the walk.
-    .{ .file = "Holders.zig", .layer = 8, .max_lines = 2280 },
-    // §5 says 450 since #1214 (L7 then, L9 since #1308): condition 5 left for Holders.
-    .{ .file = "Demands.zig", .layer = 9, .max_lines = 450 },
-    // §5 says 1 600 since #1350: a view's instantiated place (`Views.instantiate`);
-    // 1 630 since #1386: a `sep` side below a constructor.
-    // 1 780 since S3b slice 4b: `positionsAt` and `reentries`, moved from
-    // `Transfer`, read a delivery's marks too. 1 810 since #1412: a write
-    // route's stop at a parameter's leaf. 1 830 since #1439: the keys a
-    // `Beside` spine's children are listed under (`keysOf`).
-    // 2 450 since #1485: the fold certificate's readers, rule 4 and (d).
-    // 2 490 since #1646: a callback's grafter and a link walk in slots by depth.
-    .{ .file = "Calls.zig", .layer = 9, .max_lines = 2490 },
-    // 260 since #1457: the frame's accessors, value helpers and uses, split
-    // out of Transfer (§5).
-    .{ .file = "TransferFrame.zig", .layer = 10, .max_lines = 260 },
-    // 960 since #1457: a write's other paths and what is beside it
-    // (§2.11 item 3), split out of Transfer (§5); 1 140 since #1439: the
-    // walk as a graph of items and reads, its runs in `TransferArms`.
-    // 1 240 since #1492: a written position's own contents below it
-    // (`ownContents`, `without`).
-    // 1 540 since #1485: the fold certificate's readers, rule 4 and (d).
-    // 1 600 since #1485 part 2: C7, the drop and the tag checks; 1 700 with
-    // part B's `Canon` and switch beside them.
-    // 1 800 since #1485 part 3: (d3) below a leaf, and a knot's view
-    // compared by cells marked approximate (`foldedView`, `foldOcc`).
-    // 1 820 since #1646: `otherPaths`' visited states in a slot by depth.
-    .{ .file = "TransferBeside.zig", .layer = 10, .max_lines = 1820 },
-    // 710 since #1439: the runs of a write's other-paths walk, a choice's
-    // arms apart (§2.11 item 3, *a choice's arms*), a parameter's cell
-    // read by the runs of the ends that reach it.
-    .{ .file = "TransferArms.zig", .layer = 10, .max_lines = 710 },
-    // 340 since #1457: patterns and splits, split out of Transfer (§5).
-    .{ .file = "TransferPattern.zig", .layer = 10, .max_lines = 340 },
-    // 350 since #1457: constructions, split out of Transfer (§5).
-    // 450 since #1420: a construction carries what a rebuild dropped (§2.3
-    // *The entries of a dropped node*).
-    .{ .file = "TransferConstruct.zig", .layer = 10, .max_lines = 450 },
-    // 170 since #1457: call application, split out of Transfer (§5).
-    .{ .file = "TransferCall.zig", .layer = 10, .max_lines = 170 },
-    // 740 since #1457: a use below a parameter's leaf, expanded after the
-    // walk, and the plain-step `sig`, split out of Transfer (§5).
-    .{ .file = "TransferGroups.zig", .layer = 10, .max_lines = 740 },
-    // §5 says 1 200 since S4-verifier (#1180): the recursive-proof verifier;
-    // S3b's worklist and propagation raise it with their design commit.
-    .{ .file = "Fix.zig", .layer = 10, .max_lines = 1200 },
-    // §5 says 1 810 since #1350: a missing step's fallback; 1 840 since #1383; 1 940 since
-    // #1386: two positions of one split beside a write; 2 000 since #1367: an
-    // answered value on the write's path, read beside the path.
-    // 2 050 since #1390: a match on a rest splits its positions, unless a
-    // head is stored beside the rest.
-    // 2 380 since #1253: the written position, by canonical path, and the
-    // routes that tell a node at one position of it. 3 050 since #1412: a
-    // use below a parameter's leaf, expanded after the walk by state.
-    // 640 since #1457: the seven-file split (§5) leaves
-    // here the frame's fields, the bindings of the six parts' methods, the
-    // preliminary passes and the walk.
-    // 660 since #1485: the fold certificate's readers, rule 4 and (d).
-    .{ .file = "Transfer.zig", .layer = 11, .max_lines = 660 },
-    .{ .file = "Walk.zig", .layer = 12, .max_lines = 1500 },
-    // §5 says 1 250 since S3b slice 1: the source and signature adapters, and
-    // calls of walked declarations; 1 330 since slice 3: imported classes,
-    // and a block's places re-interned onto the adapter's.
-    // 1 410 since #1324: a comparison read through the user-written ones its
-    // type reaches (`componentClasses`).
-    // 1 780 since S3b slice 4a: the recursive group's solver (ports from ⊥,
-    // synchronous rounds, the read vectors, the group built whole or not at
-    // all, its cold re-check, polymorphic recursion named apart).
-    // 1 840 since S3b slice 5e: a call through a function alias (the alias
-    // not walked, the callee name followed) and a type's comparison told
-    // for R-5.13.1.
-    // 1 900: a comparison told by its well-known signature, through aliases,
-    // and a pub alias publishing its target's class.
-    // 1 930: the well-known shape with type variables, and an imported
-    // alias chain taken hop by hop.
-    // 2 200 since S3b slice 4b: the group's edges, `propagate` and the
-    // wake rule. 2 205 since #1543: `--ownership-propagate`'s plumbing.
-    // 2 220 since #1566: a block read's re-interning memo, read outside the
-    // call's lane.
-    // 2 270 since #1485: the fold certificate's readers, rule 4 and (d).
-    // 2 310 since #1485 part 2: C5, the induction walked again.
-    // 2 350 since #1582: `--ownership-rewalk-check` walks each member
-    // again at the fixpoint and compares the read-off.
-    .{ .file = "Groups.zig", .layer = 13, .max_lines = 2350 },
-    .{ .file = "Entry.zig", .layer = 13, .max_lines = 900 },
-    // §5 says 500 since #1065: exact ranks, the counted refinement grouped
-    // by threaded lists, its labelled graph and the reserving meter.
-    .{ .file = "Refine.zig", .layer = 13, .max_lines = 500 },
-    // §5 says 1 660 since #1073 (1 650 since #1065/#1066): positions with their read κ, closed under the
-    // map's entries, and the shared format; the reader is `BlockRead`, the
-    // refinement `Refine`; the tiers ranked exactly, every step reserved on
-    // the codec's lane, and each class's growth counted alone.
-    // 1 770 since #1335: a knot whose cycle no child step closes.
-    .{ .file = "Block.zig", .layer = 14, .max_lines = 1810 },
-    .{ .file = "Hoists.zig", .layer = 14, .max_lines = 500 },
-    .{ .file = "Message.zig", .layer = 14, .max_lines = 900 },
-    .{ .file = "Report.zig", .layer = 14, .max_lines = 600 },
-    // §5 says 950 since #1073: a snapshot rebuilt from its positions.
-    // 1 050 since S3b slice 3: the commit re-interns the block's places.
-    // 1 235 since #1335: a knot's members tied raw, set once it is read,
-    // a forward name only on a cycle, and the safety check of each reach.
-    // 1 280 since #1399: a projection decoded with its DAG's sides the other
-    // way round is the reader's projection (`sameDag`).
-    // 1 320 since #1485 part 2: the certified mark and a fold obligation.
-    .{ .file = "BlockRead.zig", .layer = 15, .max_lines = 1320 },
-    // 305 since S3b slice 4a: a recursive group member's walks on its account line.
-    // 340 since #1547: the lowering channel built from the verdicts (`Hoists`).
-    // 350 since the counters (`Counters.zig`): their lines in the dump.
-    .{ .file = "Ownership.zig", .layer = 16, .max_lines = 350 },
-    // 500 since #1398: the dump checks a module after its imports and reads
-    // the blocks it published itself.
-    // 510 since #1566: the block read's `own_memo`, kept across one read.
-    .{ .file = "Enforce.zig", .layer = 17, .max_lines = 510 },
+    // #1685: a holder's deepest use; the pair ancestry split to `Ancestry`.
+    .{ .file = "Liveness.zig", .layer = 6, .max_lines = 750 },
+    // Compatibility for one pair of points, split from `Liveness` (#1685).
+    .{ .file = "Ancestry.zig", .layer = 6, .max_lines = 130 },
+    .{ .file = "Relation.zig", .layer = 7, .max_lines = 1300 },
+    // The distinct check's entries and rounds' state, split from `Distinct` (#1714).
+    .{ .file = "Entries.zig", .layer = 7, .max_lines = 400 },
+    // The atoms a result holds open already, for the read-off (#1716).
+    .{ .file = "Held.zig", .layer = 7, .max_lines = 70 },
+    // A call's subtree of atoms read as the callee's node (#1714).
+    .{ .file = "AtomGraft.zig", .layer = 7, .max_lines = 70 },
+    // The entries' inline order by jump pointers, for `Chains` (#1714).
+    .{ .file = "Jumps.zig", .layer = 7, .max_lines = 60 },
+    // One walk of a value along several paths by route sets, below
+    // `Distinct` (#1714, §2.11.2); `⟲` one of its shared steps, split
+    // from `Routed` (#1714, §2.3.5 *a key's leaf*).
+    .{ .file = "RouteWalk.zig", .layer = 8, .max_lines = 450 },
+    // A selection's apart and plain occurrences, split from `Distinct` (#1714).
+    .{ .file = "ApartPlain.zig", .layer = 8, .max_lines = 130 },
+    // A write onto a caller's parameter stops there, its targets read off
+    // the callee's tree (#1714, §2.11.2).
+    .{ .file = "Graft.zig", .layer = 8, .max_lines = 520 },
+    // A callee's tree and condition taken as the caller's at a call whose
+    // arguments are its parameters whole (#1225, #1714, §2.10).
+    .{ .file = "CallGraft.zig", .layer = 8, .max_lines = 170 },
+    // A holder DAG's items under united route sets, for the descent (#1714).
+    .{ .file = "DagRoutes.zig", .layer = 8, .max_lines = 170 },
+    // A value's leaves at their slots, split from `Relation` (#1714).
+    .{ .file = "Parts.zig", .layer = 8, .max_lines = 70 },
+    // What the distinct check reads of its rounds, split from `Distinct` (#1714).
+    .{ .file = "Chains.zig", .layer = 8, .max_lines = 80 },
+    // A chain of calls handing one object on, split from `Relation` (#1714).
+    .{ .file = "Ends.zig", .layer = 8, .max_lines = 40 },
+    // A call's leaf's atoms, for the distinct check (#1714).
+    .{ .file = "AtomSets.zig", .layer = 8, .max_lines = 240 },
+    // Split from `Relation` and `Eval` (#1685): the walk reads leaves of
+    // values, the distinct check reads a call's instantiation.
+    // A cell's `◆` as an evaluation reads it, from `Eval` (#1729).
+    .{ .file = "Cells.zig", .layer = 8, .max_lines = 150 },
+    // A label's answer handed back to it, and its `fed` occurrence (#1713).
+    .{ .file = "Fed.zig", .layer = 8, .max_lines = 140 },
+    // The sources a frame's escapes reach, for the read-off's `host` (#1744).
+    .{ .file = "Host.zig", .layer = 8, .max_lines = 120 },
+    // A callee's `fed` occurrence at a call, split from `Fed` (#1721).
+    .{ .file = "FedCall.zig", .layer = 8, .max_lines = 105 },
+    // The module's services a walk reads, split from `Walk` (#1758).
+    .{ .file = "WalkContext.zig", .layer = 8, .max_lines = 75 },
+    // The labels a virtual call's supply comes through, outward, split
+    // from `Eval` (#1758, #1760, #1721).
+    .{ .file = "LabelChain.zig", .layer = 8, .max_lines = 145 },
+    // A closure's captures in what holds it, beside `Routed` (#1772).
+    .{ .file = "Captures.zig", .layer = 8, .max_lines = 55 },
+    // A demand says whether it is a cell operation (#1727).
+    .{ .file = "Walk.zig", .layer = 9, .max_lines = 1240 },
+    // A function value run by unknown code: the function objects that escape (#1773, #1775, #1776).
+    .{ .file = "FnRun.zig", .layer = 9, .max_lines = 250 },
+    // One entry of many objects; an answer apart from nothing (#1710,
+    // #1711); what an answer may hold (§2.9.2 step 7).
+    .{ .file = "Distinct.zig", .layer = 9, .max_lines = 750 },
+    // A call's writes projected by the walk, and a set written out (#1714).
+    .{ .file = "Routed.zig", .layer = 9, .max_lines = 90 },
+    // What a callee holds across a run of a known code it is handed (#1955).
+    .{ .file = "Across.zig", .layer = 9, .max_lines = 60 },
+    // What a cell callback's write-back makes escape, from `Eval` (#1729, #1955).
+    .{ .file = "Stored.zig", .layer = 9, .max_lines = 65 },
+    // The subtree symbol's read-off beside the passed-on labels (§2.3.1).
+    // A closure's cell operations on its captures, at its creation (#1727).
+    .{ .file = "Eval.zig", .layer = 10, .max_lines = 640 },
+    // Demands judged once for their twins (#1714).
+    .{ .file = "Twins.zig", .layer = 10, .max_lines = 90 },
+    // What resolution reads of the leaves: base keys, the escape index (#1714).
+    .{ .file = "Holders.zig", .layer = 10, .max_lines = 700 },
+    // The holder index and its sweep, split from `Holders` (#1714): holds
+    // listed once a holder, buckets by next use, the aggregated holders.
+    // A holder's later uses, split from `Resolve` for the best-hold descent (#1714).
+    .{ .file = "Later.zig", .layer = 10, .max_lines = 180 },
+    .{ .file = "Sweep.zig", .layer = 10, .max_lines = 720 },
+    // The paths at which a hold holds a target, split from `Descent` (#1714).
+    .{ .file = "HoldAt.zig", .layer = 10, .max_lines = 140 },
+    // The pending operands by clock and key, split from the walk's copies (#1714).
+    .{ .file = "Stack.zig", .layer = 10, .max_lines = 380 },
+    // Resolve grew by the passed-on labels' supply judgement (§2.11.3).
+    // A supply part judged by its known objects too (#1712).
+    // The read-off, split from `Eval` (#1714).
+    // Where the read-off puts what it describes, split from `ReadOff` (#1714).
+    .{ .file = "Put.zig", .layer = 11, .max_lines = 170 },
+    // The best-hold descent over a holder DAG, below Resolve (#1714).
+    .{ .file = "Descent.zig", .layer = 11, .max_lines = 330 },
+    .{ .file = "Deliver.zig", .layer = 11, .max_lines = 300 },
+    // A callee's hand-back is an escape too (#1709).
+    .{ .file = "Closures.zig", .layer = 11, .max_lines = 140 },
+    // A group's judgements kept across its rounds (§2.12, #1714).
+    .{ .file = "Kept.zig", .layer = 11, .max_lines = 420 },
+    // What the labels outward of a virtual call add to its demands and to
+    // a passed-on label's supplies, from `Eval` and `ReadOff` (#1758, #1721).
+    .{ .file = "Outward.zig", .layer = 11, .max_lines = 90 },
+    .{ .file = "ReadOff.zig", .layer = 12, .max_lines = 1160 },
+    .{ .file = "Resolve.zig", .layer = 12, .max_lines = 680 },
+    // A module's codes and one declaration's answer, split from `Groups` (#1758).
+    .{ .file = "Codes.zig", .layer = 12, .max_lines = 55 },
+    // Evidence terms as function values (#1708).
+    .{ .file = "Groups.zig", .layer = 13, .max_lines = 1900 },
+    .{ .file = "Block.zig", .layer = 14, .max_lines = 380 },
+    .{ .file = "Message.zig", .layer = 14, .max_lines = 280 },
+    .{ .file = "Report.zig", .layer = 14, .max_lines = 150 },
+    .{ .file = "Hoists.zig", .layer = 14, .max_lines = 170 },
+    .{ .file = "Ownership.zig", .layer = 15, .max_lines = 340 },
+    .{ .file = "Enforce.zig", .layer = 16, .max_lines = 510 },
 };
 
 /// §5's base layer, the only files outside `own2/` a production line may
@@ -307,7 +251,7 @@ const base_imports = [_]BaseImport{
 const test_imports = [_][]const u8{ "../lex/Tokenizer.zig", "../parse/Parse.zig", "../bir/Lower.zig" };
 
 /// The files that compare no name to a string literal.
-const no_name_compare = [_][]const u8{ "Transfer.zig", "TransferFrame.zig", "TransferBeside.zig", "TransferArms.zig", "TransferPattern.zig", "TransferConstruct.zig", "TransferCall.zig", "TransferGroups.zig", "Calls.zig", "Demands.zig", "Holders.zig", "Rows.zig" };
+const no_name_compare = [_][]const u8{ "Eval.zig", "Relation.zig", "Resolve.zig", "Rows.zig" };
 
 /// A `std.mem.eql(u8, …, "literal")` a fenced file is allowed, by file and
 /// a text of its line, with why. An entry nothing matches fails too.
@@ -473,8 +417,8 @@ test "own2 fences: alias, name comparisons, Cause order, records asserted" {
     for (sources.items) |s| {
         if (std.mem.eql(u8, s.name, "rules_test.zig")) continue;
         // Only `Cell` defines `alias`.
-        if (!std.mem.eql(u8, s.name, "Cell.zig") and std.mem.indexOf(u8, s.text, "fn alias(") != null) {
-            fail(&bad, "{s} defines `alias`: only Cell.alias compares cells (§5)", .{s.name});
+        if (!std.mem.eql(u8, s.name, "Distinct.zig") and std.mem.indexOf(u8, s.text, "fn overlap(") != null) {
+            fail(&bad, "{s} defines `overlap`: only Distinct.overlap relates leaves (§2.9.2)", .{s.name});
         }
         // The normal form's words are build-local (§3.5: this module's
         // place ids, union sides in id order): only `Summary` makes them
@@ -553,24 +497,24 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 43), layers.len);
+    try testing.expectEqual(@as(usize, 83), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 
 test "the import verdict refuses back doors and accepts the base layer" {
-    try testing.expect(importVerdict("Cell.zig", "../beni.zig", false) != null);
-    try testing.expect(importVerdict("Cell.zig", "../beni.zig", true) != null);
-    try testing.expect(importVerdict("Cell.zig", "../own/Ownership.zig", false) != null);
+    try testing.expect(importVerdict("Slots.zig", "../beni.zig", false) != null);
+    try testing.expect(importVerdict("Slots.zig", "../beni.zig", true) != null);
+    try testing.expect(importVerdict("Slots.zig", "../own/Ownership.zig", false) != null);
     try testing.expect(importVerdict("Prepass.zig", "../check/TypeKeys.zig", false) != null);
     try testing.expect(importVerdict("Prepass.zig", "../check/Module.zig", false) != null);
-    try testing.expect(importVerdict("Cell.zig", "../check/TypeStore.zig", false) != null);
+    try testing.expect(importVerdict("Slots.zig", "../check/TypeStore.zig", false) != null);
     try testing.expect(importVerdict("Place.zig", "../check/TypeStore.zig", false) == null);
     try testing.expect(importVerdict("Prepass.zig", "../check/Scc.zig", false) == null);
     try testing.expect(importVerdict("Prepass.zig", "../bir/Lower.zig", false) != null);
     try testing.expect(importVerdict("Prepass.zig", "../bir/Lower.zig", true) == null);
-    try testing.expect(importVerdict("Cell.zig", "Ids.zig", false) == null);
-    try testing.expect(importVerdict("Ids.zig", "Cell.zig", false) != null);
-    try testing.expect(importVerdict("Cell.zig", "Facts.zig", false) != null);
+    try testing.expect(importVerdict("Slots.zig", "Ids.zig", false) == null);
+    try testing.expect(importVerdict("Ids.zig", "Slots.zig", false) != null);
+    try testing.expect(importVerdict("Slots.zig", "Facts.zig", false) != null);
     try testing.expect(importVerdict("Shape.zig", "Nowhere.zig", false) != null);
 }
 

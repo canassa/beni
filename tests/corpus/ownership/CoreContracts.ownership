@@ -1,0 +1,8 @@
+module CoreContracts
+  9:37 List.update xs: rejected later-use: xs is read again at 9:22
+  13:30 List.push <call List.range>: accepted call
+  summary changedThenRead: π1 RAW[storage], π1[*] R; res .1 π1
+  summary pushedFresh: unused
+  demands 2: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 2: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause later-use 1

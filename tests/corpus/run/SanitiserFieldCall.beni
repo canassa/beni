@@ -1,0 +1,34 @@
+-- A runtime catch for a call of a record field (`ownership-v2.md`
+-- §2.11.5): `r.load ⊤` calls a function the caller put in the record, so
+-- its answer may be a list the caller still reads. The checker v2 once
+-- read a field call as a comparison, whose answer is fresh, and accepted
+-- the push onto it in `load` and in `extDotted`; the sanitised run then
+-- trapped on the stale read of `xs`. A field call is now unknown code:
+-- both pushes are refused.
+import List
+import Node exposing (Program)
+import String
+
+
+type alias Loader =
+    load : ⊤ → List Int
+
+
+load : Loader → List Int
+load r = List.push (r.load ⊤) 3
+
+
+extDotted : { r | load : ⊤ → List Int } → List Int
+extDotted r = List.push (r.load ⊤) 4
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main =
+    xs = [ 1, 2 ]
+    ys = load { load = λ⊤ → xs }
+    zs = extDotted { load = λ⊤ → xs, other = 1 }
+    Node.print "${show xs} ${show ys} ${show zs}"

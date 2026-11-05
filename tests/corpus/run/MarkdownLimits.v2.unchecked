@@ -1,6 +1,0 @@
-MarkdownLimits ofInline: lines 70-102 (not built: let_def)
-MarkdownLimits ofInlines: lines 66-67 (not built: call)
-MarkdownLimits ofBlock: lines 37-63 (not built: record_update)
-MarkdownLimits ofBlocks: lines 33-34 (not built: call)
-MarkdownLimits cases: lines 109-150 (not built: call)
-MarkdownLimits main: lines 155-160 (not built: local)

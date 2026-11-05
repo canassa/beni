@@ -1,0 +1,61 @@
+-- A runtime catch for a callback that answers a record update of what it
+-- writes (`ownership-v2.md` §2.10, *Read-off*; #1756): `grow g = { g | kids =
+-- List.push g.kids "new" }` asks `g`'s other objects apart from `g.kids`.
+-- Through a label that object set was read as everything below `g`, `g.kids`
+-- among it, so the write was refused through any label, even `apply1 f x =
+-- f x`, while the tuple form was accepted. A key now reads the objects at its
+-- own slot. Each edit here is accepted, and the sanitised run prints the same.
+import List
+import Node exposing (Program)
+import String
+
+
+type alias Group =
+    title : String
+    kids : List String
+
+
+type alias Acc =
+    lo : List Int
+    hi : List Int
+
+
+grow : Group → Group
+grow g = { g | kids = List.push g.kids "new" }
+
+
+both : Int, Acc → Acc
+both n a = { lo = List.push a.lo n, hi = List.push a.hi (n * 10) }
+
+
+apply1 : (a → a), a → a
+apply1 f x = f x
+
+
+wrapList : (a → a), a → List a
+wrapList f x = [ f x ]
+
+
+kids : Group → String
+kids g = String.join g.kids ","
+
+
+ints : List Int → String
+ints l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main =
+    a = apply1 grow { title = "a", kids = [ "x" ] }
+    bs = wrapList grow { title = "b", kids = [] }
+    cs = List.update [ { title = "c", kids = [ "y" ] }, { title = "d", kids = [] } ] 0 grow
+    r = List.foldl [ 1, 2 ] { lo = [], hi = [] } both
+    s = List.foldl [ 1, 2 ] { title = "e", kids = [] } λ_ g → grow g
+    Node.printLines
+        [ kids a
+        , String.join (List.map bs kids) ";"
+        , String.join (List.map cs kids) ";"
+        , ints r.lo
+        , ints r.hi
+        , kids s
+        ]

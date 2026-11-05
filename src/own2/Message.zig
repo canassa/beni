@@ -1,4 +1,4 @@
-//! L14: what a demand's line and diagnostic say (`docs/design/ownership-v2.md`
+//! L11: what a demand's line and diagnostic say (`docs/design/ownership-v2.md`
 //! §6, R-6.1–R-6.7, R-7.15): the operation, the base as written, the
 //! verdict, its cause and the detail naming the holder and its later use —
 //! v1's texts (`src/own/Ownership.zig`'s `resolveRaw`), so a golden compares
@@ -12,9 +12,10 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Facts = @import("Facts.zig");
 const Place = @import("Place.zig");
-const Cell = @import("Cell.zig");
-const Demands = @import("Demands.zig");
 const Walk = @import("Walk.zig");
+const Resolve = @import("Resolve.zig");
+const Groups = @import("Groups.zig");
+const CallGraft = @import("CallGraft.zig");
 const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 
@@ -48,9 +49,6 @@ pub const Frame = struct {
     module: u32,
     decl: Bir.Decl,
     places: *const Place.Table,
-    cells: *const Cell.Table,
-    /// `shared` index → `(module, decl)`.
-    shared: []const [2]u32,
     /// The `(module, decl)` a value reference names.
     ctx: *anyopaque,
     decl_of: *const fn (ctx: *anyopaque, inst: u32) ?[2]u32,
@@ -90,6 +88,14 @@ pub fn calleeName(f: Frame, a: Allocator, i: u32) Allocator.Error!?[]const u8 {
     return try std.fmt.allocPrint(a, "{s}.{s}", .{ f.names.module_names[md[0]], f.names.declName(md[0], md[1]) });
 }
 
+/// A call's operation as written: its callee's `M.f`, or the local a
+/// function value is called through (`push 3`), or `call`.
+pub fn opName(f: Frame, a: Allocator, i: u32) Allocator.Error![]const u8 {
+    if (try calleeName(f, a, i)) |n| return n;
+    if (tag(f, i) == .local) return localName(f, data(f, i).lhs);
+    return "call";
+}
+
 pub fn refName(f: Frame, a: Allocator, i: u32) Allocator.Error!?[]const u8 {
     const md = f.decl_of(f.ctx, i) orelse return null;
     return try std.fmt.allocPrint(a, "{s}.{s}", .{ f.names.module_names[md[0]], f.names.declName(md[0], md[1]) });
@@ -120,12 +126,16 @@ fn baseText(f: Frame, a: Allocator, top: u32) Allocator.Error![]const u8 {
 }
 
 /// The base as written, and below it the path a writer call writes.
-fn writtenText(f: Frame, a: Allocator, d: Demands.Demand) Allocator.Error![]const u8 {
-    const base = try baseText(f, a, d.base_inst);
-    if (d.write_path == .none) return base;
+fn writtenText(f: Frame, a: Allocator, d: Walk.Demand) Allocator.Error![]const u8 {
+    const base = if (d.base_local != none) localName(f, d.base_local) else try baseText(f, a, d.base_inst);
+    const mod: *Groups.Module = @ptrCast(@alignCast(f.ctx));
     var buf: std.Io.Writer.Allocating = .init(a);
-    buf.writer.writeAll(base) catch return error.OutOfMemory;
-    pathText(f, a, &buf.writer, d.write_path) catch return error.OutOfMemory;
+    for (0..d.also.len + 1) |i| {
+        const at = try CallGraft.textPath(&mod.places, &mod.slots, mod.gpa, d.write_path, if (i == 0) d.write_rel else d.also[i - 1]);
+        if (i == 0 and at == .none) return base;
+        buf.writer.print("{s}{s}", .{ if (i == 0) "" else ", ", base }) catch return error.OutOfMemory;
+        pathText(f, a, &buf.writer, at) catch return error.OutOfMemory;
+    }
     return buf.written();
 }
 fn isAppend(f: Frame, i: u32) bool {
@@ -143,6 +153,7 @@ fn baseOne(f: Frame, a: Allocator, i: u32) Allocator.Error![]const u8 {
         .local => localName(f, d.lhs),
         .field_access, .tuple_index => unreachable,
         .list => "<literal>",
+        .lambda => "<lambda>",
         .record => "<record>",
         .top, .ext_value => (try refName(f, a, i)) orelse "<expression>",
         // A spread literal's outermost call is the literal, as v1 names it.
@@ -155,8 +166,7 @@ fn baseOne(f: Frame, a: Allocator, i: u32) Allocator.Error![]const u8 {
 /// A path under a local's root, in source terms: `.field`, `.0`, `[*]`,
 /// `#Ctor.i`, `⟨Type⟩` for the levels below a recursive value, `◆`.
 fn pathText(f: Frame, a: Allocator, w: *std.Io.Writer, root: Ids.PathId) (Allocator.Error || std.Io.Writer.Error)!void {
-    // The way up, then printed down: a path is as long as the source is
-    // deep, so an explicit list, never a native frame per step (#1138).
+    // The way up, then printed down: a path is as long as the source is deep, so an explicit list, never a native frame per step (#1138).
     const places = f.places;
     var way: std.ArrayList(Ids.PathId) = .empty;
     defer way.deinit(a);
@@ -204,12 +214,15 @@ fn stepText(f: Frame, w: *std.Io.Writer, p: Ids.PathId) std.Io.Writer.Error!void
 }
 
 /// The line of one resolved demand.
-pub fn line(f: Frame, a: Allocator, l: Walk.Line, op_name: []const u8) Allocator.Error!Facts.Line {
+pub fn line(f: Frame, a: Allocator, l: Resolve.Line, op_name: []const u8) Allocator.Error!Facts.Line {
     const d = l.demand;
     const o = l.outcome;
     const op: []const u8 = switch (d.kind) {
         .construction => "construction",
         .append => "++",
+        .once => "once",
+        // A closure's cell operation on a capture, at its creation.
+        .writer => if (d.cell and d.call == none) "cell" else op_name,
         else => op_name,
     };
     var detail: []const u8 = "";
@@ -233,6 +246,8 @@ pub fn line(f: Frame, a: Allocator, l: Walk.Line, op_name: []const u8) Allocator
                 else
                     w.print(" holds it and is read at {d}:{d}", .{ up.line, up.col });
             },
+            .captured => w.print("{s}, a closure holding it, is used at {d}:{d}", .{ localName(f, l.holder.?.who), up.line, up.col }),
+            .once => w.writeAll("it is written by a closure that may run more than once"),
             .held_operand => blk: {
                 const pp = f.names.position(f.names.ctx, f.module, l.holder.?.token);
                 break :blk w.print("the value at {d}:{d}, evaluated before it, holds it until its consumer runs", .{ pp.line, pp.col });
@@ -244,7 +259,7 @@ pub fn line(f: Frame, a: Allocator, l: Walk.Line, op_name: []const u8) Allocator
             .unknown => w.writeAll("it came from a call of a function the checker cannot identify, which may return a list something else holds"),
             .comparison => w.writeAll("a type's `eq` and `compare` may only read the values they are handed"),
             .top_level => blk: {
-                const md = sharedOf(f, o.cell);
+                const md: ?[2]u32 = if (o.shared[0] == none) null else o.shared;
                 break :blk if (md) |x| w.print("{s}.{s} is a top-level value", .{ f.names.module_names[x[0]], f.names.declName(x[0], x[1]) }) else w.writeAll("it is a top-level value");
             },
             else => {},
@@ -262,10 +277,4 @@ pub fn line(f: Frame, a: Allocator, l: Walk.Line, op_name: []const u8) Allocator
         .approx = o.verdict == .refused and o.exactness == .approximate,
         .detail = detail,
     };
-}
-
-fn sharedOf(f: Frame, c: Ids.CellId) ?[2]u32 {
-    if (c == .none) return null;
-    const idx = f.cells.get(c).a;
-    return if (idx < f.shared.len) f.shared[idx] else null;
 }

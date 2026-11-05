@@ -1,0 +1,3 @@
+A runtime catch for a list literal past eight entries that holds one list at a [*] position and a front or back one
+(ownership-v2.md §2.3.2, §2.9.3, #1963). Built again under --ownership=v2 and the list stale-read sanitiser. v2
+refuses each edit; were it to accept one, the sanitised run would trap on the stale read.

@@ -1,0 +1,47 @@
+-- ownership: a call after a write that reads nothing of the written value
+-- (ownership-v2.md §2.7: a call's uses are its callee's footprint).
+-- `incAll` pushes onto `v`'s kids in place. `ignore` reads nothing of its
+-- argument, so `( incAll v, ignore v )` is accepted (`ignored`); `count`
+-- reads `v`'s kids, so `( incAll v, count v )` is refused (`counted`).
+-- v2 refused `ignored` `element` while a call's use of its argument was a
+-- read of all of it; v1 accepts it.
+type Rose
+    = Rose (List Rose)
+
+
+incAll : Rose → Rose
+incAll r =
+    case r of
+        Rose kids →
+            Rose (List.push kids (Rose []))
+
+
+ignore : Rose → Int
+ignore _ = 0
+
+
+count : Rose → Int
+count r =
+    case r of
+        Rose kids →
+            List.length kids
+
+
+pub ignored : Bool → Rose × Int
+ignored c =
+    v =
+        if c then
+            Rose [ Rose [] ]
+        else
+            Rose []
+    ( incAll v, ignore v )
+
+
+pub counted : Bool → Rose × Int
+counted c =
+    v =
+        if c then
+            Rose [ Rose [] ]
+        else
+            Rose []
+    ( incAll v, count v )

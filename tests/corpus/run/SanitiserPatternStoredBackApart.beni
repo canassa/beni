@@ -1,0 +1,61 @@
+-- The controls of `SanitiserPatternStoredBack` (`ownership-v2.md` §2.3.2,
+-- #1956): `[ …rest, p ]` with `p` the head and `rest` the tail of one list
+-- holds each element once, and a slice past the head of `[ el, …xs ]` holds
+-- `xs`'s elements only, once each. v2 accepts the edits, and the sanitised
+-- run prints the golden.
+import List
+import Node exposing (Program)
+import String
+
+
+rotate : List (List Int) → List (List Int)
+rotate l =
+    case l of
+        [ p, …rest ] →
+            [ …rest, p ]
+
+        _ →
+            l
+
+
+dropFront : List (List Int) → List (List Int)
+dropFront xs =
+    case xs of
+        [ _, el, …_ ] →
+            case [ el, …xs ] of
+                [ _, …rest ] →
+                    rest
+
+                [] →
+                    []
+
+        _ →
+            []
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show ls = String.join (List.map ls ints) ";"
+
+
+viaRotate : ⊤ → List (List Int)
+viaRotate ⊤ = List.update (rotate [ [ 1 ], [ 2 ] ]) 0 λv → List.push v 9
+
+
+viaDrop : ⊤ → List (List Int)
+viaDrop ⊤ =
+    case dropFront [ [ 1 ], [ 2 ] ] of
+        [ f, …r ] →
+            [ List.push f 9, …r ]
+
+        [] →
+            []
+
+
+main : Program
+main = Node.print "${show (viaRotate ⊤)} ${show (viaDrop ⊤)}"

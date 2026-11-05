@@ -1,0 +1,4 @@
+# v2 refuses the caller's in-place edit: the helper's escape of its closure reaches through the cell (§2.13.7).
+54:5 list_still_used Ref.update
+# and through a record field that holds the cell.
+64:5 list_still_used Ref.update

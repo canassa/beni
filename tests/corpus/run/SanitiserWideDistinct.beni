@@ -1,0 +1,65 @@
+-- A runtime catch for a list literal too wide for the distinct check to
+-- compare its entries pair by pair (`ownership-v2.md` §2.3.2, *a `[*]`
+-- position and a front one*, §2.9.3; #1963). Past eight entries the check
+-- finds the pairs by an index of step classes; a `[*]` position (the
+-- spread `…l`) and a front or back one (an element a pattern binds) may
+-- name one element, so `[ …l, a1, …, a6 ]` with `a1` the head of `l` puts
+-- one list at two positions. An in-place edit of one then changes the
+-- other. Each prints the edited list.
+import List
+import Node exposing (Program)
+import String
+
+
+afterSpread : List (List Int) → List (List Int)
+afterSpread l =
+    case l of
+        [ a1, a2, a3, a4, a5, a6, …_ ] →
+            [ …l, a1, a2, a3, a4, a5, a6 ]
+
+        _ →
+            l
+
+
+beforeSpread : List (List Int) → List (List Int)
+beforeSpread l =
+    case l of
+        [ a1, a2, a3, a4, a5, a6, a7, a8, a9, …_ ] →
+            [ a1, a2, a3, a4, a5, a6, a7, a8, a9, …l ]
+
+        _ →
+            l
+
+
+fromBack : List (List Int) → List (List Int)
+fromBack l =
+    case l of
+        [ …_, b1, b2, b3, b4, b5, b6, b7, b8, b9 ] →
+            [ b1, b2, b3, b4, b5, b6, b7, b8, b9, …l ]
+
+        _ →
+            l
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show ls = String.join (List.map ls ints) ";"
+
+
+nine : ⊤ → List (List Int)
+nine ⊤ = [ [ 1 ], [ 2 ], [ 3 ], [ 4 ], [ 5 ], [ 6 ], [ 7 ], [ 8 ], [ 9 ] ]
+
+
+edited : List (List Int) → String
+edited xs = show (List.update xs 0 λv → List.push v 0)
+
+
+main : Program
+main =
+    Node.print
+        "${edited (afterSpread (nine ⊤))} ${edited (beforeSpread (nine ⊤))} ${edited (fromBack (nine ⊤))}"

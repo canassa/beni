@@ -1,0 +1,11 @@
+-- The casts of `Main`, which only a platform may write: one through a type
+-- variable on each side, and one that builds a twin before it casts.
+import Js
+
+
+pub cast : a → b
+cast x = Js.to (Js.from x)
+
+
+pub twinList : List Int → List (List Int)
+twinList xs = Js.to (Js.from [ xs, xs ])

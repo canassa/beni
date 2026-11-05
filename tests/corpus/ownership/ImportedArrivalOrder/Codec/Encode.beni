@@ -1,0 +1,28 @@
+--! Encoders: functions that build a `Codec.Value` from typed data, and
+--! `encode`, which prints one as JSON text.
+
+import Codec.Value as Json exposing (Null, Boolean, Number, Text, Array, Object)
+import Dict exposing (Dict)
+import Set exposing (Set)
+
+
+pub type alias Value =
+    Json.Value
+
+
+--| The value as JSON text, indented that many spaces per level; 0 prints
+--| it on one line.
+pub encode : Value, Int → String
+encode value indent = Json.print value indent
+
+
+pub string : String → Value
+string s = Text s
+
+
+pub list : List a, (a → Value) → Value
+list items encoder = Array (List.map items encoder)
+
+
+pub object : List (String × Value) → Value
+object fields = Object fields

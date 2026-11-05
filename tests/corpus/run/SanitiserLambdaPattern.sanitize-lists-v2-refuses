@@ -1,0 +1,3 @@
+# v2 refuses each push of a list that a pattern parameter's lambda put into a value still read (§2.11.4).
+22:10 list_still_used List.push
+25:10 list_still_used List.push

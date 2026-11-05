@@ -1,0 +1,7 @@
+# v2 refuses a writer reached through a call's result: k read again, a capture run twice, a writer it cannot follow (§2.11.3).
+67:9 list_still_used SanitiserFunctionResult.first
+69:9 list_still_used SanitiserFunctionResult.viaHead
+71:16 list_still_used SanitiserFunctionResult.twice
+71:16 list_still_used SanitiserFunctionResult.twice
+73:9 list_may_be_shared SanitiserFunctionResult.local
+75:9 list_may_be_shared SanitiserFunctionResult.viaAnswer

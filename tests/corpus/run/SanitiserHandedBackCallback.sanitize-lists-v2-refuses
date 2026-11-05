@@ -1,0 +1,5 @@
+# v2 refuses a writing callback that a callee hands back: the caller calls it as unknown code (§2.11.4).
+47:9 list_may_be_shared SanitiserHandedBackCallback.same
+55:9 list_may_be_shared SanitiserHandedBackCallback.later
+63:11 list_may_be_shared SanitiserHandedBackCallback.mkOps
+70:17 list_may_be_shared SanitiserHandedBackCallback.defer

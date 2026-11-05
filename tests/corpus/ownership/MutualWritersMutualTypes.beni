@@ -3,9 +3,8 @@
 -- `wb`, the call `wa a` writes `a#A.0` and the lists of the `A`s below it,
 -- which are parts of `wb`'s parameter: accepted `param`, as in v1. A
 -- caller's fresh value is accepted `fresh`.
--- At the default allowance `wb` stops at its summary-size limit (90 408
--- records against 65 536, since 5a, #1487), so this module raises it.
-@ownership_summary_size(module, 131072)
+-- `wb` checks at the default allowance with growth 0 (the slot domain,
+-- #1685; it stopped at 90 408 records before, #1487).
 
 type A
     = A (List Int) B B

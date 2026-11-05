@@ -1,55 +1,45 @@
 //! L1: places, the type-shaped nodes abstract values live at
 //! (`docs/design/ownership-v2.md` §2.1, §3.1).
 //!
-//! A place is a node of the *place graph* of a type: one per store variable
-//! reachable from a root, children by step, built by one memoised walk with
-//! knot-tying — a variable reached again while on the walk's stack is the
-//! place being built, so a recursive type folds onto itself and a different
+//! A place is a node of the *place graph* of a type: one per store variable reachable from a root,
+//! children by step, built by one memoised walk with knot-tying — a variable reached again while on
+//! the walk's stack is the place being built, so a recursive type folds onto itself and a different
 //! instantiation is another place (R-4.7.3).
 //!
-//! **The one reader of type children.** This file is the only one in
-//! `own2/` that looks at a type's structure (§5's fence), and it does so
-//! through `Source`: an interface the caller passes down that describes one
-//! type node as `(kind, head, children)`. The adapter from the checker's
-//! `TypeStore`/`Types` is the caller's — note that `Walk.structural` yields
-//! an `app`'s type ARGUMENTS and not a constructor's payloads, so the
-//! adapter, not this file, instantiates `C#i`'s children — and a test
-//! builds a graph by hand. Nothing here names a type, a module or a field by
+//! **The one reader of type children.** This file is the only one in `own2/` that looks at a type's
+//! structure (§5's fence), and it does so through `Source`: an interface the caller passes down that
+//! describes one type node as `(kind, head, children)`. The adapter from the checker's
+//! `TypeStore`/`Types` is the caller's — note that `Walk.structural` yields an `app`'s type
+//! ARGUMENTS and not a constructor's payloads, so the adapter, not this file, instantiates `C#i`'s
+//! children — and a test builds a graph by hand. Nothing here names a type, a module or a field by
 //! spelling.
 //!
-//! **Steps are ordered by text, never by a session id** (§3.1, §3.8). A
-//! field step carries the field name's RANK in the adapter's table of the
-//! module's field names sorted by text, built once in input time; a
-//! constructor step carries `(constructor ordinal, argument)`; a tuple step
-//! its index. The canonical order of a place's children is the order of
-//! these words, and `encode`/`decode` map every name and head through the
-//! caller's `Names`/`Remap`, so a block holds no interned address.
+//! **Steps are ordered by text, never by a session id** (§3.1, §3.8). A field step carries the field
+//! name's RANK in the adapter's table of the module's field names sorted by text, built once in input
+//! time; a constructor step carries `(constructor ordinal, argument)`; a tuple step its index. The
+//! canonical order of a place's children is the order of these words, and `PlaceIdentity` maps every
+//! name and head through the caller's `Names`/`Remap`, so a block holds no interned address.
 //!
-//! **Canonical paths** (§2.1) are a trie (`paths`): a step that re-enters a
-//! place the path has returned to once pops back to that return and appends
-//! `⟲` (#1253: the first return stays a plain step), so a path
-//! names a place at most twice and is at most 3·|places| long. `extend` is
-//! memoised per `(path, step)`; a first extension reads the ancestors and
-//! charges one record per ancestor read (§3.1: "charged … per step").
+//! **Canonical paths** (§2.1) are a trie (`paths`): a step that re-enters a place the path has
+//! returned to once pops back to that return and appends `⟲` (#1253: the first return stays a plain
+//! step), so a path names a place at most twice and is at most 3·|places| long. `extend` is memoised
+//! per `(path, step)`; a first extension reads the ancestors and charges one record per ancestor
+//! read (§3.1: "charged … per step").
 //!
-//! **Holds** is the least fixpoint of "what kinds of cell may sit at or
-//! below this place", by a worklist over reverse edges, O(7·E); a `ctor`
-//! or `tuple` holding nothing is reclassified `cross` (§2.1's last row),
-//! which is what makes an `Int × Int` or a `type T = A T | B` a leaf.
+//! **Holds** is the least fixpoint of "what kinds of cell may sit at or below this place", by a
+//! worklist over reverse edges, O(7·E); a `ctor` or `tuple` holding nothing is reclassified `cross`
+//! (§2.1's last row), which is what makes an `Int × Int` or a `type T = A T | B` a leaf. **Cycles**
+//! are the strongly connected components, and with them each place's count of the object places at
+//! and below it, saturating past `below_min` and past it on a cycle that holds an object (§2.3.1).
 //!
-//! **Limits** (§4.4) are checked before the work they bound and named:
-//! `type_places`, `record_fields`, `tuple_arity`, `constructor_args`,
-//! `path_steps`, and the step payload's 28 bits. Each sets the account's
-//! failure.
+//! **Limits** (§4.4) are checked before the work they bound and named: `type_places`,
+//! `record_fields`, `tuple_arity`, `constructor_args`, `path_steps`, and the step payload's 28 bits.
+//! Each sets the account's failure.
 //!
-//! **Structural identity.** `encode` writes a sub-graph as
-//! `(kind, head, children)` records with ordinals for backreferences, so a
-//! cycle is one record; `decode` reads one back into a table of its own;
-//! `equals` is the graph-pair walk two tables are compared by (§2.1,
-//! *Identity*), one record reserved per pair before it is read.
+//! **Structural identity** (`encode`, `decode`, `equals`) is `PlaceIdentity`'s.
 //!
-//! Obligations kept here: none of §2.14's rules is about a place; the
-//! canonical-path fold (`⟲`) is what O6's "`⟲` covers every level" rests on.
+//! Obligations kept here: none of §2.14's rules is about a place; the canonical-path fold (`⟲`) is
+//! what O6's "`⟲` covers every level" rests on.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -74,8 +64,7 @@ pub const Kind = enum(u8) {
     @"var",
     cross,
 
-    /// The kind of cell a value at a place of this kind IS, as a `Holds`
-    /// bit; nothing for a tuple, a constructor or a crossing leaf.
+    /// The kind of cell a value at a place of this kind IS, as a `Holds` bit; none for a tuple, a constructor, a crossing leaf.
     pub fn own(k: Kind) Holds {
         return switch (k) {
             .record => .{ .record = true },
@@ -90,7 +79,7 @@ pub const Kind = enum(u8) {
     }
 
     /// The input limit on this kind's children (§4.4), or null.
-    fn childLimit(k: Kind) ?Ids.Limit {
+    pub fn childLimit(k: Kind) ?Ids.Limit {
         return switch (k) {
             .record => .record_fields,
             .tuple => .tuple_arity,
@@ -152,8 +141,7 @@ pub const Step = packed struct(u32) {
     pub const contents: Step = .{ .kind = .contents, .payload = 0 };
     pub const env: Step = .{ .kind = .env, .payload = 0 };
 
-    /// A payload past 28 bits is the named format limit `step_payload`,
-    /// never a truncation.
+    /// A payload past 28 bits is the named format limit `step_payload`, never a truncation.
     fn checked(account: *Account, kind: StepKind, payload: u32) Ids.AccountError!Step {
         try account.limit(.step_payload, @as(u64, payload) + 1);
         return .{ .kind = kind, .payload = @intCast(payload) };
@@ -189,16 +177,14 @@ pub const Description = struct {
     head: u32 = 0,
 };
 
-/// The type graph, as the caller sees it: `describe(v)` appends `v`'s
-/// children (in any order; the table sorts them) and returns its kind and
-/// head. Passed down, never stored (§5).
+/// The type graph, as the caller sees it: `describe(v)` appends `v`'s children (in any order; the table
+/// sorts them) and returns its kind and head. Passed down, never stored (§5).
 pub const Source = struct {
     ctx: *anyopaque,
     describe: *const fn (ctx: *anyopaque, v: u32, out: *std.ArrayList(Child)) Allocator.Error!Description,
 };
 
-/// How `encode` writes a head and a field rank: through the block writer's
-/// string table, so no session id is written (§3.6).
+/// How `encode` writes a head and a field rank: through the block writer's string table, so no session id is written (§3.6).
 pub const Names = struct {
     ctx: *anyopaque,
     head: *const fn (ctx: *anyopaque, head: u32) u32,
@@ -210,8 +196,7 @@ pub const Names = struct {
     }
 };
 
-/// The reader's inverse of `Names`: a written head to this session's, a
-/// written field name to this table's rank.
+/// The reader's inverse of `Names`: a written head to this session's, a written field name to this table's rank.
 pub const Remap = Names;
 
 pub const Place = struct {
@@ -224,7 +209,18 @@ pub const Place = struct {
     /// The strongly connected component of the place graph this place is
     /// in (`settleCycles`): what `sameCycle` reads for §2.2's `⟲` matching.
     scc: u32,
+    /// `objectsBelow` (§2.3.1) and `PlaceBelow.familyBelow`, set with `scc`.
+    below: Below = .{},
+    /// `slotsAtLeast` (§2.9.1), set with `scc`.
+    lower: u8 = 0,
 };
+
+/// A subtree of more object slots than this is held whole, `↓p` (§2.3.1).
+pub const below_min: u8 = 16;
+
+/// A place's objects below it, saturating at `below_min + 1`, and whether a
+/// family is below it: one byte, so `Place` stays 24 bytes.
+pub const Below = packed struct(u8) { objects: u5 = 0, family: bool = false, _: u2 = 0 };
 
 pub const StepEntry = struct { step: Step, child: PlaceId };
 
@@ -234,20 +230,27 @@ pub const PathNode = struct {
     parent: PathId,
     step: Step,
     place: PlaceId,
-    /// Steps from the root.
-    depth: u32,
-    /// At or below a summary position: a `[*]` or a `⟲` on the way.
-    summary: bool,
+    /// Steps from the root (at most `path_steps`), and the way's flags.
+    info: PathInfo,
     /// The nearest node at or above this one whose step stays on a cycle (a
     /// `⟲`, or a step between two places of one cyclic SCC): the prefixes
     /// §2.8's cycle anchors key, so a reader visits them alone, never every
     /// step of a long path (#1236). Set when the node is made: SCCs are
     /// settled before any path reaches their places.
     anchor_up: PathId = .none,
-    /// The step re-entered a place on the path: the first return, a plain
-    /// step (#1253), or a `⟲`. What widen opens a union, choice or
-    /// positions node at (§2.3).
+    /// A skew-binary jump pointer (`ancestorAt`, #1714).
+    jump: PathId = .none,
+};
+
+pub const PathInfo = packed struct(u32) {
+    depth: u29,
+    /// At or below a summary position: a `[*]` or a `⟲` on the way.
+    summary: bool,
+    /// The step re-entered a place on the path: the first return, a plain step (#1253),
+    /// or a `⟲`. What widen opens a union, choice or positions node at (§2.3).
     ret: bool = false,
+    /// A `⟲` on the way: else the path is its own canonical name (`Slots.canon`).
+    levels: bool = false,
 };
 
 pub const Error = Ids.ChargeError;
@@ -271,8 +274,7 @@ pub const Table = struct {
     paths: Ids.Columns(PathNode) = .empty,
     /// `(parent path, step)` → path; a root is `(none, place)`.
     path_index: Ids.Interned(2) = .{},
-    /// `extend`'s memo: `(path, step)` → the canonical result, `none` for
-    /// no such step.
+    /// `extend`'s memo: `(path, step)` → the canonical result, `none` for no such step.
     extend_memo: Ids.FixedDict(2) = .{},
     /// `C#i` steps: `(constructor, argument)` pairs interned, the payload
     /// their index, so a module has 2²⁸ of them (`ctor_steps`); the
@@ -285,6 +287,11 @@ pub const Table = struct {
     level_memo: Ids.IdColumn(PathId) = .{},
     fold_runs: std.ArrayList([2]u32) = .empty,
     fold_paths: std.ArrayList(PathId) = .empty,
+    /// Each memo's fill costs (§4.1, *A module table's entries*): `extend`'s by its memo's entry number, the others by path.
+    extend_cost: Ids.Costs = .{},
+    hit_cost: Ids.Costs = .{},
+    up_cost: Ids.Costs = .{},
+    level_cost: Ids.Costs = .{},
     limits: Limits = .{},
     /// Instrumentation: places visited by the holds fixpoint.
     holds_visits: u32 = 0,
@@ -303,10 +310,10 @@ pub const Table = struct {
         t.level_memo.deinit(gpa);
         t.fold_runs.deinit(gpa);
         t.fold_paths.deinit(gpa);
+        inline for (.{ &t.extend_cost, &t.hit_cost, &t.up_cost, &t.level_cost }) |c| c.deinit(gpa);
     }
 
-    /// Start a block's place namespace: `ofBlock`'s numbers from here on
-    /// are the next block's, and meet no earlier block's.
+    /// Start a block's place namespace: `ofBlock`'s numbers from here on are the next block's, and meet no earlier block's.
     pub fn beginBlock(t: *Table) void {
         t.block_var.clear();
     }
@@ -335,7 +342,7 @@ pub const Table = struct {
         return .{ .steps = t.step_tab.col.step[r.start..][0..r.len], .children = t.step_tab.col.child[r.start..][0..r.len] };
     }
 
-    fn stepRange(t: *const Table, p: PlaceId) Ids.Range {
+    pub fn stepRange(t: *const Table, p: PlaceId) Ids.Range {
         return t.places.col.steps[p.int()];
     }
 
@@ -541,8 +548,7 @@ pub const Table = struct {
         while (i < t.count()) : (i += 1) {
             if ((kinds[i] == .ctor or kinds[i] == .tuple) and hs[i].isEmpty()) {
                 kinds[i] = .cross;
-                // A leaf names no type: the head would otherwise carry a
-                // session id into a block.
+                // A leaf names no type: the head would otherwise carry a session id into a block.
                 t.places.col.head[i] = 0;
                 ranges[i].len = 0;
             }
@@ -555,7 +561,7 @@ pub const Table = struct {
     /// never collide across builds (a count at a build's start did, #1452).
     /// Edges into older places are followed for membership but those
     /// places keep their own component.
-    fn settleCycles(t: *Table, gpa: Allocator, first: u32) Error!void {
+    pub fn settleCycles(t: *Table, gpa: Allocator, first: u32) Error!void {
         const n = t.count() - first;
         if (n == 0) return;
         const ranges = t.places.col.steps;
@@ -611,12 +617,35 @@ pub const Table = struct {
                     low[parent - first] = @min(low[parent - first], low[p - first]);
                 }
                 if (low[p - first] != index[p - first]) continue;
+                // Every component below pops first: a lone place sums its kids; a family is below when a member on a cycle holds an object, an element holds one, or a component below is one.
+                const kids = children[ranges[p].start..][0..ranges[p].len];
+                const lone = stack.items[stack.items.len - 1] == p and std.mem.indexOfScalar(PlaceId, kids, .from(p)) == null;
+                var below: u32 = if (lone) @intFromBool(!t.places.col.kind[p].own().isEmpty()) else if (t.places.col.holds[p].isEmpty()) 0 else below_min + 1;
+                for (if (lone) kids else kids[0..0]) |c| below = @min(below + t.objectsBelow(c), below_min + 1);
+                var fam = false;
+                for (stack.items[std.mem.lastIndexOfScalar(u32, stack.items, p).?..]) |m| {
+                    const rg = ranges[m];
+                    fam = fam or (!lone and (!t.places.col.holds[m].isEmpty() or !t.places.col.kind[m].own().isEmpty()));
+                    for (children[rg.start..][0..rg.len], t.step_tab.col.step[rg.start..][0..rg.len]) |c, s| {
+                        const held = !t.places.col.holds[c.int()].isEmpty() or !t.places.col.kind[c.int()].own().isEmpty();
+                        fam = fam or (s.kind == .elem and held) or ((c.int() < first or !on_stack[c.int() - first]) and t.places.col.below[c.int()].family);
+                    }
+                }
+                const members = try gpa.dupe(u32, stack.items[std.mem.lastIndexOfScalar(u32, stack.items, p).?..]);
+                defer gpa.free(members);
                 while (true) {
                     const m = stack.pop().?;
                     on_stack[m - first] = false;
                     sccs[m] = p + 1;
+                    t.places.col.below[m] = .{ .objects = @intCast(below), .family = fam };
                     if (m == p) break;
                 }
+                var least: u32 = 0; // `lower`
+                for (members) |m| {
+                    least += @intFromBool(!t.places.col.kind[m].own().isEmpty());
+                    for (children[ranges[m].start..][0..ranges[m].len]) |c| least += if (sccs[c.int()] != p + 1) t.places.col.lower[c.int()] else 0;
+                }
+                for (members) |m| t.places.col.lower[m] = @intCast(@min(least, below_min + 1));
             }
         }
     }
@@ -637,18 +666,23 @@ pub const Table = struct {
         return t.places.col.scc[p.int()];
     }
 
-    /// Whether `p` lies on a cycle of the place graph: one of its steps
-    /// reaches a place that can reach `p` again, so a value at `p` can
-    /// hold a re-entry back to its own path (§2.3's widen). O(steps).
-    pub fn onCycle(t: *const Table, p: PlaceId) bool {
-        for (t.steps(p).children) |c| if (t.sameCycle(p, c)) return true;
-        return false;
+    /// A value at a place on a cycle can re-enter its own path (§2.3's widen).
+    pub const onCycle = cyclic;
+
+    /// At most the object slots at and below a path at `p`, capped: each object place of its component once, and what is below each step out of it.
+    pub fn slotsAtLeast(t: *const Table, p: PlaceId) u8 {
+        return t.places.col.lower[p.int()];
+    }
+
+    /// The object places at and below `p`, saturating at `below_min + 1`, as is
+    /// a cycle below `p` that holds an object (§2.3.1): `below` is then `↓p`.
+    pub fn objectsBelow(t: *const Table, p: PlaceId) u8 {
+        return t.places.col.below[p.int()].objects;
     }
 
     // ---- canonical paths ------------------------------------------------
 
-    /// `path_index`'s keys, rebuilt from the paths: `(parent, step)`, and
-    /// `(none, place)` for a root.
+    /// `path_index`'s keys, rebuilt from the paths: `(parent, step)`, and `(none, place)` for a root.
     const PathKeys = struct {
         t: *const Table,
         pub fn keyAt(c: PathKeys, i: u32) [2]u32 {
@@ -663,7 +697,7 @@ pub const Table = struct {
         try t.paths.ensureUnusedCapacity(gpa, 1);
         if (try t.path_index.getOrInsert(gpa, .{ Ids.none_int, place.int() }, PathKeys{ .t = t }, t.paths.len())) |hit| return .from(hit);
         const id: PathId = .from(@intCast(t.paths.len()));
-        try t.paths.append(gpa, .{ .parent = .none, .step = Step.level, .place = place, .depth = 0, .summary = false });
+        try t.paths.append(gpa, .{ .parent = .none, .step = Step.level, .place = place, .info = .{ .depth = 0, .summary = false }, .jump = id });
         return id;
     }
 
@@ -687,16 +721,20 @@ pub const Table = struct {
     }
 
     pub fn pathDepth(t: *const Table, p: PathId) u32 {
-        return t.paths.col.depth[p.int()];
+        return t.paths.col.info[p.int()].depth;
     }
 
-    /// Whether `prefix` is `path` or an ancestor of it. O(depth) column
-    /// reads, the caller's charged walk (§2.2: `alias` costs O(path length)).
+    /// Whether `prefix` is `path` or an ancestor of it; the caller charges `ancestorAt`'s reads.
     pub fn isPrefix(t: *const Table, prefix: PathId, path: PathId) bool {
-        if (t.pathDepth(prefix) > t.pathDepth(path)) return false;
-        var at = path;
-        while (t.pathDepth(at) > t.pathDepth(prefix)) at = t.pathParent(at);
-        return at == prefix;
+        return t.pathDepth(prefix) <= t.pathDepth(path) and t.ancestorAt(path, t.pathDepth(prefix))[0] == prefix;
+    }
+
+    /// `p`'s ancestor at depth `d` (or `p`) by jump pointers, and its O(log depth) reads.
+    pub fn ancestorAt(t: *const Table, p: PathId, d: u32) struct { PathId, u32 } {
+        var at = p;
+        var n: u32 = 0;
+        while (t.pathDepth(at) > d) : (n += 1) at = if (t.pathDepth(t.paths.col.jump[at.int()]) >= d) t.paths.col.jump[at.int()] else t.pathParent(at);
+        return .{ at, n };
     }
 
     /// `path · step`, canonical (§2.1): null when the place has no such
@@ -707,12 +745,28 @@ pub const Table = struct {
         // One record per request, a memo hit included (§4.1: a cache hit is
         // reached only through a charged edge, and charged).
         try charge.reserve(gpa, .path, 1);
-        if (t.extend_memo.get(.{ path.int(), step.word() })) |hit| return if (hit == Ids.none_int) null else PathId.from(hit);
-        const here = t.pathPlace(path);
-        const target = t.child(here, step) orelse {
-            (try t.extend_memo.getOrPut(gpa, .{ path.int(), step.word() })).value_ptr.* = Ids.none_int;
-            return null;
+        const a = charge.account;
+        if (t.extend_memo.indexOf(.{ path.int(), step.word() })) |i| {
+            try a.readEntry(gpa, .extend, i, t.extend_cost.get(i));
+            const hit = t.extend_memo.values.items[i];
+            return if (hit == Ids.none_int) null else PathId.from(hit);
+        }
+        const fill = a.beginFill();
+        const got = t.extendFill(gpa, charge, path, step) catch |err| {
+            _ = a.endFill(fill);
+            return err;
         };
+        const cost = a.endFill(fill);
+        const e = try t.extend_memo.getOrPut(gpa, .{ path.int(), step.word() });
+        e.value_ptr.* = if (got) |g| g.int() else Ids.none_int;
+        try t.extend_cost.put(gpa, e.index, cost);
+        try a.readEntry(gpa, .extend, e.index, cost);
+        return got;
+    }
+
+    fn extendFill(t: *Table, gpa: Allocator, charge: Charge, path: PathId, step: Step) Error!?PathId {
+        const here = t.pathPlace(path);
+        const target = t.child(here, step) orelse return null;
         // Re-entry: is `target` on the path? Only if it shares a cycle with
         // `here` (a place above on the path that `here` steps back to closes
         // one), and then among the path's last places on that cycle: they are
@@ -727,15 +781,13 @@ pub const Table = struct {
             // A `⟲` given directly (a use's or a hold's route): inside a
             // level already it folds onto it, else it is the next step.
             if (t.pathParent(path) != .none and t.pathStep(path).kind == .level) out = path;
-            // At a first return that is not sealed, the levels below are not
-            // `path⟲`: a place of the cycle above has returned already, so a
-            // step-by-step walk folds them onto that return's `⟲` (in
-            // `T = T (List T)`, the lists below `#T.0[*]#T.0` are
-            // `#T.0[*]⟲#T.0`). One position has one name (#1253): a single
-            // level path is that path; several (`B (List B) (List B)`) are
-            // `levelPaths`', and `path⟲` stays only as the name of their join
-            // where one cell must stand for them (`Cell.alias` reads it on
-            // the cycle as overlapping every level path).
+            // At a first return that is not sealed, the levels below are not `path⟲`: a place
+            // of the cycle above has returned already, so a step-by-step walk folds them onto
+            // that return's `⟲` (in `T = T (List T)`, the lists below `#T.0[*]#T.0` are
+            // `#T.0[*]⟲#T.0`). One position has one name (#1253): a single level path is that
+            // path; several (`B (List B) (List B)`) are `levelPaths`', and `path⟲` stays only
+            // as the name of their join where one cell must stand for them (`Cell.alias` reads
+            // it on the cycle as overlapping every level path).
             if (out == null and t.pathParent(path) != .none and !(try t.sealed(charge, gpa, path))) {
                 const r = try t.levelsOf(gpa, charge, path);
                 if (r.len == 1) out = t.fold_paths.items[r.start];
@@ -762,8 +814,7 @@ pub const Table = struct {
         }
         const result = out orelse try t.node(gpa, charge.account, path, step, target);
         // A first return: a plain step back onto a place of the path.
-        if (out == null and deepest != .none) t.paths.col.ret[result.int()] = true;
-        (try t.extend_memo.getOrPut(gpa, .{ path.int(), step.word() })).value_ptr.* = result.int();
+        if (out == null and deepest != .none) t.paths.col.info[result.int()].ret = true;
         return result;
     }
 
@@ -830,10 +881,13 @@ pub const Table = struct {
         try t.paths.ensureUnusedCapacity(gpa, 1);
         if (try t.path_index.getOrInsert(gpa, .{ parent.int(), step.word() }, PathKeys{ .t = t }, t.paths.len())) |hit| return .from(hit);
         const id: PathId = .from(@intCast(t.paths.len()));
-        const summary = t.paths.col.summary[parent.int()] or step.kind == .elem or step.kind == .level;
+        const summary = t.paths.col.info[parent.int()].summary or step.kind == .elem or step.kind == .level;
         const anchor = step.kind == .level or t.sameCycle(t.pathPlace(parent), place);
         const up: PathId = if (anchor) .from(@intCast(t.paths.len())) else t.paths.col.anchor_up[parent.int()];
-        try t.paths.append(gpa, .{ .parent = parent, .step = step, .place = place, .depth = depth, .summary = summary, .anchor_up = up, .ret = step.kind == .level });
+        const pj = t.paths.col.jump[parent.int()];
+        const jump = if (depth - 1 - t.pathDepth(pj) == t.pathDepth(pj) - t.pathDepth(t.paths.col.jump[pj.int()])) t.paths.col.jump[pj.int()] else parent;
+        const info: PathInfo = .{ .depth = @intCast(depth), .summary = summary, .ret = step.kind == .level, .levels = t.paths.col.info[parent.int()].levels or step.kind == .level };
+        try t.paths.append(gpa, .{ .parent = parent, .step = step, .place = place, .info = info, .anchor_up = up, .jump = jump });
         return id;
     }
 
@@ -852,7 +906,23 @@ pub const Table = struct {
     /// path; a run of `fold_paths`, read by `foldPath`.
     pub fn foldsUp(t: *Table, gpa: Allocator, charge: Charge, p: PathId) Error!Ids.Range {
         try charge.reserve(gpa, .memo, 1);
-        if (t.up_memo.get(p)) |i| return rangeOf(t.fold_runs.items[i]);
+        const a = charge.account;
+        if (t.up_memo.get(p)) |i| {
+            try a.readEntry(gpa, .folds_up, p.int(), t.up_cost.get(p.int()));
+            return rangeOf(t.fold_runs.items[i]);
+        }
+        const fill = a.beginFill();
+        const r = t.foldsUpFill(gpa, charge, p) catch |err| {
+            _ = a.endFill(fill);
+            return err;
+        };
+        const cost = a.endFill(fill);
+        try t.up_cost.put(gpa, p.int(), cost);
+        try a.readEntry(gpa, .folds_up, p.int(), cost);
+        return r;
+    }
+
+    fn foldsUpFill(t: *Table, gpa: Allocator, charge: Charge, p: PathId) Error!Ids.Range {
         var acc: std.ArrayList(PathId) = .empty;
         defer acc.deinit(gpa);
         if (t.cyclic(t.pathPlace(p))) {
@@ -872,7 +942,23 @@ pub const Table = struct {
     /// once; memoised per path; empty when the place is on no cycle.
     pub fn levelsOf(t: *Table, gpa: Allocator, charge: Charge, p: PathId) Error!Ids.Range {
         try charge.reserve(gpa, .memo, 1);
-        if (t.level_memo.get(p)) |i| return rangeOf(t.fold_runs.items[i]);
+        const a = charge.account;
+        if (t.level_memo.get(p)) |i| {
+            try a.readEntry(gpa, .levels, p.int(), t.level_cost.get(p.int()));
+            return rangeOf(t.fold_runs.items[i]);
+        }
+        const fill = a.beginFill();
+        const r = t.levelsFill(gpa, charge, p) catch |err| {
+            _ = a.endFill(fill);
+            return err;
+        };
+        const cost = a.endFill(fill);
+        try t.level_cost.put(gpa, p.int(), cost);
+        try a.readEntry(gpa, .levels, p.int(), cost);
+        return r;
+    }
+
+    fn levelsFill(t: *Table, gpa: Allocator, charge: Charge, p: PathId) Error!Ids.Range {
         const target = t.pathPlace(p);
         var seen: Ids.FixedDict(1) = .{};
         defer seen.deinit(gpa);
@@ -935,7 +1021,7 @@ pub const Table = struct {
         while (k < r[1]) : (k += 1) {
             try charge.reserve(gpa, .inspection, 1);
             const e = t.fold_paths.items[r[0] + k];
-            try charge.reserve(gpa, .path, t.pathDepth(e) -| t.pathDepth(p));
+            try charge.reserve(gpa, .path, t.ancestorAt(e, t.pathDepth(p))[1]);
             if (t.isPrefix(p, e)) continue;
             for (acc.items) |a| {
                 if (a == e) break;
@@ -943,31 +1029,75 @@ pub const Table = struct {
         }
     }
 
-    /// `hits(x)`: the paths that a step of `x`'s plain subtree on its cycle
-    /// folds into, outside `x`'s subtree. A fold lands at the first return
-    /// it re-enters below (`extend`), so a target is `a⟲ₛ` for a prefix `a`
-    /// of the path, below `x` exactly when `x` is a prefix of it (#1253:
-    /// `a` may be below `x`). Made from the plain children's, so each canonical
-    /// path of a cycle is visited once, on an explicit stack (#1138).
+    /// `hits(x)`: the paths that a step of `x`'s plain subtree on its cycle folds into, outside
+    /// `x`'s subtree. A fold lands at the first return it re-enters below (`extend`), so a
+    /// target is `a⟲ₛ` for a prefix `a` of the path, below `x` exactly when `x` is a prefix of
+    /// it (#1253: `a` may be below `x`). Made from the plain children's, so each canonical path
+    /// of a cycle is visited once, on an explicit stack (#1138).
     fn hits(t: *Table, gpa: Allocator, charge: Charge, x0: PathId) Error![2]u32 {
         try charge.reserve(gpa, .memo, 1);
-        if (t.hit_memo.get(x0)) |i| return t.fold_runs.items[i];
-        if (try t.sealed(charge, gpa, x0)) {
-            const r = try t.memoRun(gpa, &t.hit_memo, x0, &.{});
-            return .{ r.start, r.len };
+        const a = charge.account;
+        if (t.hit_memo.get(x0) == null) {
+            const fill = a.beginFill();
+            t.hitsFill(gpa, charge, x0) catch |err| {
+                _ = a.endFill(fill);
+                return err;
+            };
+            // Each entry's cost is stored with it; nothing is left over.
+            _ = a.endFill(fill);
         }
-        const Fr = struct { path: PathId, expanded: bool };
+        try a.readEntry(gpa, .hits, x0.int(), t.hit_cost.get(x0.int()));
+        return t.fold_runs.items[t.hit_memo.get(x0).?];
+    }
+
+    /// `hits`' entry for a sealed first return `y`: empty, its cost the
+    /// test that it is sealed, counted apart from the fill around it.
+    fn hitsSealed(t: *Table, gpa: Allocator, charge: Charge, y: PathId) Error!bool {
+        const a = charge.account;
+        const fill = a.beginFill();
+        const is = t.sealed(charge, gpa, y) catch |err| {
+            _ = a.endFill(fill);
+            return err;
+        };
+        if (!is) {
+            try t.hit_cost.put(gpa, y.int(), a.endFill(fill));
+            return false;
+        }
+        _ = t.memoRun(gpa, &t.hit_memo, y, &.{}) catch |err| {
+            _ = a.endFill(fill);
+            return err;
+        };
+        try t.hit_cost.put(gpa, y.int(), a.endFill(fill));
+        return true;
+    }
+
+    /// Fill `hits(x0)` and the plain subtree's entries it is made from,
+    /// each with its own cost: its own steps' records plus its plain
+    /// children's costs, whichever of them were filled before (§4.1).
+    fn hitsFill(t: *Table, gpa: Allocator, charge: Charge, x0: PathId) Error!void {
+        const a = charge.account;
+        if (try t.hitsSealed(gpa, charge, x0)) return;
+        // The sealed test's cost (none of x0's entry if not sealed: it is
+        // the test every route to x0 makes, counted again below).
+        const sealed_cost = t.hit_cost.get(x0.int());
+        const Fr = struct { path: PathId, expanded: bool, cost: u64 = 0 };
         var stack: std.ArrayList(Fr) = .empty;
         defer stack.deinit(gpa);
         var acc: std.ArrayList(PathId) = .empty;
         defer acc.deinit(gpa);
-        try stack.append(gpa, .{ .path = x0, .expanded = false });
+        try stack.append(gpa, .{ .path = x0, .expanded = false, .cost = sealed_cost });
         while (stack.pop()) |f| {
             const x = f.path;
             if (t.hit_memo.get(x) != null) continue;
             const here = t.pathPlace(x);
-            if (!f.expanded) try stack.append(gpa, .{ .path = x, .expanded = true });
+            const me = stack.items.len;
+            if (!f.expanded) try stack.append(gpa, .{ .path = x, .expanded = true, .cost = f.cost });
             acc.clearRetainingCapacity();
+            const pass = a.beginFill();
+            var pass_open = true;
+            defer if (pass_open) {
+                _ = a.endFill(pass);
+            };
             const n = t.steps(here).steps.len;
             var j: usize = 0;
             while (j < n) : (j += 1) {
@@ -981,11 +1111,12 @@ pub const Table = struct {
                 if (!f.expanded) {
                     if (plain and t.hit_memo.get(y) == null) {
                         // A sealed first return folds nothing outside itself (#1253).
-                        if (try t.sealed(charge, gpa, y)) _ = try t.memoRun(gpa, &t.hit_memo, y, &.{}) else try stack.append(gpa, .{ .path = y, .expanded = false });
+                        if (!try t.hitsSealed(gpa, charge, y)) try stack.append(gpa, .{ .path = y, .expanded = false, .cost = t.hit_cost.get(y.int()) });
                     }
                     continue;
                 }
                 if (plain) {
+                    try a.readEntry(gpa, .hits, y.int(), t.hit_cost.get(y.int()));
                     const r = t.fold_runs.items[t.hit_memo.get(y).?];
                     var k: u32 = 0;
                     while (k < r[1]) : (k += 1) {
@@ -994,14 +1125,19 @@ pub const Table = struct {
                     }
                 } else try addOutside(&acc, gpa, charge, x, y, t);
             }
-            if (!f.expanded) continue;
+            pass_open = false;
+            const spent = a.endFill(pass);
+            if (!f.expanded) {
+                stack.items[me].cost += spent;
+                continue;
+            }
             _ = try t.memoRun(gpa, &t.hit_memo, x, acc.items);
+            try t.hit_cost.put(gpa, x.int(), f.cost + spent);
         }
-        return t.fold_runs.items[t.hit_memo.get(x0).?];
     }
 
     fn addOutside(acc: *std.ArrayList(PathId), gpa: Allocator, charge: Charge, x: PathId, e: PathId, t: *const Table) Error!void {
-        try charge.reserve(gpa, .path, t.pathDepth(e) -| t.pathDepth(x));
+        try charge.reserve(gpa, .path, t.ancestorAt(e, t.pathDepth(x))[1]);
         if (t.isPrefix(x, e)) return;
         for (acc.items) |a| if (a == e) return;
         try acc.append(gpa, e);
@@ -1010,7 +1146,7 @@ pub const Table = struct {
     /// Whether `path` is a summary position or below one: it holds a
     /// `[*]` or a `⟲` (§2.2's occurrence rule). O(1): a column.
     pub fn isSummary(t: *const Table, path: PathId) bool {
-        return t.paths.col.summary[path.int()];
+        return t.paths.col.info[path.int()].summary;
     }
 
     /// Whether `y` is a sealed first return (#1253): a plain step back onto
@@ -1031,10 +1167,9 @@ pub const Table = struct {
         }
         return true;
     }
-    /// Whether `path`'s last step re-entered a place on it: a first return
-    /// or a `⟲` (`PathNode.ret`). O(1): a column.
+    /// Whether `path`'s last step re-entered a place on it: a first return or a `⟲` (`PathNode.ret`). O(1): a column.
     pub fn isReturn(t: *const Table, path: PathId) bool {
-        return t.paths.col.ret[path.int()];
+        return t.paths.col.info[path.int()].ret;
     }
 
     /// The node a return `path` came back to (`isReturn`): a `⟲`'s parent,
@@ -1046,161 +1181,6 @@ pub const Table = struct {
         while (at != .none and t.pathPlace(at) != t.pathPlace(path)) at = t.pathParent(at);
         std.debug.assert(at != .none);
         return at;
-    }
-
-    // ---- structural identity --------------------------------------------
-
-    /// Write the sub-graph under `root` as records in pre-order ordinals:
-    /// `[count] { kind, head, holds, n, (step, child ordinal)×n }`, with a
-    /// field step's name and a nominal head written through `names` (the
-    /// block's string table), so no session id reaches the bytes. A place
-    /// is written once; a child seen before is its ordinal (a cycle too).
-    pub fn encode(t: *const Table, gpa: Allocator, root: PlaceId, names: Names, out: *std.ArrayList(u32)) Allocator.Error!void {
-        var ordinal: stamped.Column(PlaceId, u32) = .{};
-        defer ordinal.deinit(gpa);
-        var order: std.ArrayList(PlaceId) = .empty;
-        defer order.deinit(gpa);
-        var stack: std.ArrayList(PlaceId) = .empty;
-        defer stack.deinit(gpa);
-        try stack.append(gpa, root);
-        while (stack.pop()) |p| {
-            if (ordinal.contains(p)) continue;
-            try ordinal.put(gpa, p, @intCast(order.items.len));
-            try order.append(gpa, p);
-            const r = t.stepRange(p);
-            // Pushed in reverse so the first child gets the next ordinal.
-            var i = r.len;
-            while (i > 0) : (i -= 1) try stack.append(gpa, t.step_tab.col.child[r.start + i - 1]);
-        }
-        try out.append(gpa, @intCast(order.items.len));
-        for (order.items) |p| {
-            const r = t.stepRange(p);
-            const k = t.kind(p);
-            const h = if (k == .tuple or k == .record) t.head(p) else names.head(names.ctx, t.head(p));
-            try out.appendSlice(gpa, &.{ @backingInt(k), h, t.holds(p).bits(), r.len });
-            for (t.step_tab.col.step[r.start..][0..r.len], t.step_tab.col.child[r.start..][0..r.len]) |s, c| {
-                // A field's rank and a `C#i`'s intern index are this table's: the
-                // word carries the kind alone and the name or pair follows, so
-                // two tables write one type identically.
-                const w = if (s.kind == .field or s.kind == .ctor_arg) (Step{ .kind = s.kind, .payload = 0 }).word() else s.word();
-                try out.appendSlice(gpa, &.{ w, ordinal.get(c).? });
-                // A field's name follows its step, through the string table.
-                if (s.kind == .field) try out.append(gpa, names.field(names.ctx, s.payload));
-                // A `C#i` payload is this table's intern index: the pair follows.
-                if (s.kind == .ctor_arg) try out.appendSlice(gpa, &t.ctorArgOf(s));
-            }
-        }
-    }
-
-    /// Read a graph `encode` wrote into a table of its own, mapping heads
-    /// and field names back through `remap`; the root is place 0. Null when
-    /// the words are not a graph (R-5.7.4: an undecodable block is no
-    /// block), including a child order that is not canonical after the
-    /// remap.
-    pub fn decode(gpa: Allocator, account: *Account, words: []const u32, remap: Remap) Error!?Table {
-        var t: Table = .{};
-        decodeInto(&t, gpa, account, words, remap) catch |err| switch (err) {
-            error.Malformed => {
-                t.deinit(gpa);
-                return null;
-            },
-            else => |e| {
-                t.deinit(gpa);
-                return e;
-            },
-        };
-        return t;
-    }
-
-    fn decodeInto(t: *Table, gpa: Allocator, account: *Account, words: []const u32, remap: Remap) (Error || error{Malformed})!void {
-        if (words.len == 0) return error.Malformed;
-        const n = words[0];
-        var at: usize = 1;
-        var i: u32 = 0;
-        while (i < n) : (i += 1) {
-            if (at + 4 > words.len) return error.Malformed;
-            const k = words[at];
-            if (k > @backingInt(Kind.cross)) return error.Malformed;
-            const kd: Kind = @fromBackingInt(@intCast(k));
-            const h = if (kd == .tuple or kd == .record) words[at + 1] else remap.head(remap.ctx, words[at + 1]);
-            const hb = words[at + 2];
-            const len = words[at + 3];
-            at += 4;
-            if (hb > 0x7f) return error.Malformed;
-            try account.limitOver(.type_places, @as(u64, t.count()) + 1, t.limits.type_places);
-            if (kd.childLimit()) |l| try account.limitOver(l, len, t.limits.children);
-            const start: u32 = @intCast(t.step_tab.len());
-            var j: u32 = 0;
-            var last: u64 = 0;
-            while (j < len) : (j += 1) {
-                if (at + 2 > words.len) return error.Malformed;
-                var s = Step.fromWord(words[at]);
-                const c = words[at + 1];
-                at += 2;
-                if (c >= n) return error.Malformed;
-                if (s.kind == .field) {
-                    if (at + 1 > words.len) return error.Malformed;
-                    s = try Step.field(account, remap.field(remap.ctx, words[at]));
-                    at += 1;
-                }
-                if (s.kind == .ctor_arg) {
-                    if (at + 2 > words.len) return error.Malformed;
-                    s = try t.ctorStep(gpa, account, words[at], words[at + 1]);
-                    at += 2;
-                }
-                if (j > 0 and !t.stepLess(Step.fromWord(@intCast(last)), s)) return error.Malformed;
-                last = s.word();
-                try t.step_tab.append(gpa, .{ .step = s, .child = .from(c) });
-            }
-            try t.places.append(gpa, .{ .kind = kd, .head = h, .steps = .{ .start = start, .len = len }, .holds = @bitCast(@as(u8, @intCast(hb))), .class = .none, .scc = 0 });
-        }
-        if (at != words.len) return error.Malformed;
-        // Settled as a build is: at 0, any two places would be one cycle.
-        try t.settleCycles(gpa, 0);
-    }
-
-    /// Structural equality of `a` in `ta` and `b` in `tb`: a graph-pair
-    /// walk, every pair visited once, O(pairs) — the charged comparison of
-    /// §2.1's *Identity*: one record reserved per pair before it is read.
-    /// A pair in `proven`, which an earlier walk over the same two tables
-    /// proved, is not walked again; on `true` every pair visited joins it
-    /// (#1566: nested places compared one by one cost their pairs once).
-    pub fn equals(ta: *const Table, a: PlaceId, tb: *const Table, b: PlaceId, gpa: Allocator, charge: Charge, proven: ?*Ids.FixedDict(2)) Error!bool {
-        var seen: Ids.FixedDict(2) = .{};
-        defer seen.deinit(gpa);
-        var stack: std.ArrayList([2]PlaceId) = .empty;
-        defer stack.deinit(gpa);
-        try stack.append(gpa, .{ a, b });
-        const same = while (stack.pop()) |pair| {
-            try charge.reserve(gpa, .inspection, 1);
-            const key: [2]u32 = .{ pair[0].int(), pair[1].int() };
-            if (proven) |pv| if (pv.get(key) != null) continue;
-            const got = try seen.getOrPut(gpa, key);
-            if (got.found_existing) continue;
-            got.value_ptr.* = 1;
-            const x = pair[0];
-            const y = pair[1];
-            if (ta.kind(x) != tb.kind(y) or ta.head(x) != tb.head(y)) break false;
-            const rx = ta.stepRange(x);
-            const ry = tb.stepRange(y);
-            if (rx.len != ry.len) break false;
-            var i: u32 = 0;
-            const steps_same = while (i < rx.len) : (i += 1) {
-                const sx = ta.step_tab.col.step[rx.start + i];
-                const sy = tb.step_tab.col.step[ry.start + i];
-                if (sx.kind != sy.kind) break false;
-                if (sx.kind == .ctor_arg) {
-                    if (!std.mem.eql(u32, &ta.ctorArgOf(sx), &tb.ctorArgOf(sy))) break false;
-                } else if (!sx.eql(sy)) break false;
-                try stack.append(gpa, .{ ta.step_tab.col.child[rx.start + i], tb.step_tab.col.child[ry.start + i] });
-            } else true;
-            if (!steps_same) break false;
-        } else true;
-        if (same) if (proven) |pv| {
-            var k: usize = 0;
-            while (k < seen.keys.items.len) : (k += 2) (try pv.getOrPut(gpa, seen.keys.items[k..][0..2].*)).value_ptr.* = 1;
-        };
-        return same;
     }
 };
 
@@ -1476,19 +1456,6 @@ test "constructor steps order by (constructor, argument), whatever order they we
     try testing.expect(f.table.stepLess(s.steps[0], s.steps[1]) and f.table.stepLess(s.steps[1], s.steps[2]));
 }
 
-/// A remap for the encode/decode test: heads and field names shifted by a
-/// constant on the way out and back, as a string table would renumber them.
-const Shift = struct {
-    fn out(_: *anyopaque, x: u32) u32 {
-        return x + 1000;
-    }
-    fn back(_: *anyopaque, x: u32) u32 {
-        return x - 1000;
-    }
-    const names: Names = .{ .ctx = undefined, .head = out, .field = out };
-    const remap: Remap = .{ .ctx = undefined, .head = back, .field = back };
-};
-
 // A record `{ a : List Int, b : Tree }` by field ranks 10 and 11: 0 record,
 // 1 list, 2 Int, 3 Tree.
 const record_nodes = [_]TestGraph.TestNode{
@@ -1501,99 +1468,6 @@ const record_nodes = [_]TestGraph.TestNode{
         .{ .kind = .ctor_arg, .payload = 0, .arg = 2, .@"var" = 3 },
     } },
 };
-
-test "encode writes a cycle once through the names table, and decode reads an equal graph" {
-    var f: Fixture = .{};
-    f.init(&record_nodes);
-    defer f.deinit();
-    const gpa = testing.allocator;
-    const rec = try f.of(0);
-    var words: std.ArrayList(u32) = .empty;
-    defer words.deinit(gpa);
-    try f.table.encode(gpa, rec, Shift.names, &words);
-    // 4 places; a field step carries its name; heads are shifted.
-    try testing.expectEqual(@as(u32, 4), words.items[0]);
-    try testing.expectEqual(@as(usize, 1 + (4 + 2 * 3) + (4 + 2) + 4 + (4 + 3 * 4)), words.items.len);
-    try testing.expectEqual(@as(u32, 1010), words.items[1 + 4 + 2]);
-    // The nominal head of `Tree` went through the table; the record's did not.
-    try testing.expectEqual(@as(u32, 0), words.items[2]);
-    var decoded = (try Table.decode(gpa, &f.account, words.items, Shift.remap)).?;
-    defer decoded.deinit(gpa);
-    try testing.expectEqual(@as(u32, 100), decoded.head(.from(3)));
-    // Its cycles are settled: the record is on none, `Tree` on its own.
-    try testing.expect(!decoded.cyclic(.from(0)));
-    var on: u32 = 0;
-    for (0..decoded.count()) |i| on += @intFromBool(decoded.cyclic(.from(@intCast(i))));
-    var on_built: u32 = 0;
-    for (0..f.table.count()) |i| on_built += @intFromBool(f.table.cyclic(.from(@intCast(i))));
-    try testing.expectEqual(on_built, on);
-    try testing.expect(try Table.equals(&f.table, rec, &decoded, .from(0), gpa, .growth(&f.account), null));
-    // A different graph at the same place count is not equal, and the
-    // comparison was charged per pair.
-    var g: Fixture = .{};
-    g.init(&inst_nodes);
-    defer g.deinit();
-    const outer = try g.of(0);
-    const before = f.account.growth;
-    try testing.expect(!try Table.equals(&f.table, rec, &g.table, outer, gpa, .growth(&f.account), null));
-    try testing.expect(f.account.growth > before);
-    // Truncated or malformed words are no graph; neither is one whose
-    // children come out of order after the remap.
-    try testing.expect((try Table.decode(gpa, &f.account, words.items[0 .. words.items.len - 1], Shift.remap)) == null);
-    try testing.expect((try Table.decode(gpa, &f.account, &.{}, Shift.remap)) == null);
-    const Swap = struct {
-        fn back(_: *anyopaque, x: u32) u32 {
-            return if (x == 1010) 11 else if (x == 1011) 10 else x - 1000;
-        }
-        const remap: Remap = .{ .ctx = undefined, .head = Shift.back, .field = back };
-    };
-    try testing.expect((try Table.decode(gpa, &f.account, words.items, Swap.remap)) == null);
-}
-
-/// One place of every kind, each nominal one with a distinctive head:
-/// 0 record { a : 1, b : 2 }, 1 list, 2 dict, 3 ref, 4 closure, 5 opaque,
-/// 6 var, 7 tuple (var, Int), 8 `type T = A T | B` (crosses), 9 Int.
-const every_kind = [_]TestGraph.TestNode{
-    .{ .kind = .record, .children = &.{ .{ .kind = .field, .payload = 10, .@"var" = 1 }, .{ .kind = .field, .payload = 11, .@"var" = 2 } } },
-    .{ .kind = .list, .head = 777, .children = &.{.{ .kind = .elem, .@"var" = 3 }} },
-    .{ .kind = .dict, .head = 778, .children = &.{.{ .kind = .elem, .@"var" = 4 }} },
-    .{ .kind = .ref, .head = 779, .children = &.{.{ .kind = .contents, .@"var" = 5 }} },
-    .{ .kind = .closure, .head = 780, .children = &.{.{ .kind = .env, .@"var" = 6 }} },
-    .{ .kind = .@"opaque", .head = 781, .children = &.{.{ .kind = .slot, .payload = 0, .@"var" = 7 }} },
-    .{ .kind = .@"var" },
-    .{ .kind = .tuple, .head = 2, .children = &.{ .{ .kind = .index, .payload = 0, .@"var" = 6 }, .{ .kind = .index, .payload = 1, .@"var" = 8 } } },
-    .{ .kind = .ctor, .head = 782, .children = &.{ .{ .kind = .ctor_arg, .payload = 0, .arg = 0, .@"var" = 8 }, .{ .kind = .ctor_arg, .payload = 1, .arg = 0, .@"var" = 9 } } },
-    .{ .kind = .cross },
-};
-
-test "no session id reaches the bytes for any place kind, a reclassified leaf included" {
-    var f: Fixture = .{};
-    f.init(&every_kind);
-    defer f.deinit();
-    const gpa = testing.allocator;
-    const rec = try f.of(0);
-    // `type T = A T | B` holds nothing: a leaf, and no longer a `T`.
-    const t = try f.of(8);
-    try testing.expectEqual(Kind.cross, f.table.kind(t));
-    try testing.expectEqual(@as(u32, 0), f.table.head(t));
-    var words: std.ArrayList(u32) = .empty;
-    defer words.deinit(gpa);
-    try f.table.encode(gpa, rec, Shift.names, &words);
-    for (words.items) |w| {
-        for ([_]u32{ 777, 778, 779, 780, 781, 782 }) |head| try testing.expect(w != head);
-    }
-    var decoded = (try Table.decode(gpa, &f.account, words.items, Shift.remap)).?;
-    defer decoded.deinit(gpa);
-    try testing.expect(try Table.equals(&f.table, rec, &decoded, .from(0), gpa, .growth(&f.account), null));
-    // Every head came back as it was, the leaf's as 0.
-    var i: u32 = 0;
-    var seen_heads: u32 = 0;
-    while (i < decoded.count()) : (i += 1) {
-        const h = decoded.head(.from(i));
-        if (h >= 777 and h <= 782) seen_heads += 1;
-    }
-    try testing.expectEqual(@as(u32, 5), seen_heads);
-}
 
 test "a refused walk leaves no placeholder: the next owner gets the real place" {
     var f: Fixture = .{};
@@ -1627,32 +1501,4 @@ test "a refused walk leaves no placeholder: the next owner gets the real place" 
     const rec2 = try g.table.of(testing.allocator, &b, g.graph.source(), 0);
     try testing.expectEqual(@as(u32, 4), g.table.count());
     try testing.expectEqual(Kind.ctor, g.table.kind(g.table.child(rec2, try Step.field(&b, 11)).?));
-}
-
-test "two tables that intern one type in different orders write identical bytes" {
-    const gpa = testing.allocator;
-    var f: Fixture = .{};
-    f.init(&record_nodes);
-    defer f.deinit();
-    var g: Fixture = .{};
-    g.init(&record_nodes);
-    defer g.deinit();
-    // `g` interns the Tree's constructor steps in another order first.
-    _ = try g.ctor(0, 2);
-    _ = try g.ctor(0, 1);
-    _ = try g.ctor(0, 0);
-    const rf = try f.of(0);
-    const rg = try g.of(0);
-    var wf: std.ArrayList(u32) = .empty;
-    defer wf.deinit(gpa);
-    var wg: std.ArrayList(u32) = .empty;
-    defer wg.deinit(gpa);
-    try f.table.encode(gpa, rf, Names.identity, &wf);
-    try g.table.encode(gpa, rg, Names.identity, &wg);
-    try testing.expectEqualSlices(u32, wf.items, wg.items);
-    // And both decode to a graph equal to either.
-    var decoded = (try Table.decode(gpa, &f.account, wg.items, Names.identity)).?;
-    defer decoded.deinit(gpa);
-    try testing.expect(try Table.equals(&f.table, rf, &decoded, .from(0), gpa, .growth(&f.account), null));
-    try testing.expect(try Table.equals(&g.table, rg, &decoded, .from(0), gpa, .growth(&g.account), null));
 }

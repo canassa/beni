@@ -1,4 +1,4 @@
-//! L17: the ownership checker v2 in a session (`docs/design/ownership-v2.md`
+//! L13: the ownership checker v2 in a session (`docs/design/ownership-v2.md`
 //! §3.7, §8 S3a): the per-module inputs built from the session, the
 //! `dump --stage=ownership --ownership=v2` report, and the Driver's hook,
 //! all behind the hidden `--ownership=v2`.
@@ -23,7 +23,7 @@ const Ownership = @import("Ownership.zig");
 const Message = @import("Message.zig");
 const Report = @import("Report.zig");
 const Hoists = @import("Hoists.zig");
-const BlockRead = @import("BlockRead.zig");
+const Block = @import("Block.zig");
 const Interface = @import("../resolve/Interface.zig");
 
 /// What every module's check reads from the session, built once before
@@ -37,6 +37,10 @@ pub const Inputs = struct {
     /// Per global symbol its rank in text order, and per rank its symbol.
     ranks: []u32,
     rank_names: []InternPool.Symbol,
+    /// Per module installed from the checked core, its pack's v2 block
+    /// (§3.6 *The checked core*), read in place of the interface's v1 block;
+    /// written by the worker that installs it, before its importers run.
+    from_pack: []?[]const u8 = &.{},
 
     pub fn deinit(i: *Inputs, gpa: Allocator) void {
         gpa.free(i.birs);
@@ -44,6 +48,7 @@ pub const Inputs = struct {
         gpa.free(i.core);
         gpa.free(i.ranks);
         gpa.free(i.rank_names);
+        gpa.free(i.from_pack);
     }
 };
 
@@ -53,9 +58,11 @@ pub fn inputs(gpa: Allocator, session: *const Session) Allocator.Error!Inputs {
         .birs = try gpa.alloc(*const Bir, n),
         .names = try gpa.alloc([]const u8, n),
         .core = try gpa.alloc(bool, n),
+        .from_pack = try gpa.alloc(?[]const u8, n),
         .ranks = &.{},
         .rank_names = &.{},
     };
+    @memset(out.from_pack, null);
     for (0..n) |i| {
         const f = session.graph.moduleFile(@fromBackingInt(@intCast(i)));
         out.birs[i] = session.artifacts.bir(f);
@@ -169,9 +176,6 @@ fn moduleInput(gpa: Allocator, session: *Session, ins: *const Inputs, t: Tables,
         .ranks = ins.ranks,
         .core = ins.core,
         .interner = &session.interner,
-        .order_check = session.options.ownership_order_check,
-        .rewalk_check = session.options.ownership_rewalk_check,
-        .propagate_dump = session.options.ownership_propagate,
     };
 }
 
@@ -194,10 +198,11 @@ const ImportReader = struct {
         return .{ .ctx = r, .read = read };
     }
 
-    fn read(ctx: *anyopaque, mod: *Groups.Module, m: u32) Groups.Error!?[]Groups.ClassId {
+    fn read(ctx: *anyopaque, mod: *Groups.Module, m: u32) Groups.Error!?[]u32 {
         const r: *ImportReader = @ptrCast(@alignCast(ctx));
         if (m >= r.interfaces.len) return null;
-        const bytes = if (r.blocks) |b| (b[m] orelse &.{}) else r.interfaces[m].ownership;
+        const from_pack = if (m < r.ins.from_pack.len) r.ins.from_pack[m] else null;
+        const bytes = if (r.blocks) |b| (b[m] orelse &.{}) else from_pack orelse r.interfaces[m].ownership;
         if (bytes.len == 0 or bytes.len % 4 != 0) return null;
         const gpa = mod.gpa;
         const words = try gpa.alloc(u32, bytes.len / 4);
@@ -205,23 +210,22 @@ const ImportReader = struct {
         @memcpy(std.mem.sliceAsBytes(words), bytes);
         var e: Envelope = .{ .r = r, .mod = mod, .m = m };
         defer e.texts.deinit(gpa);
-        defer e.own_memo.deinit(gpa);
         const body = (try e.parse(gpa, words)) orelse return null;
-        var classes: std.ArrayList(Groups.ClassId) = .empty;
-        defer classes.deinit(gpa);
-        const remap: BlockRead.Remap = .{ .place = .{ .ctx = &e, .head = Envelope.head, .field = Envelope.field }, .ctx = &e, .decl = Envelope.decl, .inst = Envelope.inst, .own = Envelope.own };
-        // A split that meets one of the importer's with another condition is
-        // no block it can read: an unknown summary (R-5.7.4), never a guess.
-        const got = BlockRead.read(mod.env(), &mod.sums, body, remap, &classes) catch |err| switch (err) {
-            error.BlockConflict => null,
+        var contracts: std.ArrayList(u32) = .empty;
+        defer contracts.deinit(gpa);
+        const remap: Block.Remap = .{ .ctx = &e, .field = Envelope.field, .decl = Envelope.declOfString };
+        // A block that does not decode, or does not encode again to its own
+        // words, is unknown (R-5.7.4): never a guess.
+        Block.read(gpa, body, &mod.contracts, &mod.slots, &mod.places, mod.account, remap, &contracts) catch |err| switch (err) {
+            error.BadBlock => return null,
             else => |x| return x,
         };
         if (e.oom) return error.OutOfMemory;
-        if (got == null or e.failed or classes.items.len * 2 != e.dir.len) return null;
+        if (e.failed or contracts.items.len * 2 != e.dir.len) return null;
         const bir = r.ins.birs[m];
-        const out = try gpa.alloc(Groups.ClassId, bir.decls.len);
-        @memset(out, .none);
-        for (classes.items, 0..) |c, k| {
+        const out = try gpa.alloc(u32, bir.decls.len);
+        @memset(out, @import("Ids.zig").none_int);
+        for (contracts.items, 0..) |c, k| {
             if (e.dir[2 * k + 1] != 1) continue;
             const di = e.declOf(m, e.dir[2 * k]) orelse {
                 gpa.free(out);
@@ -242,8 +246,6 @@ const ImportReader = struct {
         dir: []const u32 = &.{},
         failed: bool = false,
         oom: bool = false,
-        /// `Remap.own`'s memo for this block (`Groups.Adapter.ownPlace`).
-        own_memo: Groups.Adapter.OwnMemo = .{},
 
         /// The block's words after the string table and the directory, or
         /// null when the envelope is malformed.
@@ -276,35 +278,17 @@ const ImportReader = struct {
             };
         }
 
-        /// `package·module·type` → the type's head (`Types.find`'s search,
-        /// with no read noted: the block, not this module's check, names it).
-        fn head(ctx: *anyopaque, s: u32) u32 {
+        fn field(ctx: *anyopaque, s: u32) ?u32 {
             const e: *Envelope = @ptrCast(@alignCast(ctx));
-            const t = e.text(s) orelse return 0;
-            if (t.len == 0) return @import("Ids.zig").none_int;
-            var it = std.mem.splitSequence(u8, t, "·");
-            const package = std.meta.stringToEnum(Graph.Package, it.next().?);
-            const module = e.symbol(it.next() orelse "");
-            const name = e.symbol(it.next() orelse "");
-            const types = e.r.types;
-            if (package != null and module != null and name != null) if (e.r.session.graph.find(package.?, module.?)) |g| if (g.int() + 1 < types.entry_offsets.len) {
-                for (types.by_name[types.entry_offsets[g.int()]..types.entry_offsets[g.int() + 1]]) |id| if (types.entries[id.int()].name == name.?) return id.int();
-            };
-            e.failed = true;
-            return 0;
-        }
-
-        fn field(ctx: *anyopaque, s: u32) u32 {
-            const e: *Envelope = @ptrCast(@alignCast(ctx));
-            const sym = e.symbol(e.text(s) orelse return 0) orelse return 0;
+            const sym = e.symbol(e.text(s) orelse return null) orelse return null;
             if (@backingInt(sym) < e.r.ins.ranks.len) return e.r.ins.ranks[@backingInt(sym)];
             e.failed = true;
-            return 0;
+            return null;
         }
 
-        /// `Module.name` (the writer's `Strings.decl`) → the importer's
-        /// `shared` index; a module name two modules share is unknown.
-        fn decl(ctx: *anyopaque, s: u32, ordinal: u32) ?u32 {
+        /// `Module.name` (the writer's `Strings.decl`) → `(module, declaration)`;
+        /// a module name two modules share is unknown.
+        fn declOfString(ctx: *anyopaque, s: u32) ?[2]u32 {
             const e: *Envelope = @ptrCast(@alignCast(ctx));
             const t = e.text(s) orelse return null;
             const dot = std.mem.lastIndexOfScalar(u8, t, '.') orelse return null;
@@ -314,23 +298,7 @@ const ImportReader = struct {
                 module = @intCast(i);
             };
             const di = e.declOf(module orelse return null, (e.symbol(t[dot + 1 ..]) orelse return null)) orelse return null;
-            if (ordinal != 0) return null;
-            return e.mod.sharedOf(.{ module.?, di }) catch {
-                e.oom = true;
-                return null;
-            };
-        }
-
-        fn own(ctx: *anyopaque, p: Groups.PlaceId) Groups.Error!?Groups.PlaceId {
-            const e: *Envelope = @ptrCast(@alignCast(ctx));
-            return e.mod.adapter.ownPlace(&e.own_memo, p);
-        }
-        fn inst(ctx: *anyopaque, i: u32) u32 {
-            const e: *Envelope = @ptrCast(@alignCast(ctx));
-            return e.mod.importInst(e.m, i) catch {
-                e.oom = true;
-                return 0;
-            };
+            return .{ module.?, di };
         }
 
         /// The value declaration of module `m` a directory or `shared` name
@@ -387,6 +355,34 @@ pub fn dump(gpa: Allocator, session: *Session, targets: []const u32, w: *std.Io.
     try Report.write(w, reports.items, ins.names, .{ .totals_only = options.totals_only });
 }
 
+/// The checked core's v2 blocks (§3.6 *The checked core*;
+/// `core_pack_main.zig`): every module of `session` outside the application,
+/// in dependency order, as `dump` runs them; one installed from the session's
+/// pack reads the pack's block. `out[m]` is null where v2 published none (a
+/// limit). Blocks live in `arena` or the pack.
+pub fn packBlocks(gpa: Allocator, arena: Allocator, session: *Session, out: []?[]const u8) (Allocator.Error || std.Io.Writer.Error)!void {
+    var ins = try inputs(gpa, session);
+    defer ins.deinit(gpa);
+    var mods: std.ArrayList(Groups.Input) = .empty;
+    defer mods.deinit(gpa);
+    var nc: NameCtx = .{ .session = session, .ins = &ins, .types = &session.checked.types, .arena = arena };
+    @memset(out, null);
+    const done = try gpa.alloc(Done, session.graph.count());
+    defer gpa.free(done);
+    @memset(done, .{});
+    var reader: ImportReader = .{ .session = session, .ins = &ins, .types = &session.checked.types, .interfaces = session.resolution.interfaces, .blocks = out };
+    var run: DumpRun = .{ .gpa = gpa, .arena = arena, .session = session, .ins = &ins, .nc = &nc, .reader = &reader, .mods = &mods, .blocks = out, .done = done, .totals_only = true };
+    for (0..session.graph.count()) |m| {
+        if (session.graph.modulePackage(@fromBackingInt(@intCast(m))) != .app) _ = try run.module(@intCast(m));
+    }
+}
+
+/// Module `m`'s block in the session's checked core, under its entry's key.
+pub fn packedBlock(session: *const Session, m: Graph.Index) ?[]const u8 {
+    if (!session.keys.isCacheable(m)) return null;
+    return session.pack.find(.own2, session.keys.of(m));
+}
+
 const Done = struct { started: bool = false, reports: ?[]const Report.Module = null };
 
 /// The dump's own run of v2 over a module and, first, the modules it imports.
@@ -407,7 +403,11 @@ const DumpRun = struct {
         if (r.done[m].started) return r.done[m].reports;
         r.done[m].started = true;
         for (r.session.graph.dependencies(@fromBackingInt(m))) |dep| _ = try r.module(dep.int());
-        var mi = moduleInput(r.gpa, r.session, r.ins, .{ .modules = r.session.checked.modules, .types = &r.session.checked.types, .dispatch = r.session.checked.dispatch }, m) orelse return null;
+        var mi = moduleInput(r.gpa, r.session, r.ins, .{ .modules = r.session.checked.modules, .types = &r.session.checked.types, .dispatch = r.session.checked.dispatch }, m) orelse {
+            // Installed from the checked core: its pack's block (§3.6).
+            r.blocks[m] = packedBlock(r.session, @fromBackingInt(m));
+            return null;
+        };
         mi.imports = r.reader.imports();
         try r.mods.append(r.gpa, mi);
         const token = r.session.profile.begin();
@@ -447,7 +447,7 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
     // authorise no write (§7.3); their clean bit says whether a caller
     // there was checked.
     var channel = [1]Hoists.Table{.empty};
-    const reports = try Ownership.run(gpa, arena, .{ .names = nc.names(), .modules = &one, .publish = true, .format_summaries = if (kept) |k| k.summaries else false, .channels = &channel });
+    const reports = try Ownership.run(gpa, arena, .{ .names = nc.names(), .modules = &one, .publish = true, .format_summaries = if (kept) |k| k.summaries else false, .below = if (kept) |k| k.below else false, .channels = &channel });
     if (session.graph.modulePackage(m) != .app) {
         gpa.free(channel[0].writes);
         channel[0].writes = &.{};

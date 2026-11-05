@@ -1,0 +1,4 @@
+# v2 refuses a callback whose supply the callee keeps: the callee returns the list it supplies (§2.11.3).
+56:16 list_still_used SanitiserKeptSupply.keepVia
+62:16 list_still_used SanitiserKeptSupply.keepFold
+68:16 list_still_used SanitiserKeptSupply.keepMixed

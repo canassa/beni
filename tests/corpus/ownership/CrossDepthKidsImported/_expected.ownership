@@ -48,15 +48,15 @@ module Roses
   52:11 List.push <literal>: accepted fresh
   73:16 call Roses.incBs bs[*]#B.0: accepted param (Roses.incBs writes π1[*]#B.0)
   73:16 call Roses.incBs bs[*]⟨B⟩⁺#B.0: accepted param (Roses.incBs writes π1[*]⟨B⟩⁺#B.0)
-  83:18 call Roses.incAs <call List.push>[*]#A.0[*]#B.0: accepted param (Roses.incAs writes π1[*]#A.0[*]#B.0)
-  83:18 call Roses.incAs <call List.push>[*]#A.0[*]⟨B⟩⁺#B.0: accepted param (Roses.incAs writes π1[*]#A.0[*]⟨B⟩⁺#B.0)
-  83:25 List.push kids: accepted param
-  83:51 call Roses.incBs rest[*]#B.0: accepted param (Roses.incBs writes π1[*]#B.0)
-  83:51 call Roses.incBs rest[*]⟨B⟩⁺#B.0: accepted param (Roses.incBs writes π1[*]⟨B⟩⁺#B.0)
-  94:15 call Roses.incA a#A.0[*]#B.0: accepted param (Roses.incA writes π1#A.0[*]#B.0)
-  94:15 call Roses.incA a#A.0[*]⟨B⟩⁺#B.0: accepted param (Roses.incA writes π1#A.0[*]⟨B⟩⁺#B.0)
-  94:24 call Roses.incAs rest[*]#A.0[*]#B.0: accepted param (Roses.incAs writes π1[*]#A.0[*]#B.0)
-  94:24 call Roses.incAs rest[*]#A.0[*]⟨B⟩⁺#B.0: accepted param (Roses.incAs writes π1[*]#A.0[*]⟨B⟩⁺#B.0)
+  80:18 call Roses.incAs <call List.push>[*]#A.0[*]#B.0: accepted param (Roses.incAs writes π1[*]#A.0[*]#B.0)
+  80:18 call Roses.incAs <call List.push>[*]#A.0[*]⟨B⟩⁺#B.0: accepted param (Roses.incAs writes π1[*]#A.0[*]⟨B⟩⁺#B.0)
+  80:25 List.push kids: accepted param
+  80:51 call Roses.incBs rest[*]#B.0: accepted param (Roses.incBs writes π1[*]#B.0)
+  80:51 call Roses.incBs rest[*]⟨B⟩⁺#B.0: accepted param (Roses.incBs writes π1[*]⟨B⟩⁺#B.0)
+  90:15 call Roses.incA a#A.0[*]#B.0: accepted param (Roses.incA writes π1#A.0[*]#B.0)
+  90:15 call Roses.incA a#A.0[*]⟨B⟩⁺#B.0: accepted param (Roses.incA writes π1#A.0[*]⟨B⟩⁺#B.0)
+  90:24 call Roses.incAs rest[*]#A.0[*]#B.0: accepted param (Roses.incAs writes π1[*]#A.0[*]#B.0)
+  90:24 call Roses.incAs rest[*]#A.0[*]⟨B⟩⁺#B.0: accepted param (Roses.incAs writes π1[*]#A.0[*]⟨B⟩⁺#B.0)
   summary incAll: π1 R, π1#Rose.0 RW[storage], π1⟨Rose⟩⁺#Rose.0 W[storage]; res #Rose.0 fresh1 ~fresh2 ~fresh3{shared}r{lost} ~fresh5{shared}r{lost} ~fresh7{shared}r{lost}, #Rose.0[*] fresh2 ~condition(fresh4) ~condition(fresh6) ~fresh3{shared}r{lost} ~fresh5{shared}r{lost}, ⟨Rose⟩#Rose.0[*] ~condition(fresh6) ~fresh7{shared}r{lost}, ⟨Rose⟩⁺#Rose.0 fresh2 fresh3{shared}r{lost} ~condition(fresh4) ~condition(fresh6) ~fresh5{shared}r{lost} ~fresh7{shared}r{lost}, ⟨Rose⟩⁺#Rose.0[*] fresh3{shared}r{lost} fresh5{shared}r{lost} ~condition(fresh6); xreq excl π1#Rose.0
   summary incList: π1 R, π1[*] R, π1[*]#Rose.0 RW[storage], π1[*]⟨Rose⟩⁺#Rose.0 RW[storage]; res [*] fresh4 fresh6 ~condition(fresh12) ~condition(fresh18) ~condition(fresh23) ~condition(fresh25) ~condition(fresh7) ~fresh11{shared}r{lost} ~fresh17{shared}r{lost} ~fresh22{shared}r{lost} ~fresh24{shared}r{lost} ~fresh7{shared}r{lost}, [*]#Rose.0 fresh2 fresh6 ~condition(fresh12) ~condition(fresh18) ~condition(fresh23) ~condition(fresh25) ~condition(fresh8) ~fresh11{shared}r{lost} ~fresh15{shared}r{lost} ~fresh17{shared}r{lost} ~fresh20{shared}r{lost} ~fresh22{shared}r{lost} ~fresh24{shared}r{lost} ~fresh5 ~fresh9{shared}r{lost}, [*]#Rose.0[*] fresh11{shared}r{lost} fresh5 ~condition(fresh10) ~condition(fresh14) ~condition(fresh16) ~condition(fresh18) ~condition(fresh21) ~condition(fresh23) ~condition(fresh25) ~fresh15{shared}r{lost} ~fresh17{shared}r{lost} ~fresh20{shared}r{lost} ~fresh22{shared}r{lost} ~fresh24{shared}r{lost} ~fresh9{shared}r{lost}, [*]⟨Rose⟩#Rose.0[*] ~condition(fresh21) ~condition(fresh25) ~condition(fresh26) ~fresh20{shared}r{lost} ~fresh24{shared}r{lost}, [*]⟨Rose⟩⁺#Rose.0 fresh11{shared}r{lost} fresh5 ~condition(fresh10) ~condition(fresh13) ~condition(fresh16) ~condition(fresh18) ~condition(fresh21) ~condition(fresh23) ~condition(fresh25) ~fresh15{shared}r{lost} ~fresh17{shared}r{lost} ~fresh20{shared}r{lost} ~fresh22{shared}r{lost} ~fresh24{shared}r{lost} ~fresh9{shared}r{lost}, [*]⟨Rose⟩⁺#Rose.0[*] fresh17{shared}r{lost} fresh9{shared}r{lost} ~condition(fresh16) ~condition(fresh19) ~condition(fresh21) ~condition(fresh23) ~condition(fresh25) ~fresh15{shared}r{lost} ~fresh20{shared}r{lost} ~fresh22{shared}r{lost} ~fresh24{shared}r{lost}, fresh1{shared}r{lost} ~fresh11{shared}r{lost} ~fresh17{shared}r{lost} ~fresh22{shared}r{lost} ~fresh24{shared}r{lost} ~fresh3 ~fresh6; xreq excl π1
   summary minimalOf: π1 RA; res #Rose.0 fresh2{shared}r{shared}, ⟨Rose⟩⁺#Rose.0 condition(fresh1) fresh1{excl π1}r{excl π1} π1{shared}r{shared}

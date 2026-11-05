@@ -3,7 +3,8 @@
 -- `r.a.b.fᵢ` is a product, and 80 holders of `l` at `.k.j` are a sweep past
 -- the direct holder: their per-step work stays the growth task's, never one
 -- lane per step. `push` is accepted; `pushed` is refused, as v1 refuses it.
-@ownership_summary_size(module, 4194304)
+-- On the slot domain (#1685) the module checks at the default allowance
+-- with growth 0, so no query here is growth: the fixture keeps the verdicts.
 
 type alias B =
     f0 : List Int

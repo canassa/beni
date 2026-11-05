@@ -117,6 +117,120 @@ core/List.beni                List.cons           41d3cb1371fbae9bb627a157b53820
 core/List.beni                List.sliceOf        6885afa24a036f93011b1e76cf30bf6901ba4888ca9e270845d4cdee8271e50a
 core/List.beni                List.focus          6a24ae82b9f8399007a33a8a228f5b75772d7804d66bcac4f945c887179ef524
 #
+# The fiber rows (ownership-v2.md §2.13.7, *The fiber rows*; ownership-checker.md
+# §24.8): `Task.spawn`, `spawnIn`, `spawnDetached` and `join`, and every helper
+# of `Task` their bodies run — `fork`, the run loop, the scheduler, ending and
+# unwinding, the teardown and the schedulers' membership. Each was read for
+# what may reach a fiber's `outcome`, the cell `join` reads: only `complete`
+# writes it, with the work's answer (`finished`) or `cancelled` (`ended`).
+core/Task.beni                Task.spawn          1f65e61ad091097310b1ac7498a783ada72a1d902ed6ec577032dff558ac3231
+core/Task.beni                Task.spawnIn        486cee6a6d4942565a73919e2856c033fce499c1d28a68b23fb95a611a60ec71
+core/Task.beni                Task.spawnDetached  3dad65d3f84d930a33518117fe3c37b23e9200e25cea30d6df830d1371ded2b2
+core/Task.beni                Task.join           d8d5b4cedbb54bd8e1dd3346fd997ba2d0bdf217ea0964b2c727735108bcaccc
+core/Task.beni                Task.host           be1d713b26a36016e9f06e34f17c144eb9ad8efc9008d3ee7105da838f8bfebe
+core/Task.beni                Task.guest          0974dbf043a741f3e878de9b8cf1de5833a57337ff0644122ebb4b2649556000
+core/Task.beni                Task.sentinel       ec70fac2ccab22c8adec33e344e0ace8bfd0e26034c3998d54c48ef62517a1b6
+core/Task.beni                Task.pending        9d84bea673ab54e55486f58a5ba3e060727ed2915c6ef637bd9cc56e4704b83a
+core/Task.beni                Task.park           2f1335da7ce04e6c3fe43813893f0ec16a6bc506f3632f0e7a28c5905c23d896
+core/Task.beni                Task.cancelled      891133fa2e6ca7e6d7f2a2aaf8b0ea2ceaf786f476ea96195c9050dcb306aab7
+core/Task.beni                Task.current        077f5d8af0c580be7946f5ee36d9f8b2cdf86688850031e22b594a7756810be9
+core/Task.beni                Task.outside        797bfd5309d410800a7dc5918a56a2de3e505ce89225df93ec702ae82cb529d2
+core/Task.beni                Task.slotted        b70b8812315c39c59d42da0de7ed3b571935389892eac97d305f02c782cddb62
+core/Task.beni                Task.slotsOf        54b07424d628cb74ed70bd3ceeff7db5c65df3e84bd3c062f13c16a9e946c191
+core/Task.beni                Task.deliverable    df6415c7654ceb0ef8e18609aeee34970875a2c6751c5890bd3a8b19a599c311
+core/Task.beni                Task.copy           68918de8ff54a63eabc3cc59b2f0f745c4155fe0e58c844b08aafcca8ce54de0
+core/Task.beni                Task.spawning       81a9b8a82e7c0e558da30f3885346025f4e54a15e120bc9a738e0d600019ddbd
+core/Task.beni                Task.none           4520bebd2d2067d7de8c9eac98c497efeaacd55da963e9e62d323d8c3a107c31
+core/Task.beni                Task.queue          2ede27b85f7bb5efc670f41fd9db3a8f6c56d0244f7b42b2974eb7ea903c69fb
+core/Task.beni                Task.head           806d874773716daeb12bbd17e5dedecbd3ec7a68fb18c4bb7eb5b88e85c0d0f6
+core/Task.beni                Task.scheduled      e034e65620d197d597b48571553051c9fd39770c16fe160faf8008b4fb7a9c6e
+core/Task.beni                Task.port           065d54b2a9ea237337ab310df7437a6b2ca69cd5715717abd7427627d240676d
+core/Task.beni                Task.portTasks      a97f84873c4bdc1a9734fa2fe87cbaf491fbe6ee3df10857f7fc8d27a26a6fe4
+core/Task.beni                Task.macrotask      8708f675e9afd7aef6bc91c8fb094057d52d3627a6f81dceb815cc8d7d5f1948
+core/Task.beni                Task.schedule       536f913fe2d200630e98f22b9e447b9ca5a7862d3ea7848efe55b98d889d2619
+core/Task.beni                Task.hosting        440e0d419a178a64857632561118d98c748af699c86a454ea6e0d43e45e05016
+core/Task.beni                Task.turn           1c541401d609096441515802ba71d5f1bdf790889622daf10cf2ca9c4f22e1f0
+core/Task.beni                Task.resumeFiber    c4ffdc5367ce0bb9c6d4bfd334c52f1d3e97141b20b080787f715611dab69f0a
+core/Task.beni                Task.enqueue        744ccd127797c7068838683539e535686cbfd146f7031f114026a31a14f437ec
+core/Task.beni                Task.defect         5845232440136f6b2de29dc8a1ce73e1e85d782550c8373049d2bf62b80c12b7
+core/Task.beni                Task.phase          68fb8ad46039e7611ad1ad86682b2d34420a14e1947833074e48b1005c13dd86
+core/Task.beni                Task.fibered        266c6e6606525acdb15e49f8d0bb07bbe5b74d5bc4dbbd56a2c2d29837da2609
+core/Task.beni                Task.newFiber       d72413dfe8ce4a888e1084cce3cbd618962806c71eea2800465d4131b7cbbb76
+core/Task.beni                Task.drain          448e130e3cbdfdfe9a2d310e151fea1eb08ec794ff2a3a8d98970bffb4c9832d
+core/Task.beni                Task.drainNow       ee4a62fc4ce4afecd381899d2e23ac834b879f4a0117e40dcd5625a0e4bfd5e5
+core/Task.beni                Task.guard          77b294a7432ff0530f67bd18cc7494d98e83731fbf9192e90d0a0ddac396451b
+core/Task.beni                Task.drainFrom      4a47fac7b7d73d36ff62ebef65fa9768acadc499a29215440d53f93043c1c672
+core/Task.beni                Task.failed         74083b6e52bf94a8609a203bf41cce45adff1e36ba72dc1e72746a0cde9acded
+core/Task.beni                Task.run            ce194843509de44a9cb41c69e333c6aacc53a0eb4b0da66a71d7d49d8b6738d3
+core/Task.beni                Task.loop           c63bef0cbab059d0cc8cb1099b4314b655d1d0bc3a20535b6204b4a97d6897d2
+core/Task.beni                Task.pushBack       62df86826caeac8795f1eb2676b53aa05461f90f7e50c08ecd805753f65937d9
+core/Task.beni                Task.suspend        478885e185515dcac49d5a838b96f3561f141addf53270e7427abc727fa4eb92
+core/Task.beni                Task.selfCancel     af6fc3c9247ce06d015e83986cdf826323ff5d59f269cd026ecaef4721362c15
+core/Task.beni                Task.complete       124fdbbc4025957d8e71ad435b16d3d59e6c1a4b18d5f4342281b2d74fa643a2
+core/Task.beni                Task.observe        c18f0c6c4bfdbff4ffe39eabc9f7e82fcb873eba4bf3bfee663975763fe239b5
+core/Task.beni                Task.unobserve      548d111da1ebe84b4a5f85846cd01dc5a27f990c95d968867cc42b5915d34b1c
+core/Task.beni                Task.halt           8b19e9b307160e2904fc4c740b7fe90b44c5affc980f4bffc057233163306211
+core/Task.beni                Task.waitAll        cfd62c0c96be1c4d6412b45718d27620b00f486519ef3f72e913aa5430b5ab93
+core/Task.beni                Task.cancelEvery    fa8e0cb49cb878f19983611f613bf69ea63925a9db31077e12e9ed48ee7294cb
+core/Task.beni                Task.finish         cd5217a383f07486e37fb5aa9e219c12c5b7a84866c79d7ccb22392cfe6d403d
+core/Task.beni                Task.finished       e77cf9e5d0f4cab4f43b5a369615f14e18d8703f66aa062b99c03e9a0192da60
+core/Task.beni                Task.unwind         6be38a2d73ff53aea5d7cc0a6d773f782afe1c70f9d7535f51267d7616ca8780
+core/Task.beni                Task.cleanups       b2da6b0339df4c63a1ca664d411deebae7b7807988708d9be4d48869045907dc
+core/Task.beni                Task.cleaning       5ccb30a07dc655e986d51215637da88816447f81e35cf335649cddbf8908e144
+core/Task.beni                Task.cleaningSet    ff66f5378dffc9dda5d0df5cd10f4b86e958eed6ad5fe94060cac498414c1bf4
+core/Task.beni                Task.inCleanup      ead80c738e4c68223479c15ee38d88e60fcad0a757a6fe2640ce4f862a6c8eef
+core/Task.beni                Task.boundary       9326e6ed72b7d80e2b5a771db827ba9c13a643dc7453446fb52c9a4a48e504eb
+core/Task.beni                Task.cutBack        b147075e25e79f47c9619fdb838af94977ded0082159ce6270b05c2ab58b1def
+core/Task.beni                Task.popTo          c2251ed199739a0e9811e5a8f4665c41098da48ea4ef18f7865fde194cb6a578
+core/Task.beni                Task.stopChildren   6625cecdc74ea94431c6ef923b7aaf5ff621402c062a99dfa1144c9b41356d3f
+core/Task.beni                Task.ended          63faec84d9a348c7b7c57824db6f296774af0f68139577a13dfe43e47b9b048f
+core/Task.beni                Task.reap           d9b2154558f80b382ed5b373dfd015b3be8f31df09e825bbbd3704f943492905
+core/Task.beni                Task.fork           759a7a5ec9873532c8f347dd2c3b15c4c02677bfbb414c9b9a082d16fc51e244
+core/Task.beni                Task.soonRunning    16d8759106aa9143cb640b7b710315057946af71ed9193e3a35d124e0f7f7644
+core/Task.beni                Task.endSoon        0105a5de8af71c2089c75c27e1a7ae5217882da2b73cc758ab0b927de05ff8c7
+core/Task.beni                Task.joined         cd7da99524b22c78549a4a5965cfa48d298650a127315e1fb95daaf978d51cb7
+core/Task.beni                Task.outcomeOf      7a37ac0a6b13e8c6296412173663c0f927f62dba524a9d7ccc72d03674594346
+core/Task.beni                Task.finalising     18e2ee27884eea2ba35248e7a05fb443631cbfe578958c9ed01c35ec1697d4b4
+core/Task.beni                Task.deferring      f050ff1d0df2e4208ecab3805faa52a5f29bf28afc7bc508c026c150016fb81f
+core/Task.beni                Task.deferral       bd266081ee34eb3a8dcab7a606fed76a5f7464cce40012f8baae593ccbb4c5a2
+core/Task.beni                Task.roots          81c202c618caa4d2d904ceff8b3f673e304af07d1553bff3fc423f7a3b587ca6
+core/Task.beni                Task.unlist         ccb0d0b290a6f2f7c26ead47c1e5e55e9895148afdde51312e8a3cd7bc92b705
+core/Task.beni                Task.live           91b3f28a31640d3e0b38ddf92bd63dfd5783c4a50e8964e4c996b05cfd51b4f5
+core/Task.beni                Task.culprit        164e00969a5a3b97cf54846438cbc20127f0b92ea4c1966a9c7d9198e625cf9a
+core/Task.beni                Task.deadline       230003cf23d72d55313edf880895b4fb1e94d986ed721fe5ed894d5b1fcc91a7
+core/Task.beni                Task.whenDone       fd3507e99934aa6efedc5b6ab7a2f5b6225bd02681b2e6708a66d44fbb3a3785
+core/Task.beni                Task.deadlineTimer  f3a7f48d72a00f3b9f1629a1ce69c69943f7cf0aa5dba6fec0bdddc3948f6092
+core/Task.beni                Task.expired        86a7dd4a489e79685d30a0e2eefefc3870a7311ca095b3a39f5982fdb75015f9
+core/Task.beni                Task.abandoned      809ec18338720a4913faddfe4a07ca68b23cf5e74c2206cb9a3fbfbfb9669689
+core/Task.beni                Task.sweeping       08d998f1a96945e7e2ce57141874bc6af3d54fde7f697d1e3b242834d2cf983a
+core/Task.beni                Task.swept          18f2668b5fbc75c52ecbab2ca01c769d4355c4ff8fdef1c05f03f433a14ef7d6
+core/Task.beni                Task.torn           dfaec19994dc780075f0d4fad9f8b536b2a933a51d69bcddd6ce2ed78bd38872
+core/Task.beni                Task.stopping       df36d8526122a31e02615cd6f2ee1e651194e376eed81e58ededc7de8bb669a0
+core/Task.beni                Task.arm            b9120d38c772ff4f3b188db5ff29c4accc0a5fe70ab14e26be8188be7ac85fdd
+core/Task.beni                Task.teardown       9813385bd5b9f41c734ec34bd0d1ab4d8ddcdba279b8fefce6c6e1e5fc10be36
+core/Task.beni                Task.withSlotsOf    4a1b1318c905a8b6fbfe22a526502686b09be7a4463a1fc397fd71f68304e12a
+core/Task.beni                Task.sweep          5ef425ee5bc15c7d6b95f6a124d4105508dabf6decaaacd1e3b8b4f59408a0f2
+core/Task.beni                Task.recover        cf29995984c9a8997f22b22a974f0d5fde0795d573f902cb7053836b83bb7ee0
+core/Task.beni                Task.expire         8cdc871e5c3d9e8562abc6c1f58634d69433dd3717af8794f957107e028971d7
+core/Task.beni                Task.abandon        23b69f878f9db0fe1a35f5212e7a434b697c87c56640fa207da0e347b4cbfd66
+core/Task.beni                Task.allEnded       298af0bbbe05df327a2e79eab05cdbbf2295097b0271853a0dac24b90a12d2e3
+core/Task.beni                Task.many           7801690d195c14efd306e21f9524a8128d7a96923d90e7ec4724cc07b1e3e388
+core/Task.beni                Task.schedulers     4088266b94a106a96f914f1a0fbda99aa31a9653ff212d8c8e5bfd4a96076665
+core/Task.beni                Task.schedulerOf    91c9f4e0698babfc020bce9ee6b0aa2336394d0385e38f97c0d7d97c2c07e369
+core/Task.beni                Task.memberOf       e79e73b30b8b6565ba8281f2b5a8c2e0e70c11c43b911f645d4d2755dd9d8d95
+core/Task.beni                Task.adopt          b8407729abb394f507bf1230caba7dd4071141d3573927bb8572629cf942c076
+core/Task.beni                Task.leave          f526c97bda079e2d6873f4ef7a22b7e0e598ec1792aee20c4eb9718a960cff07
+core/Task.beni                Task.countDown      73076cdf177ea086a5d1b56965a11a466b27c60cd3198e9266f142b5bc2a9c63
+core/Task.beni                Task.rootsFor       ccab81d6b9275bf976cc054e23f10b9b9006f7eddb9ba442ae357b36ad3f2a32
+core/Task.beni                Task.unlistFrom     244cb4d00ad6514878c07193e8a67658e5604aa4045667fd6c275cb6ae06be49
+core/Task.beni                Task.hasStopped     e2c4a42309f6e3359df8ed6261cb67571fb3853d4cc4764de629a601ab2d79d4
+core/Task.beni                Task.stoppedFor     a59eccbf97a56aa9ea12644dc28100cb7128f33645eee5f5b94516eb6ee2a9c3
+core/Task.beni                Task.hasEnded       45e9123e387e0fbc47be37d7a3492496b97c0c059ae826672c480cc1fa3da8aa
+core/Task.beni                Task.expiredFor     e8a380410afccc637f3e31d702ed8bb907fda25f77bb20b9dd7a462f7f2ed001
+core/Task.beni                Task.countCut       c2128b81b9d6cb80d457329434e2a1634ee513631bc144d438fa5f4fc8841f20
+core/Task.beni                Task.scheduleOn     986809c1a2f778b602f8d8c0148a86614d0025995e7ff3937fd3574260525505
+core/Task.beni                Task.requeue        7db618e3c4129eeae5772bfe9463f6deaf993e2f5c191a8d416d07bb9e1dadb6
+#
 # The index obligation (ownership-v2.md §2.13.6, R-5.10.7): every body that
 # reads a container through a `taken` result — `traverseAt` — reads it only
 # through it, once per index, moving one way. These bodies are part of the

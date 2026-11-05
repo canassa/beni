@@ -1,0 +1,31 @@
+-- A runtime catch for a lambda whose parameter is a pattern (`ownership-v2.md`
+-- §2.11.4): the pattern's own type is not recorded, so its place was a type
+-- variable's and what it bound was lost. `Dict.fromList`'s result said only
+-- `shared` (its lambda takes `( key, value )`), and `List.map xs λ( _, v ) → v`
+-- said its elements were fresh, so each push of `xs` below ran in place while
+-- the dictionary or the list still held it: the sanitised runs trapped. The
+-- parameter's place is now the one in the lambda's own function type.
+import Dict
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main =
+    xs = [ 1 ]
+    d = Dict.fromList [ ( 1, xs ) ]
+    ys = List.push xs 2
+    v0 = [ 3 ]
+    vs = List.map [ ( 1, v0 ) ] λ( _, v ) → v
+    ws = List.push v0 4
+    Node.printLines
+        [ show ys
+        , show (Maybe.withDefault (Dict.get d 1) [])
+        , show ws
+        , String.join (List.map vs show) ";"
+        ]

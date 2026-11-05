@@ -1,0 +1,8 @@
+# v2 refuses each edit of a wide list literal that holds one list at a [*] position and a front or back one, for
+# the list and for its elements (§2.9.3, #1963).
+65:12 list_may_be_shared SanitiserWideDistinct.edited
+65:12 list_may_be_shared SanitiserWideDistinct.edited
+65:45 list_may_be_shared SanitiserWideDistinct.edited
+65:45 list_may_be_shared SanitiserWideDistinct.edited
+65:79 list_may_be_shared SanitiserWideDistinct.edited
+65:79 list_may_be_shared SanitiserWideDistinct.edited

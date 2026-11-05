@@ -1,1 +1,2 @@
 S3a (ownership-v2.md §8): a list fixture of one declaration at a time; v2's verdict lines are v1's.
+v2 names one refusal `held-operand` (the operand evaluated before the write holds the list) where v1 names it `later-use` (#1685).

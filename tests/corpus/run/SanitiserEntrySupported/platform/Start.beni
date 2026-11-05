@@ -1,0 +1,18 @@
+--! A test platform: an `entry` record of the state protocol (`update` of a
+--! message and the state), handed to the runtime, which keeps only the
+--! state `update` answers.
+
+import Js
+
+
+pub type alias Program =
+    Js.Value
+
+
+pub launch :
+      entry { init : ⊤ → model
+            , update : Int, model → model
+            , view : model → Int
+            }
+    → Program
+launch app = Js.from app

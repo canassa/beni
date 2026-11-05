@@ -1,0 +1,19 @@
+--! A test platform: an `entry` record of an unsupported settle protocol
+--! (`settle` of one parameter), handed to the runtime, which reads the old
+--! state after `settle`.
+
+import Js
+
+
+pub type alias Program =
+    Js.Value
+
+
+pub launch :
+      entry { init : ⊤ → model
+            , update : ⊤, Int, model → model
+            , settle : model → model
+            , view : model → Int
+            }
+    → Program
+launch app = Js.from app

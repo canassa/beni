@@ -1,0 +1,21 @@
+module HolderRestApart
+  34:30 construction kids: accepted param
+  36:29 HolderRestApart.mapT kids[*]#Tree.1: rejected disjoint: another operand of the same operation reaches it (approx)
+  36:29 HolderRestApart.mapT kids[*]#Tree.1⟨Tree⟩: rejected disjoint: another operand of the same operation reaches it (approx)
+  36:29 HolderRestApart.mapT kids[*]#Tree.1⟨Tree⟩: rejected disjoint: another operand of the same operation reaches it (approx)
+  36:44 HolderRestApart.grow k#Tree.1: accepted param
+  36:44 HolderRestApart.grow k#Tree.1[*]#Tree.1: accepted param
+  36:44 HolderRestApart.grow k#Tree.1[*]⟨Tree⟩#Tree.1: accepted param
+  40:36 HolderRestApart.grow model.root#Tree.1: accepted param
+  40:36 HolderRestApart.grow model.root#Tree.1[*]#Tree.1: accepted param
+  40:36 HolderRestApart.grow model.root#Tree.1[*]⟨Tree⟩#Tree.1: accepted param
+  account mapT: source 31, baseline 3967, growth 0 of 65536, total 3967, continuation 3944 of 31744, demands 0, walks 1, rounds 4, liveness_index lanes 5, transfer_settlement lanes 3
+  summary mapT: res ε fresh, [*]#0.1 cb(π2ε@22), [*]#0.1⟲ cb(π2ε@22) cb(π2ε@22); nondup no; reads π1ε* π2ε*; label π2ε@22 many [1: #0.1 π1[*]#0.1 π1[*]#0.1*, #0.1[*]#0.1 π1[*]#0.1⟲ π1[*]#0.1⟲*, #0.1[*]⟲#0.1 π1[*]#0.1⟲ π1[*]#0.1⟲* sep ⇐ sel π1{ε*~,[*]*} π2{ε~}]
+  account grow: source 46, baseline 6275, growth 0 of 65536, total 6275, continuation 6221 of 47104, demands 793, walks 2, rounds 4, liveness_index lanes 11, transfer_settlement lanes 5
+  summary grow: res #0.1 π2#0.1 fresh, #0.1[*]#0.1 π2#0.1[*]#0.1 fresh, #0.1[*]⟲#0.1 π2#0.1[*]#0.1 π2#0.1[*]⟲#0.1 fresh; nondup no; reads π2ε*; writes π2#0.1 π2#0.1[*]#0.1* π2#0.1[*]⟲#0.1*; req yes
+  account update: source 13, baseline 921, growth 0 of 65536, total 921, continuation 909 of 13312, demands 435, walks 1, rounds 1, liveness_index lanes 5, transfer_settlement lanes 1
+  summary update: res ε fresh, .root#0.1 π2.root#0.1 fresh, .root#0.1[*]#0.1 π2.root#0.1[*]#0.1 fresh, .root#0.1[*]⟲#0.1 π2.root#0.1[*]#0.1 π2.root#0.1[*]⟲#0.1 fresh; nondup no; reads π2.root*; writes π2.root#0.1 π2.root#0.1[*]#0.1* π2.root#0.1[*]⟲#0.1*; req ⇐ sel π2{ε*~,.root#0.1,.root#0.1[*]#0.1*,.root#0.1[*]⟲#0.1*}
+  block: 908 bytes, hash 5f86f34ef82f6b3c
+  demands 10: accepted 7 (fresh 0, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 10: accepted 7 (fresh 0, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause disjoint 3

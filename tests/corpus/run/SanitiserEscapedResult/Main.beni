@@ -1,0 +1,76 @@
+-- A runtime catch for an object that escapes and is returned (`ownership-v2.md`
+-- §2.10, *host objects*). Each function below hands a list it made to
+-- JavaScript, which keeps it, and returns the same list. A contract names only
+-- its parameters' escapes, so the result was read off as `fresh` (or as the
+-- callback's answer), `main` edited it in place, and the list JavaScript kept
+-- changed under it: each sanitised run trapped. The result now also arrives
+-- `host`, and each edit is refused `escaped`. `viaForeign` is a `foreign` that
+-- answers its argument: its result is `host` too.
+import Kept
+import List
+import Node exposing (Program)
+import String
+
+
+own : ⊤ → List Int
+own ⊤ =
+    y = [ 1, 2 ]
+    Kept.keep y
+    y
+
+
+made : Int → List Int
+made n = [ n, 2 ]
+
+
+fromCallee : ⊤ → List Int
+fromCallee ⊤ =
+    y = made 1
+    Kept.keep y
+    y
+
+
+answered : (⊤ → List Int) → List Int
+answered f =
+    y = f ⊤
+    Kept.keep y
+    y
+
+
+same : List Int → List Int
+same l = l
+
+
+throughCall : ⊤ → List Int
+throughCall ⊤ =
+    y = [ 1, 2 ]
+    Kept.keep (same y)
+    y
+
+
+viaForeign : ⊤ → List Int × List Int
+viaForeign ⊤ =
+    y = [ 1, 2 ]
+    ( y, Kept.ident y )
+
+
+main : Program
+main =
+    a = List.set (own ⊤) 0 9
+    ka = Kept.kept ⊤
+    b = List.set (fromCallee ⊤) 0 9
+    kb = Kept.kept ⊤
+    c = List.set (answered λ⊤ → [ 1, 2 ]) 0 9
+    kc = Kept.kept ⊤
+    d = List.set (throughCall ⊤) 0 9
+    kd = Kept.kept ⊤
+    ( e0, e1 ) = viaForeign ⊤
+    v = List.set e0 0 9
+    Node.printLines
+        [ ka
+        , kb
+        , kc
+        , kd
+        , String.join (List.map v String.fromInt) ","
+        , String.join (List.map e1 String.fromInt) ","
+        ]
