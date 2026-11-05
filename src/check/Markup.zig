@@ -7,8 +7,14 @@
 //! its own declarations, which P2 and `Vocab.check` have read before any
 //! value group, so it reads its own interface skeleton, the declarations
 //! behind it, and their failure bits: a row whose declaration failed is
-//! absent, exactly as publication will leave it out (§25.2), so the row
-//! indices here are the published ones.
+//! kept and marked refused, exactly as publication will publish it (§25.2,
+//! amended 2026-11-05), so the row indices here are the published ones.
+//!
+//! **A refused row hides its name.** It takes part in resolution as any row
+//! does, and a tie that holds one answers it: a use that resolves to it is
+//! typed as an unknown name's is and reports nothing, so it never falls
+//! through to a pattern — the wildcard `"*"` — whose type is not the one the
+//! platform meant. "Did you mean" never offers one.
 //!
 //! **Every resolution is a function of the name's text and the rows**
 //! (I13): exact before pattern, and of two patterns the longer literal part;
@@ -65,6 +71,9 @@ pub const Row = struct {
     scheme: Interface.SchemeIndex,
     /// The type, once read; at rank `generalized`.
     type: Var.Optional = .none,
+    /// The declaration failed: a use resolves here and is silent, and the
+    /// row's type and facts are never read (§25.2).
+    refused: bool = false,
 
     pub fn has(row: Row, word: Bir.FactWord) bool {
         return row.facts & (@as(u32, 1) << @intCast(@backingInt(word))) != 0;
@@ -119,7 +128,7 @@ pub fn build(
                 at += 1;
                 break :blk d orelse continue;
             } else null;
-            if (decl) |d| if (d.int() < failed.bit_length and failed.isSet(d.int())) continue;
+            const refused = if (decl) |d| d.int() < failed.bit_length and failed.isSet(d.int()) else r.refused();
             const name = iface.symbol(r.name);
             const text = cx.interner.slice(name);
             var on: std.ArrayList(Symbol) = .empty;
@@ -137,6 +146,7 @@ pub fn build(
                 .via = if (r.via.unwrap()) |v| iface.symbol(v).toOptional() else .none,
                 .decl = decl,
                 .scheme = r.scheme,
+                .refused = refused,
             });
         }
         @field(m, field) = rows.items;
@@ -154,6 +164,7 @@ fn markupTypeId(cx: *const Context) Types.TypeId {
 /// The row's type, at rank `generalized`, or null when it has none that
 /// can be read (a failed declaration's, or a dependency's `<error>`).
 pub fn typeOf(m: *Markup, row: *Row) Error!?Var {
+    if (row.refused) return null;
     if (row.type.unwrap()) |v| return v;
     const cx = m.cx;
     const v: Var = if (row.decl) |d| blk: {
@@ -181,7 +192,7 @@ pub fn classOf(m: *Markup, row: *Row) Error!?Vocab.ValueClass {
 // ---------------------------------------------------------------------------
 
 /// The element row a tag resolves to: an exact name, then the most specific
-/// pattern.
+/// pattern. The row may be refused (`Row.refused`).
 pub fn element(m: *Markup, name: Symbol) ?*Row {
     return m.exact(m.elements, name, null, .any) orelse m.pattern(m.elements, name, null, .any);
 }
@@ -189,16 +200,31 @@ pub fn element(m: *Markup, name: Symbol) ?*Row {
 /// The attribute or event row an item named `name` on the element `tag`
 /// resolves to: one scoped to the element before one of every element, each
 /// by exact name, then by pattern. Attributes and events share the name
-/// space.
+/// space, so an attribute and an event that answer at one precedence tie,
+/// and the tie answers the refused one when either is (§25.2).
 pub fn item(m: *Markup, tag: Symbol, name: Symbol) ?*Row {
     inline for (.{ Scope.scoped, Scope.unscoped }) |scope| {
-        if (m.exact(m.attributes, name, tag, scope) orelse m.exact(m.events, name, tag, scope)) |r| return r;
+        if (tie(m.exact(m.attributes, name, tag, scope), m.exact(m.events, name, tag, scope))) |r| return r;
         const a = m.pattern(m.attributes, name, tag, scope);
         const e = m.pattern(m.events, name, tag, scope);
-        if (a != null and e != null) return if (e.?.literalLen(m.cx) > a.?.literalLen(m.cx)) e else a;
+        if (a != null and e != null) {
+            const la = a.?.literalLen(m.cx);
+            const le = e.?.literalLen(m.cx);
+            return if (le > la) e else if (la > le) a else tie(a, e);
+        }
         if (a orelse e) |r| return r;
     }
     return null;
+}
+
+/// Of two rows that answer a name at one precedence, the refused one, else
+/// the first: a tie that holds a refused row answers it, so a use of the
+/// name is silent (§25.2, amended 2026-11-05). Two well-formed rows never
+/// tie — the later is `duplicate_declaration`, and refused.
+fn tie(a: ?*Row, b: ?*Row) ?*Row {
+    const x = a orelse return b;
+    const y = b orelse return a;
+    return if (!x.refused and y.refused) y else x;
 }
 
 const Scope = enum { any, scoped, unscoped };
@@ -221,10 +247,11 @@ fn exact(m: *Markup, rows: []Row, name: Symbol, tag: ?Symbol, scope: Scope) ?*Ro
         }
     };
     var i = std.sort.lowerBound(Row, rows, Cx{ .interner = m.cx.interner, .key = text }, Cx.order);
+    var found: ?*Row = null;
     while (i < rows.len and rows[i].name == name) : (i += 1) {
-        if (rows[i].star == null and inScope(rows[i], tag, scope)) return &rows[i];
+        if (rows[i].star == null and inScope(rows[i], tag, scope)) found = tie(found, &rows[i]);
     }
-    return null;
+    return found;
 }
 
 fn pattern(m: *Markup, rows: []Row, name: Symbol, tag: ?Symbol, scope: Scope) ?*Row {
@@ -234,7 +261,9 @@ fn pattern(m: *Markup, rows: []Row, name: Symbol, tag: ?Symbol, scope: Scope) ?*
         if (r.star == null or !inScope(r.*, tag, scope)) continue;
         // Each `*` matches a non-empty run of name characters.
         if (!Vocab.nameMatches(m.cx.interner.slice(r.name), text)) continue;
-        if (best == null or r.literalLen(m.cx) > best.?.literalLen(m.cx)) best = r;
+        if (best == null or r.literalLen(m.cx) > best.?.literalLen(m.cx)) {
+            best = r;
+        } else if (r.literalLen(m.cx) == best.?.literalLen(m.cx)) best = tie(best, r);
     }
     return best;
 }
@@ -246,8 +275,10 @@ fn pattern(m: *Markup, rows: []Row, name: Symbol, tag: ?Symbol, scope: Scope) ?*
 /// One row per node the checker decided something about: every markup root
 /// in instruction order, each tree depth first, items before children. Read
 /// off the tree, the rows and what the solver decided (`decisions`, sorted
-/// here); called only for a module that checked clean, where every name
-/// resolved and every obligation was decided.
+/// here); called only for a module that reported no error, where every name
+/// resolved and every obligation was decided — or resolved to a refused row
+/// of a vocabulary that failed, which is written as unresolved: no build
+/// lowers such a module, and no reader of the section reads a refused row.
 pub fn section(m: *Markup, gpa: Allocator, decisions: []MarkupDecide.Decision) Error![]Dispatch.Markup {
     std.mem.sort(MarkupDecide.Decision, decisions, {}, decisionLessThan);
     var s: Section = .{ .m = m, .gpa = gpa, .decisions = decisions };
@@ -296,7 +327,8 @@ const Section = struct {
                 const e = bir.extraData(at, Bir.MarkupElement);
                 const tag = bir.symbol(e.name);
                 const row = s.m.element(tag);
-                try s.add(.{ .root = s.root, .node = @backingInt(at), .kind = .element, .row = if (row) |r| r.index else Dispatch.Markup.no_row });
+                const index = if (row) |r| if (r.refused) Dispatch.Markup.no_row else r.index else Dispatch.Markup.no_row;
+                try s.add(.{ .root = s.root, .node = @backingInt(at), .kind = .element, .row = index });
                 for (bir.extraSlice(.{ .start = e.items_start, .end = e.items_end }, Bir.ExtraIndex)) |i| try s.item(tag, i);
                 try s.children(e.children_start, e.children_end);
             },
@@ -359,6 +391,7 @@ const Section = struct {
             }),
             .attr => {
                 const row = m.item(tag, bir.symbol(it.name)) orelse return;
+                if (row.refused) return;
                 if (row.form == .event) {
                     return s.add(.{
                         .root = s.root,
@@ -411,14 +444,15 @@ fn extractor(m: *const Markup, row: Row) u32 {
 /// At most `max_suggestions` names close to `name`, sorted by edit distance
 /// then text (§15.3's rule): the declared elements, or — with `tag` — the
 /// attributes and events that element accepts. Patterns are not names a
-/// program can copy, so they are not suggested.
+/// program can copy, so they are not suggested, and a refused row is a name
+/// nothing written with can check (§25.2).
 pub fn suggestions(m: *const Markup, scratch: Allocator, name: Symbol, tag: ?Symbol) Error![]const []const u8 {
     const text = m.cx.interner.slice(name);
     const Candidate = struct { text: []const u8, distance: usize };
     var found: std.ArrayList(Candidate) = .empty;
     const lists: []const []const Row = if (tag == null) &.{m.elements} else &.{ m.attributes, m.events };
     for (lists) |rows| for (rows) |r| {
-        if (r.star != null) continue;
+        if (r.star != null or r.refused) continue;
         if (tag) |t| if (r.on.len != 0 and std.mem.indexOfScalar(Symbol, r.on, t) == null) continue;
         const candidate = m.cx.interner.slice(r.name);
         const d = distance(text, candidate);
@@ -445,7 +479,7 @@ pub const max_suggestions = 3;
 pub fn eventsLike(m: *const Markup, scratch: Allocator, name: []const u8, tag: Symbol) Error![]const []const u8 {
     var out: std.ArrayList([]const u8) = .empty;
     for (m.events) |r| {
-        if (r.star != null) continue;
+        if (r.star != null or r.refused) continue;
         if (r.on.len != 0 and std.mem.indexOfScalar(Symbol, r.on, tag) == null) continue;
         const candidate = m.cx.interner.slice(r.name);
         if (std.ascii.eqlIgnoreCase(candidate, name)) try out.append(scratch, candidate);

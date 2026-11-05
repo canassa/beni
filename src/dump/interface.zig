@@ -172,6 +172,9 @@ fn writeFacts(w: *std.Io.Writer, iface: *const Interface, interner: *const Inter
             }
         }
     }
+    // Last: the declaration failed, and the row is published so its uses
+    // stay silent (`checker-v2.md` §25.2, amended 2026-11-05).
+    if (row.refused()) try w.writeAll(" refused");
 }
 
 /// One present derived row's context, entry by entry: `(param, method)` and,

@@ -97,7 +97,10 @@ pub const magic = "BENIIFC\x00";
 /// ownership-checker.md §16.7 (c)).
 /// 18: a type row's byte 30 and a hidden row's byte 22 carry the type word,
 /// a constructor row's byte 25 its `failure` mark (ownership-v2.md §2.13.6).
-pub const format_version: u32 = 18;
+/// 19: a vocabulary row's fact word carries bit 30, `refused`: a failed
+/// declaration's row is published, with the scheme `<error>` (checker-v2.md
+/// §25.2, amended 2026-11-05).
+pub const format_version: u32 = 19;
 
 /// The columns, in this order and no other (`hidden_types` since
 /// format 4, the vocabulary tables since format 8, `checker-v2.md` §14.2,
@@ -531,13 +534,14 @@ fn readVocab(gpa: Allocator, in: []const u8, n: u32) Allocator.Error![]Interface
 }
 
 /// Whether a vocabulary table's names, `on` ranges and schemes stay inside
-/// their columns, and its facts name only fact words and the pattern bit.
+/// their columns, and its facts name only fact words, the pattern bit and
+/// the refused bit.
 fn verifyVocab(iface: *const Interface, rows: []const Interface.VocabRow) bool {
     const symbols = iface.symbols.len;
     const known: u32 = (@as(u32, 1) << @typeInfo(Bir.FactWord).@"enum".field_names.len) - 1;
     for (rows) |r| {
         if (@backingInt(r.name) >= symbols) return false;
-        if (r.facts & ~(known | Interface.VocabRow.pattern_bit) != 0) return false;
+        if (r.facts & ~(known | Interface.VocabRow.pattern_bit | Interface.VocabRow.refused_bit) != 0) return false;
         if (r.arg.unwrap()) |s| if (@backingInt(s) >= symbols) return false;
         if (r.via.unwrap()) |s| if (@backingInt(s) >= symbols) return false;
         if (r.scheme != .none and @backingInt(r.scheme) >= iface.schemes.len) return false;
