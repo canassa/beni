@@ -963,7 +963,11 @@ a whole `case` to one tree, which may test the parts of the scrutinee in whateve
 test one part on several paths, and skip a test it has already made. All of that is reading a value
 that is already there. What the tree may not do is evaluate a written expression twice, or in an
 order this table does not give — which is why it binds the scrutinee at most once and rebuilds
-*occurrences* rather than re-evaluating subjects.
+*occurrences* rather than re-evaluating subjects. *Amended 2026-11-05 (§13; specified, not built):*
+in a checked build a test can crash, when a part is a `NaN` met by an `int` literal pattern, so the
+tree's test order is observable: `( 0, _ )` and `( _, 0 )` over two `NaN`s report whichever is tested
+first. The tree's order stays the compiler's to choose, and it is deterministic and the same in the
+three builds.
 
 **Deliberately unspecified.** Three things, each because pinning it would buy nothing and cost an
 implementation:
@@ -975,7 +979,12 @@ implementation:
 - **The order in which one module's top-level constants are initialised**, beyond each preceding its
   own first use. The backend emits them in dependency order today. Nothing can observe the
   difference except a top-level `Debug.log`, and `backend.md` §9 may drop that declaration whole.
-- **Which of two modules that do not depend on each other is loaded first.**
+  *Amended 2026-11-05 (§13.1; specified, not built):* a crash can observe it too, since two failing
+  top-level values decide which one fires. The order stays unspecified for a program to rely on,
+  but the emission order is now part of the checked contract: it is deterministic and the same in
+  the three builds.
+- **Which of two modules that do not depend on each other is loaded first.** *Amended the same day,
+  with the same contract.*
 
 **What an optimiser may assume** (`backend.md` §9 is where it is spent). Every beni expression is
 **pure**: evaluating it produces a value and changes nothing an observer can see — **unless it
@@ -3646,7 +3655,7 @@ valid `Int`, and no build normalises it.** `toFloat` keeps its sign, so `1 / toF
 | `int` literal | refused at compile time, above |
 | `+`, `-`, `*`, `round`, `floor`, `ceiling`, `truncate` | the crash above. `round 1e300` is finite and crashes, because `1e300` is not an `Int` |
 | `//`, `Int.mod`, `Int.rem`, `abs`, `negate`, `min`, `max`, `clamp` | cannot leave the range on true operands, so no overflow test. A zero divisor is §13.5. Their bodies may not overflow on the way to a result that fits (§13.9): `Int.mod` adds its modulus today, and must not (#1992) |
-| `^^` | owned by #1985: repeated `*`, so it crashes as `*` does, at each multiplication. A negative exponent is `1 // (x ^^ n)`, so `0 ^^ (-1)` crashes |
+| `^^` | owned by #1985: exponentiation by squaring with checked `*`, squaring **only while exponent bits remain**, so `1 ^^ M` ends in 53 steps and `3 ^^ 33`, which fits, does not crash on an extra `3⁶⁴`. A negative exponent is `1 // (x ^^ n)`, so `0 ^^ (-1)` crashes, and so does `2 ^^ (-1024)`, whose `x ^^ n` overflows, though `0` would be defined |
 | `String.toInt` | answers `Nothing` past the range. Already so |
 | `Schema.int`, `Json.decode`, a compiled `schema` | refuse with `InvalidValue`, in both directions. Already so |
 | `Char.toCode`, `String.length`, `List.length`, `Dict.size` | a host count or code point, whole and in range |
@@ -3673,15 +3682,18 @@ Producing `NaN` or `±Infinity` stays legal. **Using one as an operand crashes**
 | `round`, `floor`, `ceiling`, `truncate` | crash on `NaN`, `±Infinity`, and any finite value past the `Int` range (§13.3) |
 | `<`, `≤`, `>`, `≥`, `==`, `≠`, `compare`, with a `NaN` on either side | crash, **for every one of the six, `≠` included**. The operands are tested before the comparison: `NaN ≠ 1` is `true` in JavaScript, so a test placed only where a comparison answers `false` misses it |
 | The same, with `±Infinity` and no `NaN` | allowed |
-| Everything built on those comparisons: `min`, `max`, `clamp`, an operator passed as a value (`(<)`, `(==)`, `(≠)`), a derived `eq` or `compare`, `List.eq`, `List.compare`, `List.member`, `List.maximum`, `List.minimum`, `List.sort`, `sortBy`, `sortWith` called with `compare`, a `Float` literal pattern | as the comparison they make. `List.maximum [ nan ]` compares nothing and answers `Just nan` |
+| Everything built on those comparisons: `min`, `max`, `clamp`, an operator passed as a value (`(<)`, `(==)`, `(≠)`), a derived `eq` or `compare`, `List.eq`, `List.compare`, `List.member`, `List.maximum`, `List.minimum`, `List.sort`, `sortBy`, `sortWith` called with `compare`, an `int` literal pattern at `Float` or at a `number` variable (§3 has no float pattern) | as the comparison they make. `List.maximum [ nan ]` compares nothing and answers `Just nan` |
 | **A count or an index** | no such row. Every count and index is an `Int`, so a `Float` reaches one through `round` or its kin, which crash first |
 | **A `Dict` key or a `Set` member** | no such row. A `Float` key is refused at compile time (§6.8), and an `Int` is never `NaN` |
 | **Producing JSON text**: `Json.encode`, `Schema.print`, `Http.jsonBody`, and any other API whose result is JSON text | a typed `Err`, in every build, never a crash: `PrintFailed` under `Schema.float`, `InvalidValue` under `finiteFloat`. *Decided by the owner, 2026-11-05, amending #1988's "crash" row:* the API returns a `Result`, and CLAUDE.md rule 9's typed error is its answer. `Http.jsonBody` is `BadRequest (UnprintableBody …)` (`boundary.md` §9.8.12) |
 | **Encoding to a host value**: `Schema.encode`, `Json.encodeValue` at `Schema.float` | allowed: `Ok NaN`, `Ok Infinity`. The value is a legal `Float` in a host value, and the schema's Encoded endpoint admits it. `Schema.finiteFloat` refuses it with `InvalidValue` in both directions |
+| **`Duration.times`** (and `Schedule.exponential`, which calls it) | **a named exception to the uniform rule**, in every build. `core/Duration.beni` promises an answer: a `NaN` factor is `zero`, and a product no length holds is the longest duration. It tests its `factor` before it multiplies (§13.9). This is the one place a program may hand core a non-finite operand and get an answer, and it does not reopen D6 (§13.10) |
+| **Written to a host as a number**: `Dom.scrollTo id x y`, and any wrapper that hands a `Float` to a host API as a number | crash, for `NaN` and for `±Infinity`: it is a use as an operand, and the host would silently read it as `0`. The wrapper tests it (`boundary.md` §4.3 (b)) |
+| **A `For` key**: `keyed={f}` whose key is a `Float` | as a comparison: `NaN` crashes at the reconcile that compares it, `±Infinity` is allowed |
 
 A core function whose answer is finite does not crash on the way to it (§13.9): `degrees 1e308` is
-`1.745…e306`, and `toPolar ( 1e200, 0 )` is `( 1e200, 0 )`. `Duration.times`, `Schedule.exponential`
-and `Pcg.float` keep their documented answers by the same rule.
+`1.745…e306`, and `toPolar ( 1e200, 0 )` is `( 1e200, 0 )`. `Pcg.float` is arithmetic on its
+bounds.
 
 ### 13.5 Integer division
 
@@ -3704,9 +3716,23 @@ leaves the operation and reaches the guards of `boundary.md` §9.8.10 (c), which
 included: a module being loaded (a top-level value), `init`, `update`, `view`, a handler, a render's
 patch and the property writes the markup lowering generates, after-render work, and a fiber, under
 `Tea` and under a plain `Browser.program` alike. Today two of those paths miss the guards (#1994),
-and that is a defect, not a limit of the rule. On a page, the development build shows the crash
-screen and `--release-safe` adds nothing to the host's report. On Node, the report goes to standard
-error and the process exits 1 (§13.10 D5). Its message begins `beni:` and names the operation:
+and that is a defect, not a limit of the rule.
+
+**What a crash stops.** *Decided by the owner, 2026-11-05 (D8).* "Stops" means one thing per
+platform:
+
+| Platform | What stops | Report |
+|---|---|---|
+| a page (`browser`, `browser-tea`, `browser-inline`) | **every program of the page** | the host's report; the crash screen in the development build; `--release-safe` adds nothing |
+| Node | **the process**, exit 1 (§13.10 D5) | standard error |
+| a Worker | **that request, or that Durable Object** (`boundary.md` §9.12) | the host's report |
+
+**A scheduler a program makes contains nothing.** A defect under `Task.scheduler` stops that
+scheduler and then the program, as any fiber's does (§13.10 D8). Only a platform's per-request or
+per-object scheduler, made with `Task.schedulerWith`, contains a defect, because the platform is
+what defines its unit of failure.
+
+A crash's message begins `beni:` and names the operation:
 
 | Cause | Message |
 |---|---|
@@ -3731,8 +3757,12 @@ meaning**, not its spelling: `Js.at`, core's `unsafeGet`, `List.at` and `travers
 an unchecked `index_get`), and any other lowering of an indexed read. For a view, the index is tested
 against the view's **logical length before** the view's offset is added: an index past the view's
 end must not read its base array's next element. The test is an integer test, not two range
-comparisons: an index that is fractional or `NaN` fails it (`0 ≤ i`, `i < n` and `i` whole). A read
-that goes past the end on purpose tests the length itself and does not use these sites. `List.get`
+comparisons: an index that is fractional or `NaN` fails it (`0 ≤ i`, `i < n` and `i` whole).
+**Core and the platforms read past the end on purpose today**, and the first draft said they did not:
+a logging prototype found thousands of such reads, in `Rt$reconcile` on every keyed `For` update and
+in `Inline$entry`. The rule stands and those sites change (rule 10): a read that may go past the
+end tests the length first, or says so with `Js.peek` (`boundary.md` §4.2), the named past-the-end
+read, which answers `undefined` and is never bounds-tested. `List.get`
 and `head` already answer `Maybe`, so these checks catch defects in beni and in `foreign` code, not
 in a program. Public list writes need no new check: `List.set`, `insertAt`, `removeAt`, `swap` and
 `update` with an index outside the list, including `NaN`, `±Infinity`, a fraction and a negative,
@@ -3753,10 +3783,13 @@ length, a defect of rule 9. **It computes what the unchecked JavaScript operator
 assumes a check would have passed** (`backend.md` §16.5).
 
 **Its baseline.** *Decided by the owner, 2026-11-05.* `--release` output changes only by named
-repairs, each a correctness fix that changes every build and is reviewed with its golden changes:
-`Duration`'s saturation, `Int.mod`'s exact answer, stable `degrees` and `toPolar` (#1992, #2021),
-the clock and deadline answers (#2022), the refusal of out-of-range literals (§13.3) and #1985's `^`.
-After those, adding the checks of this section changes no byte of `--release` output: it keeps
+repairs, each a correctness fix that changes every build and is reviewed with its golden changes.
+**The named repairs are the repairs of `backend.md` §16.8 step 2**, with #1985's `^` and the
+value restriction of §13.11: `Duration`'s saturation, `Int.mod`'s exact answer, wide `Random.int`
+(#1992), stable `degrees` and `toPolar` (#2021), the clock and deadline answers (#2022),
+`Html.targetValue`'s type (#1993), the stop paths (#1994), the host wrappers (#1995, #2020), the
+Cloudflare import (#2019), the repairs of the predicate sweep, and the refusal of out-of-range
+literals (§13.3). After those, adding the checks of this section changes no byte of `--release` output: it keeps
 unchecked emission relative to that new baseline.
 
 A run in which a check would fire has these results:
@@ -3783,7 +3816,10 @@ That is the price of the build, and the reason `--release-safe` exists.
 that carries a check is not pure in the sense that section uses, because a dropped check is a crash
 the development build shows:
 
-- it is not dropped when nothing reads it, so `x = a + b`, unread, is evaluated;
+- it is not dropped when nothing reads it, so a local `x = a + b`, unread, is evaluated. A **reachability**
+  walk is not such a drop: a top-level declaration nothing reaches is not part of the program, in
+  any build, so `unused = round 1e300` at top level runs nothing and fires nothing. What the
+  development build reaches, `--release-safe` keeps, even where a later fold would remove the use;
 - it is not sunk into a branch, duplicated, or moved past another evaluation, so of two expressions
   that both fail, the one written first is the one that crashes;
 - it is not folded when its operands would fire the check: `9007199254740991 + 1` stays a crash, at
@@ -3822,7 +3858,16 @@ non-finite value core makes on purpose is an answer, not an intermediate: `Float
 least `Basics` (`degrees`, `turns`, `toPolar`, `fromPolar`, `Float.log`), `Int.mod`, `Duration`,
 `Schedule`, `Random.Pcg` (#1992), `Clock`, `Task`'s virtual sleeps and `Clock.adjust`
 (`core/Task.beni:2777`, `:2815`), `Task.timeout`, `platforms/cloudflare/Worker/Object.beni:1076`'s
-`alarmIn` (#2022), and every `Js.to (Js.from x)` between two types (`backend.md` §16.4).
+`alarmIn` (#2022), every `Js.to (Js.from x)` between two types (`backend.md` §16.4), and the runtime
+sites a logging prototype found: in `platforms/browser/Rt.beni`, `reconcile`, `held`, `startPass`,
+`childrenFrom`, `restate` and `bubble` (a host read: `disabled` is `undefined` on a `<div>`, so as
+written every click on a non-control would crash); in `platforms/browser-inline/Inline.beni`, `entry`,
+`assignConst`, and the comment read at `:737`, which casts `Number(data)` to `Int` before it tests
+it. These are found, not finished: the sweep of `backend.md` §16.8 step 2 is what closes the list.
+
+A core function that wraps a host conversion and owns a check uses `Js.cast` there: `round` is `Js.to`
+of `Math.round`, so an exact `Js.to` test would fire first and report "read from JavaScript" where
+§13.6 promises `round`'s own message.
 
 ### 13.10 The owner's decisions of 2026-11-05
 
@@ -3853,6 +3898,52 @@ recommended. They are normative where the sections above use them.
   promises it (`Duration`).
 - **`Html.targetValue : Event → Maybe String`** (#1993): `Nothing` on an element with no string
   `value`.
+- **D7. A value is not generic over what it computes** (#1999's third review): option (a), hold
+  them. §13.11 is the rule.
+- **D8. What a crash stops** (#1994): a scheduler a program makes does not contain a defect; only
+  a platform's per-request or per-object scheduler does. §13.6 defines "stops" per platform:
+  a page, every program of it; Node, the process; a Worker, that request or object. This overrides
+  `core/Task.beni`'s doc comment and `transparent-effects-proposal.md` §17.5.
+- **`Duration.times`** keeps its promised answers on a non-finite factor, as a named row of §13.4.
+  The first draft kept them without saying so. This does not reopen D6.
+
+### 13.11 A value is not generic over what it computes
+
+*Decided by the owner, 2026-11-05 (D7), after the third review of #1999. Specified, not built (#2077);
+it refuses programs that compile today, with a guarantee behind the refusal (rule 7).* Numeric
+evidence (§13.10 D1) goes in a parameter, and a value has none. Today `big = 9007199254740991 + 2`
+serves `asInt : Int` and `asFloat : Float` at once, though it is one evaluation that must crash at
+`Int` and must not at `Float`. Making it a function of its evidence would run its right side at each
+read, which breaks §6's "evaluated once, where written". So this extends the value restriction
+(`checker-v2.md` §8.4):
+
+**The rule.** A **value binding**, at top level or in a block, is a binding with no parameters whose
+right side is not a lambda. Such a binding is generalised over a `number` variable only when its
+right side is **inert** at that variable: built from literals, constructors, record, tuple and list
+literals, and names of inert values. `zero = 0`, `xs = [ 1, 2 ]` and `p = ( zero, Just 1 )` stay
+generic: they compute nothing, and a literal is the same number at both types, so they take no
+evidence. Anything else at the variable **computes**, and the variable is **held**: an operator, a
+call, or a lambda or a generic function anywhere inside the right side, because a function stored in
+a value has nowhere to take evidence either.
+
+- **In a block**, a held variable belongs to the enclosing frame, as a held wanted does. Its uses fix
+  it, and a use at another type is `type_mismatch`, whichever is written first.
+- **At top level**, no frame encloses it and a declaration's group is checked before its users, so
+  it **defaults to `Int` when its group closes**. `asInt = big` type-checks and `big` crashes when
+  it evaluates. `asFloat = big + 0.5` is `type_mismatch`; write `big : Float`. Defaulting at the
+  group and not at the last use keeps the rule that declaration order never changes whether a program
+  checks (`ordering_test.zig`), and keeps a module's interface a function of that module.
+- **`ops = { double = λx → x + x }`** is a value holding a lambda, so its `number` is held:
+  `ops.double 1` and `ops.double 1.5` in one block are `type_mismatch`, and at top level `ops.double`
+  is `Int → Int`. `double = λx → x + x` and `double x = x + x` are function bindings, stay generic and
+  take evidence. A bare name, `f = twice`, is a callable alias of a function, computes nothing, and
+  takes what `twice` takes; `{ f = twice }` is not bare and is held.
+- **An annotation does not lift this.** `big : number` over a right side that computes, or `pick :
+  Maybe number` over `Just (M + 2)`, is `constrained_constant`, the existing refusal of a value that
+  would need evidence. Write `Int` or `Float`.
+- **An unresolved `number` at a monomorphic site means `Int`.** `show (twice 9007199254740991)`, with
+  `show : a → String`, fixes nothing, and evidence is `Int`, so it crashes. This is
+  `static-dispatch-spike.md` §8.6's rule for identities, applied to evidence.
 
 ## Appendix A. The prelude
 

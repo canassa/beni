@@ -13577,11 +13577,11 @@ does not depend on what the comparison answers.
 | `toFloat` | as today | as today: `-0` keeps its sign (D3) |
 | `<`, `≤`, `>`, `≥`, `==`, `≠` at `Float` | the operator | crash if either operand is `NaN`, tested before the operator. This covers `≠`, which answers `true` for `NaN` |
 | the same operators at `Int` | the operator | nothing: a true `Int` is never `NaN` |
-| `compare`, a derived `eq` or `compare` over a `Float`, `List.eq`, `List.compare` | as today | the same operand test at every place a number is compared. Each is a separate lowering path and each needs its test and its fixture: `primitiveOperator` (`src/js/Lower.zig:10131`, `==` and `≠` written in place), `orderOf` (`:9555`, used by `comparePrimDecl` at `:9507` and `compareKeyDecl` at `:9536`), `orderTest` (`:10181`, `≤` and `≥` over an `Order`), the derived comparisons the lowering generates, and `listCompare` in `src/js/derived_runtime.mjs` |
+| `compare`, a derived `eq` or `compare` over a `Float`, `List.eq`, `List.compare` | as today | the same operand test at every place a number is compared. Each is a separate lowering path and each needs its test and its fixture: `primitiveOperator` (`src/js/Lower.zig:10131`, `==` and `≠` written in place), `eqPrimDecl` (`$x === $y`, `(==)` as a value and as evidence), `orderOf` (`:9555`, used by `comparePrimDecl` at `:9507` and `compareKeyDecl` at `:9536`), `orderTest` (`:10181`, `≤` and `≥` over an `Order`), the derived comparisons the lowering generates, and `listCompare` in `src/js/derived_runtime.mjs` |
 | an operator passed as a value: `(<)`, `(==)`, `(≠)`, `(+)` | as today | the same check as the operator, in the function value; under a type variable through §16.3's evidence |
-| a `Float` literal pattern | `===` | the scrutinee is tested for `NaN` before the literal arms |
+| an `int` literal pattern at `Float` or at a `number` variable (there is no float pattern, `language.md` §3) | `===` | the scrutinee is tested with `x !== x` before the literal arms. That test is right at either type, so no evidence is needed |
 | `a // b`, `Int.mod`, `Int.rem`, `Int32.div`, `Int32.rem`, `Int32.mod` | `0` on a zero divisor | crash on a zero divisor. `//` is `Math.trunc(a / b)`, exact for safe operands (`research/111` §7.3) |
-| an indexed read: `Js.at`, `unsafeGet`, `List.at`, `traverseAt` (`Lower.zig:11467`, an `index_get`), and every other `index_get` the lowering writes for a list | a read | crash unless the index `i` is whole and `0 ≤ i < n`, where `n` is the **logical** length of what is read; for a view, `i` is tested against the view's length before its offset is added. The rule is by meaning: a new lowering of an indexed read owes the same test. `Js.at` on a receiver that is not an array is unchanged |
+| an indexed read: `Js.at`, `unsafeGet`, `List.at`, `traverseAt` (`Lower.zig:11467`, an `index_get`), and every other `index_get` the lowering writes for a list | a read | crash unless the index `i` is whole and `0 ≤ i < n`, where `n` is the **logical** length of what is read; for a view, `i` is tested against the view's length before its offset is added. The rule is by meaning: a new lowering of an indexed read owes the same test. It holds for a receiver that is an array or a list view, a view by its logical length. Any other receiver is unchanged. `Js.peek` (`boundary.md` §4.2) is the past-the-end read, and is never tested |
 | `Js.to` at a scalar type, a `case` | an unchecked cast; no default arm | `boundary.md` §4.3 (h) |
 
 `Int32.add`, `sub`, `mul`, `fromInt` and the shifts have no check: they wrap, in every build. A
@@ -13598,9 +13598,11 @@ number → number` have one body today, with no type information: `Main$twice = 
 run time a whole double does not say whether it is an `Int` or a `Float`, so `twice 9007199254740991`
 (must crash) and `twice 1.0e308` (must not) are told apart only by what the compiler knows.
 
-**The rule.** In a checked build, every declaration that is generic over a `number` type variable
-and whose body or callees do arithmetic, a conversion or a comparison at that variable receives
-**numeric evidence**: one hidden discriminator per **independent** `number` variable of its scheme,
+**The rule.** In a checked build, every declaration whose **scheme** is generic over a `number`
+type variable receives **numeric evidence**, whether or not its body uses it. *Corrected 2026-11-05,
+after the third review of #1999 (#2080):* this said "whose body or callees do arithmetic", which made
+the ABI depend on a body, so adding `x + 1` would change what callers emit, defeat the interface
+firewall, and change a `--library` ABI on an internal edit. The evidence is one hidden discriminator per **independent** `number` variable of its scheme,
 saying `Int` or `Float`. Two independent variables are two discriminators, not one: `f : number,
 number2 → …` has four instantiations. The evidence is the existing `number` kind elaborated by the
 compiler; it is not a method a program can name, define or override, and it is not an open type
@@ -13619,7 +13621,14 @@ class.
 - **Order.** Numeric evidence comes in a canonical order beside the existing `where` evidence
   (`static-dispatch-spike.md` §8.6): first the `where` evidence in its order, then one numeric
   discriminator per `number` variable in the order the scheme's variables are numbered, which is
-  input-derived and never depends on thread completion or on the cache.
+  input-derived and never depends on thread completion or on the cache. **Identity parameters
+  (`static-dispatch-spike.md` §8.6) come after all of it**, since that section places them "after
+  its evidence parameters" and numeric evidence is evidence.
+- **Unused evidence.** Reach or a later specialiser may drop a discriminator nothing reads in a closed
+  build, never in a `--library` export.
+- **Values.** A value has no parameter. An inert value takes no evidence and any other value is not
+  generic over `number` (`language.md` §13.11, #2077). An unresolved `number` at a monomorphic site
+  means `Int`, the rule §8.6 already has for identities.
 - **Suspension.** A declaration's `name$s` form (`§4`, *`Js.suspending`*) receives the same evidence
   in the same order. A checked operation can fail, and failing is synchronous: **"may fail" is
   tracked apart from "may suspend"**, so adding a check changes no inferred effect rung and no
@@ -13652,6 +13661,13 @@ before step 4 of §16.8:
 - **The lying `Int`s.** `Basics.append` and `String.append` read strings at `Int` to write `+`
   (`boundary.md` §4.3 (e)). They use a named unchecked `Js` operation, scoped to those two bodies.
   Every other `Js.to (Js.from x)` between two types is read when this lands.
+- **The reads the exact tests refuse** (#2078), from a logging prototype that covered `Js.at` and
+  `Bool` only: `Rt$reconcile`, `held`, `startPass`, `childrenFrom`, `restate` and `bubble` in
+  `platforms/browser/Rt.beni`; `Inline$entry`, `assignConst` and the comment read at `:737` in
+  `platforms/browser-inline/Inline.beni`. Each gets a length test, `Js.peek`, or a host comparison.
+  `Js.cast` is for a representation change only.
+- **A conversion that owns a check** (`round`, `floor`, `ceiling`, `truncate`) uses `Js.cast` on the
+  `Math` result, so its own check reports it and not the `Js.to` test.
 - **Stable implementations**: `Int.mod` (#1992), `degrees`, `toPolar` and the rest of `Basics`'
   `Float` functions (#2021), `Duration` (#1992).
 - **Clocks and deadlines** (#2022): `core/Task.beni:2777` and `:2815`, `Task.timeout`, `Schedule`'s
@@ -13707,13 +13723,13 @@ module, makes every caller "may fail", through interfaces, in the `sync` and the
 rung does not change, and no new effect rung or user restriction follows. A conservative fact is
 enough at first: a call whose callee's failure is unknown may fail. Today's code trusts the rung:
 `src/check/Totality.zig` treats a `foreign pure` callee, `Js.pure` included, as total (`:4`, `:52`)
-and does not look inside an argument lambda (`:91`), and the lowering spends that totality when it
+and skips an argument lambda (`.lambda => continue`, `:85`, in the walk beside the `.call` arm at `:91`), and the lowering spends that totality when it
 decides that markup work may run eagerly (`src/js/Lower.zig`, `instSafeMode`, `valueSafe`,
 `valuePureTotal`). Changing `Operator.pureTotal` alone does not reach a check inside `Js.pure`'s
 callback. **An unread call that may fail is not dropped** in a checked build, however pure its rung. These passes treat
 arithmetic as droppable and movable today, and each must learn that a checked operation is neither:
 `src/Operator.zig` `pureTotal`, with its consumers in `Lower.zig` and `src/check/Totality.zig`;
-`Spec.zig`'s "none of these throws"; `Opt.zig`; §9's *What stays droppable*; `Spec.binary` and the
+every "cannot throw" claim that reads arithmetic as safe (`Spec.zig:3328`, `Opt.zig:1478`, `Lower.zig`'s `valueSafe` comment and the one above `instSafeMode`, `JsIr.zig:750`); §9's *What stays droppable*; `Spec.binary` and the
 pure-call evaluator, which fold `9007199254740991 + 1` to `2⁵³` today and must not fold a check away;
 specialisation and inlining, which must not duplicate or move one; and §8's tail-call assignment
 order (*In place, when nothing captures*), which may reorder two checked operations only when neither
@@ -13736,21 +13752,29 @@ only: range analysis and evidence specialisation are step 6.
     a bounded time, killed by the harness, with what it printed before (`.release-hangs`). The bound
     is the harness's, well under the 120-second hang guard;
   - *mode observation*: a documented difference of `language.md` §13.1, pinned per pass.
-- **Cases owed**, each in both checked builds: an unread `round 1e300` and an unread `Float.log`
-  with a non-finite argument, each through a wrapper function, through a callable alias and across a
+- **Cases owed**, each in both checked builds: an unread **local** `round 1e300` and an unread local
+  `Float.log` with a non-finite argument (a top-level declaration nothing reaches is not emitted, and
+  is not a run, `language.md` §13.8), each through a wrapper function, through a callable alias and across a
   module boundary, in the `sync` and the `$s` form (§16.6, *A checked failure survives `Js.pure`*);
   unused arithmetic that overflows; an intermediate
   overflow whose final result fits (`(M + 2) - 5`); constant evaluation of an overflowing literal
   expression; two failing expressions, where the first written must crash; a tail call whose argument
   assignments both fail; every operator passed as a value; `≠` with `NaN`; a derived comparison, a
-  list comparison and a `Float` literal pattern with `NaN`; arithmetic under one and two `number`
+  list comparison and an `int` literal pattern at `Float` with `NaN`; arithmetic under one and two `number`
   variables, through a function value, a placeholder, recursion and a module boundary; a `--library`
   consumer of a generic export; both the `sync` and the `$s` form of a generic function; the schema
   paths compiled and through the hidden `--schema-library`; JSON text and host-value encoding of
   `NaN`.
+- **Values** (`language.md` §13.11, #2077): `check/bad/` fixtures for a computing value used at two
+  types, at top level, in a block, annotated, and holding a lambda; `run/` fixtures that `zero = 0`
+  and `xs = [ 1, 2 ]` stay generic and that an unresolved `number` crashes as `Int`.
+- **Order** (`language.md` §6): two failing top-level values, two failing modules, and a tree whose
+  two literal tests both meet a `NaN`, each reporting the same crash in both checked builds.
 - **Pages and workers.** A crash in each path of `language.md` §13.6: module load, a plain
-  `Browser.program` fiber, `Tea`, `browser-inline`, a generated property write, in `browser/` under
-  happy-dom and in Chrome (`zig build test-browser`), and in `workers/` under Miniflare.
+  `Browser.program` fiber, `Tea`, `browser-inline`, a generated property write, and **a fiber under a
+  program-made `Task.scheduler`, which stops the page** (#1994), in `browser/` under happy-dom and
+  in Chrome (`zig build test-browser`). In `workers/` under Miniflare, a crash stops that request or
+  that object and the next one is answered.
 - **`--release` changes only by the named baseline repairs** (`language.md` §13.7). Each repair's
   golden changes are reviewed with it; after them, adding a check moves no `emit/release/` golden.
 
@@ -13766,10 +13790,17 @@ guarantee is not. #1985 is a dependency of step 4.
    reviewed baseline change: `Int.mod`, wide `Random.int`, `Duration` (#1992); stable core math
    (#2021); clocks and deadlines (#2022); host reads and arguments (#1993, #1995, #2020); the
    Cloudflare development import (#2019); the browser startup and fiber stop paths (#1994). The literal
-   refusal can land here, as a deliberate source-compatibility change. None of these is called a
-   safe mode.
-3. **The compiler's foundation, internal:** mode plumbing and cache identity; numeric evidence
-   (§16.3); a possibly-throwing operation representation, and a failure fact that survives
+   refusal and the value restriction (`language.md` §13.11, #2077) can land here, as deliberate
+   source-compatibility changes. **Run the exact predicates in logging form across the whole corpus
+   and repair every hit before step 4 (#2078)**: a logging prototype found thousands of hits in
+   `Rt.beni` and `Inline.beni` (`language.md` §13.9), so a builder who skips this finds the whole
+   browser corpus red. These repairs are the named repairs of `language.md` §13.7. None of them is
+   called a safe mode.
+3. **The compiler's foundation, internal:** mode plumbing and cache identity; `Js.checked`, `Js.cast`
+   and `Js.peek` (`boundary.md` §4.2); **a per-site numeric class** for each arithmetic, comparison
+   and conversion call, and **the instantiated type at each `Js.to`**, made by the checker and carried
+   in cached and packed module data (#2079), because `src/Operator.zig` and `Dispatch` have no type
+   today; numeric evidence (§16.3, #2080); a possibly-throwing operation representation, and a failure fact that survives
    `Js.pure`, `foreign pure`, wrappers, callable aliases and module boundaries (§16.6), with
    `Totality.zig` and the lowering's eager-markup tests (`instSafeMode`, `valueSafe`,
    `valuePureTotal`) reading it; totality, dead-binding removal, constant

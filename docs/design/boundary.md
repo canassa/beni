@@ -821,6 +821,15 @@ function a platform receives through `Js.from` — an event handler, a render ca
 `undefined` where a development build returns `null`. A platform's JavaScript never reads what such
 a function returns; a `()` it is handed, and a `()` it returns, may be either.
 
+**`Js.checked`, `Js.cast`, `Js.peek`** (*specified 2026-11-05, not built; #1988, #2079, #2078*), the
+three declarations checked builds add to this module:
+
+| Declaration | Is |
+|---|---|
+| `pub foreign pure checked : ⊤ → bool` | `true` in the development build and under `--release-safe`, `false` under `--release`, written in place as `Js.development` is (§4.3 (f)) |
+| `pub foreign pure cast : returned Value → a` | **`Js.to` to every pass**, with no test in any build (§4.3 (h)) |
+| `pub foreign impure peek : Value, index → Value` | `o[k]` in every build, `undefined` past the end, never bounds-tested: the read that says it may go past the end. `Js.at` is the read that says it does not |
+
 ### 4.3 What crosses the wall in a checked build
 
 *Added 2026-11-05 (the owner's #1988, `language.md` §13). Specified, not built. Revised the same day
@@ -844,7 +853,10 @@ it wants.
 
 **(b) An `Int` read from a host.** A host number read at `Int` is whole and in range by the host's
 specification, or the wrapper tests it with `Number.isSafeInteger`, or the wrapper reads it at
-`Float`. `clientX` is a `Float` for this reason.
+`Float`. `clientX` is a `Float` for this reason. *Amended 2026-11-05, after the third review of
+#1999:* **a `Float` written to a host as a number** is a use as an operand (`language.md` §13.4): the
+wrapper tests that it is finite and crashes, since a host reads `NaN` as `0` with no complaint.
+`Dom.scrollTo` (`platforms/browser/Dom.beni:106`) is the one such public API found.
 
 **(c) An `Int` written to a host.** Every `Int` is in range in a checked build, but a host may take
 less. A wrapper that passes an `Int` to an API that narrows it owns the narrowing: past `2³¹−1`,
@@ -875,7 +887,7 @@ in core as in a program. So core may not write `+` at a type that is false: `cor
 written", and in a checked build that `+` would crash. They use a named unchecked `Js` operation,
 scoped to those bodies (`language.md` §13.9, `backend.md` §16.4).
 
-**(f) `Js.checked`.** `Js.checked ⊤ : bool` is `true` in the development build and under
+**(f) `Js.checked`.** `Js.checked ⊤ : bool` (declared in §4.2) is `true` in the development build and under
 `--release-safe`, and `false` under `--release`, written in place as `Js.development` is, with the
 same dropped arm (`backend.md` §4, *`Js.development` is the build's mode*). `Js.development` keeps
 its meaning, the crash screen's: `true` in the development build only. What every checked build
@@ -912,7 +924,19 @@ too.
   not escaped. `platforms/cloudflare/Worker/Object.beni:1292–1297` is such a read: it casts optional
   error flags (`overloaded`, `durableObjectReset`, `retryable`) to `Bool` and compares with `True`,
   and an absent flag is `undefined`, which the `Bool` test would refuse. It compares with
-  `Js.same … (Js.from True)` on the host value instead.
+  `Js.same … (Js.from True)` on the host value instead. It is **not the only one**: *corrected
+  2026-11-05, after the third review of #1999,* a logging prototype found 3 365 failing `Bool` reads
+  in `platforms/browser/Rt.beni` (`bubble`'s `Js.get node "disabled"` is a host read, `undefined` on a
+  `<div>`, so as written a click on any element with a handler would crash), and
+  `platforms/browser-inline/Inline.beni:737` casts `Number(data)` of any comment to `Int` before it
+  tests it. The tests are right and those sites change. The sweep of `backend.md` §16.8 step 2
+  (#2078) finds them all before any test is on.
+- **`Js.cast` is `Js.to` to every pass**: the value restriction (`checker-v2.md` §8.4,
+  `Generalize.transparent`), the wild set (§4.2's amendment of 2026-10-20), and the ownership row
+  all treat it as `Js.to`. It differs only in having no test. Moving a site to it changes no byte of
+  `--release` output. A pass that misses it reopens #488's dropped flows.
+- **Aliases and opaque types.** The test reads the instantiated type through an alias. An opaque type,
+  such as `Duration`, is not read through and stays trusted, as a record's fields do.
 - **What stays trusted**, said plainly: this defence is **partial**. It does not test a record's
   fields or a constructor's payload at a cast, a `Js.to` instantiated at a type variable or a
   function type, a list's elements, or a value a match never inspects (an irrefutable pattern, a
@@ -3702,6 +3726,9 @@ the branch the build takes, in reachability and in lowering.
   included, and every place a program's code or the code the markup lowering generates runs: module
   load, `init`, `update`, `view`, a handler, a render's patch and its generated property writes (a
   file input's `value` throws `InvalidStateError` there today, #2020), after-render work and a fiber.
+  A fiber under a program-made `Task.scheduler` is a third path that misses them today (#1994): it
+  stops that scheduler and leaves the page running. *Decided by the owner, 2026-11-05:* such a
+  scheduler contains nothing, and a defect under it stops the page (`language.md` §13.6).
   `platforms/browser-inline/Inline.beni`'s `prop` (around `:451–482`) and the Zig lowering's property
   writes are audited with `Rt.beni`'s host wrappers. The Cloudflare development build of a Worker
   with a Durable Object does not start today (`ReferenceError: Rt$$cloudflare_workers is not
@@ -7751,7 +7778,9 @@ pub type ServiceError = Unavailable            -- `retryable` is true: the call 
   a Worker. It is prose here and no declaration, so the module is declared once.
 - **One scheduler and one scope per request.** Each request runs on its own scheduler
   (`Task.withScheduler`, #596) and in its own scope, so a fiber never resumes in another request's
-  I/O context — the measured hazard below cannot arise — and a defect fails only its own request:
+  I/O context — the measured hazard below cannot arise — and a defect fails only its own request
+  (*amended 2026-11-05, `language.md` §13.6:* this is what "stops" means on a Worker, a request or
+  an object, and only a platform's `Task.schedulerWith` scheduler contains a defect):
   the throw leaves the request's drain, the host answers the client with 1101, the request's scope
   is closed (its fibers cancelled, their finalisers run), and no other request is touched. **The
   Worker slice therefore depends on #596** before it can be built.
