@@ -14135,6 +14135,10 @@ test "a root plan uses the normalized empty fragment and refuses a two-child fra
     // root. The fragment must keep the general range insertion/removal path.
     try testing.expect(std.mem.indexOf(u8, empty_js, ".nextSibling") == null);
     try testing.expect(std.mem.indexOf(u8, fragment_js, ".nextSibling") != null);
+    // Only the planned page spends closed literal-array representation facts.
+    // The ordinary multi-node path keeps its original List dispatch.
+    try testing.expect(std.mem.indexOf(u8, empty_js, "Array.isArray") == null);
+    try testing.expect(std.mem.indexOf(u8, fragment_js, "Array.isArray") != null);
 }
 
 test "a proved root selector retains an unread factory's real effect" {

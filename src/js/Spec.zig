@@ -3729,6 +3729,7 @@ const Spec = struct {
             const st = &s.pts.sites.items[site];
             if (st.kind != .array or st.escaped or st.any_written or st.prog_any or st.prog_props.items.len != 0) return null;
             const ir = s.mods[st.module].ir;
+            if (ir.tag(st.node) != .array) return null;
             const n: u32 = @intCast(ir.extraSlice(JsIr.inlineRange(ir.data(st.node)), Index).len);
             if (length) |old| {
                 if (old != n) return null;
@@ -4091,6 +4092,32 @@ const Spec = struct {
     fn globalOfDecl(s: *Spec, d: Decl) u32 {
         const m = &s.mods[d.module];
         return m.globalOf(@fromBackingInt(@intCast(m.ir.data(d.stmt).lhs))).?;
+    }
+
+    /// Spend the same closed literal-array sites the root proof already uses.
+    /// Only a name can replace the generated reader: evaluating it is inert.
+    fn foldRootListRead(s: *Spec, m: *Mod, node: Index) Allocator.Error!bool {
+        if (!s.in.root_proof or !s.pts.ok) return false;
+        const input_ = rootListInput(m.ir, node) orelse return false;
+        if (m.ir.tag(input_) != .ident or input_.int() >= s.pts.vals[m.index].len) return false;
+        const value = s.pts.vals[m.index][input_.int()];
+        if (!rootSites(value)) return false;
+        for (value.sites) |site| {
+            try s.readsSite(site);
+            const st = s.pts.sites.items[site];
+            if (st.kind != .array or st.escaped or st.any_written or st.prog_any or st.prog_props.items.len != 0) return false;
+            if (s.mods[st.module].ir.tag(st.node) != .array) return false;
+        }
+        const mode = m.ir.nodes.items(.flags)[node.int()].array_model;
+        if (mode == .base) {
+            try m.foldTo(s.gpa, node, input_);
+            m.memo[node.int()] = m.memo[input_.int()];
+        } else {
+            const zero = try s.number(0);
+            _ = try s.patchLiteral(m, node, zero, false);
+            m.memo[node.int()] = zero;
+        }
+        return true;
     }
 
     /// A literal node's value; ⊤ for anything else. A module-level
@@ -4956,6 +4983,10 @@ const Spec = struct {
             if (tag == .arrow) {
                 const f = ir.extraData(@fromBackingInt(@intCast(ir.data(node).lhs)), JsIr.Func);
                 for (ir.extraSlice(f.body(), Index)) |b| try JsIr.pushOperand(s.arena, &stack, b);
+                continue;
+            }
+            if (try s.foldRootListRead(m, node)) {
+                any = true;
                 continue;
             }
             // Fact 3: a key no reachable read reaches goes from its
@@ -21910,4 +21941,29 @@ test "root node proof refuses a helper mixing nodes with primitive or nullish re
         try testing.expectEqual(@as(u3, 1), s.pts.vals[0][invoke.int()].native());
         try testing.expect(!try rootConcreteNode(&s, 0, outer, names[6]));
     }
+}
+
+test "root array length refuses constructed array sites" {
+    const gpa = testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    const name = try b.intern(.local(@fromBackingInt(0)));
+    const receiver = try b.addParts(.ident, Node.no_pos, name.int(), 0);
+    const args = try b.addRecord(try b.addRange(&.{}));
+    const made = try b.addParts(.new_call, Node.no_pos, receiver.int(), @backingInt(args));
+    const items = try b.addRange(&.{receiver});
+    const literal = try b.addParts(.array, Node.no_pos, @backingInt(items.start), @backingInt(items.end));
+    var ir = try b.toOwned(try b.addRange(&.{}));
+    defer ir.deinit(gpa);
+    const modules = [_]Module{.{ .ir = &ir, .global = &.{none} }};
+    var s: Spec = try .init(gpa, arena.allocator(), .{ .modules = &modules, .globals = 0, .escaping = &.{}, .root_proof = true });
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    defer s.finish() catch @panic("out of memory");
+    try s.pts.sites.append(s.pts.tmp.allocator(), .{ .kind = .array, .module = 0, .node = made, .any = none });
+    try testing.expectEqual(@as(?Lat, null), try s.arrayLength(&s.mods[0], receiver, .{ .sites = &.{0} }));
+    s.pts.sites.items[0].node = literal;
+    try testing.expectEqual(try s.number(1), (try s.arrayLength(&s.mods[0], receiver, .{ .sites = &.{0} })).?);
 }
