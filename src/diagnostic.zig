@@ -518,6 +518,11 @@ pub const Code = enum {
     /// specifier is not a string literal naming a `node:` or `cloudflare:`
     /// built-in. The checker's, at the argument.
     invalid_js_module,
+    /// Appended on 2026-11-05 with the typed `srcdoc` of `html` (the
+    /// owner's decision, `language.md` §11.5): an element that writes the
+    /// typed `srcdoc` without a constant `sandbox` free of the token
+    /// `allow-same-origin`. The checker's, at the `srcdoc` name.
+    srcdoc_without_sandbox,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -728,6 +733,7 @@ pub fn title(code: Code) []const u8 {
         .invalid_entry_export => "INVALID ENTRY EXPORT",
         .exports_ignored => "EXPORTS IGNORED",
         .invalid_js_module => "INVALID HOST MODULE",
+        .srcdoc_without_sandbox => "SRCDOC WITHOUT A SAFE SANDBOX",
     };
 }
 

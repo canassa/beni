@@ -938,8 +938,10 @@ pub attribute "src" url on "audio" "embed" "iframe" "img" "input" "source" "trac
 --| as far as the frame's `sandbox` lets it. The text is an attribute
 --| value, so it never becomes markup of this page. Without a `sandbox`, or
 --| with `allow-same-origin` in it, the frame has this page's origin, and
---| its scripts can read and change this page. Write a constant `sandbox`
---| without `allow-same-origin`: the frame's origin is then opaque.
+--| its scripts can read and change this page. So the element must also
+--| have a constant `sandbox` without `allow-same-origin`, and the checker
+--| refuses anything else (`srcdoc_without_sandbox`). The frame's origin is
+--| then opaque.
 pub attribute "srcdoc" on "iframe" : String
 
 

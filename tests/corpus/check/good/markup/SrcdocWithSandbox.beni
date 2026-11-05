@@ -1,0 +1,18 @@
+-- A typed `srcdoc` checks when the same element writes a constant
+-- `sandbox` without the token `allow-same-origin` (language.md §11.5): an
+-- empty one; other tokens, in any case and spacing; a token that only
+-- begins with `allow-same-origin`; a string literal in a hole; and the
+-- quoted escape `"sandbox"`. Attribute order does not matter.
+import Html exposing (Html)
+
+
+pub view : String → Html msg
+view page =
+    <div>
+        <iframe sandbox="" srcdoc={page} />
+        <iframe srcdoc={page} sandbox="allow-scripts" />
+        <iframe sandbox="  ALLOW-Scripts  allow-popups " srcdoc={page} />
+        <iframe sandbox="allow-same-origins" srcdoc={page} />
+        <iframe sandbox={"allow-forms"} srcdoc="<p>x</p>" />
+        <iframe "sandbox"="allow-scripts" srcdoc={page} />
+    </div>

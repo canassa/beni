@@ -308,6 +308,7 @@ pub fn fault(s: *Solve, region: Bir.Inst.Index, f: Tree.MarkupFault) Error!void 
         .raw_attribute => if (s.informational) try MarkupTexts.rawAttribute(s.report, region, f.token, f.name),
         .event_escape => try MarkupTexts.eventEscape(s.report, region, f.token, f.name, try vocab.eventsLike(s.cx.scratch, s.cx.interner.slice(f.name), f.tag)),
         .srcdoc_escape => try MarkupTexts.srcdocEscape(s.report, region, f.token, f.name),
+        .srcdoc_no_sandbox, .srcdoc_sandbox_dynamic, .srcdoc_sandbox_same_origin => try MarkupTexts.srcdocWithoutSandbox(s.report, region, f.token, f.name, f.kind),
         .quoted_value, .bare_value => try MarkupTexts.valueForm(s.report, region, f.token, f.name, f.kind == .quoted_value, @fromBackingInt(@intCast(f.type))),
     }
 }
