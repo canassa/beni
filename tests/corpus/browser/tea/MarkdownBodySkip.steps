@@ -1,0 +1,7 @@
+# Typing changes the draft, not the body: the body is not parsed again.
+input #comment "a"
+input #comment "ab"
+# A new body is parsed once.
+click #next
+# Typing again does not parse the new body again.
+input #comment "abc"

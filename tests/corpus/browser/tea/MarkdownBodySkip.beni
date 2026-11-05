@@ -1,0 +1,53 @@
+-- `Html.Markdown` in a page whose `view` re-runs on each keystroke, as
+-- Conduit's article page does (examples/conduit/src/Article.beni,
+-- docs/design/markdown.md §8). The body renders through a top-level helper
+-- in a hole, so the helper is not called again while its argument is the
+-- same string (language.md §11.6): typing in the comment box does not parse
+-- the body again. `Debug.log` in the helper shows each parse. A new body
+-- parses once.
+import Html exposing (Html)
+import Html.Markdown
+import Tea
+
+
+type Msg
+    = Typed String
+    | Next
+
+
+type alias Model =
+    draft : String
+    body : String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Typed text →
+            { model | draft = text }
+
+        Next →
+            { model | body = "## Next\n\nA *new* body." }
+
+
+body : String → Html msg
+body markdown =
+    <div class="article-content">{Html.Markdown.fromString (Debug.log "parse" markdown)}</div>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        {body model.body}
+        <textarea id="comment" value={model.draft} onInput={Typed} />
+        <button id="next" onClick={Next}>next</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { draft = "", body = "# Training\n\nIt takes a **Jacobian**." }
+        , update = update
+        , view = view
+        }
