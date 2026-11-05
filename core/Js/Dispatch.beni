@@ -66,6 +66,27 @@ read callback raw project =
                     (Js.read failure) ⊤
 
 
+-- Native observers call a sender that already queues dispatch. Avoid a second turn.
+-- Synchronous callbacks restore running before returning, so it also marks success.
+pub observe : sync (a → ⊤), b, sync (b → a) → ⊤
+observe callback raw project =
+    if not (Js.read dead) then
+        nested = Js.read running
+        Js.write running True
+        Js.finally
+            (λ⊤ →
+                callback (project raw)
+                if not nested then drain ⊤
+                Js.write running False
+            )
+            λ⊤ →
+                failed = Js.read running
+                Js.write running nested
+                if failed then
+                    stop ⊤
+                    (Js.read failure) ⊤
+
+
 drain : ⊤ → ⊤
 drain ⊤ =
     if not (Js.read dead) then

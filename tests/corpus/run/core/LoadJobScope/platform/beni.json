@@ -1,0 +1,22 @@
+{
+  "platform": true,
+  "name": "load-job-scope",
+  "platforms": [
+    "browser-inline"
+  ],
+  "program": "Probe.Program",
+  "entryHost": "window",
+  "entryKinds": [
+    {
+      "programType": "Probe.Program",
+      "realm": "window",
+      "runtime": "Probe",
+      "constructors": [],
+      "launches": [],
+      "parameters": []
+    }
+  ],
+  "reexports": [
+    "Inline.Load"
+  ]
+}

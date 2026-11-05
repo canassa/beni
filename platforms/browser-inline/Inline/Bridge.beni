@@ -1,0 +1,5 @@
+-- Compiler-owned dev-only duplicate-root marker, private to this layer.
+import Browser.Host.Element as Element
+
+
+pub foreign impure markRoot : borrowed Element.Element → Bool

@@ -1,0 +1,2 @@
+-- A module name does not grant compiler-owned foreign coverage.
+pub foreign pure markRoot : returned Int → Int

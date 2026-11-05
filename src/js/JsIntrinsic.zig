@@ -87,6 +87,7 @@ pub const Which = enum {
     cellWrite,
     none,
     some,
+    inlineMarkRoot,
     browserBlock,
     browserInstallRoot,
     browserInstallFuzz,
@@ -268,6 +269,11 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
     const d = bir.instData(inst);
     const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
     if (module.int() >= interfaces.len) return null;
+    if (graph.isInline(module) and same(interner.slice(graph.moduleName(module)), "Inline.Bridge")) {
+        const iface_ = &interfaces[module.int()];
+        if (d.rhs >= iface_.values.len) return null;
+        return if (same(interner.slice(iface_.symbols[@backingInt(iface_.values[d.rhs].name)]), "markRoot")) .inlineMarkRoot else null;
+    }
     if (graph.isBrowser(module) and same(interner.slice(graph.moduleName(module)), "Browser.Bridge")) {
         const iface_ = &interfaces[module.int()];
         if (d.rhs >= iface_.values.len) return null;
@@ -306,7 +312,7 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
 /// does not change the sibling copied by an existing development program.
 pub fn compilerOnly(which: Which) bool {
     return switch (which) {
-        .any_unpack_opt, .browserBlock, .browserInstallRoot, .browserInstallFuzz, .kernelPack, .kernelRead, .schemaIdentity, .arrayAllocate, .arraySet, .arrayDone, .arrayGet, .arrayLength, .arrayWrite, .arraySort, .optNone, .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
+        .any_unpack_opt, .inlineMarkRoot, .browserBlock, .browserInstallRoot, .browserInstallFuzz, .kernelPack, .kernelRead, .schemaIdentity, .arrayAllocate, .arraySet, .arrayDone, .arrayGet, .arrayLength, .arrayWrite, .arraySort, .optNone, .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
         else => false,
     };
 }

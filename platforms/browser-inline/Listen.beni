@@ -5,28 +5,17 @@
 --! it is dispatched, inside the dispatch guard, so what it carried is not
 --! read late and a reader that throws stops the page.
 
+import Browser.Host.Document as HostDocument
+import Browser.Host.Event as HostEvent
+import Browser.Host.Window as HostWindow
 import Inline
-import Js
 
 
---| Add a listener for every event named `name` on `target` (`"window"` or
---| `"document"`) that calls `send (read event)` while the event is
---| dispatched, and return what removes it.
-pub on : String, String, sync (Js.Value → a), sync (a → ⊤) → (⊤ → ⊤)
+--| Read each native event inside dispatch, and return its exact remover.
+pub on : String, String, sync (HostEvent.Event → a), sync (a → ⊤) → (⊤ → ⊤)
 on target name read send =
-    host = Js.global target
-    -- The read is program code, and it runs while the event is dispatched,
-    -- inside a dispatch guard: in the one running when the event fires in
-    -- it, where only the send of what it read is queued, else in one it
-    -- starts. A throw in it stops the page; once the page has stopped it
-    -- does not run.
-    handler = Js.from λevent →
-        if Inline.stopped ⊤ then
-            ⊤
-        else if Inline.busy ⊤ then
-            -- `send` enters the guard, which queues it.
-            send (read event)
-        else
-            Inline.send (Js.from λdispatched → send (read dispatched)) event Js.undefined
-    _ = Js.call host "addEventListener" [ Js.from name, handler ]
-    λ⊤ → Js.to (Js.call host "removeEventListener" [ Js.from name, handler ])
+    handler = λevent → Inline.observe send event read
+    if target == "window" then
+        HostWindow.listen name handler
+    else
+        HostDocument.listen name handler

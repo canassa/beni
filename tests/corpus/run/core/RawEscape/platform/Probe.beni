@@ -1,0 +1,17 @@
+-- Test-only closed stdout job for the window platform, run under Node.
+-- The private constructor admits only this synchronous printing body.
+import Js
+import Js.Protocol as Protocol
+
+
+pub opaque type Program
+    = Program (⊤ → ⊤)
+
+
+pub printLines : List String → Program
+printLines lines = Program λ⊤ →
+    List.foldl lines ⊤ λline _ → Js.to (Js.call (Js.global "console") "log" [ Js.from line ])
+
+
+pub run : Program → ⊤
+run (Program job) = Protocol.call job ⊤

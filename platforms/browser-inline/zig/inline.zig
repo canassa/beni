@@ -44,13 +44,26 @@ pub const lowering: m.Lowering = .{
         // `(f, x, read)`: the dispatch guard, which every entry into program
         // code goes through; `read`, an event's `via` extractor, is called
         // first, even when the send waits (boundary.md §9.8.20 (d), #559).
-        .{ .name = "send", .arity = 3 },
         .{ .name = "guarded", .arity = 3 },
         .{ .name = "unchanged", .arity = 1 },
         // `(f)`: what undoes the mount, run once by `stop`.
         .{ .name = "own", .arity = 1 },
         // `(id)`: the element a program mounts at.
         .{ .name = "root", .arity = 1 },
+        .{ .name = "client", .arity = 1 },
+        .{ .name = "tree", .arity = 1 },
+        .{ .name = "defaultRoot", .arity = 1 },
+        .{ .name = "namedRoot", .arity = 1 },
+        .{ .name = "ssrRender", .arity = 3 },
+        .{ .name = "ssrRoutes", .arity = 1 },
+        .{ .name = "requestRoute", .arity = 1 },
+        .{ .name = "requestText", .arity = 1 },
+        .{ .name = "decodedOk", .arity = 1 },
+        .{ .name = "decodedValue", .arity = 1 },
+        .{ .name = "decodedIssues", .arity = 1 },
+        .{ .name = "invalid", .arity = 2 },
+        .{ .name = "rendered", .arity = 1 },
+        .{ .name = "renderedDocument", .arity = 2 },
         // `(⊤)`: the page's unmount (`boundary.md` §9.4.5).
         .{ .name = "stop", .arity = 1 },
         // Modifier effects must also be inert on host-retained stopped nodes.
@@ -80,25 +93,11 @@ pub const lowering: m.Lowering = .{
         // `(rows, elements, from, table, at)`: a run of roots mounted
         // through one table (§8.4, amended 2026-10-24).
         .{ .name = "roots", .arity = 1 },
-        // The pushed-state loader (§8.4, amended 2026-10-22 and 2026-10-24):
-        // `(model, table, key, raw)` a keyed route, `(model, rows, raws)`
-        // routes in turn; the `…Planned` pair for rows with copy plans, and
-        // the `…Shaped` ones for rows that may hold a shape, which take
-        // `validShape` last.
-        .{ .name = "load", .arity = 4 },
-        .{ .name = "loadAll", .arity = 3 },
-        .{ .name = "loadPlanned", .arity = 4 },
-        .{ .name = "loadAllPlanned", .arity = 3 },
-        .{ .name = "loadShaped", .arity = 5 },
-        .{ .name = "loadAllShaped", .arity = 4 },
-        .{ .name = "loadShapedPlanned", .arity = 5 },
-        .{ .name = "loadAllShapedPlanned", .arity = 4 },
-        // The `…Const` ones for shape rows that may hold constants (§8.4,
-        // amended 2026-10-24, #946).
-        .{ .name = "loadShapedConst", .arity = 5 },
-        .{ .name = "loadAllShapedConst", .arity = 4 },
-        .{ .name = "loadShapedPlannedConst", .arity = 5 },
-        .{ .name = "loadAllShapedPlannedConst", .arity = 4 },
+        .{ .name = "loadJob", .arity = 1 },
+        .{ .name = "loadDecoded", .arity = 2 },
+        .{ .name = "keyedLoads", .arity = 1 },
+        .{ .name = "runLoad", .arity = 3 },
+        .{ .name = "runKeyed", .arity = 4 },
         // The string form (`prerender.md` §4.3): a text as an element's
         // content holds it, one in a `pre`, a `textarea` or a `listing`, and
         // an attribute's value, quoted.
@@ -1394,8 +1393,8 @@ const Page = struct {
         // handed. A constant argument is one a release build folds into
         // `root`.
         const which = switch (pg.p.placed) {
-            .at => |text_| try js.string(text_),
-            .body => try js.literal(.undefined),
+            .at => |text_| try js.call(try js.name(try cx.runtime("namedRoot")), &.{try js.string(text_)}),
+            .body => try js.call(try js.name(try cx.runtime("defaultRoot")), &.{try js.literal(.null)}),
             else => try js.name(id),
         };
         try js.constant(body, at, try js.call(try js.name(try cx.runtime("root")), &.{which}));
@@ -1412,7 +1411,7 @@ const Page = struct {
             const d = try cx.fresh("data");
             const schema = try cx.programDataSchema(body);
             try js.constant(body, d, try js.call(try js.name(try cx.runtime("pageData")), &.{ schema, try js.name(at) }));
-            try cx.programDataBind(body, try js.index(try js.name(d), try js.number("1")));
+            try cx.programDataBind(body, try js.member(try js.name(d), "b"));
             break :blk d;
         } else null;
         // An application's `init` is handed the page's address and key
@@ -1423,7 +1422,7 @@ const Page = struct {
         const init = if (pg.p.constructor == 3) blk: {
             const address = if (data) |d| a: {
                 const u = try cx.fresh("url");
-                try js.constant(body, u, try js.call(try js.name(try cx.runtime("routeUrl")), &.{ try js.string(cx.build.address), try js.index(try js.name(d), try js.number("0")) }));
+                try js.constant(body, u, try js.call(try js.name(try cx.runtime("routeUrl")), &.{ try js.string(cx.build.address), try js.member(try js.name(d), "a") }));
                 pg.route_url = u;
                 break :a try js.name(u);
             } else if (pg.hydrating) a: {
@@ -1842,7 +1841,7 @@ const Page = struct {
         if (pg.taking) try js.expression(body, try js.call(try js.name(try cx.runtime("deliver")), &.{
             try js.index(try js.name(pg.elements.?), try js.number("0")),
         }));
-        return js.arrow(&.{id}, body);
+        return js.call(try js.name(try cx.runtime("client")), &.{try js.arrow(&.{id}, body)});
     }
 
     // ---- Hydration (`prerender.md` §6) ----------------------------------
@@ -1891,19 +1890,23 @@ const Page = struct {
         if (pg.top_nodes.len == 0 or pg.top_nodes[0].kind != .element or pg.top_nodes[0].ctx != 0)
             return later(cx, view_node, "a prerendered page of a `view` whose top-level node is not one element of its own; it does not prerender it");
         const body = try js.block();
+        const request = try cx.fresh("request");
         const route = try cx.fresh("route");
+        try js.constant(body, route, try js.call(try js.name(try cx.runtime("requestRoute")), &.{try js.name(request)}));
         // A program of each page's value renders from the value its schema
         // decodes from the page's text (`prerender.md` §8.5 item 5), or gives
         // the issues, `{ issues }`, and renders nothing.
         const text: ?m.Name = if (pg.p.data) blk: {
             const t = try cx.fresh("text");
             const d = try cx.fresh("data");
+            try js.constant(body, t, try js.call(try js.name(try cx.runtime("requestText")), &.{try js.name(request)}));
             const schema = try cx.programDataSchema(body);
             try js.constant(body, d, try js.call(try js.name(try cx.runtime("decoded")), &.{ schema, try js.name(t) }));
             const failed = try js.block();
-            try js.@"return"(failed, try js.name(d));
-            try js.@"if"(body, try js.member(try js.name(d), "issues"), failed, null);
-            try cx.programDataBind(body, try js.member(try js.name(d), "value"));
+            const issues = try js.call(try js.name(try cx.runtime("decodedIssues")), &.{try js.name(d)});
+            try js.@"return"(failed, try js.call(try js.name(try cx.runtime("invalid")), &.{ try js.name(request), issues }));
+            try js.@"if"(body, try js.unary(.not, try js.call(try js.name(try cx.runtime("decodedOk")), &.{try js.name(d)})), failed, null);
+            try cx.programDataBind(body, try js.call(try js.name(try cx.runtime("decodedValue")), &.{try js.name(d)}));
             break :blk t;
         } else null;
         // An application's `init` is handed its route's `Url`, made from the
@@ -1929,8 +1932,8 @@ const Page = struct {
         var r: Render = .{ .pg = pg, .out = try cx.fresh("html"), .route = route };
         try r.unit(body, title);
         cx.programViewLeave();
-        if (text) |t| return js.arrow(&.{ route, t }, body);
-        return js.arrow(&.{route}, body);
+        _ = text;
+        return js.call(try js.name(try cx.runtime("tree")), &.{try js.arrow(&.{request}, body)});
     }
 
     /// What a key's handler is refused by (§8.7): an `update` computed when
@@ -3255,7 +3258,15 @@ const Render = struct {
         try r.enter(blk, 0);
         try r.nodes(blk, r.pg.top_nodes, 0);
         try r.flush(blk);
-        try js_.@"return"(blk, if (title) |t| try js_.array(&.{ try js_.name(r.out), try js_.name(t) }) else try js_.name(r.out));
+        // Pieces are nested string renderers; only a complete page constructs
+        // the typed SSR result consumed by the wire adapter.
+        const returned = if (r.route == null)
+            try js_.name(r.out)
+        else if (title) |t|
+            try js_.call(try js_.name(try r.pg.cx.runtime("renderedDocument")), &.{ try js_.name(r.out), try js_.name(t) })
+        else
+            try js_.call(try js_.name(try r.pg.cx.runtime("rendered")), &.{try js_.name(r.out)});
+        try js_.@"return"(blk, returned);
     }
 
     /// Context `c` entered: the `let`s of its root that anything written in

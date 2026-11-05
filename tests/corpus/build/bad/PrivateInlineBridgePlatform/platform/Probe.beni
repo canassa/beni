@@ -1,0 +1,9 @@
+import Browser
+import Inline.Bridge as Bridge
+import Tea
+
+
+pub page : Browser.Program
+page =
+    _ = Bridge.markRoot
+    Tea.sandbox { init = λ⊤ → {}, update = λ_ model → model, view = λ_ → <></> }

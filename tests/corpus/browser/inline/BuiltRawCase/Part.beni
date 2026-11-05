@@ -1,0 +1,15 @@
+import Html
+import Json
+import Schema exposing (Value)
+
+
+pub type alias Model =
+    value : Int
+
+
+pub replace : Value, Model → Model
+replace raw model = Result.withDefault (Json.decodeValue raw) model
+
+
+pub view : Model → Html.Html msg
+view model = <section><output>{model.value}</output></section>

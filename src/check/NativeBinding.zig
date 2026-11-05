@@ -517,13 +517,14 @@ pub fn valid(cx: *const Context, row: Operations.Row, v: Var) bool {
         .math_random => a.len == 1 and unit(cx, a[0]) and named(cx, r, "Basics", "Float"),
 
         .document => a.len == 1 and unit(cx, a[0]) and native(cx, r, "Document"),
-        .query_selector => blk: {
-            if (a.len != 2 or !native(cx, a[0], "Document") or !named(cx, a[1], "String", "String")) break :blk false;
+        .query_selector, .element_query => blk: {
+            if (a.len != 2 or !native(cx, a[0], if (row.recipe == .element_query) "Element" else "Document") or !named(cx, a[1], "String", "String")) break :blk false;
             const error_type = argument(cx, r, "Result", "Result", 0) orelse break :blk false;
             const result = argument(cx, r, "Result", "Result", 1) orelse break :blk false;
             const element = argument(cx, result, "Maybe", "Maybe", 0) orelse break :blk false;
-            break :blk named(cx, error_type, "Browser.Host.Document", "QueryError") and native(cx, element, "Element");
+            break :blk named(cx, error_type, if (row.recipe == .element_query) "Browser.Host.Element" else "Browser.Host.Document", "QueryError") and native(cx, element, "Element");
         },
+        .element_get_attribute => a.len == 2 and native(cx, a[0], "Element") and named(cx, a[1], "String", "String") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |text| named(cx, text, "String", "String") else false),
         .text_content => a.len == 1 and native(cx, a[0], "Node") and (if (argument(cx, r, "Maybe", "Maybe", 0)) |text| named(cx, text, "String", "String") else false),
         .set_text_content => a.len == 2 and native(cx, a[0], "Node") and named(cx, a[1], "String", "String") and unit(cx, r),
         .identity => a.len == 1 and native(cx, a[0], "Element") and native(cx, r, "Node"),

@@ -116,6 +116,7 @@ cycle_members: []const Index,
 sees: []const u64 = &.{},
 cloudflare_layer: ?u8 = null,
 browser_owner: ?Index = null,
+inline_owner: ?Index = null,
 /// The markup vocabulary the chain names (`boundary.md` §9.2), resolved.
 markup: Markup = .{},
 /// Set during the existing name-index build; no native pass on ordinary builds.
@@ -174,7 +175,9 @@ pub const Platforms = struct {
     /// platform it depends on, transitively.
     sees: []const u64 = &.{},
     cloudflare_layer: ?u8 = null,
-    browser_layer: ?u8 = null,
+    browser_runtime: ?RuntimeOwner = null,
+    inline_runtime: ?RuntimeOwner = null,
+
     /// The `"reexports"` of every package of the chain.
     reexports: []const Reexport = &.{},
     /// Whether the run has a platform at all.
@@ -191,6 +194,8 @@ pub const Platforms = struct {
     lowerings: []const ?[]const u8 = &.{},
     /// Selected lowering capabilities, known before lazy source discovery.
     operand_evidence: u8 = 0,
+
+    pub const RuntimeOwner = struct { layer: u8, module: []const u8 };
 
     pub const Reexport = struct {
         /// The module name as the manifest spells it.
@@ -485,17 +490,8 @@ pub fn build(
     }
     g.rows = try rows.toOwnedSlice(gpa);
     g.modules = modules.toOwnedSlice();
-    if (platforms.browser_layer) |layer| {
-        for (0..g.modules.len) |i| {
-            const index: Index = @fromBackingInt(@intCast(i));
-            if (g.modulePackage(index) == .platform and g.modules.items(.layer)[i] == layer and
-                std.mem.eql(u8, interner.slice(g.moduleName(index)), "Browser"))
-            {
-                g.browser_owner = index;
-                break;
-            }
-        }
-    }
+    g.browser_owner = g.markupBridgeOwner(interner, platforms.browser_runtime);
+    g.inline_owner = g.markupBridgeOwner(interner, platforms.inline_runtime);
     g.markup = try resolveMarkup(&g, gpa, artifacts, interner, platforms);
 
     // 2. Edges: one per import the module uses, then one per module that
@@ -1450,7 +1446,23 @@ pub fn samePlatformLayer(g: *const Graph, a: Index, b: Index) bool {
 }
 
 /// The browser bridge belongs to the loaded browser layer, not its spelling.
+fn markupBridgeOwner(g: *const Graph, interner: *const InternPool.Global, owner: ?Platforms.RuntimeOwner) ?Index {
+    const selected = owner orelse return null;
+    for (0..g.modules.len) |i| {
+        const m: Index = @fromBackingInt(@intCast(i));
+        if (g.modulePackage(m) == .platform and g.modules.items(.layer)[i] == selected.layer and
+            std.mem.eql(u8, interner.slice(g.moduleName(m)), selected.module)) return m;
+    }
+    return null;
+}
+
 pub fn isBrowser(g: *const Graph, m: Index) bool {
     const owner = g.browser_owner orelse return false;
+    return g.samePlatformLayer(m, owner);
+}
+
+/// Only the registered inline runtime layer owns its marker bridge.
+pub fn isInline(g: *const Graph, m: Index) bool {
+    const owner = g.inline_owner orelse return false;
     return g.samePlatformLayer(m, owner);
 }

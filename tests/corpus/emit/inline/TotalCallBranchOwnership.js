@@ -1,7 +1,7 @@
-import { Inline$root, Inline$own, Inline$when, Inline$text, Inline$entry, Inline$passes, Inline$on, Inline$first } from "./_platform/Inline.mjs";
+import { Inline$namedRoot, Inline$root, Inline$own, Inline$bucket, Inline$when, Inline$text, Inline$entry, Inline$passes, Inline$unchanged, Inline$guarded, Inline$first, Inline$client } from "./_platform/Inline.mjs";
 import { List$push } from "./_core/List.mjs";
-const TotalCallBranchOwnership$main = ($id$1) => {
-  const $root$2 = Inline$root("root");
+const TotalCallBranchOwnership$main = Inline$client(($id$1) => {
+  const $root$2 = Inline$root(Inline$namedRoot("root"));
   const $init$3 = false;
   let $model$4 = $init$3;
   $root$2.insertAdjacentHTML("beforeend", "<main><section data-arm=left><p></section><section data-arm=right><p></section><button>Toggle");
@@ -10,7 +10,7 @@ const TotalCallBranchOwnership$main = ($id$1) => {
     $node$5.remove();
   });
   const $elements$6 = $node$5.querySelectorAll("*");
-  const $table$7 = [[[], []]];
+  const $table$7 = [[Inline$bucket(null), Inline$bucket(null)]];
   Inline$entry(() => {
     let $arm$9;
     let $value$11;
@@ -46,14 +46,18 @@ const TotalCallBranchOwnership$main = ($id$1) => {
     if ($selected$17) {
       Inline$text($elements$6[3], $value$20);
     }
-  }, $table$7[0][1]);
-  Inline$on($elements$6[4], () => {
+  }, [$table$7[0][1]]);
+  const $listener$23 = () => {
     const $value$21 = "Toggle";
     const $before$22 = $model$4;
     $model$4 = !$before$22;
     Inline$passes($table$7[0]);
+  };
+  const $reader$24 = Inline$unchanged;
+  $elements$6[4].addEventListener("click", ($event$25) => {
+    Inline$guarded($listener$23, $event$25, $reader$24);
   });
   Inline$first();
-};
+});
 export { TotalCallBranchOwnership$main };
 //# sourceMappingURL=TotalCallBranchOwnership.mjs.map

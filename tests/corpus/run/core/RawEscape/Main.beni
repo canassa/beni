@@ -1,0 +1,20 @@
+-- Decoding copies the list; a later write to input cannot change the result.
+import Inline.Load as Load
+import Js
+import Json
+import Probe
+
+
+job : Load.LoadJob (List Int)
+job = Load.loadJob λraw old → Result.withDefault (Json.decodeValue (Js.to raw)) old
+
+
+main : Probe.Program
+main =
+    values = [ 1, 2 ]
+    copied = Load.runLoad job (Js.from values) []
+    grown = List.push values 3
+    Probe.printLines
+        [ String.join (List.map copied String.fromInt) ","
+        , String.join (List.map grown String.fromInt) ","
+        ]

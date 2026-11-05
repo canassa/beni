@@ -10,13 +10,13 @@ needs. Effects are inferred and never written; a value whose result reaches the 
 wait says so in a trailing comment, `-- impure` or `-- suspends`.
 ```text
 module Browser
-  type Program
+  opaque type Program
   type UrlRequest
     Internal
     External
   value mountAt : Program, String → Program
-  value prerender : Program, List String → Program  -- impure
-  value prerenderData : Schema e d, (d → Program) → Program  -- impure
+  value prerender : Program, List String → Program
+  value prerenderData : (Schema e d), (d → Program) → Program
 module Browser.Navigation
   type Error
     BadUrl
@@ -59,7 +59,6 @@ module Inline
   value busy : ⊤ → Bool  -- impure
   value caught : Node → ⊤  -- impure
   value commands : (Cmd msg), (msg → ⊤) → ⊤  -- impure
-  value decoded : (Schema e d), V → V  -- impure
   value deliver : Node → ⊤  -- impure
   value entry : (⊤ → ⊤), List Bucket → Entry  -- impure
   value escape : V → V  -- impure
@@ -67,33 +66,19 @@ module Inline
   value escapePre : V → V  -- impure
   value first : ⊤ → ⊤  -- impure
   value listen : Node, String, (Event → ⊤) → ⊤  -- impure
-  value load : V, V, V, V → ⊤  -- impure
-  value loadAll : V, V, V → ⊤  -- impure
-  value loadAllPlanned : V, V, V → ⊤  -- impure
-  value loadAllShaped : V, V, V, (V, V → Result V V) → ⊤  -- impure
-  value loadAllShapedConst : V, V, V, (V, V → Result V V) → ⊤  -- impure
-  value loadAllShapedPlanned : V, V, V, (V, V → Result V V) → ⊤  -- impure
-  value loadAllShapedPlannedConst : V, V, V, (V, V → Result V V) → ⊤  -- impure
-  value loadPlanned : V, V, V, V → ⊤  -- impure
-  value loadShaped : V, V, V, V, (V, V → Result V V) → ⊤  -- impure
-  value loadShapedConst : V, V, V, V, (V, V → Result V V) → ⊤  -- impure
-  value loadShapedPlanned : V, V, V, V, (V, V → Result V V) → ⊤  -- impure
-  value loadShapedPlannedConst : V, V, V, V, (V, V → Result V V) → ⊤  -- impure
   value navigationKey : ⊤ → NavigationKey
+  value observe : (a → ⊤), b, (b → a) → ⊤  -- impure
   value on : EventTarget, (a → ⊤), String, (Event → a) → ⊤  -- impure
   value onArm : EventTarget, (a → ⊤), String, V, (Event → a) → ⊤  -- impure
   value own : (⊤ → ⊤) → ⊤  -- impure
-  value pageData : (Schema e d), V → V  -- impure
   value pageUrl : String → Url  -- impure
   value part : V → V  -- impure
   value pass : Bucket → ⊤  -- impure
   value passes : List Bucket → ⊤  -- impure
   value prop : V, V, V → ⊤  -- impure
-  value root : V → V  -- impure
   value roots : List (⊤ → ⊤) → ⊤  -- impure
   value routeUrl : String, String → Url  -- impure
-  value run : (Value → ⊤) → ⊤  -- impure
-  value send : V, V, V → ⊤  -- impure
+  value run : Program → ⊤  -- impure
   value stop : ⊤ → ⊤  -- impure
   value stopped : ⊤ → Bool  -- impure
   value take : V, V, V, V → V  -- impure
@@ -101,7 +86,7 @@ module Inline
   value title : String → ⊤  -- impure
   value when : V, Bool → ⊤  -- impure
 module Listen
-  value on : String, String, (Value → a), (a → ⊤) → (⊤ → ⊤)  -- impure
+  value on : String, String, (Event → a), (a → ⊤) → (⊤ → ⊤)  -- impure
 module Sub
   alias Sub a
   value batch : List (Sub msg) → Sub msg
@@ -112,8 +97,8 @@ module Tea
   alias Document a
     Document
   alias Program
-  value application : { init : Url, Key → model × Cmd msg, onUrlChange : Url → msg, onUrlRequest : UrlRequest → msg, subscriptions : model → Sub msg, update : msg, model → model × Cmd msg, view : model → Document msg } → Program  -- impure
-  value document : { init : ⊤ → model × Cmd msg, subscriptions : model → Sub msg, update : msg, model → model × Cmd msg, view : model → Document msg } → Program  -- impure
-  value element : { init : ⊤ → model × Cmd msg, subscriptions : model → Sub msg, update : msg, model → model × Cmd msg, view : model → Html msg } → Program  -- impure
-  value sandbox : { init : ⊤ → model, update : msg, model → model, view : model → Html msg } → Program  -- impure
+  value application : { init : Url, Key → model × Cmd msg, onUrlChange : Url → msg, onUrlRequest : UrlRequest → msg, subscriptions : model → Sub msg, update : msg, model → model × Cmd msg, view : model → Document msg } → Program
+  value document : { init : ⊤ → model × Cmd msg, subscriptions : model → Sub msg, update : msg, model → model × Cmd msg, view : model → Document msg } → Program
+  value element : { init : ⊤ → model × Cmd msg, subscriptions : model → Sub msg, update : msg, model → model × Cmd msg, view : model → Html msg } → Program
+  value sandbox : { init : ⊤ → model, update : msg, model → model, view : model → Html msg } → Program
 ```

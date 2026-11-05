@@ -1,0 +1,5 @@
+import Probe
+
+
+main : Probe.Program
+main = Probe.page

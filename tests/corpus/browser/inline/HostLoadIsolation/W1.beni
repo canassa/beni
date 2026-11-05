@@ -1,0 +1,44 @@
+--! The first widget: a number of cups, which it writes in place.
+
+import Html exposing (Html)
+import Json
+import Schema exposing (Value)
+
+
+pub type alias Model =
+    cups : Int
+    items : List Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { cups = -1, items = [] }
+
+
+pub type Msg
+    = Bump
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Bump →
+            { model | cups = model.cups + 1 }
+
+
+--| One more cup.
+pub bump : Model → Model
+bump model = { model | cups = model.cups + 1 }
+
+
+--| The state the host sent, or the model as it was when it sent none.
+pub replace : Value, Model → Model
+replace state model = Result.withDefault (Json.decodeValue state) model
+
+
+pub view : Model → Html Msg
+view model =
+    <section data-role="w1">
+        <button data-role="growcups" onClick={Bump}>Grow</button>
+        <p>{model.cups}</p>
+        <output data-role="items">{String.join (List.map model.items String.fromInt) ","}</output>
+    </section>

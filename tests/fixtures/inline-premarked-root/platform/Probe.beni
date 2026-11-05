@@ -1,0 +1,2 @@
+-- The sibling's module initializer marks the host root before boot.
+pub foreign impure prepare : ⊤ → String

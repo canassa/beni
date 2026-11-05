@@ -2,7 +2,12 @@
 --! (`docs/design/browser-inline.md` §1): one program per page, at
 --! `document.body` unless `mountAt` names an element.
 
+import Browser.Host.Document as Document
+import Browser.Host.Element as Element
+import Browser.Host.Node as Node
+import Inline.Bridge as Bridge
 import Js
+import Js.Protocol as Protocol
 import Schema exposing (Schema)
 import Url exposing (Url)
 
@@ -10,7 +15,26 @@ import Url exposing (Url)
 --| What `main` is: the page's one program and where it mounts. Only a
 --| program constructor of `Tea` makes one: the `inline` lowering compiles
 --| the program where the constructor is called.
-pub foreign type Program
+pub opaque type Program
+    = Client (Maybe String → ⊤)
+    | Tree (RenderRequest → Result RenderError Rendered)
+    | Routes Program (List String)
+    | Data { mount : Maybe String → ⊤, render : RenderRequest → Result RenderError Rendered }
+
+
+pub type alias RenderRequest =
+    route : String
+    text : Maybe String
+
+
+pub type alias Rendered =
+    html : String
+    title : Maybe String
+
+
+pub type alias RenderError =
+    route : String
+    issues : List Schema.Issue
 
 
 --| A click on a link the page should handle itself (`boundary.md` §9.8.13
@@ -30,11 +54,7 @@ pub type UrlRequest
 --|     main =
 --|         Browser.mountAt (Tea.sandbox app) "root"
 pub mountAt : Program, String → Program
-mountAt page id =
-    -- A program is the mount the lowering compiled, a function of the
-    -- element's id. Where the id is a literal written at the program's call,
-    -- the lowering mounts there itself and this is not called.
-    Js.to (Js.from λ_ → Js.to (Js.apply (Js.from page) [ Js.from id ]))
+mountAt page id = Client λ_ → runAt page (Just id)
 
 
 --| The same program, and a page the build writes for each route of the
@@ -53,13 +73,7 @@ mountAt page id =
 --|     main =
 --|         Browser.prerender (Tea.application app) [ "/", "/about" ]
 pub prerender : Program, List String → Program
-prerender page routes =
-    -- Where `main` says so, the build compiles the call away: a page holds
-    -- the program alone. The prerender tree runs it, and its entry reads
-    -- the render function and the routes from what it gives.
-    list = Js.array []
-    List.foldl routes ⊤ λroute _ → Js.to (Js.call list "push" [ Js.from route ])
-    Js.to (Js.array [ Js.from page, list ])
+prerender page routes = Routes page (List.copy routes)
 
 
 --| A site whose pages hold data the build reads from files
@@ -86,7 +100,168 @@ prerender page routes =
 --|                 }
 pub prerenderData : Schema e d, (d → Program) → Program
 prerenderData schema body =
-    -- Where `main` says so, the build compiles the call away: a page reads
-    -- and decodes its value where its program mounts, and the prerender
-    -- tree where it renders the page.
-    Js.to (Js.array [ Js.from schema, Js.from body ])
+    Data
+        { mount =
+            λid →
+                ( _, value ) = pageData schema (lookupRoot id)
+                runAt (body value) id
+        , render =
+            λrequest →
+                case request.text of
+                    Nothing →
+                        Protocol.defect "a data prerender needs its page text"
+                    Just text →
+                        case Schema.parse schema text of
+                            Ok value →
+                                renderAt (body value) request
+                            Err issues →
+                                Err { route = request.route, issues = issues }
+        }
+
+
+-- Private typed construction. Effects belong to invoking a stored job.
+pub client : escaped sync (Maybe String → ⊤) → Program
+client mount = Client mount
+
+
+pub tree : escaped sync (RenderRequest → Result RenderError Rendered) → Program
+tree render = Tree render
+
+
+pub runAt : Program, Maybe String → ⊤
+runAt page id =
+    case page of
+        Client mount →
+            Protocol.call mount id
+        Routes inner _ →
+            runAt inner id
+        Data jobs →
+            Protocol.call jobs.mount id
+        Tree _ →
+            Protocol.defect "a prerender tree cannot mount in the browser"
+
+
+pub renderAt : Program, RenderRequest → Result RenderError Rendered
+renderAt page request =
+    case page of
+        Tree render →
+            Protocol.call render request
+        Routes inner _ →
+            renderAt inner request
+        Data jobs →
+            Protocol.call jobs.render request
+        Client _ →
+            Protocol.defect "a client program cannot render a prerender tree"
+
+
+pub routesOf : Program → List String
+routesOf page =
+    case page of
+        Routes _ routes →
+            routes
+        _ →
+            []
+
+
+lookupRoot : Maybe String → Element.Element
+lookupRoot id =
+    selected =
+        case id of
+            Nothing →
+                Document.body ⊤
+            Just name →
+                Document.byId name
+    case selected of
+        Just element →
+            element
+        Nothing →
+            shown = Maybe.withDefault id "undefined"
+            Protocol.defect
+                "cannot mount at ${shown}: no element has that id, or a program is mounted there already"
+
+
+pub root : Maybe String → Element.Element
+root id =
+    element = lookupRoot id
+    if Js.development ⊤ then
+        if Bridge.markRoot element then
+            shown = Maybe.withDefault id "undefined"
+            Protocol.defect
+                "cannot mount at ${shown}: no element has that id, or a program is mounted there already"
+    element
+
+
+pub pageData : Schema e d, Element.Element → String × d
+pageData schema at =
+    script =
+        case Element.querySelector at ":scope>script[data-beni-data]" of
+            Ok (Just selected) →
+                selected
+            Ok Nothing →
+                Protocol.defect
+                    (if Js.development ⊤ then
+                        "cannot start the page: it holds no <script type=\"application/json\" data-beni-data> as a child of the element the program mounts at, so it has no value for init. It is not a page the build wrote, or something took the script out."
+                     else
+                        "no data"
+                    )
+            Err _ →
+                Protocol.defect "cannot read page data: the fixed selector was refused"
+    route =
+        case Element.getAttribute script "data-beni-data" of
+            Just value →
+                value
+            Nothing →
+                Protocol.defect "cannot read page data: its route attribute disappeared"
+    native = Element.toNode script
+    held =
+        case Node.textContent native of
+            Just text →
+                text
+            Nothing →
+                Protocol.defect "cannot read page data: its text disappeared"
+    Node.rendererRemove native
+    case Schema.parse schema held of
+        Ok value →
+            ( route, value )
+        Err issues →
+            shown = String.join (List.map issues issueText) "; "
+            Protocol.defect
+                (if Js.development ⊤ then
+                    "cannot start the page: the value its script holds does not decode: ${shown}"
+                 else
+                    "bad data"
+                )
+
+
+issueText : Schema.Issue → String
+issueText issue = "${pathText issue.path}: ${issue.message}"
+
+
+pathText : List Schema.PathSegment → String
+pathText path =
+    if List.isEmpty path then
+        "the value"
+    else
+        List.foldl path "" λsegment shown →
+            case segment of
+                Schema.Field name →
+                    "${shown}.${name}"
+                Schema.Index i →
+                    "${shown}[${String.fromInt i}]"
+
+
+pub renderWire : Program, String, String → Js.Value
+renderWire page route text =
+    case renderAt page { route = route, text = Just text } of
+        Err failure →
+            Js.from { issues = List.map failure.issues issueText }
+        Ok rendered →
+            case rendered.title of
+                Nothing →
+                    Js.from rendered.html
+                Just title →
+                    Js.array [ Js.from rendered.html, Js.from title ]
+
+
+pub routesWire : Program → Js.Value
+routesWire page = Js.from (routesOf page)

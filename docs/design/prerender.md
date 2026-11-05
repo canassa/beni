@@ -6,6 +6,50 @@ program then takes over in the browser. It holds what is decided, what is open w
 recommendation (§10), and the slices with what "done" means for each (§11). Section numbers are
 never renumbered (CLAUDE.md rule 2); a later change is a dated amendment in place.*
 
+*Amended 2026-11-05 (Part of #1807; closes #1934 when built):* the private
+inline Program is opaque beni data with closed typed client and SSR jobs. Its
+client mount has type `sync (Maybe String → ⊤)`; its render job takes
+`{ route : String, text : Maybe String }` and returns a typed result containing
+`{ html : String, title : Maybe String }` or all schema issues with the route.
+Placement wrappers carry typed Programs and List String routes; data jobs close
+over their concrete schema and body. Callable values, native roots and decoded
+data never pass through Js.Value to reach this boundary. Private constructors
+and consumers are fenced to the owning inline platform layer. Source Tea
+constructors build a real Program holding an unreachable mount job: construction
+is pure; invoking the unlowered job defects. No compiler effect override is used.
+
+The lowering constructs a client job in client output and a render job in the
+prerender tree. The opposite runtime is not rooted. Root lookup returns a typed
+native Element; pageData returns String × d, and decoded returns
+Result (List Schema.Issue) d. Missing roots/data are named defects. The external
+render/routes exports, their wire forms, HTML, title, data-error envelope and
+route order remain byte-identical. Node rendering starts no browser runtime,
+listener or Task kernel; hydration and capture order are unchanged.
+
+Load groups use opaque LoadJob m / KeyedLoads m jobs built once per site.
+A job holds sync (Js.Value, m → m), with static decoders, shapes, plans and
+constants. The concrete typed model is passed explicitly on each invocation,
+never captured from a helper's local parameter. Factories and consumers keep
+ordinary body-derived summaries, preserving callback classes, return aliases
+and model writes; §24.2 does not mix explicit words with inferred model facts.
+Only decoders proven to copy every retained mutable object/array receive jobs;
+Value-retaining and unproven decoders keep ordinary source execution. Thus raw
+input is borrowed for all admitted jobs. No borrowed model or optimistic result
+word is asserted. All decodes run against old fields in row order before any
+copy occurs; lexical temporaries retain results, then identity checks and
+copy/constant writes run in order. Keyed groups select the same unique string
+key and do nothing when absent. No staging closure or cell is allocated per
+message/load. Pins follow the real bodies, and fixtures cover host mutation,
+mutation of Beni-built raw input, decoder fallback, and model-write honesty.
+
+Listeners use native Event and existing typed native registration. Dispatch
+projects events immediately inside its guard, including nested sends, and queues
+only typed closed work. Exact remover identity, ordering, stopped-page behaviour
+and defect handling remain. Html.Runtime 1.30 and its SHA stay frozen. No new
+foreign primitive is authorised by this amendment. Public Browser/Tea/Navigation/
+Events/Sub signatures stay unchanged; private Listen readers use native Event.
+
+
 ## 1. What this is
 
 The owner's request, 2026-10-29: write an ordinary website in beni, and have the build write one

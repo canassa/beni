@@ -1,0 +1,53 @@
+import Cmd
+import Html
+import Json
+import Part
+import Sub
+import Tea
+
+
+type alias Model =
+    one : Part.Model
+    two : Part.Model
+
+
+type Msg
+    = Reset
+
+
+init : ⊤ → Model × Cmd.Cmd Msg
+init ⊤ = ( { one = { value = 0 }, two = { value = 0 } }, Cmd.none )
+
+
+update : Msg, Model → Model × Cmd.Cmd Msg
+update _ model =
+    case ( Json.encodeValue three, Json.encodeValue four ) of
+        ( Ok first, Ok second ) →
+            ( { one = Part.replace first model.one
+              , two = Part.replace second model.two
+              }
+            , Cmd.none
+            )
+        _ →
+            ( model, Cmd.none )
+
+
+view : Model → Html.Html Msg
+view model =
+    <div>
+        <button onClick={Reset}>Reset</button>
+        {Part.view model.one}
+        <output>{model.two.value}</output>
+    </div>
+
+
+main : Tea.Program
+main = Tea.element { init = init, update = update, view = view, subscriptions = λ_ → Sub.none }
+
+
+three : Part.Model
+three = { value = 3 }
+
+
+four : Part.Model
+four = { value = 4 }

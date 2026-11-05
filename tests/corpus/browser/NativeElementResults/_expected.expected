@@ -1,0 +1,7 @@
+-- load
+<body>
+  <div id="present" data-value="value"></div>
+  <div id="empty" data-value=""></div>
+  <div id="absent"></div>
+  <output>"found[value] | found[] | absent | missing | syntax"</output>
+</body>

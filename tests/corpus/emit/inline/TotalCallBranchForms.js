@@ -1,10 +1,10 @@
 import { List$push, List$singleton, List$append, List$update, List$set } from "./_core/List.mjs";
-import { Inline$root, Inline$own, Inline$when, Inline$text, Inline$entry, Inline$pass, Inline$on, Inline$first } from "./_platform/Inline.mjs";
+import { Inline$namedRoot, Inline$root, Inline$own, Inline$bucket, Inline$when, Inline$text, Inline$entry, Inline$pass, Inline$unchanged, Inline$guarded, Inline$first, Inline$client } from "./_platform/Inline.mjs";
 const TotalCallBranchForms$inc = (x$1) => x$1 + 1;
 const TotalCallBranchForms$bump = (xs$1) => List$push(xs$1, 4);
 const TotalCallBranchForms$glue = (xs$1) => List$append(xs$1, List$singleton(1));
-const TotalCallBranchForms$main = ($id$1) => {
-  const $root$2 = Inline$root("root");
+const TotalCallBranchForms$main = Inline$client(($id$1) => {
+  const $root$2 = Inline$root(Inline$namedRoot("root"));
   const $init$3 = 0;
   let $model$4 = $init$3;
   $root$2.insertAdjacentHTML("beforeend", "<main><section data-arm=dot><p></section><section data-arm=append><p></section><section data-arm=update><p></section><section data-arm=set><p></section><section data-arm=helper><p></section><section data-arm=glue><p></section><button>Next");
@@ -13,7 +13,7 @@ const TotalCallBranchForms$main = ($id$1) => {
     $node$5.remove();
   });
   const $elements$6 = $node$5.querySelectorAll("*");
-  const $table$7 = [[[]]];
+  const $table$7 = [[Inline$bucket(null)]];
   Inline$entry(() => {
     let $arm$9;
     let $value$12;
@@ -143,14 +143,18 @@ const TotalCallBranchForms$main = ($id$1) => {
     if ($selected$38) {
       Inline$text($elements$6[11], $value$41);
     }
-  }, $table$7[0][0]);
-  Inline$on($elements$6[12], () => {
+  }, [$table$7[0][0]]);
+  const $listener$44 = () => {
     const $value$42 = "Next";
     const $before$43 = $model$4;
     $model$4 = $before$43 + 1;
     Inline$pass($table$7[0][0]);
+  };
+  const $reader$45 = Inline$unchanged;
+  $elements$6[12].addEventListener("click", ($event$46) => {
+    Inline$guarded($listener$44, $event$46, $reader$45);
   });
   Inline$first();
-};
+});
 export { TotalCallBranchForms$main };
 //# sourceMappingURL=TotalCallBranchForms.mjs.map

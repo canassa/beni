@@ -1,0 +1,7 @@
+pub foreign impure exercise :
+      sync ((Int → ⊤), Int, (Int → Int) → ⊤)
+    , sync ((Int → ⊤), Int → ⊤)
+    , sync ((⊤ → ⊤) → ⊤)
+    , sync (⊤ → Bool)
+    , sync (⊤ → Bool)
+    → String

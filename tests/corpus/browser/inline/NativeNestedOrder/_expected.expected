@@ -1,0 +1,14 @@
+-- load
+<body>
+  <div>
+    <button>"Burst"</button>
+    <output></output>
+  </div>
+</body>
+-- click button
+<body>
+  <div>
+    <button>"Burst"</button>
+    <output>"T192"</output>
+  </div>
+</body>

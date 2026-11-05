@@ -1,0 +1,9 @@
+import Inline.Bridge as Bridge
+
+
+pub type Program
+    = Program Int
+
+
+pub page : Program
+page = Program (Bridge.markRoot 7)

@@ -3,6 +3,7 @@
 --! reads its `eventPhase`, which the host sets back to none once dispatch
 --! ends.
 
+import Browser.Host.Event as HostEvent
 import Js
 import Listen
 
@@ -22,7 +23,4 @@ pub pings : sync (Bool → ⊤) → (⊤ → ⊤)
 pings send = Listen.on "window" "rr-ping" check send
 
 
-check : Js.Value → Bool
-check event =
-    _ = Js.call event "preventDefault" []
-    Js.to (Js.from (Js.same (Js.get event "eventPhase") (Js.from 2)))
+foreign impure check : borrowed HostEvent.Event → Bool

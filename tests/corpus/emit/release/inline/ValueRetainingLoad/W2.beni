@@ -1,0 +1,65 @@
+--! The second widget: a venue the user types, a count it parses from what
+--! the user types, and what it shows of the first widget's cups, which it
+--! reads and never writes. Its `replace` is a `case`: a record made from the
+--! decoded state, or the model as it was.
+
+import Html exposing (Html)
+import Json
+import Schema exposing (Value)
+import W1
+
+
+pub type alias Model =
+    venue : String
+    seats : Int
+    seatsTyped : Maybe String
+
+
+pub init : ⊤ → Model
+init ⊤ = { venue = "", seats = 1, seatsTyped = Nothing }
+
+
+pub type Msg
+    = Write String
+    | EnterSeats String
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Write typed →
+            { model | venue = typed }
+
+        EnterSeats typed →
+            case String.toInt typed of
+                Just parsed →
+                    { model | seats = parsed, seatsTyped = Nothing }
+
+                Nothing →
+                    { model | seatsTyped = Just typed }
+
+
+--| The state the host sent, or the model as it was when it sent none.
+pub replace : Value, Model → Model
+replace state model =
+    case Json.decodeValue state of
+        Ok new →
+            { venue = new.venue, seats = new.seats, seatsTyped = Nothing }
+
+        Err _ →
+            model
+
+
+pub view : Model, W1.Model → Html Msg
+view model first =
+    <section data-role="w2">
+        <input data-role="venue" value={model.venue} onInput={Write} />
+        <p>{model.venue}</p>
+        <input
+            data-role="seats"
+            value={Maybe.withDefault model.seatsTyped (String.fromInt model.seats)}
+            onInput={EnterSeats}
+        />
+        <span>{model.seats}</span>
+        <output>{first.cups}</output>
+    </section>

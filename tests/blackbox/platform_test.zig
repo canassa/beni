@@ -2959,3 +2959,56 @@ test "native host projections refuse values arguments and placeholders" {
         try testing.expectEqual(diagnostic.Code.invalid_native_binding, result.diagnostics[0].code);
     }
 }
+
+test "browser bridge runtime owner is the same by name and by directory" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    try w.write("Main.beni",
+        \\import Browser
+        \\main : Browser.Program
+        \\main = Browser.program { init = λ⊤ → {}, update = λ_ model → model, view = λ_ → <p>Hello</p> }
+        \\
+    );
+    const by_name = try arena.dupe(u8, try releaseMain(&w, &.{ "--platform=browser", "Main.beni" }));
+    const dir = try shippedDir(arena, "browser");
+    const by_dir = try releaseMain(&w, &.{ try std.fmt.allocPrint(arena, "--platform={s}", .{dir}), "Main.beni" });
+    // Source discovery may colour private DOM fields differently; pin behaviour.
+    try w.write("by-name.mjs", by_name);
+    try w.write("by-directory.mjs", by_dir);
+    const driver = try std.Io.Dir.cwd().realPathFileAlloc(testing.io, "tests/browser/driver.mjs", arena);
+    const dom = try std.Io.Dir.cwd().realPathFileAlloc(testing.io, "tests/browser/happy-dom.mjs", arena);
+    const dom_flag = try std.fmt.allocPrint(arena, "--dom={s}", .{dom});
+    for ([_][]const u8{ "by-name.mjs", "by-directory.mjs" }) |entry| {
+        const rendered = try w.runNode(&.{ driver, dom_flag, entry });
+        try testing.expectEqual(@as(u8, 0), rendered.exit_code);
+        try testing.expectEqualStrings("", rendered.stderr);
+        try testing.expectEqualStrings("-- load\n<body>\n  <p>\"Hello\"</p>\n</body>\n", rendered.stdout);
+    }
+}
+
+test "inline root marker recognises a host root marked before boot" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    const fixture = "tests/fixtures/inline-premarked-root";
+    try w.copyTree(fixture, "_expected.");
+    const driver = try std.Io.Dir.cwd().realPathFileAlloc(testing.io, "tests/browser/driver.mjs", arena);
+    const dom = try std.Io.Dir.cwd().realPathFileAlloc(testing.io, "tests/browser/happy-dom.mjs", arena);
+    const dom_flag = try std.fmt.allocPrint(arena, "--dom={s}", .{dom});
+    for ([_]bool{ false, true }) |release| {
+        const mode: []const u8 = if (release) "release" else "dev";
+        const built = try w.run(if (release)
+            &.{ "build", "--release", "--platform=platform", "--out=release", "Main.beni" }
+        else
+            &.{ "build", "--platform=platform", "--out=dev", "Main.beni" });
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+        const entry = try std.fmt.allocPrint(arena, "{s}/_main.mjs", .{mode});
+        const rendered = try w.runNode(if (release) &.{ driver, dom_flag, entry } else &.{ driver, dom_flag, entry, "dev.steps" });
+        const expected = try std.Io.Dir.cwd().readFileAlloc(testing.io, try std.fmt.allocPrint(arena, "{s}/{s}.expected", .{ fixture, mode }), arena, .limited(1 << 20));
+        try testing.expectEqual(@as(u8, 0), rendered.exit_code);
+        try testing.expectEqualStrings("", rendered.stderr);
+        try testing.expectEqualStrings(expected, rendered.stdout);
+    }
+}

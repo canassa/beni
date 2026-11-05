@@ -2382,6 +2382,7 @@ const Emitter = struct {
 
     fn compilerOwnedJs(e: *Emitter, m: Graph.Index, d: Bir.Decl) bool {
         if (e.loweringSupplied(m, d)) return true;
+        if (e.graph().isInline(m) and std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Inline.Bridge")) return std.mem.eql(u8, e.session.interner.slice(e.bir(m).symbol(d.name)), "markRoot");
         if (e.graph().isBrowser(m) and std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Browser.Bridge")) return @import("JsIntrinsic.zig").browserBridge(e.session.interner.slice(e.bir(m).symbol(d.name))) != null;
         if (e.graph().modulePackage(m) == .core) {
             if (@import("../native/Operations.zig").lookup(e.session.interner.slice(e.graph().moduleName(m)), e.session.interner.slice(e.bir(m).symbol(d.name)))) |row| {
@@ -3724,13 +3725,13 @@ const Emitter = struct {
         const module = e.runtime_module orelse return out.items;
         var names: std.ArrayList([]const u8) = .empty;
         try names.appendSlice(e.scratch, e.module_uses.items);
-        if (entry != null) {
+        if (entry != null and e.options.prerender != .tree) {
             if (e.suppliedAs("run") != null) try names.append(e.scratch, "run");
             if (e.suppliedAs("start") != null and try e.startData() != null) try names.append(e.scratch, "start");
             // The page's unmount (`boundary.md` §9.4.5, amended 2026-10-17):
             // the page may call it whatever the program reached.
             if (e.suppliedAs("stop") != null) try names.append(e.scratch, "stop");
-        } else {
+        } else if (entry == null) {
             // A build with no entry file (`--library`): the page's own
             // entry mounts the exported program, so the program runtime's
             // exports are written as the hand-written file's are, whole.
@@ -3738,9 +3739,14 @@ const Emitter = struct {
                 if (e.suppliedAs(w) != null) try names.append(e.scratch, w);
             }
         }
-        const uses = try e.programUses(entry);
-        try names.appendSlice(e.scratch, uses);
-        e.program_uses = uses;
+        var uses: std.ArrayList([]const u8) = .empty;
+        try uses.appendSlice(e.scratch, try e.programUses(entry));
+        if (e.options.prerender == .tree and e.typedInlinePrerender()) {
+            try uses.append(e.scratch, "ssrRender");
+            if (!e.options.data) try uses.append(e.scratch, "ssrRoutes");
+        }
+        try names.appendSlice(e.scratch, uses.items);
+        e.program_uses = uses.items;
 
         for (names.items) |n| if (e.moduleValue(module, n)) |decl| {
             try out.append(e.scratch, .{ .module = module, .kind = .decl, .index = decl });
@@ -4427,6 +4433,34 @@ const Emitter = struct {
         // slice (`browser-inline.md` §8.4, amended 2026-10-22).
         const in_place = try a.alloc(bool, n);
         for (in_place, 0..) |*x, i| x.* = arm_fields and !e.options.sanitize_records and i < e.session.checked.hoists.len and e.session.checked.hoists[i].clean and e.session.enforce_ownership;
+        const copying: ?[]const []const u32 = if (arm_fields) copying: {
+            const schema_graph: SchemaGraph = .{
+                .graph = e.graph(),
+                .plans = e.session.checked.plans,
+                .birs = birs,
+                .interfaces = e.session.resolution.interfaces,
+                .provenance = e.session.resolution.provenance,
+                .interner = &e.session.interner,
+            };
+            const proven = try a.alloc([]const u32, n);
+            for (proven, birs, 0..) |*out, b, mi| {
+                if (packages[mi] == .core) {
+                    out.* = &.{};
+                    continue;
+                }
+                var calls: std.ArrayList(u32) = .empty;
+                const m: Graph.Index = @fromBackingInt(@intCast(mi));
+                const sites = try SchemaValid.sites(a, e.graph(), schema_graph.interfaces, schema_graph.provenance, &e.session.interner, b, &e.session.checked.dispatch[mi], m, &schema_graph, true);
+                for (sites.json_calls, sites.json_codecs) |call, codec| {
+                    if (try schema_graph.copiesInput(a, schema_graph.codecTarget(m, codec))) try calls.append(a, call);
+                }
+                for (sites.shape_json, sites.shape_codecs) |call, codec| {
+                    if (try schema_graph.copiesInput(a, schema_graph.codecTarget(m, codec))) try calls.append(a, call);
+                }
+                out.* = calls.items;
+            }
+            break :copying proven;
+        } else null;
         const w = try Writes.init(.{
             .gpa = e.gpa,
             .graph = e.graph(),
@@ -4439,6 +4473,7 @@ const Emitter = struct {
             .own = try e.ownCode(a, names),
             .targets = targets,
             .effects = effects,
+            .copying_decodes = copying,
             // `browser-inline` refuses a capped key, so the caps that only
             // bound precision are lifted for it (`write-sets.md`, *The caps*);
             // its handlers take a key's leaf fields, so a message of one
@@ -9460,7 +9495,7 @@ const Emitter = struct {
             var names: std.ArrayList([]const u8) = .empty;
             try names.appendSlice(e.scratch, e.program_uses);
             if (e.workerHostModule() == module) try names.appendSlice(e.scratch, &.{ "stop", "stopped" });
-            if (entry != null) for ([_][]const u8{ "run", "start", "flush", "stop" }) |w| {
+            if (entry != null and e.options.prerender != .tree) for ([_][]const u8{ "run", "start", "flush", "stop" }) |w| {
                 if (e.suppliedAs(w) != null) try names.append(e.scratch, w);
             };
             for (names.items) |n| {
@@ -9910,7 +9945,24 @@ const Emitter = struct {
     /// `prerender_entry`: `main`, which the lowering made the render
     /// function, and the routes, exported. It starts nothing: the program
     /// runtime is not called, so nothing of a page runs.
+    fn typedInlinePrerender(e: *const Emitter) bool {
+        const module = e.runtime_module orelse return false;
+        return e.session.graph.isInline(module);
+    }
+
     fn emitPrerenderEntry(e: *Emitter, module_path: []const u8, imported: []const u8) !void {
+        if (e.typedInlinePrerender()) {
+            var text: std.ArrayList(u8) = .empty;
+            const module = e.runtime_module.?;
+            const render = try e.moduleSpelling(module, "ssrRender");
+            const routes = try e.moduleSpelling(module, "ssrRoutes");
+            try text.print(e.scratch, "import{{{s}}}from\"./{s}\";\n", .{ imported, module_path });
+            try text.print(e.scratch, "import{{{s}", .{render});
+            if (!e.options.data) try text.print(e.scratch, ",{s}", .{routes});
+            try text.print(e.scratch, "}}from\"./{s}\";\n{s}\n", .{ try e.outputPath(module), try e.prerenderExports(imported) });
+            try e.produce(e.options.platform.entry, text.items, try e.manifestPath());
+            return;
+        }
         const text = if (e.options.release)
             try std.fmt.allocPrint(e.scratch,
                 \\import{{{s}}}from"./{s}";
@@ -9933,6 +9985,11 @@ const Emitter = struct {
     /// render function and the routes, an array of strings, which is what
     /// `main` is in the prerender tree (`Placement.Places.prerender`).
     fn prerenderExports(e: *Emitter, main_name: []const u8) ![]const u8 {
+        if (e.typedInlinePrerender()) {
+            const render = try e.moduleSpelling(e.runtime_module.?, "ssrRender");
+            if (e.options.data) return std.fmt.allocPrint(e.scratch, "export const render=(route,text)=>{s}({s},route,text);", .{ render, main_name });
+            return std.fmt.allocPrint(e.scratch, "export const render=route=>{s}({s},route,\"\"),routes={s}({s});", .{ render, main_name, try e.moduleSpelling(e.runtime_module.?, "ssrRoutes"), main_name });
+        }
         // A data site's `main` is the render function itself, of a route and
         // its page's text; its routes are the data program's (`prerender.md`
         // §8.5).

@@ -4543,6 +4543,28 @@ returning `document`, and takes no list: it has no words. Every entry pinned in
 that region was re-read for it; their bodies are unchanged and their words
 stand.
 
+**Inline typed jobs and native root operations (2026-11-05, Part of #1807).**
+The body-derived consumers keep their complete inferred ownership summary; a
+word on a different argument would replace that summary (§24.2), hiding model
+writes. In particular runLoad/runKeyed do not carry a borrowed-job word. Their
+raw argument is borrowed under the closed-producer invariant: the lowering
+emits jobs only for decoders that copy all retained mutable structure. Model
+writes remain visible. Factories retain their supplied functions:
+
+| Declaration | Words and real body | Misuse flip |
+|---|---|---|
+| Browser.client, Browser.tree | escaped callback; the opaque Program retains the exact supplied callback | escaped→borrowed loses the captured-list escape in InlineJobWords |
+| Inline.client, Inline.tree | escaped callback; forwards to the retaining Browser factory | same captured-list flip |
+| Inline.Load.loadJob, Inline.loadJob | ordinary body-derived factories: return the callback in the opaque job, preserving its result/class facts; no unconditional host escape word | discarded jobs may safely release their captures; retained jobs keep the actual callback aliases |
+| Browser.Host.Element.querySelector, host_querySelector | borrowed Element; reads a native descendant, captures only named SyntaxError, null remains absent; no beni sequence retained | Native-handle-only rationale: these two fields take only native handles and strings, so no sequence verdict separates borrowed from unused |
+| Browser.Host.Element.getAttribute, host_getAttribute | borrowed Element; reads an attribute, mapping only null to absence; no beni sequence retained | Native-handle-only rationale for these two fields |
+| Inline.Bridge.markRoot | borrowed Element; reads $root, writes true only if absent, returns the prior presence; no allocation or beni sequence | Native-handle-only rationale for markRoot |
+
+All five native-handle-only declarations above are pinned to their actual
+bodies, including generated siblings and recipe lowering. The bridge is owned
+by the embedded inline layer and cannot be acquired by naming a foreign module
+Inline.Bridge. The tests pin both its owner fence and its native mutation.
+
 **Browser boot bridge (2026-11-04, Part of #1807).** The three compiler-owned
 Browser.Bridge operations have no Js.Value path and are separate from frozen
 Html.Runtime 1.30. Their words are derived from the pinned Lower bodies:
