@@ -178,6 +178,11 @@ The renderer never uses the `raw` attribute (`innerHTML`, `Html.beni:789`), and 
 attribute name (`language.md` §11.5). Its only attribute values that come from the text are
 `href`, `src`, `alt`, `title`, `start` and `class` (as `language-` plus the info word).
 
+*As built 2026-11-05 (slice M2):* `platforms/html/Html/Markdown.beni`, with `view` and
+`fromString` as above. The `html` vocabulary had no `start` on `<ol>`; it has now (`pub attribute
+"start" on "ol" : Int`). `node`, `browser`, `browser-tea` and `browser-inline` re-export
+`Html.Markdown` beside `Html`.
+
 ## 6. Safety
 
 ### 6.1 Raw HTML is parsed, and becomes text
@@ -288,6 +293,14 @@ reference table of §9 D3: 2,125 names, about 9.5 kB brotli in a simple form. Ma
   #1936, the owner's "measured cost to reduce later" (§9 D3); it must keep §8's reference examples
   passing.
 
+*Measured 2026-11-05 (slice M2), `--release`, brotli 11.* `bench/size.mjs`'s `browser-tea
+markdown` page renders a short text: 62,612 bytes raw and 22,268 brotli, against 979 and 489 for
+the `browser-tea hello` page beside it. Of that, the table is about 10.0 kB (a page that only
+parses: 20,130; the same page with an empty table: 10,148), the parser's code about 9.6 kB, and the
+renderer about 2.1 kB (a page that renders: 22,220). Conduit's source with no `Markdown`, built by
+the compiler of this slice, is byte for byte what master `1468390492`'s compiler builds: 111,448
+bytes raw and 28,135 brotli, with no name of the table and no `Markdown` module in it.
+
 ## 8. Tests
 
 - **Conformance.** `tests/markdown/` vendors spec.txt of CommonMark 0.31.2 (CC BY-SA 4.0, kept with
@@ -344,6 +357,8 @@ The owner took all three on 2026-11-04 (Cesar, dashboard).
   `Block`) is a plain value, never written once made.
 - **M2 — the renderer.** `Html.Markdown` (§5), the re-exports, the conformance fixture and
   `tests/markdown/`, the safety fixtures. §7.3's two size measurements and the `bench/size.mjs`
-  line.
+  line. *As built 2026-11-05:* `run/MarkdownSpec` (580 examples `ok`; the 72 of
+  `tests/markdown/differences.txt` each hold raw HTML, which shows as text: 46 HTML blocks and 26
+  inline), `run/MarkdownSafety` and `browser/tea/MarkdownSafety`.
 - **M3 — Conduit.** `Article.body` renders the body with `Html.Markdown.view`; the `GAP` comment
   goes. `ConduitReader`'s new article and transcript (§8). Closes #240.
