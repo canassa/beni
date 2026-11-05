@@ -163,7 +163,7 @@ const layers = [_]Entry{
     // from `Eval` (#1758, #1760, #1721).
     .{ .file = "LabelChain.zig", .layer = 8, .max_lines = 145 },
     // What a traversal's supply says, below the labels' chain's readers.
-    .{ .file = "Each.zig", .layer = 8, .max_lines = 100 },
+    .{ .file = "Each.zig", .layer = 8, .max_lines = 120 },
     // A closure's captures in what holds it, beside `Routed` (#1772).
     .{ .file = "Captures.zig", .layer = 8, .max_lines = 55 },
     // A function value in a result: its called code (#2028).

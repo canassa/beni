@@ -34,6 +34,8 @@ const Source = struct {
     /// `taken` compares containers only (the index obligation, §2.13.6).
     kind: enum { taken, front, whole, slice },
     at: u32 = 0,
+    /// The element comes out of a `taken` row, all the way down.
+    walk: bool = false,
 };
 
 /// What a direct call's argument `a` hands, if an element of a family.
@@ -42,7 +44,7 @@ fn directSource(e: *Eval.Evaluation, a: u32) ?Source {
     const c = Taken.containerOf(f, e.contracts, a);
     if (c != none) {
         const v = f.val(c);
-        return if (v.kind == .ref and v.family == Slots.empty) .{ .root = v.root, .pos = v.pos, .kind = .taken } else null;
+        return if (v.kind == .ref and v.family == Slots.empty) .{ .root = v.root, .pos = v.pos, .kind = .taken, .walk = true } else null;
     }
     const v = f.val(a);
     if (v.kind != .ref or v.family != Slots.empty) return null;
@@ -52,14 +54,27 @@ fn directSource(e: *Eval.Evaluation, a: u32) ?Source {
 }
 
 /// What value `v` walks when a callee's traversal is passed it: its own
-/// elements from an index on.
-fn walkSource(e: *Eval.Evaluation, v0: u32) ?Source {
+/// elements from an index on. A call's result is no walk of what it was
+/// handed, but for a call that answers its parameter whole (`base`).
+fn walkSource(e: *Eval.Evaluation, v0: u32, walk: bool) Error!?Source {
     const f = e.fr();
-    const v = f.val(v0);
-    if (v.kind != .ref or v.family != Slots.empty) return null;
+    var w = v0;
+    while (true) {
+        const x = f.val(w);
+        if (x.kind != .ref or x.family != Slots.empty) return null;
+        const r = f.roots.items[x.root];
+        if (r.kind == .param) break;
+        if (r.kind != .call or x.pos != r.pos) return null;
+        const cl = f.calls.items[r.a];
+        if (cl.contract == none) return null;
+        const j = (try Each.answersWhole(e.chain(), cl.contract)) orelse return null;
+        if (j >= cl.args.len) return null;
+        w = cl.args[j];
+    }
+    const v = f.val(w);
     const p = f.pos.items[v.pos];
     if (p.kind == .slice and p.parent != none and p.b == 0) return .{ .root = v.root, .pos = p.parent, .kind = .slice, .at = p.a };
-    return .{ .root = v.root, .pos = v.pos, .kind = .whole };
+    return .{ .root = v.root, .pos = v.pos, .kind = .whole, .walk = walk };
 }
 
 /// Whether a direct source and a pass name no position in common: a taken
@@ -112,12 +127,12 @@ fn passSource(e: *Eval.Evaluation, p: [3]u32, su: Contract.Supply) Error!?Source
     if (!su.each) return null;
     const fam = (try Each.familyOf(c, su)) orelse return null;
     if (fam.j >= call.args.len) return null;
+    const v = try e.ev.valueAt(call.args[fam.j], fam.words[0 .. fam.words.len - 1]);
     if (call.virtual) {
         const own = call.args.len - f.kidsOf(f.val(call.callee_val)).len;
-        if (fam.j >= own) return if (LabelChain.outwardMany(c, p[1])) null else walkSource(e, try e.ev.valueAt(call.args[fam.j], fam.words[0 .. fam.words.len - 1]));
-        if (!try runsEach(c, p[1], fam.j)) return null;
+        if (if (fam.j >= own) LabelChain.outwardMany(c, p[1]) else !try runsEach(c, p[1], fam.j)) return null;
     }
-    return walkSource(e, try e.ev.valueAt(call.args[fam.j], fam.words[0 .. fam.words.len - 1]));
+    return walkSource(e, v, su.walk and !call.virtual);
 }
 
 /// Whether the pass `p` is a known code handing its own element whole,
@@ -151,6 +166,7 @@ pub fn publish(e: *Eval.Evaluation, s: anytype, arena: Allocator, labelIndex: an
     const c = e.chain();
     for (d.labels.items, 0..) |*g, gi| for (g.supplies.items) |*sup| {
         sup.each = false;
+        sup.walk = false;
         if (sup.kept.items.len != 0) continue;
         if (!try oneFamily(e, arena, sup)) continue;
         var direct: ?Source = null;
@@ -158,12 +174,13 @@ pub fn publish(e: *Eval.Evaluation, s: anytype, arena: Allocator, labelIndex: an
         var directs: u32 = 0;
         var any = false;
         var ok = true;
+        var walk = true;
         for (f.cbs.items[e.w.last.cbs..], e.w.last.cbs..) |cb, ci| {
             if (cb.inst == none or try labelIndex(s, @intCast(ci)) != gi) continue;
             directs += 1;
             if (sup.k >= cb.args.len) continue;
             direct = directSource(e, cb.args[sup.k]);
-            if (direct == null) ok = false;
+            if (direct == null) ok = false else walk = walk and direct.?.walk;
         }
         for (e.passes.items) |p| {
             if (try labelIndex(s, p[0]) != gi) continue;
@@ -171,16 +188,21 @@ pub fn publish(e: *Eval.Evaluation, s: anytype, arena: Allocator, labelIndex: an
             const lab = c.contracts.labelsOf(c.contracts.head(call.contract).labels)[p[2]];
             const su = supplyOf(c, lab, sup.k) orelse continue;
             any = true;
-            if (try handsOn(e, p, lab, su)) continue;
+            if (try handsOn(e, p, lab, su)) {
+                walk = false;
+                continue;
+            }
             // Two passes over one value are alternatives: the first would
             // be kept by the second's argument.
             const src = try passSource(e, p, su);
             if (src == null or (pass != null and !std.meta.eql(src.?, pass.?))) ok = false;
             pass = src;
+            if (src) |x| walk = walk and x.walk;
         }
         if (!ok or directs > 1 or (directs == 0 and !any)) continue;
         if (direct != null and pass != null and !apartSources(direct.?, pass.?)) continue;
         sup.each = true;
+        sup.walk = walk;
     };
 }
 
