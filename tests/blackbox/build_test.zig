@@ -14364,3 +14364,386 @@ test "the checker v2 counts K inside a recursive function, its read-off filter s
     try testing.expect(totals[1] <= 3 * totals[0]);
     try testing.expect(totals[0] <= 75_000);
 }
+
+/// The default growth allowance a function's walk may spend (§4.1).
+const default_growth_allowance: u64 = 65_536;
+
+/// `owner`'s verdict in a v2 dump of a generated module (§7.6 item 6): it
+/// either stopped at the loud limit (`limit <owner>: ownership_summary_size`
+/// with the declaration `unchecked`), or it was walked within the default
+/// allowance and `max_total` records. Returns whether it stopped.
+fn expectBoundedOrLimit(dump: []const u8, owner: []const u8, max_total: u64) !bool {
+    var buf: [96]u8 = undefined;
+    const limit = try std.fmt.bufPrint(&buf, "limit {s}: ownership_summary_size", .{owner});
+    if (std.mem.indexOf(u8, dump, limit) != null) {
+        const unchecked = try std.fmt.bufPrint(&buf, "unchecked {s}:", .{owner});
+        try testing.expect(std.mem.indexOf(u8, dump, unchecked) != null);
+        return true;
+    }
+    const unchecked = try std.fmt.bufPrint(&buf, "unchecked {s}:", .{owner});
+    try testing.expect(std.mem.indexOf(u8, dump, unchecked) == null);
+    try testing.expect(try accountField(dump, owner, "growth") <= default_growth_allowance);
+    try testing.expect(try accountTotal(dump, owner) <= max_total);
+    return false;
+}
+
+/// §7.6 item 6: each default-limit generated module stops in at most two
+/// seconds of ownership-pass wall time. The whole process is timed here, on
+/// the ReleaseSafe compiler the gates run, so the bound is looser than the
+/// spec's (a ReleaseFast pass) in the process's start and the front end and
+/// tighter in nothing; the generators run in well under a quarter of it.
+const generated_wall_ms: i64 = 2_000;
+
+/// A generated module's v2 dump at the default allowance.
+fn dumpGenerated(w: *World, src: []const u8) ![]const u8 {
+    try w.write("Main.beni", src);
+    const start = std.Io.Timestamp.now(testing.io, .awake);
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    try testing.expect(start.durationTo(std.Io.Timestamp.now(testing.io, .awake)).toMilliseconds() <= generated_wall_ms);
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    return dump.stdout;
+}
+
+test "the checker v2 walks CallbackWrapperDag's doubling wrappers in records that stay flat in the depth" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §7.6 item 6: `w0 f = ( f ⊤, f ⊤ )`, `wk f = ( w(k-1) f,
+    // w(k-1) f )` names 2^(k+1) callback answers in `wk`. Each wrapper is
+    // walked within the default allowance, or stops at the loud
+    // `ownership_summary_size`, never silently. The tuple form is the
+    // spec's own, at depth 10: its type has 2^(k+1) leaves and `beni check`
+    // pays for them (depth 24 is #2034). The list form (`++`) has a constant
+    // type and runs at 8/16/24. Measured on the slot domain: 270 to 330
+    // records per wrapper, growth 0, at every depth.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var tuples: std.ArrayList(u8) = .empty;
+    defer tuples.deinit(a);
+    try tuples.appendSlice(a, "w0 f = ( f ⊤, f ⊤ )\n");
+    for (1..11) |k| try tuples.print(a, "\n\nw{d} f = ( w{d} f, w{d} f )\n", .{ k, k - 1, k - 1 });
+    var lists: std.ArrayList(u8) = .empty;
+    defer lists.deinit(a);
+    try lists.appendSlice(a, "w0 f = f ⊤ ++ f ⊤\n");
+    for (1..25) |k| try lists.print(a, "\n\nw{d} f = w{d} f ++ w{d} f\n", .{ k, k - 1, k - 1 });
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const tuple_dump = try dumpGenerated(&w, tuples.items);
+    const list_dump = try dumpGenerated(&w, lists.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_][]const u8{ "w2", "w6", "w10" }) |owner| try testing.expect(!try expectBoundedOrLimit(tuple_dump, owner, 2_000));
+    try testing.expect(try accountTotal(tuple_dump, "w10") <= 2 * try accountTotal(tuple_dump, "w2"));
+    for ([_][]const u8{ "w8", "w16", "w24" }) |owner| {
+        try testing.expect(!try expectBoundedOrLimit(list_dump, owner, 2_000));
+        try testing.expectEqual(@as(u64, 0), try accountField(list_dump, owner, "growth"));
+    }
+    try testing.expect(try accountTotal(list_dump, "w24") <= 2 * try accountTotal(list_dump, "w8"));
+}
+
+test "the checker v2 walks ClosureTower at depths 8, 16 and 24 in a flat number of records" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Appendix B's ClosureTower: `w0 ⊤ = (xs = [0]; λ_ → xs)`, each `wk`
+    // builds two `w(k-1)` closures and a closure over both. The type stays
+    // `⊤ → (Bool → List Int)`, with no callback label. A declaration's
+    // returned closure is summarised `res ε fresh` (#2028), so the tower has
+    // no ordinary creation contexts to enumerate and its walk is flat: 503
+    // records per level, growth 0. When #2028 lands the tower may stop at
+    // the loud limit instead, which this test allows; it may never spend
+    // past the allowance or run on silently.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(a);
+    try src.appendSlice(a, "w0 : ⊤ → (Bool → List Int)\nw0 ⊤ =\n    xs = [ 0 ]\n    λ_ → xs\n");
+    for (1..25) |k| try src.print(a, "\n\nw{d} : ⊤ → (Bool → List Int)\nw{d} ⊤ =\n    a = w{d} ⊤\n    b = w{d} ⊤\n    λflag → if flag then a flag else b flag\n", .{ k, k, k - 1, k - 1 });
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try dumpGenerated(&w, src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    var totals: [3]u64 = .{ 0, 0, 0 };
+    for ([_][]const u8{ "w8", "w16", "w24" }, 0..) |owner, i| {
+        const stopped = try expectBoundedOrLimit(dump, owner, 2_000);
+        if (!stopped) totals[i] = try accountTotal(dump, owner);
+    }
+    if (totals[0] != 0 and totals[2] != 0) try testing.expect(totals[2] <= 2 * totals[0]);
+}
+
+const WideLeaf = enum { scalar, fresh, supplied };
+
+/// §7.6 item 6's WideCallbackResult: `h f` builds an `n`-field record of
+/// `f ⊤`; each answer is an `m`-field record of lists (or of `Int`s for
+/// `.scalar`, which has `h` alone). `use` hands `h` a lambda answering `[]`
+/// in every field (`.fresh`) or the parameter `x` (`.supplied`). `demo`
+/// writes one list of the answer while a list of another field is read.
+fn wideSource(a: std.mem.Allocator, src: *std.ArrayList(u8), n: u32, m: u32, leaf: WideLeaf) !void {
+    const field = if (leaf == .scalar) "Int" else "List Int";
+    try src.appendSlice(a, "type alias R = { ");
+    for (0..m) |j| try src.print(a, "{s}b{d} : {s}", .{ if (j == 0) "" else ", ", j, field });
+    try src.appendSlice(a, " }\n\n\ntype alias H = { ");
+    for (0..n) |i| try src.print(a, "{s}a{d} : R", .{ if (i == 0) "" else ", ", i });
+    try src.appendSlice(a, " }\n\n\npub h : (⊤ → R) → H\nh f = { ");
+    for (0..n) |i| try src.print(a, "{s}a{d} = f ⊤", .{ if (i == 0) "" else ", ", i });
+    try src.appendSlice(a, " }\n");
+    if (leaf == .scalar) return;
+    try src.appendSlice(a, "\n\npub use : List Int → H\nuse x =\n    h λ⊤ → { ");
+    for (0..m) |j| try src.print(a, "{s}b{d} = {s}", .{ if (j == 0) "" else ", ", j, if (leaf == .fresh) "[]" else "x" });
+    try src.appendSlice(a, " }\n\n\npub demo : List Int → List Int × List Int\ndemo x =\n    r = use x\n    ( List.push r.a0.b0 1, r.a1.b1 )\n");
+}
+
+test "the checker v2 keeps a direct N-field wrapper of scalar answers at baseline for any written width" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §7.6 item 6: "A direct N-field `h` with scalar leaves stays baseline at
+    // arbitrary written width". `h f = { a0 = f ⊤, … }` over `Int` answers
+    // spends no growth, and its records are linear in N (2 080 / 17 952 at
+    // N = 64 / 512).
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 64, 512 }, 0..) |n, i| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(testing.allocator);
+        const a = testing.allocator;
+        try src.appendSlice(a, "type alias H = { ");
+        for (0..n) |k| try src.print(a, "{s}a{d} : Int", .{ if (k == 0) "" else ", ", k });
+        try src.appendSlice(a, " }\n\n\npub h : (⊤ → Int) → H\nh f = { ");
+        for (0..n) |k| try src.print(a, "{s}a{d} = f ⊤", .{ if (k == 0) "" else ", ", k });
+        try src.appendSlice(a, " }\n");
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try dumpGenerated(&w, src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expect(!try expectBoundedOrLimit(dump, "h", 40_000));
+        try testing.expectEqual(@as(u64, 0), try accountField(dump, "h", "growth"));
+        totals[i] = try accountTotal(dump, "h");
+    }
+    try testing.expect(totals[1] <= 12 * totals[0]);
+}
+
+test "the checker v2 answers a 16-wide callback product exactly and a 32-wide one within the allowance" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §7.6 item 6, N = M: `use` hands `h` an M-field actual of lists it
+    // holds, so reading and writing the N×M descendants is the product the
+    // allowance bounds. At 16 the answer is exact: `demo` writes
+    // `r.a0.b0` while `r.a1.b1` is read, and both fields are `x`, so it is
+    // refused. At 32 the product spends 48 105 of the 65 536 growth
+    // records. The fresh actual is the shortcut that does not exist yet
+    // (#2035).
+    const a = testing.allocator;
+    var seen_demo: u32 = 0;
+    for ([_]u32{ 16, 32 }, 0..) |n, i| {
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try wideSource(a, &src, n, n, .supplied);
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try dumpGenerated(&w, src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expect(!try expectBoundedOrLimit(dump, "use", 200_000));
+        if (i == 0) {
+            try testing.expect(std.mem.indexOf(u8, dump, ": rejected ") != null);
+            seen_demo += 1;
+        }
+    }
+    try testing.expectEqual(@as(u32, 1), seen_demo);
+}
+
+test "the checker v2 stops a 64-wide callback product loudly with ownership_limit and nothing else but its dependents" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §7.6 item 6: "generated cases exceeding the growth allowance must fail
+    // with ownership_limit". N = M = 64 supplied descendants are 4 096
+    // products, past the default allowance on the slot domain. The dump says
+    // `limit use`, the declaration is unchecked, and `check` refuses with
+    // `ownership_limit` for `use`. (Should the product ever fit, the dump's
+    // verdict stands and the test ends there.)
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    var src: std.ArrayList(u8) = .empty;
+    defer src.deinit(testing.allocator);
+    try wideSource(testing.allocator, &src, 64, 64, .supplied);
+    try w.write("Main.beni", src.items);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
+    const raw: world.RunOptions = .{ .raw_diagnostics = true };
+    const check = try w.runWith(&.{ "check", "--ownership=v2", "--ownership-everywhere", "--platform=node", "--diagnostics=json", "Main.beni" }, raw);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), dump.exit_code);
+    if (!try expectBoundedOrLimit(dump.stdout, "use", 400_000)) return;
+    try testing.expectEqual(@as(u8, 1), check.exit_code);
+    try testing.expect(std.mem.indexOf(u8, check.stderr, "\"code\":\"ownership_limit\"") != null);
+    try testing.expect(std.mem.indexOf(u8, check.stderr, "ownership_summary_size") != null);
+    // `demo` reads `use`'s unknown answer and is refused for that; nothing else is.
+    try testing.expectEqual(@as(usize, 1), std.mem.count(u8, check.stderr, "\"code\":\"ownership_limit\""));
+    try testing.expectEqual(std.mem.count(u8, check.stderr, "\"code\":"), 1 + std.mem.count(u8, check.stderr, "\"code\":\"list_may_be_shared\""));
+}
+
+test "the checker v2 composes N-way and M-way callback unions exactly, in records below N times M" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §7.6 item 6's CallbackUnionComposition, N = M = 16/64/256. `pickN`
+    // answers `f ⊤` in N arms, `pickM` in M arms, and `both` pairs the two
+    // unions. The unions add nothing (growth 0 in `both`); comparing the
+    // two answers of a caller costs at most the N×M pairs. At every size the
+    // verdicts are exact: `fresh` (a fresh lambda) is accepted, `shared`
+    // (the lambda answers the caller's `x`) is refused.
+    const a = testing.allocator;
+    var totals: [3]u64 = undefined;
+    for ([_]u32{ 16, 64, 256 }, 0..) |n, i| {
+        var w = try World.init(a, testing.io);
+        defer w.deinit();
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        for ([_][]const u8{ "pickN", "pickM" }) |name| {
+            try src.print(a, "{s} : Int, (⊤ → List Int) → List Int\n{s} k f =\n    case k of\n", .{ name, name });
+            for (0..n - 1) |k| try src.print(a, "        {d} → f ⊤\n\n", .{k});
+            try src.appendSlice(a, "        _ → f ⊤\n\n\n");
+        }
+        try src.appendSlice(a, "pub both : Int, Int, (⊤ → List Int) → List Int × List Int\nboth i j f = ( pickN i f, pickM j f )\n\n\n");
+        try src.appendSlice(a, "pub fresh : Int, Int → List Int × List Int\nfresh i j =\n    ( p, q ) = both i j λ⊤ → [ 1 ]\n    ( List.push p 1, q )\n\n\n");
+        try src.appendSlice(a, "pub shared : Int, Int, List Int → List Int × List Int\nshared i j x =\n    ( p, q ) = both i j λ⊤ → x\n    ( List.push p 1, q )\n");
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try dumpGenerated(&w, src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expectEqual(@as(u64, 0), try accountField(dump, "both", "growth"));
+        try testing.expect(!try expectBoundedOrLimit(dump, "fresh", 200_000));
+        try testing.expect(!try expectBoundedOrLimit(dump, "shared", 200_000));
+        try testing.expect(std.mem.indexOf(u8, dump, "total 2: accepted 1 (fresh 1,") != null);
+        try testing.expect(std.mem.indexOf(u8, dump, "pending 0, rejected 1") != null);
+        totals[i] = try accountTotal(dump, "fresh") + try accountTotal(dump, "shared");
+    }
+    // A sixteen-fold step in N×M costs at most that many records.
+    try testing.expect(totals[1] <= 16 * totals[0]);
+    try testing.expect(totals[2] <= 16 * totals[1]);
+}
+
+test "the checker v2 walks mutual carried lambdas in no growth and answers exactly" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §7.6 item 6, "recursion through wrappers, mutual carried lambdas":
+    // `ping` and `pong` hand each other a lambda that calls the one they were
+    // given. The group terminates with growth 0 and no limit, a fresh actual
+    // is accepted, and one that answers the caller's `x` is refused.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const src =
+        \\ping : Int, (⊤ → List Int) → List Int
+        \\ping n f =
+        \\    if n == 0 then
+        \\        f ⊤
+        \\
+        \\    else
+        \\        pong (n - 1) λ⊤ → f ⊤
+        \\
+        \\
+        \\pong : Int, (⊤ → List Int) → List Int
+        \\pong n f =
+        \\    if n == 0 then
+        \\        f ⊤
+        \\
+        \\    else
+        \\        ping (n - 1) λ⊤ → f ⊤
+        \\
+        \\
+        \\pub fresh : Int → List Int
+        \\fresh n = List.push (ping n λ⊤ → [ 1 ]) 2
+        \\
+        \\
+        \\pub shared : Int, List Int → List Int × List Int
+        \\shared n x = ( List.push (ping n λ⊤ → x) 2, x )
+        \\
+    ;
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dump = try dumpGenerated(&w, src);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_][]const u8{ "ping", "pong", "fresh", "shared" }) |owner| {
+        try testing.expect(!try expectBoundedOrLimit(dump, owner, 5_000));
+        try testing.expectEqual(@as(u64, 0), try accountField(dump, owner, "growth"));
+    }
+    try testing.expect(std.mem.indexOf(u8, dump, "total 2: accepted 1 (fresh 1,") != null);
+    try testing.expect(std.mem.indexOf(u8, dump, "pending 0, rejected 1") != null);
+}
+
+test "the checker v2 walks a chain of folds that feed each other in records linear in its length" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §7.6 item 6, "supplies-only feedback": `r_k` folds `r_(k-1)` into a
+    // fresh accumulator, so each fold's feedback is its own supply and
+    // nothing else. Twice the folds cost at most 2.5 times the records, with
+    // growth 0 (72 144 / 142 659 at 100 / 200 on Debug).
+    var totals: [2]u64 = undefined;
+    for ([_]u32{ 40, 80 }, 0..) |n, i| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const a = testing.allocator;
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "pub chain : List Int → List Int\nchain xs =\n    r0 = List.foldl xs [] λx acc → List.push acc x\n");
+        for (1..n + 1) |k| try src.print(a, "    r{d} = List.foldl r{d} [] λx acc → List.push acc x\n", .{ k, k - 1 });
+        try src.print(a, "    r{d}\n", .{n});
+
+        // ┌─────────────────────────────────────────┐
+        // │ EXECUTE                                 │
+        // └─────────────────────────────────────────┘
+        const dump = try dumpGenerated(&w, src.items);
+
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY OUTPUT                           │
+        // └─────────────────────────────────────────┘
+        try testing.expect(!try expectBoundedOrLimit(dump, "chain", 400_000));
+        try testing.expectEqual(@as(u64, 0), try accountField(dump, "chain", "growth"));
+        totals[i] = try accountTotal(dump, "chain");
+    }
+    try testing.expect(totals[1] * 10 <= totals[0] * 25);
+}
