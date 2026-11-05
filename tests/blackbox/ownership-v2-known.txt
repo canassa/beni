@@ -4689,7 +4689,6 @@ tests/corpus/run/SanitiserHandedWriter.beni SanitiserHandedWriter 23:20 #0 :: on
 tests/corpus/run/SanitiserHandedWriter.beni SanitiserHandedWriter 23:25 #0 :: List.push v :: pending :: accepted  v2 escapes a writer a callee hands to a label, which names objects, never a code (§2.11.3, *a function value goes where a value goes*); v1 leaves it to unchecked callers
 tests/corpus/run/SanitiserHandedWriter.beni SanitiserHandedWriter 27:16 #0 :: value SanitiserHandedWriter.bump :: pending :: absent  v2 escapes a writer a callee hands to a label, which names objects, never a code (§2.11.3, *a function value goes where a value goes*); v1 leaves it to unchecked callers
 tests/corpus/run/SanitiserHandedWriter.beni SanitiserHandedWriter 27:20 #0 :: once SanitiserHandedWriter.bump :: absent :: rejected  v2 escapes a writer a callee hands to a label, which names objects, never a code (§2.11.3, *a function value goes where a value goes*); v1 leaves it to unchecked callers
-tests/corpus/run/SanitiserHandedWriter.beni SanitiserHandedWriter 31:23 #0 :: once buf :: absent :: accepted  v2 escapes a writer a callee hands to a label, which names objects, never a code (§2.11.3, *a function value goes where a value goes*); v1 leaves it to unchecked callers
 tests/corpus/run/SanitiserHandedWriter.beni SanitiserHandedWriter 31:23 #0 :: once <lambda> :: absent :: rejected  v2 escapes a writer a callee hands to a label, which names objects, never a code (§2.11.3, *a function value goes where a value goes*); v1 leaves it to unchecked callers
 tests/corpus/run/SanitiserHandedWriter.beni SanitiserHandedWriter 31:28 #0 :: List.push buf :: pending :: accepted  v2 escapes a writer a callee hands to a label, which names objects, never a code (§2.11.3, *a function value goes where a value goes*); v1 leaves it to unchecked callers
 #
@@ -5556,3 +5555,27 @@ tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 87:13 #0 :: Sanitise
 tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 88:13 #0 :: Ref.make v :: absent :: accepted  v2 judges a store at the cell; v1 refuses the row at its later write.
 tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 89:9 #0 :: Ref.update c◆ :: absent :: accepted  v2 judges a store at the cell; v1 refuses the row at its later write.
 tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 89:9 #0 :: Ref.update c◆.0 :: absent :: accepted  v2 judges a store at the cell; v1 refuses the row at its later write.
+tests/corpus/run/SanitiserHandedWriter.beni SanitiserHandedWriter 31:23 #0 :: once buf :: absent :: rejected  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserClosureResult.beni SanitiserClosureResult 22:5 #0 :: Ref.update r◆ :: absent :: accepted  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserClosureResult.beni SanitiserClosureResult 27:14 #0 :: List.map <call> :: absent :: accepted  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserClosureResult.beni SanitiserClosureResult 27:47 #0 :: cell r◆ :: absent :: accepted  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserClosureResult.beni SanitiserClosureResult 27:52 #0 :: SanitiserClosureResult.sink r◆ :: absent :: accepted  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserClosureResult.beni SanitiserClosureResult 49:15 #0 :: List.map <call> :: absent :: accepted  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserClosureResult.beni SanitiserClosureResult 49:47 #0 :: cell r◆ :: absent :: accepted  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserClosureResult.beni SanitiserClosureResult 50:5 #0 :: Ref.update r◆ :: absent :: accepted  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserClosureResult.beni SanitiserClosureResult 55:15 #0 :: cell r◆ :: absent :: accepted  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserClosureResult.beni SanitiserClosureResult 56:5 #0 :: Ref.update r◆ :: absent :: accepted  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserClosureResult.beni SanitiserClosureResult 61:14 #0 :: List.map <call> :: absent :: accepted  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserClosureResult.beni SanitiserClosureResult 61:83 #0 :: cell r◆ :: absent :: accepted  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserClosureResult.beni SanitiserClosureResult 61:88 #0 :: SanitiserClosureResult.stash r◆ :: absent :: accepted  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserClosureResult.beni SanitiserClosureResult 66:9 #0 :: Ref.make <literal> :: absent :: accepted  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserClosureResult.beni SanitiserClosureResult 68:9 #0 :: SanitiserClosureResult.stored r◆ :: absent :: accepted  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserClosureResult.beni SanitiserClosureResult 69:9 #0 :: List.push y :: accepted :: rejected  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserClosureResult.beni SanitiserClosureResult 82:10 #0 :: Ref.make <literal> :: absent :: accepted  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserClosureResult.beni SanitiserClosureResult 84:10 #0 :: SanitiserClosureResult.updated r6◆ :: absent :: accepted  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserClosureResult.beni SanitiserClosureResult 85:10 #0 :: List.push y6 :: accepted :: rejected  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserClosureResult.beni SanitiserClosureResult 86:10 #0 :: Ref.make <literal> :: absent :: accepted  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserClosureResult.beni SanitiserClosureResult 88:10 #0 :: SanitiserClosureResult.handed r7◆ :: absent :: accepted  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserClosureResult.beni SanitiserClosureResult 89:10 #0 :: List.push y7 :: accepted :: rejected  #2059: v2 refuses an edit of a capture that left in a closure
+tests/corpus/run/SanitiserAnswerLeft.beni SanitiserAnswerLeft 36:9 #0 :: List.push y :: accepted :: rejected  #2059: v2 refuses an edit of a capture whose answer left
+tests/corpus/run/SanitiserAnswerLeft.beni SanitiserAnswerLeft 39:9 #0 :: List.push w :: accepted :: rejected  #2059: v2 refuses an edit of a capture whose answer left

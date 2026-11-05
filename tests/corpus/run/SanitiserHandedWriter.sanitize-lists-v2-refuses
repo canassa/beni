@@ -2,3 +2,5 @@
 23:20 list_may_be_shared once
 27:20 list_may_be_shared once
 31:23 list_still_used once
+# Not a duplicate: the second is `once <lambda>`, the first `once buf`.
+31:23 list_still_used once

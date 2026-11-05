@@ -1,10 +1,7 @@
-//! L11: what a closure run by unknown code runs in turn
+//! L12: what a closure run by unknown code runs in turn
 //! (`docs/design/ownership-v2.md` §2.11.3, *a function value goes where a
-//! value goes*). A closure that escapes is called by code nobody sees, so
-//! a function it captures and calls, hands on or lets escape is run by
-//! unknown code too, and it escapes. Before this a closure reaching a
-//! callee in a list of two met no rule, and what its label wrote was judged
-//! by nobody (#2041).
+//! value goes*): a function it captures and calls, hands on or lets escape
+//! is run by unknown code too, and it escapes (#2041).
 //!
 //! Obligations kept here: O1's half for a closure's captured functions.
 
@@ -12,10 +9,12 @@ const std = @import("std");
 const Ids = @import("Ids.zig");
 const Eval = @import("Eval.zig");
 const FnRun = @import("FnRun.zig");
-const Relation = @import("Relation.zig");
+const Answers = @import("ClosureAnswers.zig");
+const AnswerRead = @import("AnswerRead.zig");
+const Loans = @import("Loans.zig");
 
 /// One closure of the frame, escaped at `point` (`none`: where it stands).
-fn runs(e: *Eval.Evaluation, atom: u32, point: u32, call: u32) Eval.Error!void {
+fn runs(e: *Eval.Evaluation, atom: u32, point: u32, call: u32, read: bool) Eval.Error!void {
     const f = e.fr();
     for (e.w.closures.items) |cl| {
         if (cl.inst != atom) continue;
@@ -26,22 +25,20 @@ fn runs(e: *Eval.Evaluation, atom: u32, point: u32, call: u32) Eval.Error!void {
         const at = if (point == Ids.none_int) cl.point else point;
         for (e.contracts.labelsOf(h.labels)) |lab| {
             if (lab.j < sig.own or lab.j - sig.own >= caps.len) continue;
-            try Eval.escapeFns(e, caps[lab.j - sig.own], f.slots.relWords(lab.slot), .run, at, call);
+            // Run by code that only reads its answer, what the closure runs answers into that read.
+            const kept = read and try Loans.supply(f, e.contracts, lab) == null and try AnswerRead.of(e.chain(), c, lab.j, true);
+            try Eval.escapeFns(e, caps[lab.j - sig.own], f.slots.relWords(lab.slot), if (kept) .run_read else .run, at, call);
         }
+        try Answers.supplied(e, c, sig.own, caps, at);
         for (e.contracts.effectsOf(h.escapes)) |x| {
             if (x.j < sig.own or x.j - sig.own >= caps.len) continue;
             try Eval.escapeFns(e, caps[x.j - sig.own], f.slots.relWords(x.slot), if (x.deep) .run_deep else .run, at, call);
-            // What the code lets escape has escaped, data too, once the code runs unseen.
-            var ps: std.ArrayList(Relation.Proj) = .empty;
-            defer ps.deinit(e.gpa());
-            try e.ev.project(caps[x.j - sig.own], f.slots.relWords(x.slot), x.deep, 0, 0, &ps);
-            for (ps.items) |p| try Eval.addEscape(e, p.leaf, at);
+            try Answers.gone(e, caps[x.j - sig.own], x.slot, x.deep, at);
         }
     }
 }
 
-/// Whether closure `cl`'s contract writes, or names a capture in a label or
-/// an escape: whether its escape matters.
+/// Whether closure `cl`'s escape matters: it writes, or names a capture.
 fn hasRuns(e: *Eval.Evaluation, cl: anytype) Eval.Error!bool {
     const c = e.ctx.contractOf(e.ctx.ctx, cl.code) orelse return false;
     const h = e.contracts.head(c);
@@ -49,14 +46,13 @@ fn hasRuns(e: *Eval.Evaluation, cl: anytype) Eval.Error!bool {
     if (h.writes.len != 0) return true;
     for (e.contracts.labelsOf(h.labels)) |lab| if (lab.j >= own) return true;
     for (e.contracts.effectsOf(h.escapes)) |x| if (x.j >= own) return true;
-    return false;
+    return Answers.namesCapture(e, c, own);
 }
 
-/// Each escaped closure's captured functions, escaped in turn. By index:
-/// a captured closure is added as it is met. A closure stored by a callee
-/// or spawned is an escape of the value that holds it, written out here.
+/// Each escaped closure run, by index: a captured closure is added as it is met.
 pub fn labels(e: *Eval.Evaluation) Eval.Error!void {
     const f = e.fr();
+    try Answers.labelled(e);
     // Reading an escape costs an expansion: only where a closure's escape matters.
     const wide = for (e.w.closures.items) |cl| {
         if (try hasRuns(e, cl)) break true;
@@ -75,9 +71,13 @@ pub fn labels(e: *Eval.Evaluation) Eval.Error!void {
         if (i == e.fn_escapes.items.len) return;
         const es = e.fn_escapes.items[i];
         const atom = f.leafAt(es.leaf).atom;
-        for (e.fn_escapes.items[0..i]) |o| {
-            if (f.leafAt(o.leaf).atom == atom) break;
-        } else try runs(e, atom, es.point, es.call);
+        var ran, var left = .{ false, es.read };
+        for (e.fn_escapes.items[0..i]) |o| if (f.leafAt(o.leaf).atom == atom) {
+            ran = true;
+            left = left or !o.read;
+        };
+        if (!ran or !left) try runs(e, atom, es.point, es.call, es.read);
+        if (!left) try Answers.of(e, atom, es.point);
         i += 1;
     }
 }

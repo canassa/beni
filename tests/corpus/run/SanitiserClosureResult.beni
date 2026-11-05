@@ -1,0 +1,99 @@
+-- A capture that leaves as a closure's result (`ownership-v2.md` §2.11.3): the
+-- closure runs unseen, so what it answers is handed to someone the frame cannot
+-- see, and a closure that comes back from a callee takes its captures with it.
+-- Each later edit of the capture is refused; asked nothing, the sanitised runs
+-- trap on a stale read.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+sink : Ref (List (List Int)), (⊤ → List Int) → Int
+sink r c =
+    Ref.update r λs → [ c ⊤, …List.copy s ]
+    0
+
+
+stored : List Int, Ref (List (List Int)) → List Int
+stored y r = List.map [ (λ⊤ → y), (λ⊤ → []) ] λq → sink r q
+
+
+pass : a → a
+pass q = q
+
+
+back : List Int → List (⊤ → List Int)
+back y = List.map [ (λ⊤ → y), (λ⊤ → []) ] λq → q
+
+
+backNamed : List Int → List (⊤ → List Int)
+backNamed y = List.map [ (λ⊤ → y), (λ⊤ → []) ] pass
+
+
+backAnswered : List Int → List (⊤ → List Int)
+backAnswered y =
+    d = λv → v
+    List.map [ (λ⊤ → d y), (λ⊤ → []) ] λq → q
+
+
+updated : List Int, Ref (List Int) → List Int
+updated y r = List.map [ (λs → s), (λs → y) ] λq →
+    Ref.update r q
+    0
+
+
+stash : Ref (List (List Int)), ((List Int → Int) → Int) → Int
+stash r q = q λv →
+    Ref.update r λs → [ v, …List.copy s ]
+    0
+
+
+handed : List Int, Ref (List (List Int)) → List Int
+handed y r = List.map [ (λf → List.length [ f y ]), (λf → List.length [ f [] ]) ] λq → stash r q
+
+
+main : Program
+main =
+    r = Ref.make []
+    y = [ 1 ]
+    a = stored y r
+    z = List.push y 2
+    y2 = [ 1 ]
+    fs = back y2
+    z2 = List.push y2 2
+    y3 = [ 1 ]
+    gs = backNamed y3
+    z3 = List.push y3 2
+    y4 = [ 1 ]
+    hs = backAnswered y4
+    z4 = List.push y4 2
+    y5 = [ 1 ]
+    is = List.map [ (λ⊤ → y5), (λ⊤ → []) ] λq → q
+    z5 = List.push y5 2
+    r6 = Ref.make []
+    y6 = [ 1 ]
+    b6 = updated y6 r6
+    z6 = List.push y6 2
+    r7 = Ref.make []
+    y7 = [ 1 ]
+    b7 = handed y7 r7
+    z7 = List.push y7 2
+    lines =
+        [ show a ++ "|" ++ show z ++ "|" ++ shows (Ref.get r)
+        , show z2 ++ "|" ++ shows (List.map fs λq → q ⊤)
+        , show z3 ++ "|" ++ shows (List.map gs λq → q ⊤)
+        , show z4 ++ "|" ++ shows (List.map hs λq → q ⊤)
+        , show z5 ++ "|" ++ shows (List.map is λq → q ⊤)
+        , show b6 ++ "|" ++ show z6 ++ "|" ++ show (Ref.get r6)
+        , show b7 ++ "|" ++ show z7 ++ "|" ++ shows (Ref.get r7)
+        ]
+    Node.print (String.join lines "\n")

@@ -31,8 +31,9 @@ const Error = Value.Error;
 /// unknown code (its own storage: the parameters' function slots and the
 /// frame's closures it is); `answer`, a known code's answer to its label,
 /// handed back to the callee (every parameter function slot it holds; a
-/// closure it holds is `Closures`' hand-back).
-pub const Mode = enum { run, run_deep, answer };
+/// closure it holds is `Closures`' hand-back); `run_read`, `run` by known
+/// code that only reads the answer (`answerRead`).
+pub const Mode = enum { run, run_deep, answer, run_read };
 
 /// The function objects of value `v` at `words` that `mode` gives, into
 /// `out`, under a subscription, so that what a growing draft adds later is
@@ -127,7 +128,8 @@ fn expanded(ev: *Relation.Eval, stack: *std.ArrayList(u32), want: Want, out: *st
         }
         switch (l.kind) {
             .site => if (std.sort.binarySearch(u32, want.sites, l.atom, order) != null) try out.append(gpa, li),
-            .ref => if (f.roots.items[l.root].kind == .param) {
+            // A label's answer that runs: the answer has left where nobody says (`answer_left`).
+            .ref => if (f.roots.items[l.root].kind == .cb) try out.append(gpa, li) else if (f.roots.items[l.root].kind == .param) {
                 var fs: std.ArrayList(u32) = .empty;
                 defer fs.deinit(gpa);
                 // A subtree held whole (`↓p`) that may hold a closure keeps

@@ -1,0 +1,82 @@
+-- The twin of `SanitiserClosureResult` (`ownership-v2.md` §2.11.3): the capture
+-- is not edited after the closure leaves, the closure answers a list of its own,
+-- or known code only reads or copies what the closure answers, so the capture can
+-- be edited. v2 accepts each; the sanitised run prints what the plain run prints.
+-- `chain`'s closures share captures; a walk per path would hit the summary limit.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+back : List Int → List (⊤ → List Int)
+back y = List.map [ (λ⊤ → y), (λ⊤ → []) ] λq → q
+
+
+own : ⊤ → List (⊤ → List Int)
+own ⊤ = List.map [ (λ⊤ → [ 1 ]), (λ⊤ → []) ] λq → q
+
+
+count : List Int → List Int
+count y = List.map [ (λ⊤ → y), (λ⊤ → []) ] λq → List.length (q ⊤)
+
+
+nested : List Int → List Int
+nested y =
+    g = λ⊤ → y
+    List.map [ (λ⊤ → g ⊤), (λ⊤ → []) ] λq → List.length (q ⊤)
+
+
+copies : List Int → List (List Int)
+copies y = List.map [ (λ⊤ → y), (λ⊤ → []) ] λq → List.copy (q ⊤)
+
+
+chain : Int, List Int → List (⊤ → List Int)
+chain b y =
+    c0 = λ⊤ → y
+    c1 = λ⊤ → List.copy y
+    c2 = λ⊤ → if b > 2 then c1 ⊤ else c0 ⊤
+    c3 = λ⊤ → if b > 3 then c2 ⊤ else c1 ⊤
+    c4 = λ⊤ → if b > 4 then c3 ⊤ else c2 ⊤
+    c5 = λ⊤ → if b > 5 then c4 ⊤ else c3 ⊤
+    c6 = λ⊤ → if b > 6 then c5 ⊤ else c4 ⊤
+    c7 = λ⊤ → if b > 7 then c6 ⊤ else c5 ⊤
+    c8 = λ⊤ → if b > 8 then c7 ⊤ else c6 ⊤
+    c9 = λ⊤ → if b > 9 then c8 ⊤ else c7 ⊤
+    c10 = λ⊤ → if b > 10 then c9 ⊤ else c8 ⊤
+    c11 = λ⊤ → if b > 11 then c10 ⊤ else c9 ⊤
+    c12 = λ⊤ → if b > 12 then c11 ⊤ else c10 ⊤
+    c13 = λ⊤ → if b > 13 then c12 ⊤ else c11 ⊤
+    List.map [ c13, c12 ] λq → q
+
+
+main : Program
+main =
+    y = [ 1 ]
+    a = count y
+    z2 = List.push y 2
+    w = [ 1 ]
+    n = nested w
+    z4 = List.push w 2
+    v = [ 1 ]
+    b = copies v
+    z3 = List.push v 2
+    cs = chain 3 [ 1 ]
+    fs = back [ 1 ]
+    gs = own ⊤
+    z = List.push (List.push [ 1 ] 2) 3
+    lines =
+        [ shows (List.map fs λq → q ⊤)
+        , show z ++ "|" ++ shows (List.map gs λq → q ⊤)
+        , show a ++ "|" ++ show z2 ++ "|" ++ shows b ++ "|" ++ show z3
+        , shows (List.map cs λq → q ⊤)
+        , show n ++ "|" ++ show z4
+        ]
+    Node.print (String.join lines "\n")

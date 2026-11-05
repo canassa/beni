@@ -30,6 +30,7 @@ const Across = @import("Across.zig");
 const Stored = @import("Stored.zig");
 const Loans = @import("Loans.zig");
 const Captures = @import("Captures.zig");
+const AnswerRead = @import("AnswerRead.zig");
 const FnRun = @import("FnRun.zig");
 const Called = @import("Called.zig");
 const W = @import("Walk.zig");
@@ -286,7 +287,7 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
         try FnRun.supplied(&e.ev, e.chain(), q, l, &ls);
         e.ev.cur_sub = saved;
         for (ls.items) |lf| try addEscape(e, lf, call.point);
-        try escapeFns(e, arg, f.slots.relWords(l.slot), .run, call.point, q);
+        try escapeFns(e, arg, f.slots.relWords(l.slot), if (try Loans.supply(f, e.contracts, l) == null and try AnswerRead.of(e.chain(), call.contract, l.j, false)) .run_read else .run, call.point, q);
     }
 }
 
@@ -297,7 +298,7 @@ pub fn escapeFns(e: *Evaluation, v: u32, words: []const u32, mode: FnRun.Mode, p
     var ls: std.ArrayList(u32) = .empty;
     defer ls.deinit(e.gpa());
     try FnRun.escapes(&e.ev, e.ctx, e.w.closures.items, v, words, mode, point, call, &ls);
-    for (ls.items) |lf| try addFn(e, lf, point, call);
+    for (ls.items) |lf| try addFn(e, lf, point, call, mode == .run_read);
 }
 
 /// A leaf a growing draft delivers to `escapeFns`' subscription `sub`: its function objects escape.
@@ -305,11 +306,11 @@ pub fn deliverFns(e: *Evaluation, sub: Relation.Sub, leaf: u32) Error!void {
     var ls: std.ArrayList(u32) = .empty;
     defer ls.deinit(e.gpa());
     try FnRun.delivered(&e.ev, e.ctx, e.w.closures.items, sub, leaf, &ls);
-    for (ls.items) |lf| try addFn(e, lf, sub.a, sub.c);
+    for (ls.items) |lf| try addFn(e, lf, sub.a, sub.c, sub.b == @backingInt(FnRun.Mode.run_read));
 }
 
-fn addFn(e: *Evaluation, lf: u32, point: u32, call: u32) Error!void {
-    if (e.fr().leafAt(lf).kind == .site) try e.fn_escapes.append(e.gpa(), .{ .leaf = lf, .point = point, .call = call }) else try addEscape(e, lf, point);
+fn addFn(e: *Evaluation, lf: u32, point: u32, call: u32, read: bool) Error!void {
+    if (e.fr().leafAt(lf).kind == .site) try e.fn_escapes.append(e.gpa(), .{ .leaf = lf, .point = point, .call = call, .read = read }) else try addEscape(e, lf, point);
 }
 
 /// Every entry of tree `root`, in the canonical order, in the round.s arena.

@@ -2097,6 +2097,21 @@ The rule has two halves.
    a growing draft adds later is read the same way, through an `escape_fn` subscription (§2.12 *Deliveries*),
    so it too gives function objects only.
 
+*Amended 2026-11-05 (#2059):* what a closure answers leaves with the closure, and so do its captures. A closure run by code the frame cannot
+follow hands its answer to whoever runs it, so a capture among the arrivals of its result escapes, and so does what a capture function holds when the
+answer is that function's, with every capture supplied to it, label by label (`ClosureAnswers`). A function capture itself stays unescaped unless the
+answer's type can hold a function: it runs at its label. **Unless the runner is known and only reads:** a contract whose result, supplies, escapes
+and stores name neither the parameter nor an answer of it (`AnswerRead`) keeps the answer inside the call, so `List.map [ (λ⊤ → y), … ] λq → List.length
+(q ⊤)` leaves `y` free to edit, and what such a closure runs answers into the same read. A label that is a cell's callback stores its answer, so
+it never only reads (`Ref.update r q`). The closure has still escaped for its writes (§2.11.4); only its answer stays. A value that holds a label's answer
+and escapes (a closure spawned on it) marks the label `answer_left` (block version 24): a caller's closure there is not escaped for that, but what it answers has
+escaped, and the run is not read-only. And what a closure hands a
+function it is given, a capture too, is seen by nobody: it escapes whatever runs the closure (`λf → f y`). A closure that arrives in a result as a
+`.site` leaf, back through a label's answer, has no structure to carry its captures, so read-off describes them at that slot, once per slot and list
+(`ReadOff.describeLeaf`); and `Captures` finds every closure built at an arrival's steps, through each element of a list and each arm of a choice.
+Refused that a perfect checker accepts: the bare-closure cases this now shares (`List.map [ c, d ] λq → q ⊤` with `c` a local writer of its own list,
+as the amendment below says). Fixtures `run/SanitiserClosureResult`, `run/SanitiserClosureResultApart`.
+
 *Amended 2026-11-05 (#2041):* a closure's own labels of its captures escape with it (`ClosureRuns.zig`). A captured function is not run by the
 value's escape, but it is by the code the escape hands to unknown callers: `chain y g = List.map [ (λ⊤ → g y), (λ⊤ → []) ] λq → q ⊤` runs `g`
 on `y` in a place no label names, and its write was judged by nobody. So each closure in `fn_escapes`, a captured closure among them, and
@@ -5207,6 +5222,7 @@ L0  Ids  Counters  Scratch
 | `Called.zig` | 8 | a function value in a result: the closure of a called code a call's result is (§2.11.3, #2028) | Ids, Slots, Value, Contract |
 | `Construction.zig` | 8 | a construction over its base, split from `Walk` (§2.13.2) | Ids, Facts, Place, Value, Relation |
 | `FnRun.zig` | 9 | a function value the frame cannot follow: the one parameter function slot a value is, and the function objects that escape where it is not (§2.11.3, #1773, #1775, #1776) | Contract, LabelChain, RouteWalk, Relation, Value, WalkContext |
+| `AnswerRead.zig` | 9 | whether known code only reads what it runs a parameter for (§2.11.3, #2059) |
 | `Codes.zig` | 12 | a module's codes and one declaration's answer (§2.10, §2.12) | Ids, Walk, Kept |
 | `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Distinct, Walk, Cells, Loans |
 | `Holders.zig` | 8 | what resolution reads of a frame's leaves: their base keys, the escape index, the operand index (§2.8) | Ids, Place, Value, Relation, Distinct, Contract, Walk, Regions |
