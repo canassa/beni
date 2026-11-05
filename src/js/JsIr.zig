@@ -550,13 +550,24 @@ pub const SubRange = struct {
     }
 };
 
-/// Payload of `func_decl` and `arrow`: the parameter names and the body
-/// statements, both ranges into `extra`.
+/// Payload of `func_decl` and `arrow`: the parameter names, the body
+/// statements, and each parameter's position, all ranges into `extra`.
+/// The body is two words in, so a pass that rewrites a body in place
+/// writes at the record's index + 2.
 pub const Func = struct {
     params_start: ExtraIndex,
     params_end: ExtraIndex,
     body_start: ExtraIndex,
     body_end: ExtraIndex,
+    /// One `pos` for each of `params`, in its order and of its length: the
+    /// place in the source where the parameter is written, `Node.no_pos`,
+    /// or a row of `JsIr.far`, as a node's `pos` is (`backend.md` §11.2,
+    /// *Deferred* item 3, amended 2026-11-05). Only a map reads it. A
+    /// function the compiler invents has `no_pos` for each
+    /// (`Builder.addFunc`); `Lower` gives a parameter the source writes
+    /// its place (`Builder.addFuncAt`).
+    param_pos_start: ExtraIndex,
+    param_pos_end: ExtraIndex,
 
     pub fn params(f: Func) SubRange {
         return .{ .start = f.params_start, .end = f.params_end };
@@ -564,6 +575,10 @@ pub const Func = struct {
 
     pub fn body(f: Func) SubRange {
         return .{ .start = f.body_start, .end = f.body_end };
+    }
+
+    pub fn paramPos(f: Func) SubRange {
+        return .{ .start = f.param_pos_start, .end = f.param_pos_end };
     }
 };
 
@@ -1071,6 +1086,9 @@ fn verifyFunc(ir: *const JsIr, index: ExtraIndex) VerifyError!void {
     const f = try ir.verifyExtra(index, Func);
     try ir.verifyNames(f.params());
     try ir.verifyRange(f.body(), .statement);
+    const at = f.paramPos();
+    if (@backingInt(at.start) > @backingInt(at.end) or @backingInt(at.end) > ir.extra.len) return error.OutOfBounds;
+    if (at.len() != f.params().len()) return error.OutOfBounds;
 }
 
 fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
@@ -1302,6 +1320,14 @@ pub const nesting = struct {
 /// sparse key (a pair of interner indices), exactly the case the rule
 /// exempts. Deduplicating matters because the release renamer wants one row per
 /// distinct identifier, and because a reference is then an integer compare.
+/// `at` as a position of the module's own source: an offset that would
+/// read as a row of `far` has none, so a source map skips what has it and
+/// never names another module (`Node.far_bit`). Inline: `addParts` asks it
+/// of every node.
+inline fn ownPos(at: u32) u32 {
+    return if (at & Node.far_bit != 0) Node.no_pos else at;
+}
+
 pub const Builder = struct {
     gpa: Allocator,
     nodes: NodeList = .empty,
@@ -1444,9 +1470,7 @@ pub const Builder = struct {
         const datas: [*]Node.Data = @ptrCast(@alignCast(b.cols.ptrs[@backingInt(NodeList.Field.data)]));
         const hosts: [*]bool = @ptrCast(b.cols.ptrs[@backingInt(NodeList.Field.host)]);
         tags[index] = node_tag;
-        // An offset that would read as a row of `far` has no position: a
-        // source map then skips the node, and never names another module.
-        positions[index] = if (node_pos & Node.far_bit != 0) Node.no_pos else node_pos;
+        positions[index] = ownPos(node_pos);
         datas[index] = .{ .lhs = lhs, .rhs = rhs };
         hosts[index] = false;
         return @fromBackingInt(@intCast(index));
@@ -1535,6 +1559,39 @@ pub const Builder = struct {
 
     pub fn addNames(b: *Builder, items: []const NameIndex) Allocator.Error!SubRange {
         return b.addExtra(@ptrCast(items));
+    }
+
+    /// The `Func` record of a function the compiler invents: each of its
+    /// parameters has no position (`Func.param_pos_start`).
+    pub fn addFunc(b: *Builder, params: SubRange, body: SubRange) Allocator.Error!ExtraIndex {
+        const start: u32 = @intCast(b.extra.items.len);
+        try b.extra.appendNTimes(b.gpa, Node.no_pos, params.len());
+        return b.addRecord(Func{
+            .params_start = params.start,
+            .params_end = params.end,
+            .body_start = body.start,
+            .body_end = body.end,
+            .param_pos_start = @fromBackingInt(@intCast(start)),
+            .param_pos_end = @fromBackingInt(@intCast(start + params.len())),
+        });
+    }
+
+    /// The `Func` record of a function the source writes: `positions` has
+    /// the place of each of `params`, `Node.no_pos` for one the lowering
+    /// added (an evidence parameter). `Lower` is its one caller.
+    pub fn addFuncAt(b: *Builder, params: SubRange, positions: []const u32, body: SubRange) Allocator.Error!ExtraIndex {
+        std.debug.assert(positions.len == params.len());
+        const start: u32 = @intCast(b.extra.items.len);
+        try b.extra.ensureUnusedCapacity(b.gpa, positions.len);
+        for (positions) |at| b.extra.appendAssumeCapacity(ownPos(at));
+        return b.addRecord(Func{
+            .params_start = params.start,
+            .params_end = params.end,
+            .body_start = body.start,
+            .body_end = body.end,
+            .param_pos_start = @fromBackingInt(@intCast(start)),
+            .param_pos_end = @fromBackingInt(@intCast(start + positions.len)),
+        });
     }
 
     /// Append a record field by field and return its `ExtraIndex`.
@@ -1841,11 +1898,11 @@ const testing = std.testing;
 
 test "extraData reads records positionally and extraLen agrees" {
     try testing.expectEqual(@as(u32, 2), extraLen(SubRange));
-    try testing.expectEqual(@as(u32, 4), extraLen(Func));
+    try testing.expectEqual(@as(u32, 6), extraLen(Func));
     try testing.expectEqual(@as(u32, 4), extraLen(Import));
     try testing.expectEqual(@as(u32, 2), extraLen(Specifier));
 
-    const words = [_]u32{ 3, 4, 7, 9, 11, 12 };
+    const words = [_]u32{ 3, 4, 7, 9, 10, 11, 11, 12 };
     var ir: JsIr = empty;
     ir.extra = &words;
     const f = ir.extraData(@fromBackingInt(@intCast(0)), Func);
@@ -1853,7 +1910,8 @@ test "extraData reads records positionally and extraLen agrees" {
     try testing.expectEqual(@as(u32, 9), @backingInt(f.body_end));
     try testing.expectEqual(@as(u32, 1), f.params().len());
     try testing.expectEqual(@as(u32, 2), f.body().len());
-    const c = ir.extraData(@fromBackingInt(@intCast(4)), Cond);
+    try testing.expectEqual(@as(u32, 1), f.paramPos().len());
+    const c = ir.extraData(@fromBackingInt(@intCast(6)), Cond);
     try testing.expectEqual(@as(u32, 11), c.consequent.int());
     try testing.expectEqual(@as(u32, 12), c.alternate.int());
 }
@@ -1905,6 +1963,37 @@ test "verify accepts a well-formed module and finds every kind of dangling index
     try testing.expectError(error.OutOfBounds, ir.verify());
     ir.nodes.items(.data)[one.int()].rhs = one_len;
     try ir.verify();
+}
+
+test "a function's parameters each have a place: none when invented, the source's when written" {
+    // `backend.md` §11.2, *Parameters* (amended 2026-11-05).
+    const gpa = testing.allocator;
+    var b: Builder = .init(gpa);
+    defer b.deinit();
+
+    const x = try b.intern(.local(@fromBackingInt(@intCast(0))));
+    const y = try b.intern(.local(@fromBackingInt(@intCast(1))));
+    const params = try b.addNames(&.{ x, y });
+    const invented = try b.addFunc(params, .empty);
+    // A place 2 GiB or more into the source would read as a row of `far`,
+    // so it is no place, as a node's is.
+    const written = try b.addFuncAt(params, &.{ 7, Node.far_bit | 3 }, .empty);
+    const first = try b.addNode(.{ .tag = .arrow, .pos = 0, .data = .{ .lhs = @backingInt(invented), .rhs = Node.arrow_plain } });
+    const second = try b.addNode(.{ .tag = .arrow, .pos = 0, .data = .{ .lhs = @backingInt(written), .rhs = Node.arrow_plain } });
+    const one = try b.addNode(.{ .tag = .const_decl, .pos = 0, .data = .{ .lhs = @backingInt(x), .rhs = first.int() } });
+    const two = try b.addNode(.{ .tag = .const_decl, .pos = 0, .data = .{ .lhs = @backingInt(y), .rhs = second.int() } });
+    const body = try b.addRange(&.{ one, two });
+
+    var ir = try b.toOwned(body);
+    defer ir.deinit(gpa);
+    try ir.verify();
+    try testing.expectEqualSlices(u32, &.{ Node.no_pos, Node.no_pos }, ir.extraSlice(ir.extraData(invented, Func).paramPos(), u32));
+    try testing.expectEqualSlices(u32, &.{ 7, Node.no_pos }, ir.extraSlice(ir.extraData(written, Func).paramPos(), u32));
+
+    // A range of places that is not one for each parameter.
+    const end_at = @backingInt(written) + 5;
+    @constCast(ir.extra)[end_at] -= 1;
+    try testing.expectError(error.OutOfBounds, ir.verify());
 }
 
 test "verify refuses a statement where an expression belongs" {
@@ -1992,7 +2081,7 @@ test "measure: a path costs what its constructs cost, a function and declaring b
     const ret = try b.addNode(.{ .tag = .return_stmt, .pos = Node.no_pos, .data = .{ .lhs = leaf.int(), .rhs = 0 } });
     const params = try b.addNames(&.{x});
     const body = try b.addRange(&.{ decl, ret });
-    const func = try b.addRecord(Func{ .params_start = params.start, .params_end = params.end, .body_start = body.start, .body_end = body.end });
+    const func = try b.addFunc(params, body);
     const arrow = try b.addNode(.{ .tag = .arrow, .pos = Node.no_pos, .data = .{ .lhs = @backingInt(func), .rhs = 0 } });
     const top = try b.addNode(.{ .tag = .const_decl, .pos = Node.no_pos, .data = .{ .lhs = @backingInt(x), .rhs = arrow.int() } });
     try testing.expectEqual(Height{

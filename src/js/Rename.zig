@@ -1154,11 +1154,6 @@ fn testNode(b: *JsIr.Builder, tag: Node.Tag, lhs: u32, rhs: u32) !Index {
 fn testFunc(b: *JsIr.Builder, name: NameIndex, param: NameIndex, body: []const Index) !Index {
     const params = try b.addNames(&.{param});
     const stmts = try b.addRange(body);
-    const func = try b.addRecord(JsIr.Func{
-        .params_start = params.start,
-        .params_end = params.end,
-        .body_start = stmts.start,
-        .body_end = stmts.end,
-    });
+    const func = try b.addFunc(params, stmts);
     return testNode(b, .func_decl, name.int(), @backingInt(func));
 }
