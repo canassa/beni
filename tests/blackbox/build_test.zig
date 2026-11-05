@@ -13259,7 +13259,8 @@ test "the checker v2 settles an accumulator of two equal subtrees in one walk" {
     // atom, one interned value under every level, which united the
     // root's class with each subtree's (Debug, self-hosted). The bound is
     // that figure and 10 %. The slot domain (#1685) walks the group once
-    // and settles it by delivering facts (§2.12, 4 rounds), in no growth.
+    // and settles it by delivering facts (§2.12, 4 rounds), in no growth,
+    // which the test asserts (the old bound let 158 000 records through).
     var growth: [1]u64 = undefined;
     for ([_]u32{1}, &growth) |k, *g| {
         var w = try World.init(testing.allocator, testing.io);
@@ -13286,7 +13287,7 @@ test "the checker v2 settles an accumulator of two equal subtrees in one walk" {
         try testing.expectEqual(@as(u64, 1), try accountField(dump.stdout, "acc", "walks"));
         g.* = try accountField(dump.stdout, "acc", "growth");
     }
-    try testing.expect(growth[0] <= 158_000);
+    try testing.expectEqual(@as(u64, 0), growth[0]);
 }
 
 /// `name`'s module text: a record that doubles at each of 11 levels, three
@@ -14090,7 +14091,14 @@ test "the checker v2 takes one walk per member of a ring of pushes at any size (
         // └─────────────────────────────────────────┘
         try testing.expectEqual(@as(u8, 0), dump.exit_code);
         var name: [16]u8 = undefined;
-        for (1..k + 1) |i| try testing.expectEqual(@as(u64, 1), try accountField(dump.stdout, try std.fmt.bufPrint(&name, "ring{d}", .{i}), "walks"));
+        // One walk, at most three rounds and no growth a member (measured:
+        // 3 rounds, growth 0), so a slow ring is caught again.
+        for (1..k + 1) |i| {
+            const m = try std.fmt.bufPrint(&name, "ring{d}", .{i});
+            try testing.expectEqual(@as(u64, 1), try accountField(dump.stdout, m, "walks"));
+            try testing.expect(try accountField(dump.stdout, m, "rounds") <= 3);
+            try testing.expectEqual(@as(u64, 0), try accountField(dump.stdout, m, "growth"));
+        }
         try testing.expect(std.mem.indexOf(u8, dump.stdout, "limit ring") == null);
     }
 }
