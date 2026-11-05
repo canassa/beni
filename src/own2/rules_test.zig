@@ -33,12 +33,26 @@ const Entry = struct { file: []const u8, layer: u8, max_lines: u32 };
 
 /// §5's table. A new file is added here by the slice that adds it.
 const layers = [_]Entry{
-    // The slot domain (#1685) replaced the shape files; the targets are
-    // the files' production lines with headroom, set with the replacement.
-    // An account's first reads of the module tables (§4.1, #1714).
-    .{ .file = "Ids.zig", .layer = 0, .max_lines = 1260 },
+    // The slot domain (#1685) replaced the shape files: a file it added has
+    // its production lines with headroom as its target, set with it; a file
+    // master had keeps its target.
+    // §5 says 600; the lane-charging forms, named limits and charge targets
+    // the first review asked for live here and push it past that, so the
+    // table is amended to 700 with the slice's design commit.
+    // 760 since S3b slice 4a: which copy of the source lanes a walk takes.
+    // 900 since #1646 and the counters: `Columns`, a table with its columns hoisted.
+    // 1 000 since #1646: `IdColumn`, a memo keyed by one dense id.
+    // 1 120 since #1646: `Index` and `Interned`, open addressing over entry indices.
+    // #1685: an account's first reads of the module tables (§4.1, #1714);
+    // the chunks, the task queue and their ids, which nothing used, cut.
+    .{ .file = "Ids.zig", .layer = 0, .max_lines = 1120 },
     .{ .file = "Counters.zig", .layer = 0, .max_lines = 580 },
-    .{ .file = "Place.zig", .layer = 1, .max_lines = 1340 },
+    // §5 says 1 100 since #1345: the fold targets and levels of a read on a
+    // cycle, memoised per path.
+    // 1 200 since #1253: one position, one name (`levelPaths`, `expandLevels`).
+    // 1 210 since #1566: `equals` skips the pairs an earlier walk proved.
+    // 1 220 since #1646: `path_index` reads its keys from the paths.
+    .{ .file = "Place.zig", .layer = 1, .max_lines = 1220 },
     .{ .file = "Runs.zig", .layer = 1, .max_lines = 90 },
     // A leaf's base keys as sets shared with its kids' (#1714).
     .{ .file = "KeySets.zig", .layer = 1, .max_lines = 160 },
@@ -69,14 +83,14 @@ const layers = [_]Entry{
     .{ .file = "Subtree.zig", .layer = 4, .max_lines = 350 },
     // How large `below(p)` is, split from `Subtree` (#1714).
     .{ .file = "BelowSize.zig", .layer = 4, .max_lines = 80 },
-    .{ .file = "Prepass.zig", .layer = 4, .max_lines = 630 },
+    .{ .file = "Prepass.zig", .layer = 4, .max_lines = 600 },
     // A selection in its one spelling of a subtree (#1714).
     .{ .file = "Canon.zig", .layer = 5, .max_lines = 120 },
     // A set met against a run of slots in one pass, for `Descent` (#1714).
     .{ .file = "MeetRun.zig", .layer = 5, .max_lines = 70 },
     // The environment rows are read in, split from `Rows` (#1752).
     .{ .file = "RowEnv.zig", .layer = 5, .max_lines = 150 },
-    .{ .file = "Regions.zig", .layer = 5, .max_lines = 530 },
+    .{ .file = "Regions.zig", .layer = 5, .max_lines = 450 },
     .{ .file = "ContractText.zig", .layer = 5, .max_lines = 160 },
     // A value's leaf set (#1714): made with the value, read by `Relation`.
     .{ .file = "Leaves.zig", .layer = 5, .max_lines = 600 },
@@ -84,7 +98,12 @@ const layers = [_]Entry{
     .{ .file = "Worded.zig", .layer = 5, .max_lines = 60 },
     .{ .file = "Rows.zig", .layer = 6, .max_lines = 320 },
     .{ .file = "Value.zig", .layer = 6, .max_lines = 480 },
-    .{ .file = "Liveness.zig", .layer = 6, .max_lines = 1190 },
+    // §5 says 750 since #1214: a path's uses grouped for a filter, and a
+    // child's range found by its one step.
+    // #1685: a holder's deepest use; the pair ancestry split to `Ancestry`.
+    .{ .file = "Liveness.zig", .layer = 6, .max_lines = 750 },
+    // Compatibility for one pair of points, split from `Liveness` (#1685).
+    .{ .file = "Ancestry.zig", .layer = 6, .max_lines = 130 },
     .{ .file = "Relation.zig", .layer = 7, .max_lines = 1300 },
     // The distinct check's entries and rounds' state, split from `Distinct` (#1714).
     .{ .file = "Entries.zig", .layer = 7, .max_lines = 400 },
@@ -472,7 +491,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 79), layers.len);
+    try testing.expectEqual(@as(usize, 80), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

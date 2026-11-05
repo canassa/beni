@@ -4517,6 +4517,11 @@ parameter function slot a value is, read in an evaluation or through the contrac
 function objects of a value run by unknown code; Contract, LabelChain, RouteWalk, Relation, Value, WalkContext),
 so that `Eval`, `Walk` and `Closures` stay under their targets; `Eval.supplyLeaves` moved into it. `WalkContext`
 names `Value` for the walk's `settledParam`; `Put` names `FnRun` for `handed`, a closure said into a supply.*
+*Amended 2026-11-05 (#1954 review): a file master had keeps its line target.* L6 `Ancestry` (binary lifting
+over the region tree: compatibility for one pair of points, §4.1's ancestry query; Ids, Regions) was split out
+of `Liveness`, which keeps the use index and its range queries; `Resolve` names it for its frame's ancestry.
+`Ids` lost `Chunks`, `Tasks` and the ids `TaskId`, `ChunkId`, `OverId`, `SplitId` and `DemandId`: no file used
+them once the shape files left. `Ids`, `Liveness`, `Place`, `Prepass` and `Regions` are back at master's targets.
 
 ```
 L13 Enforce
@@ -4562,6 +4567,7 @@ L0  Ids  Counters  Scratch
 | `Leaves.zig` | 4 | a value's leaf set: the persistent Patricia set, its coexisting and choice joins, a plain subtree under a route set, its pass reader (§2.3.4, §2.3.5, §2.11.2, #1714) | Ids, Routes |
 | `Value.zig` | 5 | a walk's roots, positions, values, leaves and tags; each value's leaf set made with it (§2.3, §3.3) | Ids, Place, Slots, Subtree, Contract, Leaves |
 | `Liveness.zig` | 5 | the use index and its queries (§2.7, §3.4a) | Ids, Facts, Place, Regions |
+| `Ancestry.zig` | 6 | compatibility for one pair of points: binary lifting over the region tree (§2.5, §4.1) | Ids, Regions |
 | `Relation.zig` | 6 | a value's leaves, projection, a call's instantiation and expansion (§2.11.2) | Ids, Place, Slots, Subtree, Contract, Value |
 | `Entries.zig` | 6 | the distinct check's entries and its rounds' state: groups kept across rounds, the within-group index, the heaps of roots to expand (§2.9.3) | Ids, Slots, Subtree, Contract, Value |
 | `AtomGraft.zig` | 7 | a call's subtree of atoms read as the callee's node: the atom test on a result tree's node, and whether a cycle spans a result slot (§2.10 *Read-off*, #1714) | Ids, Trees, Forest, Value |

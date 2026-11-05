@@ -21,11 +21,6 @@
 //! **Records** are fixed-size, at most 16 words (`max_record_words`);
 //! `assertRecord` is the one check and every table in `own2/` makes it,
 //! through `Columns`, which holds each table with its columns hoisted.
-//! Variable-length runs are chains of `Chunks`, each chunk reserved before it
-//! is filled.
-//!
-//! **The persistent set** of §4.1 is `Cell.Radix` (L2), the one table that
-//! holds cells; it is built on the same account.
 //!
 //! **The fixed-key dictionary** is `Index`: open addressing over entry
 //! indices with a fixed hash and linear probing, never iterated, an expected
@@ -33,9 +28,6 @@
 //! past `probe_length` is the named `ownership_limit` (§4.1). `FixedDict`
 //! keeps its keys in its own dense columns; `Interned` reads them from the
 //! records of an intern table, which stores each key once.
-//!
-//! **The queue** (`Tasks`) is one-shot: a task is enqueued at most once and
-//! executes at most once (§4.1), its links in its own record.
 //!
 //! Obligations kept here: O11 (no bound accepts: a reservation is refused
 //! before the work it stands for, and a refusal is terminal).
@@ -322,19 +314,7 @@ pub const NodeId = enum(u32) {
     pub const int = IdType(@This()).int;
     pub const from = IdType(@This()).from;
 };
-pub const OverId = enum(u32) {
-    none = none_int,
-    _,
-    pub const int = IdType(@This()).int;
-    pub const from = IdType(@This()).from;
-};
 pub const CondId = enum(u32) {
-    none = none_int,
-    _,
-    pub const int = IdType(@This()).int;
-    pub const from = IdType(@This()).from;
-};
-pub const SplitId = enum(u32) {
     none = none_int,
     _,
     pub const int = IdType(@This()).int;
@@ -347,12 +327,6 @@ pub const ClassId = enum(u32) {
     pub const from = IdType(@This()).from;
 };
 pub const UseId = enum(u32) {
-    none = none_int,
-    _,
-    pub const int = IdType(@This()).int;
-    pub const from = IdType(@This()).from;
-};
-pub const DemandId = enum(u32) {
     none = none_int,
     _,
     pub const int = IdType(@This()).int;
@@ -373,18 +347,6 @@ pub const KappaId = enum(u32) {
     pub const from = IdType(@This()).from;
 };
 pub const SummaryAccountId = enum(u32) {
-    none = none_int,
-    _,
-    pub const int = IdType(@This()).int;
-    pub const from = IdType(@This()).from;
-};
-pub const TaskId = enum(u32) {
-    none = none_int,
-    _,
-    pub const int = IdType(@This()).int;
-    pub const from = IdType(@This()).from;
-};
-pub const ChunkId = enum(u32) {
     none = none_int,
     _,
     pub const int = IdType(@This()).int;
@@ -847,75 +809,6 @@ pub const Charge = struct {
 };
 
 // ---------------------------------------------------------------------------
-// Chunks: variable-length runs as fixed-size records (§4.1)
-// ---------------------------------------------------------------------------
-
-/// One chunk of a run: `words_per_chunk` words and a link. Exactly 16 words.
-pub const Chunk = struct {
-    next: ChunkId,
-    len: u32,
-    words: [words_per_chunk]u32,
-};
-pub const words_per_chunk = 14;
-
-/// Runs of `u32` as chains of chunks. A run is `(first chunk, count)`;
-/// appending reserves the chunk it opens, in `category`, before writing.
-pub const Chunks = struct {
-    table: Columns(Chunk) = .empty,
-
-    pub const Run = struct {
-        first: ChunkId = .none,
-        last: ChunkId = .none,
-        count: u32 = 0,
-    };
-
-    pub fn deinit(c: *Chunks, gpa: Allocator) void {
-        c.table.deinit(gpa);
-    }
-
-    /// Append one word to `run`, opening a chunk (one record in `charge`) when
-    /// the last is full.
-    pub fn append(c: *Chunks, gpa: Allocator, charge: Charge, category: Category, run: *Run, word: u32) ChargeError!void {
-        if (run.last == .none or c.table.col.len[run.last.int()] == words_per_chunk) {
-            try charge.reserve(gpa, category, 1);
-            const id: ChunkId = .from(@intCast(c.table.len()));
-            try c.table.append(gpa, .{ .next = .none, .len = 0, .words = undefined });
-            if (run.last == .none) run.first = id else c.table.col.next[run.last.int()] = id;
-            run.last = id;
-        }
-        const i = run.last.int();
-        const len = &c.table.col.len[i];
-        c.table.col.words[i][len.*] = word;
-        len.* += 1;
-        run.count += 1;
-    }
-
-    pub const Iterator = struct {
-        chunks: *const Chunks,
-        at: ChunkId,
-        i: u32 = 0,
-
-        pub fn next(it: *Iterator) ?u32 {
-            while (it.at != .none) {
-                const k = it.at.int();
-                if (it.i < it.chunks.table.col.len[k]) {
-                    const w = it.chunks.table.col.words[k][it.i];
-                    it.i += 1;
-                    return w;
-                }
-                it.at = it.chunks.table.col.next[k];
-                it.i = 0;
-            }
-            return null;
-        }
-    };
-
-    pub fn iterate(c: *const Chunks, run: Run) Iterator {
-        return .{ .chunks = c, .at = run.first };
-    }
-};
-
-// ---------------------------------------------------------------------------
 // The fixed-key dictionary: open addressing over entry indices (§4.1)
 // ---------------------------------------------------------------------------
 
@@ -1157,75 +1050,6 @@ pub fn Interned(comptime k: usize) type {
             return null;
         }
     };
-}
-
-// ---------------------------------------------------------------------------
-// One-shot tasks (§4.1)
-// ---------------------------------------------------------------------------
-
-pub const TaskState = enum(u8) { fresh, queued, done };
-
-/// A task record: its kind and four payload words are the caller's; the
-/// state and queue link are the queue's. Reserved before creation.
-pub const Task = struct {
-    kind: u8,
-    state: TaskState,
-    next: TaskId,
-    a: u32,
-    b: u32,
-    c: u32,
-    d: u32,
-};
-
-pub const Tasks = struct {
-    table: Columns(Task) = .empty,
-    head: TaskId = .none,
-    tail: TaskId = .none,
-    /// Instrumentation (§7.6): tasks executed, i.e. dequeued.
-    executed: u32 = 0,
-
-    pub fn deinit(t: *Tasks, gpa: Allocator) void {
-        t.table.deinit(gpa);
-    }
-
-    /// A new task, one record in `charge`, not yet queued.
-    pub fn add(t: *Tasks, gpa: Allocator, charge: Charge, kind: u8, payload: [4]u32) ChargeError!TaskId {
-        try charge.reserve(gpa, .task, 1);
-        const id: TaskId = .from(@intCast(t.table.len()));
-        try t.table.append(gpa, .{ .kind = kind, .state = .fresh, .next = .none, .a = payload[0], .b = payload[1], .c = payload[2], .d = payload[3] });
-        return id;
-    }
-
-    /// Queue `id` unless it was queued or has run: at most once per task.
-    pub fn enqueueOnce(t: *Tasks, id: TaskId) void {
-        const states = t.table.col.state;
-        if (states[id.int()] != .fresh) return;
-        states[id.int()] = .queued;
-        if (t.tail == .none) t.head = id else t.table.col.next[t.tail.int()] = id;
-        t.tail = id;
-    }
-
-    /// The next task to run, marked done as it leaves the queue.
-    pub fn dequeue(t: *Tasks) ?TaskId {
-        if (t.head == .none) return null;
-        const id = t.head;
-        t.head = t.table.col.next[id.int()];
-        if (t.head == .none) t.tail = .none;
-        t.table.col.state[id.int()] = .done;
-        t.executed += 1;
-        return id;
-    }
-
-    pub fn get(t: *const Tasks, id: TaskId) Task {
-        return t.table.get(id.int());
-    }
-};
-
-comptime {
-    assertRecord(Chunk);
-
-    assertRecord(Task);
-    std.debug.assert(@sizeOf(Chunk) == 64);
 }
 
 // ---------------------------------------------------------------------------
@@ -1485,60 +1309,20 @@ test "keys that collide past probe_length are the named ownership_limit, and the
     try testing.expectError(error.OwnershipLimit, a.reserve(.cell, 1));
 }
 
-test "chunks reserve each chunk before filling it and read back in order" {
-    var c: Chunks = .{};
-    defer c.deinit(testing.allocator);
-    var a: Account = .{ .allowance = 2 };
-    defer a.deinit(testing.allocator);
-    var run: Chunks.Run = .{};
-    var i: u32 = 0;
-    while (i < 2 * words_per_chunk) : (i += 1) try c.append(testing.allocator, .growth(&a), .chunk, &run, i * 7);
-    try testing.expectError(error.OwnershipLimit, c.append(testing.allocator, .growth(&a), .chunk, &run, 1));
-    try testing.expectEqual(@as(u32, 2 * words_per_chunk), run.count);
-    var it = c.iterate(run);
-    i = 0;
-    while (it.next()) |w| : (i += 1) try testing.expectEqual(i * 7, w);
-    try testing.expectEqual(@as(u32, 2 * words_per_chunk), i);
-}
-
-test "a task is queued once and runs once" {
-    var t: Tasks = .{};
-    defer t.deinit(testing.allocator);
-    var a: Account = .{};
-    defer a.deinit(testing.allocator);
-    const x = try t.add(testing.allocator, .growth(&a), 1, .{ 1, 2, 3, 4 });
-    const y = try t.add(testing.allocator, .growth(&a), 2, .{ 0, 0, 0, 0 });
-    t.enqueueOnce(x);
-    t.enqueueOnce(y);
-    t.enqueueOnce(x);
-    try testing.expectEqual(x, t.dequeue().?);
-    t.enqueueOnce(x);
-    try testing.expectEqual(y, t.dequeue().?);
-    try testing.expectEqual(@as(?TaskId, null), t.dequeue());
-    try testing.expectEqual(@as(u32, 2), t.executed);
-    try testing.expectEqual(TaskState.done, t.get(x).state);
-    try testing.expectEqual(@as(u32, 2), a.growth);
-}
-
-test "a primitive charges the lane it is given, and growth only when it is given none" {
-    var c: Chunks = .{};
-    defer c.deinit(testing.allocator);
+test "a charge reserves in the lane it is given, and growth only when it is given none" {
     var a: Account = .{ .allowance = 0 };
     defer a.deinit(testing.allocator);
     const lane: Lane = .{ .atom = 3, .role = .direct_data };
-    var run: Chunks.Run = .{};
+    const in_lane: Charge = .in(&a, lane);
     // Source-sized work in its lane spends no growth (§4.4).
-    var i: u32 = 0;
-    while (i < 3 * words_per_chunk) : (i += 1) try c.append(testing.allocator, .in(&a, lane), .chunk, &run, i);
+    for (0..3) |_| try in_lane.reserve(testing.allocator, .chunk, 1);
     try testing.expectEqual(@as(u32, 0), a.growth);
     try testing.expectEqual(@as(u32, 3), a.laneUsed(lane));
     try testing.expectEqual(@as(u64, 3), a.baseline);
-    var t: Tasks = .{};
-    defer t.deinit(testing.allocator);
-    _ = try t.add(testing.allocator, .in(&a, lane), 1, .{ 0, 0, 0, 0 });
+    try in_lane.reserve(testing.allocator, .task, 1);
     try testing.expectEqual(@as(u32, 4), a.laneUsed(lane));
     // With no lane the same call is growth, and this account has none.
-    try testing.expectError(error.OwnershipLimit, t.add(testing.allocator, .growth(&a), 1, .{ 0, 0, 0, 0 }));
+    try testing.expectError(error.OwnershipLimit, Charge.growth(&a).reserve(testing.allocator, .task, 1));
 }
 
 test "an invariant failure keeps reading as the invariant, and the baseline does not wrap" {
