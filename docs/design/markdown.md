@@ -137,6 +137,12 @@ pub parse : String → List Block
   per run.
 - `eq` and `compare` are derived (`static-dispatch-spike.md` §9), so a test compares trees.
 
+*As built 2026-11-05 (slice M1):* the constructors are positional, `CodeBlock (Maybe String)
+String`, `Link String (Maybe String) (List Inline)` (destination, title, content) and `Image String
+(Maybe String) (List Inline)` (destination, title, description). A record alias is also a
+constructor of its module, so `Link Link` is `duplicate_constructor`. A title that is `""` is
+`Nothing`, as the reference renderer writes no `title` for it.
+
 ## 5. The renderer
 
 ```text
@@ -226,6 +232,26 @@ implementation follows cmark's answers to them: the delimiter stack with a lower
 delimiter kind (spec §7.3, *process emphasis*, `openers_bottom`), and a bracket stack whose
 inactive openers are skipped.
 
+*As built 2026-11-05 (slice M1):* five measures keep it linear.
+
+- Emphasis is a pass over a bracket's or a paragraph's items, with a stack of open delimiters and
+  the twelve lower bounds of spec §7.3.
+- A bracket that forms no link joins its parent as one item, so 25 000 nested `[` cost no copy.
+- Backtick runs are found once, by length, and a code span's closer is a search in them, not a
+  rescan of the rest of the text.
+- A bracket is inactive when a link formed after it opened: a count, not a walk of the stack.
+- Two scans that the reference parser repeats end early, as cmark ends them. A bare destination
+  fails past 32 open parentheses (cmark `src/inlines.c:1098`; spec §6.3 allows a limit). Raw HTML
+  of a kind whose end (`-->`, `?>`, `>`, `]]>`) a scan did not find through the end of the text is
+  not scanned again (cmark's `FLAG_SKIP_HTML_*`, `src/inlines.c:974`).
+
+Measured on cmark's 25 inputs (Node 24, `--release`): `unclosed links B` took 6 679 ms and `unclosed
+<!--` 74 202 ms before the last two measures, and 172 ms and 552 ms after them (one run each). Every
+input now takes at most about a second at cmark's size (`pattern ![[]() repeated`, 960 kB: 1 049
+ms), and twice the size takes about twice the time (1 847 ms). `run/MarkdownLimits` holds all 25,
+with `[a](b` and `<!--` at a size that a quadratic scan cannot finish inside the 120-second hang
+guard.
+
 ### 7.2 Depth
 
 The tree is recursive, and so are its derived `eq`, the renderer, and a lowering's walk of the
@@ -302,6 +328,17 @@ The owner took all three on 2026-11-04 (Cesar, dashboard).
 
 - **M1 — the parser.** `core/Markdown.beni`: §4's tree and `parse`, the HTML5 reference table,
   §7's limits. Fixtures: the tree, the limits. `skills/beni/` and `zig build skill-api`.
+  *As built 2026-11-05:* `run/MarkdownTree` and `run/MarkdownLimits`. A harness outside the tree
+  rendered `parse`'s tree with commonmark.js's HTML rules (raw HTML as it is) and matched all 652
+  examples of the spec, in a development and a `--release` build; slice M2 makes that the
+  corpus's conformance fixture. The table is WHATWG's `entities.json` (2026-11-05, SHA-256
+  `d741d877ac77…`), the 2,125 names that end in `;`. The two passes keep their growing state (the
+  open blocks and their children, the open brackets and their items, the open emphasis delimiters)
+  in host objects written in place, as `Schema` and `Queue` keep theirs. A first version threaded
+  it through records and lists, and the ownership checker refused 190 of its writes when it
+  checked core for an in-place platform: a frame's list of children inside the list of frames is
+  a list the checker cannot prove unshared. Every value the passes make (`Node`, `Item`, `Inline`,
+  `Block`) is a plain value, never written once made.
 - **M2 — the renderer.** `Html.Markdown` (§5), the re-exports, the conformance fixture and
   `tests/markdown/`, the safety fixtures. §7.3's two size measurements and the `bench/size.mjs`
   line.
