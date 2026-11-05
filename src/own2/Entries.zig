@@ -30,7 +30,7 @@ const none: u32 = Ids.none_int;
 /// the route set it is reached under (§2.11.2; 0 for its leaf's tags alone).
 /// `one`: the given entry this one is a candidate for, when that entry's
 /// occurrence names one object (`singular`); `none` otherwise.
-pub const Ent = struct { leaf: u32, route: u32, occ: u64, block: u32, routes: u32 = 0, one: u32 = none };
+pub const Ent = struct { leaf: u32, route: u32, occ: u64, block: u32, routes: u32 = 0, one: u32 = none, read: bool = false, taken: bool = false };
 
 /// Whether two entries are candidates of one object: never two of its places.
 pub fn oneObject(a: Ent, b: Ent) bool {
@@ -102,6 +102,9 @@ pub fn pairMay(f: *Frame, a: Ent, b: Ent, routed: bool) Error!bool {
     try f.charge(.cond, 1);
     if ((a.block != none and a.block == b.block) or oneObject(a, b)) return false;
     if (a.leaf == b.leaf and a.route == b.route and a.occ == b.occ and a.routes == b.routes) return false;
+    // A taken element is its container's family's, once by the index
+    // obligation: not compared with the family, whose separation asks it.
+    if (a.leaf == b.leaf and (a.taken or b.taken)) return false;
     // Apart occurrences need only be apart from the plain ones.
     if (Contract.isApart(a.occ) and Contract.isApart(b.occ)) return false;
     const la = f.leafAt(a.leaf);

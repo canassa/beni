@@ -82,6 +82,8 @@ const layers = [_]Entry{
     .{ .file = "Forest.zig", .layer = 3, .max_lines = 380 },
     // Conditions, split from `Contract` (#1714).
     .{ .file = "Conds.zig", .layer = 3, .max_lines = 200 },
+    // The answers occurrence (§2.11.3).
+    .{ .file = "AnsOcc.zig", .layer = 4, .max_lines = 35 },
     .{ .file = "Contract.zig", .layer = 4, .max_lines = 800 },
     // A whole subtree held as a symbol (#1706): its readers, above `Slots`.
     .{ .file = "Subtree.zig", .layer = 4, .max_lines = 350 },
@@ -158,6 +160,14 @@ const layers = [_]Entry{
     .{ .file = "Host.zig", .layer = 8, .max_lines = 120 },
     // A callee's `fed` occurrence at a call, split from `Fed` (#1721).
     .{ .file = "FedCall.zig", .layer = 8, .max_lines = 105 },
+    // A label's answers read, and their occurrence decided (§2.11.3).
+    .{ .file = "Answers.zig", .layer = 8, .max_lines = 190 },
+    // An answers occurrence decided at a caller.
+    .{ .file = "AnswerCall.zig", .layer = 8, .max_lines = 120 },
+    // What a check's plain slots may hold, split from `Distinct`.
+    .{ .file = "PlainReach.zig", .layer = 8, .max_lines = 120 },
+    // An entry of the distinct check expanded, split from `Distinct`.
+    .{ .file = "EntryExpand.zig", .layer = 8, .max_lines = 30 },
     // The module's services a walk reads, split from `Walk` (#1758).
     .{ .file = "WalkContext.zig", .layer = 8, .max_lines = 75 },
     // The labels a virtual call's supply comes through, outward, split
@@ -547,7 +557,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 113), layers.len);
+    try testing.expectEqual(@as(usize, 118), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

@@ -28,6 +28,11 @@ const RouteWalk = @import("RouteWalk.zig");
 const CallGraft = @import("CallGraft.zig");
 const ApartPlain = @import("ApartPlain.zig");
 const Graft = @import("Graft.zig");
+const PlainReach = @import("PlainReach.zig");
+const EntryExpand = @import("EntryExpand.zig");
+const Answers = @import("Answers.zig");
+const AnswerCall = @import("AnswerCall.zig");
+const AnsOcc = @import("AnsOcc.zig");
 const Coexist = @import("Coexist.zig");
 const Chains = @import("Chains.zig");
 const Ends = @import("Ends.zig");
@@ -117,116 +122,26 @@ fn sepLeaf(e: *Eval, li: u32) Error!Cond {
 /// cycle through it reads `no`.
 pub fn instCond(e: *Eval, call: u32) Error!Cond {
     try condStates(e);
-    switch (e.cond_state.items[call] & 3) {
-        2 => return e.cond_of.items[call],
+    if (e.contractOf(call)) |c| if (!e.contracts.head(c).res_read.no) hoped(e);
+    // Each call twice: the reading of a label's answers has its own (§2.11.3).
+    const at = 2 * call + @intFromBool(e.read_mode == .reading);
+    switch (e.cond_state.items[at] & 3) {
+        2 => return e.cond_of.items[at],
         1 => return Cond.unprovable,
         else => {},
     }
-    e.cond_state.items[call] |= 1;
-    const got = if (e.contractOf(call)) |c| try instSel(e, try e.contracts.cond(e.arena, e.contracts.head(c).res_cond), call) else Cond.unprovable;
-    e.cond_state.items[call] ^= 3; // in progress → done, `mixed_on` kept
-    e.cond_of.items[call] = got;
+    e.cond_state.items[at] |= 1;
+    const got = if (e.contractOf(call)) |c| try instSel(e, try e.contracts.resCond(e.arena, c, e.read_mode == .reading), call) else Cond.unprovable;
+    e.cond_state.items[at] ^= 3; // in progress → done, `mixed_on` kept
+    e.cond_of.items[at] = got;
     return got;
 }
 
-/// `cond_state`'s bit while `instCondMixed` asks the call.
-const mixed_on: u8 = 4;
-
 fn condStates(e: *Eval) Error!void {
-    while (e.cond_state.items.len < e.f.calls.items.len) {
+    while (e.cond_state.items.len < 2 * e.f.calls.items.len) {
         try e.cond_state.append(e.gpa(), 0);
         try e.cond_of.append(e.gpa(), .{});
     }
-}
-
-/// The callee's `res_cond` on call `call`'s arguments, for a check that
-/// asks some of the call's slots only to be apart (§2.9.1): an
-/// occurrence of the callee that arrives at no plain slot of the check
-/// is asked apart, so that what an apart slot repeats inside it is not
-/// asked once (`List.unzipHelp`'s builders, whose elements come from one
-/// family of its parameter). `idx`: the call's entries of `ents`.
-/// A cycle through it reads `no`, as `instCond`'s does (a fold's step fed
-/// its own answer asks it inside its arguments; #1723).
-fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32) Error!Cond {
-    try condStates(e);
-    if (e.cond_state.items[call] & mixed_on != 0) return Cond.unprovable;
-    e.cond_state.items[call] |= mixed_on;
-    defer e.cond_state.items[call] &= ~mixed_on;
-    const g = e.gpa();
-    const c = e.contractOf(call) orelse return Cond.unprovable;
-    const h = e.contracts.head(c);
-    const full = try e.contracts.cond(e.arena, h.res_cond);
-    if (full.no or full.sel.len == 0) return full;
-    // The plain slots of the check, as words from the call's root.
-    var plain: std.ArrayList([]const u32) = .empty;
-    defer plain.deinit(g);
-    for (idx) |i| {
-        if (Contract.isApart(ents[i].occ)) continue;
-        // A whole subtree is plain at every slot below its top: every
-        // occurrence may arrive there.
-        if (Subtree.symbolic(e.f.slots, e.f.leafAt(ents[i].leaf).slots)) return instSel(e, full, call);
-        for (e.f.slots.items(e.f.leafAt(ents[i].leaf).slots)) |x| {
-            try plain.append(g, e.f.slots.relWords(try e.f.slots.relOf(g, e.account(), e.places(), .from(x))));
-        }
-    }
-    // What arrives at the plain slots, read once for every occurrence:
-    // the callee's result tree is walked once per plain slot, not once
-    // per (occurrence, slot).
-    var reach: Reach = .empty;
-    defer reach.deinit(g);
-    var hits: std.ArrayList(Contract.Hit) = .empty;
-    defer hits.deinit(g);
-    for (plain.items) |words| {
-        try e.charge(.cond, e.contracts.trees.count(h.res_root));
-        hits.clearRetainingCapacity();
-        try e.hitsAt(h.res_root, words, &hits);
-        // A slot the result tree does not name may hold anything.
-        if (hits.items.len == 0) return instSel(e, full, call);
-        for (hits.items) |hit| for (hit.arrivals) |a| {
-            if (a.kind != .param) continue;
-            // The arrival's slot is its own steps, then what the plain
-            // slot takes on below an open one.
-            const aw = try std.mem.concat(e.arena, u32, &.{ &.{a.j}, e.f.slots.relWords(a.slot), words[hit.depth..] });
-            try e.charge(.cond, @intCast(aw.len));
-            try reachMark(&reach, g, aw, if (a.deep) reach_deep else reach_at);
-            for (1..aw.len) |n| try reachMark(&reach, g, aw[0..n], reach_below);
-        };
-    }
-    const out = try e.arena.alloc(u64, full.sel.len);
-    for (full.sel, 0..) |o, k| {
-        out[k] = o;
-        if (Contract.isApart(o)) continue;
-        if (!try arrivesAtPlain(e, &reach, o)) out[k] = o | Contract.apart_bit;
-    }
-    return instSel(e, try Cond.of(e.account(), out), call);
-}
-
-/// What arrives at a check's plain slots, by a callee's result tree: for
-/// each word sequence `j · slot`, an arrival of parameter `j` there
-/// (`reach_at`), a deep one (`reach_deep`), or an arrival below it
-/// (`reach_below`).
-const Reach = std.StringHashMapUnmanaged(u8);
-const reach_at: u8 = 1;
-const reach_deep: u8 = 2;
-const reach_below: u8 = 4;
-
-fn reachMark(r: *Reach, g: Allocator, key: []const u32, bit: u8) Error!void {
-    const got = try r.getOrPut(g, std.mem.sliceAsBytes(key));
-    got.value_ptr.* = if (got.found_existing) got.value_ptr.* | bit else bit;
-}
-
-/// Whether occurrence `o` of a callee may arrive at one of the check's
-/// plain slots: an arrival at its own slot, a deep arrival above it, or,
-/// for a deep occurrence (which reaches every slot below its own), an
-/// arrival below it.
-fn arrivesAtPlain(e: *Eval, reach: *const Reach, o: u64) Error!bool {
-    const key = try std.mem.concat(e.arena, u32, &.{ &.{Contract.occParam(o)}, e.f.slots.relWords(Contract.occRel(o)) });
-    try e.charge(.cond, @intCast(key.len));
-    const at = reach.get(std.mem.sliceAsBytes(key)) orelse 0;
-    if (at & (reach_at | reach_deep) != 0) return true;
-    if (Contract.isDeep(o) and at & reach_below != 0) return true;
-    for (1..key.len) |n| if ((reach.get(std.mem.sliceAsBytes(key[0..n])) orelse 0) & reach_deep != 0) return true;
-    return false;
 }
 
 /// A callee's condition (a selection over its parameters) on call
@@ -244,11 +159,17 @@ pub fn instSelFeed(e: *Eval, c0: Cond, call: u32, feed: ?Fed.Feed) Error!Cond {
     if (c0.sel.len == 0) return Cond.yes;
     var fed: std.ArrayList(u64) = .empty;
     var rest: std.ArrayList(u64) = .empty;
-    for (c0.sel) |o| if (!Contract.isFed(o)) try rest.append(e.arena, o) else switch (try FedCall.at(e, call, o)) {
+    var own: Cond = .yes;
+    var own_n: usize = 0;
+    for (c0.sel) |o| own_n += @intFromBool(!Contract.isFed(o));
+    for (c0.sel) |o| if (!Contract.isFed(o)) try rest.append(e.arena, o) else if (AnsOcc.is(o)) {
+        if (!try AnswerCall.at(e, call, o, instCond, FedCall, &rest, &own, &fed)) return Cond.unprovable;
+    } else switch (try FedCall.at(e, call, o)) {
         .yes => {},
         .no => return Cond.unprovable,
         .occ => |x| try fed.append(e.arena, x),
     };
+    if (rest.items.len != own_n) return withFed(e, try Cond.conj(e.arena, e.account(), own, try instSelFeed(e, try Cond.of(e.account(), rest.items), call, feed)), fed.items);
     const c: Cond = .{ .sel = rest.items };
     if (c.sel.len == 0) return withFed(e, Cond.yes, fed.items);
     // Arguments that are the caller's parameters whole: renamed (`CallGraft`).
@@ -326,6 +247,16 @@ fn projectAll(e: *Eval, c: Cond, cl: Value.Call, got: []std.ArrayList(Proj), pla
     }
 }
 
+/// A result's separation: as a call reads it, and, where that is `no`, with
+/// its labels' answers read (§2.11.3, *a traversal's supply*).
+pub fn resConds(e: *Eval, v: u32, d: anytype, recursive: bool) Error!void {
+    e.read_mode = .strict;
+    defer e.read_mode = .ask;
+    d.res_cond = try sepOf(e, v);
+    e.read_mode = .reading;
+    if (d.res_cond.no and Answers.reads(e, d.labels.items.len, recursive)) d.res_read = try sepOf(e, v);
+}
+
 /// `Sep(v)`: v's components each separated, all apart.
 pub fn sepOf(e: *Eval, v: u32) Error!Cond {
     var ls: std.ArrayList(u32) = .empty;
@@ -373,6 +304,11 @@ fn answerMeets(f: *Value.Frame, ents: []const Ent, alive: []const bool, fresh: u
     return false;
 }
 
+/// A `no` from here on may be another answer read (`distinct`).
+fn hoped(e: *Eval) void {
+    if (e.read_mode == .strict) e.read_mode = .hope;
+}
+
 fn isAnswer(f: *const Value.Frame, l: Value.Leaf) bool {
     return l.kind == .answer or (l.kind == .ref and f.roots.items[l.root].kind == .cb);
 }
@@ -382,20 +318,41 @@ fn isAnswer(f: *const Value.Frame, l: Value.Leaf) bool {
 /// across rounds (`Entries.Rounds`): a round checks only the groups its
 /// expansion changed, each for its new entries.
 pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
+    // Where it would say `no`, a label's answers are read (`Answers`).
+    var rd: Answers.Reader = .{};
+    defer rd.deinit(e.gpa());
+    if (e.read_mode == .reading) return check(e, ps, routed, &rd);
+    if (e.read_mode != .ask) return check(e, ps, routed, null);
+    e.read_mode = .strict;
+    const c = check(e, ps, routed, null);
+    const hope = e.read_mode == .hope;
+    e.read_mode = .ask;
+    if ((c catch return c).no == false or !hope) return c;
+    e.read_mode = .reading;
+    defer e.read_mode = .ask;
+    return check(e, ps, routed, &rd);
+}
+
+fn check(e: *Eval, ps: []const Proj, routed: bool, read: ?*Answers.Reader) Error!Cond {
     const g = e.gpa();
     const f = e.f;
     var st: Entries.Rounds = .{};
     defer st.deinit(g);
-    // A callee's occurrence that names one object: its entries are candidates of it.
-    for (ps, 0..) |p, k| try st.add(g, .{ .leaf = p.leaf, .route = p.route, .occ = p.occ, .block = none, .routes = p.routes, .one = if (routed and singular(f, p.occ, p.leaf)) @intCast(k) else none }, .{ none, @intCast(k), 0 });
     // The conditions met, gathered and made one at the end: a merge per
     // entry or group would cost their product (§2.9.3's linear bound).
     var occs: Occs = .{};
     defer occs.deinit(g);
+    // A callee's occurrence that names one object: its entries are candidates of it.
+    for (ps, 0..) |p, k| {
+        if (read) |rd| if (try rd.take(e, &st, &occs, p.leaf, none, .{ none, @intCast(k), 0 })) continue;
+        try st.add(g, .{ .leaf = p.leaf, .route = p.route, .occ = p.occ, .block = none, .routes = p.routes, .one = if (routed and singular(f, p.occ, p.leaf)) @intCast(k) else none }, .{ none, @intCast(k), 0 });
+    }
+    if (read) |rd| if (rd.failed) return Cond.unprovable;
     // A family asks its own root's separation; ⊤ and shared objects are
     // never known to be once.
     for (st.ents.items) |en| {
         const l = f.leafAt(en.leaf);
+        if (isAnswer(f, l)) hoped(e);
         switch (l.kind) {
             .ref => if (!l.at_pos and try isFamily(e, l) and !Contract.isApart(en.occ)) {
                 if (f.roots.items[l.root].kind == .cb and !e.expandable(l)) return Cond.unprovable;
@@ -470,11 +427,17 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
                 },
                 .call => {
                     gr.must = 0;
+                    if (read != null and try Answers.allMade(e, r.a)) {
+                        if (try Chains.gather(e, &occs, try instCond(e, r.a))) return Cond.unprovable;
+                        taken.clearRetainingCapacity();
+                        try st.take(g, gr.root, &taken);
+                        continue;
+                    }
                     if ((idx.len >= 2 or Entries.manyObjects(f, ents, idx)) and !Entries.allApart(ents, idx)) {
                         // A call that does not vouch for its parts is read
                         // through what they come from (§2.9.2 step 3),
                         // each part on its own.
-                        const c = if (Entries.anyApart(ents, idx)) try instCondMixed(e, r.a, ents, idx) else try instCond(e, r.a);
+                        const c = if (Entries.anyApart(ents, idx)) try PlainReach.instCondMixed(e, r.a, ents, idx, instSel, try condStates(e)) else try instCond(e, r.a);
                         if (c.no) {
                             // At a slot no step below can name, the arrivals
                             // are one set: `xs` twice inside a cast is one leaf
@@ -527,7 +490,7 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
             defer list.deinit(g);
             var rs: std.ArrayList(u32) = .empty;
             defer rs.deinit(g);
-            try expandEntry(e, en, &list, &rs);
+            try EntryExpand.expand(e, en, &list, &rs);
             // One entry of its root expanding to one leaf: a chain of calls
             // that hand one object on is read to its end, each call's
             // group one entry of one object (it asks nothing of its own).
@@ -535,6 +498,7 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
             for (list.items, 0..) |x, nth| {
                 const xl = f.leafAt(x);
                 if (xl.kind == .top or xl.kind == .shared or xl.kind == .loan) return Cond.unprovable;
+                if (isAnswer(f, xl) or (read == null and Taken.containerRoot(f, e.contracts, f.leafAt(en.leaf)) != none)) hoped(e);
                 try e.charge(.edge, 1);
                 e.route_count += 1;
                 if (blk != none and (try seen.getOrPut(g, .{ x, rs.items[nth] })).found_existing) continue;
@@ -544,12 +508,16 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
                 // chain reads already (the least fixpoint, §2.9.3).
                 if (try Chains.onChain(e, &st, ti, x)) continue;
                 if ((en.one != none or Contract.isApart(en.occ)) and (try cands.getOrPut(g, .{ x, en.one, blk, @truncate(en.occ), @intCast(en.occ >> 32), rs.items[nth] })).found_existing) continue;
-                try st.add(g, .{ .leaf = x, .route = 0x4000_0000 | e.route_count, .occ = if (Contract.isApart(en.occ)) en.occ else 0, .block = blk, .routes = rs.items[nth], .one = en.one }, .{ ti, @intCast(nth), st.par.items[ti][2] + 1 });
+                if (read) |rd| if (try rd.take(e, &st, &occs, x, blk, .{ ti, @intCast(nth), st.par.items[ti][2] + 1 })) {
+                    if (rd.failed) return Cond.unprovable;
+                    continue;
+                };
+                try st.add(g, .{ .leaf = x, .route = 0x4000_0000 | e.route_count, .occ = if (Contract.isApart(en.occ)) en.occ else 0, .block = blk, .routes = rs.items[nth], .one = en.one, .taken = read != null and Taken.containerRoot(f, e.contracts, f.leafAt(en.leaf)) != none }, .{ ti, @intCast(nth), st.par.items[ti][2] + 1 });
             }
         }
         // Families of the expansion ask their own separation.
         for (st.ents.items[start..]) |en| {
-            if (en.block == none) continue;
+            if (en.block == none and !en.read) continue;
             const l = f.leafAt(en.leaf);
             if (l.kind == .ref and !l.at_pos and try isFamily(e, l) and !e.expandable(l) and !Contract.isApart(en.occ)) {
                 if (f.roots.items[l.root].kind == .cb) return Cond.unprovable;
@@ -559,26 +527,6 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
     }
     if (occs.run.items.len == 0) return Cond.yes;
     return Cond.of(e.account(), try e.arena.dupe(u64, occs.run.items));
-}
-
-/// An entry's expansion (§2.3.5, *a key's leaf*): each leaf without its
-/// route set, the set its entry's routes (`rs`), where the entry has none;
-/// else each leaf written out, under the entry's routes.
-fn expandEntry(e: *Eval, en: Ent, list: *std.ArrayList(u32), rs: *std.ArrayList(u32)) Error!void {
-    const g = e.gpa();
-    if (en.routes != 0) {
-        try e.expand(en.leaf, list);
-        for (list.items) |_| try rs.append(g, en.routes);
-        return;
-    }
-    try e.expandRouted(en.leaf, list);
-    for (list.items) |*x| {
-        var l = e.f.leafAt(x.*);
-        try rs.append(g, l.routes);
-        if (l.routes == 0) continue;
-        l.routes = 0;
-        x.* = try e.f.leaf(l);
-    }
 }
 
 // ---- the one relation (§2.9.2) -------------------------------------------

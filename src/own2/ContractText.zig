@@ -1,10 +1,10 @@
 //! L4: a contract's text (`docs/design/ownership-v2.md` §2.10, §3.5): the `summary` line of
 //! `beni dump --stage=ownership`, each field in canonical order. Obligations kept here: none (text).
-
 const std = @import("std");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Contract = @import("Contract.zig");
+const AnsOcc = @import("AnsOcc.zig");
 const Forest = @import("Forest.zig");
 
 const Table = Contract.Table;
@@ -55,7 +55,7 @@ fn condText(t: *const Table, slots: *const Slots.Table, places: *const Place.Tab
         try relText(slots, places, names, w, Contract.occRel(o));
         if (Contract.isDeep(o)) try w.writeAll("*");
         if (Contract.isApart(o)) try w.writeAll("~");
-        if (Contract.isFed(o)) if (Contract.fedArg(o) == Contract.fresh_arg) try w.writeAll("!") else try w.print("!{d}", .{Contract.fedArg(o) + 1});
+        if (Contract.isFed(o)) try AnsOcc.text(w, o);
     }
     try w.writeAll("}");
 }
@@ -131,7 +131,7 @@ pub fn print(t: *const Table, gpa: std.mem.Allocator, c: Id, slots: *const Slots
         try w.writeAll("res");
         try arrivalsText(t, gpa, c, slots, places, names, w, h.res_root, null, true);
     }
-    try condText(t, slots, places, names, w, "; nondup ", h.res_cond);
+    for ([_]Contract.StoredCond{ h.res_cond, h.res_read }, [_][]const u8{ "; nondup ", "; answers " }) |x, n| if (n[2] == 'n' or !x.no) try condText(t, slots, places, names, w, n, x);
     if (h.reads.len != 0) try w.writeAll("; reads");
     for (t.readsOf(h.reads)) |x| try arrivalsText(t, gpa, c, slots, places, names, w, x[1], x[0], true);
     if (h.writes.len != 0) try w.writeAll("; writes");

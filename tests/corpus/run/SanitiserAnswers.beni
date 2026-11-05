@@ -1,0 +1,67 @@
+-- A callback's answers that are not apart (`ownership-v2.md` §2.11.3, *a
+-- traversal's supply*): one capture answered at every position, an identity
+-- over a list that repeats an element, one element handed twice, an answer
+-- handed to the next run, one answer held twice, an answer that holds one
+-- object twice, two traversals of one list in one result. Each element write
+-- is refused; with the reading unasked, the sanitised runs trap or print the
+-- edit.
+import List
+import Node exposing (Program)
+import Ref
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+pushAll : List (List Int), Int → List (List Int)
+pushAll ls n = List.map ls λl → List.push l n
+
+
+twice : List a, (a → b) → List b
+twice xs f = List.concat [ List.map xs f, List.map xs f ]
+
+
+handedTwice : List a, (a → b) → List b
+handedTwice xs f =
+    case xs of
+        [ x, …rest ] →
+            [ f x, f x, …handedTwice rest f ]
+
+        _ →
+            []
+
+
+nextRun : a, List a, (a → b) → List b
+nextRun p xs f =
+    case xs of
+        [ x, …rest ] →
+            [ f p, …nextRun x rest f ]
+
+        _ →
+            []
+
+
+heldTwice : (⊤ → List Int) → List (List Int)
+heldTwice f =
+    y = f ⊤
+    [ y, y ]
+
+
+main : Program
+main =
+    k = [ 0 ]
+    captured = pushAll (List.map [ 1, 2 ] λ_ → k) 1
+    a = [ 1 ]
+    repeats = pushAll (List.map [ a, a ] λl → l) 2
+    handed = pushAll (handedTwice [ [ 1 ] ] λl → l) 3
+    run = pushAll (nextRun [ 1 ] [ [ 2 ], [ 3 ] ] λl → l) 4
+    held = pushAll (heldTwice λ⊤ → [ 1 ]) 5
+    both = pushAll (twice [ [ 1 ] ] λl → l) 6
+    Node.printLines
+        (List.map [ captured, repeats, handed, run, held, both ] shows)

@@ -137,11 +137,11 @@ pub const Eval = struct {
     cond_of: std.ArrayList(Cond) = .empty,
     /// A holder is judged against a label's answer (§2.11.3, *An answer handed on*).
     keeping: bool = false,
+    read_mode: enum { ask, strict, hope, reading } = .ask,
     /// `(leaf, leaf, target)` → `ovs` index; `none` while in progress.
     ov_memo: Ids.FixedDict(3) = .{},
     ovs: std.ArrayList(Ov) = .empty,
-    /// Per `(call, callee label)`: the frame label it maps to (`cbs`), when
-    /// the label passes on; set by `Eval.zig` before any relation is asked.
+    /// Per `(call, callee label)`: the frame label a label passes on to (`cbs`).
     label_map: Ids.FixedDict(2) = .{},
     /// Per `(call, callee label)`: the virtual call that applies a known code.
     known: Ids.FixedDict(2) = .{},

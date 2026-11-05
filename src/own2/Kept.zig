@@ -364,6 +364,7 @@ pub const Group = struct {
             const h = contracts.head(codes[id].contract);
             try p.appendSlice(g, &.{ h.res_root, @as(u8, @bitCast(h.flags)) });
             try putCond(p, g, contracts.occsOf(h.res_cond), h.res_cond.no);
+            try putCond(p, g, contracts.occsOf(h.res_read), h.res_read.no);
             const ls = contracts.labelsOf(h.labels);
             try p.append(g, @intCast(ls.len));
             for (ls) |l| {
