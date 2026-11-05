@@ -1,0 +1,65 @@
+-- Seen observation and unseen guarded delivery have the same list-type gate.
+-- Scalars/opaque data have no reachable list; real lists remain consumed.
+import Browser.Host.Event as Event
+import Listen
+import Schema exposing (Value)
+import Sub exposing (Sub)
+
+
+pub foreign impure readInt : borrowed Event.Event → Int
+
+
+pub foreign impure readString : borrowed Event.Event → String
+
+
+pub foreign impure readValue : borrowed Event.Event → Value
+
+
+pub foreign impure readList : borrowed Event.Event → List Int
+
+
+pub foreign impure readRecord : borrowed Event.Event → { items : List Int }
+
+
+type Key
+    = Integers
+    | Strings
+    | Values
+    | Lists
+    | Records
+
+
+type IntMessage
+    = IntMessage Int
+
+
+type StringMessage
+    = StringMessage String
+
+
+type ValueMessage
+    = ValueMessage Value
+
+
+pub ints : Sub IntMessage
+ints = Sub.on Integers (Listen.on "window" "int" readInt _) IntMessage
+
+
+pub strings : Sub StringMessage
+strings = Sub.on Strings (Listen.on "window" "string" readString _) StringMessage
+
+
+pub values : Sub ValueMessage
+values = Sub.on Values (Listen.on "window" "value" readValue _) ValueMessage
+
+
+pub lists : Sub (List Int)
+lists = Sub.on Lists (Listen.on "window" "list" readList _) identity
+
+
+pub records : Sub { items : List Int }
+records = Sub.on Records (Listen.on "window" "record" readRecord _) identity
+
+
+-- Unknown payload types may contain a list and keep the same refusal.
+pub unknown read = Sub.on Integers (Listen.on "window" "unknown" read _) identity

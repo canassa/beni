@@ -1,0 +1,16 @@
+module SeenSendTypes
+  57:9 value Basics.identity: rejected need: Sub.on sends what it returns, which may be a list it does not own (§23.5)
+  57:23 send Listen.on: rejected supply: Listen.on sends what it may still hold (cb3), and a send gives its payload up (§23.2) (approx)
+  61:11 value Basics.identity: rejected need: Sub.on sends what it returns, which may be a list it does not own (§23.5)
+  61:27 send Listen.on: rejected supply: Listen.on sends what it may still hold (cb3), and a send gives its payload up (§23.2) (approx)
+  65:20 value Basics.identity: rejected need: Sub.on sends what it returns, which may be a list it does not own (§23.5)
+  summary readInt: π1 R; res ⊤{lost}r{lost} (words)
+  summary readString: π1 R; res ⊤{lost}r{lost} (words)
+  summary readValue: π1 R; res ⊤{lost}r{lost} (words)
+  summary readList: π1 R; res ⊤{lost}r{lost} (words)
+  summary readRecord: π1 R; res ⊤{lost}r{lost} (words)
+  summary unknown: π1 RE; res #Sub.0 fresh4{lost}r{lost}, #Sub.0[*] condition(fresh3), #Sub.0[*].0#Storage.1 λr{lost}, #Sub.0[*].0#Storage.2 fresh1{lost}r{lost}, #Sub.0[*].1 fresh2{lost}r{lost}, #Sub.0[*].2 λ?r{lost}; π1 calls many, need owned, unseen, supply 1 ⊤ borrowed{lost}r{lost}
+  demands 5: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+total 5: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause supply 2
+cause need 3

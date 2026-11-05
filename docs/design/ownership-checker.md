@@ -4657,6 +4657,7 @@ built, for the declaration's own frame:
   Collection reads existing function slots only; other field dependencies live
   solely in the effect fact as parameter/path projections. They never create
   ordinary function slots or grant any other summary fact.
+  *Amended 2026-11-05 (Part of #1807):* both seen-call and unseen-call send/list-supply checks apply the same existing `holdsList` gate to the actual payload type; record obligations and §23.1's unconditional ownership rule for payloads containing lists are unchanged.
 - **Carried lambdas.** A lambda the result holds keeps its class in the summary, with what each capture held in the
   declaration's vocabulary, when calling it needs nothing but its result and its reads: its class writes nothing,
   escapes nothing, relies on nothing (§18.4) and is not once, and no capture holds a function value. Where the call

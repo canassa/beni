@@ -19573,8 +19573,16 @@ const Walker = struct {
                     rbad_approx[u.param] = true;
                 }
             }
+            // A generic send class writes lists; only a payload containing a
+            // beni-reachable list has that obligation. Match the unseen-call
+            // gate above; record supply checks remain independent.
+            const sends_list = cls != .send or list: {
+                const sty = w.instType(args[j]) orelse break :list true;
+                const mty = funcParam(w.store, sty, 0) orelse break :list true;
+                break :list try w.o.holdsList(w.store, mty, 0);
+            };
             for (c.uses) |u| {
-                if (u.bits & bit_w == 0 or u.param >= c.params) continue;
+                if (!sends_list or u.bits & bit_w == 0 or u.param >= c.params) continue;
                 for (s.supply) |e| {
                     if (e.prov.condition_only or e.fun != j or e.k != u.param or !w.o.writeOverlap(u.path, e.path, u.extent)) continue;
                     // The path the callback writes, within what the supply holds.
