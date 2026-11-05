@@ -408,6 +408,15 @@ related. Every other difference (two fields, two tuple indices, two constructor 
 constructors, `front i ≠ front j`) makes them **distinct**. Distinct positions are different places in the
 structure. They hold different objects only where the root's **separation** (§2.9) holds: `Node l xs r` may
 have `l` and `r` be one tree unless the caller separates them.
+*Amended 2026-11-05 (#1956):* the plain step `[*]` and a list step at one parent are **related**: `[*]` names every
+element, a `front`, `back` or `slice` one too. They were distinct, so `[ …l, p ]` with `p` bound to `front 0` of `l`
+had its two copies of `p` apart under `l`'s separation, and an edit of position 0 changed position 1 in place
+(PatternStoredBack's `viaL`: the sanitised run trapped; `[ …xs, el ]` likewise, `PushedPositions`' `editSpread`).
+Sound because the objects at a `[*]` position are the elements, each list step's among them. To keep `[ el, …xs ]`
+then `[ _, …rest ]` precise, a slice of a list literal with spreads drops the kids it skips before the first spread
+and after the last (each stands at its own index), and holds every kid from a spread on (`Walk`). Fixtures:
+`run/SanitiserPatternStoredBack` (refused) and `run/SanitiserPatternStoredBackApart` (`[ …rest, p ]`, and a slice
+past a prepended element: accepted).
 
 #### 2.3.3 Values
 

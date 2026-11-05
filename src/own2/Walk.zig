@@ -469,8 +469,19 @@ const Walker = struct {
                             return fr.mk(.{ .kind = .alt, .head = if (x.site != none) 0x8000_0000 | x.site else 0xC000_0000 | (x.head & 0x3fff_ffff), .kids = try fr.mkKids(cands.items) });
                         },
                         .slice => {
-                            // With spreads the view may hold any kid.
-                            if (fr.wordsOf(x.extra).len != 0) return v;
+                            // With spreads, a kid before the first spread stands at its
+                            // own index and one after the last at its own from the back,
+                            // so the view drops those it skips; past a spread it may hold
+                            // any kid (#1956).
+                            const flags = fr.wordsOf(x.extra);
+                            if (flags.len != 0) {
+                                var lo: usize = 0;
+                                while (lo < a and lo < ks.len and flags[lo] == 0) lo += 1;
+                                var hi = ks.len;
+                                while (ks.len - hi < b and hi > lo and flags[hi - 1] == 0) hi -= 1;
+                                if (lo == 0 and hi == ks.len) return v;
+                                return fr.mk(.{ .kind = .built, .form = .list, .head = x.head, .site = x.site, .place = x.place, .kids = try fr.mkKids(ks[lo..hi]), .extra = try fr.mkWords(flags[lo..hi]) });
+                            }
                             const lo = @min(a, ks.len);
                             const hi = ks.len - @min(b, ks.len - lo);
                             // A view: the same storage, fewer elements.

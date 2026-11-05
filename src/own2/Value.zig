@@ -413,25 +413,18 @@ pub const Frame = struct {
             if (a.items[k] == c.items[k]) continue;
             const x = f.pos.items[a.items[k]];
             const y = f.pos.items[c.items[k]];
+            // `[*]` names every element, a front, back or slice one's too (#1956).
+            if ((x.kind == .plain) != (y.kind == .plain) and Step.fromWord(if (x.kind == .plain) x.a else y.a).kind == .elem) return .{ .rel = .related, .second_prefix = y.kind == .plain };
             if (x.kind == .plain or y.kind == .plain) return .{ .rel = .distinct, .second_prefix = false };
+            // Two fronts (or backs) are two indices; a front and a back may meet.
+            if (x.kind != .slice and y.kind != .slice) return if (x.kind == y.kind) .{ .rel = .distinct, .second_prefix = false } else .{ .rel = .related, .second_prefix = false };
             return switch (x.kind) {
-                .front => switch (y.kind) {
-                    .front => .{ .rel = .distinct, .second_prefix = false },
-                    .back => .{ .rel = .related, .second_prefix = false },
-                    .slice => if (x.a < y.a) .{ .rel = .distinct, .second_prefix = false } else .{ .rel = .related, .second_prefix = true },
-                    .plain => unreachable,
-                },
-                .back => switch (y.kind) {
-                    .back => .{ .rel = .distinct, .second_prefix = false },
-                    .front => .{ .rel = .related, .second_prefix = false },
-                    .slice => if (x.a < y.b) .{ .rel = .distinct, .second_prefix = false } else .{ .rel = .related, .second_prefix = true },
-                    .plain => unreachable,
-                },
+                .front => if (x.a < y.a) .{ .rel = .distinct, .second_prefix = false } else .{ .rel = .related, .second_prefix = true },
+                .back => if (x.a < y.b) .{ .rel = .distinct, .second_prefix = false } else .{ .rel = .related, .second_prefix = true },
                 .slice => switch (y.kind) {
                     .front => if (y.a < x.a) .{ .rel = .distinct, .second_prefix = false } else .{ .rel = .related, .second_prefix = false },
                     .back => if (y.a < x.b) .{ .rel = .distinct, .second_prefix = false } else .{ .rel = .related, .second_prefix = false },
-                    .slice => .{ .rel = .related, .second_prefix = true },
-                    .plain => unreachable,
+                    else => .{ .rel = .related, .second_prefix = true },
                 },
                 .plain => unreachable,
             };
