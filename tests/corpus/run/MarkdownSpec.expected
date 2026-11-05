@@ -18,7 +18,7 @@
 18 ok
 19 ok
 20 ok
-21 "<p>&lt;a href=\"/bar\\/)\"></p>"
+21 raw "<p>&lt;a href=\"/bar\\/)\"></p>"
 22 ok
 23 ok
 24 ok
@@ -28,7 +28,7 @@
 28 ok
 29 ok
 30 ok
-31 "<p>&lt;a href=\"&amp;ouml;&amp;ouml;.html\"></p>"
+31 raw "<p>&lt;a href=\"&amp;ouml;&amp;ouml;.html\"></p>"
 32 ok
 33 ok
 34 ok
@@ -145,50 +145,50 @@
 145 ok
 146 ok
 147 ok
-148 "<p>&lt;table>&lt;tr>&lt;td>\n&lt;pre>\n**Hello**,</p><p><em>world</em>.\n&lt;/pre></p><p>&lt;/td>&lt;/tr>&lt;/table></p>"
-149 "<p>&lt;table>\n  &lt;tr>\n    &lt;td>\n           hi\n    &lt;/td>\n  &lt;/tr>\n&lt;/table></p><p>okay.</p>"
-150 "<p> &lt;div>\n  *hello*\n         &lt;foo>&lt;a></p>"
-151 "<p>&lt;/div>\n*foo*</p>"
-152 "<p>&lt;DIV CLASS=\"foo\"></p><p><em>Markdown</em></p><p>&lt;/DIV></p>"
-153 "<p>&lt;div id=\"foo\"\n  class=\"bar\">\n&lt;/div></p>"
-154 "<p>&lt;div id=\"foo\" class=\"bar\n  baz\">\n&lt;/div></p>"
-155 "<p>&lt;div>\n*foo*</p><p><em>bar</em></p>"
-156 "<p>&lt;div id=\"foo\"\n*hi*</p>"
-157 "<p>&lt;div class\nfoo</p>"
-158 "<p>&lt;div *???-&amp;&amp;&amp;-&lt;---\n*foo*</p>"
-159 "<p>&lt;div>&lt;a href=\"bar\">*foo*&lt;/a>&lt;/div></p>"
-160 "<p>&lt;table>&lt;tr>&lt;td>\nfoo\n&lt;/td>&lt;/tr>&lt;/table></p>"
-161 "<p>&lt;div>&lt;/div>\n``` c\nint x = 33;\n```</p>"
-162 "<p>&lt;a href=\"foo\">\n*bar*\n&lt;/a></p>"
-163 "<p>&lt;Warning>\n*bar*\n&lt;/Warning></p>"
-164 "<p>&lt;i class=\"foo\">\n*bar*\n&lt;/i></p>"
-165 "<p>&lt;/ins>\n*bar*</p>"
-166 "<p>&lt;del>\n*foo*\n&lt;/del></p>"
-167 "<p>&lt;del></p><p><em>foo</em></p><p>&lt;/del></p>"
-168 "<p>&lt;del><em>foo</em>&lt;/del></p>"
-169 "<p>&lt;pre language=\"haskell\">&lt;code>\nimport Text.HTML.TagSoup\n\nmain :: IO ()\nmain = print $ parseTags tags\n&lt;/code>&lt;/pre></p><p>okay</p>"
-170 "<p>&lt;script type=\"text/javascript\">\n// JavaScript example\n\ndocument.getElementById(\"demo\").innerHTML = \"Hello JavaScript!\";\n&lt;/script></p><p>okay</p>"
-171 "<p>&lt;textarea>\n\n*foo*\n\n_bar_\n\n&lt;/textarea></p>"
-172 "<p>&lt;style\n  type=\"text/css\">\nh1 {color:red;}\n\np {color:blue;}\n&lt;/style></p><p>okay</p>"
-173 "<p>&lt;style\n  type=\"text/css\">\n\nfoo</p>"
-174 "<blockquote><p>&lt;div>\nfoo</p></blockquote><p>bar</p>"
-175 "<ul><li><p>&lt;div></p></li><li>foo</li></ul>"
-176 "<p>&lt;style>p{color:red;}&lt;/style></p><p><em>foo</em></p>"
-177 "<p>&lt;!-- foo -->*bar*</p><p><em>baz</em></p>"
-178 "<p>&lt;script>\nfoo\n&lt;/script>1. *bar*</p>"
-179 "<p>&lt;!-- Foo\n\nbar\n   baz --></p><p>okay</p>"
-180 "<p>&lt;?php\n\n  echo '>';\n\n?></p><p>okay</p>"
-181 "<p>&lt;!DOCTYPE html></p>"
-182 "<p>&lt;![CDATA[\nfunction matchwo(a,b)\n{\n  if (a &lt; b &amp;&amp; a &lt; 0) then {\n    return 1;\n\n  } else {\n\n    return 0;\n  }\n}\n]]></p><p>okay</p>"
-183 "<p>  &lt;!-- foo --></p><pre><code>&lt;!-- foo -->\n</code></pre>"
-184 "<p>  &lt;div></p><pre><code>&lt;div>\n</code></pre>"
-185 "<p>Foo</p><p>&lt;div>\nbar\n&lt;/div></p>"
-186 "<p>&lt;div>\nbar\n&lt;/div>\n*foo*</p>"
-187 "<p>Foo\n&lt;a href=\"bar\">\nbaz</p>"
-188 "<p>&lt;div></p><p><em>Emphasized</em> text.</p><p>&lt;/div></p>"
-189 "<p>&lt;div>\n*Emphasized* text.\n&lt;/div></p>"
-190 "<p>&lt;table></p><p>&lt;tr></p><p>&lt;td>\nHi\n&lt;/td></p><p>&lt;/tr></p><p>&lt;/table></p>"
-191 "<p>&lt;table></p><p>  &lt;tr></p><pre><code>&lt;td>\n  Hi\n&lt;/td>\n</code></pre><p>  &lt;/tr></p><p>&lt;/table></p>"
+148 raw "<p>&lt;table>&lt;tr>&lt;td>\n&lt;pre>\n**Hello**,</p><p><em>world</em>.\n&lt;/pre></p><p>&lt;/td>&lt;/tr>&lt;/table></p>"
+149 raw "<p>&lt;table>\n  &lt;tr>\n    &lt;td>\n           hi\n    &lt;/td>\n  &lt;/tr>\n&lt;/table></p><p>okay.</p>"
+150 raw "<p> &lt;div>\n  *hello*\n         &lt;foo>&lt;a></p>"
+151 raw "<p>&lt;/div>\n*foo*</p>"
+152 raw "<p>&lt;DIV CLASS=\"foo\"></p><p><em>Markdown</em></p><p>&lt;/DIV></p>"
+153 raw "<p>&lt;div id=\"foo\"\n  class=\"bar\">\n&lt;/div></p>"
+154 raw "<p>&lt;div id=\"foo\" class=\"bar\n  baz\">\n&lt;/div></p>"
+155 raw "<p>&lt;div>\n*foo*</p><p><em>bar</em></p>"
+156 raw "<p>&lt;div id=\"foo\"\n*hi*</p>"
+157 raw "<p>&lt;div class\nfoo</p>"
+158 raw "<p>&lt;div *???-&amp;&amp;&amp;-&lt;---\n*foo*</p>"
+159 raw "<p>&lt;div>&lt;a href=\"bar\">*foo*&lt;/a>&lt;/div></p>"
+160 raw "<p>&lt;table>&lt;tr>&lt;td>\nfoo\n&lt;/td>&lt;/tr>&lt;/table></p>"
+161 raw "<p>&lt;div>&lt;/div>\n``` c\nint x = 33;\n```</p>"
+162 raw "<p>&lt;a href=\"foo\">\n*bar*\n&lt;/a></p>"
+163 raw "<p>&lt;Warning>\n*bar*\n&lt;/Warning></p>"
+164 raw "<p>&lt;i class=\"foo\">\n*bar*\n&lt;/i></p>"
+165 raw "<p>&lt;/ins>\n*bar*</p>"
+166 raw "<p>&lt;del>\n*foo*\n&lt;/del></p>"
+167 raw "<p>&lt;del></p><p><em>foo</em></p><p>&lt;/del></p>"
+168 raw "<p>&lt;del><em>foo</em>&lt;/del></p>"
+169 raw "<p>&lt;pre language=\"haskell\">&lt;code>\nimport Text.HTML.TagSoup\n\nmain :: IO ()\nmain = print $ parseTags tags\n&lt;/code>&lt;/pre></p><p>okay</p>"
+170 raw "<p>&lt;script type=\"text/javascript\">\n// JavaScript example\n\ndocument.getElementById(\"demo\").innerHTML = \"Hello JavaScript!\";\n&lt;/script></p><p>okay</p>"
+171 raw "<p>&lt;textarea>\n\n*foo*\n\n_bar_\n\n&lt;/textarea></p>"
+172 raw "<p>&lt;style\n  type=\"text/css\">\nh1 {color:red;}\n\np {color:blue;}\n&lt;/style></p><p>okay</p>"
+173 raw "<p>&lt;style\n  type=\"text/css\">\n\nfoo</p>"
+174 raw "<blockquote><p>&lt;div>\nfoo</p></blockquote><p>bar</p>"
+175 raw "<ul><li><p>&lt;div></p></li><li>foo</li></ul>"
+176 raw "<p>&lt;style>p{color:red;}&lt;/style></p><p><em>foo</em></p>"
+177 raw "<p>&lt;!-- foo -->*bar*</p><p><em>baz</em></p>"
+178 raw "<p>&lt;script>\nfoo\n&lt;/script>1. *bar*</p>"
+179 raw "<p>&lt;!-- Foo\n\nbar\n   baz --></p><p>okay</p>"
+180 raw "<p>&lt;?php\n\n  echo '>';\n\n?></p><p>okay</p>"
+181 raw "<p>&lt;!DOCTYPE html></p>"
+182 raw "<p>&lt;![CDATA[\nfunction matchwo(a,b)\n{\n  if (a &lt; b &amp;&amp; a &lt; 0) then {\n    return 1;\n\n  } else {\n\n    return 0;\n  }\n}\n]]></p><p>okay</p>"
+183 raw "<p>  &lt;!-- foo --></p><pre><code>&lt;!-- foo -->\n</code></pre>"
+184 raw "<p>  &lt;div></p><pre><code>&lt;div>\n</code></pre>"
+185 raw "<p>Foo</p><p>&lt;div>\nbar\n&lt;/div></p>"
+186 raw "<p>&lt;div>\nbar\n&lt;/div>\n*foo*</p>"
+187 raw "<p>Foo\n&lt;a href=\"bar\">\nbaz</p>"
+188 raw "<p>&lt;div></p><p><em>Emphasized</em> text.</p><p>&lt;/div></p>"
+189 raw "<p>&lt;div>\n*Emphasized* text.\n&lt;/div></p>"
+190 raw "<p>&lt;table></p><p>&lt;tr></p><p>&lt;td>\nHi\n&lt;/td></p><p>&lt;/tr></p><p>&lt;/table></p>"
+191 raw "<p>&lt;table></p><p>  &lt;tr></p><pre><code>&lt;td>\n  Hi\n&lt;/td>\n</code></pre><p>  &lt;/tr></p><p>&lt;/table></p>"
 192 ok
 193 ok
 194 ok
@@ -198,7 +198,7 @@
 198 ok
 199 ok
 200 ok
-201 "<p>[foo]: &lt;bar>(baz)</p><p>[foo]</p>"
+201 raw "<p>[foo]: &lt;bar>(baz)</p><p>[foo]</p>"
 202 ok
 203 ok
 204 ok
@@ -305,8 +305,8 @@
 305 ok
 306 ok
 307 ok
-308 "<ul><li>foo</li><li>bar</li></ul><p>&lt;!-- --></p><ul><li>baz</li><li>bim</li></ul>"
-309 "<ul><li><p>foo</p><p>notcode</p></li><li><p>foo</p></li></ul><p>&lt;!-- --></p><pre><code>code\n</code></pre>"
+308 raw "<ul><li>foo</li><li>bar</li></ul><p>&lt;!-- --></p><ul><li>baz</li><li>bim</li></ul>"
+309 raw "<ul><li><p>foo</p><p>notcode</p></li><li><p>foo</p></li></ul><p>&lt;!-- --></p><pre><code>code\n</code></pre>"
 310 ok
 311 ok
 312 ok
@@ -341,7 +341,7 @@
 341 ok
 342 ok
 343 ok
-344 "<p>&lt;a href=\"`\">`</p>"
+344 raw "<p>&lt;a href=\"`\">`</p>"
 345 ok
 346 ok
 347 ok
@@ -472,9 +472,9 @@
 472 ok
 473 ok
 474 ok
-475 "<p>*&lt;img src=\"foo\" title=\"*\"/></p>"
-476 "<p>**&lt;a href=\"**\"></p>"
-477 "<p>__&lt;a href=\"__\"></p>"
+475 raw "<p>*&lt;img src=\"foo\" title=\"*\"/></p>"
+476 raw "<p>**&lt;a href=\"**\"></p>"
+477 raw "<p>__&lt;a href=\"__\"></p>"
 478 ok
 479 ok
 480 ok
@@ -488,10 +488,10 @@
 488 ok
 489 ok
 490 ok
-491 "<p>[link](&lt;foo\nbar>)</p>"
+491 raw "<p>[link](&lt;foo\nbar>)</p>"
 492 ok
 493 ok
-494 "<p>[a](&lt;b)c\n[a](&lt;b)c>\n[a](&lt;b>c)</p>"
+494 raw "<p>[a](&lt;b)c\n[a](&lt;b)c>\n[a](&lt;b>c)</p>"
 495 ok
 496 ok
 497 ok
@@ -521,7 +521,7 @@
 521 ok
 522 ok
 523 ok
-524 "<p>[foo &lt;bar attr=\"](baz)\"></p>"
+524 raw "<p>[foo &lt;bar attr=\"](baz)\"></p>"
 525 ok
 526 ok
 527 ok
@@ -533,7 +533,7 @@
 533 ok
 534 ok
 535 ok
-536 "<p>[foo &lt;bar attr=\"][ref]\"></p>"
+536 raw "<p>[foo &lt;bar attr=\"][ref]\"></p>"
 537 ok
 538 ok
 539 ok
@@ -610,25 +610,25 @@
 610 ok
 611 ok
 612 ok
-613 "<p>&lt;a>&lt;bab>&lt;c2c></p>"
-614 "<p>&lt;a/>&lt;b2/></p>"
-615 "<p>&lt;a  />&lt;b2\ndata=\"foo\" ></p>"
-616 "<p>&lt;a foo=\"bar\" bam = 'baz &lt;em>\"&lt;/em>'\n_boolean zoop:33=zoop:33 /></p>"
-617 "<p>Foo &lt;responsive-image src=\"foo.jpg\" /></p>"
+613 raw "<p>&lt;a>&lt;bab>&lt;c2c></p>"
+614 raw "<p>&lt;a/>&lt;b2/></p>"
+615 raw "<p>&lt;a  />&lt;b2\ndata=\"foo\" ></p>"
+616 raw "<p>&lt;a foo=\"bar\" bam = 'baz &lt;em>\"&lt;/em>'\n_boolean zoop:33=zoop:33 /></p>"
+617 raw "<p>Foo &lt;responsive-image src=\"foo.jpg\" /></p>"
 618 ok
 619 ok
 620 ok
 621 ok
 622 ok
-623 "<p>&lt;/a>&lt;/foo ></p>"
+623 raw "<p>&lt;/a>&lt;/foo ></p>"
 624 ok
-625 "<p>foo &lt;!-- this is a --\ncomment - with hyphens --></p>"
-626 "<p>foo &lt;!--> foo --></p><p>foo &lt;!---> foo --></p>"
-627 "<p>foo &lt;?php echo $a; ?></p>"
-628 "<p>foo &lt;!ELEMENT br EMPTY></p>"
-629 "<p>foo &lt;![CDATA[>&amp;&lt;]]></p>"
-630 "<p>foo &lt;a href=\"&amp;ouml;\"></p>"
-631 "<p>foo &lt;a href=\"\\*\"></p>"
+625 raw "<p>foo &lt;!-- this is a --\ncomment - with hyphens --></p>"
+626 raw "<p>foo &lt;!--> foo --></p><p>foo &lt;!---> foo --></p>"
+627 raw "<p>foo &lt;?php echo $a; ?></p>"
+628 raw "<p>foo &lt;!ELEMENT br EMPTY></p>"
+629 raw "<p>foo &lt;![CDATA[>&amp;&lt;]]></p>"
+630 raw "<p>foo &lt;a href=\"&amp;ouml;\"></p>"
+631 raw "<p>foo &lt;a href=\"\\*\"></p>"
 632 ok
 633 ok
 634 ok
@@ -639,8 +639,8 @@
 639 ok
 640 ok
 641 ok
-642 "<p>&lt;a href=\"foo  \nbar\"></p>"
-643 "<p>&lt;a href=\"foo\\\nbar\"></p>"
+642 raw "<p>&lt;a href=\"foo  \nbar\"></p>"
+643 raw "<p>&lt;a href=\"foo\\\nbar\"></p>"
 644 ok
 645 ok
 646 ok

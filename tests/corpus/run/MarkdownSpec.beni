@@ -3,9 +3,12 @@
 -- the spec's 652 examples (tests/markdown/spec.txt, CC BY-SA 4.0); do not edit
 -- it by hand. A line is `<n> ok` when `Ssr.render (Html.Markdown.fromString
 -- md)` is the spec's HTML in `Ssr.render`'s form. The 72 examples of
--- tests/markdown/differences.txt differ on purpose, and their line is the
--- rendering, which the golden pins.
+-- tests/markdown/differences.txt differ on purpose: each holds raw HTML,
+-- which the renderer shows as text (§6.1). Their line is `<n> raw` and the
+-- rendering, which the golden pins, or `<n> DIFFERS` when the tree holds no
+-- raw HTML.
 import Html.Markdown
+import Markdown exposing (Block, BlockQuote, BulletList, Emphasis, Heading, HtmlBlock, HtmlInline, Image, Inline, Link, OrderedList, Paragraph, Strong)
 import Node exposing (Program)
 import Ssr
 
@@ -1250,7 +1253,58 @@ check ( n, markdown, wanted ) =
                 "${String.fromInt n} DIFFERS ${Debug.toString got} WANTED ${Debug.toString html}"
 
         Nothing →
-            "${String.fromInt n} ${Debug.toString got}"
+            if List.any (Markdown.parse markdown) rawBlock then
+                "${String.fromInt n} raw ${Debug.toString got}"
+            else
+                "${String.fromInt n} DIFFERS: no raw HTML ${Debug.toString got}"
+
+
+-- The tree holds an `HtmlBlock` or an `HtmlInline`.
+rawBlock : Block → Bool
+rawBlock b =
+    case b of
+        HtmlBlock _ →
+            True
+
+        Paragraph content →
+            List.any content rawInline
+
+        Heading _ content →
+            List.any content rawInline
+
+        BlockQuote children →
+            List.any children rawBlock
+
+        BulletList _ items →
+            List.any items λitem → List.any item rawBlock
+
+        OrderedList _ _ items →
+            List.any items λitem → List.any item rawBlock
+
+        _ →
+            False
+
+
+rawInline : Inline → Bool
+rawInline x =
+    case x of
+        HtmlInline _ →
+            True
+
+        Emphasis content →
+            List.any content rawInline
+
+        Strong content →
+            List.any content rawInline
+
+        Link _ _ content →
+            List.any content rawInline
+
+        Image _ _ content →
+            List.any content rawInline
+
+        _ →
+            False
 
 
 main : Program

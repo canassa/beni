@@ -13,9 +13,12 @@ The conformance test of core's `Markdown` and the `html` platform's `Html.Markdo
 `run/MarkdownSpec` holds each example's Markdown and the spec's HTML for it, in the form that
 `Ssr.render` writes: void elements with no `/`, no line ending around a block tag or after
 `<br>`, and `>` and a text's `"` not escaped. It prints `<n> ok` for each example that renders as
-that HTML. An example in `differences.txt` prints its rendering instead, and the golden pins it.
-Today each difference holds raw HTML, which the renderer shows as text (§6.1). The fixture is a
-work derived from `spec.txt`, so it is under the spec's licence too.
+that HTML. An example in `differences.txt` prints `<n> raw` and its rendering instead, and the
+golden pins it. Each difference holds raw HTML, which the renderer shows as text (§6.1): the fixture
+parses each one and prints `<n> DIFFERS` when its tree holds no `HtmlBlock` and no `HtmlInline`.
+`generate.mjs` also checks that its HTML rewrites (listed in its comment) only delete line endings
+past the three that `Ssr.render`'s form needs. The fixture is a work derived from `spec.txt`, so it
+is under the spec's licence too.
 
 After a change to `spec.txt` or `differences.txt`:
 

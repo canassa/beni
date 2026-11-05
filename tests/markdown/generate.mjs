@@ -9,8 +9,9 @@
 //   node tests/markdown/generate.mjs
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const here = dirname(new URL(import.meta.url).pathname);
+const here = dirname(fileURLToPath(import.meta.url));
 const lines = readFileSync(join(here, 'spec.txt'), 'utf8').split('\n');
 const fence = '`'.repeat(32);
 const examples = [];
@@ -30,9 +31,15 @@ const differences = new Map(
     .filter((l) => /^\d/.test(l))
     .map((l) => { const [n, ...why] = l.split(' '); return [Number(n), why.join(' ')]; }));
 
-// The spec's HTML in the form `Ssr.render` writes: void elements with no
-// `/`, no line ending around a block tag or after `<br />` (outside
-// `<pre>`), and `>` (and `"` in text) not escaped.
+// The spec's HTML in the form `Ssr.render` writes. These are the only
+// rewrites, and `onlyLineEnds` below checks it for every example:
+//
+// 1. A void element has no `/`: `<hr />` is `<hr>`.
+// 2. `&gt;` is `>`, in text and in an attribute value.
+// 3. `&quot;` in text is `"`; in an attribute value it stays.
+// 4. Outside `<pre>`, the line ending after a block tag (`p`, `h1`-`h6`,
+//    `ul`, `ol`, `li`, `blockquote`, `pre`, `hr`) or after `<br />` goes, and
+//    so does the line ending before a block tag.
 const block = /^<\/?(?:p|h[1-6]|ul|ol|li|blockquote|pre|hr)\b[^>]*>$/;
 function normalise(html) {
   const parts = html.split(/(<[^>]*>)/).filter((p) => p !== '');
@@ -57,8 +64,26 @@ function normalise(html) {
   return out.join('');
 }
 
+// Apart from rewrites 1-3, `normalise` only deletes line endings.
+function onlyLineEnds(html, out) {
+  const base = html.replace(/\s*\/>/g, '>').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+  const got = out.replace(/&quot;/g, '"');
+  let i = 0;
+  for (const c of base) {
+    if (i < got.length && got[i] === c) i++;
+    else if (c !== '\n') return false;
+  }
+  return i === got.length;
+}
+// The check covers the examples whose golden `normalise` writes, the ones
+// not in differences.txt.
+for (const e of examples) {
+  if (!differences.has(e.n) && !onlyLineEnds(e.html, normalise(e.html))) throw new Error(`normalise changes example ${e.n} past its rewrites`);
+}
+
 const lit = (s) => '"' + [...s].map((c) => {
   const n = c.codePointAt(0);
+  if (n >= 0xd800 && n <= 0xdfff) throw new Error('a lone surrogate has no beni string literal');
   if (c === '\\') return '\\\\';
   if (c === '"') return '\\"';
   if (c === '$') return '\\$';
@@ -79,9 +104,12 @@ writeFileSync(fixture, `-- run: the conformance of \`Html.Markdown\` to CommonMa
 -- the spec's ${examples.length} examples (tests/markdown/spec.txt, CC BY-SA 4.0); do not edit
 -- it by hand. A line is \`<n> ok\` when \`Ssr.render (Html.Markdown.fromString
 -- md)\` is the spec's HTML in \`Ssr.render\`'s form. The ${differences.size} examples of
--- tests/markdown/differences.txt differ on purpose, and their line is the
--- rendering, which the golden pins.
+-- tests/markdown/differences.txt differ on purpose: each holds raw HTML,
+-- which the renderer shows as text (§6.1). Their line is \`<n> raw\` and the
+-- rendering, which the golden pins, or \`<n> DIFFERS\` when the tree holds no
+-- raw HTML.
 import Html.Markdown
+import Markdown exposing (Block, BlockQuote, BulletList, Emphasis, Heading, HtmlBlock, HtmlInline, Image, Inline, Link, OrderedList, Paragraph, Strong)
 import Node exposing (Program)
 import Ssr
 
@@ -100,7 +128,58 @@ check ( n, markdown, wanted ) =
             if got == html then "\${String.fromInt n} ok" else "\${String.fromInt n} DIFFERS \${Debug.toString got} WANTED \${Debug.toString html}"
 
         Nothing →
-            "\${String.fromInt n} \${Debug.toString got}"
+            if List.any (Markdown.parse markdown) rawBlock then
+                "\${String.fromInt n} raw \${Debug.toString got}"
+            else
+                "\${String.fromInt n} DIFFERS: no raw HTML \${Debug.toString got}"
+
+
+-- The tree holds an \`HtmlBlock\` or an \`HtmlInline\`.
+rawBlock : Block → Bool
+rawBlock b =
+    case b of
+        HtmlBlock _ →
+            True
+
+        Paragraph content →
+            List.any content rawInline
+
+        Heading _ content →
+            List.any content rawInline
+
+        BlockQuote children →
+            List.any children rawBlock
+
+        BulletList _ items →
+            List.any items λitem → List.any item rawBlock
+
+        OrderedList _ _ items →
+            List.any items λitem → List.any item rawBlock
+
+        _ →
+            False
+
+
+rawInline : Inline → Bool
+rawInline x =
+    case x of
+        HtmlInline _ →
+            True
+
+        Emphasis content →
+            List.any content rawInline
+
+        Strong content →
+            List.any content rawInline
+
+        Link _ _ content →
+            List.any content rawInline
+
+        Image _ _ content →
+            List.any content rawInline
+
+        _ →
+            False
 
 
 main : Program
