@@ -163,6 +163,10 @@ by its type — hides nothing: it is written exactly, and accepted.
 4. **A limit of the compiler** — a fact the analysis did not give, or code the compiler cannot
    write where the lowering needs it. The message says *"a limit of the compiler"*, so it is never
    read as a rule of the language, and names what would lift it.
+   *Amended 2026-11-05 (#1176):* an event of the program's own markup whose handler value names no
+   key when the program is built — a function of the event, a message the model holds — is no
+   longer of this class: its message goes through the dispatcher (§8.3). One of another module's
+   markup still is (§8.7).
 
 *Implementation specified 2026-10-30: scalar String class attributes.* The checker already
 records whether an attribute is its declared String form or a class list
@@ -530,6 +534,36 @@ the event is dispatched, even when the send waits for a running dispatch: then o
 extractor read are queued (`boundary.md` §9.8.20 (d)). Before, the extractor ran inside `f`, so a
 queued send read its event after the dispatch: a `Pointer` threw `TypeError`, and an input gave the
 value written after its event (`browser/inline/PointerInSend`, `InputInSend`).
+
+*Amended 2026-11-05 (#1176): a handler value that names no key goes through the dispatcher.* An
+event of the program's own markup whose handler value names no key when the program is built is
+compiled, and is no longer a limit of the compiler. Such a value is a function of the payload that
+is not a constructor (`onClick={handle}` with `handle : Event → Msg`, or a lambda), a call that
+makes the message, or a message that the model holds (`onClick={model.next}`). Its listener is
+`on(E[n], dispatch, type, make)`:
+
+- `make` takes the event and gives the message: the handler value applied to the payload — what the
+  event's extractor reads, when it has one, read first — evaluated from the model the page holds
+  then, as every handler value is read at the event (Q1).
+- `dispatch` is the program's dispatcher (§10.3), made as when a command runs (§4): every key then
+  has a named handler with its write pass and its command, and the dispatcher hands each its
+  leaf's fields.
+- **The handler runs while the event is dispatched.** `make` is what `send` reads of the event, so
+  `send` calls it first, inside the dispatch guard, also when the send waits for a running
+  dispatch; only the dispatcher and the message are queued (#559's rule, above). So a handler's
+  `Html.preventDefault` takes effect, as on `browser-tea` (`boundary.md` §9.8.10 (a)). A link
+  whose own handler prevents the default is not a request: `onUrlRequest`'s listener on the window
+  hears the click after the link's listener, and step 1 of `boundary.md` §9.8.13 (c) leaves it
+  alone (`browser/inline/LinkGuard`'s `handled` link, whose transcript is `browser/tea/LinkGuard`'s
+  for that link). A throw of the handler stops the page, as any throw inside the guard.
+- **A control on the element of such an event** is written back by the handler of every key
+  (*Controlled inputs*, above): any key may be the one its event reaches.
+
+A page with no such event is compiled as before, byte for byte (the `emit/inline/` and
+`emit/release/inline/` goldens did not move). What stays refused: an event of another module's
+markup whose handler value is not one constructor that takes the payload or nothing (§8.7,
+`PieceEventArgs/`, class 4), since a piece is lowered in its own module and hands the program site
+a constructor's fields (§8.4); and a handler written as a literal.
 
 ### 8.4 Pieces: another module's view and arms
 
@@ -1479,6 +1513,11 @@ the compiler"*, a language rule never says *"yet"*):
 
 *Amended 2026-10-25 (S2's design pass):* the keyed `For` row above is replaced, from S2, by §9.6's
 rows; `ResearchListWidget/` moves to `ListRowsById/` with the class 3 text when S2's refusals land.
+
+*Amended 2026-11-05 (#1176):* the row of an event whose handler value is a message no key can be
+named for is withdrawn. Such an event of the program's own markup goes through the dispatcher
+(§8.3), and `MessageValue/` is the page `browser/inline/MessageValue`. The row of another module's
+event (`PieceEventArgs/`) stays.
 
 **An arm that reads its message whole** (D-e, `message_read_whole`) is not refused: that key's
 handler builds the message value from its fields, in that handler only, and hands it on.
