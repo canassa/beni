@@ -2440,6 +2440,24 @@ Fixtures: `run/SanitiserTraversal` (the written key, an element handed twice, a 
 the run, a deep write through a structural supply, two maps of one list: each refused, and each traps without its rule) and
 `run/SanitiserTraversalApart` (rows sharing a key, directly, through a helper and a walker; `List.map xs λv → g (f v)`: accepted in place).
 
+*Amended 2026-11-05 (#2032): **a fold's storage.*** A fold's accumulator is the one supply that is the same object from run to run, by the `fed`
+occurrence of *a label's answer handed back to it*. That occurrence asked the whole answer to be the argument `k` or fresh, and the
+condition asked the accumulator's every object once and apart from the elements. So `List.foldl xs [] λx a → List.push a x`, whose answer holds `x`
+at `[*]`, was refused, and `List.foldl xs (List.foldr xs [] …) …` too, whose accumulator holds what the elements are. The write reaches none of that: it
+writes `a`'s storage. So a write of a supply with its own `fed` occurrence (`FedWrite.zig`) is asked by the slot it writes. The occurrence is
+decided at the written slots: an answer's entry matters where a later run writes it, at a prefix of the written words, or below them for a deep write
+(`FedCall.Written`). The supply's own arrivals are read apart, and the written object plain, in one selection, without the deep mark a type variable's
+slot gives: below the code's own type it is one object. Everything else in the condition stands, and the function's holds stay in it. A `fed` that renames
+at a pass keeps its whole form: a hand-off through another label asks the whole answer.
+
+Sound. A run's write of `a` at slots `W` reaches the objects at `W` of what it was handed: the first value, or an earlier run's answer. The occurrence at `W`
+says an answer holds at `W` only the argument's objects there or fresh ones, so by induction every run writes either the first value's object at `W`
+or an object one run made. The plain occurrence keeps the first value's apart from everything else in the selection, the elements and what the
+function holds. An element stored at `[*]` is only ever read: a code that writes `[*]` has `[*]` in `W`, its answer's `[*]` holds its other argument there, and the
+occurrence is `no`. So the fold element's condition stays `lost` (C.9 gap 3), and an element write of the result is refused, as `run/FoldOverFoldShared`
+and `run/FeedbackPrevTwice` require. Fixtures: `run/SanitiserFoldStored` (the first value read after, elements written, an element answered and pushed
+onto, a capture answered: refused) and `run/SanitiserFoldStoredApart`, `ownership/FoldStoresElements`.
+
 *Amended 2026-11-05 (#2028, #2029, #2030): **a function value in a result.*** A closure a declaration returns was
 followed by nobody: `res ε fresh π1ε` says what it holds and nothing of what it does, so at `g = mk xs` the call `g ⊤`
 was unknown code. Its answer was `⊤`, and whatever its code answered was refused `unknown` or `alias` at every write
@@ -5286,6 +5304,7 @@ L0  Ids  Counters  Scratch
 | `TypeVarParam.zig` | 12 | whether a parameter's annotated type is a type variable, split from `Groups` (§2.13.9) | Ids |
 | `Groups.zig` | 10 | the module: adapters, callees, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Worded, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver, Closures |
 | `Block.zig` | 11 | contracts ↔ words, format v-next, validation by re-encoding (§3.6) | Ids, Place, Slots, Contract, Groups |
+| `FedWrite.zig` | 10 | a write of a fold's accumulator, by its slot (§2.11.3) | FedCall, Distinct, LabelChain |
 | `Each.zig` | 8 | what a traversal's supply says: its family, what its callee takes, what a write of it asks (§2.11.3) | Contract, LabelChain, Place |
 | `Traversal.zig` | 11 | which supplies are a traversal's, derived from the walk (§2.11.3) | Each, LabelChain, Taken, Eval, Forest |
 | `BlockCalled.zig` | 13 | a contract's called contracts in a block (§3.6, version 23) | Contract, Slots |
@@ -8656,7 +8675,7 @@ taken result (`Taken.zig`), and `within` over the splits does not exist: the con
 | `List.map xs (λ_ → [ 1 ])` | **as specified** since #1978: `answers ⇐ sel π1{[*]*~} π2{ε!!1}`, the slot domain's `excl(ι_m⋆) ∧ within(ι_m⋆)`; the occurrence asks nothing of `xs` for a `fresh` code (§2.11.3, *a traversal's supply*, license 3) |
 | `List.map xs (λ_ → shared)` | **as specified**: refused `top-level` |
 | `List.map [ x, x ] λl → l` | **as specified**: the occurrence asks the supply plain, and `[ x, x ]` fails it |
-| `List.foldl xs [] λx acc → List.push acc x` | accepted over `Int` elements. **Not met** over lists: refused `disjoint` (approx), at the accumulator's supply, not the element's (§2.11.3, *a label's answer handed back to it*) |
+| `List.foldl xs [] λx acc → List.push acc x` | **as specified** since #2032 (§2.11.3, *a fold's storage*): the storage write is accepted, the element's condition stays `lost` |
 | the tuple accumulator, a captured `saved` | **as specified**: refused, each `disjoint` (approx) |
 | `edit list f` | **as specified**: `ownership/EditAnsweredList`'s `patched` is accepted, its `shared` refused |
 
