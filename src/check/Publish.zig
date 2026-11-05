@@ -146,11 +146,13 @@ pub fn fill(in: Input) Error!u32 {
     return p.poisoned;
 }
 
-/// The vocabulary tables (§25.8): each row whose declaration checked, with
-/// its attribute's value type or its event's payload type as a scheme. A
-/// declaration whose failure bit is set is published as absent, so an
-/// importer's markup meets `unknown_element` or `unknown_attribute` rather
-/// than a half-read row (§25.2).
+/// The vocabulary tables (§25.8): each row, with its attribute's value type
+/// or its event's payload type as a scheme. A declaration whose failure bit
+/// is set is published REFUSED, with the scheme `<error>`, never as a
+/// half-read row and never as absent: an absent row let a use of its name
+/// fall through to a pattern — the wildcard `"*"` — and meet that row's
+/// type, a message that was not the program's. A use that resolves to a
+/// refused row is silent (§25.2, amended 2026-11-05).
 fn vocabTables(p: *Publisher, in: Input, iface: *Interface) Error!void {
     const gpa = p.cx.gpa;
     const decls = in.provenance.vocab_decl;
@@ -163,9 +165,11 @@ fn vocabTables(p: *Publisher, in: Input, iface: *Interface) Error!void {
             const decl = if (at < decls.len) decls[at] else null;
             at += 1;
             const d = decl orelse continue;
-            if (d.int() < in.report.failed.bit_length and in.report.failed.isSet(d.int())) continue;
             var published = row;
-            if (!std.mem.eql(u8, field, "elements")) {
+            if (d.int() < in.report.failed.bit_length and in.report.failed.isSet(d.int())) {
+                published.facts |= Interface.VocabRow.refused_bit;
+                if (!std.mem.eql(u8, field, "elements")) published.scheme = try p.writer.addError();
+            } else if (!std.mem.eql(u8, field, "elements")) {
                 const root = if (d.int() < in.decl_scheme.len) in.decl_scheme[d.int()].unwrap() else null;
                 published.scheme = try p.scheme(root, d);
             }

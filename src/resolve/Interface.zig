@@ -486,6 +486,15 @@ pub const VocabRow = struct {
     scheme: SchemeIndex = .none,
 
     pub const pattern_bit: u32 = 1 << 31;
+    /// The declaration failed (checker-v2.md §25.2, amended 2026-11-05): the
+    /// row is published, with the scheme `<error>`, so that a use of its name
+    /// resolves to it and is silent instead of falling through to a pattern.
+    /// The checker sets it at publication; the skeleton never does.
+    pub const refused_bit: u32 = 1 << 30;
+
+    pub fn refused(row: VocabRow) bool {
+        return row.facts & refused_bit != 0;
+    }
 
     pub fn has(row: VocabRow, word: Bir.FactWord) bool {
         return row.facts & (@as(u32, 1) << @intCast(@backingInt(word))) != 0;

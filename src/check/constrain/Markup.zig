@@ -159,6 +159,13 @@ const Walker = struct {
             for (items) |at| try w.free(b.extraData(at, Bir.MarkupItem).value);
             return w.children(e.children_start, e.children_end);
         };
+        // A refused row (§25.2, amended 2026-11-05): typed as an unknown
+        // element is, and silent — its declaration's diagnostic is the one
+        // message, and none of its facts is read.
+        if (row.refused) {
+            for (items) |at| try w.free(b.extraData(at, Bir.MarkupItem).value);
+            return w.children(e.children_start, e.children_end);
+        }
         for (items) |at| try w.item(tag, at);
         const kids = b.extraSlice(.{ .start = e.children_start, .end = e.children_end }, Bir.ExtraIndex);
         if (row.has(.void) and kids.len != 0) try w.fault(.void_children, nodeToken(b, kids[0]), tag, tag, null);
@@ -197,6 +204,8 @@ const Walker = struct {
             try w.fault(.unknown_attribute, it.token, name, tag, null);
             return w.free(it.value);
         };
+        // A refused row: typed as an unknown name's value is, and silent.
+        if (row.refused) return w.free(it.value);
         switch (row.form) {
             .event => try w.event(row, name, at, it),
             else => try w.attribute(row, name, at, it),
