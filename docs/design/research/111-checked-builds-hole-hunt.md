@@ -51,13 +51,20 @@ wrong report or a corner.
 | H11 | An optimiser pass may drop, sink or fold a check under `--release-safe` | medium | [read] | contract, §13.8, `backend.md` §16.6 |
 | H12 | `language.md` §6 says arithmetic "cannot fail" | medium | read in the text | contract, §6 |
 | H13 | Core's `Basics.append` and `String.append` write `+` on strings typed `Int` | medium | [read] | contract, `backend.md` §16.4 |
-| H14 | A crash in one Node request stops the server for everyone | medium | by the rule | D5, #1998 |
-| H15 | `-0` typed `Int` is visible through `toFloat` | low | [run] | D3, #1998 |
+| H14 | A crash in one Node request stops the server for everyone | medium | by the rule | D5, decided: keep, #1998 |
+| H15 | `-0` typed `Int` is visible through `toFloat` | low | [run] | D3, decided: documented, valid, #1998 |
 | H16 | `Debug.toString` prints a zero's sign inverted | low | [run] | #1282 |
-| H17 | `toPolar` and `Float.log` would crash on finite input | low | [read] | contract, §13.4 |
+| H17 | `degrees` and `toPolar` overflow on finite input with a finite answer | medium | [run] by the review | #2021 |
 | H18 | Other host calls with no typed error: see §3.5 | low | [host] and [read] | #1995 |
 | H19 | `Int` written to a host that narrows it | low | [read] | contract, `boundary.md` §4.3 (c) |
 | H20 | `Node.exitWith` takes its code modulo 256 | low | [run] | contract, `boundary.md` §4.3 (c) |
+| H21 | Virtual clocks and deadlines leave the `Int` range | medium | [run] by the review | #2022 |
+| H22 | A file input's non-empty `value` throws in a render, `browser` and `browser-inline` | medium | [run] by the review, happy-dom and Chrome 153 | #2020 |
+| H23 | A development Worker with a Durable Object does not start | high | [run] by the review, Miniflare 2026-05-18 | #2019 |
+| H24 | A `NaN` test placed where a comparison answers `false` misses `≠` | high, in the first draft's lowering | review | `backend.md` §16.2 |
+
+*Added after the review (§8):* H21–H24 are the review's. H24 was an error of the first draft of
+`backend.md` §16.2, not of master.
 
 ## 3. The evidence
 
@@ -152,7 +159,8 @@ after 1 ms. [host] `platforms/browser/Http.beni:777` and `:836` reach them. [rea
 **Read, not run** (a second reader's audit; #1995 lists each with its line): `Server.beni:519`'s body
 past the string limit; `WebSocket.beni:814`, the same; `Worker.beni:796`, `new Request` on a used
 body; `Worker.beni:562`, `Worker.text 204 ""`; `Object.beni:833`, `setAlarm` out of range;
-`Rt.beni:1755`, a file input's `value`; `Navigation.beni:131`, `goBack 4294967296`;
+`Rt.beni:1755`, a file input's `value`; *corrected (§8):* the `204` and `setAlarm` predictions did
+not reproduce in workerd, and the file input did reproduce (#2020); `Navigation.beni:131`, `goBack 4294967296`;
 `Navigation.beni:162`, a `SecurityError` labelled `Throttled`; `Url.beni:173`, `toWellFormed` on an
 older engine. `Storage.beni:111`'s `key(i)` and `cloudflare/WebSocket.beni:90` may read `null`
 (#1993).
@@ -193,7 +201,10 @@ nothing to do: `language.md` §13.4 says so.
 - **Unicode.** `String` works in code points, so `String.left "😀" 1` is whole, and `Url.percentEncode`
   of a lone surrogate gives `%EF%BF%BD`. `"\u{D800}"` is `invalid_escape`. [run]
 - **`Url.percentDecode`** of bad text is `Nothing`. **`Url.fromString "http://["`** is `Nothing`. [run]
-- **`Schema` and `Json`** refuse everything §3.2 lists, on both directions, and have a depth limit.
+- **`Schema` and `Json`** refuse every invalid `Int` of §3.2, in both directions, and have a depth
+  limit on encoding. *Corrected (§8):* they do not refuse a non-finite `Float` in a host value:
+  `Schema.encode Schema.float inf` is `Ok Infinity`, which is right, because the value is a legal
+  `Float`. Only JSON text refuses it (`PrintFailed`).
 - **Rule 9's catches.** All 20 `Js.catchIf` sites in scope name what they expect. [read]
 - **`Task.sleep`** chains timers past `2³¹−1`. [read]
 - **The optimiser.** A second reader searched `src/js/` for a Dart-shaped fold and found none
@@ -205,6 +216,12 @@ nothing to do: `language.md` §13.4 says so.
   `HttpDefect`, `browser/dom/DefectInHandler`.
 
 ## 5. Decisions for the owner
+
+*Decided by the owner on 2026-11-05, every one as the review of #1999 recommended (`language.md`
+§13.10).* D1: compiler-owned numeric evidence, not two bodies (`backend.md` §16.3). D2: option 1,
+with exact predicates and the partial defence said plainly. D3: **document**, not the
+recommendation below: `-0` is a valid `Int`. D4: refuse. D5: keep. D6: keep the one rule. The
+recommendations below are the first draft's, kept as written.
 
 **D1. `+ - *` under a `number` variable (#1996).** Options: (1) two bodies in a checked build, one
 per instantiation, as `name$s` gives a second body; (2) a hidden evidence parameter in a checked
@@ -231,8 +248,9 @@ a defect is what rule 9 forbids. Cloudflare's per-request failure stands.
 
 **D6. Arithmetic on `±Infinity`.** The table's row is settled as written: `Infinity + 1` crashes.
 §13.4 extends it to `negate`, `abs` and every math function, so `atan inf`, which has a meaning,
-crashes too, and the only ways to `-Infinity` are `(-1) / 0` and a literal such as `-1e999`, which
-writes `0 - Infinity` and so crashes. **Recommendation: keep the one rule**, since it is what the
+crashes too. *Corrected (§8):* the first draft said the only ways to `-Infinity` were `(-1) / 0` and
+a negated literal. That was wrong: `String.toFloat "-1e999"`, a decoded `-1e999` and `Float.log 0
+10` make it too, and it was not an argument for the rule. **Recommendation: keep the one rule**, since it is what the
 owner's table says. The consequence to confirm: a `Float` that overflows is one operation from a
 crash. If that is not wanted, the alternative is to limit the crash to `NaN`, and let `±Infinity`
 pass through arithmetic by IEEE 754.
@@ -251,3 +269,97 @@ pass through arithmetic by IEEE 754.
 
 The probes live in the worktree's evidence copy, `~/worktree-evidence/beni-safe-mode-spec/` on
 dagon: each batch of programs, the harness and the output.
+
+## 7. Proofs the contract rests on
+
+*Added 2026-11-05 from the independent review of #1999, which proved them; reproduced here so that
+`language.md` §13.3, §13.5 and `backend.md` §16.2 can point at them. Its deterministic JavaScript
+tests (seed `0x1999`: 6 000 000 `+ - *` results against BigInt range classification, 2 000 000
+divisions and 199 999 near-boundary divisions, and a cross-product of non-finite operands) found no
+counterexample. They corroborate the proofs; they do not replace them. Evidence: dagon,
+`~/worktree-evidence/beni-review-1999/own/math.mjs` and `math.log`.*
+
+### 7.1 The range test is exact
+
+Let `M = 2⁵³ − 1` and let `a`, `b` be integers in `[−M, M]`. The exact result `z` of `a + b`, `a − b`
+or `a × b` is an integer. If `|z| ≤ M`, `z` is a double, and the correctly rounded operation returns
+`z`. If `z ≥ M + 1 = 2⁵³`, rounding is monotonic and `2⁵³` is a double, so `fl(z) ≥ 2⁵³`; the
+negative side is symmetric. So `|fl(z)| ≤ M` exactly when `|z| ≤ M`. `-0` has magnitude zero and
+passes. The proof assumes safe operands and standard Number arithmetic: a host value smuggled into an
+`Int` breaks the premise, which is why `boundary.md` §4.3 (h) tests `Js.to`.
+
+The predicate is `r >= -M && r <= M`, crashing on its negation. `r < -M || r > M` is wrong: both
+comparisons are `false` for `NaN`, so it passes one. Repeated integer powers check each
+multiplication; no sample of `Math.pow` proves it exact.
+
+### 7.2 A non-finite operand of `+`, `−` or `×` gives a non-finite result
+
+A `NaN` operand gives `NaN`. An infinite operand of `+` or `−` gives an infinity or `NaN`; of `×`, an
+infinity or `NaN` (infinity times zero is `NaN`). So for these three a finite result proves finite
+operands, and testing the result alone is the fast path. It is false for `/` (`1 / Infinity` is `0`)
+and for `**` (`NaN ** 0` is `1`), whose operands are tested. The proof is about numbers, not
+JavaScript's string `+` or coercion of other host values.
+
+### 7.3 `Math.trunc(a / b)` is the integer quotient
+
+For safe integers `a`, `b` with `b ≠ 0`; by symmetry take both positive. Rounding could change the
+truncation only by rounding an exact quotient just below an integer `k` up to `k`. Write
+`d = kb − a ≥ 1`. As `a ≤ M`, `dM ≥ a`, so `d / b ≥ k / 2⁵³`. The distance from `k` to the midpoint
+below it is strictly less than `k / 2⁵³`, at powers of two included. So the quotient cannot round
+across `k`. An exact integer quotient is a double. This does not justify `| 0`, nor dividing a value
+that is not a true `Int`.
+
+## 8. What the independent review of #1999 changed
+
+*Added 2026-11-05.* An independent review replayed 234 build and run attempts over 156 of this
+report's probes on master `1468390492`, with Node 24.19, Chrome 153 and Miniflare (compatibility date
+2026-05-18), and wrote its own probes. Evidence: dagon, `~/worktree-evidence/beni-review-1999/`.
+Most of §2's holes reproduced. What it found wrong or missing, and checked again before this
+amendment where it said WRONG:
+
+- **The first draft's comparison lowering** put the `NaN` test where a comparison answers `false`;
+  `NaN !== 1` is `true`, so `≠` let a `NaN` through (H24). Fixed in `backend.md` §16.2: operands are
+  tested first.
+- **The order of work** made a public safe mode out of monomorphic checks first. Replaced by its
+  order (`backend.md` §16.8); `--release-safe` is not public until the whole guarantee holds.
+- **"`--release` output does not change"** contradicted the repairs the draft required. Replaced by a
+  baseline of named repairs (`language.md` §13.7). Run: `Duration.seconds M` is
+  `9007199254740991000`; `toPolar ( 1e200, 0 )` has an infinite radius.
+- **Core's exception** for intermediate non-finite values had no implementable rule. Replaced by
+  `language.md` §13.9. New cases run: `degrees 1e308` is `Infinity` though `(pi / 180) * 1e308` is
+  `1.745e306` (#2021); `Clock.virtual M`, `adjust 2`, `now` is `9007199254740992` (#2022), so the
+  draft's "`Clock.now` is sealed" was wrong for a virtual clock.
+- **D1** needed a whole ABI, not "two bodies": two independent `number` variables have four
+  instantiations, and function values, placeholders, recursion, `$s` forms, modules and `--library`
+  exports all carry it. `backend.md` §16.3.
+- **Schemas**: the draft said every encoder refuses a non-finite `Float`. Run: `Schema.encode
+  Schema.float inf` is `Ok Infinity` and `Json.encodeValue inf` is `Ok`. That is right; the contract
+  now limits the typed `Err` to JSON text and `finiteFloat`.
+- **D2's predicates**: `typeof v === "number"` does not make an `Int32`, nor `typeof v === "string"`
+  a `Char`. Exact predicates and the trusted remainder are in `boundary.md` §4.3 (h). The audit gained
+  `platforms/cloudflare/Worker/Object.beni:1292–1297`, a `Bool` cast of optional flags.
+- **Bounds** are by the read's meaning: `List.at` and `traverseAt` lower to an unchecked `index_get`
+  (`src/js/Lower.zig:11467`), and a view's index is tested before its offset is added.
+- **The crash path**: module load and a plain `Browser.program` fiber also fail in `browser-inline`;
+  a file input's `value` throws `InvalidStateError` in a render in both DOMs (#2020); and a
+  development Worker with a Durable Object does not start, `ReferenceError: Rt$$cloudflare_workers is
+  not defined` (#2019). Host counter-evidence: workerd returned 204 for `Worker.text 204 ""`, accepted
+  `alarmAt M`, `alarmIn` of the longest duration and `alarmAt -1`, and accepted a Japanese header
+  value that Node's `Headers` refuses. Those predictions are withdrawn.
+- **Equivalence**: "`--release` has no crash" became "no inserted checks"; "the same for every
+  program" became the definition of `language.md` §13.1. Fixture categories, bounded hang assertions
+  and the extra cases are in `backend.md` §16.7.
+- **Pointers and overstatements**: `negate` and `abs` need an infinity test as well as a `NaN` test;
+  `orderOf`, `orderTest` and `primitiveOperator` are in `src/js/Lower.zig`, `listCompare` in
+  `src/js/derived_runtime.mjs`; `history.go` is modulo `2³²`, so `2³² + 1` is `1`; the "only ways to
+  `-Infinity`" (§5, D6) was wrong; report 110's claims on Rust RFC 560, on performance and on V8
+  boxing are corrected there, its missing summary table is no longer referred to, and its GHC
+  revision is pinned.
+- **Smaller replay differences**: H2's later failure was "undefined is not iterable" in the review's
+  probe and the `$plain` message in this report's, so the message depends on the use; `String.padLeft
+  "a" 1000000000 'x'` hit the review's 768 MiB heap cap and aborted, not with this report's exact
+  `invalid table size` text; `Pcg.list` on `NaN` exhausted the heap rather than only waiting. The
+  review notes that seven seconds without output does not prove non-termination.
+
+What the review confirmed is not restated here: its table "Replayed PR and report 111 claims" has a
+row per hole.

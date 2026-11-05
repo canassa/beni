@@ -5,9 +5,14 @@ decisions of that day. The text below is the report as written, kept whole, so i
 **no language compiler was run** (§3.7), and **some [doc] quotes came through a page-extraction
 model, not the raw page**, so re-check the wording of a [doc] quote before citing it verbatim. Its
 §3.5 and §3.6 argue positions the owner has since settled: [`language.md`](../language.md) §13 is
-what was decided, and this report is evidence, not contract. The "summary table above" that §1
-names was in the message that carried the report and was not kept. Report 111 is the run-time hole
-hunt that followed.*
+what was decided, and this report is evidence, not contract. Report 111 is the run-time hole hunt
+that followed.*
+
+*Corrected 2026-11-05, after an independent review of #1999 (`research/111` §7):* the summary
+table §1 pointed to was in the message that carried the report and was not kept, so §1 no longer
+points to it, and §3.1 is the summary. Statements the review found stronger than their evidence
+are marked *Corrected* where they stand. The GHC revision is now pinned. Everything else is as
+written.
 
 Research report for beni, 2026-11-05.
 
@@ -23,7 +28,8 @@ Some [doc] quotes came through a page-extraction model, not the raw page, so re-
 
 ## 1. Comparison table
 
-See the summary table above. These languages are not in it:
+*Corrected:* the summary table that stood here was not kept; §3.1 summarises the strategies. These
+languages get a line here and no section of §2:
 
 - **GHCJS:** assumed the same as GHC JS [U].
 - **ClojureScript:** dynamic, so no static claim to break. `int` is `bit-or 0` and `quot` by zero is NaN by inspection.
@@ -182,7 +188,8 @@ export function divideInt(a, b) { return Math.trunc(divideFloat(a, b)); }
 - [PR #6382](https://github.com/JetBrains/kotlin/pull/6382): "Previously, division by zero in generated JavaScript followed JS behavior and did not throw as expected".
 - `doubleToInt` saturates. `toInt` "Returns zero if this Double value is NaN", but `roundToInt` has "@throws IllegalArgumentException when this value is `NaN`". One library makes both choices. [src, doc]
 - Only `Double.pow` exists in the JS math file. [src]
-- [PR #6450](https://github.com/JetBrains/kotlin/pull/6450) adopts Scala.js's algorithms, citing an ARITH 2026 paper I could not find.
+- [PR #6450](https://github.com/JetBrains/kotlin/pull/6450) adopts Scala.js's algorithms, citing an ARITH 2026 paper I could not find. *Corrected:* #6450 links the paper directly; its
+  content was not read.
 
 ### 2.11 Dart (dart2js), the key case
 
@@ -263,7 +270,8 @@ DoubleToIntOp -> r |= toI32 x
 
 ### 2.17 Other deliberate choices
 
-**Nim is the only surveyed language that traps on JS** [src]:
+**Nim is the only surveyed language that traps on ordinary arithmetic overflow on JS** [src]. *Corrected:* several
+surveyed languages trap on division by zero or on a conversion; Nim is the one that checks `+ - *`:
 
 ```nim
 proc checkOverflowInt(a: int) {.asmNoStackFrame, compilerproc.} =
@@ -285,7 +293,7 @@ AssemblyScript compiles to Wasm. [doc] Grain was not researched; I believe it al
 ### 2.19 Non-JS prior art
 
 - **Swift:** "arithmetic operators in Swift don't overflow by default. Overflow behavior is trapped and reported as an error." `&+` opts out. [doc]
-- **Rust RFC 560:** overflow is a program error, but "these checks will be compiled out whenever an optimized build is produced, so final code will not pay a performance penalty." [doc]
+- **Rust RFC 560:** overflow is a program error, but "these checks will be compiled out whenever an optimized build is produced, so final code will not pay a performance penalty." [doc] *Corrected:* that sentence describes the default of its day, not a rule. The RFC permits an implementation to check overflow in any build, and Rust's optimised builds may keep the checks (`overflow-checks`).
 - **Rust 1.45:** `as` became "a 'saturating cast'", and "NaN produces zero", after [#10184](https://github.com/rust-lang/rust/issues/10184) ran from 2013 to 2020. [doc]
 - **Roc:** `plus`, `plus_wrap`, `plus_try`, `plus_saturated`; `pow_try : … -> Try(I64, [Overflow, Underflow])`; `div_try`; `to_i64_try`, `to_i64_wrap`. [doc] The default crashes and every operation has explicit spellings. **This family is the design to copy.**
 - **Check cost, native:** [Regehr](https://blog.regehr.org/archives/1384) reports 11.8% on SPEC CINT 2006, 8.7% after patches, mostly blocked vectorisation. [Dan Luu](https://danluu.com/integer-overflow/) estimates a few percent. [secondary summary] **No measurement of a checked Int on a JS JIT was found anywhere.**
@@ -296,11 +304,11 @@ AssemblyScript compiles to Wasm. [doc] Grain was not researched; I believe it al
 
 | # | Strategy | Who | Sound? | 53-bit timestamps? | Cost |
 |---|---|---|---|---|---|
-| A | Wrap to int32 | PureScript, ReScript, Melange, jsoo, Scala.js, Kotlin, GHC JS, Idris, MoonBit | Yes, if every primitive is covered | **No** | Near zero |
+| A | Wrap to int32 | PureScript, ReScript, Melange, jsoo, Scala.js, Kotlin, GHC JS, Idris, MoonBit | Yes, if every primitive is covered | **No** | Small in the measurements of §3.4 (*corrected:* not measured on any workload but a loop) |
 | B | Double, unchecked | Elm, Gren, Gleam, Dart, Haxe, Fable | **No** | Yes | Zero |
-| C | Double, range-checked | Nim, 32-bit bound | Yes | **Nobody has shipped it at 53 bits** | Branch per op, unmeasured on UI |
-| D | Emulated 64-bit | Scala.js, Kotlin, Fable, Idris `Bits64`, Nim `--jsbigint64` | Yes | Yes | 3–5× Int at best; interop cost |
-| E | Arbitrary precision | Idris `Integer`, ReScript `bigint`, Gleam `bigi` | Yes | Yes | Slowest; breaks JSON |
+| C | Double, range-checked | Nim, 32-bit bound | Yes | **No surveyed language does it at 53 bits** (*corrected:* among those surveyed, not everywhere) | Branch per op, unmeasured on UI |
+| D | Emulated 64-bit | Scala.js, Kotlin, Fable, Idris `Bits64`, Nim `--jsbigint64` | Yes | Yes | 3–5× Int in the one paper's benchmarks; interop cost |
+| E | Arbitrary precision | Idris `Integer`, ReScript `bigint`, Gleam `bigi` | Yes | Yes | Slower than D in the sources cited (*corrected:* not ranked on every workload); a raw `BigInt` needs a conversion before `JSON.stringify` |
 | F | Refuse by type, or failure value | Gleam, PureScript `fromNumber`, Roc, Nim, Idris, Rust, Haxe `/` | Yes, per operation | n/a | Ergonomic |
 
 ### 3.2 Holes the brief did not list
@@ -332,7 +340,7 @@ For safe operands, `|r| ≤ 2^53−1` after `+ - *` is an exact test. If the tru
 
 These numbers support two things: the check is not free in a tight loop, and BigInt has improved. They say nothing about UI cost. Rule 8 requires js-framework-benchmark against Solid 2.
 
-With pointer compression, Smis are 31-bit: "limiting the Smi payload to 31 bits". [doc] So values of 2^30 and above are boxed in record fields whatever beni does. Whether TurboFan folds the range test on values it knows are int32 **was not determined and is the best next measurement.**
+With pointer compression, Smis are 31-bit: "limiting the Smi payload to 31 bits". [doc] *Corrected:* that payload limit says a value of `2^30` and above is not a Smi; it does not say such a field is boxed in every case, since an optimiser may keep a field unboxed or remove the allocation. No claim about record cost follows without a measurement. Whether TurboFan folds the range test on values it knows are int32 **was not determined and is the best next measurement.**
 
 ### 3.5 Assessment of the leaning
 
@@ -366,8 +374,8 @@ For:
 - It stops `NaN` reaching `eq` and `Dict`.
 
 Against:
-- Nobody has shipped it at 53 bits or measured it on JS UI.
-- Rust compiles it out of release builds. Dart wanted "convincing numbers". Haxe cites performance.
+- No surveyed language does it at 53 bits, and none measured it on JS UI.
+- Rust compiles it out of release builds by default (*corrected:* it may keep it; §2.19). Dart wanted "convincing numbers". Haxe cites performance.
 - Code size is unpriced for a language with 1.4 kB pages.
 - It changes the promise. Overflow from user input, such as `quantity * price`, is not obviously a program defect, yet rule 9 would show a crash screen.
 
@@ -413,7 +421,9 @@ Kotlin's `canAddOrSubOverflow` and Scala.js's literal elision are precedents for
 
 ### Source code, pinned
 
-File paths resolve under each commit. GHC was read at master, not pinned.
+File paths resolve under each commit. GHC was read at master, not pinned. *Corrected:* pinned to
+the GitHub mirror's master of 2026-11-05, `37ad471`, at which the quoted `Prim.hs` and `Real.hs`
+lines hold (checked when pinning; the original reading's own revision is not known).
 
 | Project | Commit | Files |
 |---|---|---|
@@ -435,7 +445,7 @@ File paths resolve under each commit. GHC was read at master, not pinned.
 | [Idris 2](https://github.com/idris-lang/Idris2/tree/debd433958c2005d42a98d0dc35c5a4648183edf) | `debd433` | `src/Compiler/ES/Codegen.idr`, `support/js/support.js`, `libs/prelude/Prelude/Num.idr` |
 | [Nim](https://github.com/nim-lang/Nim/tree/194567aadfd16be50c86dbf37f72fb8f1756e8ff) | `194567a` | `lib/system/jssys.nim`, `compiler/jsgen.nim`, `lib/pure/math.nim` |
 | [MoonBit core](https://github.com/moonbitlang/core/tree/f5efa52d13bccdbea6c136e0cb2bb5b41068184b) | `f5efa52` | `builtin/double_to_int.mbt` |
-| [GHC](https://gitlab.haskell.org/ghc/ghc) | master | `compiler/GHC/StgToJS/Prim.hs`, `libraries/ghc-internal/src/GHC/Internal/Real.hs` |
+| [GHC](https://github.com/ghc/ghc/tree/37ad47105079d55e0da68f3c660f9bbd2e18047a) | `37ad471` | `compiler/GHC/StgToJS/Prim.hs`, `libraries/ghc-internal/src/GHC/Internal/Real.hs` |
 
 ### Documentation
 
