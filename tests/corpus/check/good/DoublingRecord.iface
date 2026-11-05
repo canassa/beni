@@ -1,0 +1,17 @@
+module DoublingRecord
+  alias W0
+    W0/1
+  alias W1
+    W1/2
+  alias W2
+    W2/2
+  alias W3
+    W3/2
+  value v0 : { items : List number }
+  value v1 : { a : { items : List number }, b : { items : List number2 } }
+  value v2 : { a : { a : { items : List number }, b : { items : List number2 } }, b : { a : { items : List number3 }, b : { items : List number4 } } }
+  value v3 : { a : { a : { a : { items : List number }, b : { items : List number2 } }, b : { a : { items : List number3 }, b : { items : List number4 } } }, b : { a : { a : { items : List number5 }, b : { items : List number6 } }, b : { a : { items : List number7 }, b : { items : List number8 } } } }
+  value w0 : W0
+  value w1 : W1
+  value w2 : W2
+  value w3 : W3

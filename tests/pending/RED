@@ -353,3 +353,9 @@ tests/pending/ownership/FoldStoresElements.beni exit=0 ownership-differs
 # CK-322 (#1978): the answers of a many label are one per invocation; an
 # element edit of a map's fresh answers is refused `disjoint`.
 tests/pending/ownership/MapAnswersFresh.beni exit=0 ownership-differs
+
+# CK-323 (#1238): v1 summarises the 2^depth paths of an annotated doubling
+# record, `w{i} = { a = w{i-1}, b = w{i-1} }`, and `check` grows ×4 a level
+# (9.9 s at depth 16); the type checker and v2 check it at the floor. Goes
+# with v1.
+scenario/CK-323 slow
