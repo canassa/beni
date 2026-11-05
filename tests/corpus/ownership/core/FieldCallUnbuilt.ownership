@@ -1,0 +1,7 @@
+module FieldCallUnbuilt
+  16:7 List.push xs: accepted param
+  summary normal: π1.build R, π2 R; res cb(π1.build){excl cb(π1.build)}; π1.build calls ≤1, supply 1 π2 owned{excl π2}
+  summary pureBody: π1 R, π2 R; res cb(π1.build){excl cb(π1.build)}r{excl cb(π1.build)}; π1.build calls ≤1, supply 1 π2 borrowed{excl π2}
+  summary usedAgain: π1.build R, π2 RAW[storage], π2[*] A; res .0 condition(fresh2) π2, .0[*] ~condition(fresh3) ~π2[*], .1 cb(π1.build){excl cb(π1.build)}r{excl cb(π1.build)} ~condition(fresh4), condition(fresh1){sep π2 cb(π1.build), sep π2[*] cb(π1.build)}r{sep π2[*] cb(π1.build)}; π1.build calls ≤1, supply 1 π2 borrowed{excl π2}
+  demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

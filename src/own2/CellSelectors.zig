@@ -1,4 +1,4 @@
-//! Literal Cell selectors are structural row input, never invoked callbacks.
+//! Literal Cell selectors and immediate pure bodies, without general closures.
 //! Obligations kept here: none (syntax and resolved module identity).
 
 const std = @import("std");
@@ -7,7 +7,8 @@ const Graph = @import("../resolve/Graph.zig");
 const InternPool = @import("../InternPool.zig");
 const Ids = @import("Ids.zig");
 
-pub const Reader = *const fn (ctx: *anyopaque, inst: u32) Ids.ChargeError!?u32;
+pub const Lambda = struct { operand: u32, immediate: bool = false };
+pub const Reader = *const fn (ctx: *anyopaque, inst: u32) Ids.ChargeError!?Lambda;
 
 /// Namespace identity must not read a Js type fact outside a caller's cache key.
 pub fn moduleId(graph: *const Graph, interner: *const InternPool.Global) u32 {
@@ -31,22 +32,35 @@ pub fn field(bir: *const Bir, owner: *const Bir, decl: Bir.Decl, interner: *cons
     return (select(bir, owner, decl, interner, args) orelse return null).field;
 }
 
-/// Only the existing worded read row consumes a selector without invoking it.
-pub fn reader(bir: *const Bir, owner: *const Bir, decl: Bir.Decl, interner: *const InternPool.Global, args: []const u32) ?u32 {
+/// Structural readers consume selectors; Js.pure executes its literal body.
+pub fn reader(bir: *const Bir, owner: *const Bir, decl: Bir.Decl, interner: *const InternPool.Global, args: []const u32) ?Lambda {
     if (owner.ownSlotsV2(decl).len == 0) return null;
+    if (std.mem.eql(u8, interner.slice(owner.symbol(decl.name)), "pure") and args.len == 1) {
+        const operand: Bir.Inst.Index = @fromBackingInt(args[0]);
+        if (bir.instTag(operand) != .lambda) return null;
+        const params = bir.extraSlice(bir.subRange(@fromBackingInt(bir.instData(operand).lhs)), Bir.Inst.Index);
+        if (params.len != 1) return null;
+        const tag = bir.instTag(params[0]);
+        if (tag != .pat_unit and tag != .pat_wild) return null;
+        return .{ .operand = args[0], .immediate = true };
+    }
     const selected = select(bir, owner, decl, interner, args) orelse return null;
-    return if (selected.write) null else selected.operand;
+    return if (selected.write) null else .{ .operand = selected.operand };
 }
 
-/// Absorb exactly a proven selector, its field access and its own parameter
-/// read. It still has an empty capture-free closure value as the call's operand.
-pub fn consume(bir: *const Bir, start: u32, absorbed: []bool, ctx: *anyopaque, lookup: ?Reader, inst: u32) Ids.ChargeError!void {
+/// Absorb structural selectors whole; immediate thunks lose only the wrapper.
+/// Their body stays live, with its answer consumed at the primitive call.
+pub fn consume(bir: *const Bir, start: u32, absorbed: []bool, consumer: []u32, ctx: *anyopaque, lookup: ?Reader, inst: u32) Ids.ChargeError!void {
     const tag = bir.instTag(@fromBackingInt(inst));
     if (tag != .call and tag != .method_call) return;
     const find = lookup orelse return;
     const selector = try find(ctx, inst) orelse return;
-    const body = bir.instData(@fromBackingInt(selector)).rhs;
-    absorbed[selector - start] = true;
+    const body = bir.instData(@fromBackingInt(selector.operand)).rhs;
+    absorbed[selector.operand - start] = true;
+    if (selector.immediate) {
+        consumer[body - start] = inst;
+        return;
+    }
     absorbed[body - start] = true;
     absorbed[bir.instData(@fromBackingInt(body)).lhs - start] = true;
 }

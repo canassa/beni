@@ -1,0 +1,60 @@
+-- #1928: Js.pure executes its literal unit body now, not as a stored closure.
+import Js as Host
+import List
+
+
+pub written : List Int → List Int
+written xs = Host.pure λ⊤ → List.push xs 1
+
+
+pub returned : List Int → List Int
+returned xs = Host.pure λ⊤ → xs
+
+
+pub kept : List Int → List Int × List Int
+kept xs =
+    held = returned xs
+    ( List.push xs 1, held )
+
+
+pub nested : List Int → List Int
+nested xs = Host.pure λ⊤ → Host.pure λ⊤ → List.push xs 1
+
+
+pub beside : List Int → List Int × List Int
+beside xs = Host.pure λ⊤ → ( List.push xs 1, xs )
+
+
+pub stored : List Int → List Int
+stored xs =
+    work = λ⊤ → List.push xs 1
+    Host.pure work
+
+
+pub returnedWork : List Int → (⊤ → List Int)
+returnedWork xs = Host.pure λ⊤ → λ⊤ → List.push xs 1
+
+
+pub namedUnit : List Int → List Int
+namedUnit xs = Host.pure λunit →
+    case unit of
+        ⊤ →
+            List.push xs 1
+
+
+pub storedAlias : List Int → List Int × List Int
+storedAlias xs =
+    cell = Host.pure λ⊤ → Host.ref xs
+    ( List.push xs 1, Host.read cell )
+
+
+pub wildcard : List Int → List Int
+wildcard xs = Host.pure λ_ → List.push xs 1
+
+
+pure : (⊤ → List Int) → List Int
+pure work = work ⊤
+
+
+pub lookalike : List Int → List Int
+lookalike xs = pure λ⊤ → List.push xs 1

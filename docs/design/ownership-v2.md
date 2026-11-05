@@ -1500,6 +1500,25 @@ where §2.8 says:
 Arguments are consumed at the call, items before the base is written (R-4.1.3); every forwarded result is a use
 at that point (R-4.1.4).
 
+*Amended 2026-11-05 (#1928), immediate pure bodies.* A resolved call of
+core `Js.pure` with one literal lambda whose sole parameter is the unit
+pattern or a wildcard is its body, exactly as backend.md §4 specifies; it
+creates no runtime closure. Transfer walks that body in the enclosing frame,
+retains every read, write, demand and returned alias, and consumes its answer
+at the call. Only the wrapper lambda is absorbed, never its body. Nested
+ordinary lambdas, stored/non-literal thunks and named-parameter lambdas retain the general callable rule and remain unchecked
+when that rule is not built. A same-spelled user function is not this
+primitive; resolved declaration aliases of core `Js.pure` are the same
+primitive. This is no callable exemption: an unsupported operation in the
+body leaves the declaration unchecked; a refused write still refuses. It
+changes neither the budgets nor the clean-module/publication rule.
+A plain field-call dispatch term is not composed comparison evidence (#1966):
+until S4 supplies its callable class it is unchecked, including inside an
+immediate body. Resolution
+uses the existing core Js identity and the caller's named dependency, with no
+type facts read from unrelated modules. Schema's `nodeRef` exercises this
+rule: its returned reference must still retain the supplied NodeBody's cells.
+
 ### 2.7 Uses and liveness
 
 A **use** is `(atom, local, PathId, point, kind, callee-use-node?)`, where `atom` is the use occurrence: unique in
@@ -7239,7 +7258,7 @@ L0  Ids
 | `Cell.zig` | 2 | origins, kinds, class, the trie, interning, persistent sets, splits, `alias`, charged union/query continuations | `Table`, `intern`, `parent`, `children`, `alias`, `Radix.{insert,member,unionWith,subset,intersection,news}` | Ids, Place | ≤ 1 390 (#1485 part B: rule 4's overlap trie `keysOverlap`, its memo and its unit test, §8 slice 4 *As built, part B*); 1 240 before (1 100 until #1370: the mark `A` that liveness reads below, `readsBelow`; 1 110 until #1390: parts and splits of positions, §2.2 *Parts*, §2.13.3; 1 180 until #1253: a refinement's parts at each level path, §2.1; 1 200 until #1473: `positionsApart`, §2.9 *Two positions of one image*) |
 | `Facts.zig` | 2 | the shared records: `Use`, `Demand`, `Obligation`, `Supply`, `Keep`, `Verdict`, `Cause` (R-6.3's order) | the types, `ProofRequest`, `ProofAnswer` | Ids | ≤ 350 |
 | `Stable.zig` | 2 | stable images (§2.3 *The two pieces that (b) adds, prototyped (4e)*): a graph's canonical form by partition refinement, the move onto an equal graph made before and its precondition, `map`'s knot and `widen`'s components; the shape table is given as `anytype` | `Store`, `Redirect`, `canon`, `moveHolds`, `mapKnot`, `widened`, `sideFact` | Ids | ≤ 500 (4e) |
-| `CellSelectors.zig` | 1 | canonical core Js identity and capture-free literal Cell selector syntax, shared by row selection and transfer preparation (#1927); no type-fact reads on unrelated calls | `moduleId`, `field`, `reader`, `consume` | Ids | ≤ 100; existing file targets and ownership budgets unchanged |
+| `CellSelectors.zig` | 1 | canonical core Js identity, literal Cell selectors (#1927) and immediate pure-body syntax (#1928), shared by row selection and transfer preparation; no type-fact reads on unrelated calls | `moduleId`, `field`, `reader`, `consume` | Ids | ≤ 100; existing file targets and ownership budgets unchanged |
 | `Prepass.zig` | 3 | SCC edges (`check/Edges.zig`'s three legs, derived bodies included), alias chains, read counts, `eq`/`compare` decls, spread chains, `withDefault` shapes | `run(bir, dispatch, graph) → Facts.Prepass` | Ids, Facts | ≤ 600 |
 | `Shape.zig` | 3 | nodes and their operations, `reach`, `widen`, coinductive `leq`/`eq` | `Table`, `leaf`, `node`, `delta`, `recast`, `union`, `collect`, `proj`, `cellsAt`, `put`, `join`, `map`, `reach`, `widen`, `leq`, `eq`, `expand`, `rank`, `namedSteps`, `cycleWalk`, `view`, `force`, `viewReach`, `eager`, `isNothing`, `isAtom` | Ids, Place, Cell, Stable | ≤ 4 100 (#1570: `interned` and `rawCopy`, an imported class image kept raw, §8 slice 4 *As built, part 4*); 4 075 for #1485 part 2: C1, a saturated positions node keeps its aggregate, §8 slice 4 *As built, part 2*); 4 025 before #1485 (#1483: the atom rule, `isAtom` and `settle`, §2.3; 4e: `map`'s trail and the move of a knot it closes, §2.3 *The two pieces that (b) adds, prototyped (4e)*; #1467: a join's reach leaves out its own cells when no side is short, a bit per node, checked under runtime safety, §2.3; #1420: positions saturate at two, their count maps, the rebuild and the nodes it dropped, §2.3; #1447: the projection correspondence and a view's projection of its DAG template, §2.9; #1314: the cycle walk `cellsOf` and `namedSteps` share, §2.11; #1360: widen's re-entry probe, §2.3; #1350: a view's instantiated place and a join's place; #1372: `map`'s knot test and the flattening choice join, §2.3) |
 | `Regions.zig` | 4 | region tree, points, compatibility (the second order and its `rank₂`, §2.5), guards, virtual `withDefault` arms | `Tree`, `build`, `compatible`, `rank2`, `guard` | Ids, Facts, Prepass | ≤ 450 |
