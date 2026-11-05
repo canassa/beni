@@ -26,6 +26,7 @@ const Graft = @import("Graft.zig");
 const RowEnv = @import("RowEnv.zig");
 const Host = @import("Host.zig");
 const LabelChain = @import("LabelChain.zig");
+const Across = @import("Across.zig");
 const Captures = @import("Captures.zig");
 const FnRun = @import("FnRun.zig");
 const W = @import("Walk.zig");
@@ -467,6 +468,12 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
             const sa = (try supplyingArg(e, o[0], lab, x.j, words)) orelse Named{ .inst = oc.inst, .path = .none };
             d.base_inst = sa.inst;
             d.write_path, d.write_rel = .{ sa.path, 0 };
+            // A capture written while the callees hold what they were handed (#1955).
+            if (Across.capture(f, q, x.j)) {
+                const o_start: u32 = @intCast(e.w.value_runs.items.len);
+                try Across.operands(e.chain(), q, &e.w.value_runs);
+                d.operands = .{ .start = o_start, .len = @intCast(e.w.value_runs.items.len - o_start) };
+            }
         }
     }
     try addDemand(e, d);

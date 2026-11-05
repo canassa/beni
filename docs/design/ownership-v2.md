@@ -2062,6 +2062,27 @@ every supply, direct or passed on, so it costs no reading of its own. A closure'
 named by the call that hands a closure back keeps that name. Measured (Debug): the oracle's 1 332 probes, 31 of
 them trapping before, 0 TRAP, 0 DIFF; the cost table unchanged in growth.
 
+*Amended 2026-11-05 (#1955): a capture written across the callee's run.* A known code applied at a callee's label
+runs inside the callee, while the callee holds what it was handed. Its supplies are judged at the callee (their kept
+slots), but a capture the code writes is the caller's object, which the callee may hold too, out of the caller's
+sight: a loan of a cell's contents (`v = Ref.get r`, then `f ⊤`, then `List.length v`), since a loan is a holder
+behind the barrier the handle `r` does not show, and the answer of another label it holds (`v = g ⊤; f ⊤;
+List.length v`, with `g` answering the list the code of `f` edits). Before this the write was judged against the
+caller's holders only: `reenter r λ⊤ → Ref.update r λxs → List.push xs 1` was accepted, and the loan read the
+edited list in place (copying `1 2`, in place `2 2`). So at every label outward of the virtual call (§2.11.3, the
+chain), a capture write has as its **operands** the call's arguments but the one that hands the code (whole when
+the label's function slot is the root of that argument, otherwise that argument too), and the answers of the call's
+other labels applied to known codes (`Across.zig`). An operand reaches the contents of every cell it holds through
+`◆`, because the operand rule (§2.8 step 4) is a relation of objects, not of holders behind a barrier. Sound because
+everything a callee can hold of the caller's objects came to it as an argument (a closure callee's captures are
+arguments of its call), as an object reached from one (a cell's contents among them), or as a label's answer; a
+callee's own allocations are none of the caller's captures, an escaped object is refused already, and a top-level
+value is never written. Coarser than a callee-side rule: a capture the callee does not hold across the run is still
+refused when an argument reaches it (`reenter r f = (f ⊤; List.length (Ref.get r))` is refused; v1 refuses it too).
+A capture of another cell than the arguments reach is accepted (`run/SanitiserCellReentryApart`). Fixture:
+`run/SanitiserCellReentry` (direct, through a helper, passed on to another function, a loan answered by another
+label, a list answered by another label; the sanitised runs printed the edited contents through the loan).
+
 #### 2.11.4 Closures
 
 A `lambda` (also `f a _`, which `Lower` makes a lambda) and a local function (`let_def` with parameters) are
@@ -4588,6 +4609,7 @@ L0  Ids  Counters  Scratch
 | `LabelChain.zig` | 8 | the labels a virtual call's supply comes through, outward (§2.11.3, #1758, #1760, #1721) | Ids, Forest, Contract, RowEnv, Value |
 | `Outward.zig` | 11 | what the outward labels add: a demand's instantiated `req` and outer conditions, a passed-on label's outer supplies (§2.11.2 item 4, §2.11.3) | Ids, Contract, RowEnv, LabelChain, Graft, Distinct, Eval |
 | `Captures.zig` | 8 | a closure's captures in what holds it: a parameter arrival at an argument closure takes them, deep (§2.10, #1772) | Ids, Place, Value, Relation |
+| `Across.zig` | 9 | what a callee holds across a run of a known code it is handed: a capture write's operands at every label outward (§2.11.3, #1955) | Ids, Value, LabelChain |
 | `FnRun.zig` | 9 | a function value the frame cannot follow: the one parameter function slot a value is, and the function objects that escape where it is not (§2.11.3, #1773, #1775, #1776) | Contract, LabelChain, RouteWalk, Relation, Value, WalkContext |
 | `Codes.zig` | 12 | a module's codes and one declaration's answer (§2.10, §2.12) | Ids, Walk, Kept |
 | `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Distinct, Walk, Cells |

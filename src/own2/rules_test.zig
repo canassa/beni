@@ -161,6 +161,8 @@ const layers = [_]Entry{
     .{ .file = "Distinct.zig", .layer = 9, .max_lines = 750 },
     // A call's writes projected by the walk, and a set written out (#1714).
     .{ .file = "Routed.zig", .layer = 9, .max_lines = 90 },
+    // What a callee holds across a run of a known code it is handed (#1955).
+    .{ .file = "Across.zig", .layer = 9, .max_lines = 60 },
     // The subtree symbol's read-off beside the passed-on labels (§2.3.1).
     // A closure's cell operations on its captures, at its creation (#1727).
     .{ .file = "Eval.zig", .layer = 10, .max_lines = 640 },
@@ -491,7 +493,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 80), layers.len);
+    try testing.expectEqual(@as(usize, 81), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

@@ -1,0 +1,6 @@
+# v2 refuses each call whose callback edits in place what its callee holds across the run (§2.11.3, #1955).
+55:5 list_still_used SanitiserCellReentry.reenter
+61:5 list_still_used SanitiserCellReentry.reenter
+67:5 list_still_used SanitiserCellReentry.passed
+73:5 list_still_used SanitiserCellReentry.answered
+79:5 list_still_used SanitiserCellReentry.counted
