@@ -1,0 +1,80 @@
+-- A runtime catch for `List.update`'s callback passed on by a helper over a
+-- list of tuples (`ownership-v2.md` §2.11.3, §2.13.6, `taken`). A helper
+-- that passes its callback on splits the supply by the tuple's parts, so
+-- the root of the supply names no element: the row's condition, that the
+-- written list occurs nowhere else in the list, was asked at a slot below
+-- the wrong part, or at none, and asked nothing. `upd [ ( a, v ), ( b, v ) ]`
+-- then pushed onto `v` in place while the other row still held it. Each
+-- shape below is refused now; accepted, the sanitised run shows the stale
+-- read.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+rows : List (List Int × List Int) → String
+rows rs = String.join (List.map rs λ( k, vs ) → show k ++ ":" ++ show vs) ";"
+
+
+upd :
+      List (List Int × List Int)
+    , (List Int × List Int → List Int × List Int)
+    → List (List Int × List Int)
+upd rs f = List.update rs 1 f
+
+
+updVia :
+      List (List Int × List Int)
+    , (List Int × List Int → List Int × List Int)
+    → List (List Int × List Int)
+updVia rs f = List.update rs 1 λv → f v
+
+
+updTwo :
+      List (List Int × List Int)
+    , (List Int × List Int → List Int × List Int)
+    → List (List Int × List Int)
+updTwo rs f = upd rs f
+
+
+updTwice :
+      List (List Int × List Int)
+    , (List Int × List Int → List Int × List Int)
+    → List (List Int × List Int)
+updTwice rs f = List.update (List.update rs 0 f) 1 f
+
+
+updNested :
+      List (List Int × (List Int × List Int))
+    , (List Int × (List Int × List Int) → List Int × (List Int × List Int))
+    → List (List Int × (List Int × List Int))
+updNested rs f = List.update rs 1 f
+
+
+main : Program
+main =
+    v = [ 4 ]
+    value = upd [ ( [ 1 ], v ), ( [ 2 ], v ) ] λ( k, vs ) → ( k, List.push vs 8 )
+    shared = [ 1 ]
+    key = upd [ ( shared, [ 0 ] ), ( shared, [ 1 ] ) ] λ( a, vs ) → ( List.push a 3, vs )
+    w = [ 5 ]
+    via = updVia [ ( [ 1 ], w ), ( [ 2 ], w ) ] λ( a, vs ) → ( a, List.push vs 8 )
+    x = [ 6 ]
+    two = updTwo [ ( [ 1 ], x ), ( [ 2 ], x ) ] λ( a, vs ) → ( a, List.push vs 8 )
+    y = [ 7 ]
+    twice = updTwice [ ( [ 1 ], y ), ( [ 2 ], y ) ] λ( a, vs ) → ( a, List.push vs 8 )
+    z = [ 8 ]
+    nested = updNested [ ( [ 1 ], ( z, [ 0 ] ) ), ( [ 2 ], ( z, [ 0 ] ) ) ] λ( a, ( vs, b ) ) →
+        ( a, ( List.push vs 9, b ) )
+    Node.printLines
+        [ rows value
+        , rows key
+        , rows via
+        , rows two
+        , rows twice
+        , String.join (List.map nested λ( a, ( vs, b ) ) → show vs) ";"
+        ]

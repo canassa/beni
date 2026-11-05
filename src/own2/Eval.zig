@@ -494,17 +494,25 @@ fn supplyingArg(e: *Evaluation, q: u32, lab: Contract.Label, k: u32, words: []co
     const call = f.calls.items[q];
     for (e.contracts.suppliesOf(lab.supplies)) |su| {
         if (su.k != k) continue;
-        // The entries at the prefixes of `words`, shortest first.
+        // The entries at the prefixes of `words`, longest first: a supply
+        // passed on by structure names a tuple's parts at its root, whose
+        // steps do not continue to `words` (§2.13.6).
+        var ns: std.ArrayList(Contract.Node) = .empty;
         var n = su.res_root;
         for (0..words.len + 1) |d| {
-            for ([_][]const Contract.Arrival{ e.contracts.trees.here(n), e.contracts.trees.open(n) }) |run| for (run) |a| {
+            try ns.append(e.ev.arena, n);
+            if (d == words.len) break;
+            n = e.contracts.trees.kidAt(n, words[d]) orelse break;
+        }
+        var d = ns.items.len;
+        while (d > 0) {
+            d -= 1;
+            for ([_][]const Contract.Arrival{ e.contracts.trees.here(ns.items[d]), e.contracts.trees.open(ns.items[d]) }) |run| for (run) |a| {
                 if (a.kind != .param or a.j >= call.arg_insts.len or call.arg_insts[a.j] == none) continue;
                 const inst = call.arg_insts[a.j];
                 const ws = try std.mem.concat(e.ev.arena, u32, &.{ f.slots.relWords(a.slot), words[d..] });
                 return .{ .inst = inst, .path = if (q < e.w.walk_calls) try pathAt(e, try e.ctx.placeOfInst(e.ctx.ctx, inst), ws) else .none };
             };
-            if (d == words.len) break;
-            n = e.contracts.trees.kidAt(n, words[d]) orelse break;
         }
     }
     return null;
