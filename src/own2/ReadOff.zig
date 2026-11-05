@@ -145,7 +145,7 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Err
     if (try hosted(s, li, q.int(), l.kind == .ref, out)) if (l.kind == .ref) try Put.arriveWide(s, q, .{ .kind = .host }, out) else try Put.arrive(s, q, .{ .kind = .host }, out);
     switch (l.kind) {
         .site, .fresh => try Put.arrive(s, q, .{ .kind = .fresh }, out),
-        .shared => try Put.arrive(s, q, .{ .kind = .shared, .j = l.atom, .slot = l.extra }, out),
+        .shared => try Put.arriveWide(s, q, .{ .kind = .shared, .j = l.atom, .slot = l.extra }, out),
         .top, .loan => try Put.arrive(s, q, .{ .kind = .top }, out),
         .host => try Put.arrive(s, q, .{ .kind = .host }, out),
         .answer => try Put.arrive(s, q, .{ .kind = .cb, .j = try Put.labelIndex(s, l.atom), .slot = l.extra }, out),
@@ -758,8 +758,8 @@ fn describeOne(s: *Sink, l: Value.Leaf, r: Value.Root, sl: u32, at: PathId, out:
     }
 }
 
-/// The effects of leaf `li` on the frame's parameters: each parameter slot
-/// it names (expanded through calls), as `(j, slot)`.
+/// The effects of leaf `li` on the frame's parameters: each parameter slot it names
+/// (expanded through calls), as `(j, slot)`; a label's escaped answer escapes its function.
 fn paramEffects(s: *Sink, li: u32, deep: bool, out: Put.EffList) Error!void {
     const e = s.e;
     const f = e.fr();
@@ -773,6 +773,7 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: Put.EffList) Error!void {
         if ((try seen.getOrPut(gpa, .{x})).found_existing) continue;
         if ((try s.effected.getOrPut(gpa, .{ x, @intFromBool(deep), @backingInt(out) })).found_existing) continue;
         const l = f.leafAt(x);
+        if (l.kind == .answer and out == .escapes) _ = try Contract.Draft.addEffect(Put.effList(s, out), s.arena, .{ .j = f.cbs.items[l.atom].j, .slot = f.cbs.items[l.atom].slot, .deep = true });
         if (l.kind != .ref) continue;
         const r = f.roots.items[l.root];
         switch (r.kind) {

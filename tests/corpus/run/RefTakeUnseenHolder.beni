@@ -1,0 +1,172 @@
+-- A take whose other holder the frame has no name for
+-- (`ownership-v2.md` §2.13.7, #1977). With no slot state these are the
+-- cases where `.0` must not read as owned: a label's answer at `.0` that
+-- `.1` also holds, through re-entry or an allocation; a capture stored at a
+-- slot the first contents never named; one object at two slots of the
+-- contents; a loan stored by a helper's callback, from a label; and a
+-- top-level pair answered whole. Each line prints the edited take, then
+-- the other holder: were an edit accepted, that holder would read it.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    joined = String.join (List.map xs String.fromInt) sep
+    "[${joined}]"
+
+
+emptied : Ref (List Int) → List Int
+emptied r = Ref.modify r λold → ( old, [] )
+
+
+steal : Ref (List Int) → List Int
+steal r = Ref.modify r λo → ( o, [ 9 ] )
+
+
+keep : Ref (List Int), (⊤ → List Int) → List Int
+keep r g = Ref.modify r λold → ( g ⊤, old )
+
+
+reentered : ⊤ → String
+reentered ⊤ =
+    r = Ref.make [ 1 ]
+    t = keep r λ⊤ → steal r
+    u = List.push t 2
+    "reentered ${ints u} ${ints (Ref.get r)}"
+
+
+allocated : Ref (List Int), (List Int → List Int) → List Int
+allocated r f = Ref.modify r λ_ →
+    n = [ 7 ]
+    ( f n, n )
+
+
+labelFresh : ⊤ → String
+labelFresh ⊤ =
+    r = Ref.make [ 1 ]
+    t = allocated r λx → x
+    u = List.push t 2
+    "labelFresh ${ints u} ${ints (Ref.get r)}"
+
+
+take : Ref (Maybe (List Int)) → Maybe (List Int)
+take r = Ref.modify r λo → ( o, Nothing )
+
+
+unnamedSlot : ⊤ → String
+unnamedSlot ⊤ =
+    ys = [ 1 ]
+    r = Ref.make Nothing
+    Ref.update r λ_ → Just ys
+    u =
+        case take r of
+            Just x →
+                List.push x 2
+            Nothing →
+                []
+    "unnamedSlot ${ints u} ${ints ys}"
+
+
+type Tagged
+    = A (List Int)
+    | B (List Int)
+
+
+otherTag : ⊤ → String
+otherTag ⊤ =
+    ys = [ 1 ]
+    r = Ref.make (A [ 0 ])
+    Ref.update r λ_ → B ys
+    t = Ref.modify r λo → ( o, A [] )
+    u =
+        case t of
+            A x →
+                x
+            B x →
+                List.push x 2
+    "otherTag ${ints u} ${ints ys}"
+
+
+twoSlots : ⊤ → String
+twoSlots ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    Ref.update r λ_ →
+        n = [ 7 ]
+        ( n, n )
+    t = Ref.modify r λp → ( p, ( [], [] ) )
+    case t of
+        ( x, y ) →
+            u = List.push x 8
+            "twoSlots ${ints u} ${ints y}"
+
+
+twoSlotsSet : ⊤ → String
+twoSlotsSet ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    n = [ 7 ]
+    Ref.set r ( n, n )
+    t = Ref.modify r λp → ( p, ( [], [] ) )
+    case t of
+        ( x, y ) →
+            u = List.push x 8
+            "twoSlotsSet ${ints u} ${ints y}"
+
+
+put : Ref (List Int), (⊤ → List Int) → ⊤
+put b f = Ref.update b λ_ → f ⊤
+
+
+labelStored : ⊤ → String
+labelStored ⊤ =
+    a = Ref.make [ 1 ]
+    b = Ref.make [ 2 ]
+    put b λ⊤ → Ref.get a
+    u = List.push (emptied a) 3
+    "labelStored ${ints u} ${ints (Ref.get b)}"
+
+
+top : List Int × List Int
+top = ( [ 1 ], [ 2 ] )
+
+
+topAnswer : ⊤ → String
+topAnswer ⊤ =
+    r = Ref.make [ 0 ]
+    t = Ref.modify r λ_ → top
+    u = List.push t 8
+    case top of
+        ( a, b ) →
+            "topAnswer ${ints u} ${ints a} ${ints b}"
+
+
+pick : ⊤ → List Int × List Int
+pick ⊤ = top
+
+
+topPicked : ⊤ → String
+topPicked ⊤ =
+    case pick ⊤ of
+        ( a, _ ) →
+            u = List.push a 9
+            case top of
+                ( c, _ ) →
+                    "topPicked ${ints u} ${ints c}"
+
+
+main : Program
+main =
+    Node.printLines
+        [ reentered ⊤
+        , labelFresh ⊤
+        , unnamedSlot ⊤
+        , otherTag ⊤
+        , twoSlots ⊤
+        , twoSlotsSet ⊤
+        , labelStored ⊤
+        , topAnswer ⊤
+        , topPicked ⊤
+        ]

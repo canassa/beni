@@ -1,0 +1,4 @@
+A runtime catch for a take whose other holder the frame has no name for (ownership-v2.md §2.13.7, #1977): a label's
+answer at .0 that .1 holds, a capture at a slot the first contents never named, one object at two slots, a loan stored
+through a label, a top-level pair. Built again under --ownership=v2 and the list stale-read sanitiser. v2 refuses each
+edit; were one accepted, the sanitised run would trap where the other holder reads the list.

@@ -19,6 +19,8 @@ const Regions = @import("Regions.zig");
 const Value = @import("Value.zig");
 const Place = @import("Place.zig");
 const KeySets = @import("KeySets.zig");
+const Cells = @import("Cells.zig");
+const Slots = @import("Slots.zig");
 
 pub const Error = Ids.ChargeError;
 const Cond = Contract.Cond;
@@ -198,7 +200,11 @@ pub const Keys = struct {
                         if (mode == .runs) try acc.append(g, .{ 0, f.roots.items[l.root].a, l.pos });
                     },
                     .cb => fx.unknown = true,
-                    .call, .supply => {},
+                    // A slot behind a `◆` where the frame names nothing: with
+                    // no slot state, what a store put there (§2.13.7, #1977).
+                    .call, .supply => if (w.span.items[at][0] == w.span.items[at][1] and !l.at_pos) for (f.slots.elems(l.slots)) |s| {
+                        if (!Slots.isNot(s) and Cells.behindCell(f.places, Slots.pathOf(s))) fx.unknown = true;
+                    },
                 },
                 .site => if (mode == .runs) try acc.append(g, .{ 1, l.atom, 0 }),
                 .fresh => if (mode == .runs) try acc.append(g, .{ 2, l.atom, 0 }),
