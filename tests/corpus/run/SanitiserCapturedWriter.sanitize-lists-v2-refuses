@@ -2,4 +2,4 @@
 26:9 list_still_used h
 34:16 list_may_be_shared SanitiserCapturedWriter.apply2
 34:16 list_may_be_shared SanitiserCapturedWriter.apply2
-36:9 list_still_used List.map
+36:9 list_may_be_shared List.map

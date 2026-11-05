@@ -23,6 +23,7 @@ const Distinct = @import("Distinct.zig");
 const Eval = @import("Eval.zig");
 const FnRun = @import("FnRun.zig");
 const Outward = @import("Outward.zig");
+const SupplyCond = @import("SupplyCond.zig");
 const Held = @import("Held.zig");
 const Routed = @import("Routed.zig");
 const CallGraft = @import("CallGraft.zig");
@@ -922,8 +923,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
         // Calls add up: a label the frame calls and also hands on
         // (`[ f x, …myMap rest f ]`), or hands to two calls, may run more
         // than once per activation, whatever each source says alone.
-        // Passed on inside a known code an outer label runs (`λv → f v`
-        // handed to `List.map`), it runs as often as that label (#1721).
+        // Inside a known code an outer label runs, it runs as often (#1721).
         const lc: Contract.Calls = if (lab.calls != .none and Outward.outwardMany(e, p[1])) .many else lab.calls;
         dl.calls = if (lc == .none) dl.calls else if (dl.calls == .none) lc else .many;
         // The supplies at this call's function type: a callee's supply slot
@@ -951,6 +951,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
             _ = try d.labels.items[at].supplyOf(arena, su.k);
             for (es.items.items) |x| {
                 const rel = f.slots.rels.find(es.wordsOf(x)) orelse try f.slots.relOfWords(gpa, f.account, f.places, es.wordsOf(x));
+                if (x.open and !at_site) try Contract.Draft.markOpen(&(try d.labels.items[at].supplyOf(arena, su.k)).res, arena, rel);
                 for (x.arrivals) |a| {
                     var ls: std.ArrayList(u32) = .empty;
                     defer ls.deinit(gpa);
@@ -1031,7 +1032,6 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
     const d = s.d;
     const code = w.code;
     if (d.flags.returns and !d.flags.cross) d.res_cond = try Distinct.sepOf(&e.ev, w.result);
-    // An arrival is read where the result is consumed.
     var arrs: std.ArrayList(Contract.Arrival) = .empty;
     for (d.res.items.items) |rs| {
         arrs.clearRetainingCapacity();
@@ -1046,7 +1046,7 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
         const at = try Put.labelIndex(s, @intCast(ci));
         for (cb.args, 0..) |_, k| {
             const sup = try d.labels.items[at].supplyOf(arena, @intCast(k));
-            if (ci < v.supply_cond.len) sup.cond = try Cond.conj(arena, f.account, sup.cond, v.supply_cond[ci]);
+            if (ci * v.width + k < v.supply_cond.len) sup.cond = try Cond.conj(arena, f.account, sup.cond, v.supply_cond[ci * v.width + k]);
         }
         for (v.kept) |kp| if (kp[0] == ci) {
             const sup = try d.labels.items[at].supplyOf(arena, kp[1]);
@@ -1059,21 +1059,21 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
         const lab = e.contracts.labelsOf(e.contracts.head(call.contract).labels)[p[2]];
         for (e.contracts.suppliesOf(lab.supplies)) |su| {
             const sup = try d.labels.items[at].supplyOf(arena, su.k);
-            sup.cond = try Cond.conj(arena, f.account, sup.cond, try Distinct.instSelFeed(&e.ev, try e.contracts.cond(arena, su.cond), p[1], .{ .j = f.cbs.items[p[0]].j, .slot = f.cbs.items[p[0]].slot, .label = p[2] }));
-            if (pi < v.pass_cond.len) sup.cond = try Cond.conj(arena, f.account, sup.cond, v.pass_cond[pi]);
+            sup.cond = try Cond.conj(arena, f.account, sup.cond, try Distinct.instSelFeed(&e.ev, try e.contracts.cond(arena, su.cond), p[1], .{ .j = f.cbs.items[p[0]].j, .slot = f.cbs.items[p[0]].slot, .label = p[2], .covered = Distinct.Fed.covering(&e.ev, try e.contracts.cond(arena, su.cond), call) }));
+            if (pi * v.width + su.k < v.pass_cond.len) sup.cond = try Cond.conj(arena, f.account, sup.cond, v.pass_cond[pi * v.width + su.k]);
             // Passed on inside a known code, the outer labels' too (#1721).
             try Outward.passSupply(e, arena, p[1], su, sup);
             for (v.pass_kept) |kp| if (kp[0] == pi and kp[1] == su.k) try keptAt(s, kp[2], kp[3], &sup.kept);
         }
     }
-    // A code that writes one of its captures is `once` (R-2.8); a cell
-    // operation on a captured `Ref` is not such a write (§2.11.4).
+    try SupplyCond.publish(e, s, arena, Put.labelIndex);
     var flat: std.ArrayList(Contract.Effect) = .empty;
     defer flat.deinit(e.gpa());
     for (d.writes.items) |x| if (x.j >= code.params.len) try e.contracts.effectFlat(e.gpa(), e.gpa(), f.account, f.slots, f.places, x, &flat);
     for (flat.items) |x| if (!Eval.cellWrite(f.slots, x)) {
         d.flags.once = true;
     };
+    d.flags.taken_write, d.flags.entry = .{ d.flags.taken_write or e.marks.taken_write, d.flags.entry or e.marks.entry };
     // Each condition in its one spelling (§2.9.1, *One spelling of a subtree*).
     var nj: usize = 0;
     for (f.roots.items) |r| if (r.kind == .param) {

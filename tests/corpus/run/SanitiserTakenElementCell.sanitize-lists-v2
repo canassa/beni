@@ -1,0 +1,3 @@
+A traversal's callback edits the elements of a list a cell holds (ownership-v2.md §2.11.3, a taken supply; §2.13.7):
+built again under --ownership=v2 and the list stale-read sanitiser. v2 keeps no slot state, so it refuses each edit;
+asked of the stale contents, the sanitised run traps.

@@ -1,0 +1,7 @@
+# v2 keeps no slot state: it refuses each traversal callback's edit of the elements of a list a cell holds (§2.11.3, §2.13.7).
+27:14 list_may_be_shared Ref.update
+35:5 list_may_be_shared Ref.update
+44:5 list_may_be_shared Ref.update
+48:5 list_may_be_shared SanitiserTakenElementCell.viaParam
+57:5 list_may_be_shared Ref.update
+61:5 list_may_be_shared Ref.update

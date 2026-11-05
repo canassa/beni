@@ -18,7 +18,8 @@ const PlaceBelow = @import("PlaceBelow.zig");
 const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
-const Fed = @import("Fed.zig");
+pub const Fed = @import("Fed.zig");
+const Taken = @import("Taken.zig");
 const FedCall = @import("FedCall.zig");
 const Entries = @import("Entries.zig");
 const RouteWalk = @import("RouteWalk.zig");
@@ -99,11 +100,11 @@ fn sepLeaf(e: *Eval, li: u32) Error!Cond {
         .call => instCond(e, r.a),
         .supply, .cb => blk: {
             if (!e.expandable(l)) break :blk Cond.unprovable;
+            var ps: std.ArrayList(Proj) = .empty;
+            defer ps.deinit(e.gpa());
             var ls: std.ArrayList(u32) = .empty;
             defer ls.deinit(e.gpa());
             try e.expand(li, &ls);
-            var ps: std.ArrayList(Proj) = .empty;
-            defer ps.deinit(e.gpa());
             for (ls.items, 0..) |x, k| try ps.append(e.gpa(), .{ .leaf = x, .route = @intCast(k + 1) });
             break :blk distinct(e, ps.items, false);
         },
@@ -617,6 +618,7 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
     if (x.kind == .host or t.kind == .host) return if (x.kind == t.kind) .may else .no;
     const xr = x.kind == .ref;
     const tr = t.kind == .ref;
+    if (Taken.side(e.f, e.contracts, x, t)) |w| return Taken.apartFromOthers(Ov, e, xi, ti, w, target, apartOf, overlap);
     // An unknown label's answer may be anything its closure was handed:
     // written, anything; holding the target, what it was supplied or its
     // label's function slot holds.

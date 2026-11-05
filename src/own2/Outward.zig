@@ -18,6 +18,7 @@ const LabelChain = @import("LabelChain.zig");
 const Graft = @import("Graft.zig");
 const Distinct = @import("Distinct.zig");
 const Eval = @import("Eval.zig");
+const CellEdit = @import("CellEdit.zig");
 
 const Allocator = std.mem.Allocator;
 const Error = Eval.Error;
@@ -25,12 +26,10 @@ const Cond = Contract.Cond;
 const Evaluation = Eval.Evaluation;
 const none: u32 = Ids.none_int;
 
-/// What each callee write relies on (§2.11.2 item 4), instantiated on its
-/// call's arguments: after the group's facts are delivered, since the
-/// distinct check reads every expansion whole.
+/// What each callee write relies on (§2.11.2 item 4), on its call's arguments:
+/// after the group's facts are delivered, the distinct check reads them whole.
 pub fn finishDemands(e: *Evaluation) Error!void {
     const f = e.fr();
-    // A call's instantiated `req`, made once a call (§2.11.2 item 4).
     const req_of = try e.ev.arena.alloc(?Cond, f.calls.items.len);
     @memset(req_of, null);
     for (e.demands.items) |*d| {
@@ -39,13 +38,17 @@ pub fn finishDemands(e: *Evaluation) Error!void {
         const c = if (req_of[d.call] == null) try e.contracts.cond(e.ev.arena, e.contracts.head(call.contract).req) else Cond.yes;
         if (req_of[d.call] == null) req_of[d.call] = (try Graft.movedReq(&e.ev, call, c)) orelse try Distinct.instSel(&e.ev, c, d.call);
         d.relies = req_of[d.call].?;
+        const held = e.contracts.head(call.contract).flags.taken_write;
+        if (held and try CellEdit.reachesParam(&e.ev, e.w.leavesOfRun(d.targets))) e.marks.taken_write = true;
         if (!call.virtual or d.wslot == none) continue;
-        // Each label the supply comes through: its supplies' condition,
-        // and a `taken` row's container occurrences, at its call (#1758).
         var lvs: std.ArrayList(LabelChain.Level) = .empty;
         defer lvs.deinit(e.gpa());
         try LabelChain.supplyLevels(e.chain(), d.call, d.arg, f.slots.relWords(d.wslot), &lvs);
         for (lvs.items) |lv| for (e.contracts.suppliesOf(lv.lab.supplies)) |su| if (su.k == lv.k) {
+            const es = try Eval.entriesOf(e, su.res_root);
+            if (lv.lab.calls == .many and CellEdit.ofElement(es, f.slots, lv.words) and try CellEdit.reachesParam(&e.ev, e.w.leavesOfRun(d.targets))) e.marks.taken_write = true;
+            if (CellEdit.elementEdit(es, f.slots, lv.words)) d.relies = Cond.unprovable;
+            if (lv.words.len != 0 or d.deep) d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try Distinct.instSel(&e.ev, try e.contracts.cond(e.ev.arena, su.below), lv.call));
             d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try Distinct.instSel(&e.ev, try e.contracts.cond(e.ev.arena, su.cond), lv.call));
             if (lv.lab.origin[2] & RowEnv.taken_origin != 0) if (try RowEnv.takenOccs(e.contracts, f.places, f.slots, f.account, e.gpa(), e.ev.arena, su, lv.words, d.deep)) |os| {
                 d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try Distinct.instSel(&e.ev, try Cond.of(f.account, os), lv.call));

@@ -107,6 +107,7 @@ const layers = [_]Entry{
     // Compatibility for one pair of points, split from `Liveness` (#1685).
     .{ .file = "Ancestry.zig", .layer = 6, .max_lines = 130 },
     .{ .file = "Relation.zig", .layer = 7, .max_lines = 1300 },
+    .{ .file = "Taken.zig", .layer = 7, .max_lines = 75 },
     // The distinct check's entries and rounds' state, split from `Distinct` (#1714).
     .{ .file = "Entries.zig", .layer = 7, .max_lines = 400 },
     // The atoms a result holds open already, for the read-off (#1716).
@@ -141,8 +142,10 @@ const layers = [_]Entry{
     // values, the distinct check reads a call's instantiation.
     // A cell's `◆` as an evaluation reads it, from `Eval` (#1729).
     .{ .file = "Cells.zig", .layer = 8, .max_lines = 150 },
+    .{ .file = "CellEdit.zig", .layer = 8, .max_lines = 65 },
     // A label's answer handed back to it, and its `fed` occurrence (#1713).
     .{ .file = "Fed.zig", .layer = 8, .max_lines = 140 },
+
     // The sources a frame's escapes reach, for the read-off's `host` (#1744).
     .{ .file = "Host.zig", .layer = 8, .max_lines = 120 },
     // A callee's `fed` occurrence at a call, split from `Fed` (#1721).
@@ -201,6 +204,8 @@ const layers = [_]Entry{
     // What the labels outward of a virtual call add to its demands and to
     // a passed-on label's supplies, from `Eval` and `ReadOff` (#1758, #1721).
     .{ .file = "Outward.zig", .layer = 11, .max_lines = 90 },
+    .{ .file = "EntryHeld.zig", .layer = 11, .max_lines = 70 },
+    .{ .file = "SupplyCond.zig", .layer = 11, .max_lines = 90 },
     .{ .file = "ReadOff.zig", .layer = 12, .max_lines = 1160 },
     .{ .file = "Resolve.zig", .layer = 12, .max_lines = 680 },
     // A module's codes and one declaration's answer, split from `Groups` (#1758).
@@ -500,7 +505,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 84), layers.len);
+    try testing.expectEqual(@as(usize, 88), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

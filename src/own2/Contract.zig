@@ -82,6 +82,9 @@ pub const Supply = struct {
     res_root: Node = 0,
     kept: Range,
     cond: StoredCond,
+    /// What a write below the supply's root relies on: the callee's own
+    /// claim about what it hands, derived from it (§2.11.3).
+    below: StoredCond = .{},
 };
 
 pub const Flags = packed struct(u8) {
@@ -90,7 +93,15 @@ pub const Flags = packed struct(u8) {
     once: bool = false,
     words: bool = false,
     pessimistic: bool = false,
-    _pad: u3 = 0,
+    /// A `taken` result (§2.13.6, `traverseAt`): one element of parameter
+    /// 1, read through the certified traversal, so a holder of that
+    /// container holds the others for the rest of the frame (§2.11.3).
+    taken: bool = false,
+    /// A traversal's element, at some level, is written where it reaches a
+    /// parameter (§2.11.3, *a taken supply*): no `entry` caller judges that.
+    taken_write: bool = false,
+    /// An argument's function values run as `entry` functions (`EntryHeld`).
+    entry: bool = false,
 };
 
 pub const Head = struct {
@@ -155,6 +166,7 @@ pub const Draft = struct {
         res: Res = .{},
         kept: std.ArrayList(Effect) = .empty,
         cond: Cond = .{},
+        below: Cond = .{},
     };
 
     /// Every plain arrival at `slot` is open (a type variable's slot).
@@ -531,7 +543,7 @@ pub const Table = struct {
             var made: std.ArrayList(Supply) = .empty;
             defer made.deinit(gpa);
             for (l.supplies.items) |*s| {
-                try made.append(gpa, .{ .k = s.k, .res_root = try t.putRes(gpa, slots, &s.res, rank), .kept = try t.putEffects(gpa, slots, s.kept.items), .cond = try t.putCond(gpa, slots, s.cond) });
+                try made.append(gpa, .{ .k = s.k, .res_root = try t.putRes(gpa, slots, &s.res, rank), .kept = try t.putEffects(gpa, slots, s.kept.items), .cond = try t.putCond(gpa, slots, s.cond), .below = try t.putCond(gpa, slots, s.below) });
             }
             try t.supplies.appendSlice(gpa, made.items);
             try t.labels.append(gpa, .{ .j = l.j, .slot = l.slot, .origin = l.origin, .calls = l.calls, .supplies = .{ .start = sstart, .len = @intCast(made.items.len) } });
@@ -554,7 +566,7 @@ pub const Table = struct {
         for (t.labelsOf(h.labels)) |l| {
             var dl: Draft.DraftLabel = .{ .j = l.j, .slot = l.slot, .origin = l.origin, .calls = l.calls };
             for (t.suppliesOf(l.supplies)) |s| {
-                var ds: Draft.DraftSupply = .{ .k = s.k, .cond = try t.cond(arena, s.cond) };
+                var ds: Draft.DraftSupply = .{ .k = s.k, .cond = try t.cond(arena, s.cond), .below = try t.cond(arena, s.below) };
                 ds.res.base = s.res_root;
                 try ds.kept.appendSlice(arena, t.effectsOf(s.kept));
                 try dl.supplies.append(arena, ds);
@@ -581,6 +593,8 @@ pub const Table = struct {
         d.flags.returns = a_returns or b_returns;
         if (!a_returns) d.flags.cross = hb.flags.cross else if (b_returns) d.flags.cross = d.flags.cross and hb.flags.cross;
         d.flags.once = d.flags.once or hb.flags.once;
+        d.flags.taken_write = d.flags.taken_write or hb.flags.taken_write;
+        d.flags.entry = d.flags.entry or hb.flags.entry;
         // A side that does not return says nothing of the result's condition.
         const bc = try t.cond(arena, hb.res_cond);
         if (!a_returns) d.res_cond = bc else if (b_returns) d.res_cond = try weakest(arena, account, d.res_cond, bc);
@@ -597,6 +611,7 @@ pub const Table = struct {
                 try t.mergeRes(gpa, slots, &ds.res, s.res_root, map);
                 for (t.effectsOf(s.kept)) |e| _ = try Draft.addEffect(&ds.kept, arena, e);
                 ds.cond = try weakest(arena, account, ds.cond, try t.cond(arena, s.cond));
+                ds.below = try weakest(arena, account, ds.below, try t.cond(arena, s.below));
             }
         }
         try t.mergeRes(gpa, slots, &d.res, hb.res_root, map);
@@ -628,6 +643,7 @@ pub const Table = struct {
             if (p.j != q.j or p.slot != q.slot or !std.mem.eql(u32, &p.origin, &q.origin) or p.calls != q.calls) return false;
             if (p.supplies.len != q.supplies.len) return false;
             for (t.suppliesOf(p.supplies), t.suppliesOf(q.supplies)) |s, u| {
+                if (!t.condEql(s.below, u.below)) return false;
                 if (s.k != u.k or s.res_root != u.res_root or !t.effectsEql(s.kept, u.kept) or !t.condEql(s.cond, u.cond)) return false;
             }
         }
@@ -650,6 +666,7 @@ pub const Table = struct {
         const c = t.heads.items[claim];
         if (g.flags.returns and !c.flags.returns) return false;
         if (g.flags.once and !c.flags.once) return false;
+        if ((g.flags.taken_write and !c.flags.taken_write) or (g.flags.entry and !c.flags.entry)) return false;
         if (g.flags.returns and !c.res_cond.no) {
             if (!(try t.cond(arena, g.res_cond)).weakerIn(slots, try t.cond(arena, c.res_cond))) return false;
         }
@@ -666,6 +683,7 @@ pub const Table = struct {
                 } else return false;
                 if (!try t.treeWithin(arena, slots, ids, s.res_root, u.res_root)) return false;
                 if (!t.effectsWithin(slots, s.kept, u.kept)) return false;
+                if (!u.below.no and !(try t.cond(arena, s.below)).weakerIn(slots, try t.cond(arena, u.below))) return false;
                 if (!u.cond.no and !(try t.cond(arena, s.cond)).weakerIn(slots, try t.cond(arena, u.cond))) return false;
             }
         }

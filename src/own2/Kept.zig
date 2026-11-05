@@ -36,11 +36,13 @@ pub const Verdicts = struct {
     req: Cond = .{},
     /// Per frame label: the kept argument slots, as `(k, leaf)` pairs.
     kept: []const [3]u32 = &.{},
-    /// Per frame label: the condition its supplies' check relied on.
+    /// Per frame label and argument (`label * width + k`): the condition
+    /// that supply's check relied on (§2.11.3).
     supply_cond: []const Cond = &.{},
+    width: u32 = 1,
     /// Per passed-on label (`passes`' index): the kept supply slots, as
     /// `(pass, k, leaf, at)` (`at`: the leaf's slot in the supply), and
-    /// the condition its supplies' check relied on.
+    /// each supply's condition (`pass * width + k`).
     pass_kept: []const [4]u32 = &.{},
     pass_cond: []const Cond = &.{},
 };
@@ -370,6 +372,7 @@ pub const Group = struct {
                     try p.appendSlice(g, &.{ s.k, s.res_root });
                     try putEffects(p, g, contracts.effectsOf(s.kept));
                     try putCond(p, g, contracts.occsOf(s.cond), s.cond.no);
+                    try putCond(p, g, contracts.occsOf(s.below), s.below.no);
                 }
             }
             try p.append(g, @as(u8, @bitCast(d.flags)));

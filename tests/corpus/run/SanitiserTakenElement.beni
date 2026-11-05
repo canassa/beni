@@ -1,0 +1,64 @@
+-- A runtime catch for a callback that edits the element a traversal hands it
+-- (`ownership-v2.md` §2.11.3, *A taken supply*). `List.map` no longer reads the
+-- list after each call, so the element is the callback's, but the caller's list
+-- still holds it. Each edit below reaches an object that something else reads:
+-- the list read again, two positions of one list, a part two rows share, a
+-- helper that keeps the list, a helper that hands it twice, a capture of the
+-- list, and a capture answered at another position. Each is refused; with the
+-- supply's condition unasked, the sanitised runs trap or print the edit.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+pairs : List (List Int × List Int) → String
+pairs ps = String.join (List.map ps λ( p, q ) → show p ++ "/" ++ show q) ";"
+
+
+viaLambda : List (List Int), (List Int → List Int) → List (List Int)
+viaLambda rs f = List.map rs λv → f v
+
+
+keeps : List (List Int), (List Int → List Int) → List (List Int) × List (List Int)
+keeps xs f = ( List.map xs f, xs )
+
+
+main : Program
+main =
+    read = [ [ 1 ], [ 2 ] ]
+    readEdited = List.map read λl → List.push l 3
+    x = [ 1 ]
+    twice = List.map [ x, x ] λl → List.push l 4
+    m = [ 5 ]
+    parts = List.map [ ( [ 1 ], m ), ( m, [ 2 ] ) ] λ( p, q ) → ( List.push p 6, q )
+    k = [ 1 ]
+    helper = viaLambda [ k, k ] λv → List.push v 7
+    ( kept, original ) = keeps [ [ 1 ], [ 2 ] ] λv → List.push v 8
+    fold = [ [ 1 ], [ 2 ] ]
+    n = List.foldl fold 0 λl acc → List.length (List.push l 9) + acc
+    self = [ [ 1 ], [ 2 ] ]
+    captured = List.map self λl → List.push l (List.length (List.concat self))
+    a = [ 1 ]
+    b = [ 2, 3 ]
+    answered = List.map [ a, b ] λl → if List.length l == 1 then b else List.push l 7
+    y = [ 1 ]
+    repeated = List.map (List.repeat y 2) λl → List.push l 4
+    Node.printLines
+        [ shows readEdited ++ " " ++ shows read
+        , shows twice
+        , pairs parts
+        , shows helper
+        , shows kept ++ " " ++ shows original
+        , String.fromInt n ++ " " ++ shows fold
+        , shows captured
+        , shows answered
+        , shows repeated
+        ]

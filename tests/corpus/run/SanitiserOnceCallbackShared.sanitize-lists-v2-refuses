@@ -1,0 +1,19 @@
+# v2 refuses each edit of a list holding one object twice, handed to a callback (§2.11.3, a taken supply).
+68:14 list_may_be_shared SanitiserOnceCallbackShared.app
+70:35 list_may_be_shared Maybe.map
+72:37 list_may_be_shared Result.map
+74:14 list_may_be_shared SanitiserOnceCallbackShared.unbox
+76:16 list_may_be_shared SanitiserOnceCallbackShared.second
+78:17 list_may_be_shared SanitiserOnceCallbackShared.app
+80:13 list_may_be_shared SanitiserOnceCallbackShared.app
+82:16 list_may_be_shared SanitiserOnceCallbackShared.app
+84:14 list_may_be_shared SanitiserOnceCallbackShared.app
+86:15 list_may_be_shared SanitiserOnceCallbackShared.app
+88:13 list_may_be_shared SanitiserOnceCallbackShared.wrap
+90:13 list_may_be_shared SanitiserOnceCallbackShared.wrapLocal
+93:16 list_may_be_shared capture
+95:33 list_may_be_shared SanitiserOnceCallbackShared.opt
+97:13 list_may_be_shared SanitiserOnceCallbackShared.go
+99:19 list_may_be_shared SanitiserOnceCallbackShared.wrap
+101:19 list_may_be_shared SanitiserOnceCallbackShared.app
+103:17 list_may_be_shared List.map

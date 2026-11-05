@@ -123,6 +123,7 @@ pub fn fromWords(env: Env, sig: Signature) Error!Contract.Id {
         const j: u32 = @intCast(k);
         const from = try env.root(p.place);
         const ws = p.words;
+        if (Env.has(ws, .entry)) d.flags.entry = true;
         if (env.places.kind(p.place) == .closure) {
             // A cell callback (`cellupdate`, `cellmodify`, §2.13.7): called
             // once, synchronously, on the contents taken out of `π1`'s `◆`.
@@ -231,6 +232,7 @@ pub fn fromWords(env: Env, sig: Signature) Error!Contract.Id {
             known_result = true;
         } else if ((Env.has(rw, .elementof) or Env.has(rw, .taken)) and sig.params.len >= 1) {
             // `taken`: one element of `π1`, the traversal's (§2.13.6).
+            d.flags.taken = Env.has(rw, .taken);
             if (try env.places.extend(env.gpa, .growth(env.account), try env.root(sig.params[0].place), Place.Step.elem)) |pe| try env.identity(&d, r, 0, pe);
             known_result = true;
         } else if (Env.has(rw, .copyof) and sig.params.len >= 1) {

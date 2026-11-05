@@ -24,6 +24,7 @@ const Subtree = @import("Subtree.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
+const SupplyCond = @import("SupplyCond.zig");
 const Routed = @import("Routed.zig");
 const Cells = @import("Cells.zig");
 const Fed = @import("Fed.zig");
@@ -648,10 +649,11 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
     try r.ops.finish(&e.ev, &r.keys, &req, arena);
     try r.stack.finish(&e.ev, e.w, regions, &req, arena);
     var kept: std.ArrayList([3]u32) = .empty;
-    const conds = try arena.alloc(Holders.Gather, f.cbs.items.len);
+    const width = SupplyCond.width(f, jobs.items);
+    const conds = try arena.alloc(Holders.Gather, f.cbs.items.len * width);
     @memset(conds, .{});
     var pkept: std.ArrayList([4]u32) = .empty;
-    const pconds = try arena.alloc(Holders.Gather, e.passes.items.len);
+    const pconds = try arena.alloc(Holders.Gather, e.passes.items.len * width);
     @memset(pconds, .{});
     for (jobs.items, got) |j, l| switch (j.kind) {
         .demand => {
@@ -660,11 +662,11 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
         },
         .cb => switch (l.outcome.verdict) {
             .refused => if (l.outcome.cause != .unknown) try kept.append(arena, .{ j.i, j.k, j.t }),
-            .accepted => try conds[j.i].addBoth(arena, f.account, l.demand.relies, l.extra),
+            .accepted => try conds[j.i * width + j.k].addBoth(arena, f.account, l.demand.relies, l.extra),
         },
         .pass => switch (l.outcome.verdict) {
             .refused => if (l.outcome.cause != .unknown) try pkept.append(arena, .{ j.i, j.k, j.t, j.at }),
-            .accepted => try pconds[j.i].addBoth(arena, f.account, l.demand.relies, l.extra),
+            .accepted => try pconds[j.i * width + j.k].addBoth(arena, f.account, l.demand.relies, l.extra),
         },
     };
     // A twin takes its first's verdict (§2.8, *Twin demands*).
@@ -673,5 +675,5 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
     for (conds, cs) |*x, *c| c.* = try x.cond(e.ev.arena, f.account);
     const ps = try arena.alloc(Cond, pconds.len);
     for (pconds, ps) |*x, *c| c.* = try x.cond(e.ev.arena, f.account);
-    return .{ .lines = lines, .verdicts = .{ .req = try req.cond(e.ev.arena, f.account), .kept = kept.items, .supply_cond = cs, .pass_kept = pkept.items, .pass_cond = ps } };
+    return .{ .lines = lines, .verdicts = .{ .req = try req.cond(e.ev.arena, f.account), .kept = kept.items, .supply_cond = cs, .width = @intCast(width), .pass_kept = pkept.items, .pass_cond = ps } };
 }
