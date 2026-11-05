@@ -411,6 +411,75 @@ fn argumentDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {
     return out.items;
 }
 
+// A record that doubles, `w{i} = { a = w{i-1}, b = w{i-1} }`, each value
+// annotated with its `type alias W{i}` (#1238). Its type is a DAG of `depth`
+// aliases and its value a DAG of `depth` records, so checking it must not
+// cost the 2^depth leaves of the tree: an alias is expanded once per read
+// (checker-v2.md §7.4), and each value's type is its annotation's. It is not
+// linear either: each of the `depth` annotations expands its own chain of
+// aliases, so the cost grows about ×3 when the depth doubles (#2074).
+// Ownership v1, the default checker, walks the value's 2^depth paths and
+// grows ×4 a level (pending_test.zig's "the default checker checks a
+// doubling record linearly in its depth"), so this claim is the type
+// checker's and v2's, under `--ownership=v2`. Calibration
+// (ReleaseFast, master 2350de11b1, instructions above an empty module's
+// 16.1 M): 4.8 / 14.1 / 47 / 171 / 502 / 1 533 M at depth 16 / 32 / 64 /
+// 128 / 256 / 512, so 16 / 32 is a ratio of 1.45 with the floor; under v1,
+// `check` takes 2.9 s at depth 13 and 9.9 s at 16, where v1's summary limit
+// stops it.
+test "checking a doubling record under annotations is not exponential in its depth" {
+    var s = try Perf.init(.concurrent);
+    defer s.deinit();
+    try s.w.write("R16.beni", try doublingRecord(s.arena(), 16, .annotated));
+    try s.w.write("R32.beni", try doublingRecord(s.arena(), 32, .annotated));
+    try s.finish("a doubling record under annotations", try s.ratioWith("R16.beni", "R32.beni", 16, &.{"--ownership=v2"}));
+}
+
+// The same record with no annotation, inside one function, from `xs = [ 1 ]`.
+// `1` is a `number`, so `xs` is generalised, and each use of a let-bound
+// `w{i-1}` takes fresh variables: `w1 : { a : { items : List number3 }, b : {
+// items : List number4 } }`. The principal type of `w{depth}` has 2^depth
+// distinct variables, as in Elm, and no sharing can make it smaller. The
+// claim is that checking costs that type's size: one level more doubles the
+// type, and must cost at most 2.5 times as much. `n` counts the type's
+// leaves. Calibration (ReleaseFast, master 2350de11b1, `--ownership=v2`):
+// 235 / 454 M instructions at depth 13 / 14, a ratio of 1.93; the `check`
+// event takes 13 / 59 / 100 / 175 ms at depth 12 / 14 / 15 / 16, and `dump
+// --stage=types` prints 289 / 575 KB at depth 12 / 13. Under v1, `check`
+// takes 2.4 s at depth 13 and 198 s at 16.
+test "checking an unannotated doubling record is linear in the size of its type" {
+    var s = try Perf.init(.concurrent);
+    defer s.deinit();
+    try s.w.write("L13.beni", try doublingRecord(s.arena(), 13, .local));
+    try s.w.write("L14.beni", try doublingRecord(s.arena(), 14, .local));
+    try s.finish("an unannotated doubling record", try s.ratioWith("L13.beni", "L14.beni", 1 << 13, &.{"--ownership=v2"}));
+}
+
+/// `w0 = { items = … }` and `w{i} = { a = w{i-1}, b = w{i-1} }` up to
+/// `depth`, read once at the end of the left spine: `.annotated` as top-level
+/// values, each with its `type alias W{i}`; `.local` as the bindings of one
+/// function, from `xs = [ 1 ]`, with no annotation.
+fn doublingRecord(arena: std.mem.Allocator, depth: usize, form: enum { annotated, local }) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    switch (form) {
+        .annotated => {
+            try out.appendSlice(arena, "type alias W0 =\n    items : List Int\n\n\n");
+            for (1..depth + 1) |i| try out.print(arena, "type alias W{d} =\n    a : W{d}\n    b : W{d}\n\n\n", .{ i, i - 1, i - 1 });
+            try out.appendSlice(arena, "w0 : W0\nw0 =\n    { items = [ 1 ] }\n\n\n");
+            for (1..depth + 1) |i| try out.print(arena, "w{d} : W{d}\nw{d} =\n    {{ a = w{d}, b = w{d} }}\n\n\n", .{ i, i, i, i - 1, i - 1 });
+            try out.print(arena, "pub doubled : ⊤ → Int\ndoubled ⊤ =\n    List.length w{d}.", .{depth});
+        },
+        .local => {
+            try out.appendSlice(arena, "pub doubled : ⊤ → Int\ndoubled ⊤ =\n    xs = [ 1 ]\n    w0 = { items = xs }\n");
+            for (1..depth + 1) |i| try out.print(arena, "    w{d} = {{ a = w{d}, b = w{d} }}\n", .{ i, i - 1, i - 1 });
+            try out.print(arena, "    List.length w{d}.", .{depth});
+        },
+    }
+    for (0..depth) |_| try out.appendSlice(arena, "a.");
+    try out.appendSlice(arena, "items\n");
+    return out.items;
+}
+
 // `==` on a doubling DAG whose every level passes two method boundaries that
 // alternate the method — `A`'s `eq` asks its payload for `compare`, `B`'s
 // `compare` asks for `eq`. The derivability verdict walks `(node, method)`
