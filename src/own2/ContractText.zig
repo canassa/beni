@@ -110,7 +110,7 @@ const Res = struct {
                 const l = r.t.labelAt(r.c, a.j);
                 try w.print(" cb(π{d}", .{l.j + 1});
                 try relText(r.slots, r.places, r.names, w, l.slot);
-                try w.print("@{d})", .{l.origin[2]});
+                try w.print("@{d})", .{l.origin[2] & ~Contract.last_origin});
             },
             .top => try w.writeAll(" ⊤"),
             .host => try w.writeAll(" host"),
@@ -146,7 +146,7 @@ pub fn print(t: *const Table, gpa: std.mem.Allocator, c: Id, slots: *const Slots
     for (t.labelsOf(h.labels)) |l| {
         try w.print("; label π{d}", .{l.j + 1});
         try relText(slots, places, names, w, l.slot);
-        try w.print("@{d} {t}", .{ l.origin[2], l.calls });
+        try w.print("@{d} {t}", .{ l.origin[2] & ~Contract.last_origin, l.calls });
         for (t.suppliesOf(l.supplies)) |s| {
             try w.print(" [{d}:", .{s.k + 1});
             try arrivalsText(t, gpa, c, slots, places, names, w, s.res_root, null, true);

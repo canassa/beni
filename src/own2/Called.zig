@@ -21,7 +21,7 @@ const none: u32 = Ids.none_int;
 
 /// Marks a label whose origin is a called code's last call, which no call
 /// instruction of the module has the type of (`Groups.originSig`).
-pub const last_origin: u32 = 1 << 29;
+pub const last_origin = Contract.last_origin;
 
 /// Where each of a walk's lists ends and its last call's begin: all zero
 /// for any other code, so that every list is read whole.

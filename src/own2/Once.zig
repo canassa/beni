@@ -20,7 +20,7 @@ const none: u32 = Ids.none_int;
 pub fn demands(e: *Eval.Evaluation) Eval.Error!void {
     const f = e.fr();
     const gpa = e.gpa();
-    if (e.w.last.calls != 0) return; // The closures of a called code's creation are its body's.
+    if (e.w.code.called != null) return; // The closures of a called code's creation are its body's.
     for (e.w.closures.items) |cl| {
         const c = (e.ctx.contractOf(e.ctx.ctx, cl.code)) orelse continue;
         const h = e.contracts.head(c);

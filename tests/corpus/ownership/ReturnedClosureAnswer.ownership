@@ -1,0 +1,14 @@
+module ReturnedClosureAnswer
+  23:7 List.push a: rejected unknown: it came from a call of a function value that may be one of several functions, and the checker does not join what each returns (approx)
+  40:7 List.push a: rejected unknown: it came from a call of a function value that may be one of several functions, and the checker does not join what each returns (approx)
+  57:7 List.push <call>: rejected unknown: it came from a call of a function the checker cannot identify, which may return a list something else holds (approx)
+  summary grow: res λ?r{lost} λr{lost}
+  summary useFresh: res .0 condition(fresh2) ⊤call{lost}r{lost}, .0[*] ~condition(fresh3) ~⊤call{lost}r{lost}, .1 ~condition(fresh4) ⊤call{lost}r{lost}, condition(fresh1){shared}r{shared}
+  summary chain: π2 RA; res λ?r{lost} λr{lost}, ◇ π2, ◇⟨◇⟩◇ π2; π2 calls 0, unseen
+  summary useChain: res .0 condition(fresh2) ⊤call{lost}r{lost}, .0[*] ~condition(fresh3) ~⊤call{lost}r{lost}, .1 ~condition(fresh4) ⊤call{lost}r{lost}, condition(fresh1){shared}r{shared}
+  summary w0: res λr{lost}
+  summary w1: res λ?r{lost}
+  summary useTower: res .0 condition(fresh2) ⊤call{lost}r{lost}, .0[*] ~condition(fresh3) ~⊤call{lost}r{lost}, .1 ~condition(fresh4) ⊤call{lost}r{lost}, condition(fresh1){shared}r{shared}
+  demands 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause unknown 3

@@ -288,7 +288,7 @@ fn canNode(s: *Sink, q: PathId, out: Put.ResList) Error!bool {
     const e = s.e;
     // A supply.s slots are also read off one arrival at a time, plain at a
     // type variable.s slot until the slot is opened: written out there.
-    if (out.label != none or e.w.last.calls != 0) return false;
+    if (out.label != none or e.w.code.called != null) return false;
     if (s.frozen == 0) {
         s.frozen = 1;
         if (e.ev.live) |lv| for (e.fr().calls.items) |cl| if (cl.code != none and lv.draftRes(lv.ctx, cl.code) != null) {
@@ -558,7 +558,7 @@ fn wholeAtoms(s: *Sink, l: Value.Leaf, sl: PathId, dest: PathId, out: Put.ResLis
     const e = s.e;
     const f = e.fr();
     const r = f.roots.items[l.root];
-    if (r.kind != .call or l.tags != 0 or out.label != none or e.w.last.calls != 0) return false;
+    if (r.kind != .call or l.tags != 0 or out.label != none or e.w.code.called != null) return false;
     const cl = f.calls.items[r.a];
     if (cl.contract == none) return false;
     if (e.ev.live) |lv| if (cl.code != none and lv.draftRes(lv.ctx, cl.code) != null) return false;
@@ -740,7 +740,7 @@ fn describeOne(s: *Sink, l: Value.Leaf, r: Value.Root, sl: u32, at: PathId, out:
             if ((try s.described.getOrPut(gpa, try Put.describedKey(s, one, at, out))).found_existing) return;
             // The callee's arrivals there, its parameters renamed, never
             // replayed onto the arguments (`CallGraft`, §2.10).
-            if (r.kind == .call and l.tags == 0 and e.w.last.calls == 0) {
+            if (r.kind == .call and l.tags == 0 and e.w.code.called == null) {
                 var arrs: std.ArrayList(Contract.Arrival) = .empty;
                 defer arrs.deinit(gpa);
                 if (try CallGraft.slotArrivals(&e.ev, r.a, .from(sl), &arrs)) {
