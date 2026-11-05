@@ -525,10 +525,23 @@ foreign pure traverseAt : borrowed List a, borrowed Int → taken a
 --| A builder with room for `n` elements: a loop that knows how many it will
 --| write fills them by index with `put`, which builds in a third of the
 --| time pushing takes at 100 000 elements, where an array grown by `push`
---| is copied as it grows.
+--| is copied as it grows. `n` is a length, or a count that `count` cut, so
+--| `new Array(n)` takes it as it is: a fraction or `-1` throws `RangeError`.
 builder : unused Int → fresh exclusive Builder a
-builder n = Js.pure λ⊤ →
-    Js.to (Js.construct (Js.global "Array") [ Js.from (if n > 0 then n else 0) ])
+builder n = Js.pure λ⊤ → Js.to (Js.construct (Js.global "Array") [ Js.from n ])
+
+
+-- A count as `builder` and a loop's `i < n` take it (`language.md` §6.8, *An
+-- index or a count that is not a whole number*): a fraction cut toward zero,
+-- and NaN or a count below 1 is 0. A loop bounded by `i < 1.5` puts two
+-- elements, so a function that takes a count cuts it here, once, before its
+-- builder and its loop, and the loop costs what it did.
+count : Int → Int
+count n =
+    if n ≥ 1 then
+        Js.pure λ⊤ → Js.to (Js.call (Js.global "Math") "trunc" [ Js.from n ])
+    else
+        0
 
 
 --| Element `i` of the builder written, `i` below the room it was made with.
@@ -1058,11 +1071,15 @@ pub singleton : a → List a
 singleton value = [ value ]
 
 
---| Create a list with `n` copies of a value.
+--| Create a list with `n` copies of a value. A fraction is cut toward zero,
+--| and a count below 1 is `[]`.
 --|
 --|     repeat 0 3 == [ 0, 0, 0 ]
+--|     repeat 0 (2 + 2 ^ (0 - 1)) == [ 0, 0 ]
 pub repeat : a, Int → List a
-repeat value n = repeatHelp value 0 n (builder n)
+repeat value n =
+    k = count n
+    repeatHelp value 0 k (builder k)
 
 
 repeatHelp : a, Int, Int, Builder a → List a
@@ -1079,8 +1096,14 @@ repeatHelp value i n b =
 --|     range 3 6 == [ 3, 4, 5, 6 ]
 --|     range 3 3 == [ 3 ]
 --|     range 6 3 == []
+--|     range 0 (1 + 2 ^ (0 - 1)) == [ 0, 1 ]
+--|
+--| The count is `hi - lo + 1`, and a fraction in it is cut toward zero, so
+--| every element is at most `hi`.
 pub range : Int, Int → List Int
-range lo hi = rangeHelp lo 0 (hi - lo + 1) (builder (hi - lo + 1))
+range lo hi =
+    k = count (hi - lo + 1)
+    rangeHelp lo 0 k (builder k)
 
 
 rangeHelp : Int, Int, Int, Builder Int → List Int
@@ -1092,13 +1115,16 @@ rangeHelp lo i n b =
 
 
 --| Create a list of `n` elements, calling `func` on each index from 0 to
---| `n - 1` in that order. A count of zero or less is `[]`.
+--| `n - 1` in that order. A fraction is cut toward zero, and a count below
+--| 1 is `[]`.
 --|
 --|     initialize 4 (λi → i * i) == [ 0, 1, 4, 9 ]
 --|
 --| O(n).
 pub initialize : Int, (Int → a) → List a
-initialize n func = initializeHelp 0 n func (builder n)
+initialize n func =
+    k = count n
+    initializeHelp 0 k func (builder k)
 
 
 initializeHelp : Int, Int, (Int → a), Builder a → List a
