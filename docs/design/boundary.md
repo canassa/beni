@@ -644,7 +644,8 @@ lambda, it is the lambda's body (`backend.md` §4, *`Js.suspending` is its body*
 `bitAnd` is `&` — and `typeOf : Value -> Value` and `instanceOf : Value, Value -> Bool`, `typeof v`
 and `v instanceof C`. Each is written in place as its operator. `rem` answers `NaN` for a zero
 divisor and `shiftRightZero` an unsigned number, both of which an `Int` may not hold: the caller
-guards, as `Int32.rem` does.
+guards, as `Int32.rem` does. *Amended 2026-11-05 (#1988):* §4.3 (e): these carry no check in any
+build, and a zero divisor reaching `Int32.rem` crashes a checked build at `Int32.rem`, not here.
 
 **The comparisons, `lt`, `gt`, `le` and `ge`** (pure, specified 2026-10-23, #882; the owner's
 decision of 2026-10-02, `plans/runtime-in-beni.md` step 7) are `a < b`, `a > b`, `a <= b` and
@@ -810,6 +811,59 @@ is not written*). A release build writes no result for a function whose result i
 function a platform receives through `Js.from` — an event handler, a render callback — returns
 `undefined` where a development build returns `null`. A platform's JavaScript never reads what such
 a function returns; a `()` it is handed, and a `()` it returns, may be either.
+
+### 4.3 What crosses the wall in a checked build
+
+*Added 2026-11-05 (the owner's #1988, `language.md` §13). Specified, not built.* A checked build's
+guarantee is that every value is true of its type (`language.md` §13.2). Beni's own operations can
+be checked. A value that comes through this wall cannot be, by its type alone: `Js.to : Value → a`
+is an unchecked cast, and §4.2's "the caller answers for the type" is the whole of the protection
+today. This section says what "answers for" now means. One question stays open: whether a checked
+build tests `Js.to` itself (`research/111` §5, D2; #1997).
+
+**(a) A read is true, or it is not a read of that type.** A core or platform function that reads a
+host value and hands it to a program at a concrete type states why the value is true of the type:
+the host's specification, or a test in the wrapper. A host read that can answer another shape
+(`undefined`, `null`, a string, a fraction, `NaN`) tests it and answers `Maybe` or a typed error, or
+crashes with a message that names the read. It does not pass the value on. A cast to a type the host
+does not promise is the defect §4.1 describes, and `Html.targetValue` on an element with no `value`
+is one (#1993): `undefined` typed `String` reached `++`, and the page stopped with
+`TypeError: Cannot read properties of undefined (reading '$plain')`, far from the cause.
+
+**(b) An `Int` read from a host.** A host number read at `Int` is whole and in range by the host's
+specification, or the wrapper tests it with `Number.isSafeInteger`, or the wrapper reads it at
+`Float`. `clientX` is a `Float` for this reason.
+
+**(c) An `Int` written to a host.** Every `Int` is in range in a checked build, but a host may take
+less. A wrapper that passes an `Int` to an API that narrows it owns the narrowing: past `2³¹−1`,
+`setTimeout` fires after 1 ms, and `Task.sleep`'s chain of timers is the model. Past `2³²`,
+`history.go` converts to 0. A process exit code is taken modulo 256. The wrapper chains, clamps,
+or answers a typed error, and its documentation says which.
+
+**(d) A host call that throws on a program's argument.** Rule 9 stands: each failure the API
+documents is tested first or caught by name, and becomes a typed error. A program-controlled
+argument that reaches a throw with no typed error is a defect in the wrapper, even though the throw
+does take the defect path. The known ones are #1995.
+
+**(e) The `Js` operators carry no check.** `Js.at`'s bounds check is the one exception
+(`language.md` §13.6). `Js.rem`, `Js.lt`, `Js.same`, the bit operators and `Js.get` compile as
+§4.2 says in every build, so core can write a guard with them, and a `foreign` sibling's JavaScript
+is not checked. An arithmetic operator written in core is an ordinary beni operator and is checked,
+in core as in a program. So core may not write `+` at a type that is false: `core/Basics.beni`'s
+`append` and `core/String.beni`'s `append` read two strings as `Int` "only so that `+` can be
+written", and in a checked build that `+` would crash. They need an unchecked operator (`backend.md`
+§16.4).
+
+**(f) `Js.checked`.** `Js.checked ⊤ : bool` is `true` in the development build and under
+`--release-safe`, and `false` under `--release`, written in place as `Js.development` is, with the
+same dropped arm (`backend.md` §4, *`Js.development` is the build's mode*). `Js.development` keeps
+its meaning, the crash screen's: `true` in the development build only. What every checked build
+needs asks `Js.checked`.
+
+**(g) A crash is not caught.** A crash is an `Error`. A `Js.catchIf` test that holds of every
+`Error` would catch it, so a test names a subclass, a `name` or a `code`, as §4.2 asks. `Js.finally`
+stays allowed. A `catchIf` body that runs program code is reviewed as a catch of that code's crash
+too.
 
 ## 5. `main`, and what a platform provides
 
@@ -3577,6 +3631,13 @@ has). **A release build adds nothing** — the screen's code is in no release bu
 added for it: `True` in a development build, `False` under `--release`, and an `if` on it keeps only
 the branch the build takes, in reachability and in lowering.
 
+- *Amended 2026-11-05 (#1988, `language.md` §13.6; specified, not built):* **a checked build's
+  crash takes this path.** It is an `Error` that no catch names, thrown at the operation, and this
+  section's "development" and "release" read: the screen is in the development build alone, and
+  `--release-safe`, like `--release`, adds nothing. Two paths miss the guards below today, and
+  each is a defect to fix, not a limit of the rule (#1994): a fiber's throw under a plain
+  `Browser.program`, where no mount gave `Task.onDefect` its hook, leaves the page running; and a
+  throw while a module loads, such as a top-level value, runs before `run` and shows no screen.
 - **Where it is caught.** Four guards, each a `Js.finally` whose body ends by noting that it
   completed and whose cleanup stops the page when it did not: the delegated and own listeners'
   `fire` (a handler and the dispatch it starts), the hosted dispatcher (a send from a fiber), the
@@ -4682,7 +4743,7 @@ road to W51's unmount, which closes one root with the same steps 1–3, and is n
 
 **(j) Development and release.** **The teardown is the same in both builds**: finalisers are the
 program's semantics, and a release build behaves exactly as its development build does
-(`language.md` §6). The differences are only what §9.8.10 (c) already makes them: the crash screen,
+(`language.md` §6; *amended 2026-11-05:* for a run in which no check fires, §13.1). The differences are only what §9.8.10 (c) already makes them: the crash screen,
 with its later-throw list and its abandoned-cleanup line, is in no release build (`Js.development`).
 A release build's log is the host's reports of the throws and the one `console.warn` of (f).
 

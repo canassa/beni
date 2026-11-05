@@ -122,7 +122,16 @@ exactly as the development build does" holds with no exception and §9 *Item
 4*'s "pin every field if `Debug` survives" is withdrawn. The corpus's release
 second pass carries a hidden, test-only `--allow-debug`, because `Debug.log`
 is its only instrument for evaluation order (24 of the 121 fixtures);
-`tests/corpus/build/bad-release/` is the kind that does not pass it. **Item 4 has
+`tests/corpus/build/bad-release/` is the kind that does not pass it. **Specified 2026-11-05, not built: checked
+builds** (the owner, #1988). The sentence above changes: **`--release-safe`
+behaves exactly as the development build does, and `--release` behaves the same
+for every run in which no check fires.** Both checked builds crash on `Int`
+overflow past `2⁵³−1`, on a `Float` `NaN` or infinity used where it has no
+meaning, on an integer division by zero and on a bad internal index, and
+`--release` has no checks. Contract: `language.md` §13 (what the guarantee is,
+and what it does not catch), `backend.md` §16, `boundary.md` §4.3; runs:
+[`research/111`](docs/design/research/111-checked-builds-hole-hunt.md).
+**Item 4 has
 landed** (2026-10-02, §9 *Item 4, taken up*): under `--release` record fields get
 short names and constructor tags are integers, except where JavaScript can see them
 (`boundary.md` §4, *What JavaScript may read of a beni value*). Still to come in M3c:

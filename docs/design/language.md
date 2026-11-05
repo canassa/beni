@@ -11,6 +11,13 @@ indentation rules in §4.
 
 ## 0. Differences from Elm, in one place
 
+**Checked builds.** *Decided by the owner on 2026-11-05 (#1988), specified the same day in §13, not
+built.* There are three builds. The development build and `--release-safe` are **checked**:
+an `Int` that leaves its range, a `Float` `NaN` or infinity used where it has no meaning, an integer
+division by zero and a bad internal index each stop the program at the operation, with an error
+that names it. `--release` has no checks. Where this document says division by zero is zero, or that
+no number operation can fail, read §13.
+
 **Ordered dictionaries and sets.** *Amended 2026-10-22, specifying the owner's
 2026-10-17 and 2026-10-19 decisions (#294); specified before implementation.*
 `Dict k v` accepts only `Int` and `String` keys; `Set t` accepts only `Int` and
@@ -242,12 +249,21 @@ division by zero is zero, as it is for `Basics.idiv`, `modBy` and `remainderBy`
 become `Int.mod` and `Int.rem` (§12.4), the names `Int32` already uses, with the same signs and the
 same zero.
 
+*Amended 2026-11-05 (the owner, #1988; §13, specified, not built).* Three statements above change.
+"Silently inexact past it" no longer holds in a checked build: an `Int` is a whole number with
+`|x| ≤ 2⁵³−1`, and an operation that would leave that range stops the program (§13.3). An `int`
+literal past the range at a type other than `Float` is refused at compile time (§13.3). And "every
+one of its operations is total" and "division by zero is zero" now hold under `--release` only:
+`Int32.div`, `rem` and `mod`, like `//`, `Int.mod` and `Int.rem`, stop a checked build on a zero
+divisor (§13.5). `Int32` overflow still wraps in every build, because wrapping is the type's
+contract.
+
 | About `Int32` | |
 |---|---|
 | literals | **there is none**. `Int32.fromInt 7`, or `Int32.fromInt 0xdeadbeef` for a bit pattern: `fromInt` truncates to 32 bits, so a literal past 2147483647 is its low 32 bits and never an error. `Int32.toInt` and `Int32.toUnsignedInt` go back, signed and unsigned. |
 | `+` `-` `*` `/` `//` `^` | **do not work on it, by design.** They are `number`-kinded — `Int` or `Float` — and `Int32` is neither, so `a + b` on two of them is `kind_mismatch`. An operator that read like `Int`'s would hide the one thing the type exists to say. Write `Int32.add`, `sub`, `mul`, `div`, `rem`, `mod`, or call one as a method: `a.add b`. The diagnostic names them. |
 | `==` `/=` `<` `<=` `>` `>=` | **do work.** `core/Int32.beni` declares its own `pub eq` and `pub compare`, and the module rule (`static-dispatch-spike.md` §1.2, §3.3) makes them the type's methods — so an `Int32` is a `Dict` key, a `Set` member and sortable, and a record or custom type holding one derives its own `eq`/`compare` from them. The order is **signed**: `minValue < zero < maxValue`, and `Int32.fromInt 0xffffffff` is -1. |
-| overflow | **two's-complement wrap, always, and never an exception** — that is the guarantee the type buys: no runtime error and no silent inexactness. `minValue` has no negation in the type and `neg minValue` is `minValue`. |
+| overflow | **two's-complement wrap, always, and never an exception** — that is the guarantee the type buys: no runtime error and no silent inexactness. `minValue` has no negation in the type and `neg minValue` is `minValue`. *Amended 2026-11-05:* this row is about overflow and stands in every build; a zero divisor is §13.5. |
 | prelude | **not in it** (Appendix A). `import Int32` is required, and no other module's meaning changes. |
 
 ### 2.6 Strings and interpolation
@@ -966,7 +982,10 @@ implementation:
 calls something the checker infers `impure` or `suspends`** (`transparent-effects-proposal.md`
 §14). A `foreign` declares its rung (`foreign pure|impure|suspends`), and every other function's is
 inferred from what it calls; `Debug.log` and `Debug.todo` are `foreign impure`, as are `Task.spawn`
-and a platform's primitives that start or observe something. So:
+and a platform's primitives that start or observe something. *Amended 2026-11-05 (§13, specified,
+not built):* a check that stops a checked build is not an effect and does not change an inferred
+rung, but it is observable, so §13.8 limits what `--release-safe` may do with a pure expression
+that carries one. Under `--release` the rules below stand unchanged. So:
 
 - **A binding whose value is never used may be dropped whole — unless its right-hand side may be
   impure or may suspend**, in which case it is **evaluated for its effect** exactly where it is
@@ -995,7 +1014,10 @@ and a platform's primitives that start or observe something. So:
   string, a literal, a name — changes nothing and cannot fail, so where it runs against another
   such evaluation is not observable, and the backend may choose (`backend.md` §8, *In place, when
   nothing captures*, orders a tail call's assignments this way). An evaluation that makes a call —
-  any call, pure or not — keeps its place.
+  any call, pure or not — keeps its place. *Amended 2026-11-05 (§13, specified, not built):* "cannot
+  fail" holds under `--release` only. In a checked build, arithmetic and a comparison of two numbers
+  can stop the program, so an operation that carries a check is not dropped, not sunk into a branch,
+  and not moved past another evaluation (§13.8).
 - A `let` binding may be sunk into the one branch that uses it, or dropped, but not lifted out of a
   branch into a position where it runs when that branch does not.
 
@@ -3462,6 +3484,236 @@ follows it (the `if` then ends the `then` branch of an outer `if`, and dropping 
 outer `else` to the inner one); and, given the warnings of a `check --explain --diagnostics=json` run as
 `--discards=<file>`, `_ = ` deleted in front of each `unit_discarded` line. Dropping `else ⊤` is
 always type-safe: the two branches were unified, so the `then` branch is already `⊤`.
+
+## 13. Checked builds: what a program may see when something goes wrong
+
+*Decided by the owner on 2026-11-05 (#1988), specified here the same day, **not built**. Today every
+build behaves as §13.7 says `--release` does. [`backend.md`](backend.md) §16 says what each build
+emits, [`boundary.md`](boundary.md) §4.3 what crosses the wall, and
+[`research/111`](research/111-checked-builds-hole-hunt.md) holds the runs behind each row and the
+choices that are still the owner's.*
+
+The owner's goal: "safe mode is able to catch all runtime errors and generate a proper error
+message, it should never let an infinity/nan/whatever slip and let the program go into undefined
+behaviour."
+
+### 13.1 Three builds
+
+| Build | Flag | Checks | Crash report |
+|---|---|---|---|
+| development | none | on | the host's report, and a crash screen on a page (`boundary.md` §9.8.10 (c)) |
+| release-safe | `--release-safe` | on | the host's report: logged and stopped, no screen |
+| release | `--release` | **off** | no crash; §13.7 |
+
+The checks cost speed and bundle size, and the owner accepts that for the two checked builds. The
+development build and `--release-safe` print the same thing and stop at the same operation for
+every program. `--release` prints what they print for every run in which no check fires. A run in
+which a check would fire is outside that promise (§13.7). This replaces "a release build behaves
+exactly as the development build does", wherever that sentence stands.
+
+### 13.2 The guarantee
+
+"Undefined behaviour" is a term of C. Beni had no definition of it, so this section gives the term
+one meaning for beni: **a value its type does not admit, in a program that keeps running.**
+
+A value is **true of its type** when:
+
+| Type | True of the type |
+|---|---|
+| `Int` | a whole number with `\|x\| ≤ 2⁵³−1` (`Number.MAX_SAFE_INTEGER`). Never `NaN`, never `±Infinity`, never a fraction. `-0` is §13.3 |
+| `Float` | any double, `NaN`, `±Infinity` and `-0.0` included |
+| `Int32` | a whole number in signed 32-bit range |
+| `Char` | one code point. A lone surrogate from the host is a code point here |
+| `String` | a JavaScript string. It may hold a lone surrogate from the host |
+| any other type | what `backend.md` §4's table says that type is at run time, with each part true of its own type |
+
+**The guarantee of a checked build.** Whatever the input, a run of a well-typed program does one of
+four things, and no fifth:
+
+1. It goes on, and every value true of its type.
+2. It stops with a **crash**: an operation found it cannot go on, and the crash names the operation
+   (§13.6).
+3. It stops because the host ran out of something: memory, stack, the longest string or array. The
+   host reports it (§13.6, *Exhaustion*).
+4. It does not end: a loop, a wait.
+
+The guarantee has an exact limit. It does not catch:
+
+- **A run that does not end** (item 4). An infinite loop and a deadlock are not crashes. A deadlock
+  of every fiber is reported on Node by the existing "the program cannot go on" line. A checked
+  build removes the hangs a `NaN` or an infinity caused, because no `Int` counter can hold one, and
+  `i + 1` past the range crashes where a double would stick. A `Float` counter can still stick.
+- **Exhaustion, before it happens** (item 3). No check predicts memory. A process may die with no
+  beni report at all when the host's allocator fails. `List.repeat x n` with an `n` too large for
+  memory stops as any out-of-memory does (#990).
+- **A wrong answer the types admit.** `2 + 2` written where `2 * 3` was meant; a `sortWith` function
+  that is not a total order; a `Float` result off by rounding; a `Float` loop that never meets its
+  target.
+- **A lie in trusted code.** The guarantee rests on the compiler, on `core/` and on the platforms.
+  Bounds checks (§13.6) catch part of a defect there; a wrong `Js.to` is `boundary.md` §4.3. A
+  checked build does not re-check the ownership checker's proofs at run time.
+- **A cleanup the rules already skip.** A crash takes the defect path, which on Node runs no
+  finaliser (`transparent-effects-proposal.md` §16.5).
+
+### 13.3 `Int`
+
+**The rule.** `+`, `-` and `*` on `Int`, `round`, `floor`, `ceiling`, `truncate` and every other
+operation that makes an `Int` crash in a checked build when the exact result is not true of `Int`.
+The test is at the operation, not at a later use. For safe operands, `|r| ≤ 2⁵³−1` after `+`, `-`
+or `*` is an exact test of the true result (`research/110` §3.3), and a `NaN` or an infinity fails
+it too.
+
+**An `Int` has no way to be fractional.** `/` gives a `Float`, and `^` gives a `Float` (#1985). With
+that change, no operation makes a fraction, and the `Int` overflow check keeps out the rest.
+
+**Literals.** An `int` literal past `2⁵³−1` at any type but `Float` is refused at compile time, in
+every build: `int_literal_out_of_range` (*not built; it joins §10's list when it is*). A literal
+still typed by a `number` variable counts as an `Int`. A hex literal follows the same rule, so
+`Int32.fromInt 0xdeadbeef` is legal and a 64-bit pattern is not. Before this rule,
+`9007199254740993` was silently `9007199254740992`, and a 400-digit literal was `Infinity`. At
+type `Float` a literal keeps today's meaning: the nearest double, and `1e999` is `Infinity`.
+
+**`-0`.** A double has a negative zero, and `0 * (-1)`, `Int.rem (-4) 2`, `(-1) // 2`, `round (-0.4)`,
+`String.toInt "-0"` and a decoded `-0` all make it. It is `==` to `0`, it prints `0`, it is the same
+`Dict` key and it matches the pattern `0`, so an `Int` cannot tell the two apart. The one way to
+observe it is `toFloat`: `1 / toFloat x` is `-Infinity`. `-0` is true of `Int`. What `toFloat` does
+with it, and in which builds, is the owner's (`research/111` §5, D3; #1998).
+
+**Where an `Int` comes from.** A source is sealed when it cannot make a value that is not true of
+`Int`. Each row holds in a checked build.
+
+| Source | How it is sealed |
+|---|---|
+| `int` literal | refused at compile time, above |
+| `+`, `-`, `*`, `round`, `floor`, `ceiling`, `truncate` | the crash above. `round 1e300` is finite and crashes, because `1e300` is not an `Int` |
+| `//`, `Int.mod`, `Int.rem`, `abs`, `negate`, `min`, `max`, `clamp` | cannot leave the range on true operands, so no overflow test. A zero divisor is §13.5. Their bodies may not overflow on the way to a result that fits: `Int.mod` adds its modulus today, and must not |
+| `^^` | owned by #1985: repeated `*`, so it crashes as `*` does. A negative exponent is `1 // (x ^^ n)`, so `0 ^^ (-1)` crashes |
+| `String.toInt` | answers `Nothing` past the range. Already so |
+| `Schema.int`, `Json.decode`, a compiled `schema` | refuse with `InvalidValue`. Already so. They also refuse on the way out |
+| `Char.toCode`, `String.length`, `List.length`, `Dict.size` | a host count or code point, whole and in range |
+| `Int32.toInt`, `Int32.toUnsignedInt` | in range by the type |
+| `Duration.toMillis`, `Clock.now`, a platform's time | whole and in range; see *Library arithmetic* below |
+| a host value read through `Js.to` | `boundary.md` §4.3 |
+
+**Library arithmetic.** A core function whose documentation promises an answer keeps that promise.
+It may not crash from its own arithmetic. `core/Duration.beni` says "an argument no length fits is
+given the nearest one that does, never a crash", so `seconds`, `minutes`, `hours`, `sum` and `times`
+saturate at the longest duration in every build: each tests its operands before it multiplies, adds
+or rounds. Its `times` tests `factor` first, because `toFloat n * factor` with a `NaN` factor is a
+use (§13.4), and `round` of a finite product past the range is a crash (above). Core's own
+arithmetic that may legally overflow an `Int` is written over `Float`.
+
+### 13.4 `Float`
+
+Producing `NaN` or `±Infinity` stays legal. **Using one where it has no meaning crashes** in a
+checked build. These rows settle what "use" covers.
+
+| Operation | Checked builds |
+|---|---|
+| **Producing one** from finite operands: `1 / 0`, `0 / 0`, `sqrt (-1)`, `Float.log 0 10`, `asin 2`, an `^` or a `+ - *` whose exact result does not fit | allowed |
+| `isNaN`, `isInfinite` | allowed |
+| Storing and passing: a `let`, a field, a list element, a `Dict` value, an argument, a return | allowed |
+| Printing: `String.fromFloat`, `Debug.toString`, interpolation, and text or an attribute built from them | allowed. It prints `NaN`, `Infinity`, `-Infinity`. The result is a `String` and is true of its type |
+| Reading one: `String.toFloat "1e999"`, a decoded `1e999` under `Schema.float` | allowed. `Schema.finiteFloat` refuses it |
+| **Arithmetic with one as an operand**: `+ - * / ^`, unary `-`, `negate`, `abs`, `sum`, `product`, `degrees`, `turns`, `toPolar`, `fromPolar` | crash, for `NaN` and for `±Infinity`. `radians` is the identity and does nothing |
+| **A math function with one as its argument**: `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `Float.log` | crash, for `NaN` and for `±Infinity` |
+| `round`, `floor`, `ceiling`, `truncate` | crash on `NaN`, `±Infinity`, and any finite value past the `Int` range (§13.3) |
+| `<`, `≤`, `>`, `≥`, `==`, `≠`, `compare`, with a `NaN` on either side | crash |
+| The same, with `±Infinity` and no `NaN` | allowed |
+| Everything built on those comparisons: `min`, `max`, `clamp`, a derived `eq` or `compare`, `List.eq`, `List.compare`, `List.member`, `List.maximum`, `List.minimum`, `List.sort`, `sortBy`, `sortWith` called with `compare`, a `Float` literal pattern | as the comparison they make. `List.maximum [ nan ]` compares nothing and answers `Just nan` |
+| **A count or an index** | no such row. Every count and index is an `Int`, so a `Float` reaches one through `round` or its kin, which crash first |
+| **A `Dict` key or a `Set` member** | no such row. A `Float` key is refused at compile time (§6.8), and an `Int` is never `NaN` |
+| `Json.encode`, `Schema.print` and every schema encoder | a typed `Err`, in every build, never a crash: `PrintFailed` under `Schema.float`, `InvalidValue` under `finiteFloat`. It returns a `Result`, so CLAUDE.md rule 9's typed error is the answer. `Http.jsonBody` is `BadRequest (UnprintableBody …)` (`boundary.md` §9.8.12) |
+
+A non-finite value that a core function produced from finite operands on the way to its answer is
+not a use. `Float.log 0 10` is `-Infinity`, and `toPolar ( 1e200, 0 )` is `( 1e200, 0 )` and not a
+crash, because the overflow inside `x * x` is core's and not the program's: `toPolar` computes its
+radius without one.
+
+`Duration.times` and `Schedule.exponential` take a `Float` and keep their documented answers
+(§13.3, *Library arithmetic*). `Pcg.float` is arithmetic.
+
+### 13.5 Integer division
+
+`x // 0`, `Int.mod x 0`, `Int.rem x 0`, `Int32.div x zero`, `Int32.rem x zero` and `Int32.mod x
+zero` crash in a checked build and are `0` under `--release`. Division by zero is most likely a bug
+(the owner, 2026-11-05). `0 ^^ (-1)` is `1 // 0` and crashes too. Core code that relies on the `0`
+must test the divisor first.
+
+`Float` `/` by zero is not included: it produces `Infinity` or `NaN`, which stays legal. `Int32`
+overflow is not included: it wraps in every build, and `Int32.div minValue (fromInt (-1))` is
+`minValue`. An `Int32` shift count stays modulo 32, as `core/Int32.beni` documents.
+
+### 13.6 A crash
+
+A crash takes CLAUDE.md rule 9's defect path, not a bare `throw`: an `Error` that no catch names
+leaves the operation and reaches the guards of `boundary.md` §9.8.10 (c), which stop the program.
+On a page, the development build shows the crash screen and `--release-safe` adds nothing to the
+host's report. On Node, the report goes to standard error and the process exits 1. Its message
+begins `beni:` and names the operation:
+
+| Cause | Message |
+|---|---|
+| `Int` overflow | `beni: Int overflow in a + b`, with `-`, `*`, `^^`, and the two operands |
+| not an `Int` | `beni: round of NaN is not an Int`, with `floor`, `ceiling`, `truncate`, and the value |
+| integer division | `beni: division by zero in a // 0`, with `Int.mod`, `Int.rem`, `Int32.div`, `Int32.rem`, `Int32.mod` |
+| a `Float` used | `beni: NaN used in a + b`, with the operation and the value, and `Infinity` as the row says |
+| a comparison | `beni: NaN compared in a < b`, with `==`, `compare`, and for a derived comparison the type |
+| a bad internal index | `beni: index i out of bounds of a list of n`, with the core function that read it. This is a defect in core or a platform, and the message says so |
+
+The exact text is not a promise, as `Debug.toString`'s is not, but a fixture pins it. The source
+position is the crash's stack, through a source map where the build has one.
+
+**A check is not caught.** No `Js.catchIf` in core or a platform may name a test that a crash
+passes. Its class is `Error`, and a `catch` that tests `instanceof Error` alone is a defect by rule
+9 (`boundary.md` §4.3).
+
+**Bounds.** The internal `unsafeGet` and `Js.at` sites in core get a bounds check in a checked
+build. `List.get` and `head` already answer `Maybe`, so these checks catch defects in beni and in
+`foreign` code, not in a program. List writes need no check: `List.set`, `insertAt`, `removeAt`,
+`swap` and `update` with an index outside the list change nothing, in every build, and that is
+their documented answer.
+
+**Exhaustion.** Stack overflow, `RangeError: Invalid string length`, `Invalid array length` and
+`Map maximum size exceeded` are the host's errors, and each takes the same path as any uncaught
+throw: a defect, with the host's message. A checked build adds no name to them, because rule 9
+forbids the broad catch that would. A deep non-tail recursion is therefore a defect whose message
+is `RangeError: Maximum call stack size exceeded`.
+
+### 13.7 `--release`
+
+`--release` has no checks, and its output does not change for this section. It is not a build that
+"may do anything": **it computes what the unchecked JavaScript operators compute, and no pass
+assumes a check would have passed** (`backend.md` §16.5). A run in which a check would fire has
+these results:
+
+| Operation | `--release` |
+|---|---|
+| `Int` overflow | the double the operator gives: inexact, then `±Infinity`, then `NaN` |
+| `round`, `floor`, `ceiling`, `truncate` of `NaN` or `±Infinity` | that value, unchanged, typed `Int`. The `#1988` question has this answer because `--release` output does not change |
+| `Float` arithmetic with `NaN` or `±Infinity` | IEEE 754 |
+| a comparison with `NaN` | `false` for `<`, `≤`, `>`, `≥`, `==`; `true` for `≠`; `EQ` for `compare` |
+| `x // 0`, `Int.mod x 0`, `Int.rem x 0`, and `Int32`'s | `0` |
+| an `Int` that is `NaN` as a `Dict` key | every comparison answers `EQ`, so it replaces the root's entry |
+| `List.repeat`, `List.range`, `String.repeat` with `NaN` | empty |
+| the same with `Infinity` | a `RangeError` from the host |
+| a recursion counted down from `NaN` or `Infinity` | it does not end |
+
+So a `--release` program that would have crashed may go on with a value its type does not admit.
+That is the price of the build, and the reason `--release-safe` exists.
+
+### 13.8 What an optimiser may do with a check
+
+§6's *What an optimiser may assume* stands under `--release`. Under `--release-safe`, an expression
+that carries a check is not pure in the sense that section uses, because a dropped check is a crash
+the development build shows:
+
+- it is not dropped when nothing reads it, so `x = a + b`, unread, is evaluated;
+- it is not sunk into a branch, duplicated, or moved past another evaluation;
+- it is not folded when its operands would fire the check: `9007199254740991 + 1` stays a crash.
+
+A checked operation keeps the inferred rung it has today. A check is not an effect. Rendering is
+unchanged: a hole `view` does not reach is not evaluated (§11.11), in both checked builds.
 
 ## Appendix A. The prelude
 
