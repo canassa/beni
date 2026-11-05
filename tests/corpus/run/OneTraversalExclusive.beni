@@ -1,0 +1,23 @@
+-- OneTraversalExclusive (Appendix B, S4): the green twin of TwoTraversalsShared.
+-- One traversal of an exclusive `xs` edits each list once: accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+build : List (List Int) → List (List Int)
+build xs = List.map xs λl → List.push l 1
+
+
+main : Program
+main = Node.print (show (build [ [ 1 ], [ 2 ] ]))

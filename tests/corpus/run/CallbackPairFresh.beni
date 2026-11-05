@@ -1,0 +1,31 @@
+-- CallbackPairFresh (Appendix B, S4): CallbackPairWrapper's green twin, the
+-- wrapper `wp f = pair f` with a fresh actual. A write through `.0` with `.1`
+-- later live is accepted: each answer is a fresh list.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+pair : (⊤ → List Int) → List Int × List Int
+pair f = ( f ⊤, f ⊤ )
+
+
+wp : (⊤ → List Int) → List Int × List Int
+wp f = pair f
+
+
+main : Program
+main =
+    ( a, b ) = wp λ⊤ → [ 1 ]
+    a2 = List.push a 9
+    Node.print "${ints a2} ${ints b}"

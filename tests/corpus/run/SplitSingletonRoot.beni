@@ -1,0 +1,35 @@
+-- SplitSingletonRoot (Appendix B, S4; R-4.6.1, R-4.6.9): a singleton `[ ( xs, x ) ]`
+-- linked after `x` was taken from `xs` keeps the root: `held` still holds
+-- `xs`, which holds `x`, and is read after the write, so the write is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+build : List (List Int) → List Int × List String
+build xs =
+    case xs of
+        [ x, …_ ] →
+            held = [ ( xs, x ) ]
+            y = List.push x 1
+            ( y, List.map held λ( a, _ ) → show a )
+
+        [] →
+            ( [], [] )
+
+
+main : Program
+main =
+    ( y, s ) = build [ [ 1 ] ]
+    sep = "|"
+    Node.print "${ints y} ${String.join s sep}"

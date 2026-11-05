@@ -1,0 +1,28 @@
+-- CallbackPairWrapper (Appendix B, S4; R-5.2.9): `pairArg` passes one list to
+-- its callback twice and returns both answers, so a write through `.0` while
+-- `.1` is live is refused. It keeps a first-instruction fold from being
+-- adopted unnoticed.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+pairArg : (List Int → List Int), List Int → List Int × List Int
+pairArg f x = ( f x, f x )
+
+
+main : Program
+main =
+    ( a, b ) = pairArg (λl → l) [ 1 ]
+    a2 = List.push a 9
+    Node.print "${ints a2} ${ints b}"

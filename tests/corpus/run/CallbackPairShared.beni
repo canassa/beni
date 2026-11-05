@@ -1,0 +1,31 @@
+-- CallbackPairShared (Appendix B, S4): CallbackPairWrapper's red twin through
+-- `wp`. The actual answers one captured list, so the write at `.0` is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+pair : (⊤ → List Int) → List Int × List Int
+pair f = ( f ⊤, f ⊤ )
+
+
+wp : (⊤ → List Int) → List Int × List Int
+wp f = pair f
+
+
+main : Program
+main =
+    xs = [ 1 ]
+    ( a, b ) = wp λ⊤ → xs
+    a2 = List.push a 9
+    Node.print "${ints a2} ${ints b}"

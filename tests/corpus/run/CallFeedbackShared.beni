@@ -1,0 +1,34 @@
+-- CallFeedbackShared (Appendix B, S4; R-5.4.8, R-5.6.3): CallFeedbackGeneration
+-- with an actual that answers one captured list. `a` and `b` are that list,
+-- so the write is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+chain : Int, (⊤ → List Int) → (⊤ → List Int)
+chain n f =
+    if n == 0 then
+        λ⊤ → f ⊤
+    else
+        previous = chain (n - 1) f
+        λ⊤ → previous ⊤
+
+
+main : Program
+main =
+    xs = [ 0 ]
+    g = chain 3 λ⊤ → xs
+    a = g ⊤
+    b = g ⊤
+    Node.print "${ints (List.push a 1)} ${ints b}"

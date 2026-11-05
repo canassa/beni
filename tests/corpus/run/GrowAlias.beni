@@ -1,0 +1,39 @@
+-- GrowAlias (Appendix B, S4): every captured backreference returns the same
+-- `xs`, so `a` and `b` are one list and the push of `a` is refused (R-3.1,
+-- R-5.4.8, R-5.6.2). Written in place, `b` would print 0,1.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+grow : Int, List Int → (⊤ → List Int)
+grow n xs =
+    if n == 0 then
+        λ⊤ → xs
+    else
+        previous = grow (n - 1) xs
+        λ⊤ → previous ⊤
+
+
+use : Int → List Int × List Int
+use n =
+    g = grow n [ 0 ]
+    a = g ⊤
+    b = g ⊤
+    ( List.push a 1, b )
+
+
+main : Program
+main =
+    ( a, b ) = use 3
+    Node.print "${ints a} ${ints b}"

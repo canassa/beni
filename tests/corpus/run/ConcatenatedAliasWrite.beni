@@ -1,0 +1,32 @@
+-- ConcatenatedAliasWrite (Appendix B, S2b/S4; R-2.2, R-2.7): `appendAlias` is a
+-- renamed `++` and `viaWrapper` calls it. Either way the write of `a` is
+-- refused while `a` is read after it. ConcatenatedCopied is the green twin.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+appendAlias : List Int, List Int → List Int
+appendAlias xs ys = xs ++ ys
+
+
+viaWrapper : List Int, List Int → List Int
+viaWrapper xs ys = appendAlias xs ys
+
+
+main : Program
+main =
+    a = [ 1 ]
+    b = appendAlias a [ 2 ]
+    c = viaWrapper a [ 3 ]
+    Node.print "${ints b} ${ints c} ${String.fromInt (List.length a)}"

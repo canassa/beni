@@ -1,0 +1,27 @@
+-- TwoTraversalsShared (Appendix B, S4; R-4.6.9, R-3.1; #1029): `ys` holds the last
+-- list of `xs` twice, once from the map and once from the fold. The splits come
+-- from two traversals of `xs`, so the element write is refused. Written in
+-- place, the plain output 1,1;2,1;2,1 would show 2,1 changed twice.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+build : List (List Int) → List (List Int)
+build xs =
+    ys = List.push (List.map xs λl → l) (List.foldl xs [] λx _ → x)
+    List.map ys λl → List.push l 1
+
+
+main : Program
+main = Node.print (show (build [ [ 1 ], [ 2 ] ]))

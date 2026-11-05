@@ -1,0 +1,27 @@
+-- ViewFeedback (Appendix B, S4; R-5.3.2, R-3.1): the fold's callback returns
+-- `prev`, a view of its previous accumulator, and writes the accumulator that
+-- is the view's source. The write is refused: in place, `prev` would see the
+-- next push.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+build : List Int → List Int × List Int
+build xs = List.foldl xs ( [], [] ) λx ( _, s ) → ( s, List.push s x )
+
+
+main : Program
+main =
+    ( p, s ) = build [ 1, 2 ]
+    Node.print "${ints p} ${ints s}"

@@ -1,0 +1,38 @@
+-- MetadataRenamedTypes (Appendix B, S4; R-5.10.7, R-5.5.11): a renamed sequence
+-- type and a renamed cell type behave as `List` and `Ref`. The cell holds one
+-- list twice, and the element write inside `Ref.update` is refused, as it is
+-- for the unrenamed types.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+type alias Rows =
+    List (List Int)
+
+
+type alias Cell =
+    Ref Rows
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : Rows → String
+show xss = String.join (List.map xss ints) ";"
+
+
+twice : List Int → Rows
+twice x = [ x, x ]
+
+
+main : Program
+main =
+    cell : Cell
+    cell = Ref.make (twice [ 1 ])
+    Ref.update cell λrows → List.update rows 0 λl → List.push l 9
+    Node.print (show (Ref.get cell))

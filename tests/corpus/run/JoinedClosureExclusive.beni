@@ -1,0 +1,28 @@
+-- JoinedClosureExclusive (Appendix B, S4): JoinedClosurePorts's green twin. Each
+-- arm's closure captures a list of its own, and the call is the only reader
+-- of the one it edits: accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+pick : Bool → List Int
+pick c =
+    a = [ 1 ]
+    b = [ 7 ]
+    f = if c then λ⊤ → List.push a 2 else λ⊤ → List.push b 8
+    f ⊤
+
+
+main : Program
+main = Node.print "${ints (pick True)} ${ints (pick False)}"

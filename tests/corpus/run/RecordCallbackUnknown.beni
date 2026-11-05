@@ -1,0 +1,28 @@
+-- RecordCallbackUnknown (Appendix B, S4; R-5.2.9): the callback is a field of a
+-- record parameter, so the callee cannot identify it. It is called twice, and
+-- the actual answers one captured list: the write of the first answer is
+-- refused.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+both : { f : ⊤ → List Int } → List Int × List Int
+both r = ( r.f ⊤, r.f ⊤ )
+
+
+main : Program
+main =
+    xs = [ 1 ]
+    ( a, b ) = both { f = λ⊤ → xs }
+    Node.print "${ints (List.push a 9)} ${ints b}"
