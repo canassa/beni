@@ -301,6 +301,12 @@ renderer about 2.1 kB (a page that renders: 22,220). Conduit's source with no `M
 the compiler of this slice, is byte for byte what master `1468390492`'s compiler builds: 111,448
 bytes raw and 28,135 brotli, with no name of the table and no `Markdown` module in it.
 
+*Measured 2026-11-05 (slice M3), the same way.* Master `6f03a9ef06`'s Conduit, which shows its
+dates with core's `Date` (#239), builds to 114,700 bytes raw and 29,357 brotli. With `Article.body`
+on `Html.Markdown`, it builds to 169,646 and 48,184: +54,946 raw and +18,827 brotli. The growth is
+less than the `markdown` page's 21,779 brotli over the `hello` page, because Conduit already ships
+some of the core code that the parser calls.
+
 ## 8. Tests
 
 - **Conformance.** `tests/markdown/` vendors spec.txt of CommonMark 0.31.2 (CC BY-SA 4.0, kept with
@@ -362,3 +368,15 @@ The owner took all three on 2026-11-04 (Cesar, dashboard).
   inline), `run/MarkdownSafety` and `browser/tea/MarkdownSafety`.
 - **M3 — Conduit.** `Article.body` renders the body with `Html.Markdown.view`; the `GAP` comment
   goes. `ConduitReader`'s new article and transcript (§8). Closes #240.
+  *As built 2026-11-05:* `Article.body` is `Html.Markdown.fromString` of the body, which is `view`
+  of its tree, inside the same `<div class="article-content">`. `browser/tea/ConduitReader`'s
+  article body has a heading, emphasis, strong text, a code span, a list with a link, and a
+  paragraph, and its transcript shows each element. Without the change, that page fails. §7.3 has
+  the size. The other goldens that move are the editor's transcript (the body's `<p>` is the
+  renderer's now, with the DOM lowering's anchors), and `ownership/Conduit` and `writes/Conduit`
+  (the new import line, and the summaries of the functions that render the body).
+  `browser/tea/MarkdownBodySkip` shows that a page whose `view` re-runs on each keystroke parses a
+  body once: a helper call in a hole is not made again while its argument is the same string
+  (`language.md` §11.6). In a page, each list has one more anchor, after its items, from the hole
+  of the helper that renders them. The `ssr` lowering writes no anchors, so `run/MarkdownSpec`
+  does not show it.
