@@ -55,7 +55,8 @@ pub fn atoms(f: *Value.Frame, res: *const Contract.Draft.Res, q: Ids.PathId) Err
 pub fn has(held: Atoms, l: Value.Leaf) bool {
     return switch (l.kind) {
         .site, .fresh => held.fresh,
-        .top, .loan => held.top,
+        .top => held.top and l.root == Value.none,
+        .loan => held.top,
         .host => held.host,
         .shared => for (held.shared[0..held.shared_n]) |x| {
             if (x[0] == l.atom and x[1] == l.extra) break true;

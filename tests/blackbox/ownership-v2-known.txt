@@ -5582,3 +5582,23 @@ tests/corpus/run/SanitiserFoldStored.beni SanitiserFoldStored 25:15 #0 :: List.f
 tests/corpus/run/SanitiserFoldStored.beni SanitiserFoldStored 28:16 #0 :: List.foldl <literal> :: accepted :: rejected  a fold's storage write is judged by its slot (§2.11.3); v1 names or refuses it elsewhere.
 tests/corpus/run/SanitiserFoldStored.beni SanitiserFoldStored 29:42 #0 :: List.push acc :: rejected :: accepted  a fold's storage write is judged by its slot (§2.11.3); v1 names or refuses it elsewhere.
 core Markdown 1271:22 #0 :: List.foldl <expression>.0 :: absent :: accepted  a fold's storage write is judged by its slot (§2.11.3); v1 names or refuses it elsewhere.
+tests/corpus/run/SanitiserFoldFunction.beni SanitiserFoldFunction 58:35 #0 :: List.push v :: pending :: accepted  #2069: v2 refuses the writer at the call, v1 leaves it pending
+tests/corpus/run/SanitiserFoldFunction.beni SanitiserFoldFunction 60:35 #0 :: List.push v :: pending :: accepted  #2069: v2 refuses the writer at the call, v1 leaves it pending
+tests/corpus/run/SanitiserFoldFunction.beni SanitiserFoldFunction 62:32 #0 :: List.push v :: pending :: accepted  #2069: v2 refuses the writer at the call, v1 leaves it pending
+tests/corpus/run/SanitiserFoldFunction.beni SanitiserFoldFunction 58:9 #0 :: SanitiserFoldFunction.called <lambda> :: absent :: rejected  #2069: v2 refuses the writer at the call, v1 leaves it pending
+tests/corpus/run/SanitiserFoldFunction.beni SanitiserFoldFunction 60:9 #0 :: SanitiserFoldFunction.helper <lambda> :: absent :: rejected  #2069: v2 refuses the writer at the call, v1 leaves it pending
+tests/corpus/run/SanitiserFoldFunction.beni SanitiserFoldFunction 62:9 #0 :: SanitiserFoldFunction.row <lambda> :: absent :: rejected  #2069: v2 refuses the writer at the call, v1 leaves it pending
+tests/corpus/run/SanitiserTopOrigin.beni SanitiserTopOrigin 109:14 #0 :: List.push v :: pending :: accepted  #2069: v2 refuses a writer in what a `⊤`'s origin holds; v1 leaves it pending or reads it
+tests/corpus/run/SanitiserTopOrigin.beni SanitiserTopOrigin 113:39 #0 :: List.push v :: pending :: accepted  #2069: v2 refuses a writer in what a `⊤`'s origin holds; v1 leaves it pending or reads it
+tests/corpus/run/SanitiserTopOrigin.beni SanitiserTopOrigin 115:38 #0 :: List.push v :: pending :: accepted  #2069: v2 refuses a writer in what a `⊤`'s origin holds; v1 leaves it pending or reads it
+tests/corpus/run/SanitiserTopOrigin.beni SanitiserTopOrigin 117:38 #0 :: List.push v :: pending :: accepted  #2069: v2 refuses a writer in what a `⊤`'s origin holds; v1 leaves it pending or reads it
+tests/corpus/run/SanitiserTopOrigin.beni SanitiserTopOrigin 119:36 #0 :: List.push v :: pending :: accepted  #2069: v2 refuses a writer in what a `⊤`'s origin holds; v1 leaves it pending or reads it
+tests/corpus/run/SanitiserTopOrigin.beni SanitiserTopOrigin 121:38 #0 :: List.push v :: pending :: accepted  #2069: v2 refuses a writer in what a `⊤`'s origin holds; v1 leaves it pending or reads it
+tests/corpus/run/SanitiserTopOrigin.beni SanitiserTopOrigin 123:38 #0 :: List.push v :: pending :: accepted  #2069: v2 refuses a writer in what a `⊤`'s origin holds; v1 leaves it pending or reads it
+tests/corpus/run/SanitiserTopOrigin.beni SanitiserTopOrigin 111:10 #0 :: SanitiserTopOrigin.inRecord <lambda> :: absent :: rejected  #2069: v2 refuses a writer in what a `⊤`'s origin holds; v1 leaves it pending or reads it
+tests/corpus/run/SanitiserTopOrigin.beni SanitiserTopOrigin 113:10 #0 :: SanitiserTopOrigin.inLiteral <lambda> :: absent :: rejected  #2069: v2 refuses a writer in what a `⊤`'s origin holds; v1 leaves it pending or reads it
+tests/corpus/run/SanitiserTopOrigin.beni SanitiserTopOrigin 115:10 #0 :: SanitiserTopOrigin.inRow <lambda> :: absent :: rejected  #2069: v2 refuses a writer in what a `⊤`'s origin holds; v1 leaves it pending or reads it
+tests/corpus/run/SanitiserTopOrigin.beni SanitiserTopOrigin 117:10 #0 :: SanitiserTopOrigin.supplied <lambda> :: absent :: rejected  #2069: v2 refuses a writer in what a `⊤`'s origin holds; v1 leaves it pending or reads it
+tests/corpus/run/SanitiserTopOrigin.beni SanitiserTopOrigin 119:10 #0 :: SanitiserTopOrigin.inCell <lambda> :: absent :: rejected  #2069: v2 refuses a writer in what a `⊤`'s origin holds; v1 leaves it pending or reads it
+tests/corpus/run/SanitiserTopOrigin.beni SanitiserTopOrigin 121:10 #0 :: SanitiserTopOrigin.captured <lambda> :: absent :: rejected  #2069: v2 refuses a writer in what a `⊤`'s origin holds; v1 leaves it pending or reads it
+tests/corpus/run/SanitiserTopOrigin.beni SanitiserTopOrigin 123:10 #0 :: SanitiserTopOrigin.returned <lambda> :: absent :: rejected  #2069: v2 refuses a writer in what a `⊤`'s origin holds; v1 leaves it pending or reads it

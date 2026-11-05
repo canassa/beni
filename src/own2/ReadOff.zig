@@ -17,6 +17,7 @@ const BelowSize = @import("BelowSize.zig");
 const Forest = @import("Forest.zig");
 const Contract = @import("Contract.zig");
 const Graft = @import("Graft.zig");
+const Origin = @import("Origin.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
@@ -160,7 +161,10 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Err
         },
         .shared => try Put.arriveWide(s, q, .{ .kind = .shared, .j = l.atom, .slot = l.extra }, out),
         // Unknown here, unknown below: no step of it is fresh (§2.1, a fold).
-        .top, .loan => for ([_]bool{ false, true }) |wide| if (wide) try Put.arriveWide(s, q, .{ .kind = .top }, out) else try Put.arrive(s, q, .{ .kind = .top }, out),
+        .top, .loan => {
+            for ([_]bool{ false, true }) |wide| if (wide) try Put.arriveWide(s, q, .{ .kind = .top }, out) else try Put.arrive(s, q, .{ .kind = .top }, out);
+            try describeOrigin(s, l, q, out);
+        },
         .host => try Put.arrive(s, q, .{ .kind = .host }, out),
         .answer => try Put.arrive(s, q, try Made.answer(s, l.atom, l.extra), out),
         .recons => unreachable,
@@ -586,6 +590,15 @@ fn wholeAtoms(s: *Sink, l: Value.Leaf, sl: PathId, dest: PathId, out: Put.ResLis
     return true;
 }
 
+/// What a `⊤` lies inside leaves with it: open at `q`, since no slot says where (§2.1).
+fn describeOrigin(s: *Sink, l: Value.Leaf, q: PathId, out: Put.ResList) Error!void {
+    if (l.kind != .top or l.root == Value.none) return;
+    var ls: std.ArrayList(u32) = .empty;
+    defer ls.deinit(s.e.gpa());
+    try Origin.leaves(&s.e.ev, l, &ls);
+    for (ls.items) |x| try describeWide(s, x, q, out);
+}
+
 /// Leaf `li` at result slot `q` and, by structure, at every slot below it.
 fn describeWide(s: *Sink, li: u32, q: PathId, out: Put.ResList) Error!void {
     const e = s.e;
@@ -596,7 +609,10 @@ fn describeWide(s: *Sink, li: u32, q: PathId, out: Put.ResList) Error!void {
     switch (l.kind) {
         .site, .fresh => try Put.arriveWide(s, q, try Made.made(s, l), out),
         .shared => try Put.arriveWide(s, q, .{ .kind = .shared, .j = l.atom, .slot = l.extra }, out),
-        .top, .loan => try Put.arriveWide(s, q, .{ .kind = .top }, out),
+        .top, .loan => {
+            try Put.arriveWide(s, q, .{ .kind = .top }, out);
+            try describeOrigin(s, l, q, out);
+        },
         .host => try Put.arriveWide(s, q, .{ .kind = .host }, out),
         .answer => try Put.arriveWide(s, q, try Made.answer(s, l.atom, l.extra), out),
         .recons => unreachable,
@@ -788,6 +804,7 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: Put.EffList) Error!void {
         const l = f.leafAt(x);
         if (l.kind == .answer and out == .escapes) _ = try Contract.Draft.addEffect(Put.effList(s, out), s.arena, .{ .j = f.cbs.items[l.atom].j, .slot = f.cbs.items[l.atom].slot, .deep = true });
         if (out == .escapes and try Made.selfEscape(s, l)) continue;
+        if (out == .escapes and l.kind == .top and l.root != Value.none) try Origin.leaves(&e.ev, l, &stack);
         if (l.kind != .ref) continue;
         const r = f.roots.items[l.root];
         switch (r.kind) {
@@ -1058,7 +1075,10 @@ fn supplyArrive(s: *Sink, li: u32, rel: Slots.Rel, out: Put.ResList) Error!void 
         const a: Contract.Arrival = switch (l.kind) {
             .site, .fresh => try Made.made(s, l),
             .shared => .{ .kind = .shared, .j = l.atom, .slot = l.extra },
-            .top, .loan => .{ .kind = .top },
+            .top, .loan => blk: {
+                if (l.kind == .top and l.root != Value.none) try Origin.leaves(&s.e.ev, l, &stack);
+                break :blk .{ .kind = .top };
+            },
             .host => .{ .kind = .host },
             .answer => try Made.answer(s, l.atom, l.extra),
             .recons => unreachable,

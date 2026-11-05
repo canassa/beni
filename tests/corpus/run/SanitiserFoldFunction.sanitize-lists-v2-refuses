@@ -1,0 +1,4 @@
+# v2 refuses each writer past the fold (§2.1, #2069).
+58:9 list_may_be_shared SanitiserFoldFunction.called
+60:9 list_may_be_shared SanitiserFoldFunction.helper
+62:9 list_may_be_shared SanitiserFoldFunction.row

@@ -176,6 +176,11 @@ A level read on a built value is read at the place the path names, not the value
 steps from the value it starts at reach the place of the `⟲` (`LevelCycle.of`), the fold here, and the literal's kids are walked along that place's cycle. So an
 element `a` of a literal, which reaches the type's own nominal only by what `a` stands for, is no level, and a type with both a plain recursion and a fold reads the
 fold when the path does.
+A function past the fold is a value no slot names, and it runs: `pf t a = case t of Wrap (Leaf [ f ]) → f a`, or `ap f a`, or `List.map fs λf → f a`. No label can
+name it. The `⊤` a step past a fold gives keeps the value at the fold, its **origin** (§2.3.4), so a run of it runs what the fold holds: the origin's objects escape whole
+(`FnRun.expanded`), a caller's closure there has escaped, and a writer is refused `unknown` (§2.11.3). A `var` slot read by a run is the same fact reached without a step, as in `List.head fs` of
+`fs` at the fold, and only a fold's `var` holds a function, since code cannot call another type variable's value (`Want.fold`). Before this `pf` said nothing of `f`, and a writer edited what it was handed in place (#2069). Fixtures
+`run/SanitiserFoldFunction`, `run/SanitiserFoldFunctionApart`, `run/SanitiserTopOrigin`, `run/SanitiserTopOriginApart`.
 
 **A step no place names** (#2043). A fold is not the only such step. `Q { r | a : List Int }` in a template drops its row, so `Q { b : List Int }` has a
 record place with no `.b`, and a schema member inside a nominal type is read through a template that cannot name its fields. A step a place
@@ -500,7 +505,7 @@ The **leaves** of a value are its objects, each said once:
 | `ref(root, position, slots, tags, at_position)` | the objects at `slots` (a slot set) inside the subtree at `position` of `root`. `at_position`: the leaf is the position's own storage only (a shallow write target) |
 | `site ι`, `fresh k` | the atom's objects |
 | `shared d` | the top-level value's objects |
-| `⊤` | unknown objects |
+| `⊤` | unknown objects. With an **origin** `v`, a value of the frame: objects inside `v` that no slot names |
 | `host` | objects JavaScript made, or beni objects that escaped (§2.10, *host objects*): a `foreign`'s unknown result, or an escaped object a callee answers |
 
 A deep read of a value reaches every leaf of it: for a `ref`, `below` of its slot, a symbol `↓p` past
@@ -556,6 +561,14 @@ node. The slot domain now does the same:
   deferred storage, and the pass skips a node without it (a read reads parameters' objects only), so a
   tower of literals costs its parameters' leaves, never its atoms. A pass never fills what is kept: an
   instantiation or an expansion (§2.11.2) made under it is made whole.
+
+*Amended 2026-11-05 (#2069): a `⊤` keeps what it lies inside.* A step no place names (§2.1) gives a `⊤` whose origin is the value it stepped from, and the origin is part of the leaf,
+so it goes wherever the value goes: into a record, a literal, a cell, a capture, a callee's argument. A `⊤` on the value alone was lost at the first of these, since `project` makes a leaf per read.
+A write of it stays `unknown`, and an overlap stays `may`. Three readers read through the origin, each at its deep leaves under the leaf's tags, the rest of its use being `⊤`'s as ever:
+
+- **A run** (`FnRun`): every object of the origin goes, whole, wherever its slots stop, since no slot says which one runs. So a step a record place cannot name (§2.1, *A step no place names*) is covered with a fold's.
+- **A read-off** of a result or a supply (`ReadOff`): the `⊤`'s arrivals, and the origin open at that slot, so a caller that runs `pick t` reads its own argument there. Sound by O1: a holder is added, never removed. Precise as before, since a `⊤` result already overlaps everything.
+- **An escape** (`ReadOff.paramEffects`): the origin's objects escape with it, or a caller's closure handed on through a cell would be nobody's. A write of a `⊤` adds no write effect: it is refused where it stands.
 
 This is the value's representation, not a memo: a set is made exactly once, when its value is, and stored
 in a column of the value table by the value's id (§3.3).

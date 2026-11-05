@@ -1,0 +1,1 @@
+A function past a non-regular fold (ownership-v2.md §2.1, #2069): built again under --ownership=v2 and the sanitiser; each writer is refused.
