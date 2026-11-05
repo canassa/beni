@@ -67,10 +67,11 @@ fn occOf(e: *Eval, j: u32, s: u32, only_apart: bool) Error!?u64 {
 }
 
 /// Occurrence `o` at slot path `s`, deep where no step below `s` can be
-/// named (a type variable's or an opaque place, §2.9.1).
+/// named (a type variable's or an opaque place, §2.9.1; a function's, whose
+/// code reads its captures, #1956).
 fn deepAt(e: *Eval, s: Slots.PathId, o: u64) Error!u64 {
     return switch (e.places().kind(e.places().pathPlace(s))) {
-        .@"var", .@"opaque" => Contract.occDeep(o),
+        .@"var", .@"opaque", .closure => Contract.occDeep(o),
         else => o,
     };
 }
