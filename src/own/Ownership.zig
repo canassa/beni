@@ -11991,7 +11991,7 @@ const Walker = struct {
                                 },
                                 .site, .shared, .top, .closure, .func, .taken, .payload => {},
                             }
-                            if (w.cells.items[x.cell].kind == .taken and std.mem.indexOfScalar(u32, w.split_taken.items, x.cell) == null) try w.split_taken.append(w.a, x.cell);
+                            if (w.cells.items[x.cell].kind == .taken) try w.noteSplit(x.cell);
                         }
                         w.split_list[item.int() - w.decl.inst_start.int()] = pat.int();
                         w.split_scrut[item.int() - w.decl.inst_start.int()] = av;
@@ -21427,6 +21427,28 @@ const Walker = struct {
         return try w.takenBase(c);
     }
 
+    /// #1956: the taken cell `t` is made. An operand already evaluated and
+    /// waiting for its consumer was read before the split, so no read will
+    /// expose it: what it holds of the element cell counts now.
+    fn noteSplit(w: *Walker, t: u32) Allocator.Error!void {
+        if (std.mem.indexOfScalar(u32, w.split_taken.items, t) != null) return;
+        try w.split_taken.append(w.a, t);
+        const item = w.cells.items[t].b -% w.decl.inst_start.int();
+        if (item >= w.split_exposed.len) return;
+        const base = try w.takenBase(t);
+        for (w.pending.items) |p| {
+            if (w.split_exposed[item]) return;
+            if (try w.reachesSplit(try w.expand(p.av), base)) w.split_exposed[item] = true;
+        }
+    }
+
+    fn reachesSplit(w: *Walker, cells: AV, base: u32) Allocator.Error!bool {
+        for (cells) |e| {
+            if (e.cell == base or (try w.covers(e.cell, base)) != null or (try w.covers(base, e.cell)) != null) return true;
+        }
+        return false;
+    }
+
     /// #1956: a read of local `l` (`av`, what the read reaches) after a list
     /// pattern split an element off. Unless `l` is one of that pattern's own
     /// bindings — its rest is the container's other positions — what it
@@ -21443,12 +21465,7 @@ const Walker = struct {
             if (own != none and own == w.split_list[item]) continue;
             const base = try w.takenBase(t);
             if (cells == null) cells = try w.expand(av);
-            for (cells.?) |e| {
-                if (e.cell == base or (try w.covers(e.cell, base)) != null or (try w.covers(base, e.cell)) != null) {
-                    w.split_exposed[item] = true;
-                    break;
-                }
-            }
+            if (try w.reachesSplit(cells.?, base)) w.split_exposed[item] = true;
         }
     }
 
