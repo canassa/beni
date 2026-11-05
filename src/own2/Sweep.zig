@@ -22,6 +22,7 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Value = @import("Value.zig");
+const Steps = @import("Steps.zig");
 const Relation = @import("Relation.zig");
 const Routed = @import("Routed.zig");
 
@@ -207,10 +208,9 @@ pub const Live = struct {
     /// The holders live now, keyed or not; the sweep's point.
     live: u32 = 0,
     now: u32 = 0,
-    /// Per position, five lists of parameter buckets: those at the
-    /// position, then those below it by a plain, front, back and slice
-    /// step of its own.
-    reg: std.ArrayList(std.ArrayList(u32)) = .empty,
+    /// The parameter buckets by position (§2.3.2, `Steps.PosLists`): at
+    /// the position, and below it by the class of the step that leads there.
+    reg: Steps.PosLists = .{},
     /// Per holder and per bucket: the query that last met it.
     mark: std.ArrayList(u32) = .empty,
     b_mark: std.ArrayList(u32) = .empty,
@@ -240,8 +240,8 @@ pub const Live = struct {
     pub fn deinit(x: *Live, g: Allocator) void {
         x.bucket.deinit(g);
         for (x.heap.items) |*h| h.deinit(g);
-        for (x.reg.items) |*l| l.deinit(g);
-        inline for (.{ &x.heap, &x.reg }) |l| l.deinit(g);
+        x.reg.deinit(g);
+        x.heap.deinit(g);
         inline for (.{ &x.b_pos, &x.params, &x.e_bucket, &x.e_holder, &x.e_key, &x.e_at, &x.uses, &x.u_next, &x.u_prev, &x.a_next, &x.a_prev, &x.by_bind, &x.by_last, &x.mark, &x.b_mark }) |l| l.deinit(g);
         x.frontier.deinit(g);
         x.holders.deinit(g);
@@ -368,26 +368,10 @@ pub const Live = struct {
         if (k[0] == 0) {
             try x.params.append(g, b);
             // Registered at its position and below each ancestor by the
-            // step that leads to it: a record a step.
-            const pos = ev.f.pos.items;
-            try x.regAdd(ev, k[2], 0, b);
-            var c = k[2];
-            while (pos[c].parent != none) : (c = pos[c].parent) try x.regAdd(ev, pos[c].parent, 1 + @as(u32, @backingInt(pos[c].kind)), b);
+            // class of the step that leads to it (`Steps.fileUnder`).
+            try x.reg.file(g, ev.f.account, ev.f.pos.items, k[2], b);
         }
         return b;
-    }
-
-    fn regAdd(x: *Live, ev: *Relation.Eval, p: u32, which: u32, b: u32) Error!void {
-        const g = ev.gpa();
-        try ev.f.charge(.edge, 1);
-        const at = 5 * p + which;
-        if (at >= x.reg.items.len) try x.reg.appendNTimes(g, .empty, at + 1 - x.reg.items.len);
-        try x.reg.items[at].append(g, b);
-    }
-
-    fn regList(x: *const Live, p: u32, which: u32) []const u32 {
-        const at = 5 * p + which;
-        return if (at < x.reg.items.len) x.reg.items[at].items else &.{};
     }
 
     /// Key holder `hi`, which `takeUnkeyed` gave: its `holds` (each `agg`
@@ -635,29 +619,7 @@ pub const Live = struct {
     /// that may name what `p`'s does. Every other parameter bucket's
     /// positions are apart from `p`'s.
     pub fn related(x: *const Live, ev: *Relation.Eval, p: u32, out: *std.ArrayList(u32)) Error!void {
-        const g = ev.gpa();
-        const pos = ev.f.pos.items;
-        for (0..5) |w| {
-            try ev.f.charge(.inspection, 1);
-            try out.appendSlice(g, x.regList(p, @intCast(w)));
-        }
-        var c = p;
-        while (pos[c].parent != none) : (c = pos[c].parent) {
-            const a = pos[c].parent;
-            try ev.f.charge(.inspection, 1);
-            try out.appendSlice(g, x.regList(a, 0));
-            const kinds: []const Value.PKind = switch (pos[c].kind) {
-                .plain => &.{},
-                .front => &.{ .back, .slice },
-                .back => &.{ .front, .slice },
-                .slice => &.{ .front, .back, .slice },
-            };
-            for (kinds) |k| {
-                try ev.f.charge(.inspection, 1);
-                try out.appendSlice(g, x.regList(a, 1 + @as(u32, @backingInt(k))));
-            }
-        }
-        try ev.f.charge(.inspection, @intCast(out.items.len));
+        try x.reg.ask(ev.gpa(), ev.f.account, ev.f.pos.items, p, out);
     }
 
     // ---- the aggregated holders ----------------------------------------------

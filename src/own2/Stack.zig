@@ -23,6 +23,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Value = @import("Value.zig");
+const Steps = @import("Steps.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
 const Walk = @import("Walk.zig");
@@ -57,10 +58,10 @@ pub const Index = struct {
     /// least `rank₂` of the operands' points over each range (§2.5).
     tree: std.ArrayList(u32) = .empty,
     rank: std.ArrayList(u32) = .empty,
-    /// A position's list; a list registered at its position (0) and below
-    /// each ancestor by the step that leads to it (1 + kind), as `Sweep`'s.
+    /// A position's list; the lists by position (`Steps.PosLists`), as
+    /// `Sweep`'s buckets.
     at_pos: std.ArrayList(u32) = .empty,
-    reg: std.ArrayList(std.ArrayList(u32)) = .empty,
+    reg: Steps.PosLists = .{},
     mark: std.ArrayList(u32) = .empty,
     query: u32 = 0,
     /// The accepted demands' parameter targets: `(clock, point, target)`.
@@ -68,7 +69,6 @@ pub const Index = struct {
 
     pub fn deinit(x: *Index, g: Allocator) void {
         inline for (.{ &x.items, &x.pos_of, &x.poss, &x.lists, &x.order, &x.pushes, &x.tree, &x.rank, &x.mark, &x.writes }) |l| l.deinit(g);
-        for (x.reg.items) |*l| l.deinit(g);
         x.reg.deinit(g);
         x.at_pos.deinit(g);
     }
@@ -118,20 +118,7 @@ pub const Index = struct {
     }
 
     fn register(x: *Index, ev: *Relation.Eval, p: u32, list: u32) Error!void {
-        const pos = ev.f.pos.items;
-        try x.regAdd(ev, 5 * p, list);
-        var c = p;
-        while (pos[c].parent != none) : (c = pos[c].parent) try x.regAdd(ev, 5 * pos[c].parent + 1 + @as(u32, @backingInt(pos[c].kind)), list);
-    }
-
-    fn regAdd(x: *Index, ev: *Relation.Eval, at: u32, list: u32) Error!void {
-        try ev.f.charge(.edge, 1);
-        if (at >= x.reg.items.len) try x.reg.appendNTimes(ev.gpa(), .empty, at + 1 - x.reg.items.len);
-        try x.reg.items[at].append(ev.gpa(), list);
-    }
-
-    fn regList(x: *const Index, p: u32, which: u32) []const u32 {
-        return if (5 * p + which < x.reg.items.len) x.reg.items[5 * p + which].items else &.{};
+        try x.reg.file(ev.gpa(), ev.f.account, ev.f.pos.items, p, list);
     }
 
     /// A list of items (in push order) and its trees.
@@ -258,29 +245,7 @@ pub const Index = struct {
 
     /// The lists at positions related to `p` (§2.3.2), as `Sweep.Live.related`.
     fn related(x: *const Index, ev: *Relation.Eval, p: u32, out: *std.ArrayList(u32)) Error!void {
-        const g = ev.gpa();
-        const pos = ev.f.pos.items;
-        for (0..5) |k| {
-            try ev.f.charge(.inspection, 1);
-            try out.appendSlice(g, x.regList(p, @intCast(k)));
-        }
-        var c = p;
-        while (pos[c].parent != none) : (c = pos[c].parent) {
-            const a = pos[c].parent;
-            try ev.f.charge(.inspection, 1);
-            try out.appendSlice(g, x.regList(a, 0));
-            const kinds: []const Value.PKind = switch (pos[c].kind) {
-                .plain => &.{},
-                .front => &.{ .back, .slice },
-                .back => &.{ .front, .slice },
-                .slice => &.{ .front, .back, .slice },
-            };
-            for (kinds) |kd| {
-                try ev.f.charge(.inspection, 1);
-                try out.appendSlice(g, x.regList(a, 1 + @as(u32, @backingInt(kd))));
-            }
-        }
-        try ev.f.charge(.inspection, @intCast(out.items.len));
+        try x.reg.ask(ev.gpa(), ev.f.account, ev.f.pos.items, p, out);
     }
 
     /// An accepted demand judged with aggregation: its parameter targets.

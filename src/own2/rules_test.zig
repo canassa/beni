@@ -65,6 +65,8 @@ const layers = [_]Entry{
     .{ .file = "TagTree.zig", .layer = 2, .max_lines = 250 },
     // What a place graph says below a path, split from `Subtree` (#1714).
     .{ .file = "PlaceBelow.zig", .layer = 2, .max_lines = 70 },
+    // One step of a position, the step relation and the index protocol the pairs and the indices share (#1963).
+    .{ .file = "Steps.zig", .layer = 2, .max_lines = 190 },
     // A place graph's encoding and equality, split from `Place` (#1714).
     .{ .file = "PlaceIdentity.zig", .layer = 2, .max_lines = 190 },
     .{ .file = "Slots.zig", .layer = 2, .max_lines = 440 },
@@ -495,7 +497,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 82), layers.len);
+    try testing.expectEqual(@as(usize, 83), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

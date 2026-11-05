@@ -19,6 +19,7 @@ const Slots = @import("Slots.zig");
 const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
+const Steps = @import("Steps.zig");
 const Coexist = @import("Coexist.zig");
 
 pub const Error = Ids.ChargeError;
@@ -117,8 +118,9 @@ pub fn pairMay(f: *Frame, a: Ent, b: Ent, routed: bool) Error!bool {
 
 /// The pairs within one group (§2.9.3): its first `seen` members were
 /// compared already; a new one is compared with every earlier one up to
-/// eight, then by index `(position, 4, slot)`, `(ancestor, list step kind,
-/// slot)` and `(ancestor, 5, slot)` for what lies below a position.
+/// eight, then by index: each slot of a member is filed `(position, list,
+/// slot)` and asked by `Steps.fileUnder`/`Steps.askFor`, the protocol every
+/// index of positions shares (§2.3.2).
 pub const Within = struct {
     seen: u32 = 0,
     indexed: bool = false,
@@ -168,18 +170,17 @@ pub const Within = struct {
     fn register(x: *Within, f: *Frame, ents: []const Ent, i: u32) Error!void {
         const l = f.leafAt(ents[i].leaf);
         if (Subtree.symbolic(f.slots, l.slots)) try x.sym.append(f.gpa, i);
-        const pos = f.pos.items;
         for (Subtree.explicit(f.slots, l.slots)) |s| {
-            try x.put(f, .{ l.pos, 4, s }, i);
-            var a = l.pos;
-            while (pos[a].parent != none) : (a = pos[a].parent) try x.put(f, .{ pos[a].parent, 5, s }, i);
-            var c = l.pos;
-            while (true) {
-                while (pos[c].parent != none and pos[c].kind == .plain) c = pos[c].parent;
-                if (pos[c].parent == none) break;
-                try x.put(f, .{ pos[c].parent, @backingInt(pos[c].kind), s }, i);
-                c = pos[c].parent;
-            }
+            const Ctx = struct {
+                x: *Within,
+                f: *Frame,
+                s: u32,
+                i: u32,
+                pub fn key(c: @This(), at: u32, list: u32) Error!void {
+                    try c.x.put(c.f, .{ at, list, c.s }, c.i);
+                }
+            };
+            try Steps.fileUnder(f.pos.items, l.pos, Ctx{ .x = x, .f = f, .s = s, .i = i });
         }
     }
 
@@ -190,31 +191,25 @@ pub const Within = struct {
         var tested: Ids.FixedDict(1) = .{};
         defer tested.deinit(f.gpa);
         for (if (sym) earlier else x.sym.items) |j| if (try pairOnce(f, &tested, ents[i], ents[j], j, routed)) return true;
-        const pos = f.pos.items;
-        for (Subtree.explicit(f.slots, l.slots)) |s| {
-            try f.charge(.inspection, 1);
-            if (x.at.get(.{ l.pos, 5, s })) |here| for (x.lists.items[here].items) |j| {
-                if (try pairOnce(f, &tested, ents[i], ents[j], j, routed)) return true;
-            };
-            var p = l.pos;
-            while (p != none) : (p = pos[p].parent) {
-                try f.charge(.inspection, 1);
-                if (x.at.get(.{ p, 4, s })) |here| for (x.lists.items[here].items) |j| {
-                    if (try pairOnce(f, &tested, ents[i], ents[j], j, routed)) return true;
-                };
-                if (pos[p].parent == none) continue;
-                const kinds: []const u32 = switch (pos[p].kind) {
-                    .plain => &.{},
-                    .front => &.{ 2, 3 },
-                    .back => &.{ 1, 3 },
-                    .slice => &.{ 1, 2, 3 },
-                };
-                for (kinds) |k| {
-                    try f.charge(.inspection, 1);
-                    const here = x.at.get(.{ pos[p].parent, k, s }) orelse continue;
-                    for (x.lists.items[here].items) |j| if (try pairOnce(f, &tested, ents[i], ents[j], j, routed)) return true;
-                }
+        const Ctx = struct {
+            x: *Within,
+            f: *Frame,
+            ents: []const Ent,
+            tested: *Ids.FixedDict(1),
+            i: u32,
+            s: u32,
+            routed: bool,
+            pub fn key(c: @This(), at: u32, list: u32) (Error || error{Met})!void {
+                try c.f.charge(.inspection, 1);
+                const here = c.x.at.get(.{ at, list, c.s }) orelse return;
+                for (c.x.lists.items[here].items) |j| if (try pairOnce(c.f, c.tested, c.ents[c.i], c.ents[j], j, c.routed)) return error.Met;
             }
+        };
+        for (Subtree.explicit(f.slots, l.slots)) |s| {
+            Steps.askFor(f.pos.items, l.pos, Ctx{ .x = x, .f = f, .ents = ents, .tested = &tested, .i = i, .s = s, .routed = routed }) catch |e| switch (e) {
+                error.Met => return true,
+                else => |e2| return e2,
+            };
         }
         return false;
     }

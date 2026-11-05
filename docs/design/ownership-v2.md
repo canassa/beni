@@ -417,6 +417,24 @@ then `[ _, …rest ]` precise, a slice of a list literal with spreads drops the 
 and after the last (each stands at its own index), and holds every kid from a spread on (`Walk`). Fixtures:
 `run/SanitiserPatternStoredBack` (refused) and `run/SanitiserPatternStoredBackApart` (`[ …rest, p ]`, and a slice
 past a prepended element: accepted).
+*Amended 2026-11-05 (#1963): one relation for the pairs and the indices.* The amendment above reached the pairwise
+check only: three indices that file positions under their parent by the step that leads to them still kept `[*]`
+apart from a list step. The distinct check's index (§2.9.3, past eight members) filed no plain step and asked only
+the other list steps at a `front`'s parent, so `[ …l, a1, …, a6 ]` with `a1` the head of `l` was accepted and its
+sanitised run trapped, while five fronts were refused; the holder buckets (§2.8, `Sweep.zig`) and the pending
+operands (`Stack.zig`) asked no list step for a `[*]` and no `[*]` for a list step. Now one step relation
+(`Steps.stepRel`) answers the first differing step for `Frame.related`, and every index of positions keeps one
+protocol (`Steps.fileUnder`, `Steps.askFor`): lists per position, one for what is at it and one per class of the
+step below it (`[*]`, another plain step, `front`, `back`, `slice`). A position is filed at itself and, at each
+step's parent on its way, under the step's class; a query at `P` asks every list at `P`, and at each step's parent
+on its way the list at the parent and the classes that may meet the step's (`Steps.meetClasses`). A unit test
+checks that `meetClasses` lists exactly the classes of some related pair of steps, and that over a tree of every
+step class the indices' storage (`Steps.PosLists`, the holder buckets' and the pending lists') and the distinct
+check's keys meet every pair `Frame.related` relates, and an unrelated one only where a slice's indices part them. The call operands' index (`Holders.Operands`) asks
+`Frame.related` itself, and the tag, route and descent indices (`TagTree`, `Coexist`, `Descent`, `HoldAt`) file no
+position. Fixtures:
+`run/SanitiserWideDistinct` (after the spread, before it, and from the back: refused) and
+`run/SanitiserWideDistinctApart` (a slice and the fronts or backs it skips, as wide: accepted).
 
 #### 2.3.3 Values
 
@@ -958,7 +976,8 @@ value (a node met again at the same path and tags is walked once), each hold a l
 path is refined by the target's slots; per demand a hold is judged against a target by the relation and the
 refinement only (`Sweep.holdsAt`). A parameter's base key carries its base leaf's **position** (the escape index
 folds it back to the parameter), and each parameter key's bucket is registered at its position and, below each
-ancestor, under the kind of the step that leads to it (a record a step, once a bucket). A parameter's untagged
+ancestor, under the class of the step that leads to it (a record a step, once a bucket; §2.3.2, *one relation
+for the pairs and the indices*). A parameter's untagged
 target (not a `◆`) at position `P` visits the unknown bucket and the buckets at positions related to `P`
 (§2.3.2): at `P` or below it, at an ancestor, or below a list step of an ancestor that may name what `P`'s
 step does. Every other live holder is an **aggregated** one for that target: each of its holds whose keys are
@@ -1348,8 +1367,10 @@ occurrences were asked. A round places only the entries the last expansion made,
 changed (a parameter's group for its new members' pairs and occurrences; a call's, a supply's and an atom's whole,
 as before), and asks the answer rule only for pairs with a new entry; a second parameter's group makes every
 parameter group ask its occurrences, as before. A new member is compared with the earlier ones, pairwise up to
-eight and then by the index, which also lists each entry under every ancestor (`(ancestor, 5, slot)`) so that a
-new entry meets the earlier ones below it; an earlier entry that several of its slots meet is asked once. The root to expand is the greatest of a heap of the expandable roots,
+eight and then by the index, which files each entry's slots by §2.3.2's protocol of position indices (at its
+position, and at each step's parent under the step's class) so that a new entry meets the earlier ones at, above
+and below it and those apart only at a step that may meet its own (§2.3.2, *one relation for the pairs and the
+indices*, #1963); an earlier entry that several of its slots meet is asked once. The root to expand is the greatest of a heap of the expandable roots,
 or of the groups that ask to be expanded (`must`), a stale one skipped. A vouched block keeps the first of two
 equal leaves in the inline order (its members compared by the expansions they came from, below their common
 ancestor: each entry keeps a skew-binary jump pointer, whose depth is a function of its own depth alone, so the
@@ -4598,6 +4619,7 @@ L0  Ids  Counters  Scratch
 | `Facts.zig` | 2 | the records that cross layers: uses, demand kinds, verdicts, causes, the pre-pass's facts, report lines | Ids |
 | `TagTree.zig` | 2 | a run of tag lists as the tree of their shared tails; the members a list may hold with (§2.8, #1714) | Ids, Routes |
 | `PlaceBelow.zig` | 2 | what a place graph says below a path: object slots counted, a family read off (§2.3.1, #1714) | Ids, Place |
+| `Steps.zig` | 2 | one step of a position, §2.3.2's relation of two steps of one parent, and the protocol by which every index of positions files and asks (#1963) | Ids, Place |
 | `PlaceIdentity.zig` | 2 | a place graph's structural identity: `encode`, `decode`, `equals` (§2.1, §3.1), split from `Place` (#1714) | Ids, Place |
 | `Slots.zig` | 2 | slot sets, `below`, canonical names, relative steps (§2.3.1, §3.2) | Ids, Place, Runs |
 | `Trees.zig` | 2 | a contract's result trees, nodes hash-consed by content (§2.10, §3.5, #1714) | Ids, Runs |

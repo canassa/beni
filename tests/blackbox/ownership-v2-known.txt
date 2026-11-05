@@ -4747,3 +4747,11 @@ tests/corpus/run/SanitiserClosureSlotHolderApart.beni SanitiserClosureSlotHolder
 tests/corpus/run/SanitiserClosureSlotHolderApart.beni SanitiserClosureSlotHolderApart 14:9 #0 :: once t.1 :: absent :: accepted  v1 checks the closure's write as `once`; v2 judges it at the call (§2.9.1, #1956)
 tests/corpus/run/SanitiserClosureSlotHolderApart.beni SanitiserClosureSlotHolderApart 17:5 #0 :: f <call> :: absent :: accepted  v1 checks the closure's write as `once`; v2 judges it at the call (§2.9.1, #1956)
 tests/corpus/run/SanitiserClosureSlotHolderApart.beni SanitiserClosureSlotHolderApart 27:19 #0 :: SanitiserClosureSlotHolderApart.g <expression>.1 :: absent :: accepted  v1 checks the closure's write as `once`; v2 judges it at the call (§2.9.1, #1956)
+#
+# A list literal past eight entries: its distinct check's index meets a `[*]` position with a front or back one (#1963).
+tests/corpus/run/SanitiserWideDistinct.beni SanitiserWideDistinct 65:12 #0 :: SanitiserWideDistinct.edited <call>[*] :: accepted :: rejected  `[ …l, a1, …, a6 ]` holds the head twice: v1 accepts the edit unsoundly (#1963)
+tests/corpus/run/SanitiserWideDistinct.beni SanitiserWideDistinct 65:45 #0 :: SanitiserWideDistinct.edited <call>[*] :: accepted :: rejected  `[ a1, …, a9, …l ]` holds the head twice: v1 accepts the edit unsoundly (#1963)
+tests/corpus/run/SanitiserWideDistinct.beni SanitiserWideDistinct 65:79 #0 :: SanitiserWideDistinct.edited <call>[*] :: accepted :: rejected  `[ b1, …, b9, …l ]` holds the last nine twice: v1 accepts the edit unsoundly (#1963)
+tests/corpus/run/SanitiserWideDistinctApart.beni SanitiserWideDistinctApart 61:12 #0 :: SanitiserWideDistinctApart.edited <call> :: rejected :: accepted  a slice and the fronts it skips are apart: v1 does not tell them apart (§2.3.2, #1963)
+tests/corpus/run/SanitiserWideDistinctApart.beni SanitiserWideDistinctApart 61:42 #0 :: SanitiserWideDistinctApart.edited <call> :: rejected :: accepted  a slice and the fronts it skips are apart: v1 does not tell them apart (§2.3.2, #1963)
+tests/corpus/run/SanitiserWideDistinctApart.beni SanitiserWideDistinctApart 61:73 #0 :: SanitiserWideDistinctApart.edited <call> :: rejected :: accepted  a slice and the backs it skips are apart: v1 does not tell them apart (§2.3.2, #1963)

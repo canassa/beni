@@ -6,7 +6,7 @@
 //! named twice is one leaf.
 //!
 //! Obligations kept here: none of §2.14's directly (tables only); §2.3.2's
-//! relation of two positions is `related`.
+//! relation of two positions is `related`, by `Steps.stepRel`.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -21,6 +21,12 @@ pub const PlaceId = Ids.PlaceId;
 pub const SetId = Slots.SetId;
 pub const Error = Ids.ChargeError;
 pub const Step = Place.Step;
+const Steps = @import("Steps.zig");
+pub const PKind = Steps.PKind;
+pub const Pos = Steps.Pos;
+pub const Rel = Steps.Rel;
+pub const StepRel = Steps.StepRel;
+pub const StepClass = Steps.StepClass;
 pub const none: u32 = Ids.none_int;
 
 /// The sources of values (§2.3.2).
@@ -88,20 +94,6 @@ pub const Root = struct {
     /// The root place's `ε` path: every position's slot is below it.
     path: PathId,
     pos: u32 = none,
-};
-
-/// A list step or a plain one (§2.3.2).
-pub const PKind = enum(u8) { plain, front, back, slice };
-
-pub const Pos = struct {
-    root: u32,
-    parent: u32,
-    kind: PKind,
-    /// `plain`: the step's word; `front`/`back`: the index; `slice`: from the front.
-    a: u32,
-    /// `slice`: from the back.
-    b: u32,
-    slot: PathId,
 };
 
 pub const Kind = enum(u8) {
@@ -184,9 +176,6 @@ pub const Leaf = struct {
     /// A shallow target at its position's own slot only.
     at_pos: bool = false,
 };
-
-/// The relation of two positions of one root (§2.3.2).
-pub const Rel = enum { distinct, related };
 
 pub const Frame = struct {
     gpa: Allocator,
@@ -400,7 +389,7 @@ pub const Frame = struct {
 
     /// §2.3.2: whether two positions of one root may name one element.
     /// `second_prefix`: the second is a prefix of the first (or equal).
-    pub fn related(f: *Frame, p1: u32, p2: u32) Error!struct { rel: Rel, second_prefix: bool } {
+    pub fn related(f: *Frame, p1: u32, p2: u32) Error!StepRel {
         var a: std.ArrayList(u32) = .empty;
         defer a.deinit(f.gpa);
         var c: std.ArrayList(u32) = .empty;
@@ -411,23 +400,7 @@ pub const Frame = struct {
         const n = @min(a.items.len, c.items.len);
         for (0..n) |k| {
             if (a.items[k] == c.items[k]) continue;
-            const x = f.pos.items[a.items[k]];
-            const y = f.pos.items[c.items[k]];
-            // `[*]` names every element, a front, back or slice one's too (#1956).
-            if ((x.kind == .plain) != (y.kind == .plain) and Step.fromWord(if (x.kind == .plain) x.a else y.a).kind == .elem) return .{ .rel = .related, .second_prefix = y.kind == .plain };
-            if (x.kind == .plain or y.kind == .plain) return .{ .rel = .distinct, .second_prefix = false };
-            // Two fronts (or backs) are two indices; a front and a back may meet.
-            if (x.kind != .slice and y.kind != .slice) return if (x.kind == y.kind) .{ .rel = .distinct, .second_prefix = false } else .{ .rel = .related, .second_prefix = false };
-            return switch (x.kind) {
-                .front => if (x.a < y.a) .{ .rel = .distinct, .second_prefix = false } else .{ .rel = .related, .second_prefix = true },
-                .back => if (x.a < y.b) .{ .rel = .distinct, .second_prefix = false } else .{ .rel = .related, .second_prefix = true },
-                .slice => switch (y.kind) {
-                    .front => if (y.a < x.a) .{ .rel = .distinct, .second_prefix = false } else .{ .rel = .related, .second_prefix = false },
-                    .back => if (y.a < x.b) .{ .rel = .distinct, .second_prefix = false } else .{ .rel = .related, .second_prefix = false },
-                    else => .{ .rel = .related, .second_prefix = true },
-                },
-                .plain => unreachable,
-            };
+            return Steps.stepRel(f.pos.items[a.items[k]], f.pos.items[c.items[k]]);
         }
         return .{ .rel = .related, .second_prefix = c.items.len <= a.items.len };
     }
@@ -496,4 +469,97 @@ test "two front positions are distinct, a front and a back are related" {
     try testing.expectEqual(Rel.distinct, (try f.related(1, 4)).rel);
     try testing.expectEqual(Rel.related, (try f.related(2, 4)).rel);
     try testing.expect((try f.related(1, 0)).second_prefix);
+}
+
+test "every index of positions meets exactly what the pairwise relation relates (§2.3.2)" {
+    // A two-level position tree of every step class. Each position is filed
+    // by the protocol every index shares (`Steps.fileUnder`/`askFor`): in
+    // `Steps.PosLists`, `Sweep.Live`'s and `Stack.Index`'s storage, and in
+    // a map keyed as `Entries.Within` keys it. A query at each position
+    // meets every position `Frame.related` relates to it, and meets an
+    // unrelated one only where a slice's indices tell them apart.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var account: Ids.Account = .{};
+    defer account.deinit(testing.allocator);
+    var places: Place.Table = .{};
+    defer places.deinit(testing.allocator);
+    var slots: Slots.Table = .{};
+    defer slots.deinit(testing.allocator);
+    var f: Frame = .{ .gpa = testing.allocator, .arena = arena_state.allocator(), .account = &account, .places = &places, .slots = &slots };
+    defer f.deinit();
+    const kinds = [_]struct { PKind, u32, u32 }{
+        .{ .plain, Step.elem.word(), 0 },     .{ .plain, (Step{ .kind = .field, .payload = 0 }).word(), 0 },
+        .{ .plain, Step.contents.word(), 0 }, .{ .front, 0, 0 },
+        .{ .front, 1, 0 },                    .{ .back, 0, 0 },
+        .{ .back, 1, 0 },                     .{ .slice, 1, 0 },
+        .{ .slice, 0, 1 },                    .{ .slice, 1, 1 },
+        .{ .slice, 2, 0 },
+    };
+    try f.pos.append(testing.allocator, .{ .root = 0, .parent = none, .kind = .plain, .a = 0, .b = 0, .slot = .none });
+    for (kinds) |k| {
+        const parent: u32 = @intCast(f.pos.items.len);
+        try f.pos.append(testing.allocator, .{ .root = 0, .parent = 0, .kind = k[0], .a = k[1], .b = k[2], .slot = .none });
+        // A slice is only ever a last step.
+        if (k[0] != .slice) for (kinds) |k2| try f.pos.append(testing.allocator, .{ .root = 0, .parent = parent, .kind = k2[0], .a = k2[1], .b = k2[2], .slot = .none });
+    }
+    const n: u32 = @intCast(f.pos.items.len);
+    const pos = f.pos.items;
+    var lists: Steps.PosLists = .{};
+    defer lists.deinit(testing.allocator);
+    // `Entries.Within`'s keys: `(position, list)` to the members filed there.
+    const Keyed = struct {
+        map: std.AutoHashMapUnmanaged([2]u32, std.ArrayList(u32)) = .empty,
+        item: u32 = 0,
+        out: ?*std.ArrayList(u32) = null,
+        pub fn key(x: *@This(), at: u32, list: u32) Allocator.Error!void {
+            if (x.out) |o| {
+                if (x.map.get(.{ at, list })) |l| try o.appendSlice(testing.allocator, l.items);
+                return;
+            }
+            const got = try x.map.getOrPut(testing.allocator, .{ at, list });
+            if (!got.found_existing) got.value_ptr.* = .empty;
+            try got.value_ptr.append(testing.allocator, x.item);
+        }
+    };
+    var keyed: Keyed = .{};
+    defer {
+        var it = keyed.map.valueIterator();
+        while (it.next()) |l| l.deinit(testing.allocator);
+        keyed.map.deinit(testing.allocator);
+    }
+    var q: u32 = 0;
+    while (q < n) : (q += 1) {
+        try lists.file(testing.allocator, &account, pos, q, q);
+        keyed.item = q;
+        try Steps.fileUnder(pos, q, &keyed);
+    }
+    var met: [2]std.ArrayList(u32) = .{ .empty, .empty };
+    defer for (&met) |*m| m.deinit(testing.allocator);
+    var p: u32 = 0;
+    while (p < n) : (p += 1) {
+        for (&met) |*m| m.clearRetainingCapacity();
+        try lists.ask(testing.allocator, &account, pos, p, &met[0]);
+        keyed.out = &met[1];
+        try Steps.askFor(pos, p, &keyed);
+        keyed.out = null;
+        for (&met) |*m| {
+            q = 0;
+            while (q < n) : (q += 1) {
+                const found = std.mem.indexOfScalar(u32, m.items, q) != null;
+                if ((try f.related(p, q)).rel == .related) {
+                    try testing.expect(found);
+                } else if (found) {
+                    // Met though apart: the two part at a slice and a list
+                    // step its indices skip.
+                    var x = p;
+                    var y = q;
+                    while (pos[x].parent != pos[y].parent) {
+                        if (pos[x].parent != 0 and pos[x].parent != none) x = pos[x].parent else y = pos[y].parent;
+                    }
+                    try testing.expect(pos[x].kind == .slice or pos[y].kind == .slice);
+                }
+            }
+        }
+    }
 }
