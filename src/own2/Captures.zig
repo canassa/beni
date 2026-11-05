@@ -17,33 +17,37 @@ const Relation = @import("Relation.zig");
 const Error = Relation.Error;
 
 /// After an arrival's own leaves at `words` of argument `v` (not `deep`):
-/// the captures of a closure built there, each deep.
+/// the captures of each closure built there, each deep.
 pub fn add(e: *Relation.Eval, v: u32, words: []const u32, deep: bool, out: *std.ArrayList(u32)) Error!void {
     if (deep) return;
-    const x = builtClosureAt(e.f, v, words) orelse return;
-    const caps = try e.arena.dupe(u32, e.f.kidsOf(x));
-    for (caps) |c| try e.routed(e, c, &.{}, true, Ids.none_int, out);
+    var found: std.ArrayList(u32) = .empty;
+    defer found.deinit(e.gpa());
+    try builtClosures(e, v, words, &found);
+    for (found.items) |x| for (try e.arena.dupe(u32, e.f.kidsOf(e.f.val(x)))) |c| try e.routed(e, c, &.{}, true, Ids.none_int, out);
 }
 
-/// The closure built at `words` below value `v0`, followed through built
+/// The closures built at `words` below value `v`, followed through built
 /// values only (nothing is made): a reference's captures are its caller's.
-fn builtClosureAt(f: *Value.Frame, v0: u32, words: []const u32) ?Value.Val {
-    var x = f.val(v0);
-    for (words) |wd| {
-        if (x.kind != .built) return null;
-        const st = Place.Step.fromWord(wd);
-        const ks = f.kidsOf(x);
-        const ca = if (st.kind == .ctor_arg) f.places.ctorArgOf(st) else .{ 0, 0 };
-        const next: ?u32 = switch (x.form) {
-            .tuple => if (st.kind == .index and st.payload < ks.len) ks[st.payload] else null,
-            .ctor => if (st.kind == .ctor_arg and ca[0] == x.head and ca[1] < ks.len) ks[ca[1]] else null,
-            .record => for (f.wordsOf(x.extra), 0..) |r, n| {
-                if (st.kind == .field and r == st.payload) break ks[n];
-            } else null,
-            .list => if (st.kind == .elem and ks.len == 1) ks[0] else null,
-            else => null,
-        };
-        x = f.val(next orelse return null);
+fn builtClosures(e: *Relation.Eval, v: u32, words: []const u32, out: *std.ArrayList(u32)) Error!void {
+    try e.charge(.inspection, 1);
+    const f, const x = .{ e.f, e.f.val(v) };
+    const ks = f.kidsOf(x);
+    if (x.kind == .alt) {
+        var n: usize = 1;
+        while (n < ks.len) : (n += 2) try builtClosures(e, ks[n], words, out);
+        return;
     }
-    return if (x.kind == .built and x.form == .closure) x else null;
+    if (x.kind != .built) return;
+    if (words.len == 0) return if (x.form == .closure) out.append(e.gpa(), v);
+    const st = Place.Step.fromWord(words[0]);
+    const ca = if (st.kind == .ctor_arg) f.places.ctorArgOf(st) else .{ 0, 0 };
+    switch (x.form) {
+        .tuple => if (st.kind == .index and st.payload < ks.len) try builtClosures(e, ks[st.payload], words[1..], out),
+        .ctor => if (st.kind == .ctor_arg and ca[0] == x.head and ca[1] < ks.len) try builtClosures(e, ks[ca[1]], words[1..], out),
+        .record => for (f.wordsOf(x.extra), 0..) |r, n| {
+            if (st.kind == .field and r == st.payload) try builtClosures(e, ks[n], words[1..], out);
+        },
+        .list => if (st.kind == .elem) for (ks) |k| try builtClosures(e, k, words[1..], out),
+        else => {},
+    }
 }

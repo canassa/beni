@@ -174,6 +174,7 @@ const layers = [_]Entry{
     .{ .file = "Walk.zig", .layer = 9, .max_lines = 1240 },
     // A function value run by unknown code: the function objects that escape (#1773, #1775, #1776).
     .{ .file = "FnRun.zig", .layer = 9, .max_lines = 250 },
+    .{ .file = "AnswerRead.zig", .layer = 9, .max_lines = 40 },
     // One entry of many objects; an answer apart from nothing (#1710,
     // #1711); what an answer may hold (§2.9.2 step 7).
     .{ .file = "Distinct.zig", .layer = 9, .max_lines = 750 },
@@ -211,7 +212,7 @@ const layers = [_]Entry{
     .{ .file = "Descent.zig", .layer = 11, .max_lines = 330 },
     .{ .file = "Deliver.zig", .layer = 11, .max_lines = 300 },
     // A callee's hand-back is an escape too (#1709).
-    .{ .file = "ClosureRuns.zig", .layer = 11, .max_lines = 85 },
+    .{ .file = "ClosureAnswers.zig", .layer = 11, .max_lines = 110 },
     .{ .file = "Closures.zig", .layer = 11, .max_lines = 140 },
     // A store that may hold one object twice escapes the cell's contents (#1984).
     .{ .file = "Contents.zig", .layer = 11, .max_lines = 140 },
@@ -233,6 +234,7 @@ const layers = [_]Entry{
     .{ .file = "Supplied.zig", .layer = 11, .max_lines = 165 },
     // A label's answer in another label's supply (§2.11.3, #2013).
     .{ .file = "SupplyAnswers.zig", .layer = 11, .max_lines = 70 },
+    .{ .file = "ClosureRuns.zig", .layer = 12, .max_lines = 85 },
     .{ .file = "ReadOff.zig", .layer = 12, .max_lines = 1160 },
     .{ .file = "Resolve.zig", .layer = 12, .max_lines = 680 },
     // The conditions of a contract, split from `ReadOff` (#2028).
@@ -544,7 +546,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 110), layers.len);
+    try testing.expectEqual(@as(usize, 112), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

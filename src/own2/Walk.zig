@@ -124,7 +124,8 @@ pub const Demand = struct {
 pub const Binding = struct { value: u32 = none, point: u32 = none, token: u32 = none };
 
 /// An escape (§2.4): a leaf at a point.
-pub const Escape = struct { leaf: u32, point: u32, call: u32 = none };
+/// `read`: the code that runs a function object only reads its answer (§2.11.3).
+pub const Escape = struct { leaf: u32, point: u32, call: u32 = none, read: bool = false };
 
 /// An operand on the stack (§2.4), its values a run of `pending_runs`: pending at clock `T` when `push <= T < gone`.
 pub const Entry = struct { inst: u32, vals: Ids.Range, push: u32, gone: u32 = none };

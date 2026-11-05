@@ -153,7 +153,11 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Err
     const l = f.leafAt(li);
     if (try hosted(s, li, q.int(), l.kind == .ref, out)) if (l.kind == .ref) try Put.arriveWide(s, q, .{ .kind = .host }, out) else try Put.arrive(s, q, .{ .kind = .host }, out);
     switch (l.kind) {
-        .site, .fresh => try Put.arrive(s, q, try Made.made(s, l), out),
+        .site, .fresh => {
+            try Put.arrive(s, q, try Made.made(s, l), out);
+            // A closure's captures leave with it, reached by no structure here.
+            if (l.kind == .site and !(try s.described.getOrPut(e.gpa(), try Put.describedKey(s, li, q, out))).found_existing) for (e.w.closures.items) |cl| if (cl.inst == l.atom) for (f.kidsOf(f.val(cl.value))) |k| try describe(s, k, q, out);
+        },
         .shared => try Put.arriveWide(s, q, .{ .kind = .shared, .j = l.atom, .slot = l.extra }, out),
         // Unknown here, unknown below: no step of it is fresh (§2.1, a fold).
         .top, .loan => for ([_]bool{ false, true }) |wide| if (wide) try Put.arriveWide(s, q, .{ .kind = .top }, out) else try Put.arrive(s, q, .{ .kind = .top }, out),
@@ -804,7 +808,10 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: Put.EffList) Error!void {
                 try expandFor(e, x, .{ .kind = .effect, .a = @backingInt(out), .b = @intFromBool(deep), .tags = l.tags }, &ls);
                 try stack.appendSlice(gpa, ls.items);
             },
-            .cb => {},
+            // What the label answers leaves, and the code it runs is not told (#2059).
+            .cb => if (out == .escapes) {
+                s.d.labels.items[try s.labelIndex(r.a)].answer_left = true;
+            },
         }
     }
 }
@@ -936,6 +943,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
         // source says alone. Inside a known code an outer label runs, it runs as often (#1721).
         const lc: Contract.Calls = if (lab.calls != .none and Outward.outwardMany(e, p[1])) .many else lab.calls;
         dl.calls = if (lc == .none) dl.calls else if (dl.calls == .none) lc else .many;
+        dl.answer_left = dl.answer_left or lab.answer_left;
         // The supplies at this call's function type: a callee's supply slot
         // of a type variable's place (`apply : (a → b), a → b`) takes the
         // whole argument, whose structure this frame's type names. Each

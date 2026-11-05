@@ -21,7 +21,7 @@ const BlockNames = @import("BlockNames.zig");
 const BlockCalled = @import("BlockCalled.zig");
 
 pub const magic: u32 = 0x324e574f;
-pub const version: u32 = 24;
+pub const version: u32 = 25;
 pub const Error = Ids.ChargeError || error{BadBlock};
 const Step = Place.Step;
 
@@ -156,7 +156,7 @@ const Writer = struct {
             try w.rel(l.slot);
             try w.word(w.names.decl(w.names.ctx, .{ l.origin[0], l.origin[1] }));
             try w.word(l.origin[2]);
-            try w.word(@backingInt(l.calls));
+            try w.word(@backingInt(l.calls) | @as(u32, @intFromBool(l.answer_left)) << 2);
             try w.word(l.supplies.len);
             for (w.t.suppliesOf(l.supplies)) |s| {
                 try w.word(s.k | @as(u32, @intFromBool(s.each)) << 31 | @as(u32, @intFromBool(s.walk)) << 30);
@@ -325,9 +325,10 @@ const Reader = struct {
             const md = try r.decl();
             const off = try r.next();
             const calls = try r.next();
-            if (calls > 2) return error.BadBlock;
+            if (calls & 3 > 2 or calls > 7) return error.BadBlock;
             const li = try d.labelOf(r.arena, j, slot, .{ md[0], md[1], off });
-            d.labels.items[li].calls = @fromBackingInt(@intCast(calls));
+            d.labels.items[li].calls = @fromBackingInt(@intCast(calls & 3));
+            d.labels.items[li].answer_left = calls >> 2 != 0;
             for (0..try r.count()) |_| {
                 const s = try d.labels.items[li].supplyOfWord(r.arena, try r.next());
                 s.res.base = try node(nodes.items, try r.next());

@@ -1,0 +1,8 @@
+# v2 refuses an edit of a capture that left as a closure's result (§2.11.3).
+69:9 list_still_used List.push
+72:10 list_still_used List.push
+75:10 list_still_used List.push
+78:10 list_still_used List.push
+81:10 list_still_used List.push
+85:10 list_still_used List.push
+89:10 list_still_used List.push

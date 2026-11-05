@@ -1,0 +1,1 @@
+A capture that leaves as a closure's result (ownership-v2.md §2.11.3): built again under --ownership=v2 and the list stale-read sanitiser. v2 refuses each edit; asked nothing, the sanitised run traps on a stale read.

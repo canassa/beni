@@ -76,6 +76,8 @@ pub const Label = struct {
     slot: Rel,
     origin: [3]u32,
     calls: Calls = .none,
+    /// The callee lets its answer go: a value that holds it escapes (§2.11.3).
+    answer_left: bool = false,
     supplies: Range = .{},
 };
 
@@ -201,6 +203,7 @@ pub const Draft = struct {
         slot: Rel,
         origin: [3]u32,
         calls: Calls = .none,
+        answer_left: bool = false,
         supplies: std.ArrayList(DraftSupply) = .empty,
 
         /// A block's supply word: `k`, its top bit the `each` mark.
@@ -637,7 +640,7 @@ pub const Table = struct {
                 try made.append(gpa, .{ .k = s.k, .res_root = try t.putRes(gpa, slots, &s.res, rank), .kept = try t.putEffects(gpa, slots, s.kept.items), .cond = try t.putCond(gpa, slots, s.cond), .below = try t.putCond(gpa, slots, s.below), .each = s.each, .walk = s.walk });
             }
             try t.supplies.appendSlice(gpa, made.items);
-            try t.labels.append(gpa, .{ .j = l.j, .slot = l.slot, .origin = l.origin, .calls = l.calls, .supplies = .{ .start = sstart, .len = @intCast(made.items.len) } });
+            try t.labels.append(gpa, .{ .j = l.j, .slot = l.slot, .origin = l.origin, .calls = l.calls, .answer_left = l.answer_left, .supplies = .{ .start = sstart, .len = @intCast(made.items.len) } });
         }
         h.labels = .{ .start = lstart, .len = @intCast(d.labels.items.len) };
         try t.heads.append(gpa, h);
@@ -656,7 +659,7 @@ pub const Table = struct {
         try d.escapes.appendSlice(arena, t.effectsOf(h.escapes));
         for (t.storesOf(h.stores)) |s| try d.stores.append(arena, .{ .j = s.j, .slot = s.slot, .cond = try t.cond(arena, s.cond) });
         for (t.labelsOf(h.labels)) |l| {
-            var dl: Draft.DraftLabel = .{ .j = l.j, .slot = l.slot, .origin = l.origin, .calls = l.calls };
+            var dl: Draft.DraftLabel = .{ .j = l.j, .slot = l.slot, .origin = l.origin, .calls = l.calls, .answer_left = l.answer_left };
             for (t.suppliesOf(l.supplies)) |s| {
                 var ds: Draft.DraftSupply = .{ .k = s.k, .cond = try t.cond(arena, s.cond), .below = try t.cond(arena, s.below), .each = s.each, .walk = s.walk };
                 ds.res.base = s.res_root;
@@ -698,6 +701,7 @@ pub const Table = struct {
             const at = map[i];
             const dl = &d.labels.items[at];
             dl.calls = @fromBackingInt(@intCast(@max(@backingInt(dl.calls), @backingInt(l.calls))));
+            dl.answer_left = dl.answer_left or l.answer_left;
             for (t.suppliesOf(l.supplies)) |s| {
                 const had = for (dl.supplies.items) |x| {
                     if (x.k == s.k) break true;
@@ -739,7 +743,7 @@ pub const Table = struct {
         if (x.stores.len != y.stores.len or x.labels.len != y.labels.len) return false;
         for (t.storesOf(x.stores), t.storesOf(y.stores)) |p, q| if (p.j != q.j or p.slot != q.slot or !t.condEql(p.cond, q.cond)) return false;
         for (t.labelsOf(x.labels), t.labelsOf(y.labels)) |p, q| {
-            if (p.j != q.j or p.slot != q.slot or !std.mem.eql(u32, &p.origin, &q.origin) or p.calls != q.calls) return false;
+            if (p.j != q.j or p.slot != q.slot or !std.mem.eql(u32, &p.origin, &q.origin) or p.calls != q.calls or p.answer_left != q.answer_left) return false;
             if (p.supplies.len != q.supplies.len) return false;
             for (t.suppliesOf(p.supplies), t.suppliesOf(q.supplies)) |s, u| {
                 if (s.each != u.each or s.walk != u.walk or !t.condEql(s.below, u.below)) return false;

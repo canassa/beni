@@ -367,7 +367,7 @@ pub const Group = struct {
             const ls = contracts.labelsOf(h.labels);
             try p.append(g, @intCast(ls.len));
             for (ls) |l| {
-                try p.appendSlice(g, &.{ l.j, l.slot, l.origin[0], l.origin[1], l.origin[2], @backingInt(l.calls) });
+                try p.appendSlice(g, &.{ l.j, l.slot, l.origin[0], l.origin[1], l.origin[2], @backingInt(l.calls) | @as(u32, @intFromBool(l.answer_left)) << 2 });
                 const ss = contracts.suppliesOf(l.supplies);
                 try p.append(g, @intCast(ss.len));
                 for (ss) |s| {
@@ -381,7 +381,7 @@ pub const Group = struct {
             try putRes(p, g, &d.res);
             try p.append(g, @intCast(d.labels.items.len));
             for (d.labels.items) |l| {
-                try p.appendSlice(g, &.{ l.j, l.slot, l.origin[0], l.origin[1], l.origin[2], @backingInt(l.calls), @intCast(l.supplies.items.len) });
+                try p.appendSlice(g, &.{ l.j, l.slot, l.origin[0], l.origin[1], l.origin[2], @backingInt(l.calls) | @as(u32, @intFromBool(l.answer_left)) << 2, @intCast(l.supplies.items.len) });
                 for (l.supplies.items) |*s| {
                     try p.append(g, s.k);
                     try putRes(p, g, &s.res);
