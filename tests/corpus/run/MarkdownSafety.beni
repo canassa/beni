@@ -1,0 +1,37 @@
+-- run: `Html.Markdown` puts no element, attribute or script of the text's own
+-- into a page (docs/design/markdown.md §6). The six article-body payloads
+-- of the RealWorld e2e suite (specs/e2e/xss-security.spec.ts:66) are raw
+-- HTML, shown as text (§6.1). A link's or an image's script URL, in each
+-- spelling `safeUrl`'s pattern names, is written as "" (§6.2). A character
+-- reference decodes to text, never to a tag (§6.3).
+import Html.Markdown
+import Node exposing (Program)
+import Ssr
+
+
+show : String → String
+show text = "${text}\n  ${Ssr.render (Html.Markdown.fromString text)}"
+
+
+payload : String → String
+payload p = show ("Before payload: ${p} After payload")
+
+
+main : Program
+main =
+    Node.printLines
+        [ payload "<script>alert(1)</script>"
+        , payload "<img src=x onerror=\"alert(1)\">"
+        , payload "<svg onload=\"alert(1)\">"
+        , payload "<iframe srcdoc=\"<script>alert(1)</script>\">"
+        , payload "<a href=\"javascript:alert(1)\">click me</a>"
+        , payload "<div onmouseover=\"alert(1)\">hover me</div>"
+        , show "<script>\nalert(1)\n</script>"
+        , show "[a](javascript:alert(1)) [b](JaVaScRiPt:alert(1)) [c](&#106;avascript:alert(1))"
+        , show "[d](<javascript:alert(1)>) <javascript:alert(1)> [e](data:text/html,<b>x</b>)"
+        , show "![f](javascript:alert(1)) ![g](data:text/html;base64,PHNjcmlwdD4=)"
+        , show "[h][ref]\n\n[ref]: javascript:alert(1)"
+        , show
+            "&lt;script&gt;alert(1)&lt;/script&gt; `<script>` and\n\n    <script>alert(1)</script>"
+        , show "[safe](https://example.com/a?b=1&c=2 \"t\") ![safe](/img.png)"
+        ]

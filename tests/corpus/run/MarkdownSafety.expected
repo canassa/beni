@@ -1,0 +1,35 @@
+Before payload: <script>alert(1)</script> After payload
+  <p>Before payload: &lt;script>alert(1)&lt;/script> After payload</p>
+Before payload: <img src=x onerror="alert(1)"> After payload
+  <p>Before payload: &lt;img src=x onerror="alert(1)"> After payload</p>
+Before payload: <svg onload="alert(1)"> After payload
+  <p>Before payload: &lt;svg onload="alert(1)"> After payload</p>
+Before payload: <iframe srcdoc="<script>alert(1)</script>"> After payload
+  <p>Before payload: &lt;iframe srcdoc="&lt;script>alert(1)&lt;/script>"> After payload</p>
+Before payload: <a href="javascript:alert(1)">click me</a> After payload
+  <p>Before payload: &lt;a href="javascript:alert(1)">click me&lt;/a> After payload</p>
+Before payload: <div onmouseover="alert(1)">hover me</div> After payload
+  <p>Before payload: &lt;div onmouseover="alert(1)">hover me&lt;/div> After payload</p>
+<script>
+alert(1)
+</script>
+  <p>&lt;script>
+alert(1)
+&lt;/script></p>
+[a](javascript:alert(1)) [b](JaVaScRiPt:alert(1)) [c](&#106;avascript:alert(1))
+  <p><a href="">a</a> <a href="">b</a> <a href="">c</a></p>
+[d](<javascript:alert(1)>) <javascript:alert(1)> [e](data:text/html,<b>x</b>)
+  <p><a href="">d</a> <a href="">javascript:alert(1)</a> <a href="">e</a></p>
+![f](javascript:alert(1)) ![g](data:text/html;base64,PHNjcmlwdD4=)
+  <p><img src="" alt="f"> <img src="" alt="g"></p>
+[h][ref]
+
+[ref]: javascript:alert(1)
+  <p><a href="">h</a></p>
+&lt;script&gt;alert(1)&lt;/script&gt; `<script>` and
+
+    <script>alert(1)</script>
+  <p>&lt;script>alert(1)&lt;/script> <code>&lt;script></code> and</p><pre><code>&lt;script>alert(1)&lt;/script>
+</code></pre>
+[safe](https://example.com/a?b=1&c=2 "t") ![safe](/img.png)
+  <p><a href="https://example.com/a?b=1&amp;c=2" title="t">safe</a> <img src="/img.png" alt="safe"></p>
