@@ -6083,6 +6083,27 @@ it is worth compiling.
   `mi`, `mo`, `mn`, `ms`, `mtext` and `annotation-xml` as its integration points, written when its
   vocabulary is.
 
+*Amended 2026-11-05* (#1074). **`<feOffset>` takes `dx` and `dy`**, which the list above left on `text`
+and `tspan` only. Without them the standard drop-shadow recipe (`feGaussianBlur`, `feOffset`, `feMerge`)
+needs the quoted escape `"dy"="3"`, a `String` the build never checks. **`<feDropShadow>` is declared**,
+the first element that elm/svg does not have. It is Filter Effects 1's (§9.12), and every current
+browser draws it. The facts, each from Filter Effects 1 (W3C Working Draft, 18 December 2018):
+
+- `feDropShadow` is an element `svg`, as the other filter primitives are.
+- It is in the `on` lists of `x`, `y`, `width`, `height` and `result`, the attributes of every filter
+  primitive (§9.2), and of `in`, which its attribute list names (§9.12).
+- `dx` and `dy` are on `feOffset` (§9.18) and `feDropShadow` (§9.12), added to the `on` list of the one
+  `dx` and `dy` declarations of `text` and `tspan`. `stdDeviation` is on `feGaussianBlur` (§9.14) and
+  `feDropShadow` (§9.12).
+- `flood-color` and `flood-opacity` apply to `feFlood` and `feDropShadow` (§9.13.1, §9.13.2). They are
+  presentation attributes, which (c) declares for every element, so they need no change.
+- Every value is a `String`, as (b) says of every SVG attribute. The type of each copies the declaration
+  it joins. The specification's types are `<number>` for `dx` and `dy`, `<number-optional-number>` for
+  `stdDeviation` (`"1.5 3"`) and `<alpha-value>` for `flood-opacity`. A `Float` would refuse the
+  second number of `stdDeviation` and a percentage `flood-opacity`.
+
+The element count of (g) is 59, and the count of attribute declarations does not change.
+
 **(h) What it costs.** A page without SVG does not move a byte: no runtime changed, and every `emit/`
 golden and `run/` record is what it was. A markup program reads a vocabulary of 410 declarations where it
 read 180, and **pays for it linearly**. Two quadratic costs were found and removed. The type table gave every
