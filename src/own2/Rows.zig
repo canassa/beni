@@ -231,6 +231,7 @@ pub fn fromWords(env: Env, sig: Signature) Error!Contract.Id {
             known_result = true;
         } else if ((Env.has(rw, .elementof) or Env.has(rw, .taken)) and sig.params.len >= 1) {
             // `taken`: one element of `π1`, the traversal's (§2.13.6).
+            d.flags.taken = Env.has(rw, .taken);
             if (try env.places.extend(env.gpa, .growth(env.account), try env.root(sig.params[0].place), Place.Step.elem)) |pe| try env.identity(&d, r, 0, pe);
             known_result = true;
         } else if (Env.has(rw, .copyof) and sig.params.len >= 1) {

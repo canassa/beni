@@ -13,6 +13,9 @@ const Ids = @import("Ids.zig");
 const Slots = @import("Slots.zig");
 const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
+const Place = @import("Place.zig");
+const Value = @import("Value.zig");
+const Taken = @import("Taken.zig");
 
 const Error = Relation.Error;
 const Eval = Relation.Eval;
@@ -20,8 +23,21 @@ const Proj = Relation.Proj;
 const none: u32 = Ids.none_int;
 
 /// A call that passes the frame's label at function slot `π_j·slot` on as
-/// the callee's label `label`.
-pub const Feed = struct { j: u32, slot: Slots.Rel, label: u32 };
+/// the callee's label `label`; `covered`: what `covering` found.
+pub const Feed = struct { j: u32, slot: Slots.Rel, label: u32, covered: u32 = none };
+
+/// The argument of call `cl` whose elements condition `c` selects plain
+/// and deep (`π{[*]*}`), else `none`: an answer of the label to an element
+/// taken out of it holds that element (among them) or what the function
+/// holds (`replace` asks it apart), §2.11.3 *A taken supply*.
+pub fn covering(e: *Eval, c: Contract.Cond, cl: Value.Call) u32 {
+    for (c.sel) |o| {
+        if (Contract.isApart(o) or !Contract.isDeep(o) or Contract.isFed(o) or Contract.occParam(o) >= cl.args.len) continue;
+        const ws = e.f.slots.relWords(Contract.occRel(o));
+        if (ws.len == 1 and ws[0] == Place.Step.elem.word()) return cl.args[Contract.occParam(o)];
+    }
+    return none;
+}
 
 /// The direct label call (`cbs`) whose answer leaf `li` is, when its
 /// function is the frame's slot `fd`.
@@ -40,14 +56,55 @@ pub fn answerOf(e: *Eval, li: u32, fd: Feed) ?u32 {
 /// argument `k`, what that call was handed as `k`, deep (appended to `ps`),
 /// and the `fed` occurrence it asks (appended to `fed`). False: `p` itself.
 pub fn replace(e: *Eval, p: Proj, o: u64, k: ?u32, feed: Feed, ps: *std.ArrayList(Proj), fed: *std.ArrayList(u64)) Error!bool {
-    const kk = k orelse return false;
-    const ci = answerOf(e, p.leaf, feed) orelse return false;
+    const ci = answerOf(e, p.leaf, feed) orelse return try through(e, p, o, feed, ps, fed);
+    // Held anywhere else (a builder's element): covered, or itself.
+    const kk = k orelse return try coveredAsks(e, ci, feed, fed);
     if (kk >= e.f.cbs.items[ci].args.len) return false;
     var sub: std.ArrayList(Proj) = .empty;
     defer sub.deinit(e.gpa());
     try e.project(e.f.cbs.items[ci].args[kk], &.{}, true, 0, p.route, &sub);
     for (sub.items) |q| try ps.append(e.gpa(), .{ .leaf = q.leaf, .route = q.route, .occ = o, .routes = p.routes });
     try fed.append(e.arena, Contract.occFed(feed.j, feed.slot, kk));
+    return true;
+}
+
+/// Whether the answer of direct label call `ci` is covered (`covering`):
+/// the one argument of the call that holds objects is an element taken out
+/// of `feed.covered`. It is read as a part of those elements, and what the
+/// function holds as apart from every plain object (`π_j·slot*~`, in `fed`).
+fn coveredAsks(e: *Eval, ci: u32, feed: Feed, fed: *std.ArrayList(u64)) Error!bool {
+    if (!covered(e, ci, feed)) return false;
+    try fed.append(e.arena, Contract.occDeep(Contract.occApart(feed.j, feed.slot)));
+    return true;
+}
+
+fn covered(e: *Eval, ci: u32, feed: Feed) bool {
+    if (feed.covered == none) return false;
+    var got: ?u32 = null;
+    for (e.f.cbs.items[ci].args) |a| if (e.f.val(a).kind != .scalar) {
+        if (got != null) return false;
+        got = a;
+    };
+    return Taken.containerOf(e.f, e.contracts, got orelse return false) == feed.covered;
+}
+
+/// A call's answer that holds a covered answer (`put b i (f x)`, a builder
+/// handed on): read as what the call answers, one level, the covered
+/// answer dropped and every other part itself. False: it holds none.
+fn through(e: *Eval, p: Proj, o: u64, feed: Feed, ps: *std.ArrayList(Proj), fed: *std.ArrayList(u64)) Error!bool {
+    if (feed.covered == none) return false;
+    const l = e.f.leafAt(p.leaf);
+    if (l.kind != .ref or e.f.roots.items[l.root].kind != .call) return false;
+    var ls: std.ArrayList(u32) = .empty;
+    defer ls.deinit(e.gpa());
+    try e.expand(p.leaf, &ls);
+    for (ls.items) |x| {
+        if (if (answerOf(e, x, feed)) |ci| covered(e, ci, feed) else false) break;
+    } else return false;
+    for (ls.items) |x| {
+        if (answerOf(e, x, feed)) |ci| if (try coveredAsks(e, ci, feed, fed)) continue;
+        try ps.append(e.gpa(), .{ .leaf = x, .route = p.route, .occ = o, .routes = p.routes });
+    }
     return true;
 }
 

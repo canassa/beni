@@ -90,7 +90,11 @@ pub const Flags = packed struct(u8) {
     once: bool = false,
     words: bool = false,
     pessimistic: bool = false,
-    _pad: u3 = 0,
+    /// A `taken` result (§2.13.6, `traverseAt`): one element of parameter
+    /// 1, read through the certified traversal, so a holder of that
+    /// container holds the others for the rest of the frame (§2.11.3).
+    taken: bool = false,
+    _pad: u2 = 0,
 };
 
 pub const Head = struct {
