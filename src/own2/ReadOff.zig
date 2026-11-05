@@ -923,8 +923,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
         // Calls add up: a label the frame calls and also hands on
         // (`[ f x, …myMap rest f ]`), or hands to two calls, may run more
         // than once per activation, whatever each source says alone.
-        // Passed on inside a known code an outer label runs (`λv → f v`
-        // handed to `List.map`), it runs as often as that label (#1721).
+        // Inside a known code an outer label runs, it runs as often (#1721).
         const lc: Contract.Calls = if (lab.calls != .none and Outward.outwardMany(e, p[1])) .many else lab.calls;
         dl.calls = if (lc == .none) dl.calls else if (dl.calls == .none) lc else .many;
         // The supplies at this call's function type: a callee's supply slot
@@ -952,6 +951,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
             _ = try d.labels.items[at].supplyOf(arena, su.k);
             for (es.items.items) |x| {
                 const rel = f.slots.rels.find(es.wordsOf(x)) orelse try f.slots.relOfWords(gpa, f.account, f.places, es.wordsOf(x));
+                if (x.open and !at_site) try Contract.Draft.markOpen(&(try d.labels.items[at].supplyOf(arena, su.k)).res, arena, rel);
                 for (x.arrivals) |a| {
                     var ls: std.ArrayList(u32) = .empty;
                     defer ls.deinit(gpa);
