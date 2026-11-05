@@ -1523,6 +1523,20 @@ day: `Basics.eq` is no longer one. The `undetermined` leaf it answered is `===` 
 since `Basics.eq` dispatches like `==` â `static-dispatch-spike.md` Â§3.1, amended â so a comparison
 reaches for `String.compare` alone.)*
 
+**Typed append (amended 2026-11-05, Closes #1807).** When checking knows
+that ++ takes lists or strings, it checks the typed List.append or String.append
+signature, matching the existing backend choice without importing an erasure
+obligation from Basics.append. A genuinely appendable-polymorphic call keeps
+Basics.append's public signature and its existing representation: string + for
+strings, otherwise plain-array concat, fresh even for an empty operand. Core's
+private compiler-owned appendTyped intrinsic takes aliased appendable operands
+and returns a fresh appendable result. Fresh describes the new outer array;
+contained mutable values still alias their inputs. No operand crosses Js.Value.
+The intrinsic is available only to core, with app/platform refusal fixtures and
+pinned lowering/helper bodies. Development and release JavaScript stay byte-identical.
+The existing CorePrivate fence also filters method-name hints and generated API
+references: an application is never offered this private implementation name.
+
 #### Identity: what an operation returns unchanged
 
 *Amended 2026-10-15 (*The representation: a plain array*, above):* the trie-header bullets below
@@ -2906,33 +2920,11 @@ imports writes one, and `dump --stage=graph` shows no edge for its literals).
 
 ### `Js.method` is a `function`
 
-*Added 2026-10-02, the owner's decision on research 50 Â§7* (`boundary.md` Â§4.2). `Js.method
-Î»self â body` lowers the lambda as an arrow and then makes it a `function` of no parameters whose
-first statement is `const self = this` (`Lower.methodFunc`): JsIr's `arrow` with the flavour
-`arrow_method`, its body read by every pass as an arrow's, and the leaf `this_lit`, handled
-wherever `global_this` is. Both printers write it `function(){â¦}` with a block body â an arrow's
-`this` is not the receiver's â and `--release`'s single-use inlining may write a `self` read once
-in the method's own statements as `this`, never one read in a nested arrow, whose statements it does
-not enter; an arrow nested in the method reads the receiver through the name. `this_lit` is not an
-atom (`Lower.isAtom`), so no argument substitution can carry it into another function.
-
-**An object holding a method is one object** (the specialiser, Â§9). A method reads and writes its
-receiver through `this`, which the points-to pass cannot follow to a site, so:
-
-- an object literal one of whose keys may hold an `arrow_method` function, and an object one is
-  written into, **escape**, as does the method's site â no key of it is unread, no call of the
-  method is resolved or inlined (`Pts.holdsMethod`);
-- **scalar replacement** never splits an object whose key holds one, written in place or the value
-  of the top-level `const` it names (`methodValue`), and never one with a key read as a call's
-  callee, `x.k(â¦)`, unless that key's value is an arrow written in place, which cannot read `this`:
-  splitting it would call the function with no receiver.
-
-Without them, `run/JsMethod`'s release build dropped the counter's `n` and called the methods
-with `this` undefined. Fixtures: `emit/core/JsMethod` and `emit/release/core/JsMethod` (a view's
-`$plain` shape, a method that only reads â `this` in place under `--release` â and one whose
-receiver an arrow reads), `run/JsMethod` (a method writing its receiver, one read through a nested
-arrow, a method making an object with a method of its own, one caching on its receiver; both
-builds), `check/bad/core/MethodSuspends` (`sync_boundary`).
+*Withdrawn 2026-11-05 (review of #2001).* Core no longer exports
+`Js.method`: its purpose was to put a beni callback into an untyped host
+value, which violates the default host boundary. Typed platform siblings
+implement host-owned receiver methods. The old receiver and nested-arrow
+examples are historical; there is no remaining source path to this lowering.
 
 ### The comparisons are operators
 
@@ -4688,6 +4680,19 @@ development), its `indexedMap` no longer reaching `range`, `length` and `map2`.
 
 ## 9. The optimiser, ranked by compressed bytes
 
+**Implicit core helpers (amended 2026-11-05, Closes #1807).** A compiler-owned
+intrinsic may call a core helper without a BIR reference. One registration owns
+the helper identity, dependency and whether its returned value is observed.
+Reach consumes that registration to keep the helper alive; Lower.findUnobserved
+consumes the same result-use fact so an implicit caller cannot lose the helper's
+returns. Selection remains specific to the intrinsic/recipe/protocol, not a
+global suppression of unread-result elimination. No artificial source read is
+needed. This includes generic append's Basics.plain, Opt sentinel/boxing helpers,
+Any's packet producer, and the suspension protocol; the existing implicit list
+reader/view/append helpers retain their registered result use. Conditional boxed
+Opt helpers are retained only on the paths that need them.
+
+
 Report 12 ranked these by what they are worth **after compression**, which inverts the raw-byte
 ranking. Build them in this order:
 
@@ -6324,9 +6329,8 @@ evaluation, which is true of a name JavaScript never rebinds after its binding:
   hand-written function may read `arguments` or `this` where emitted code never does, and a host
   that holds the value may call it with more arguments than the lambda took — `then`, `replaceAll`,
   a listener — which the lambda dropped and `f` would receive. An emitted function has no rest or
-  default parameter and reads no `arguments`; it reads `this` only when `Js.method` made it, and
-  such a function is a `Js.Value`, which only a `Js.apply` calls (the rule below). So an emitted
-  callee is the same function to every caller; a sibling is not promised to be. Only the join
+  default parameter and reads no `arguments` or `this` (`Js.method` was withdrawn
+  2026-11-05). So an emitted callee is the same function to every caller; a sibling is not promised to be. Only the join
   knows which names are such imports (a
   specifier whose imported name is not its local one, `Emit.markHandWritten`), so the veto is the
   printer's: `Print.resolve` leaves an arrow whose recorded callee is one as the arrow it is.
@@ -9245,7 +9249,7 @@ worker, and the snapshot's and the widgets' workers it calls, stayed, each makin
 or a record only for its caller to test and read. Six extensions take the site. With them each
 constructor's `return` of the worker becomes the body of its arm, the failure mark's `return`
 becomes the `Err` arm, and no fail mark is compared. Each is exact:
-- **A rest that makes a function.** `R` may hold a plain arrow (not `Js.method`'s) whose body is
+- **A rest that makes a function.** `R` may hold a plain arrow whose body is
   statements of the same kind as `R`'s, with no function of its own. A copy names its parameters
   and its declarations afresh. Such a function may run later, and more than once, so it may not
   mention `x`, which a copy writes in place. It may mention an alias of `x`, which a copy binds
@@ -9590,7 +9594,7 @@ root or an edge:
    (â¤, or an escaped site) escapes. An escaped site escapes everything it holds (`propagate`),
    and an escaped function is a root. A call of an unknown callee escapes its arguments and its
    receiver, so `stack.pop()` on the fiber runtime's array escapes the frames in it. A var that
-   becomes â¤ escapes every site it held or later holds (`makeTop`). `Js.method` makes a function
+   becomes â¤ escapes every site it held or later holds (`makeTop`). A method-form IR node makes a function
    JavaScript calls with a receiver, and writing one escapes it and its object (`holdsMethod`).
 4. **A key the host reads unasked** (`toJSON`, `toString`, `valueOf`): a function held under one
    is a root.

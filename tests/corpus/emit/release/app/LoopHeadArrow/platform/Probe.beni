@@ -1,0 +1,15 @@
+-- The numeric binding contains a callback that reads x. Moving its
+-- initializer into the loop head would capture the loop binding named x.
+-- The release golden pins the callback outside for(let a of[c]).
+import Js
+
+
+foreign pure compute : sync (⊤ → Int) → Int
+
+
+pub probe : Int → Int
+probe x =
+    acc = Js.ref 0
+    c = Js.from (compute λ⊤ → x)
+    Js.each (Js.array [ c ]) λg → Js.write acc (Js.read acc + Js.to g)
+    Js.read acc

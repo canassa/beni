@@ -1,0 +1,5 @@
+-- A raw callback-producing method cannot bypass the typed host boundary.
+import Js
+
+
+pub bad = Js.method

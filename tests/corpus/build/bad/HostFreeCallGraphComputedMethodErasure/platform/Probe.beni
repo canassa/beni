@@ -1,0 +1,18 @@
+--! A test platform that keeps a function in a JavaScript array and takes
+--! it out again by a method whose name is not a literal: `frames[name]()`
+--! (#685). The release specialiser's call graph must count the function as
+--! called. Fact 3 reads the method of an array as anything, and calling it
+--! escapes the receiver, and so the function the array holds, whichever way
+--! the method's name is written.
+
+import Js
+
+
+--| `f n`, with `f` kept in an array and taken out by `pop`, a name made
+--| at run time.
+pub viaComputed : (Int → Int), Int → Int
+viaComputed f n =
+    frames = Js.array [ Js.from f ]
+    name = Js.call (Js.from "pop") "toString" []
+    g = Js.call frames (Js.to name) []
+    Js.to (Js.apply g [ Js.from n ])

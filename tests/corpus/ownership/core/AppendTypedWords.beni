@@ -1,0 +1,35 @@
+-- A fresh outer list still holds aliases to mutable elements.
+-- The aliased words are conservative about the outer array too.
+import Basics
+
+
+pub outer : Int → Int
+outer number =
+    original = [ number ]
+    combined = Basics.appendTyped original []
+    grown = List.push combined 2
+    List.length original + List.length grown
+
+
+pub nested : Int → Int
+nested number =
+    inner = [ number ]
+    combined = Basics.appendTyped [ inner ] []
+    grown = List.push inner 2
+    case combined of
+        [ kept ] →
+            List.length kept + List.length grown
+        _ →
+            0
+
+
+pub right : Int → Int
+right number =
+    inner = [ number ]
+    combined = Basics.appendTyped [] [ inner ]
+    grown = List.push inner 2
+    case combined of
+        [ kept ] →
+            List.length kept + List.length grown
+        _ →
+            0

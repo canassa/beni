@@ -8,8 +8,7 @@ import Js
 pub foreign type Program
 
 
-pub program : sync (⊤ → ⊤) → Program
-program init = Js.to (Js.object [ ( "$init", Js.from init ) ])
+pub foreign pure program : sync (⊤ → ⊤) → Program
 
 
 pub text : String → ⊤

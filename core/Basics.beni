@@ -18,19 +18,17 @@
 --! order a `String`, a record or a list as readily as a number, and `==`
 --! calls that type's `eq` the same way.
 --!
---! **Nothing here is `foreign`** but the two number types, and there is no
---! `Basics.js`: every function is beni, most of it over `Js` (`boundary.md`
---! §4.2). The operators no longer route through `eq`, `neq`, `lt`, `gt`, `le`
+--! The number types and private typed append implementation are `foreign`.
+--! There is no `Basics.js`: append is compiler-owned; the other functions
+--! are beni, most of them over `Js` (`boundary.md` §4.2). The operators no longer route through `eq`, `neq`, `lt`, `gt`, `le`
 --! or `ge` — they dispatch on the receiver's type instead — but all seven,
 --! `compare` included, stay declared, exported and callable by name.
 --!
 --! `eq` and `neq` are `==` and `≠` themselves: their `where` clause hands
 --! them the receiver type's own `eq`, so called by name they answer what
 --! the operator answers (`static-dispatch-spike.md` §3.1, amended
---! 2026-10-02). `append` — concatenation over two representations — asks
---! a value's JavaScript `typeof` with `Js.typeIs`, which writes the type's
---! name in place: a `"string"` of this module's own would be a `String`,
---! and `Basics` is below `String`.
+--! 2026-10-02). `append` uses its typed compiler implementation: string
+--! addition or fresh plain-array concatenation, with no value erasure.
 --!
 --! The operators `add` `sub` `mul` `fdiv` `pow` `lt` `gt` `le` `ge` `and`
 --! `or` are beni whose body is the operator itself: `add a b = a + b`. A
@@ -243,23 +241,11 @@ or a b = a || b
 --|
 --| What `++` desugars to.
 pub append : appendable, appendable → appendable
-append a b =
-    -- A `++` the checker knows to be on lists calls `List.append` instead
-    -- (`backend.md` §4), so the list half serves code generic over
-    -- `appendable`: a fresh plain array, even when one side is empty
-    -- (`backend.md` §4, *Identity*, amended 2026-10-13).
-    Js.pure λ⊤ →
-        if Js.typeIs (Js.from a) "string" then
-            -- Strings, read as numbers only so that `+` can be written:
-            -- JavaScript's `+` of two strings is their concatenation.
-            s : Int
-            s = Js.to (Js.from a)
+append = appendTyped
 
-            t : Int
-            t = Js.to (Js.from b)
-            Js.to (Js.from (s + t))
-        else
-            Js.to (Js.call (plain (Js.from a)) "concat" [ plain (Js.from b) ])
+
+-- Private typed implementation of the generic string/list representation.
+pub foreign pure appendTyped : aliased appendable, aliased appendable → fresh appendable
 
 
 --| Convert an integer into a float.

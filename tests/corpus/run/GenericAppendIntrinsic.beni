@@ -1,0 +1,13 @@
+-- The generic append intrinsic must keep its implicit plain helper's returns.
+import Node
+
+
+glue : appendable, appendable → appendable
+glue first second = first ++ second
+
+
+main : Node.Program
+main =
+    words = glue "typed" "!"
+    numbers = glue [ 1, 2 ] [ 3 ]
+    Node.print (words ++ ":" ++ String.fromInt (List.sum numbers))

@@ -166,19 +166,20 @@ summary. Interfaces carry availability and deferred generic dependencies, even w
 defining build has no native operation; imported and cached summaries must not
 depend on unrelated modules in that build.
 Interface format 20 combines Wire paths with realm class words, initializer
-availability, the dormant HostFree quantifier bit and realm-only callback
+availability, the HostFree quantifier bit and realm-only callback
 dependencies. Wire and HostFree use distinct quantifier bits. Dispatch format 16
 carries entry/initializer availability. EntryHost checks each emitted projection before output.
 
-HostFree is implemented behind an internal Session option, off by default
-until typed Task storage (#1615) and the dependent callback queues are ready.
-Meanwhile, realm inference treats callable values erased by Js.from as called
-in the enclosing declaration, covering Task.start work. Every callback in a
+**Amended 2026-11-05, Closes #1807:** HostFree applies by default to every
+ordinary check, build and serve, with no opt-out for applications, core or
+platforms. Js.Value carries plain dynamic data; Js.from and Js.to refuse native
+handles and callable values, including nested or imported generic payloads.
+Typed Task, renderer, queue and platform storage preserve those real types.
+Realm inference independently attributes stored callbacks to their writer. Every callback in a
 foreign parameter contributes availability to that foreign's own class. These
 realm dependencies do not change purity or suspension inference. It walks
 representations, including opaque constructors, and retains generic requirements
-in interfaces and through the quantified-use/copy worklist. No CLI flag exposes
-this rollout option. Browser Http/WebSocket UTF-8 length helpers use the new
+in interfaces and through the quantified-use/copy worklist. Pre-rollout cache entries use a separate key domain; there is no rollout flag. Browser Http/WebSocket UTF-8 length helpers use the new
 native operations; remaining native migration is tracked in
 [#1636](https://github.com/canassa/beni/issues/1636).
 The HostFree representation facts are immutable before the checker DAG runs;

@@ -1,0 +1,25 @@
+import Js
+
+
+pub type alias Model =
+    Js.Cell { count : Int, text : String }
+
+
+pub make : ⊤ → Model
+make ⊤ = Js.cell { count = 0, text = "v0" }
+
+
+pub next : Model → Model
+next model =
+    count = Js.cellRead model .count + 1
+    Js.cellWrite model count .count
+    Js.cellWrite model ("v" ++ String.fromInt count) .text
+    model
+
+
+pub text : Model → String
+text model = Js.cellRead model .text
+
+
+pub checked : Model → Bool
+checked model = Int.mod (Js.cellRead model .count) 2 == 0

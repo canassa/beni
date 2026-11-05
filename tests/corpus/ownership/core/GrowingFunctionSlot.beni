@@ -1,10 +1,15 @@
 import Js
+import Js.Any as Any
 
 
-pub loop : Int, a, Js.Value → Js.Value
+pub loop : Int, a, Any.Any → Js.Value
 loop n value host =
-    reader : { f : a → Js.Value }
-    reader = Js.to host
+    reader =
+        case read host of
+            Just found →
+                found
+            Nothing →
+                { f = λ_ → Js.null }
     if n == 0 then
         reader.f value
     else
@@ -18,3 +23,7 @@ constant n value =
         Js.from [ value ]
     else
         constant (n - 1) [ 0 ]
+
+
+read : Any.Any → Maybe { f : a → Js.Value }
+read packet = Any.unpack packet

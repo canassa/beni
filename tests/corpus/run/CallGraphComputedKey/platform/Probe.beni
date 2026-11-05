@@ -1,7 +1,8 @@
 --! A test platform that reads a function field of a record by a key made
---! at run time, `r[name]`, and calls it (#685). The release specialiser's
+--! at run time in a typed key map, and calls it (#685). The release specialiser's
 --! call graph must count the function as called.
 
+import Browser.Host.KeyMap as KeyMap
 import Js
 
 
@@ -9,5 +10,7 @@ import Js
 pub viaKey : { f : Int → Int }, Int → Int
 viaKey r n =
     name = Js.call (Js.from "f") "toString" []
-    g = Js.get (Js.from r) (Js.to name)
-    Js.to (Js.apply g [ Js.from n ])
+    fields = KeyMap.make ⊤
+    KeyMap.set fields "f" r.f
+    g = KeyMap.getOr fields (Js.to name) λx → x
+    g n

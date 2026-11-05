@@ -496,3 +496,6 @@ browser Rt.rootConnection ownership/core/RootPlanWords.beni - Rt.singleRootRende
 browser Rt.rootConnection.createRoot ownership/core/RootPlanWords.beni - Rt.singleRootRenderer
 browser Rt.rootConnection.nodeRoot ownership/core/RootPlanWords.beni - Rt.singleRootRenderer
 browser Rt.rootConnection.patchRoot ownership/core/RootPlanWords.beni - Rt.singleRootRenderer
+
+# Fresh outer concat; element aliases remain explicit in both operands.
+core Basics.appendTyped ownership/core/AppendTypedWords.beni 1:aliased>borrowed|2:aliased>borrowed

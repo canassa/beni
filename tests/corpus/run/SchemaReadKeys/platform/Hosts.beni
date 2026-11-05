@@ -21,45 +21,18 @@ getters ⊤ =
     y = Js.ref 3
     kind = Js.ref 0
     proto = Js.object []
-    _ =
-        Js.call (Js.global "Object") "defineProperty"
-            [ proto
-            , Js.from "x"
-            , Js.object
-                [ ( "get"
-                  , Js.from λ⊤ →
-                      next = Js.read x + 1
-                      Js.write x next
-                      next
-                  )
-                ]
-            ]
-    _ =
-        Js.call (Js.global "Object") "defineProperty"
-            [ proto
-            , Js.from "y"
-            , Js.object
-                [ ( "get"
-                  , Js.from λ⊤ →
-                      next = Js.read y + 1
-                      Js.write y next
-                      next
-                  )
-                ]
-            ]
-    _ =
-        Js.call (Js.global "Object") "defineProperty"
-            [ proto
-            , Js.from "kind"
-            , Js.object
-                [ ( "get"
-                  , Js.from λ⊤ →
-                      next = Js.read kind + 1
-                      Js.write kind next
-                      if next == 1 then "own" else "changed"
-                  )
-                ]
-            ]
+    defineGetter proto "x" λ⊤ →
+        next = Js.read x + 1
+        Js.write x next
+        next
+    defineGetter proto "y" λ⊤ →
+        next = Js.read y + 1
+        Js.write y next
+        next
+    defineGetter proto "kind" λ⊤ →
+        next = Js.read kind + 1
+        Js.write kind next
+        if next == 1 then "own" else "changed"
     Js.to (Js.call (Js.global "Object") "create" [ proto ])
 
 
@@ -92,3 +65,6 @@ polluted ⊤ =
     proto = Js.get (Js.global "Object") "prototype"
     Js.set proto "y" (Js.from 7)
     Js.to (Js.object [ ( "x", Js.from 9 ) ])
+
+
+foreign impure defineGetter : Js.Value, String, sync (⊤ → a) → ⊤

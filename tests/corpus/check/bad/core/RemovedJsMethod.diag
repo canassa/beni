@@ -1,0 +1,1 @@
+[{"code":"unknown_import_name","severity":"error","span":{"file":"tests/corpus/check/bad/core/RemovedJsMethod.beni","start":{"line":5,"col":11},"end":{"line":5,"col":20}},"title":"UNKNOWN IMPORT NAME","message":"`Js` does not expose `method`.\n\nCheck the spelling, or check that the declaration in `Js` is marked `pub`."}]

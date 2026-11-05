@@ -81,6 +81,8 @@ pub const Node = struct {
         /// `a` = the target; the type is the one the reference at `region`
         /// names (`Instantiate.reference`), copied.
         reference,
+        /// An in-place raw host value: a is its type variable; b is the call.
+        raw_host,
         /// `a` = `extra` index of a `Let`.
         let_,
         /// `a` = start, `b` = count into `Tree.binders`: occurs-check them now.

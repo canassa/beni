@@ -1,6 +1,6 @@
 --! Keys the host reads with no member expression (`backend.md` §9, fact 3).
---! An arrow is not `Js.method`, so the object does not escape. `pad` is an
---! ordinary key nothing reads.
+--! Host-owned coercion functions come from the sibling. Their implicit
+--! valueOf/toString keys must remain observable; pad is an ordinary field.
 
 import Js
 
@@ -9,7 +9,7 @@ import Js
 --| `valueOf` is `0`.
 pub coerced : ⊤ → Int
 coerced ⊤ =
-    o = Js.object [ ( "valueOf", λ_ → 7 ), ( "pad", 1 ) ]
+    o = Js.object [ ( "valueOf", seven ⊤ ), ( "pad", 1 ) ]
     n : Int
     n = Js.to o
     Js.bitAnd n 1
@@ -18,7 +18,7 @@ coerced ⊤ =
 --| A template converts with `toString`. Development is `x5y`.
 pub shown : ⊤ → String
 shown ⊤ =
-    o = Js.object [ ( "toString", λ_ → "5" ), ( "pad", 1 ) ]
+    o = Js.object [ ( "toString", five ⊤ ), ( "pad", 1 ) ]
     hole : String
     hole = Js.to o
     "x${hole}y"
@@ -28,7 +28,14 @@ shown ⊤ =
 pub assigned : ⊤ → Int
 assigned ⊤ =
     o = Js.object [ ( "pad", 1 ) ]
-    Js.set o "valueOf" (Js.from λ_ → 7)
+    Js.set o "valueOf" (seven ⊤)
     n : Int
     n = Js.to o
     Js.bitAnd n 1
+
+
+-- Host-owned function; no program closure crosses Js.Value.
+foreign pure seven : ⊤ → Js.Value
+
+
+foreign pure five : ⊤ → Js.Value

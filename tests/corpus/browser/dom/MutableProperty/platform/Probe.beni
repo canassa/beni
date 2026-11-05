@@ -1,0 +1,29 @@
+import Browser.Host.Node as Node
+import Html.Runtime as Runtime
+import Rt
+
+
+foreign impure makeNode : ⊤ → Node.Node
+
+
+foreign pure descriptor : ⊤ → Runtime.Property
+
+
+foreign impure payload : ⊤ → Runtime.Payload
+
+
+foreign impure mutate : Runtime.Payload → ⊤
+
+
+foreign impure result : Node.Node → String
+
+
+pub run : ⊤ → String
+run ⊤ =
+    node = makeNode ⊤
+    property = descriptor ⊤
+    value = payload ⊤
+    Rt.control node property value
+    mutate value
+    Rt.control node property value
+    result node

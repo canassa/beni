@@ -10,13 +10,13 @@ type alias V =
 
 
 -- A kind: `m` makes an instance, a literal with its node and no `b`.
-kind : V
-kind = Js.from { m = λ_ → Js.from { s = Js.from "node" } }
+kind : { m : Int → V }
+kind = { m = λ_ → Js.from { s = Js.from "node" } }
 
 
 -- One block, made once; `view` always shows it.
 block : V
-block = Js.from { t = kind }
+block = Js.from { t = "kind" }
 
 
 view : Int → V
@@ -26,7 +26,7 @@ view _ = block
 -- A block mounted on its own: the instance remembers its kind and block.
 unit : V → V
 unit b =
-    i = Js.call (Js.get b "t") "m" [ Js.from 0 ]
+    i = kind.m 0
 
     Js.set i "t" (Js.get b "t")
 

@@ -1,0 +1,1 @@
+[{"code":"host_value_erasure","severity":"error","span":{"file":"Main.beni","start":{"line":5,"col":11},"end":{"line":5,"col":22}},"title":"TYPED VALUE REQUIRED","message":"The argument 1 of `Probe.erase` contains a function at `value`. Functions and\nbrowser or system objects must stay typed. Use a typed platform operation, or\nkeep the value in a typed record or list."}]

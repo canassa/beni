@@ -1,29 +1,31 @@
+-- The recursive call grows a to List a while returning a typed function.
+-- Only its data crosses the raw boundary; the callback is never erased.
 import Js
 
 
-pub build : Int, a → Js.Value
+pub build : Int, a → (Js.Value → Js.Value)
 build n x =
     if n == 0 then
-        Js.from λy → Js.from [ x, y ]
+        λy → Js.from [ Js.from x, y ]
     else
         build (n - 1) [ x ]
 
 
 pub outer : List Int → List (List (List Int)) × List Int
 outer xs =
-    f : List (List Int) → Js.Value
-    f = Js.to (build 1 xs)
+    f : Js.Value → Js.Value
+    f = build 1 xs
     decoded : List (List (List Int))
-    decoded = Js.to (f [ [] ])
+    decoded = Js.to (f (Js.from [ [] ]))
     ( List.push decoded [], xs )
 
 
 pub shared : List Int → List Int × List Int
 shared xs =
-    f : List (List Int) → Js.Value
-    f = Js.to (build 1 xs)
+    f : Js.Value → Js.Value
+    f = build 1 xs
     decoded : List (List (List Int))
-    decoded = Js.to (f [ [] ])
+    decoded = Js.to (f (Js.from [ [] ]))
     case decoded of
         [ [ ys ], _ ] →
             ( List.push ys 1, xs )
@@ -32,15 +34,15 @@ shared xs =
 
 
 -- A known root on one branch cannot hide an unknown callable alternative.
-pub mixed : Bool, Js.Value, List Int → List (List (List Int)) × List Int
+pub mixed : Bool, (Js.Value → Js.Value), List Int → List (List (List Int)) × List Int
 mixed known host xs =
     encoded =
         if known then
             build 1 xs
         else
             host
-    f : List (List Int) → Js.Value
-    f = Js.to encoded
+    f : Js.Value → Js.Value
+    f = encoded
     decoded : List (List (List Int))
-    decoded = Js.to (f [ [] ])
+    decoded = Js.to (f (Js.from [ [] ]))
     ( List.push decoded [], xs )

@@ -3,8 +3,9 @@
 -- 2026-10-20; checker-v2.md §36). `Tagged`'s `a` is phantom, a host value
 -- underneath, so `useTagged` leaves `Kept` keyed and out of the wild set. A
 -- `List a` holds its `a`s, so `useList` puts `Listed` in the wild set; a
--- record with an `a → ⊤` field hands one out, so `useHandler` puts `Handled`
--- there too.
+-- callable in a phantom type argument still is not held: `useCallbackTag`
+-- keeps `Handled` keyed. An actual function field is separately refused by
+-- HostFreePhantomHandler.
 import Js
 
 
@@ -32,10 +33,6 @@ sendList : List a → Js.Value
 sendList xs = Js.from xs
 
 
-sendHandler : { act : a → ⊤ } → Js.Value
-sendHandler h = Js.from h
-
-
 useTagged : Tagged Kept → Js.Value
 useTagged t = sendTagged t
 
@@ -44,5 +41,6 @@ useList : List Listed → Js.Value
 useList xs = sendList xs
 
 
-useHandler : (Handled → ⊤) → Js.Value
-useHandler f = sendHandler { act = f }
+-- A callable in a phantom argument still does not occur in the representation.
+useCallbackTag : Tagged (Handled → ⊤) → Js.Value
+useCallbackTag t = sendTagged t

@@ -1,0 +1,6 @@
+-- An actual function field is not phantom and cannot cross Js.Value.
+import Js
+
+
+sendHandler : { act : a → ⊤ } → Js.Value
+sendHandler h = Js.from h

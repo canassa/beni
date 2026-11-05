@@ -1,5 +1,8 @@
 # The list runtime in beni: what `core/List.js` needs to move
 
+> Historical note, 2026-11-05: `Js.method` was removed from core in #2001.
+> Receiver-method proposals below describe the earlier representation.
+
 > Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
 > requirements were removed (#740). Each test or corpus case now has a
 > 120-second wall-clock hang guard. Older counts and budget references below

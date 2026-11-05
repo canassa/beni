@@ -10,6 +10,7 @@
 -- (`platforms/browser/runtime.js`, `template` and `queued`/`scheduled`): the
 -- same `let`, the same test, the same assignment; a read of a cell is never
 -- folded past a write. Built with `--core --release`.
+import Browser.Host.Timers as Timers
 import Js
 
 
@@ -39,12 +40,9 @@ schedule ⊤ =
     else
         Js.write scheduled True
 
-        _ =
-            Js.apply (Js.global "queueMicrotask")
-                [ Js.from λ⊤ →
-                    if Js.read scheduled then
-                        flush ⊤
-                ]
+        Timers.queueMicrotask λ⊤ →
+            if Js.read scheduled then
+                flush ⊤
         ⊤
 
 

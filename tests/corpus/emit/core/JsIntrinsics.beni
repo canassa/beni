@@ -43,8 +43,8 @@ pub pair : Js.Value → Js.Value
 pair x = Js.array [ x, Js.null, Js.undefined ]
 
 
-pub callback : Js.Value → Js.Value
-callback f = Js.apply f [ Js.from λn → n + 1 ]
+pub callback : sync ((Int → Int) → Js.Value) → Js.Value
+callback f = Js.invoke f λn → n + 1
 
 
 pub back : Js.Value → Int

@@ -1,0 +1,7 @@
+-- Host-owned receiver methods, including a returned arrow.
+import Node
+import Probe
+
+
+main : Node.Program
+main = Node.print (Probe.check ⊤)

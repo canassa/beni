@@ -4,7 +4,6 @@
 --! under the scheduler does not end the Node process and the fixture can
 --! show what runs after it.
 
-import Js
 import Task exposing (Scheduler)
 
 
@@ -13,12 +12,12 @@ import Task exposing (Scheduler)
 pub make : String, sync (⊤ → ⊤) → Scheduler
 make name hook =
     Task.schedulerWith
-        (λdrain → later name (Js.from drain))
-        (λdrain → later name (Js.from drain))
+        (λdrain → later name drain)
+        (λdrain → later name drain)
         hook
 
 
 -- Run `drain` in a reaction of a resolved promise. A throw out of it
 -- rejects the reaction's promise; the handler names the fixture's one
 -- error and throws the rest again.
-foreign impure later : String, Js.Value → ⊤
+foreign impure later : String, sync (⊤ → ⊤) → ⊤
