@@ -332,3 +332,27 @@ tests/pending/ownership/LocalEmptyInCtor.beni OwnershipV2Differs
 # flag without a platform chain (#1509) exposed it. v2 checks it in 0.03 s
 # (check_test.zig), so this goes with v1.
 scenario/CK-316 exit=1 codes=ownership_limit×1
+
+# CK-317 (#2028): a closure a declaration returns is opaque, so a write of
+# its answer is refused `unknown`; Appendix B GrowFresh, CallFeedbackGeneration
+# and a fresh ClosureTower.
+tests/pending/ownership/ReturnedClosureAnswer.beni exit=0 ownership-differs
+
+# CK-318 (#2029): `r.f ⊤` on a lambda stored in a record field answers unknown.
+tests/pending/ownership/RecordFieldLambda.beni exit=0 ownership-differs
+
+# CK-319 (#2030): List.copy of the answer of a returned closure still reads as
+# holding its source.
+tests/pending/ownership/CopyOfClosureAnswer.beni exit=0 ownership-differs
+
+# CK-320 (#2031): an element edit of a list that stores a callback's answers is
+# refused over a fresh lambda.
+tests/pending/ownership/CallbackAnswerInList.beni exit=0 ownership-differs
+
+# CK-321 (#2032): a fold that pushes its elements into its accumulator is
+# refused `disjoint`.
+tests/pending/ownership/FoldStoresElements.beni exit=0 ownership-differs
+
+# CK-322 (#1978): the answers of a many label are one per invocation; an
+# element edit of a map's fresh answers is refused `disjoint`.
+tests/pending/ownership/MapAnswersFresh.beni exit=0 ownership-differs
