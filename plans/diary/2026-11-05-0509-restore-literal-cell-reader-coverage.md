@@ -1,0 +1,14 @@
+# Restore ownership coverage of literal Cell readers
+
+Part of #1927. Re-audit the final kernel at b8f1a0f1d3, including the reviewed protocol and native Worker correction. V2 walked a capture-free Cell field selector's local as though it belonged to the outer function. The existing field-specific row already interprets that syntax without calling it. Consume just that recognized reader selector, sharing recognition with the row; leave arbitrary callbacks and all writer analysis unchanged.
+
+The exact base has 913 unchecked core declarations against 857 recorded: 56 inherited public Browser.Host wrapper losses from #1937, now manager-accepted debt #1961. This fix restores 33 (Task 25, Queue 3, List 2, Js.Fifo 2, Js.Chain 1), yielding 880, with 0 new losses. The original 20 Task cohort restores 13; all 7 remaining bodies are individually justified in the evidence Task table. The raw work/frame helpers remain explicit unsupported bodies, without erasure or exemptions. The pinned copySweep false positive remains precisely Task 3543:18: its sole caller fills and sorts a fresh unpublished destination before storing it, but the generic helper loses that fact through opaque Control reach.
+
+All 531 ownership fixtures pass after removing two obsolete unchecked entries: ArrayTruncateCell.shrink and KernelSlotWords.editPolled. The latter now reports the unsafe polled-list write as rejected, agreeing with the existing v1 verdict; previously it was unchecked. No existing checked verdict changes or new parity exceptions. The new alias-import selector fixture preserves refusal of a list edit after reading a live cell and leaves its writer cases unchecked.
+
+A checked-core pack test applies the restored schedulerBusy class without rechecking Task. Source imports produce identical dumps at jobs 1/8. Explicit v2 persistent user-module caching is still disabled; no cache/publication policy or format is changed. No budgets, ownership words or runtime/emitter source changes.
+
+Exact base gates and the candidate comparison live at ~/worktree-evidence/wd-fiber/coverage-p6-final/, with per-declaration audits and before/after fixture reports. Only one full candidate gate run follows the targeted audits.
+
+
+The single candidate gate run exposed an undeclared Js type-fact read on unrelated calls. Filter by resolved core module identity instead; the two-function CellReaderUnrelatedImport fixture and imported-doubling accounting test pin the correction. A 52-line CellSelectors helper keeps Groups/Transfer/Enforce within their unchanged 2350/660/510 line targets; architecture module count becomes 43. All 532 ownership fixtures pass. SchedulerCount.count, SchedulerIdle.busy and AllocationOnlyEffects.main also lose their obsolete unchecked entries. Targeted runs verify every correction, with no second full gates run.

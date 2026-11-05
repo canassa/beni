@@ -41,6 +41,7 @@ const layers = [_]Entry{
     // 1 200 since #1253: one position, one name (`levelPaths`, `expandLevels`).
     // 1 210 since #1566: `equals` skips the pairs an earlier walk proved.
     .{ .file = "Place.zig", .layer = 1, .max_lines = 1210 },
+    .{ .file = "CellSelectors.zig", .layer = 1, .max_lines = 100 },
     // §5 says 900 since S3a: the containment relation (`below`, `stepsTo`)
     // and a refinement's canonical position (`unrefined`) Demands reads.
     // 1 180 since #1390: parts and splits of positions (§2.2 *Parts*).
@@ -519,7 +520,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 42), layers.len);
+    try testing.expectEqual(@as(usize, 43), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

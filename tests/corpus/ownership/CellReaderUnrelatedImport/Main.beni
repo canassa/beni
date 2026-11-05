@@ -1,0 +1,5 @@
+-- Preparing unrelated calls must not read a Js type fact outside the cache key.
+import W
+
+
+h x = W.w1 (W.w1 x)

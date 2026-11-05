@@ -43,6 +43,7 @@
 //! of O7 and O13 `TransferConstruct`'s.
 
 const std = @import("std");
+const CellSelectors = @import("CellSelectors.zig");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Facts = @import("Facts.zig");
@@ -119,6 +120,8 @@ pub const Context = struct {
     sharedIndex: *const fn (ctx: *anyopaque, ref: u32) ?u32,
     /// A `++` the checker resolved to `List.append` (`Dispatch`).
     isListAppend: *const fn (ctx: *anyopaque, inst: u32) bool,
+    /// A literal selector consumed structurally by a field-specific Cell read row.
+    cellSelector: ?*const fn (ctx: *anyopaque, inst: u32) Error!?u32 = null,
     /// Told of every call a class answered, with its arguments: a
     /// recursive group records its edges (§8 S3b slice 4b).
     onCall: ?*const fn (ctx: *anyopaque, inst: u32, args: []const Value) Error!void = null,
@@ -362,6 +365,7 @@ pub const Frame = struct {
                 if (o.int() < f.decl.inst_start.int() or o.int() >= f.decl.inst_end.int()) continue;
                 f.consumer[f.rel(o.int())] = i;
             }
+            try CellSelectors.consume(f.bir, f.decl.inst_start.int(), f.absorbed, f.ctx.ctx, f.ctx.cellSelector, i);
             switch (f.tag(i)) {
                 .branch => {
                     // The arm's pattern matches the case's scrutinee: the
@@ -439,7 +443,7 @@ pub const Frame = struct {
     fn eval(f: *Frame, i: u32) Error!Val {
         const d = f.data(i);
         const t = f.tag(i);
-        if (f.absorbed[f.rel(i)]) return .{};
+        if (f.absorbed[f.rel(i)]) return if (t == .lambda) .{ .value = try f.nothing(try f.placeOf(i)) } else .{};
         if (t.isType() or t.isPattern()) return .{};
         if (f.chain[f.rel(i)] != none) {
             const s = f.bir.spreads(f.decl)[f.chain[f.rel(i)]];
