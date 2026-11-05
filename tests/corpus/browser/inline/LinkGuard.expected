@@ -11,6 +11,7 @@
     <a id="nested" href="/n">
       <span id="inner">"inner"</span>
     </a>
+    <a id="handled" href="/h">"handled"</a>
     <a id="nohref">"no href"</a>
     <a id="script" href="">"script"</a>
     <p></p>
@@ -30,6 +31,7 @@
     <a id="nested" href="/n">
       <span id="inner">"inner"</span>
     </a>
+    <a id="handled" href="/h">"handled"</a>
     <a id="nohref">"no href"</a>
     <a id="script" href="">"script"</a>
     <p>"Internal /blog/42"</p>
@@ -49,6 +51,7 @@
     <a id="nested" href="/n">
       <span id="inner">"inner"</span>
     </a>
+    <a id="handled" href="/h">"handled"</a>
     <a id="nohref">"no href"</a>
     <a id="script" href="">"script"</a>
     <p>"Internal /_page.html"</p>
@@ -68,6 +71,7 @@
     <a id="nested" href="/n">
       <span id="inner">"inner"</span>
     </a>
+    <a id="handled" href="/h">"handled"</a>
     <a id="nohref">"no href"</a>
     <a id="script" href="">"script"</a>
     <p>"External http://example.com/x"</p>
@@ -87,6 +91,7 @@
     <a id="nested" href="/n">
       <span id="inner">"inner"</span>
     </a>
+    <a id="handled" href="/h">"handled"</a>
     <a id="nohref">"no href"</a>
     <a id="script" href="">"script"</a>
     <p>"External mailto:a@example.com"</p>
@@ -109,6 +114,7 @@
     <a id="nested" href="/n">
       <span id="inner">"inner"</span>
     </a>
+    <a id="handled" href="/h">"handled"</a>
     <a id="nohref">"no href"</a>
     <a id="script" href="">"script"</a>
     <p>"Internal /s"</p>
@@ -134,9 +140,30 @@
     <a id="nested" href="/n">
       <span id="inner">"inner"</span>
     </a>
+    <a id="handled" href="/h">"handled"</a>
     <a id="nohref">"no href"</a>
     <a id="script" href="">"script"</a>
     <p>"Internal /n"</p>
+  </main>
+</body>
+-- click #handled
+(click's default prevented)
+<body>
+  <main>
+    <a id="relative" href="/blog/42?x=1#c">"relative"</a>
+    <a id="fragment" href="#top">"fragment"</a>
+    <a id="host" href="http://example.com/x">"host"</a>
+    <a id="mail" href="mailto:a@example.com">"mail"</a>
+    <a id="blank" href="/b" target="_blank">"blank"</a>
+    <a id="self" href="/s" target="_SELF">"self"</a>
+    <a id="download" href="/d" download="">"download"</a>
+    <a id="nested" href="/n">
+      <span id="inner">"inner"</span>
+    </a>
+    <a id="handled" href="/h">"handled"</a>
+    <a id="nohref">"no href"</a>
+    <a id="script" href="">"script"</a>
+    <p>"handled by the link"</p>
   </main>
 </body>
 -- click #nohref
@@ -170,6 +197,7 @@
     <a id="nested" href="/n">
       <span id="inner">"inner"</span>
     </a>
+    <a id="handled" href="/h">"handled"</a>
     <a id="nohref">"no href"</a>
     <a id="script" href="">"script"</a>
     <p>"Internal /_page.html"</p>

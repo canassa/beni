@@ -8,6 +8,9 @@
   `Navigation.Key`. A click on a link of the page goes to `onUrlRequest` as `Browser.Internal url`
   or `Browser.External href`. Each change of the address goes to `onUrlChange`. A page opened from a
   file stops at start: it has no `http` or `https` address.
+- A link whose own `onClick` handler calls `Html.preventDefault event` is not a request:
+  `onUrlRequest` gets nothing for it, and its handler's message goes to `update`. Use this to keep
+  one link out of routing.
 - `Browser.Navigation`: the commands `pushUrl`, `replaceUrl`, `back`, `forward`, `load` and `reload`.
   The last argument of each is the message for a refusal (`BadUrl`, `CrossOrigin`, `Throttled`).
   The direct forms are `push`, `replace`, `goBack`, `goForward`, `loadPage` and `reloadPage`.
