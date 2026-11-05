@@ -10,6 +10,7 @@ const std = @import("std");
 const Ids = @import("Ids.zig");
 const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
+const Value = @import("Value.zig");
 const Bir = @import("../bir/Bir.zig");
 
 const Error = Ids.ChargeError;
@@ -63,6 +64,9 @@ pub const Context = struct {
     /// The same of a label's origin: the function type its callback call's
     /// head has there; null when it has none to hand.
     originSig: *const fn (ctx: *anyopaque, origin: [3]u32, params: *std.ArrayList(PlaceId)) Error!?PlaceId,
+    /// The one parameter function slot `(j, rel)` a value of frame `f` is,
+    /// read through the contracts settled at the walk (`FnRun.settled`).
+    settledParam: *const fn (ctx: *anyopaque, f: *Value.Frame, v: u32) Error!?[2]u32,
     /// The pessimistic contract of a call of `arity` arguments.
     pessimistic: *const fn (ctx: *anyopaque, arity: u32) Error!Contract.Id,
     /// A `try`'s shape: `(success ordinal, failure ordinal, failure arity)` of its

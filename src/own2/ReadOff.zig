@@ -21,6 +21,7 @@ const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
 const Eval = @import("Eval.zig");
+const FnRun = @import("FnRun.zig");
 const Outward = @import("Outward.zig");
 const Held = @import("Held.zig");
 const Routed = @import("Routed.zig");
@@ -956,7 +957,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
                         const saved = e.ev.cur_sub;
                         e.ev.cur_sub = if (e.solver != null) .{ .kind = .supply, .a = at, .b = su.k, .c = rel } else null;
                         defer e.ev.cur_sub = saved;
-                        try Eval.supplyLeaves(e, p[1], a, &ls);
+                        try FnRun.supplyLeaves(&e.ev, p[1], a, &ls);
                     }
                     for (ls.items) |l| try supplyArrive(s, l, rel, .{ .label = at, .k = su.k });
                 }
@@ -1014,6 +1015,7 @@ pub fn deliver(e: *Evaluation, sub: Relation.Sub, x: u32, at: u32) Error!void {
         .effect => try paramEffects(&e.sink, y, sub.b != 0, @fromBackingInt(@intCast(sub.a))),
         .supply => try supplyArrive(&e.sink, y, sub.c, .{ .label = sub.a, .k = sub.b }),
         .escape => try Eval.addEscape(e, y, sub.a),
+        .escape_fn => unreachable,
         .forward => unreachable,
     }
 }

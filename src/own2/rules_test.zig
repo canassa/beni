@@ -135,6 +135,8 @@ const layers = [_]Entry{
     .{ .file = "Captures.zig", .layer = 8, .max_lines = 55 },
     // A demand says whether it is a cell operation (#1727).
     .{ .file = "Walk.zig", .layer = 9, .max_lines = 1240 },
+    // A function value run by unknown code: the function objects that escape (#1773, #1775, #1776).
+    .{ .file = "FnRun.zig", .layer = 9, .max_lines = 250 },
     // One entry of many objects; an answer apart from nothing (#1710,
     // #1711); what an answer may hold (§2.9.2 step 7).
     .{ .file = "Distinct.zig", .layer = 9, .max_lines = 750 },

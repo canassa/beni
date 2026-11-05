@@ -55,6 +55,7 @@ const Kept = @import("Kept.zig");
 const Deliver = @import("Deliver.zig");
 const Closures = @import("Closures.zig");
 const Outward = @import("Outward.zig");
+const FnRun = @import("FnRun.zig");
 const Codes = @import("Codes.zig");
 const Bir = @import("../bir/Bir.zig");
 const TypeStore = @import("../check/TypeStore.zig");
@@ -1140,6 +1141,10 @@ pub const Module = struct {
         return siteSig(ctx, bir.instData(@fromBackingInt(i)).lhs, params);
     }
 
+    fn settledParam(ctx: *anyopaque, f: *Value.Frame, v: u32) Error!?[2]u32 {
+        return FnRun.settled(f, &self(ctx).contracts, self(ctx).context(), v);
+    }
+
     /// A `try`'s shape (§2.11.5): `(success, failure, failure arity)` ordinals of its scrutinee's type, `Ok`/`Err` or `Just`/`Nothing`.
     fn tryShape(ctx: *anyopaque, inst: u32) ?[3]u32 {
         const mod = self(ctx);
@@ -1172,6 +1177,7 @@ pub const Module = struct {
             .codeSig = codeSig,
             .siteSig = siteSig,
             .originSig = originSig,
+            .settledParam = settledParam,
             .pessimistic = pessimistic,
             .tryShape = tryShape,
         };
