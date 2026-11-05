@@ -60,7 +60,7 @@ module Worker
   value method : Request → String  -- impure
   value objects : Env, String, (Schema e msg) → Maybe (Namespace msg)  -- impure
   value path : Request → String  -- impure
-  value program : { fetch : (Context), Request → Response, objects : List Definition } → Program  -- impure
+  value program : { fetch : Context, Request → Response, objects : List Definition } → Program  -- impure
   value redirect : Request, String, Int → Response  -- impure
   value refId : Ref msg → String
   value refName : Ref msg → Maybe String

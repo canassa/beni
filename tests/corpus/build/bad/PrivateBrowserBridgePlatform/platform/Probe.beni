@@ -1,0 +1,10 @@
+import Browser
+import Browser.Bridge as Bridge
+
+
+pub page : Browser.Program
+page =
+    _ = Bridge.block
+    _ = Bridge.installRoot
+    _ = Bridge.installFuzz
+    Browser.program { init = λ⊤ → {}, update = λ_ model → model, view = λ_ → <></> }

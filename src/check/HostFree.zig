@@ -456,3 +456,31 @@ test "HostFree typed generated host wrappers preserve natives and payload callba
     if (project.session.diagnostics.items.len != 0) std.debug.print("{s}\n", .{project.stderr.written()});
     try testing.expectEqual(@as(usize, 0), project.session.diagnostics.items.len);
 }
+
+test "HostFree program boundary reductions retain native and callable refusals" {
+    const TestProject = @import("../resolve/TestProject.zig");
+    const Session = @import("../Session.zig");
+    const testing = std.testing;
+    for ([_][:0]const u8{
+        "import Js\npub foreign type Program\npub pack : (⊤ → ⊤) → Program\npack start = Js.to (Js.from { start = start })\n",
+        "import Js\npub foreign type Html msg\npub foreign type Block\npub convert : (model → Html msg), model → Block\nconvert view model = Js.to (Js.from (view model))\n",
+        "import Js\npub foreign type Node\npub install : Node, (⊤ → ⊤) → ⊤\ninstall node send = Js.set (Js.from node) \"$$root\" (Js.from send)\n",
+    }) |source| {
+        var modules: std.ArrayList(TestProject.Module) = .empty;
+        defer modules.deinit(testing.allocator);
+        try modules.appendSlice(testing.allocator, &@import("checker_test.zig").test_core);
+        try modules.appendSlice(testing.allocator, &.{
+            .{ .path = "Js.beni", .package = .core, .source = "pub foreign type Value\npub foreign pure from : a → Value\npub foreign pure to : Value → a\npub foreign impure set : Value, String, Value → ⊤\n" },
+            .{ .path = "Reduced.beni", .package = .platform, .source = source },
+        });
+        var p = try TestProject.initWith(testing.allocator, modules.items, .{ .phases = Session.check_phases, .host_free = true });
+        defer p.deinit();
+        var refused: usize = 0;
+        for (p.session.diagnostics.items) |item| {
+            if (item.code == .host_value_erasure) refused += 1;
+        }
+        if (refused != 2 or p.session.diagnostics.items.len != 2) std.debug.print("{s}\n{s}\n", .{ source, p.stderr.written() });
+        try testing.expectEqual(@as(usize, 2), refused);
+        try testing.expectEqual(@as(usize, 2), p.session.diagnostics.items.len);
+    }
+}

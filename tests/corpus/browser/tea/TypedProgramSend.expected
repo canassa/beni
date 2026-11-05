@@ -1,0 +1,8 @@
+-- load
+<body>
+  <button id="increment">"0"</button>
+</body>
+-- click #increment
+<body>
+  <button id="increment">"1"</button>
+</body>

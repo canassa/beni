@@ -1,0 +1,14 @@
+-- Compiler-owned browser boot bridge (boundary.md §9.4–9.5, #1807).
+-- Only the owning platform layer may use it; Html.Runtime stays frozen.
+import Browser.Host.Node as Node
+import Html exposing (Html)
+import Html.Runtime as Runtime
+
+
+pub foreign pure block : returned Html msg → Runtime.Block
+
+
+pub foreign impure installRoot : borrowed Node.Node, escaped (msg → ⊤) → ⊤
+
+
+pub foreign impure installFuzz : escaped (Node.Node, Runtime.Payload → ⊤) → ⊤

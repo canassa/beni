@@ -478,3 +478,6 @@ core Browser.Host.EventTarget.host_asSelect ownership/core/NativeEvents.beni - M
 core Browser.Host.EventTarget.host_asOption ownership/core/NativeEvents.beni - M4.asOption
 core Browser.Host.EventTarget.host_asForm ownership/core/NativeEvents.beni - M4.asForm
 core Browser.Host.Map.has ownership/core/NativeMapHasWords.beni - NativeMap.has
+browser Browser.Bridge.block ownership/core/BrowserBridgeWords.beni 1:returned>borrowed Bridge.block
+browser Browser.Bridge.installRoot ownership/core/BrowserBridgeWords.beni 2:escaped>borrowed Bridge.installRoot
+browser Browser.Bridge.installFuzz ownership/core/BrowserBridgeWords.beni 1:escaped>borrowed Bridge.installFuzz

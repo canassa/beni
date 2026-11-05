@@ -7254,11 +7254,12 @@ L0  Ids
 | `Refine.zig` | 13 | exact ranks of variable words and Hopcroft's partition refinement with canonical block numbers (the block's places and positions), with the meter that reserves before work | `rank`, `blocks`, `Graph`, `Meter` | Ids | ≤ 500 |
 | `Block.zig` | 14 | class → bytes, the format | `write`, `version`, `entered`, `Names`, `Remap` | Ids, Summary, Place, Cell, Shape, Cond, Refine | ≤ 1 810 (#1335: a knot whose cycle no child step closes; #1459: a join's entry its sides imply is not written) |
 | `BlockRead.zig` | 15 | bytes → classes, lazy directory | `read`, `open`, `summary` | Ids, Summary, Place, Cell, Shape, Cond, Block | ≤ 1 320 (#1485 part 2: the certified mark and a position's fold obligation, read back; 1 300 before: S3b slice 3: a block's places re-interned onto the reader's; #1335: a knot's members tied raw, a forward name only on their cycle; #1399: a projection decoded with its sides the other way round, §3.6; #1447: at every level, by canonical ids, and its origin noted) |
+| `Packed.zig` | 15 | versioned v2 rows beside the pack's v1 entries (2026-11-05; #1854) | `write`, `read` | Block | ≤ 100 |
 | `Hoists.zig` | 14 | the lowering channel, format v2 | `Table`, `Builder`, `write`, `read` | Facts | ≤ 500 (#1547: the list half, `Table` and `Builder`, 108 lines; `write`/`read` land with v2's cache) |
 | `Message.zig` | 14 | diagnostic text and JSON fixes (ported from v1 over `Facts.Demand`) | `build`, `limit`, `code` | Facts | ≤ 900 |
 | `Report.zig` | 14 | dump lines and totals | `print`, `totals` | Facts, Summary | ≤ 600 |
 | `Ownership.zig` | 16 | facade | `Input`, `run`, `ModuleReport` | Groups, Entry, Block, BlockRead, Hoists, Message, Report | ≤ 340 (S3b slice 4a: a group member's walks on its account line; #1459: a block not published for a limit is that limit, said; #1547: the lowering channel from the verdicts) |
-| `Enforce.zig` | 17 | the Driver hook, inputs, interface and cache sections (ported) | `checkModule`, `inputs` | Ownership, Block, BlockRead | ≤ 510 (#1566: the block read's `own_memo`, kept across one read) |
+| `Enforce.zig` | 17 | the Driver hook, inputs, interface and cache sections (ported) | `checkModule`, `inputs` | Ownership, Block, BlockRead, Packed | ≤ 510 (#1566: the block read's `own_memo`, kept across one read) |
 | `rules_test.zig` | — | the gate below | — | — | — |
 
 **Input adapters.** `Groups` builds `Place.Source` and `Rows.Signature` together, reading

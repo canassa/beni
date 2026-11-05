@@ -1411,6 +1411,25 @@ into **one blob, the checked core** (`src/cache/Pack.zig`): a table of `(kind, k
 sorted by kind and key, then the payloads, in the two byte formats the cache directory already
 holds. The compiler embeds the blob as the module `core_pack`.
 
+**Ownership v2 beside v1 (2026-11-05; Part of #1854).** Pack version 4 adds row kind 4,
+`ownership2`, under the same module key as its ordinary checked entry. The maker computes both
+ownership engines while that module's solved types are alive. It keeps the v1 interface and entry
+unchanged and publishes v2 summaries separately; dependencies read their completed v2 rows in DAG
+order. Every checked core/platform module has a v2 row, including a versioned empty payload when
+v2 cannot publish a class. Later chains reuse those rows along with the checked entries.
+
+The row is little-endian: eight bytes `BENIOW2\0`, a u32 envelope version (1), a u32 v2 block
+version (`own2/Block.version`), a u32 payload length, and that many bytes of v2's string-table,
+directory and OWN2 block envelope. The length must be a multiple of four and consume the row
+exactly. An empty payload explicitly publishes no classes. A stale envelope or block version is
+rejected before any v2 decoder runs. Pack version 3 is also rejected by the pack header.
+
+A v2 run installs a checked pack entry only when its matching, current v2 row exists. It reads
+summaries from that row or from the explicit v2 slot of a module checked in this run, never from
+the entry's v1 ownership bytes. A missing or malformed row is a miss, not permission to decode v1.
+A complete current pack needs no core/platform source recheck. Ordinary runs keep using their v1
+entries and do not decode, allocate or compute v2 summaries.
+
 **A read-only cache directory in the binary, keyed exactly as the directory is.** In a run whose core
 is the embedded one, a core file's file key is looked up in the checked core before the directory,
 and so is a core module's module key: a row that is there is validated, re-interned and installed by

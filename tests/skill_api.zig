@@ -95,6 +95,7 @@ pub fn generate(arena: Allocator, io: Io, beni: []const u8, root: []const u8, pa
     try text.appendSlice(arena, "```text\n");
     var lines = std.mem.splitScalar(u8, r.stdout, '\n');
     var in_never = false;
+    var private_declaration = false;
     var module: []const u8 = "";
     var gated_worker = false;
     while (lines.next()) |line| {
@@ -104,7 +105,12 @@ pub fn generate(arena: Allocator, io: Io, beni: []const u8, root: []const u8, pa
         if (gated_worker) continue;
         if (line.len == 0 and lines.peek() == null) break;
         if (std.mem.startsWith(u8, line, "module ")) module = line[7..];
-        if (runtimePrivate(module, line, is_core)) continue;
+        if (runtimePrivate(module, line, is_core)) {
+            private_declaration = true;
+            continue;
+        }
+        if (private_declaration and std.mem.startsWith(u8, line, "    ")) continue;
+        private_declaration = false;
         // `type Never` in Basics and its constructor line: one comment (§12.1).
         if (std.mem.eql(u8, line, "  type Never")) {
             in_never = true;
@@ -123,7 +129,7 @@ pub fn generate(arena: Allocator, io: Io, beni: []const u8, root: []const u8, pa
 // Runtime-only names are not part of the application API.
 fn runtimePrivate(module: []const u8, line: []const u8, is_core: bool) bool {
     if (@import("core_private").access(module, "", true)) |access| if (privateInPackage(access, is_core)) return true;
-    for ([_][]const u8{ "  value ", "  foreign value ", "  foreign type ", "  type ", "  opaque type " }) |prefix| {
+    for ([_][]const u8{ "  value ", "  foreign value ", "  foreign type ", "  type ", "  opaque type ", "  alias " }) |prefix| {
         if (!std.mem.startsWith(u8, line, prefix)) continue;
         const rest = line[prefix.len..];
         const end = std.mem.indexOfScalar(u8, rest, ' ') orelse rest.len;
@@ -135,7 +141,7 @@ fn runtimePrivate(module: []const u8, line: []const u8, is_core: bool) bool {
 
 fn privateInPackage(access: @import("core_private").Access, is_core: bool) bool {
     return switch (access) {
-        .worker, .cloudflare => !is_core,
+        .worker, .cloudflare, .same_platform => !is_core,
         .platform => true,
         .core, .task, .runtime, .debug => is_core,
     };
@@ -180,8 +186,28 @@ pub fn surface(arena: Allocator, line: []const u8) ![]const u8 {
             }
         }
     }
-    try out.appendSlice(arena, try replaceNever(arena, try stripClasses(arena, rest)));
+    try out.appendSlice(arena, try replaceNever(arena, try stripAtomParens(arena, try stripClasses(arena, rest))));
     try out.appendSlice(arena, comment);
+    return out.items;
+}
+
+/// Effect removal can leave a parenthesised single type atom.
+fn stripAtomParens(arena: Allocator, s: []const u8) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var i: usize = 0;
+    while (i < s.len) {
+        if (s[i] == '(') {
+            var end = i + 1;
+            while (end < s.len and (std.ascii.isAlphanumeric(s[end]) or s[end] == '_' or s[end] == '.')) end += 1;
+            if (end > i + 1 and end < s.len and s[end] == ')') {
+                try out.appendSlice(arena, s[i + 1 .. end]);
+                i = end + 1;
+                continue;
+            }
+        }
+        try out.append(arena, s[i]);
+        i += 1;
+    }
     return out.items;
 }
 
@@ -286,6 +312,9 @@ test "a dump line becomes beni's notation" {
         .{ "  value expectJson : Expect Error a !(impure | e1) where a.codec : ⊤ → Codec a !e1", "  value expectJson : Expect Error a where a.codec : ⊤ → Codec a  -- impure" },
         .{ "  value value : (Generator a !e1) → a !(impure | e1)", "  value value : (Generator a) → a  -- impure" },
         .{ "  value never : ⊥ → a", "  value never : ⊥ → a" },
+        .{ "  value page : ⊤ → (Program !impure)", "  value page : ⊤ → Program" },
+        .{ "  value control : Opt (Control !e1)", "  value control : Opt Control" },
+        .{ "  value any : (Any !e1) → (a → b !e2)", "  value any : Any → (a → b)" },
         .{ "module Maybe", "module Maybe" },
     };
     for (cases) |c| {

@@ -6415,7 +6415,8 @@ test "a page build makes each module's edge lists once and lowers and prints eac
         .edge_lists = counters.modules_checked,
         .edge_lists_embedded = counters.embedded_modules,
         .reach_walks = 2,
-        .modules_lowered = maps,
+        // Browser.Bridge is lowered to per-site operations and writes no module.
+        .modules_lowered = maps + 1,
         .modules_printed = maps,
         .emit_units_embedded = counters.emit_units_embedded,
         .emit_units_lowered = counters.emit_units_lowered,
@@ -6465,10 +6466,11 @@ test "a release page build lowers each module once" {
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     // One file, and each module in it lowered once: none is lowered two
-    // times, and none is lowered that the file does not hold but one:
+    // times. Two lowered modules emit no runtime code:
     // `Browser.Host.Element`, whose one value the runtime reads, the
     // identity upcast `toNode` that finds the mount node (interface 1.30),
     // is written where it is called, so the file holds nothing of it.
+    // Browser.Bridge is likewise erased into the view expression/root store.
     var files: u64 = 0;
     for (try w.listFiles("out")) |path| {
         if (std.mem.endsWith(u8, path, ".mjs")) files += 1;
@@ -6476,7 +6478,7 @@ test "a release page build lowers each module once" {
     try testing.expectEqual(1, files);
     try testing.expectEqual(2, counters.reach_walks);
     try testing.expect(counters.modules_printed > 1);
-    try testing.expectEqual(counters.modules_printed + 1, counters.modules_lowered);
+    try testing.expectEqual(counters.modules_printed + 2, counters.modules_lowered);
 }
 
 test "a program builds the same with the edge lists the binary carries as with lists it builds" {
@@ -6938,21 +6940,20 @@ test "the release specialiser writes every independent function called once in o
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    // And `total`, called once, and since slice 6 (#676) core `List`'s
-    // length setter, written into the loop that calls it once the liveness
-    // read-off has left that loop's body small; and since 2026-10-23 (#877)
-    // the two single-call functions the `node` platform's beni `printLines`
-    // reaches, `String.join` and the list reader it calls.
-    try testing.expectEqual(@as(u64, n + 4), c.spec_inlined);
+    // All 260 library functions are written. The two additional writes
+    // are List.isEmpty and String.join, reached by typed Node.printLines.
+    // List.offset and List.done are now intrinsics, and String.elements
+    // retains its scalar-view branch. Master's four helper writes were
+    // offset, elements, join and done; total was never one of that four.
+    try testing.expectEqual(@as(u64, n + 2), c.spec_inlined);
     try testing.expectEqual(@as(u64, 0), c.spec_inline_capped);
     try testing.expectEqual(@as(u64, 0), c.spec_inline_waits);
-    // Since #781 the 260 are written before the first solve. The length
-    // setter waits for the liveness read-off, so it takes the pass after
-    // that solve, with a solve of its own and its two counts; then the
-    // count of the pass that found nothing to do.
-    try testing.expectEqual(@as(u64, 1), c.spec_passes);
-    try testing.expectEqual(@as(u64, 2), c.spec_solves);
-    try testing.expectEqual(@as(u64, 5), c.spec_inline_scans);
+    // Every candidate is written before the first solve. The length
+    // setter is now intrinsic, so no later inline pass or second solve
+    // is needed; the three counts include the final unchanged scan.
+    try testing.expectEqual(@as(u64, 0), c.spec_passes);
+    try testing.expectEqual(@as(u64, 1), c.spec_solves);
+    try testing.expectEqual(@as(u64, 3), c.spec_inline_scans);
 }
 
 test "the release specialiser leaves a function whose call a write just copied for the next pass" {
@@ -7036,13 +7037,11 @@ test "the release specialiser leaves a function whose call a write just copied f
     // Since #781 the first pass runs before the first solve, so `h`'s
     // pass is the one pass after it.
     try testing.expectEqual(@as(u64, 1), c.spec_passes);
-    // `g`, `k`, `twice` and, a pass later, `h`: every one of them; and since
-    // slice 6 (#676) core `List`'s length setter, written into the loop
-    // that calls it (647 → 631 bytes). Since 2026-10-23 (#877) the `node`
-    // platform's `printLines` is beni over `Js`, and the two single-call
-    // functions it reaches — `String.join` and the list reader it calls —
-    // are written into it: 5 → 7.
-    try testing.expectEqual(@as(u64, 7), c.spec_inlined);
+    // g and k, then h, are written; twice remains at its expression call.
+    // Typed Node.printLines adds List.isEmpty and String.join. The old
+    // offset/elements/join/done helper set contributed four writes; the
+    // typed primitives and scalar-view reader now contribute these two.
+    try testing.expectEqual(@as(u64, 5), c.spec_inlined);
 }
 
 test "the release specialiser does not ask a declined call again while neither module changed" {
@@ -11017,7 +11016,9 @@ test "the checker v2 stores a joined position's κ under each inner's own node" 
     // the hash, not the size.
     // Version 14 (#1335) changes the hash only. Version 15 (#1485): each
     // position carries its fold obligation on its own, one word for each of
-    // the 26 (1 796 → 1 900 bytes).
+    // the 26 (1 796 → 1 900 bytes). Unnamed leaves now use the no-type
+    // sentinel instead of real type 0 (2026-11-03): the separate empty
+    // name adds one string-table word (1 900 → 1 904 bytes).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -11032,7 +11033,7 @@ test "the checker v2 stores a joined position's κ under each inner's own node" 
     );
     const dump = try w.run(&.{ "dump", "--stage=ownership", "--ownership=v2", "Main.beni" });
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  block: 1900 bytes, hash 019f542663260235\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  block: 1904 bytes, hash 503cc6fa6a8bff67\n") != null);
 }
 
 test "the checker v2 refuses every write after the escapes in the same branch" {
@@ -13941,5 +13942,150 @@ test "generated host wrappers keep Maybe and Result tags private in release" {
     const emitted = try w.read("out/_main.mjs");
     for ([_][]const u8{ "\"Just\"", "\"Nothing\"", "\"Ok\"", "\"Err\"" }) |tag| {
         try testing.expect(std.mem.find(u8, emitted, tag) == null);
+    }
+}
+
+test "typed browser bridge is identity code and fuzz registration is absent on normal pages" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Browser
+        \\main : Browser.Program
+        \\main = Browser.program { init = λ⊤ → {}, update = λ_ model → model, view = λ_ → <p>Hello</p> }
+        \\
+    );
+    const dev = try w.run(&.{ "build", "--platform=browser", "--out=dev", "Main.beni" });
+    const release = try w.run(&.{ "build", "--release", "--platform=browser", "--out=release", "Main.beni" });
+    const fuzz = try w.run(&.{ "build", "--release", "--fuzz", "--platform=browser", "--out=fuzz", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dev.exit_code);
+    try testing.expectEqualStrings("", dev.stderr);
+    try testing.expectEqual(@as(u8, 0), release.exit_code);
+    try testing.expectEqualStrings("", release.stderr);
+    try testing.expectEqual(@as(u8, 0), fuzz.exit_code);
+    try testing.expectEqualStrings("", fuzz.stderr);
+    const browser = try w.read("dev/_platform/Browser.mjs");
+    const runtime = try w.read("dev/_platform/Rt.mjs");
+    const ordinary = try w.read("release/_main.mjs");
+    const fuzzed = try w.read("fuzz/_main.mjs");
+    // Direct block uses are the view expression itself, not calls to an
+    // identity helper. The bridge's module has no remaining reference.
+    try testing.expect(!w.exists("dev/_platform/Browser/Bridge.mjs"));
+    try testing.expect(std.mem.indexOf(u8, browser, "Bridge$block") == null);
+    try testing.expect(std.mem.indexOf(u8, browser, "Bridge$installRoot") == null);
+    try testing.expect(std.mem.indexOf(u8, browser, "$$root =") != null);
+    try testing.expect(std.mem.indexOf(u8, runtime, "__beniFuzzSend") == null);
+    try testing.expect(std.mem.indexOf(u8, ordinary, "__beniFuzzSend") == null);
+    try testing.expect(std.mem.indexOf(u8, fuzzed, "__beniFuzzSend") != null);
+}
+
+test "typed browser mounts name a missing body and refuse render requests after stop" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    // The adapter is core code so it may exercise the private typed boot contract.
+    try w.write("Probe.beni",
+        \\import Browser
+        \\import Hosted
+        \\import Html
+        \\import Js
+        \\
+        \\
+        \\host : Js.Ref (Maybe (Browser.Host Int))
+        \\host = Js.ref Nothing
+        \\
+        \\
+        \\request : ⊤ → ⊤
+        \\request ⊤ =
+        \\    case Js.read host of
+        \\        Nothing →
+        \\            ⊤
+        \\        Just self →
+        \\            Hosted.afterRender self (Hosted.later λ_ → ⊤)
+        \\
+        \\
+        \\mounts : Browser.Program, Browser.Boot → ⊤
+        \\mounts = Browser.runMounts
+        \\
+        \\
+        \\page : Browser.Program
+        \\page =
+        \\    Browser.hosted
+        \\        { init =
+        \\            λself →
+        \\                Js.write host (Just self)
+        \\                0
+        \\        , update = λ_ _ n → n
+        \\        , settle = λ_ n → n
+        \\        , view = λ_ → Html.text "ok"
+        \\        }
+        \\
+        \\
+        \\pub operations = { mounts = mounts, page = page, request = request }
+    );
+    const expected = "the page has no body to mount a program at\nscheduled after stop: 0\n";
+    inline for (.{ false, true }) |release| {
+        const result = if (release)
+            try w.run(&.{ "build", "--core", "--library", "--release", "--platform=browser", "--out=dev", "Probe.beni" })
+        else
+            try w.run(&.{ "build", "--core", "--library", "--platform=browser", "--out=dev", "Probe.beni" });
+        try testing.expectEqual(@as(u8, 0), result.exit_code);
+        try testing.expectEqualStrings("", result.stderr);
+        try w.write("check.mjs",
+            \\globalThis.document = {body:null};
+            \\const {mounts,page,request}=Object.values(await import('./dev/Probe.mjs'))[0];
+            \\let stopped=false,scheduled=0;
+            \\const boot={hasRoot:()=>false,render:()=>()=>{},schedule:()=>{scheduled++},dead:()=>stopped,hosted:()=>{},flush:()=>{},phase:()=>false,stop:()=>{}};
+            \\try{mounts(page,boot);throw Error('missing expected defect')}catch(e){if(e.constructor!==Error||e.message!=='the page has no body to mount a program at')throw e;console.log(e.message)}
+            \\document.body={};
+            \\mounts(page,boot);
+            \\stopped=true;
+            \\request(null);
+            \\console.log('scheduled after stop: '+scheduled);
+        );
+        try w.expectProgram("check.mjs", .{ .stdout = expected });
+    }
+}
+
+test "a foreign platform Browser.Bridge keeps its own direct and first-class implementations" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("platform/beni.json",
+        \\{"platform":true,"name":"bridge-test","program":"Probe.Program","runtime":"runtime.js"}
+    );
+    try w.write("platform/runtime.js", "export const run = (main) => { console.log(main); };\n");
+    try w.write("platform/Browser/Bridge.beni", "pub foreign pure block : Int → Int\n");
+    try w.write("platform/Browser/Bridge.js", "export const block = (n) => n + 10;\n");
+    try w.write("platform/Probe.beni",
+        \\import Browser.Bridge as Bridge
+        \\
+        \\
+        \\pub foreign type Program
+        \\
+        \\
+        \\pub foreign pure program : Int → Program
+        \\
+        \\
+        \\apply : (Int → Int), Int → Int
+        \\apply f n = f n
+        \\
+        \\
+        \\pub page : Program
+        \\page = program (Bridge.block 7 + apply Bridge.block 3)
+    );
+    try w.write("platform/Probe.js", "export const program = (n) => n;\n");
+    try w.write("Main.beni",
+        \\import Probe
+        \\
+        \\
+        \\main : Probe.Program
+        \\main = Probe.page
+    );
+    for ([_]bool{ false, true }) |release| {
+        const built = try w.run(if (release)
+            &.{ "build", "--release", "--platform=./platform", "--out=out", "Main.beni" }
+        else
+            &.{ "build", "--platform=./platform", "--out=out", "Main.beni" });
+        try expectBuilt(built);
+        try testing.expectEqualStrings("", built.stderr);
+        try w.expectProgram("out/_main.mjs", .{ .stdout = "30\n" });
     }
 }

@@ -186,6 +186,7 @@ pub const own = struct {
 /// The ownership checker v2 (`docs/design/ownership-v2.md` §5), behind the
 /// hidden `--ownership=v2` while v1 is frozen.
 pub const own2 = struct {
+    pub const Packed = @import("own2/Packed.zig");
     pub const Ids = @import("own2/Ids.zig");
     pub const Place = @import("own2/Place.zig");
     pub const Cell = @import("own2/Cell.zig");

@@ -27,7 +27,8 @@
 //! rows[count], sorted by (kind, key):
 //!   kind: u8, 3 zero bytes      0 an entry, 1 a front-end artifact (`Dir.Kind`'s
 //!                               numbers), 2 a module's edge lists, 3 a
-//!                               module's emitted text, in units
+//!                               module's emitted text, in units, 4 a versioned
+//!                               v2 ownership row
 //!   key: [16]u8
 //!   offset: u32, len: u32       into the blob, from its first byte
 //! the payloads, in row order; two `edges` or `emit` rows with the same
@@ -43,8 +44,8 @@ const Allocator = std.mem.Allocator;
 const Key = @import("Key.zig");
 
 pub const magic = "BENIPACK";
-/// 2: the `edges` kind; 3: the `emit` rows.
-pub const version: u32 = 3;
+/// 2: the `edges` kind; 3: the `emit` rows; 4: versioned v2 ownership rows.
+pub const version: u32 = 4;
 
 const header_len = magic.len + 4 + 4;
 const row_len = 4 + 16 + 4 + 4;
@@ -58,6 +59,7 @@ pub const Kind = enum(u8) {
     frontend = 1,
     edges = 2,
     emit = 3,
+    ownership2 = 4,
 };
 
 /// A pack, validated. `empty` holds no row and finds nothing.
@@ -82,7 +84,7 @@ pub const Pack = struct {
         var previous: ?Row = null;
         for (0..count) |i| {
             const row = pack.rowAt(@intCast(i));
-            if (row.kind > @backingInt(Kind.emit)) return empty;
+            if (row.kind > @backingInt(Kind.ownership2)) return empty;
             if (@as(u64, row.offset) + row.len > bytes.len or row.offset < table_end) return empty;
             if (previous) |p| if (!p.lessThan(row)) return empty;
             previous = row;

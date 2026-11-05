@@ -4,13 +4,13 @@ import { String$fromInt } from "./_core/String.mjs";
 import { Node$printLines } from "./_platform/Node.mjs";
 const JsonDerivedDce$$codec1$$read = (c, d, p, k, n, v) => {
   if (typeof v !== "object" || v === null || globalThis.Array.isArray(v)) {
-    return Schema$compiledFail(c, p, k, n, 0, "expected an object", v, false);
+    return Schema$compiledFail("[\"v\",[]]", c, p, k, n, 0, "expected an object", v, false);
   }
   const $before$1 = c.issues.length;
   if (c.reject) {
     for (const $key$2 of globalThis.Object.keys(v)) {
       if ($key$2 !== "rank" && $key$2 !== "title") {
-        Schema$compiledFail(c, Schema$pathAt(p, k, n), $key$2, $key$2, 2, "unexpected key \"" + $key$2 + "\"", v[$key$2], false);
+        Schema$compiledFail("[\"v\",[]]", c, Schema$pathAt(p, k, n), $key$2, $key$2, 2, "unexpected key \"" + $key$2 + "\"", v[$key$2], false);
         if (!c.all) {
           return c.fail;
         }
@@ -22,20 +22,20 @@ const JsonDerivedDce$$codec1$$read = (c, d, p, k, n, v) => {
   const $x$6 = v["rank"];
   if ($x$6 !== undefined) {
     if ($deep$4) {
-      $f$5 = Schema$compiledFail(c, Schema$pathAt(p, k, n), "rank", "rank", 5, "the depth limit is reached", $x$6, false);
+      $f$5 = Schema$compiledFail("[\"v\",[]]", c, Schema$pathAt(p, k, n), "rank", "rank", 5, "the depth limit is reached", $x$6, false);
     } else {
       if (typeof $x$6 !== "number") {
-        $f$5 = Schema$compiledFail(c, Schema$pathAt(p, k, n), "rank", "rank", 0, "expected a number", $x$6, false);
+        $f$5 = Schema$compiledFail("[\"v\",[]]", c, Schema$pathAt(p, k, n), "rank", "rank", 0, "expected a number", $x$6, false);
       } else {
         if (!globalThis.Number.isSafeInteger($x$6)) {
-          $f$5 = Schema$compiledFail(c, Schema$pathAt(p, k, n), "rank", "rank", 4, "expected a safe integer", $x$6, false);
+          $f$5 = Schema$compiledFail("[\"v\",[]]", c, Schema$pathAt(p, k, n), "rank", "rank", 4, "expected a safe integer", $x$6, false);
         } else {
           $f$5 = $x$6;
         }
       }
     }
   } else {
-    $f$5 = Schema$compiledFail(c, Schema$pathAt(p, k, n), "rank", "rank", 1, "missing key \"rank\"", v, false);
+    $f$5 = Schema$compiledFail("[\"v\",[]]", c, Schema$pathAt(p, k, n), "rank", "rank", 1, "missing key \"rank\"", v, false);
   }
   if ($f$5 === c.fail && !c.all) {
     return c.fail;
@@ -44,16 +44,16 @@ const JsonDerivedDce$$codec1$$read = (c, d, p, k, n, v) => {
   const $x$8 = v["title"];
   if ($x$8 !== undefined) {
     if ($deep$4) {
-      $f$7 = Schema$compiledFail(c, Schema$pathAt(p, k, n), "title", "title", 5, "the depth limit is reached", $x$8, false);
+      $f$7 = Schema$compiledFail("[\"v\",[]]", c, Schema$pathAt(p, k, n), "title", "title", 5, "the depth limit is reached", $x$8, false);
     } else {
       if (typeof $x$8 !== "string") {
-        $f$7 = Schema$compiledFail(c, Schema$pathAt(p, k, n), "title", "title", 0, "expected a string", $x$8, false);
+        $f$7 = Schema$compiledFail("[\"v\",[]]", c, Schema$pathAt(p, k, n), "title", "title", 0, "expected a string", $x$8, false);
       } else {
         $f$7 = $x$8;
       }
     }
   } else {
-    $f$7 = Schema$compiledFail(c, Schema$pathAt(p, k, n), "title", "title", 1, "missing key \"title\"", v, false);
+    $f$7 = Schema$compiledFail("[\"v\",[]]", c, Schema$pathAt(p, k, n), "title", "title", 1, "missing key \"title\"", v, false);
   }
   if ($f$7 === c.fail && !c.all) {
     return c.fail;
@@ -63,7 +63,7 @@ const JsonDerivedDce$$codec1$$read = (c, d, p, k, n, v) => {
   }
   return { rank: $f$5, title: $f$7 };
 };
-const JsonDerivedDce$$codec1$$parseWith = ($o, $t) => Schema$compiledParse($o, null, JsonDerivedDce$$codec1$$read, $t);
+const JsonDerivedDce$$codec1$$parseWith = ($o, $t) => Schema$compiledParse($o, [], JsonDerivedDce$$codec1$$read, $t);
 const JsonDerivedDce$$codec1$$parse = ($t) => JsonDerivedDce$$codec1$$parseWith(Schema$defaultOptions(), $t);
 const JsonDerivedDce$title = (text$1) => {
   const $t$1 = JsonDerivedDce$$codec1$$parse(text$1);

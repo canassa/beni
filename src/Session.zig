@@ -212,6 +212,8 @@ ownership_sites: []?[]const [6]u64 = &.{},
 /// each module's report from the check's own run of the checker v2, which the
 /// dump prints, so v2 runs once (#1193).
 ownership2_reports: []?*Own2Report.Kept = &.{},
+/// Separate v2 blocks, populated only for a v2 run or the pack maker.
+ownership2_blocks: []?[]const u8 = &.{},
 
 pub const DiagnosticsFormat = enum { text, json };
 
@@ -219,6 +221,9 @@ pub fn freeOwnershipBlocks(session: *Session) void {
     for (session.ownership_blocks) |slot| if (slot) |bytes| session.gpa.free(bytes);
     session.gpa.free(session.ownership_blocks);
     session.ownership_blocks = &.{};
+    for (session.ownership2_blocks) |slot| if (slot) |bytes| session.gpa.free(bytes);
+    session.gpa.free(session.ownership2_blocks);
+    session.ownership2_blocks = &.{};
     for (session.ownership_sites) |slot| if (slot) |sites| session.gpa.free(sites);
     session.gpa.free(session.ownership_sites);
     session.ownership_sites = &.{};
@@ -2159,11 +2164,15 @@ fn graphPlatforms(session: *const Session, scratch: Allocator) Allocator.Error!G
     const sees = try scratch.alloc(u64, chain.layers.len);
     var reexports: std.ArrayList(Graph.Platforms.Reexport) = .empty;
     var cloudflare_layer: ?u8 = null;
+    var browser_layer: ?u8 = null;
     const lowerings = try scratch.alloc(?[]const u8, chain.layers.len);
     for (chain.layers, sees, lowerings, 0..) |layer, *s, *l, i| {
         s.* = layer.sees;
         if (layer.manifest.name) |name| if (std.mem.eql(u8, name, "cloudflare")) {
             cloudflare_layer = @intCast(i);
+        };
+        if (layer.embedded) |embedded| if (std.mem.eql(u8, embedded.name, "browser")) {
+            browser_layer = @intCast(i);
         };
         l.* = layer.manifest.markup.lowering;
         for (layer.manifest.reexports) |name| try reexports.append(scratch, .{ .module = name, .layer = @intCast(i) });
@@ -2173,6 +2182,7 @@ fn graphPlatforms(session: *const Session, scratch: Allocator) Allocator.Error!G
         .sees = sees,
         .reexports = reexports.items,
         .cloudflare_layer = cloudflare_layer,
+        .browser_layer = browser_layer,
         .chain = true,
         .vocabulary = if (chain.firstMarkup("vocabulary")) |f| f.value else null,
         .markup_type = if (chain.firstMarkup("type")) |f| f.value else null,
@@ -2464,6 +2474,10 @@ fn packEntries(session: *Session, writer: *CorePack.Writer, cached: []const ?Cac
         const entry = try session.entryBytes(gpa, m);
         defer gpa.free(entry);
         try writer.add(gpa, .entry, session.keys.of(m), entry);
+        const block = session.ownership2_blocks[i] orelse &.{};
+        const packed_row = try @import("own2/Packed.zig").write(gpa, block);
+        defer gpa.free(packed_row);
+        try writer.add(gpa, .ownership2, session.keys.of(m), packed_row);
     }
 }
 
@@ -2708,6 +2722,11 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
     session.freeOwnershipBlocks();
     session.ownership_blocks = try session.gpa.alloc(?[]u8, session.graph.count());
     @memset(session.ownership_blocks, null);
+    const needs_ownership2 = session.options.ownership_v2 or session.options.pack_out != null;
+    if (needs_ownership2) {
+        session.ownership2_blocks = try session.gpa.alloc(?[]const u8, session.graph.count());
+        @memset(session.ownership2_blocks, null);
+    }
     if (session.options.ownership_v2 and session.options.ownership_v2_dump != null) {
         session.ownership2_reports = try session.gpa.alloc(?*Own2Report.Kept, session.graph.count());
         @memset(session.ownership2_reports, null);
@@ -2718,8 +2737,8 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
     }
     const ownership: Enforce.Context = .{ .session = session, .ins = &ins };
     // The checker v2's inputs, under `--ownership=v2` (`ownership-v2.md` §8).
-    var ins2: Enforce2.Inputs = if (session.options.ownership_v2) try Enforce2.inputs(session.gpa, session) else .{ .birs = &.{}, .names = &.{}, .ranks = &.{}, .rank_names = &.{} };
-    defer if (session.options.ownership_v2) ins2.deinit(session.gpa);
+    var ins2: Enforce2.Inputs = if (needs_ownership2) try Enforce2.inputs(session.gpa, session) else .{ .birs = &.{}, .names = &.{}, .ranks = &.{}, .rank_names = &.{} };
+    defer if (needs_ownership2) ins2.deinit(session.gpa);
     const ownership2: Enforce2.Context = .{ .session = session, .ins = &ins2 };
     const Runner = struct {
         session: *Session,
@@ -2744,7 +2763,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                 &r.session.interner,
                 .{
                     .ownership = if (r.session.options.ownership_v2) null else r.ownership,
-                    .ownership2 = if (r.session.options.ownership_v2) r.ownership2 else null,
+                    .ownership2 = if (r.session.options.ownership_v2 or r.session.options.pack_out != null) r.ownership2 else null,
                     .profile = &r.session.profile,
                     .entry_constructors = r.entry_constructors,
                     .entry_kinds = r.entry_kinds,

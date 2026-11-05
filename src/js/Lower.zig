@@ -3531,6 +3531,7 @@ pub const Lowerer = struct {
     }
 
     fn typedIntrinsicDecl(l: *Lowerer, decl: Bir.Decl) ?JsIntrinsic.Which {
+        if (l.in.graph.isBrowser(l.in.module) and std.mem.eql(u8, l.text(l.module_name), "Browser.Bridge")) return JsIntrinsic.browserBridge(l.text(l.bir.symbol(decl.name)));
         if (l.in.graph.modulePackage(l.in.module) == .core and std.mem.eql(u8, l.text(l.module_name), "Schema") and std.mem.eql(u8, l.text(l.bir.symbol(decl.name)), "endpointIdentity")) return .schemaIdentity;
         if (l.in.graph.modulePackage(l.in.module) == .core and std.mem.eql(u8, l.text(l.module_name), "Js.Kernel")) {
             const kernel_name = l.text(l.bir.symbol(decl.name));
@@ -12627,11 +12628,35 @@ pub const Lowerer = struct {
     }
     // ownership pin end: unpackOpt
 
+    // ownership pin begin: block
+    // ownership pin begin: installRoot
+    // ownership pin begin: installFuzz
+    fn browserBridgeOperation(l: *Lowerer, out: *StmtList, which: JsIntrinsic.Which, values: []const Node.Index, p: u32) Allocator.Error!Node.Index {
+        switch (which) {
+            .browserBlock => return values[0],
+            .browserInstallRoot => {
+                const target = try l.member(values[0], try l.interner.getOrPut(l.gpa, "$$root"), p);
+                try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), values[1].int()));
+            },
+            .browserInstallFuzz => {
+                const global = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
+                const target = try l.member(global, try l.interner.getOrPut(l.gpa, "__beniFuzzSend"), p);
+                const missing = try l.binary(.strict_eq, target, try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p);
+                try l.ifStatement(out, missing, &.{try l.add(.assign_stmt, p, target.int(), values[0].int())}, p);
+            },
+            else => unreachable,
+        }
+        return l.nullNode(p);
+    }
+    // ownership pin end: installFuzz
+    // ownership pin end: installRoot
+    // ownership pin end: block
+
     /// A first-class typed intrinsic, with no sibling export or import.
     fn jsTypedValue(l: *Lowerer, which: JsIntrinsic.Which, p: u32) !Node.Index {
         const arity: usize = switch (which) {
             .optMatch, .arraySet, .arrayWrite => 3,
-            .any_unpack_opt, .schemaIdentity, .optWithDefault, .arrayDone, .arrayGet, .arraySort => 2,
+            .browserInstallRoot, .any_unpack_opt, .schemaIdentity, .optWithDefault, .arrayDone, .arrayGet, .arraySort => 2,
             else => 1,
         };
         var names: [3]JsIr.NameIndex = undefined;
@@ -12639,6 +12664,12 @@ pub const Lowerer = struct {
         for (0..arity) |i| {
             names[i] = try l.fresh(l.well.temp);
             values[i] = try l.ident(names[i], p);
+        }
+        if (which == .browserBlock or which == .browserInstallRoot or which == .browserInstallFuzz) {
+            var body: StmtList = .empty;
+            const result_ = try l.browserBridgeOperation(&body, which, values[0..arity], p);
+            try body.append(l.scratch, try l.returnStmt(result_, p));
+            return l.arrowOf(names[0..arity], body.items, p);
         }
         if (which == .any_unpack_opt) {
             var body: StmtList = .empty;
@@ -12840,6 +12871,7 @@ pub const Lowerer = struct {
             W.kernelPack, W.kernelRead => v[0],
             // ownership pin end: slotRead
             // ownership pin end: slotPack
+            W.browserBlock, W.browserInstallRoot, W.browserInstallFuzz => l.browserBridgeOperation(out, which, v, p),
             W.from, W.to => v[0],
             W.invoke => l.hostCall(v[0], &.{ v[1], v[2] }, p),
             W.completion => if (l.completion != .none)

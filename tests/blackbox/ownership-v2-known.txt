@@ -59,8 +59,8 @@ tests/corpus/ownership/RefSetThenWrite.beni [node] RefSetThenWrite 48:17 #0 :: R
 tests/corpus/ownership/RefSetThenWrite.beni [node] RefSetThenWrite 53:5 #0 :: Ref.set cell◆ :: absent :: accepted  v2 words `Ref.set` as a writer of `◆` (#1079); v1 has no row; a later use of the handle is no use of the old contents (#1366)
 tests/corpus/ownership/RefSetThenWrite.beni [node] RefSetThenWrite 53:5 #0 :: Ref.set xs :: absent :: rejected  v2 words `Ref.set`'s payload `consumed`, and the old contents are read after the cell is written again; v1 reads them escaped
 tests/corpus/ownership/RefSetThenWrite.beni [node] RefSetThenWrite 54:5 #0 :: RefSetThenWrite.pokeList cell◆ :: absent :: accepted  v2 words `Ref.set` as a writer of `◆` (#1079); v1 has no row; a later use of the handle is no use of the old contents (#1366)
-core List 1745:20 #0 :: List.focus func :: absent :: accepted  `update`'s call of `focus`: v2's row also demands the index and the callback (#1079)
-core List 1745:20 #0 :: List.focus i :: absent :: accepted  `update`'s call of `focus`: v2's row also demands the index and the callback (#1079)
+core List 1006:20 #0 :: List.focus func :: absent :: accepted  `update`'s call of `focus`: v2's row also demands the index and the callback (#1079)
+core List 1006:20 #0 :: List.focus i :: absent :: accepted  `update`'s call of `focus`: v2's row also demands the index and the callback (#1079)
 #
 # S3b (#1016): calls of walked declarations. v2 names a write below a recursive
 # value by its canonical path, where v1 names the step it took (`#Node.0⟨Tree⟩`,
@@ -608,8 +608,8 @@ tests/corpus/run/RefUpdateAcrossFibers.beni RefUpdateAcrossFibers 32:9 #0 :: Ref
 # Slice 4a: known limits.
 core Dict limit removeMin  #1372: a red-black removal that settles in 7 walks, the later ones about 130 000 growth each
 # Slice 4a: core's groups, solved.
-core List 1799:5 #1 :: List.unzipHelp <call> :: absent :: accepted  v2 finds the second builder or accumulator written too; v1's summary writes only the first
-core List 1813:17 #1 :: List.unzipHelp <call> :: absent :: accepted  v2 finds the second builder or accumulator written too; v1's summary writes only the first
+core List 1060:5 #1 :: List.unzipHelp <call> :: absent :: accepted  v2 finds the second builder or accumulator written too; v1's summary writes only the first
+core List 1074:17 #1 :: List.unzipHelp <call> :: absent :: accepted  v2 finds the second builder or accumulator written too; v1's summary writes only the first
 core Result 271:21 #1 :: Result.partitionHelp <literal> :: absent :: accepted  v2 finds the second builder or accumulator written too; v1's summary writes only the first
 # Slice 4d: a group solved since its port keeps no round that its last round covers.
 tests/corpus/run/TailModConsMerge.beni TailModConsMerge 27:18 #1 :: TailModConsMerge.split <literal> :: absent :: accepted  v2 finds the second accumulator written too (`split` swaps the two); v1's summary writes only the first
@@ -2904,12 +2904,24 @@ tests/corpus/browser/dedicated/RealmConcretePageWorkerSafe Main 23:13 #0 :: Ref.
 tests/corpus/browser/dedicated/RealmGenericLocalSafe Main 16:13 #0 :: Ref.set r◆ :: absent :: accepted  v2 words generic Ref writes and their consumed payloads; v1 has no cell-writer row (#1079)
 tests/corpus/browser/dedicated/RealmGenericLocalSafe Main 16:13 #0 :: Ref.set x :: absent :: accepted  v2 words generic Ref writes and their consumed payloads; v1 has no cell-writer row (#1079)
 # #1664: typed Ref chain snapshots; the fresh accumulator never enters the input chain.
-core Task 2837:23 #0 :: Task.linksList <literal> :: accepted :: rejected  #1664: v2 aliases the earlier Ref payload with a fresh snapshot accumulator
-core Task 2850:21 #0 :: Task.linksList <construction> :: accepted :: rejected  #1664: v2 aliases the input Ref chain with its separate accumulator
-core Task 2850:54 #0 :: construction values :: accepted :: rejected  #1664: the accumulator is never stored into the input chain
 tests/corpus/ownership/core/ChainSnapshot.beni [node] ChainSnapshot 11:18 #0 :: ChainSnapshot.collect <literal> :: accepted :: rejected  #1664: a fresh accumulator cannot alias the earlier Ref payload
 tests/corpus/ownership/core/ChainSnapshot.beni [node] ChainSnapshot 24:21 #0 :: ChainSnapshot.collect <construction> :: accepted :: rejected  #1664: the snapshot accumulator is separate from the input chain
 tests/corpus/ownership/core/ChainSnapshot.beni [node] ChainSnapshot 24:52 #0 :: construction values :: accepted :: rejected  #1664: the accumulator is never stored into the input chain
 
 # #1831: pre-existing v1 Opt projection; v2 refusal is the contract.
 tests/corpus/ownership/core/AnyUnpackOpt.beni [node] AnyUnpackOpt 10:5 #0 :: List.push items :: accepted :: rejected  #1831: v1 drops the unknown Opt payload; v2 refuses it. Correct refusal remains in tests/pending/build/bad/OptDefaultAlias.
+
+# Packed v2 summaries recover these checked callbacks (#1854).
+tests/corpus/run/HttpServerBasics.beni HttpServerBasics 32:17 #0 :: Deferred.complete stop◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row; the pack now supplies the callback's v2 callees (#1854)
+tests/corpus/run/HttpServerInvalidResponse.beni HttpServerInvalidResponse 48:17 #0 :: Deferred.complete stop◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row; the pack now supplies the callback's v2 callees (#1854)
+tests/corpus/run/WebSocketBackPressure.beni WebSocketBackPressure 29:17 #0 :: Deferred.complete gates.hold◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row; the pack now supplies the callback's v2 callees (#1854)
+tests/corpus/run/WebSocketDrain.beni WebSocketDrain 28:17 #0 :: Deferred.complete gates.holdClose◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row; the pack now supplies the callback's v2 callees (#1854)
+tests/corpus/run/WebSocketEcho.beni WebSocketEcho 24:17 #0 :: Deferred.complete stop◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row; the pack now supplies the callback's v2 callees (#1854)
+tests/corpus/run/WebSocketLifetime.beni WebSocketLifetime 27:17 #0 :: Deferred.complete gates.closed◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row; the pack now supplies the callback's v2 callees (#1854)
+tests/corpus/run/WebSocketNetworkFault.beni WebSocketNetworkFault 18:9 #0 :: Deferred.complete gate◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row; the pack now supplies the callback's v2 callees (#1854)
+tests/corpus/run/WebSocketOwnerEnds.beni WebSocketOwnerEnds 16:9 #0 :: Deferred.complete stop◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row; the pack now supplies the callback's v2 callees (#1854)
+
+core List limit removeLeaf  owner-accepted interim trie: List classes remain unpublished until ownership-checker.md §30 O0–O6 (#1854); no budget or publication-rule change
+
+# linksList and its three #1664 rows were removed by eb39897284.
+core Task 3472:18 #0 :: Js.Array.arraySet into :: accepted :: rejected  #1927: locally allocated destination is not published until copySweep finishes, so existing Controls cannot reach it; v2 opaque-Control payload reach is conservative; wd-fiber re-checks after P6

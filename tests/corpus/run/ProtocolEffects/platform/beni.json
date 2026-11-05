@@ -1,0 +1,13 @@
+{
+  "platform": true,
+  "name": "protocol-effects",
+  "platforms": ["browser"],
+  "program": "Probe.Program",
+  "entryHost": "window",
+  "entryKinds": [{
+    "programType": "Probe.Program",
+    "realm": "window",
+    "runtime": "Probe",
+    "constructors": [], "launches": [], "parameters": []
+  }]
+}

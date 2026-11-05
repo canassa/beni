@@ -254,7 +254,15 @@ const CodecWriter = struct {
                 const args = try gpa.alloc(u32, argc);
                 defer gpa.free(args);
                 for (args, words[n.b + 1 ..][0..argc]) |*arg, slot| {
-                    arg.* = @backingInt(try b.appendNode(.{ .tag = .parameter, .lhs = slot, .rhs = 0, .token = w.token }));
+                    const parameter = try b.appendNode(.{ .tag = .parameter, .lhs = slot, .rhs = 0, .token = w.token });
+                    // Recursive codec arguments forward the enclosing codec's
+                    // endpoint seats, including their checked-data witnesses.
+                    const at = b.current_parameters.start + 2 * slot;
+                    b.node_types.items[@backingInt(parameter)] = .{
+                        .pair = .{ .encoded = b.identity_parameters.items[at], .program = b.identity_parameters.items[at + 1] },
+                        .parameters = b.current_parameters,
+                    };
+                    arg.* = @backingInt(parameter);
                 }
                 return b.appendNode(.{ .tag = .codec_ref, .lhs = w.c.order[n.a], .rhs = try b.range(args), .token = w.token });
             },

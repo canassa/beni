@@ -9,7 +9,12 @@
 --! model once, on one microtask after the messages of a task, writing only
 --! the holes whose values changed.
 
+import Browser.Bridge as Bridge
+import Browser.Host.Document as Document
+import Browser.Host.Element as Element
+import Browser.Host.Node as Node
 import Html exposing (Html)
+import Html.Runtime as Runtime
 import Js
 import Js.Chain as Chain
 import Js.Host as TypedHost
@@ -20,7 +25,28 @@ import Url exposing (Url)
 
 
 --| What `main` is: the programs of a page, and where each mounts.
-pub foreign type Program
+pub opaque type Program
+    = Program (List Mount)
+
+
+pub type alias Boot =
+    hasRoot : Node.Node → Bool
+    render : Node.Node → (Runtime.Block → ⊤)
+    schedule : (⊤ → ⊤) → ⊤
+    dead : ⊤ → Bool
+    hosted : ⊤ → ⊤
+    flush : ⊤ → ⊤
+    phase : (⊤ → ⊤) → Bool
+    stop : ⊤ → ⊤
+
+
+type alias Mount =
+    id : Maybe String
+    start : Boot, Node.Node → ⊤
+
+
+type Control
+    = RenderOnly
 
 
 --| A click on a link the page should handle itself (`boundary.md` §9.8.13
@@ -45,12 +71,7 @@ pub program :
             , view : sync (model → Html msg)
             }
     → Program
-program p =
-    -- One mount, `{ a, n }`: the record, and no element id. Written in beni
-    -- (`plans/runtime-in-beni.md`, step 3), so a release build sees that the
-    -- mount has no `h` and drops the runtime's hosted branch (`backend.md`
-    -- §9, fact 3).
-    Js.to (Js.array [ Js.from { a = p, n = Js.null } ])
+program p = Program [ { id = Nothing, start = λboot node → mount p boot node λ_ _ → ⊤ } ]
 
 
 --| The same program, mounted at the element whose `id` is the string
@@ -62,12 +83,7 @@ program p =
 --|     main =
 --|         Browser.mountAt (Browser.program app) "cart"
 pub mountAt : Program, String → Program
-mountAt page id =
-    -- Each mount again, `{ a, h, n }`, with the element's id.
-    Js.to
-        (Js.call (Js.from page) "map"
-            [ Js.from λm → Js.from { a = Js.get m "a", h = Js.get m "h", n = Js.from id } ]
-        )
+mountAt (Program mounts) id = Program (List.map mounts λm → { m | id = Just id })
 
 
 --| The same program. Under `browser-inline` this asks the build to write
@@ -91,14 +107,7 @@ prerender page _ = page
 --|     main =
 --|         Browser.programs [ page, Browser.mountAt cart "cart" ]
 pub programs : List Program → Program
-programs list =
-    -- Every mount of every program, in order. The list is read as the list
-    -- protocol reads one (`backend.md` §4, *Lists are arrays*).
-    mounts = Js.array []
-
-    List.foldl list ⊤ λpage _ →
-        Js.each (Js.from page) λmount → Js.to (Js.call mounts "push" [ mount ])
-    Js.to mounts
+programs list = Program (List.concatMap list λ(Program mounts) → mounts)
 
 
 --| A function that sends a message to a running program: what a command's
@@ -129,16 +138,26 @@ pub hosted :
             }
     → Program
 hosted p =
-    -- One mount, `{ h, n }`: no element id, and the function the runtime
-    -- turns into the record it mounts, handed the mount node, the render
-    -- loop's `flush`, what sets the after-render phase, and what stops the
-    -- page when a fiber throws (`boundary.md` §9.8.10 (c)).
-    Js.to
-        (Js.array
-            [ Js.from
-                { h = λroot flushing phase stop → host p root flushing phase stop, n = Js.null }
-            ]
-        )
+    Program
+        [ { id = Nothing
+          , start =
+              λboot node →
+                  boot.hosted ⊤
+                  sender = Js.ref Nothing
+                  request = Js.ref Nothing
+                  app =
+                      host
+                          p
+                          (λmsg → (stored sender) msg)
+                          (λcontrol → (stored request) control)
+                          boot.flush
+                          boot.phase
+                          boot.stop
+                  mount app boot node λsend render →
+                      Js.write sender (Just send)
+                      Js.write request (Just render)
+          }
+        ]
 
 
 --| Render every program with a message waiting, now, rather than on the
@@ -220,8 +239,8 @@ nudge = Js.ref λ⊤ → ⊤
 
 
 -- A renderer-private message queues a flush without applying update.
-skip : Js.Value
-skip = Js.array []
+skip : Control
+skip = RenderOnly
 
 
 later : Js.Ref (Chain.Chain (⊤ → ⊤))
@@ -297,81 +316,65 @@ host :
       , settle : sync (Host msg, model → model)
       , view : sync (model → Html msg)
       }
-    , Js.Value
+    , Send msg
+    , (Control → ⊤)
     , sync (⊤ → ⊤)
     , sync ((⊤ → ⊤) → Bool)
     , sync (⊤ → ⊤)
-    → Js.Value
-host p root flushing phase stop =
+    → { init : ⊤ → ⊤, update : msg, ⊤ → ⊤, view : ⊤ → Html msg }
+host p send request flushing phase stop =
     Js.write loop (Just flushing)
-
-    -- A fiber that throws stops the page, as a handler that throws does.
-    -- Once the page has stopped, `stop` cancels every fiber of every
-    -- program (`boundary.md` §9.8.14). The after-render work not yet run is
-    -- dropped with no help: only a flush runs it, and none runs once the
-    -- page has stopped.
     TaskHooks.onDefect stop
     Js.write setPhase (Just phase)
     _ = phase afterRender
-
-    send =
-        λmsg →
-            _ = Js.call root "$$root" [ msg ]
-            ⊤
-
-    Js.write nudge λ⊤ → send skip
+    Js.write nudge λ⊤ → request skip
     model = Js.ref Nothing
     started = Js.ref False
     dirty = Js.ref False
     shown = Js.ref Nothing
-    self = TypedHost.make (λmessage → Js.to (Js.call root "$$root" [ message ])) λwork →
+    self = TypedHost.make send λwork →
         _ = Chain.append (Js.read later) work
-        send skip
-
+        request skip
     apply =
         λmsg →
             Js.write dirty True
-            Js.write model (Just (p.update self (Js.to msg) (stored model)))
-    Js.from
-        { init = λ⊤ → Js.null
-        , update =
-            λmsg →
-                if Js.same msg skip then
-                    ⊤
-                else if Js.read dispatching then
-                    _ = Chain.append inbox λ⊤ → apply msg
-                    ⊤
-                else
-                    Js.write dispatching True
-                    Js.finally
-                        (λ⊤ →
-                            apply msg
-                            drain ⊤
-                            ⊤
-                        )
-                        λ⊤ →
-                            Chain.clear inbox
-                            Js.write dispatching False
-        , view =
-            λ⊤ →
-                if not (Js.read started) then
-                    Js.write started True
-                    Js.write model (Just (p.settle self (p.init self)))
-                    Js.write shown (Just (p.view (stored model)))
-                    stored shown
-                else if not (Js.read dirty) then
-                    stored shown
-                else
-                    Js.write dirty False
-                    Js.write busy True
-                    Js.finally
-                        (λ⊤ →
-                            Js.write model (Just (p.settle self (stored model)))
-                            Js.write shown (Just (p.view (stored model)))
-                            stored shown
-                        )
-                        λ⊤ → Js.write busy False
-        }
+            Js.write model (Just (p.update self msg (stored model)))
+    { init = λ⊤ → ⊤
+    , update =
+        λmsg _ →
+            if Js.read dispatching then
+                _ = Chain.append inbox λ⊤ → apply msg
+                ⊤
+            else
+                Js.write dispatching True
+                Js.finally
+                    (λ⊤ →
+                        apply msg
+                        drain ⊤
+                    )
+                    λ⊤ →
+                        Chain.clear inbox
+                        Js.write dispatching False
+    , view =
+        λ⊤ →
+            if not (Js.read started) then
+                Js.write started True
+                Js.write model (Just (p.settle self (p.init self)))
+                Js.write shown (Just (p.view (stored model)))
+                stored shown
+            else if not (Js.read dirty) then
+                stored shown
+            else
+                Js.write dirty False
+                Js.write busy True
+                Js.finally
+                    (λ⊤ →
+                        Js.write model (Just (p.settle self (stored model)))
+                        Js.write shown (Just (p.view (stored model)))
+                        stored shown
+                    )
+                    λ⊤ → Js.write busy False
+    }
 
 
 -- The compiled platform supplies its synchronous after-render point.
@@ -390,3 +393,61 @@ stored cell =
             value
         Nothing →
             Protocol.defect "a browser model was read before initialization"
+
+
+-- Runtime entry; each lookup happens after the preceding mount has rendered.
+pub runMounts : Program, Boot → ⊤
+runMounts (Program mounts) boot = List.foldl mounts ⊤ λm _ →
+    root =
+        case m.id of
+            Nothing →
+                case Document.body ⊤ of
+                    Just element →
+                        Element.toNode element
+                    Nothing →
+                        Protocol.defect "the page has no body to mount a program at"
+            Just id →
+                case Document.byId id of
+                    Just element →
+                        Element.toNode element
+                    Nothing →
+                        Protocol.defect "no element has the id \"${id}\" to mount a program at"
+    if boot.hasRoot root then
+        case m.id of
+            Nothing →
+                Protocol.defect "the page's body already holds a program"
+            Just id →
+                Protocol.defect "the element \"${id}\" already holds a program"
+    m.start boot root
+
+
+mount :
+      { init : ⊤ → model, update : msg, model → model, view : model → Html msg }
+    , Boot
+    , Node.Node
+    , (Send msg, (Control → ⊤) → ⊤)
+    → ⊤
+mount p boot node connect =
+    paint = boot.render node
+    model = Js.ref (p.init ⊤)
+    waiting = Js.ref False
+    render =
+        λ⊤ →
+            Js.write waiting False
+            paint (Bridge.block (p.view (Js.read model)))
+    request =
+        λRenderOnly →
+            if not (boot.dead ⊤) && not (Js.read waiting) then
+                Js.write waiting True
+                boot.schedule render
+    send =
+        λmsg →
+            if not (boot.dead ⊤) then
+                request skip
+                if TaskHooks.hasLogContext ⊤ then
+                    Js.write model (TaskHooks.withoutLogContext λ⊤ → p.update msg (Js.read model))
+                else
+                    Js.write model (p.update msg (Js.read model))
+    connect send request
+    Bridge.installRoot node send
+    paint (Bridge.block (p.view (Js.read model)))
