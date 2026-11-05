@@ -82,6 +82,9 @@ pub const Supply = struct {
     res_root: Node = 0,
     kept: Range,
     cond: StoredCond,
+    /// What a write below the supply's root relies on: the callee's own
+    /// claim about what it hands, derived from it (§2.11.3).
+    below: StoredCond = .{},
 };
 
 pub const Flags = packed struct(u8) {
@@ -163,6 +166,7 @@ pub const Draft = struct {
         res: Res = .{},
         kept: std.ArrayList(Effect) = .empty,
         cond: Cond = .{},
+        below: Cond = .{},
     };
 
     /// Every plain arrival at `slot` is open (a type variable's slot).
@@ -539,7 +543,7 @@ pub const Table = struct {
             var made: std.ArrayList(Supply) = .empty;
             defer made.deinit(gpa);
             for (l.supplies.items) |*s| {
-                try made.append(gpa, .{ .k = s.k, .res_root = try t.putRes(gpa, slots, &s.res, rank), .kept = try t.putEffects(gpa, slots, s.kept.items), .cond = try t.putCond(gpa, slots, s.cond) });
+                try made.append(gpa, .{ .k = s.k, .res_root = try t.putRes(gpa, slots, &s.res, rank), .kept = try t.putEffects(gpa, slots, s.kept.items), .cond = try t.putCond(gpa, slots, s.cond), .below = try t.putCond(gpa, slots, s.below) });
             }
             try t.supplies.appendSlice(gpa, made.items);
             try t.labels.append(gpa, .{ .j = l.j, .slot = l.slot, .origin = l.origin, .calls = l.calls, .supplies = .{ .start = sstart, .len = @intCast(made.items.len) } });
@@ -562,7 +566,7 @@ pub const Table = struct {
         for (t.labelsOf(h.labels)) |l| {
             var dl: Draft.DraftLabel = .{ .j = l.j, .slot = l.slot, .origin = l.origin, .calls = l.calls };
             for (t.suppliesOf(l.supplies)) |s| {
-                var ds: Draft.DraftSupply = .{ .k = s.k, .cond = try t.cond(arena, s.cond) };
+                var ds: Draft.DraftSupply = .{ .k = s.k, .cond = try t.cond(arena, s.cond), .below = try t.cond(arena, s.below) };
                 ds.res.base = s.res_root;
                 try ds.kept.appendSlice(arena, t.effectsOf(s.kept));
                 try dl.supplies.append(arena, ds);
@@ -607,6 +611,7 @@ pub const Table = struct {
                 try t.mergeRes(gpa, slots, &ds.res, s.res_root, map);
                 for (t.effectsOf(s.kept)) |e| _ = try Draft.addEffect(&ds.kept, arena, e);
                 ds.cond = try weakest(arena, account, ds.cond, try t.cond(arena, s.cond));
+                ds.below = try weakest(arena, account, ds.below, try t.cond(arena, s.below));
             }
         }
         try t.mergeRes(gpa, slots, &d.res, hb.res_root, map);
@@ -638,6 +643,7 @@ pub const Table = struct {
             if (p.j != q.j or p.slot != q.slot or !std.mem.eql(u32, &p.origin, &q.origin) or p.calls != q.calls) return false;
             if (p.supplies.len != q.supplies.len) return false;
             for (t.suppliesOf(p.supplies), t.suppliesOf(q.supplies)) |s, u| {
+                if (!t.condEql(s.below, u.below)) return false;
                 if (s.k != u.k or s.res_root != u.res_root or !t.effectsEql(s.kept, u.kept) or !t.condEql(s.cond, u.cond)) return false;
             }
         }
@@ -677,6 +683,7 @@ pub const Table = struct {
                 } else return false;
                 if (!try t.treeWithin(arena, slots, ids, s.res_root, u.res_root)) return false;
                 if (!t.effectsWithin(slots, s.kept, u.kept)) return false;
+                if (!u.below.no and !(try t.cond(arena, s.below)).weakerIn(slots, try t.cond(arena, u.below))) return false;
                 if (!u.cond.no and !(try t.cond(arena, s.cond)).weakerIn(slots, try t.cond(arena, u.cond))) return false;
             }
         }

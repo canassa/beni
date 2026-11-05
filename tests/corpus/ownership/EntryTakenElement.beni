@@ -2,7 +2,7 @@
 -- (`ownership-v2.md` §2.11.3, *a taken supply*; S7). v2 makes no demand at an
 -- `entry` argument yet, so no caller judges a write of `update`'s model, and a
 -- list reached from one stays held: `Tea.sandbox` is refused here, for `update`
--- and for `view`, directly and through a helper. `init` builds one list twice,
+-- and for `view`, directly, through a helper and through a closure's captures. `init` builds one list twice,
 -- which the first click would push twice; `view` needs no sharing to be wrong.
 import Browser
 import Html exposing (Html)
@@ -50,6 +50,22 @@ helper ⊤ =
 
 pub inView : ⊤ → Browser.Program
 inView ⊤ = Tea.sandbox { init = λ⊤ → [ [ 1 ] ], update = λmsg m → m, view = view }
+
+
+pub captured : (List (List Int) → Html Msg) → Browser.Program
+captured f = Tea.sandbox { init = λ⊤ → [ [ 1 ] ], update = λmsg m → m, view = λm → f m }
+
+
+pub viaCapture : ⊤ → Browser.Program
+viaCapture ⊤ = captured view
+
+
+pub inList : ⊤ → Browser.Program
+inList ⊤ =
+    a = [ 1 ]
+    fs = [ update ]
+    Tea.sandbox
+        { init = λ⊤ → [ a, a ], update = λx y → List.foldl fs y λf acc → f x acc, view = plain }
 
 
 main : Browser.Program

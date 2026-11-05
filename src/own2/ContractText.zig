@@ -139,7 +139,6 @@ pub fn print(t: *const Table, gpa: std.mem.Allocator, c: Id, slots: *const Slots
     try condText(t, slots, places, names, w, "; nondup ", h.res_cond);
     if (h.reads.len != 0) try w.writeAll("; reads");
     for (t.readsOf(h.reads)) |x| try arrivalsText(t, gpa, c, slots, places, names, w, x[1], x[0], true);
-    // The writes an entry a slot (§2.11.2, as the flat runs printed them).
     if (h.writes.len != 0) try w.writeAll("; writes");
     for (t.writesOf(h.writes)) |x| try arrivalsText(t, gpa, c, slots, places, names, w, x[1], x[0], false);
     if (h.writes.len != 0) try condText(t, slots, places, names, w, "; req ", h.req);
@@ -153,6 +152,7 @@ pub fn print(t: *const Table, gpa: std.mem.Allocator, c: Id, slots: *const Slots
             try arrivalsText(t, gpa, c, slots, places, names, w, s.res_root, null, true);
             try effectsText(t, slots, places, names, w, " kept", s.kept);
             try condText(t, slots, places, names, w, " sep ", s.cond);
+            try condText(t, slots, places, names, w, " below ", s.below);
             try w.writeAll("]");
         }
     }

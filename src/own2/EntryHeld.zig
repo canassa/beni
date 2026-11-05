@@ -32,9 +32,9 @@ pub fn demands(e: *Eval.Evaluation) Error!void {
             const x = f.val(v);
             switch (x.kind) {
                 .built => {
-                    if (x.form == .closure) {
-                        if (marked(e, x.head)) try refuse(e, @intCast(q), v);
-                    } else try todo.appendSlice(e.gpa(), f.kidsOf(x));
+                    // A closure runs its code and holds its captures, which it may run.
+                    if (x.form == .closure and marked(e, x.head)) try refuse(e, @intCast(q), v);
+                    try todo.appendSlice(e.gpa(), f.kidsOf(x));
                 },
                 .alt => {
                     const ks = f.kidsOf(x);

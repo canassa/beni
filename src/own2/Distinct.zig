@@ -19,7 +19,6 @@ const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 pub const Fed = @import("Fed.zig");
-const SupplyRead = @import("SupplyRead.zig");
 const Taken = @import("Taken.zig");
 const FedCall = @import("FedCall.zig");
 const Entries = @import("Entries.zig");
@@ -103,7 +102,10 @@ fn sepLeaf(e: *Eval, li: u32) Error!Cond {
             if (!e.expandable(l)) break :blk Cond.unprovable;
             var ps: std.ArrayList(Proj) = .empty;
             defer ps.deinit(e.gpa());
-            try SupplyRead.entries(e, li, &ps);
+            var ls: std.ArrayList(u32) = .empty;
+            defer ls.deinit(e.gpa());
+            try e.expand(li, &ls);
+            for (ls.items, 0..) |x, k| try ps.append(e.gpa(), .{ .leaf = x, .route = @intCast(k + 1) });
             break :blk distinct(e, ps.items, false);
         },
     };

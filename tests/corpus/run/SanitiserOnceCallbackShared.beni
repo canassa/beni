@@ -1,11 +1,11 @@
--- A runtime catch for a list that holds one object twice, handed through a
--- callback's supply (`ownership-v2.md` §2.9.3, *a family behind a supply*): a
--- callee calls its callback once, and that callback edits each element. Read
--- through the supply, `[ a, a ]` was one object, so nothing was asked of it. A
--- literal behind `app`, `Maybe.map`, `Result.map`, a user's holder, a tuple,
--- two levels of `app`, a named function, `filterMap`, `foldl` and
--- `List.update` each hold one list twice. Each edit is refused; read as one
--- object, the sanitised runs trap on a stale read.
+-- A runtime catch for a list that holds one object twice, handed to a callback
+-- (`ownership-v2.md` §2.11.3, *a taken supply*): a callee calls its callback
+-- once, and that callback edits each element. A label's `sep` is derived from
+-- what the callee supplies. A literal behind `app`, `Maybe.map`, `Result.map`,
+-- a user's holder, a tuple, two levels of `app`, a named function, `filterMap`,
+-- `foldl` and `List.update` each hold one list twice, and so do a list the
+-- callee builds, a capture, and a lambda that passes the label on. Each edit is
+-- refused; asked nothing, the sanitised runs trap on a stale read.
 import List
 import Node exposing (Program)
 import String
@@ -43,6 +43,24 @@ second : Int × a, (a → b) → b
 second ( _, v ) f = f v
 
 
+wrap : a, (List a → b) → b
+wrap v f = f [ v, v ]
+
+
+wrapLocal : a, (List a → b) → b
+wrapLocal v f =
+    w = [ v, v ]
+    f w
+
+
+opt : Maybe a, (a → b) → Maybe b
+opt m f = Maybe.map m λz → f z
+
+
+go : a, (a → b) → b
+go v f = app v λz → f z
+
+
 main : Program
 main =
     a = [ 1 ]
@@ -65,6 +83,19 @@ main =
     folded = app [ i, i ] λl → List.foldl l 0 λx n → n + List.length (push1 x)
     j = [ 1 ]
     updated = app [ j, j ] λl → List.update l 0 push1
+    k = [ 1 ]
+    built = wrap k λl → List.map l push1
+    n1 = [ 1 ]
+    local = wrapLocal n1 λl → List.map l push1
+    n2 = [ 1 ]
+    capture = λrun → run [ n2, n2 ]
+    captured = capture λl → List.map l push1
+    o = [ 1 ]
+    viaOpt = Maybe.withDefault (opt (Just [ o, o ]) λl → List.map l push1) []
+    q = [ 1 ]
+    viaGo = go [ q, q ] λl → List.map l push1
+    s = [ 1 ]
+    builtUpdate = wrap s λl → List.update l 0 push1
     Node.printLines
         [ shows viaApp
         , shows viaMaybe
@@ -76,4 +107,10 @@ main =
         , shows filtered
         , String.fromInt folded
         , shows updated
+        , shows built
+        , shows local
+        , shows captured
+        , shows viaOpt
+        , shows viaGo
+        , shows builtUpdate
         ]

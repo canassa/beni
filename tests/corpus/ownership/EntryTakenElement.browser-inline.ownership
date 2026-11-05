@@ -9,6 +9,8 @@ module EntryTakenElement
   42:5 entry EntryTakenElement.update model[*]: rejected exclusive: the callee needs the list's elements not to share, and they may
   48:5 entry EntryTakenElement.viaHelper model[*]: rejected exclusive: the callee needs the list's elements not to share, and they may
   52:12 entry EntryTakenElement.view model[*]: rejected read-only: the runtime hands view the model to read only (§20.3)
+  60:16 value EntryTakenElement.view: accepted callback-param (EntryTakenElement.captured supplies it owned)
+  66:10 value EntryTakenElement.update: pending: it is stored in a list
   summary bump: π1 R, π1[*] AW[storage], π1[*][*] A; res [*] ~condition(fresh1) ~fresh1{excl π1} ~π1[*], [*][*] ~condition(fresh2) ~π1[*][*], fresh3{excl π1}; xreq spine π1[*]
   summary update: π2 R, π2[*] AW[storage], π2[*][*] A; res [*] ~condition(fresh1) ~fresh1{excl π2} ~π2[*], [*][*] ~condition(fresh2) ~π2[*][*], fresh3{excl π2}; xreq spine π2[*]
   summary viaHelper: π2 R, π2[*] RAW[storage], π2[*][*] RA; res [*] ~condition(fresh1) ~fresh1{excl π2} ~π2[*], [*][*] ~condition(fresh2) ~π2[*][*], fresh3{excl π2}; xreq spine π2[*]
@@ -17,7 +19,10 @@ module EntryTakenElement
   summary direct: res ⊤{lost}r{lost}
   summary helper: res ⊤{lost}r{lost}
   summary inView: res ⊤{lost}r{lost}
-  demands 10: accepted 7 (fresh 0, call 0, param 4, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 3
-total 10: accepted 7 (fresh 0, call 0, param 4, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 3
+  summary captured: π1 R; res ⊤{lost}r{lost}; π1 calls 0
+  summary viaCapture: res ⊤{lost}r{lost}
+  summary inList: res ⊤{lost}r{lost}
+  demands 12: accepted 8 (fresh 0, call 0, param 4, callback-param 4, once 0, entry 0; assumed 0), pending 1, rejected 3
+total 12: accepted 8 (fresh 0, call 0, param 4, callback-param 4, once 0, entry 0; assumed 0), pending 1, rejected 3
 cause exclusive 2
 cause read-only 1

@@ -1290,14 +1290,6 @@ its own (`Relation.Eval.readAt`), so it is a second entry, as the kids it came f
 
 - An entry that is a family (`ref` not `at_position`) asks its root's own separation on its slots; `⊤` and
   `shared` entries make the check `no`.
-*Amended 2026-11-05 (#1975, the review of #1981): **a family behind a supply.*** A supply's leaf expands through a read that
-gives a value's objects each once under their route sets (`no_routes`, §2.11.2): the right read for what a value may
-hold, the wrong one for how many times it holds it. So `[ a, a ]` behind a callback's supply was one entry, and `sep`
-asked nothing of it: `app [ a, a ] λl → List.update l 0 push1` pushed `a` twice in place, on master, through `Maybe.map`,
-`Result.map` or any callee that calls a callback once. A family of a supply is now read from the argument it comes
-from, each position at a route of its own (`SupplyRead.zig`), so the check counts both. Fixtures
-`run/SanitiserOnceCallbackShared` (the sanitised runs trapped) and `run/SanitiserOnceCallbackApart`.
-
 - Entries are **grouped by root**. Within a group, a conflict is two entries at related positions whose slots
   meet. It is found through position ancestry: each entry is indexed at `(position, slot)` for each of its
   slots, and an entry is checked against the index at its own position and each ancestor, never against every
@@ -2147,14 +2139,37 @@ supply was kept, and `List.map xs λl → List.push l 1` was refused `call` even
 of a taken supply is a `callsite` demand on that argument, judged as any write of it. The element is the callback's
 exactly when the caller's list is dead after the call or fresh: a live holder is refused `later-use` or `alias`, as a
 direct write would be, and a parameter's list makes it the frame's own write of `π1[*]`, which its callers judge in
-turn (an `entry` function's have none yet: *As built*, below). The write also relies on the supply's condition, which a kept supply never needed. Each supply has its own
-condition: what judging that supply relied on. For `List.map`, `indexedMap`, `filterMap` and `concatMap` it reads
-`sep ⇐ sel π1{ε,[*]*} π2{ε*~}`, and for `foldl` and `foldr`'s element `π1{ε,[*]*} π2{ε*~} π3{ε*~,ε!2}`, while the
-accumulator's stays `π1{ε~,[*]*~} π2{ε*} π3{ε*~,ε!2}`, so a fold that reads its own list writes its accumulator in
-place (shared by the label, it was refused: `run/SanitiserTakenElementApart`). `π1[*]*` plain, each object in an element once, so two positions of one list and a
-part two rows share are refused; `π2ε*~`, what the function holds apart from them, so a capture of the list or of an
-element is refused. A taken supply is not the same as an owned one: if the condition fails the write is refused, and
-nothing is copied. `List.map2` stays kept: it reads with `at`, an `elementof` row, which makes no split (C.7).
+turn (an `entry` function's have none yet: *As built*, below). The write also relies on the supply's two conditions, which a kept supply never needed.
+
+`sep` is what judging the supply relied on: what the callee's holders and operands keep apart from it. Each supply has
+its own. For `List.map`, `indexedMap`, `filterMap` and `concatMap` it reads `sep ⇐ sel π1{ε,[*]*} π2{ε*~}`, and for `foldl`
+and `foldr`'s element `π1{ε,[*]*} π2{ε*~} π3{ε*~,ε!2}`, while the accumulator's stays `π1{ε~,[*]*~} π2{ε*} π3{ε*~,ε!2}`, so a
+fold that reads its own list writes its accumulator in place. `π1[*]*` plain, each object in an element once, so two
+positions of one list and a part two rows share are refused; `π2ε*~`, what the function holds apart from them, so a
+capture of the list or of an element is refused. A taken supply is not an owned one: if the condition fails the write is
+refused, and nothing is copied. `List.map2` stays kept: it reads with `at`, an `elementof` row, which makes no split (C.7).
+
+`below` (block version 21) is the callee's claim about the value it hands, and it is derived from that value, never assumed. At each direct
+call of a label, read-off runs the distinct check over the argument (§2.9.3, `Distinct.sepOf`, `SupplyCond.zig`), family
+positions included. So it is `no` for `wrap v f = f [ v, v ]`, a selection on the parameters where it depends on them
+(`app v f = f v`: `below ⇐ sel π1{ε*}`), and `yes` only when shown. A capture-held family is the same check in the frame of
+the code that makes the call: `g = λf → f [ a, a ]` publishes `no`. At a call that passes the label on, the callee's
+`below` is instantiated on the arguments, and inside a known code each outer label's is added too, through the chain
+(`opt m f = Maybe.map m λz → f z`: `sel π1{#0.0*}`). **Only a write below the supply's root asks `below`.** A write of the
+root reaches one object, and an object holds no copy of itself, so `wrap v f = f [ v, v ]` with `λl → List.push l 1` and
+`chain xs identity λl → List.push l 3` stay accepted, where the value may hold duplicates the write cannot reach.
+
+Before this, no check saw a duplicate the callee made or passed: `sep` was `yes` by default, and the code's own `K.req` read
+a supply through `expand`, which gives a value's objects each once (`no_routes`, §2.11.2). So `[ a, a ]` was one object
+behind `app`, `Maybe.map` or any callee that calls a callback once, and `app [ a, a ] λl → List.update l 0 push1` pushed `a`
+twice in place on master too. Counting positions at the caller cannot close it: `[ v, v ]` built in the callee is one
+arrival at `[*]`, and the contract records no multiplicity. Sound because every value a label is handed is, at the call
+that hands it, a value of that frame; the check there sees every position; and a selection it leaves is instantiated at
+each frame outward, so a caller's own `[ a, a ]` fails there, at its own positions. Inside a `taken` row's label
+(`upd rs f = List.update rs 1 λ( a, b ) → f ( a, b )`) one element is supplied, so the claim holds of that element and not
+of the row's family: passed on there, `below` is asked apart, and each write still asks its own slot plain through
+`takenOccs` (§2.13.6). Otherwise rows that share a key the callback does not write would be refused. Fixtures
+`run/SanitiserOnceCallbackShared` (without `below`, the sanitised run traps) and `run/SanitiserOnceCallbackApart`.
 
 **The answer held by the builder.** A label's condition is instantiated at the recursive call that passes the label on
 (§2.11.3), and there `π6` is `put b i (f x)`: the builder holds the answer of the frame's own call, which §2.9.3 reads
@@ -2178,8 +2193,8 @@ caller judges a write of a parameter of `update`, `view` or `init`, and the kept
 editing the model: `init = λ⊤ → [ a, a ]` with `update msg m = List.map m λl → List.push l 1` trapped on the first click,
 and a `view` that maps over the model trapped with no sharing at all. So a contract records `taken_write`: a many label's
 element write, at this level or in a callee, that reaches a parameter. A function value so marked, handed to a parameter
-worded `entry`, is refused `call` at that call (`EntryHeld.zig`), where v1 refuses the same programs; a frame that hands
-its own parameter on is marked `entry` in turn. A list `update` makes for itself is not reached from an argument, and is
+worded `entry`, or held by a closure handed there (its captures may run it), is refused `call` at that call
+(`EntryHeld.zig`), where v1 refuses the same programs; a frame that hands its own parameter on is marked `entry` in turn. A list `update` makes for itself is not reached from an argument, and is
 edited in place (`browser/tea/EntryFreshTraversal`). A function in a top-level record or a call's answer is refused
 `unknown` already (§2.11.3). This holds the line and fixes nothing else: `List.push m 1` in `view` misbehaves on master and
 here (#2004). S7's demands replace this rule. Fixture: `ownership/EntryTakenElement`.
@@ -2188,19 +2203,19 @@ Sound in full because every object a taken write reaches is judged. Against the 
 and by Lemma 1's split clause for the container (O9's pinned obligation on every body that reads a `taken` result: the
 seven loops of `core/List`). Between invocations, by `π1[*]*`: a write of one element reaches nothing another
 element holds, which the next invocation would read. Against the code's own holds, by `K.req` instantiated over the
-whole family, read position by position (§2.9.3, *a family behind a supply*). Against the caller, by the `callsite` demand. Through a helper, by §2.11.3's passes: the condition is
+whole family, and by `below` for what the callee made. Against the caller, by the `callsite` demand. Through a helper, by §2.11.3's passes: the condition is
 instantiated at the pass, and the helper's own read of the list keeps the slot.
 
 Measured (2026-11-05, Debug, against master at `89acc9741`). Accepted: C.6's first row over a parameter and a local,
 its `edit` row, and the same shapes through `indexedMap`, `filterMap`, `concatMap`, `foldl`, `foldr`, a helper, nested
 maps, a field and a tuple's part, all in place (`run/SanitiserTakenElementApart`, refused on master). Refused:
-`run/SanitiserTakenElement`, whose probed shapes trap when the supply's condition is not asked. The oracle's 2 362
+`run/SanitiserTakenElement`, whose probed shapes trap when the supply's condition is not asked. The oracle's 2 578
 probes: 0 DIFF, and 2 TRAP, both of #1986, which trap on master too and hold no traversal. Two generated sweeps, 6 578
 programs: 0 TRAP, 0 DIFF, none master accepts refused, 1 129 master refuses accepted. The ledger of 2 298 roots:
 11 positions refused → accepted, 2 accepted → refused, each a call into a callee whose own write both sides refuse:
 `Differential`'s `t42Repeated`, whose `[ tags, tags ]` master accepted only because it refused the write inside `t42`, and
 `BallMachine`'s `Ref.modify` of `step`, refused at `Physics` 299:14. Cost: growth unchanged everywhere, `Schema.shapeOf`
--8 records of 229 045.
++157 records of 229 045.
 Refused that a perfect checker accepts: rows that share a part the callback does not write, because the condition is
 deep and plain and not per written slot, as `takenOccs` is for `List.update`; and an edit of the elements of a list
 `List.map` answered or `List.reverse` built, because a result's separation is another rule (Appendix C.6, *As built*).
