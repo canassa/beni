@@ -4755,3 +4755,17 @@ tests/corpus/run/SanitiserWideDistinct.beni SanitiserWideDistinct 65:79 #0 :: Sa
 tests/corpus/run/SanitiserWideDistinctApart.beni SanitiserWideDistinctApart 61:12 #0 :: SanitiserWideDistinctApart.edited <call> :: rejected :: accepted  a slice and the fronts it skips are apart: v1 does not tell them apart (§2.3.2, #1963)
 tests/corpus/run/SanitiserWideDistinctApart.beni SanitiserWideDistinctApart 61:42 #0 :: SanitiserWideDistinctApart.edited <call> :: rejected :: accepted  a slice and the fronts it skips are apart: v1 does not tell them apart (§2.3.2, #1963)
 tests/corpus/run/SanitiserWideDistinctApart.beni SanitiserWideDistinctApart 61:73 #0 :: SanitiserWideDistinctApart.edited <call> :: rejected :: accepted  a slice and the backs it skips are apart: v1 does not tell them apart (§2.3.2, #1963)
+#
+# Master's fixtures and core after the rebase onto e00cf1c6c (#1951, core's Markdown).
+#
+# v2-cell: 6
+tests/corpus/run/SuspendJoinEffect.beni SuspendJoinEffect 11:23 #0 :: Ref.set cell◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand (#1951: a stable cell of Int contents)
+tests/corpus/run/SuspendJoinEffect.beni SuspendJoinEffect 18:24 #0 :: Ref.set cell◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand (#1951: a stable cell of Int contents)
+tests/corpus/run/SuspendJoinEffect.beni SuspendJoinEffect 19:9 #0 :: SuspendJoinEffect.loop cell◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand (#1951: a stable cell of Int contents)
+tests/corpus/run/SuspendJoinEffect.beni SuspendJoinEffect 25:5 #0 :: SuspendJoinEffect.branch cell◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand (#1951: a stable cell of Int contents)
+tests/corpus/run/SuspendJoinEffect.beni SuspendJoinEffect 27:5 #0 :: SuspendJoinEffect.branch cell◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand (#1951: a stable cell of Int contents)
+tests/corpus/run/SuspendJoinEffect.beni SuspendJoinEffect 28:5 #0 :: SuspendJoinEffect.loop cell◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand (#1951: a stable cell of Int contents)
+#
+# ref-other: 2
+core Markdown 1271:22 #0 :: List.foldl <expression>.0 :: absent :: rejected  #1713: a fold pushing elements of a recursive type (`Node` holds `List Node`) onto a fresh accumulator; v2 reads the folded type's list as reachable from the folded list (approx). A refusal, so nothing is edited in place
+core Markdown 1271:22 #0 :: List.foldl <tuple>.0 :: accepted :: absent  the same fold under v1's text: v1 accepts the fresh accumulator; v2 refuses it in the row above (#1713)
