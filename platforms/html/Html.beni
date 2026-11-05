@@ -930,6 +930,11 @@ pub attribute "selected" property stateful on "option" : Bool
 pub attribute "src" url on "audio" "embed" "iframe" "img" "input" "source" "track" "video" : String
 
 
+-- The number an ordered list starts at (HTML's `start`): CommonMark's
+-- `3. three` is `<ol start="3">` (`docs/design/markdown.md` §5).
+pub attribute "start" on "ol" : Int
+
+
 pub attribute "step" on "input" : String
 
 

@@ -1,0 +1,179 @@
+--! A Markdown tree as `Html msg` (`docs/design/markdown.md` §5): core's
+--! `Markdown.parse`, rendered by the elements of the `html` vocabulary.
+--!
+--!     Html.Markdown.fromString "# Hello\n\nA *short* text."
+--!
+--! Every element comes from this module's own markup. Raw HTML in the text
+--! (`HtmlBlock`, `HtmlInline`) is shown as text, never as markup (§6.1),
+--! and a link's or an image's URL goes through the `url` attribute rule of
+--! every view, so a `javascript:` URL is written as `""` (§6.2). The
+--! elements are CommonMark's own (`<p>`, `<h1>` … `<h6>`, `<hr>`, `<pre>`,
+--! `<code class="language-…">`, `<blockquote>`, `<ul>`, `<ol start>`,
+--! `<li>`, `<em>`, `<strong>`, `<a>`, `<img>`, `<br>`), so a stylesheet
+--! for any CommonMark renderer fits.
+
+import Html exposing (Html)
+import Markdown exposing (Block, BlockQuote, BulletList, CodeBlock, CodeSpan, Emphasis, HardBreak, Heading, HtmlBlock, HtmlInline, Image, Inline, Link, OrderedList, Paragraph, SoftBreak, Strong, Text, ThematicBreak)
+
+
+--| The blocks, as a fragment.
+pub view : List Block → Html msg
+view blocks = blocksIn blocks False
+
+
+--| `view (Markdown.parse text)`.
+pub fromString : String → Html msg
+fromString text = view (Markdown.parse text)
+
+
+-- The blocks of a document, a block quote or a list item. A paragraph of
+-- a tight list item has no `<p>` (spec §5.3).
+blocksIn : List Block, Bool → Html msg
+blocksIn blocks tight = <><For each={blocks} keyed={False}>{λb → block b tight}</For></>
+
+
+block : Block, Bool → Html msg
+block b tight =
+    case b of
+        Paragraph content →
+            if tight then inlines content else <p>{inlines content}</p>
+
+        Heading level content →
+            heading level content
+
+        ThematicBreak →
+            <hr />
+
+        CodeBlock language code →
+            case language of
+                Just word →
+                    <pre><code class={"language-${word}"}>{code}</code></pre>
+
+                Nothing →
+                    <pre><code>{code}</code></pre>
+
+        BlockQuote children →
+            <blockquote>{blocksIn children False}</blockquote>
+
+        BulletList isTight items →
+            <ul>
+                <For each={items} keyed={False}>{λitem → <li>{blocksIn item isTight}</li>}</For>
+            </ul>
+
+        OrderedList start isTight items →
+            if start == 1 then
+                <ol>
+                    <For each={items} keyed={False}>{λitem → <li>{blocksIn item isTight}</li>}</For>
+                </ol>
+            else
+                <ol start={start}>
+                    <For each={items} keyed={False}>{λitem → <li>{blocksIn item isTight}</li>}</For>
+                </ol>
+
+        HtmlBlock html →
+            -- §6.1: the text the author wrote, as text.
+            <p>{html}</p>
+
+
+heading : Int, List Inline → Html msg
+heading level content =
+    case level of
+        1 →
+            <h1>{inlines content}</h1>
+
+        2 →
+            <h2>{inlines content}</h2>
+
+        3 →
+            <h3>{inlines content}</h3>
+
+        4 →
+            <h4>{inlines content}</h4>
+
+        5 →
+            <h5>{inlines content}</h5>
+
+        _ →
+            <h6>{inlines content}</h6>
+
+
+inlines : List Inline → Html msg
+inlines content = <><For each={content} keyed={False}>{inline}</For></>
+
+
+inline : Inline → Html msg
+inline x =
+    case x of
+        Text s →
+            Html.text s
+
+        CodeSpan s →
+            <code>{s}</code>
+
+        Emphasis content →
+            <em>{inlines content}</em>
+
+        Strong content →
+            <strong>{inlines content}</strong>
+
+        Link destination title content →
+            case title of
+                Just t →
+                    <a href={destination} title={t}>{inlines content}</a>
+
+                Nothing →
+                    <a href={destination}>{inlines content}</a>
+
+        Image destination title description →
+            case title of
+                Just t →
+                    <img src={destination} alt={plain description} title={t} />
+
+                Nothing →
+                    <img src={destination} alt={plain description} />
+
+        HardBreak →
+            <br />
+
+        SoftBreak →
+            Html.text "\n"
+
+        HtmlInline html →
+            -- §6.1: the text the author wrote, as text.
+            Html.text html
+
+
+-- An image's description as `alt` text: its inlines' text (spec §6.4).
+plain : List Inline → String
+plain content = String.concat (List.map content plainOne)
+
+
+plainOne : Inline → String
+plainOne x =
+    case x of
+        Text s →
+            s
+
+        CodeSpan s →
+            s
+
+        Emphasis content →
+            plain content
+
+        Strong content →
+            plain content
+
+        Link _ _ content →
+            plain content
+
+        Image _ _ description →
+            plain description
+
+        HardBreak →
+            "\n"
+
+        SoftBreak →
+            "\n"
+
+        HtmlInline html →
+            html
