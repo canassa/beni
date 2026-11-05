@@ -3302,8 +3302,10 @@ another), `run/SemaphoreHandoffCancelled` (point 3), `run/SemaphoreReleaseUnmatc
 `run/SemaphoreOversizeThenResize` (an oversize holder counts `n`, so a `resize` and its `release`
 leave the true free count), `run/SemaphoreTryNegativeSize` (a try on a semaphore made or resized
 below 0 answers `Nothing`), `run/SemaphoreMiddleCancelled` (a waiter cancelled in the middle of
-the queue leaves it, and those on either side are served in order) and `run/SemaphoreTryCancelled`
-(a holder cancelled inside `tryWithPermits` gives its permits back).
+the queue leaves it, and those on either side are served in order), `run/SemaphoreTryCancelled`
+(a holder cancelled inside `tryWithPermits` gives its permits back) and
+`run/SemaphoreHandoffStoppedScheduler` (point 3 under a scheduler's stop: §17.9 point 7's
+amendment of 2026-11-05).
 
 *Amended 2026-10-26 (#1040): `Queue` and `Latch` as built.* Both modules are beni over
 `Task.callback` and `Task.resume`, with no `foreign`. A queue keeps its takers and its parked
@@ -3362,12 +3364,30 @@ The text above left eight points open. They are settled as follows.
    ended queue does not answer `Nothing` or `[]`: a take that would get that waits, and so does a
    parked taker. When the count drops to 0 — the handed taker runs, or gives its values back — the
    waiting takers are served, in order, with what is held then. So a value given back after the
-   `end` goes to the next taker, and no taker sees the end while a value can still return. A
-   taker resumed through a scheduler that has stopped for good is cancelled by the kernel without
-   its canceller (§17.5's amendment, *a stopped scheduler is a dead end*), so its values are lost
-   and its hand-off is never settled. The stop cancels, and so runs the canceller of, every taker
-   it can interrupt. Only a taker parked where it cannot be interrupted, in a release or an
-   `uninterruptible` region, and left there when the stop's deadline passed, can be resumed so.
+   `end` goes to the next taker, and no taker sees the end while a value can still return.
+   *Amended 2026-11-05 (#1051). This withdraws the text of 2026-10-26, which said that a taker
+   on a stopped scheduler, parked where the stop cannot interrupt it, loses the values handed to
+   it. The text was written from the code with no fixture. A fixture shows that this does not
+   happen:* **a scheduler's stop never loses a hand-off.**
+   - The stop cancels every taker that it can interrupt, and so runs each canceller (point 2).
+   - At the deadline, a taker parked inside a finaliser has its wait cancelled, and its canceller
+     runs too (`boundary.md` §9.8.14 (f)). So the values go to the next taker.
+   - The deadline does not cut a taker in an `uninterruptible` region, or in a `bracket` release
+     that runs after its use returned. That taker keeps its scheduler from stopping for good,
+     because a scheduler stops for good only when every fiber of it has ended (§17.5's
+     amendment). Its scheduler's queue still drains while the scheduler tears down. So a
+     hand-off from another scheduler resumes the taker through that queue, and the taker runs
+     with the values. The stop's `done` waits for it, as for any uninterruptible region
+     (`boundary.md` §9.8.14 (a)).
+   - A release that waits inside `withScheduler` of another scheduler is not cut by the
+     deadline of its own scheduler (#2093). The stop then waits for that release too, but no
+     value is lost.
+
+   So no parked taker reaches §17.5's dead end. Only a fiber that the scheduler does not count,
+   such as one started after the scheduler stopped for good, is resumed through it. And even
+   there, a fiber that is masked or unwinding goes on with its value. `Semaphore`'s hand-off is
+   the same, for permits. `run/QueueHandoffStoppedScheduler` and
+   `run/SemaphoreHandoffStoppedScheduler` pin each case.
 8. **`Latch`'s waiters are released in the order they began to wait.** A waiter cancelled while
    it waits is taken off the list. `open` and `release` take the whole list at once and start a
    new one. So a fiber that begins to wait at a latch closed again in the same turn waits for the
@@ -3376,8 +3396,9 @@ The text above left eight points open. They are settled as follows.
 Fixtures, besides the eight the text above lists: `run/QueueHandoffCancelled` (point 2),
 `run/QueueOfferAcceptedCancelled` (point 3), `run/QueueTakeNoJump` (point 1),
 `run/QueueTakeUnderTimeout` (point 2, under `timeout` on a virtual clock and under `race`),
-`run/QueueEndAfterHandoffCancelled` (points 2 and 7 together) and `run/CancelManyWaitersQueue`
-(400 000 takers cancelled at once).
+`run/QueueEndAfterHandoffCancelled` (points 2 and 7 together), `run/CancelManyWaitersQueue`
+(400 000 takers cancelled at once) and `run/QueueHandoffStoppedScheduler` (point 7's amendment of
+2026-11-05).
 `run/QueueTakeAllTakeN` carries point 5, and `run/QueueEndWakesOfferers` carries point 4's
 `end`. The retained-heap check of `bench/fiber` that the text above names is not part of this
 work (the owner, 2026-10-26, #1040).

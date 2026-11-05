@@ -208,11 +208,12 @@ end (Queue q) =
 -- ended queue does not yet answer `Nothing` or `[]`: the takers that would
 -- get that wait until the last hand-off is settled, and are served then.
 --
--- A taker handed values through a scheduler that has stopped for good is
--- cancelled by the kernel without its canceller (`Task`'s `enqueue`), and
--- those values are lost, with the `pending` they hold. Only an
--- uninterruptible taker on that scheduler can be reached so: the stop
--- cancels every other one, which runs its canceller.
+-- A scheduler's stop loses no hand-off (§17.9 point 7, amended
+-- 2026-11-05). The stop cancels every taker it can interrupt, and its
+-- deadline every taker parked inside a finaliser: each one runs its
+-- canceller. A taker it cannot interrupt keeps its scheduler from stopping
+-- for good, so a hand-off resumes it through that scheduler's own queue,
+-- and it runs with the values.
 --
 -- An offer that waits is `{ vs, at, single, resume, queued, prev, next }`:
 -- the values `vs` from `at` on are not yet accepted. When room is made
