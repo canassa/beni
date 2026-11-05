@@ -1,7 +1,8 @@
--- A listener calls its key's handler with no message made
--- (docs/design/browser-inline.md §8.3): a handler value the model holds is
--- a message no key can be named for when the program is built, refused at
--- its element as a limit of the compiler (§8.7; §5, class 4).
+-- A handler value the model holds is a message no key can be named for
+-- when the program is built (docs/design/browser-inline.md §8.3, amended
+-- 2026-11-05): the listener reads it from the model when the button is
+-- clicked, and the program's dispatcher hands it to its key. Each click
+-- counts the way the last one chose: up, down, up.
 import Browser
 import Html exposing (Html)
 import Tea

@@ -1641,8 +1641,17 @@ const Page = struct {
             named[s.handler] = true;
         };
         for (plans.items, 0..) |pl, i| {
-            refs[pl.key] += 1;
-            if (stateful_at.get(pg.events.items[i].target)) |fs| try addRefs(pg.a(), &pg.controls[pl.key], fs.items);
+            const fs = stateful_at.get(pg.events.items[i].target);
+            const k = pl.key orelse {
+                // Its message may be any key's, through the dispatcher: every
+                // key is then reached, and each writes the control back
+                // (§8.3, amended 2026-11-05).
+                runs = true;
+                if (fs) |s| for (pg.controls) |*c| try addRefs(pg.a(), c, s.items);
+                continue;
+            };
+            refs[k] += 1;
+            if (fs) |s| try addRefs(pg.a(), &pg.controls[k], s.items);
         }
         // Each piece's handlers, by the key the constructor reaches through
         // the hole's maps.
@@ -1702,11 +1711,26 @@ const Page = struct {
         // Each local listener contains its arm, its fields bound to what
         // the event's message holds, even when another event has the key.
         for (plans.items, listeners) |pl, *l| {
-            const params = try pg.a().alloc(m.Name, keys[pl.key].fields);
+            const k = pl.key orelse {
+                // What `send` reads of the event: the message the handler
+                // value makes, which the dispatcher then takes (§8.3, amended
+                // 2026-11-05) — of what the event's extractor reads, when it
+                // has one, read first.
+                try js.@"return"(pl.blk, pl.message.?);
+                l.* = if (pl.read) |rd| made: {
+                    const e = try cx.fresh("event");
+                    const outer = try js.block();
+                    try js.constant(outer, pl.event.?, try js.call(rd, &.{try js.name(e)}));
+                    try js.nested(outer, pl.blk);
+                    break :made try js.arrow(&.{e}, outer);
+                } else if (pl.event) |e| try js.arrow(&.{e}, pl.blk) else try js.arrow(&.{}, pl.blk);
+                continue;
+            };
+            const params = try pg.a().alloc(m.Name, keys[k].fields);
             for (params) |*x| x.* = try cx.fresh("value");
             if (pl.args.len != params.len) return limit(cx, pl.node, "this event's message has another number of fields than its key's handler takes");
             for (params, pl.args) |x, arg| try js.constant(pl.blk, x, arg);
-            try pg.handlerBody(pl.blk, pl.key, params, update, passes[pl.key]);
+            try pg.handlerBody(pl.blk, k, params, update, passes[k]);
             l.* = if (pl.event) |e| try js.arrow(&.{e}, pl.blk) else try js.arrow(&.{}, pl.blk);
         }
         if (pg.dispatch) |d| {
@@ -1720,10 +1744,17 @@ const Page = struct {
 
         // Each event wired. A listener with neither flag is the runtime's
         // `on`, the event's name left out for a click.
+        // An event whose message goes through the dispatcher hands `send`
+        // the dispatcher, and its listener as what `send` reads of the
+        // event, while the event is dispatched (§8.3, amended 2026-11-05).
         for (plans.items, listeners, pg.events.items) |pl, f, evinfo| {
             const node = try pg.ref(pl.target);
             if (evinfo.captures.len == 0 and !pl.flags.prevent_default and !pl.flags.stop_propagation) {
-                try js.expression(body, try pg.onCall(node, f, pl.kind, evinfo.ctx, pl.read));
+                const call = if (pl.key == null)
+                    try pg.onCall(node, try js.name(pg.dispatch.?), pl.kind, evinfo.ctx, f)
+                else
+                    try pg.onCall(node, f, pl.kind, evinfo.ctx, pl.read);
+                try js.expression(body, call);
                 continue;
             }
             const active = if (evinfo.captures.len != 0) try pg.eventBindingFor(evinfo) else try pg.armActivity(evinfo.ctx);
@@ -1745,7 +1776,14 @@ const Page = struct {
             }
             if (pl.flags.prevent_default) try js.expression(dom, try js.call(try js.member(try js.name(ev), "preventDefault"), &.{}));
             if (pl.flags.stop_propagation) try js.expression(dom, try js.call(try js.member(try js.name(ev), "stopPropagation"), &.{}));
-            try js.expression(dom, try js.call(try js.name(try cx.runtime("send")), if (pl.read) |rd| &.{ try js.name(listener), try js.name(ev), rd } else &.{ try js.name(listener), try js.name(ev) }));
+            const send = try js.name(try cx.runtime("send"));
+            const call = if (pl.key == null)
+                try js.call(send, &.{ try js.name(pg.dispatch.?), try js.name(ev), try js.name(listener) })
+            else if (pl.read) |rd|
+                try js.call(send, &.{ try js.name(listener), try js.name(ev), rd })
+            else
+                try js.call(send, &.{ try js.name(listener), try js.name(ev) });
+            try js.expression(dom, call);
             try js.expression(body, try pg.addListener(node, pl.kind orelse "click", try js.arrow(&.{ev}, dom)));
         }
 
@@ -3084,7 +3122,8 @@ const Page = struct {
     /// through the event's extractor and evaluates the message the handler
     /// value makes, read at the event (Q1); the key it reaches and that
     /// key's fields. The mount then ends the block with the key's handler,
-    /// or a call of it.
+    /// or a call of it — or, for a message no key can be named for when the
+    /// program is built, returns the message, which the dispatcher takes.
     fn plan(pg: *Page, ev: Event) m.Error!Plan {
         const cx = pg.cx;
         const js = cx.js;
@@ -3127,7 +3166,10 @@ const Page = struct {
         pg.leave(arms);
         return switch (message) {
             .key => |kc| .{ .node = ev.node, .target = ev.target, .blk = blk, .event = event, .read = read, .key = kc.key, .args = kc.args, .kind = kind, .flags = facts },
-            .value => limit(cx, ev.node, "this event's handler value is not a constructor of the program's message whose key `browser-inline` can name, so its message would need a dispatcher"),
+            // A message no key can be named for when the program is built —
+            // a function of the event, a call, a message the model holds —
+            // goes through the dispatcher (§8.3, amended 2026-11-05).
+            .value => |value| .{ .node = ev.node, .target = ev.target, .blk = blk, .event = event, .read = read, .key = null, .args = &.{}, .message = value, .kind = kind, .flags = facts },
         };
     }
 
@@ -3222,8 +3264,14 @@ const Plan = struct {
     /// The event's `via` extractor, which `send` applies to the event
     /// before the listener takes what it read.
     read: ?m.Expr,
-    key: u32,
+    /// The key the handler value reaches, and that key's fields; null for
+    /// a value that names no key when the program is built, whose message
+    /// goes through the dispatcher (§8.3, amended 2026-11-05).
+    key: ?u32,
     args: []const m.Expr,
+    /// For a null `key`: the message the handler value makes, the value
+    /// of `blk`, which `send` evaluates while the event is dispatched.
+    message: ?m.Expr = null,
     kind: ?[]const u8,
     flags: m.EventFacts,
 };

@@ -1,0 +1,25 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <button>"0"</button>
+  </div>
+</body>
+-- click button
+<body>
+  <div id="root">
+    <button>"1"</button>
+  </div>
+</body>
+-- click button
+<body>
+  <div id="root">
+    <button>"0"</button>
+  </div>
+</body>
+-- click button
+<body>
+  <div id="root">
+    <button>"1"</button>
+  </div>
+</body>

@@ -7,19 +7,23 @@
 -- other. A click inside a `<span>` in a link is the link's. Every other
 -- click is left to the host, which the driver shows as `(the host follows
 -- the link …)`: `_blank`, `download`, each modifier and the middle button.
+-- A link whose own handler prevented the default (a function of the event,
+-- whose message goes through the dispatcher, §8.3 amended 2026-11-05) logs
+-- `(click's default prevented)` and is no request.
 -- A constant script URL is written as an empty `href`, so following it
 -- runs nothing. `update` splits the request on its constructor, so the
 -- compiled subscription sends it through the dispatcher as the message.
 import Browser
 import Browser.Navigation as Navigation
 import Cmd exposing (Cmd)
-import Html exposing (Html)
+import Html exposing (Event, Html)
 import Sub
 import Tea
 
 
 type Msg
     = Requested Browser.UrlRequest
+    | Handled
 
 
 update : Msg, String → String × Cmd Msg
@@ -30,6 +34,15 @@ update msg last =
 
         Requested (Browser.External href) →
             ( "External ${href}", Cmd.none )
+
+        Handled →
+            ( "handled by the link", Cmd.none )
+
+
+handle : Event → Msg
+handle event =
+    Html.preventDefault event
+    Handled
 
 
 view : String → Html Msg
@@ -43,6 +56,7 @@ view last =
         <a id="self" href="/s" target="_SELF">self</a>
         <a id="download" href="/d" download="">download</a>
         <a id="nested" href="/n"><span id="inner">inner</span></a>
+        <a id="handled" href="/h" onClick={handle}>handled</a>
         <a id="nohref">no href</a>
         <a id="script" href="  JaVa script:alert(1)">script</a>
         <p>{last}</p>

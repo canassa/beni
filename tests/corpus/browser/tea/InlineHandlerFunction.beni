@@ -1,0 +1,118 @@
+-- Event handlers that are functions of their event, not constructors
+-- (docs/design/browser-inline.md §8.3, amended 2026-11-05): no key can be
+-- named for their message when the program is built, so the listener makes
+-- the message while the event is dispatched, and the program's dispatcher
+-- hands it to its key. Each listener shape is here once:
+-- - `onKeyDown={pressed}`: `Enter` adds the draft and prevents the key's
+--   default; another key sends `Ignored`, and nothing prevents its default.
+-- - `onInput`, a lambda over what the event's extractor reads: the field
+--   takes at most four characters. A fifth sends `Ignored`, which writes
+--   nothing, and the field shows the model's draft again (*Controlled
+--   inputs*: any key's handler writes the field back).
+-- - `onPointerDown={touched}`, through the pointer's extractor: a touch's
+--   default is prevented, a mouse's is not, and both give the point.
+-- - `onClick`, a lambda inside an arm shown while the panel is open.
+-- - `onSubmit`, a lambda, with the declaration's own `preventDefault`.
+-- - `onClick`, a lambda in a view helper that reads the helper's argument,
+--   bound when the binding last ran: one more than the count of drafts
+--   added.
+-- `browser/tea/InlineHandlerFunction.beni` is this file, byte for byte,
+-- built for `browser-tea`, the oracle of this behaviour: the transcripts
+-- differ only where `browser-tea` keeps an empty `<!---->` marker and
+-- `browser-inline` an empty text.
+import Html exposing (Event, Html)
+import Tea
+
+
+type Msg
+    = Typed String
+    | Added
+    | Ignored
+    | Cleared
+    | Touched Float
+    | Closed
+    | Picked Int
+
+
+type alias Model =
+    draft : String
+    added : Int
+    last : String
+    at : Float
+    open : Bool
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Typed s →
+            { model | draft = s }
+
+        Added →
+            { model | added = model.added + 1, last = model.draft, draft = "" }
+
+        Ignored →
+            model
+
+        Cleared →
+            { model | added = 0, last = "" }
+
+        Touched x →
+            { model | at = x }
+
+        Closed →
+            { model | open = False }
+
+        Picked n →
+            { model | last = "picked ${String.fromInt n}" }
+
+
+pressed : Event → Msg
+pressed event =
+    if Html.key event == "Enter" then
+        Html.preventDefault event
+        Added
+    else
+        Ignored
+
+
+touched : Html.Pointer → Msg
+touched p =
+    if Html.pointerType p == "touch" then
+        Html.preventDefault (Html.pointerEvent p)
+        Touched (Html.localX p)
+    else
+        Touched (Html.localX p)
+
+
+picker : Int → Html Msg
+picker n = <button id="pick" onClick={λ_ → Picked (n + 1)}>pick</button>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <form id="form" onSubmit={λ_ → Cleared}>
+            <input
+                id="field"
+                value={model.draft}
+                onInput={λs → if String.length s > 4 then Ignored else Typed s}
+                onKeyDown={pressed}
+            />
+            <button id="submit">clear</button>
+        </form>
+        <p id="added">{"${String.fromInt model.added} ${model.last}"}</p>
+        <div id="pad" onPointerDown={touched}>pad</div>
+        <p id="at">{String.fromFloat model.at}</p>
+        {if model.open then <button id="close" onClick={λ_ → Closed}>close</button> else <></>}
+        {picker model.added}
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { draft = "", added = 0, last = "", at = 0, open = True }
+        , update = update
+        , view = view
+        }

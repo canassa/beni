@@ -1,0 +1,9 @@
+# The fifth character is refused: the field shows "abcd" again.
+type #field "abcde"
+key #field a
+key #field Enter
+click #pick
+pointer #pad pointerdown 10 20 type:touch
+pointer #pad pointerdown 30 5
+click #close
+click #submit

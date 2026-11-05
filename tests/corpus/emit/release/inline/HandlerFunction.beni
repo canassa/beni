@@ -1,0 +1,52 @@
+-- emit/release/inline: an event whose handler value is a function of the
+-- event, not a constructor, is the runtime's `on` handed the program's
+-- dispatcher and, as what `send` reads of the event, the function that
+-- makes the message (browser-inline.md §8.3, amended 2026-11-05): `send`
+-- calls it while the event is dispatched, so `preventDefault` takes
+-- effect, and hands its message to the dispatcher. The button's
+-- constructor is wired as before: its key's arm is written in its
+-- listener. The pages are `browser/inline/LinkGuard` and `HandlerFunction`.
+import Browser
+import Html exposing (Event, Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+    last : String
+
+
+type Msg
+    = Handled
+    | Bumped
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Handled →
+            { model | last = "handled" }
+
+        Bumped →
+            { model | count = model.count + 1 }
+
+
+handle : Event → Msg
+handle event =
+    Html.preventDefault event
+    Handled
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <a href="/h" onClick={handle}>{model.last}</a>
+        <button onClick={Bumped}>{model.count}</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { count = 0, last = "" }, update = update, view = view })
+        "root"
