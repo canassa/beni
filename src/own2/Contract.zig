@@ -248,9 +248,17 @@ pub const Table = struct {
     supplies: std.ArrayList(Supply) = .empty,
     /// `res` and supplies' `res` as result trees (§2.10), by node.
     trees: Trees.Table = .{},
+    /// Per `(contract, function slot of its result)`: its called contract
+    /// (§2.11.3), and per contract its run of `(slot, called contract)`.
+    called: Ids.FixedDict(2) = .{},
+    called_list: std.ArrayList([2]u32) = .empty,
+    called_runs: Ids.FixedDict(1) = .{},
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.trees.deinit(gpa);
+        t.called.deinit(gpa);
+        t.called_list.deinit(gpa);
+        t.called_runs.deinit(gpa);
         t.heads.deinit(gpa);
         t.effects.deinit(gpa);
         t.stores.deinit(gpa);
@@ -262,6 +270,21 @@ pub const Table = struct {
 
     pub fn head(t: *const Table, c: Id) Head {
         return t.heads.items[c];
+    }
+    pub fn calledOf(t: *const Table, c: Id, rel: Rel) ?Id {
+        return t.called.get(.{ c, rel });
+    }
+    /// A contract's called contracts are put one after another.
+    pub fn putCalled(t: *Table, gpa: Allocator, c: Id, rel: Rel, called: Id) Ids.IndexError!void {
+        try t.called.put(gpa, .{ c, rel }, called);
+        const got = try t.called_runs.getOrPut(gpa, .{c});
+        if (!got.found_existing) got.value_ptr.* = @intCast(t.called_list.items.len << 8);
+        got.value_ptr.* += 1;
+        try t.called_list.append(gpa, .{ rel, called });
+    }
+    pub fn calledRun(t: *const Table, c: Id) []const [2]u32 {
+        const x = t.called_runs.get(.{c}) orelse return &.{};
+        return t.called_list.items[x >> 8 ..][0 .. x & 0xff];
     }
     /// The parameter whose whole subtree `c`'s result is, at its own path,
     /// when `c` writes nothing of it (§2.11.2, *the identity control*).

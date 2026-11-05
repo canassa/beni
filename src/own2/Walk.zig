@@ -26,6 +26,8 @@ const Liveness = @import("Liveness.zig");
 const Prepass = @import("Prepass.zig");
 const Bir = @import("../bir/Bir.zig");
 const WalkContext = @import("WalkContext.zig");
+const Called = @import("Called.zig");
+const Construction = @import("Construction.zig");
 
 pub const Error = Ids.ChargeError;
 pub const PathId = Ids.PathId;
@@ -35,8 +37,7 @@ const Step = Place.Step;
 const Cond = Contract.Cond;
 const none: u32 = Ids.none_int;
 
-/// The high bit of a closure's `head`: a fixed contract, not a code.
-pub const fixed_bit: u32 = 1 << 31;
+pub const fixed_bit = WalkContext.fixed_bit;
 
 pub const Callee = WalkContext.Callee;
 pub const Context = WalkContext.Context;
@@ -57,6 +58,14 @@ pub const Code = struct {
     /// Its body instruction.
     body: u32,
     result_place: PlaceId,
+    /// A called code's walk: the body, then a call of its result (§2.11.3).
+    called: ?Called.Input = null,
+
+    /// The parameters of its contract.
+    pub fn arity(c: Code) u32 {
+        const all: u32 = @intCast(c.params.len + c.captures.len);
+        return if (c.called) |cd| @as(u32, @intCast(cd.own_places.len)) + all + 1 else all;
+    }
 };
 
 /// A demand made by the walk or by an evaluation (§2.8): what `Resolve` judges and `Message` says.
@@ -164,6 +173,8 @@ pub const Walk = struct {
     supply_of: Ids.FixedDict(3) = .{},
     /// The calls and labels the walk made, before any evaluation's.
     walk_calls: u32 = 0,
+    /// A called code: where its last call begins (`Called.Last`).
+    last: Called.Last = .{},
 
     pub fn deinit(w: *Walk) void {
         const gpa = w.f.gpa;
@@ -193,6 +204,8 @@ pub const Walk = struct {
 const Res = struct { v: u32 = none, local: u32 = none, path: PathId = .none };
 
 const Walker = struct {
+    /// Walking a called code's last call: the call's result has the code's place.
+    in_last: bool = false,
     w: *Walk,
     ctx: Context,
     contracts: *const Contract.Table,
@@ -219,7 +232,7 @@ const Walker = struct {
     early: std.ArrayList(Early) = .empty,
     module: u32 = 0,
 
-    fn f(k: *Walker) *Value.Frame {
+    pub fn f(k: *Walker) *Value.Frame {
         return &k.w.f;
     }
     fn tag(k: *const Walker, i: u32) Inst.Tag {
@@ -231,11 +244,14 @@ const Walker = struct {
     fn rel(k: *const Walker, i: u32) u32 {
         return i - k.w.code.decl.inst_start.int();
     }
-    fn token(k: *const Walker, i: u32) u32 {
+    pub fn token(k: *const Walker, i: u32) u32 {
         return k.bir.insts.items(.main_token)[i];
     }
-    fn placeOf(k: *Walker, i: u32) Error!PlaceId {
+    pub fn placeOf(k: *Walker, i: u32) Error!PlaceId {
         return k.ctx.placeOfInst(k.ctx.ctx, i);
+    }
+    fn callPlace(k: *Walker, i: u32) Error!PlaceId {
+        return if (k.in_last) k.w.code.result_place else k.placeOf(i);
     }
     fn args(k: *const Walker, c: u32) []const Inst.Index {
         return k.bir.extraSlice(k.bir.subRange(@fromBackingInt(k.data(c).rhs)), Inst.Index);
@@ -250,7 +266,7 @@ const Walker = struct {
         return fr == k.w.code.inst;
     }
 
-    fn valueOf(k: *Walker, i: u32) Error!u32 {
+    pub fn valueOf(k: *Walker, i: u32) Error!u32 {
         const r = k.res[k.rel(i)];
         if (r.v == none) return k.f().scalar();
         return r.v;
@@ -273,7 +289,7 @@ const Walker = struct {
         try k.w.uses.append(k.gpa, .{ .local = r.local, .path = r.path, .point = point, .kind = kind, .region = k.w.regions.regionOf(point), .use_node = node, .atom = k.atom.* });
     }
 
-    fn consume(k: *Walker, operand: u32, point: u32) Error!void {
+    pub fn consume(k: *Walker, operand: u32, point: u32) Error!void {
         try k.use(operand, point, .whole, .{ none, none }, .{ none, none, none });
         k.pop(operand);
     }
@@ -290,7 +306,7 @@ const Walker = struct {
 
     /// The pending operands at a call (§2.4), as the clock: the stack's entries are made once
     /// each (resolution filters them by the call's point), never a copy of the stack a call.
-    fn pendingRun(k: *Walker) Error!u32 {
+    pub fn pendingRun(k: *Walker) Error!u32 {
         while (k.made < k.stack.items.len) : (k.made += 1) {
             const x = &k.stack.items[k.made];
             const i = x[0];
@@ -391,7 +407,7 @@ const Walker = struct {
     // ---- projection of a value by one step -------------------------------------
 
     /// Value `v` projected by a step (§2.3.3): a literal's part, a position.
-    fn project(k: *Walker, v: u32, kind: Value.PKind, a: u32, b: u32) Error!u32 {
+    pub fn project(k: *Walker, v: u32, kind: Value.PKind, a: u32, b: u32) Error!u32 {
         try k.charge(.inspection, 1);
         const fr = k.f();
         const x = fr.val(v);
@@ -876,13 +892,14 @@ const Walker = struct {
             // now (`g = pick f 0`, #1773).
             .ref => if (if (fr.roots.items[x.root].kind == .param and x.family == Slots.empty) .{ fr.roots.items[x.root].a, try fr.slots.relOf(k.gpa, fr.account, fr.places, fr.pos.items[x.pos].slot) } else try k.ctx.settledParam(k.ctx.ctx, fr, fv)) |js| {
                 const slot = js[1];
-                const at = try k.placeOf(i);
+                const at = try k.callPlace(i);
                 const cbi: u32 = @intCast(fr.cbs.items.len);
                 const root = try fr.addRoot(.cb, cbi, at);
                 for (arg_insts) |a| try k.consume(a, i);
-                try fr.cbs.append(k.gpa, .{ .j = js[0], .slot = slot, .origin = .{ k.module, k.w.code.decl_index, i - k.w.code.decl.inst_start.int() }, .root = root, .inst = i, .point = i, .args = try fr.mkKids(vals), .calls = 1, .pending = try k.pendingRun() });
+                const offset = i - k.w.code.decl.inst_start.int() | if (k.in_last) Called.last_origin else 0;
+                try fr.cbs.append(k.gpa, .{ .j = js[0], .slot = slot, .origin = .{ k.module, k.w.code.decl_index, offset }, .root = root, .inst = i, .point = i, .args = try fr.mkKids(vals), .calls = 1, .pending = try k.pendingRun() });
                 return fr.refRoot(root);
-            },
+            } else if (try Called.value(fr, k.ctx, k.contracts, fv)) |cv| return k.valueCall(i, cv, arg_insts, vals, depth),
             else => {},
         }
         // Unknown code: its answer is unknown, what it is handed escapes,
@@ -909,8 +926,8 @@ const Walker = struct {
         var insts: std.ArrayList(u32) = .empty;
         defer insts.deinit(k.gpa);
         try insts.appendSlice(k.gpa, arg_insts);
-        for (captures) |_| try insts.append(k.gpa, none);
-        const at = try k.placeOf(i);
+        for (0..all.items.len - insts.items.len) |_| try insts.append(k.gpa, none);
+        const at = try k.callPlace(i);
         const root = try fr.addRoot(.call, ci, at);
         const head: u32 = if (k.tag(i) == .call) k.data(i).lhs else i;
         try fr.calls.append(k.gpa, .{ .inst = i, .head = head, .point = i, .args = try fr.mkKids(all.items), .arg_insts = try fr.mkWords(insts.items), .root = root, .code = code, .contract = if (fixed) |c| c else none });
@@ -940,7 +957,7 @@ const Walker = struct {
             try items.append(k.gpa, rhs);
             break;
         }
-        return k.construction(i, items.items, .append, items.items[0], null);
+        return Construction.of(k, i, items.items, .append, items.items[0], null);
     }
 
     /// A spread chain (§2.13.2): a prepend, or a construction over its base.
@@ -960,7 +977,7 @@ const Walker = struct {
             // `[ x₁…xₖ, …xs ]`: a prepend — fresh storage, the fronts and xs's elements.
             return k.prepend(i, items.items[0..sp], items.items[sp]);
         }
-        return k.construction(i, items.items, .construction, items.items[sp], spread);
+        return Construction.of(k, i, items.items, .construction, items.items[sp], spread);
     }
 
     fn literalOf(k: *Walker, i: u32, items: []const u32) Error!u32 {
@@ -990,48 +1007,6 @@ const Walker = struct {
         flags[flags.len - 1] = 1;
         // Its storage is fresh, or `xs`'s base re-consed (§2.13.6, `prepended`).
         return k.built(i, .list, xs + 1, i, ks.items, flags);
-    }
-
-    /// A construction over its base (R-2.3): the base's storage is written
-    /// in place, the other items are its new elements.
-    /// `spread`: which items are lists whose elements go in (every one of a
-    /// `++` chain); the others are elements.
-    fn construction(k: *Walker, i: u32, items: []const u32, kind: Facts.DemandKind, base: u32, spread: ?[]const bool) Error!u32 {
-        const fr = k.f();
-        var ev: Relation.Eval = .{ .f = fr, .contracts = undefined, .arena = fr.arena };
-        defer ev.deinit();
-        const bv = try k.valueOf(base);
-        const t_start: u32 = @intCast(k.w.leaf_runs.items.len);
-        var ls: std.ArrayList(u32) = .empty;
-        defer ls.deinit(k.gpa);
-        try ev.storageOf(bv, 0, &ls);
-        try k.w.leaf_runs.appendSlice(k.gpa, ls.items);
-        const o_start: u32 = @intCast(k.w.value_runs.items.len);
-        var ks: std.ArrayList(u32) = .empty;
-        defer ks.deinit(k.gpa);
-        const flags = try fr.arena.alloc(u32, items.len);
-        for (items, 0..) |e, n| {
-            const v = try k.valueOf(e);
-            const sp = if (spread) |sps| sps[n] else true;
-            flags[n] = @intFromBool(sp or e == base);
-            if (e != base) try k.w.value_runs.append(k.gpa, v);
-            // A spread item gives its elements, a family of unknown length.
-            try ks.append(k.gpa, if (sp or e == base) try k.project(v, .plain, Step.elem.word(), 0) else v);
-            try k.consume(e, i);
-        }
-        const pend = try k.pendingRun();
-        try k.w.demands.append(k.gpa, .{
-            .point = i,
-            .kind = kind,
-            .token = k.token(i),
-            .base_inst = base,
-            .targets = .{ .start = t_start, .len = @intCast(ls.items.len) },
-            .operands = .{ .start = o_start, .len = @intCast(k.w.value_runs.items.len - o_start) },
-            .pending = pend,
-            .base_value = bv,
-        });
-        // The result is the base's storage holding every item's elements.
-        return fr.mk(.{ .kind = .built, .form = .list, .site = none, .head = bv + 1, .place = try k.placeOf(i), .kids = try fr.mkKids(ks.items), .extra = flags });
     }
 };
 
@@ -1143,15 +1118,23 @@ pub fn walk(gpa: Allocator, arena: Allocator, account: *Ids.Account, places: *Pl
         }
     }
     // Parameters, then captures: the roots.
+    // A called code's own parameters come first, as a closure's do (§2.11.3).
+    const own = if (code.called) |cd| cd.own_places else &.{};
+    var own_vals: std.ArrayList(u32) = .empty;
+    defer own_vals.deinit(gpa);
+    for (own, 0..) |at, j| {
+        const root = try w.f.addRoot(.param, @intCast(j), at);
+        try own_vals.append(gpa, if (Slots.holdsAny(places, w.f.roots.items[root].path)) try w.f.refRoot(root) else try w.f.scalar());
+    }
     for (code.params, 0..) |p, j| {
         const at = code.param_places[j];
-        const root = try w.f.addRoot(.param, @intCast(j), at);
+        const root = try w.f.addRoot(.param, @intCast(own.len + j), at);
         const v = if (Slots.holdsAny(places, w.f.roots.items[root].path)) try w.f.refRoot(root) else try w.f.scalar();
         try k.bind(p.int(), v, p.int());
     }
     for (code.captures, 0..) |l, c| {
         const at = try ctx.placeOfLocal(ctx.ctx, l);
-        const root = try w.f.addRoot(.param, @intCast(code.params.len + c), at);
+        const root = try w.f.addRoot(.param, @intCast(own.len + code.params.len + c), at);
         const v = if (Slots.holdsAny(places, w.f.roots.items[root].path)) try w.f.refRoot(root) else try w.f.scalar();
         // Bound where the parameters are, before every point of the
         // body: a capture written and read again later is `later-use`.
@@ -1203,12 +1186,18 @@ pub fn walk(gpa: Allocator, arena: Allocator, account: *Ids.Account, places: *Pl
     for (k.early.items) |e| {
         const target = if (e.target == none) none else e.target;
         if (target != code.inst and !(target == none and code.inst == none)) continue;
-        const v = try w.f.mk(.{ .kind = .built, .form = .ctor, .head = e.ord, .place = code.result_place, .kids = try w.f.mkKids(if (e.v == none) &.{} else &.{e.v}) });
+        const v = try w.f.mk(.{ .kind = .built, .form = .ctor, .head = e.ord, .place = if (code.called) |cd| cd.body_result else code.result_place, .kids = try w.f.mkKids(if (e.v == none) &.{} else &.{e.v}) });
         try arms.appendSlice(gpa, &.{ @intCast(arms.items.len / 2 + 1), v });
     }
     if (arms.items.len != 0) {
         try arms.appendSlice(gpa, &.{ 0, result });
         result = try w.f.mk(.{ .kind = .alt, .head = 0x4000_0000 | body, .kids = try w.f.mkKids(arms.items) });
+    }
+    // A called code: the rest of the walk is the call of what the body answered.
+    if (code.called) |cd| {
+        w.last = .{ .calls = @intCast(w.f.calls.items.len), .demands = @intCast(w.demands.items.len), .escapes = @intCast(w.escapes.items.len), .runs = @intCast(w.runs.items.len), .uses = @intCast(w.uses.items.len), .cbs = @intCast(w.f.cbs.items.len) };
+        k.in_last = true;
+        result = try k.valueCall(body, try w.f.valueAt(result, cd.words), &.{}, own_vals.items, 0);
     }
     w.result = result;
     w.walk_calls = @intCast(w.f.calls.items.len);

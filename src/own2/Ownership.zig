@@ -15,6 +15,7 @@ const Groups = @import("Groups.zig");
 const Message = @import("Message.zig");
 const Report = @import("Report.zig");
 const Block = @import("Block.zig");
+const SummaryText = @import("SummaryText.zig");
 const Hoists = @import("Hoists.zig");
 const Subtree = @import("Subtree.zig");
 
@@ -134,10 +135,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error![]Report
             }
             if (in.format_summaries and dr.contract != Ids.none_int) {
                 var fn_names: FieldNames = .{ .names = in.names };
-                var buf: std.Io.Writer.Allocating = .init(arena);
-                buf.writer.print("summary {s}: ", .{name}) catch return error.OutOfMemory;
-                ContractText.print(&mod.contracts, gpa, dr.contract, &mod.slots, &mod.places, .{ .ctx = &fn_names, .field = FieldNames.field }, &buf.writer) catch return error.OutOfMemory;
-                try others.append(arena, buf.written());
+                try SummaryText.lines(&mod.contracts, gpa, arena, dr.contract, name, &mod.slots, &mod.places, .{ .ctx = &fn_names, .field = FieldNames.field }, &others);
                 if (in.below and dr.decl < mod.body_code.len and mod.body_code[dr.decl] != Ids.none_int) try belows.append(arena, .{ name, mod.body_code[dr.decl] });
             }
         }

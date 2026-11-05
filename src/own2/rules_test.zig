@@ -94,6 +94,8 @@ const layers = [_]Entry{
     .{ .file = "RowEnv.zig", .layer = 5, .max_lines = 150 },
     .{ .file = "Regions.zig", .layer = 5, .max_lines = 450 },
     .{ .file = "ContractText.zig", .layer = 5, .max_lines = 160 },
+    // A code's summary lines, its called contracts' after it (#2028).
+    .{ .file = "SummaryText.zig", .layer = 5, .max_lines = 35 },
     // `within`, split from `Contract` (#1991).
     .{ .file = "Within.zig", .layer = 5, .max_lines = 140 },
     // A value's leaf set (#1714): made with the value, read by `Relation`.
@@ -160,6 +162,10 @@ const layers = [_]Entry{
     .{ .file = "LabelChain.zig", .layer = 8, .max_lines = 145 },
     // A closure's captures in what holds it, beside `Routed` (#1772).
     .{ .file = "Captures.zig", .layer = 8, .max_lines = 55 },
+    // A function value in a result: its called code (#2028).
+    .{ .file = "Called.zig", .layer = 8, .max_lines = 70 },
+    // A construction over its base, split from `Walk` (#2028).
+    .{ .file = "Construction.zig", .layer = 8, .max_lines = 65 },
     // A demand says whether it is a cell operation (#1727).
     .{ .file = "Walk.zig", .layer = 9, .max_lines = 1240 },
     // A function value run by unknown code: the function objects that escape (#1773, #1775, #1776).
@@ -210,6 +216,10 @@ const layers = [_]Entry{
     // a passed-on label's supplies, from `Eval` and `ReadOff` (#1758, #1721).
     .{ .file = "Outward.zig", .layer = 11, .max_lines = 90 },
     .{ .file = "EntryHeld.zig", .layer = 11, .max_lines = 70 },
+    // What a closure's creation asks of its writes, split from `Eval` (#2028).
+    .{ .file = "Once.zig", .layer = 11, .max_lines = 60 },
+    // What a called code says of what its creation made (#2028).
+    .{ .file = "Made.zig", .layer = 11, .max_lines = 55 },
     .{ .file = "SupplyCond.zig", .layer = 11, .max_lines = 90 },
     // A supplied part judged, split from `Resolve` (§2.11.3, #2013).
     .{ .file = "Supplied.zig", .layer = 11, .max_lines = 165 },
@@ -217,6 +227,12 @@ const layers = [_]Entry{
     .{ .file = "SupplyAnswers.zig", .layer = 11, .max_lines = 70 },
     .{ .file = "ReadOff.zig", .layer = 12, .max_lines = 1160 },
     .{ .file = "Resolve.zig", .layer = 12, .max_lines = 680 },
+    // The conditions of a contract, split from `ReadOff` (#2028).
+    .{ .file = "CondsOff.zig", .layer = 12, .max_lines = 120 },
+    // Nested codes' captures, split from `Groups` (#2028).
+    .{ .file = "CodeCaps.zig", .layer = 12, .max_lines = 90 },
+    // A parameter annotated with a type variable, split from `Groups` (#2028).
+    .{ .file = "TypeVarParam.zig", .layer = 12, .max_lines = 95 },
     // A module's codes and one declaration's answer, split from `Groups` (#1758).
     .{ .file = "Codes.zig", .layer = 12, .max_lines = 55 },
     // Evidence terms as function values (#1708).
@@ -225,6 +241,8 @@ const layers = [_]Entry{
     .{ .file = "LoanNote.zig", .layer = 13, .max_lines = 35 },
     // How a block names what is local to a module, split from `Block` (#1991).
     .{ .file = "BlockNames.zig", .layer = 13, .max_lines = 30 },
+    // A contract's called contracts in a block (#2028).
+    .{ .file = "BlockCalled.zig", .layer = 13, .max_lines = 35 },
     .{ .file = "Block.zig", .layer = 14, .max_lines = 380 },
     .{ .file = "Message.zig", .layer = 14, .max_lines = 280 },
     .{ .file = "Report.zig", .layer = 14, .max_lines = 150 },
@@ -518,7 +536,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 95), layers.len);
+    try testing.expectEqual(@as(usize, 104), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

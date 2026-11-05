@@ -18,9 +18,10 @@ const Slots = @import("Slots.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
 const BlockNames = @import("BlockNames.zig");
+const BlockCalled = @import("BlockCalled.zig");
 
 pub const magic: u32 = 0x324e574f;
-pub const version: u32 = 22;
+pub const version: u32 = 23;
 pub const Error = Ids.ChargeError || error{BadBlock};
 const Step = Place.Step;
 
@@ -38,11 +39,11 @@ const Writer = struct {
     out: *std.ArrayList(u32),
     gpa: Allocator,
 
-    fn word(w: *Writer, x: u32) Allocator.Error!void {
+    pub fn word(w: *Writer, x: u32) Allocator.Error!void {
         try w.out.append(w.gpa, x);
     }
 
-    fn rel(w: *Writer, r: Slots.Rel) Allocator.Error!void {
+    pub fn rel(w: *Writer, r: Slots.Rel) Allocator.Error!void {
         try w.word(@intCast(w.slots.relWords(r).len));
         for (w.slots.relWords(r)) |wd| try w.step(wd);
     }
@@ -120,7 +121,7 @@ const Writer = struct {
         return if (n == 0) 0 else index.get(n).?;
     }
 
-    fn contract(w: *Writer, c: Contract.Id) Allocator.Error!void {
+    pub fn contract(w: *Writer, c: Contract.Id) Allocator.Error!void {
         const h = w.t.head(c);
         try w.word(h.arity);
         try w.word(@as(u8, @bitCast(h.flags)));
@@ -165,6 +166,7 @@ const Writer = struct {
                 try w.cond(s.below);
             }
         }
+        try BlockCalled.write(w, c);
     }
 };
 
@@ -201,7 +203,7 @@ const Reader = struct {
         return r.words[r.at - 1];
     }
 
-    fn rel(r: *Reader) Error!Slots.Rel {
+    pub fn rel(r: *Reader) Error!Slots.Rel {
         const out = try r.arena.alloc(u32, try r.count());
         for (out) |*o| o.* = try r.step();
         return r.slots.relOfWords(r.gpa, r.account, r.places, out);
@@ -268,7 +270,7 @@ const Reader = struct {
     }
 
     /// A count, no more than the block's words.
-    fn count(r: *Reader) Error!u32 {
+    pub fn count(r: *Reader) Error!u32 {
         const n = try r.next();
         return if (n > r.words.len) error.BadBlock else n;
     }
@@ -299,7 +301,7 @@ const Reader = struct {
         return if (i < nodes.len) nodes[i] else error.BadBlock;
     }
 
-    fn contract(r: *Reader, t: *Contract.Table) Error!Contract.Id {
+    pub fn contract(r: *Reader, t: *Contract.Table) Error!Contract.Id {
         var d: Contract.Draft = .{ .arity = try r.next() };
         d.flags = @bitCast(@as(u8, @truncate(try r.next())));
         var nodes: std.ArrayList(Contract.Node) = .empty;
@@ -335,7 +337,7 @@ const Reader = struct {
                 s.below = try r.cond();
             }
         }
-        return t.commit(r.gpa, r.account, r.slots, &d);
+        return BlockCalled.read(r, t, try t.commit(r.gpa, r.account, r.slots, &d));
     }
 
     fn fieldString(ctx: *anyopaque, rank: u32) u32 {
