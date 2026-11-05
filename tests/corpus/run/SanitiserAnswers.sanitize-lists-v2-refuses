@@ -1,7 +1,10 @@
-# v2 refuses an element write of answers that are not apart: a capture, a repeated element, one handed twice or kept for the next run, one answer held twice, two traversals (§2.11.3).
-59:16 list_may_be_shared SanitiserAnswers.pushAll
-61:15 list_may_be_shared SanitiserAnswers.pushAll
-62:14 list_may_be_shared SanitiserAnswers.pushAll
-63:11 list_may_be_shared SanitiserAnswers.pushAll
-64:12 list_may_be_shared SanitiserAnswers.pushAll
-65:12 list_may_be_shared SanitiserAnswers.pushAll
+# v2 refuses an element write of answers that are not apart: a capture, a repeated element, one handed twice or kept for the next run, one answer held twice, two traversals, a list a callee repeats, one fresh answer read twice, a part of a local (§2.11.3).
+85:16 list_may_be_shared SanitiserAnswers.pushAll
+87:15 list_may_be_shared SanitiserAnswers.pushAll
+88:14 list_may_be_shared SanitiserAnswers.pushAll
+89:11 list_may_be_shared SanitiserAnswers.pushAll
+90:12 list_may_be_shared SanitiserAnswers.pushAll
+91:12 list_may_be_shared SanitiserAnswers.pushAll
+92:14 list_may_be_shared SanitiserAnswers.pushAll
+94:13 list_may_be_shared List.update
+95:12 list_may_be_shared SanitiserAnswers.pushAll

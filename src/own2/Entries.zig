@@ -231,6 +231,8 @@ pub const Group = struct {
     dirty: bool = false,
     /// A parameter group's members whose occurrences are gathered.
     occ_done: u32 = 0,
+    /// All its call can hold is made run by run: compared, never expanded.
+    settled: bool = false,
     /// The group asks to be expanded first: 1 unvouched, 2 vouched.
     must: u8 = 0,
 };

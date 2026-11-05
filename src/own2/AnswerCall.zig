@@ -37,6 +37,8 @@ pub fn at(e: *Eval, call: u32, o: u64, instCond: anytype, comptime F: type, plai
         if (!try known(e, vi, k, instCond, F, own, fed, &handed)) return false;
         if (!handed) continue;
         for (e.contracts.suppliesOf(lab.supplies)) |su| if (su.k == k) {
+            // Handed a value the callee could not say holds each object once.
+            if (su.cond.no or su.below.no) return false;
             var es: Forest.Entries = .{};
             defer es.deinit(e.gpa());
             try es.of(&e.contracts.trees, e.gpa(), e.places(), su.res_root, &.{});
@@ -73,7 +75,7 @@ fn known(e: *Eval, vi: u32, k: u32, instCond: anytype, comptime F: type, own: *C
                     continue;
                 }
                 const x = if (a.j < vc.args.len) e.f.val(vc.args[a.j]) else return false;
-                if (x.kind != .ref or try F.holdsAt(e, e.f.roots.items[x.root].path, e.f.slots.relWords(a.slot))) return false;
+                if (x.kind != .ref or try F.holdsAt(e, e.f.pos.items[x.pos].slot, e.f.slots.relWords(a.slot))) return false;
             },
             .cb => {
                 const k2 = if (k == Contract.fresh_arg) k else (try F.supplyOf(e, vi, a.j, k)) orelse Contract.fresh_arg;

@@ -2,7 +2,9 @@
 -- traversal's supply*): one capture answered at every position, an identity
 -- over a list that repeats an element, one element handed twice, an answer
 -- handed to the next run, one answer held twice, an answer that holds one
--- object twice, two traversals of one list in one result. Each element write
+-- object twice, two traversals of one list in one result, a list a callee
+-- repeats itself, a fresh answer read twice out of a tuple, and a capture that
+-- is a part of a local. Each element write
 -- is refused; with the reading unasked, the sanitised runs trap or print the
 -- edit.
 import List
@@ -53,6 +55,30 @@ heldTwice f =
     [ y, y ]
 
 
+dupL : a → List a
+dupL x = [ x, x ]
+
+
+repeatsInside : List Int, (List Int → List Int) → List (List Int)
+repeatsInside l f = List.map (dupL l) f
+
+
+fresh : ⊤ → List (List Int) × Int
+fresh ⊤ = ( List.initialize 1 λ_ → [ 1 ], 1 )
+
+
+fst : a × b → a
+fst ( x, _ ) = x
+
+
+partOf : Int × (List Int × Int) → List (List Int)
+partOf p =
+    ( _, u ) = p
+    List.map [ 1, 2 ] λ_ →
+        ( l, _ ) = u
+        l
+
+
 main : Program
 main =
     k = [ 0 ]
@@ -63,5 +89,12 @@ main =
     run = pushAll (nextRun [ 1 ] [ [ 2 ], [ 3 ] ] λl → l) 4
     held = pushAll (heldTwice λ⊤ → [ 1 ]) 5
     both = pushAll (twice [ [ 1 ] ] λl → l) 6
+    dupped = pushAll (repeatsInside [ 1 ] λl → l) 7
+    d = fresh ⊤
+    outOf = List.update [ fst d, fst d ] 0 λr → List.push r [ 8 ]
+    part = pushAll (partOf ( 1, ( [ 1 ], 2 ) )) 9
     Node.printLines
-        (List.map [ captured, repeats, handed, run, held, both ] shows)
+        (List.map
+            [ captured, repeats, handed, run, held, both, dupped, List.concat outOf, part ]
+            shows
+        )

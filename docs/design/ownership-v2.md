@@ -2411,13 +2411,15 @@ are not, their labels' supplies being `kept`, and `any` is not, as it reads with
 
    The occurrence is decided at a caller (`Answers.at`), over every label of the function slot in **one** selection: at a label that
    passes on it renames; at a known code `K` it asks `K`'s own result separation (`λ_ → ( a = [ 1 ]; [ a, a ] )` fails it) and reads `K`'s
-   result. `fresh` asks nothing. `K`'s argument `k` asks that supply's arrivals plain and deep, in the selection of the callee's other occurrences.
-   A capture that holds an object is `no`. A label `K` passes on renames, and one `K` applies is read the same way. Anything else is `no`. So
+   result. `fresh` asks nothing. `K`'s argument `k` asks that supply's arrivals plain and deep, in the selection of the callee's other occurrences, and is `no` where the
+   supply's own `sep` or `below` is: `List.map (dupL a) f` repeats its family inside the callee, where nothing that renames the occurrence would ask it.
+   A capture that holds an object at the slot, read from the capture's own position, is `no`. A label `K` passes on renames, and one `K` applies is read the same way. Anything else is `no`. So
    `List.map xs λ_ → [ 1 ]` holds whatever `xs` is (C.6), `List.map xs λl → l` asks `xs`'s elements apart, and `λ_ → k` is `no`.
    A supply's `below` is never read: a pass that closes an entry relies on it staying `no` (*A pass closes what it describes*), and `comp f g x = g (f x)`
    would otherwise hand a write below `[ s, s ]` to nothing that asks it (a generated sweep's 60 traps).
-   A result of nothing but fresh answers asks only that occurrence, so the check stops at the call (`Answers.allMade`): expanded, a tuple of
-   `n` answers costs `n`, and `wk f = ( w(k-1) f, w(k-1) f )` doubled with the depth.
+   A result of nothing but fresh answers asks only that occurrence, so the check stops expanding that call (`Answers.allMade`): expanded, a tuple of
+   `n` answers costs `n`, and `wk f = ( w(k-1) f, w(k-1) f )` doubled with the depth. Its entries stay in their group, so one object read twice
+   out of the result still meets itself (`[ fst d, fst d ]`).
 
  Take a known code `K` applied at the caller to a label with an `each` supply, over positions `P` of the
 family. By induction on the walk's sources, each run gets a distinct position: one direct call's position and a pass's positions are disjoint
@@ -4403,6 +4405,8 @@ import as unknown (no block, or one that does not decode) says so in its report:
 declarations read the pessimistic contract`.
 
 *As built (#1979): version 24.* A supply's `k` word carries the `each` mark in its top bit and `walk` in the next (§2.11.3, *a traversal's supply*).
+
+*As built (#1978): version 26.* `res_read` follows `res_cond`.
 
 *As built (#2028): version 23.* After a contract's labels, a count, then per function slot of its result the slot's
 steps and its called contract, written as a contract is, in the canonical order of the slots (§2.11.3).
