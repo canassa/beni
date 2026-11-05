@@ -5470,7 +5470,8 @@ region named:
 | `key_not_primitive` | the `keyed` value | the key type and the primitive types |
 | `markup_type_in_foreign` | the `foreign` declaration | the markup type, the lowering the build selects and the one the package names (or that it names none), and the markup primitive as the form that serves every lowering |
 | `untyped_event_attribute` | the quoted name | that a page runs an `on…` attribute as script, and the typed event attributes (the owner's refusal, `language.md` §11.5) |
-| `untyped_srcdoc_attribute` (*added 2026-09-29*) | the quoted name | that a page runs a `srcdoc` document, scripts included, and that a frame's document is loaded from a URL (the owner's decision, `language.md` §11.5) |
+| `untyped_srcdoc_attribute` (*added 2026-09-29*) | the quoted name | that a page runs a `srcdoc` document, scripts included, and that a frame's document is loaded from a URL (the owner's decision, `language.md` §11.5). *Amended 2026-11-05:* and the typed `srcdoc` with a constant `sandbox` without `allow-same-origin` as the first fix |
+| `srcdoc_without_sandbox` (*added 2026-11-05*) | the typed `srcdoc` name | which of the three it is — no `sandbox`, a `sandbox` from a value, a `sandbox` with `allow-same-origin` — that the frame's scripts would then run with the page's origin, and a constant `sandbox` as the fix (the owner's decision, Cesar, 2026-11-05, html-iframe-srcdoc-q1/q2; `language.md` §11.5) |
 | `unkeyed_for` (warning) | the `For` tag | the item type and the two ways to silence it |
 | `raw_markup_attribute` (warning) | the attribute | that the value is written as markup, unescaped |
 
@@ -5480,6 +5481,8 @@ value's shape (`frontend.md` §9.7), with a non-function the unification's `type
 
 Warnings are reported only for modules of the root package, as `ambiguous_method_receiver` is, and
 are cached and replayed with the entry like every warning (`fast-compiler.md` §8).
+
+*Amended 2026-11-05 (Cesar, 2026-11-05, html-iframe-srcdoc-q1/q2; #2016):* `srcdoc_without_sandbox` is decided from the syntax alone, like a quoted `on…` name (§25.9's *As built*, below). After an element's items, the generator looks for a typed attribute named `srcdoc` that resolved in the vocabulary. When there is one, it reads every item named `sandbox`, typed or quoted, ASCII case folded: an item whose value is not a constant (`frontend.md` §9.7) is a fault, and so is a string constant whose tokens, split on ASCII whitespace, hold `allow-same-origin`, ASCII case folded. No item named `sandbox` is a fault too. Each fault is a `markup_fault` node at the `srcdoc` name, reported when the solver reaches it, one per element. A bare `sandbox` and a number are constants that hold no token: their own fault or `type_mismatch` is the one message. An element the vocabulary does not know, or a `srcdoc` it does not declare there, is that error and nothing more. The rule needs no type, so it adds no obligation.
 
 *As built, 2026-09-29, for §25.3–§25.7 and §25.9* (`src/check/Markup.zig`, `constrain/Markup.zig`,
 `MarkupDecide.zig`, `MarkupTexts.zig`). Markup is typed; §25.8's *As built* bullets "Markup under a
