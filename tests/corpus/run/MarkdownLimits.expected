@@ -1,0 +1,31 @@
+64 block quotes: blocks 65, inlines 1, depth 0, chars 1
+65 block quotes: blocks 65, inlines 1, depth 0, chars 3
+64 nested lists: blocks 128, inlines 64, depth 0, chars 64
+65 nested lists: blocks 128, inlines 66, depth 0, chars 67
+64 emphasis levels: blocks 1, inlines 191, depth 64, chars 257
+65 emphasis levels: blocks 1, inlines 193, depth 64, chars 263
+64 images and emphasis: blocks 1, inlines 65, depth 64, chars 1
+65 images and emphasis: blocks 1, inlines 67, depth 64, chars 8
+nested strong emph: blocks 1, inlines 193, depth 64, chars 454809
+many emph closers with no openers: blocks 1, inlines 1, depth 0, chars 97499
+many emph openers with no closers: blocks 1, inlines 1, depth 0, chars 97499
+many link closers with no openers: blocks 1, inlines 1, depth 0, chars 65000
+many link openers with no closers: blocks 1, inlines 1, depth 0, chars 65000
+mismatched openers and closers: blocks 1, inlines 1, depth 0, chars 99999
+issue #389: blocks 1, inlines 193, depth 64, chars 159871
+openers and closers multiple of 3: blocks 1, inlines 1, depth 0, chars 75003
+link openers and emph closers: blocks 1, inlines 1, depth 0, chars 100000
+pattern [ (]( repeated: blocks 1, inlines 1, depth 0, chars 200000
+pattern ![[]() repeated: blocks 1, inlines 320000, depth 1, chars 320000
+nested brackets: blocks 1, inlines 1, depth 0, chars 50001
+nested block quotes: blocks 65, inlines 1, depth 0, chars 49873
+deeply nested lists: blocks 128, inlines 936, depth 0, chars 1372
+backticks: blocks 1, inlines 1, depth 0, chars 3126249
+unclosed links A: blocks 1, inlines 1, depth 0, chars 180000
+unclosed links B: blocks 1, inlines 1, depth 0, chars 650000
+unclosed <!--: blocks 1, inlines 1, depth 0, chars 1800002
+empty lines in deeply nested lists: blocks 65, inlines 1, depth 0, chars 59873
+empty lines in deeply nested lists in blockquote: blocks 65, inlines 1, depth 0, chars 59875
+emph in deep blockquote: blocks 65, inlines 150000, depth 1, chars 199936
+nested inlines: blocks 1, inlines 67, depth 64, chars 39745
+many references: blocks 1, inlines 1, depth 0, chars 19999

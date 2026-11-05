@@ -1,0 +1,33 @@
+-- run: core's `Markdown.parse` (docs/design/markdown.md §3, §4): the tree
+-- of one small document per construct, so the tree's shape is pinned apart
+-- from any renderer. Raw HTML is kept as text in the tree (§6.1). A
+-- definition goes, and a reference uses it (§4). References decode by the
+-- HTML5 table, and a name it does not have stays as written (§9 D3). Every
+-- other construct's whole spec is the conformance fixture of slice M2.
+import Markdown
+import Node exposing (Program)
+
+
+show : String → String
+show text = "${Debug.toString text}\n  ${Debug.toString (Markdown.parse text)}"
+
+
+main : Program
+main =
+    Node.printLines
+        [ show ""
+        , show "plain text"
+        , show "# One\n## Two ##\nSetext\n======\nTwo\n---"
+        , show "***\n- - -"
+        , show "    indented\n\n```js extra\nfenced\n```"
+        , show "> quoted\n> > twice"
+        , show "- a\n- b\n\n1. one\n2) two"
+        , show "3. loose\n\n4. list"
+        , show "*em* **strong** `code` \\* escaped"
+        , show "[link](/url \"title\") ![image](/img.png) <https://example.com> <a@b.c>"
+        , show "[ref][]\n\n[ref]: /target 'with title'"
+        , show "hard  \nbreak\\\nand soft\nbreak"
+        , show "<div>\n*block html*\n</div>\n\ninline <b>html</b>"
+        , show "&amp; &copy; &ClockwiseContourIntegral; &#35; &#x22; &MadeUp;"
+        , show "[a](javascript:alert(1)) [b](<a b>)"
+        ]

@@ -1,0 +1,2823 @@
+--! Markdown: CommonMark 0.31.2 parsed to a tree of blocks and inlines
+--! (`docs/design/markdown.md`). `parse` is total: every text is a
+--! document, and it returns in time linear in the text's length.
+--!
+--!     Markdown.parse "# Hello\n\nA *short* text."
+--!
+--! Raw HTML is parsed as CommonMark says, and kept in the tree as text
+--! (`HtmlBlock`, `HtmlInline`): a renderer writes it as text, never as
+--! markup (§6.1). Character references are decoded, all 2,125 names of
+--! HTML5 included. Nesting stops at 64 levels of blocks and 64 of
+--! inlines (§7.2): a deeper marker stays as text.
+--!
+--! The algorithm is CommonMark's appendix (*A parsing strategy*), as
+--! the reference parser commonmark.js builds it: blocks line by line,
+--! then the link reference definitions in document order, then the
+--! inlines of each paragraph and heading.
+
+import Dict exposing (Dict)
+import Js
+
+
+-- ---- The tree -----------------------------------------------------------
+
+--| A block of a document.
+pub type Block
+    = Paragraph (List Inline)
+    | Heading Int (List Inline)
+    | ThematicBreak
+    | CodeBlock (Maybe String) String
+    | BlockQuote (List Block)
+    | BulletList Bool (List (List Block))
+    | OrderedList Int Bool (List (List Block))
+    | HtmlBlock String
+
+
+--| A piece of a paragraph or a heading.
+pub type Inline
+    = Text String
+    | CodeSpan String
+    | Emphasis (List Inline)
+    | Strong (List Inline)
+    | Link String (Maybe String) (List Inline)
+    | Image String (Maybe String) (List Inline)
+    | HardBreak
+    | SoftBreak
+    | HtmlInline String
+
+
+-- ---- Strings, as JavaScript holds them ----------------------------------
+--
+-- The parser counts in UTF-16 code units, as the reference parser and the
+-- host's patterns do. Every character that decides a block is ASCII.
+
+size : String → Int
+size s = Js.pure λ⊤ → Js.to (Js.get (Js.from s) "length")
+
+
+-- The code unit at `i`, or -1 past either end.
+codeAt : String, Int → Int
+codeAt s i =
+    if i < 0 || i ≥ size s then
+        -1
+    else
+        Js.pure λ⊤ → Js.to (Js.call (Js.from s) "charCodeAt" [ Js.from i ])
+
+
+cut : String, Int, Int → String
+cut s from to = Js.pure λ⊤ → Js.to (Js.call (Js.from s) "slice" [ Js.from from, Js.from to ])
+
+
+after : String, Int → String
+after s from = cut s from (size s)
+
+
+-- The length of the match of `pattern` at the start of `s`, or -1. Every
+-- pattern here is anchored with `^` and has no `g` or `y` flag, so a
+-- match leaves the pattern as it was.
+lead : Js.Value, String → Int
+lead pattern s = Js.pure λ⊤ →
+    found = Js.call pattern "exec" [ Js.from s ]
+    if Js.isNull found then -1 else Js.to (Js.get (Js.at found 0) "length")
+
+
+holds : Js.Value, String → Bool
+holds pattern s = Js.pure λ⊤ → Js.to (Js.call pattern "test" [ Js.from s ])
+
+
+-- The groups of a match at the start of `s`, the whole match first.
+groups : Js.Value, String → Maybe (List String)
+groups pattern s = Js.pure λ⊤ →
+    found = Js.call pattern "exec" [ Js.from s ]
+    if Js.isNull found then
+        Nothing
+    else
+        n : Int
+        n = Js.to (Js.get found "length")
+        Just (List.map (List.range 0 (n - 1)) λi → groupText (Js.at found i))
+
+
+-- A group that matched nothing is "".
+groupText : Js.Value → String
+groupText v = if Js.isUndefined v then "" else Js.to v
+
+
+-- `s` with each match of `pattern` given to `f`. A pattern with `g` keeps
+-- a position between uses, so each call makes a fresh global copy.
+replaceAll : String, Js.Value, (String → String) → String
+replaceAll s pattern f = Js.pure λ⊤ →
+    global = everywhere pattern
+    Js.to (Js.call (Js.from s) "replace" [ global, Js.method λ_ m → Js.from (f (Js.to m)) ])
+
+
+everywhere : Js.Value → Js.Value
+everywhere pattern = Js.pure λ⊤ →
+    Js.construct (Js.global "RegExp")
+        [ Js.get pattern "source", Js.call (Js.get pattern "flags") "concat" [ Js.from "g" ] ]
+
+
+repeatText : String, Int → String
+repeatText s n =
+    if n ≤ 0 then "" else Js.pure λ⊤ → Js.to (Js.call (Js.from s) "repeat" [ Js.from n ])
+
+
+isSpaceOrTab : Int → Bool
+isSpaceOrTab c = c == 32 || c == 9
+
+
+-- ---- Blocks: the first pass ----------------------------------------------
+--
+-- The state of the block pass is one host object, written in place: the
+-- cursor in the current line and the stack of open blocks, each a host
+-- object whose closed children grow in a host array. A line then costs no
+-- copy of the open blocks, as core's other engines keep their growing
+-- state (`Schema`, `Queue`). Closed blocks are plain values (`Node`),
+-- never written once made.
+
+-- A list item's marker: a bullet (`*`, `+`, `-`) or a number and its
+-- delimiter (`.`, `)`), and where the item's content starts.
+type alias Marker =
+    ordered : Bool
+    char : Int
+    start : Int
+    markerOffset : Int
+    padding : Int
+
+
+-- What an open block is.
+type Kind
+    = KDocument
+    | KQuote
+    | KList Marker
+    | KItem Marker
+    | KParagraph
+    | KHeading Int
+    | KThematic
+    | KFenced Int Int Int
+    | KIndented
+    | KHtml Int
+
+
+-- A closed block, with its first and last line: list tightness reads the
+-- lines, as the reference parser's source positions are read.
+type Node
+    = Node Raw Int Int
+
+
+type Raw
+    = RParagraph String
+    | RHeading Int String
+    | RThematic
+    | RCode (Maybe String) String
+    | RHtml String
+    | RQuote (List Node)
+    | RList Marker Bool (List Node)
+    | RItem (List Node)
+
+
+-- How deep blocks may nest (§7.2): block quotes and lists, counted
+-- together.
+maxNesting : Int
+maxNesting = 64
+
+
+-- A field of a host object.
+get : Js.Value, String → a
+get o key = Js.to (Js.get o key)
+
+
+put : Js.Value, String, a → ⊤
+put o key value = Js.set o key (Js.from value)
+
+
+newFrame : Kind, Int → Js.Value
+newFrame kind start =
+    Js.object
+        [ ( "kind", Js.from kind )
+        , ( "start", Js.from start )
+        , ( "content", Js.from "" )
+        , ( "children", Js.array [] )
+        ]
+
+
+-- The parser: the line and the cursor in it (the reference parser's
+-- `offset`, `column`, `nextNonspace` …), the open blocks, the document
+-- first, and the last block the line matched.
+newParser : ⊤ → Js.Value
+newParser ⊤ =
+    Js.object
+        [ ( "stack", Js.array [ newFrame KDocument 1 ] )
+        , ( "lineNumber", Js.from 0 )
+        , ( "line", Js.from "" )
+        , ( "offset", Js.from 0 )
+        , ( "column", Js.from 0 )
+        , ( "nextNonspace", Js.from 0 )
+        , ( "nextNonspaceColumn", Js.from 0 )
+        , ( "indent", Js.from 0 )
+        , ( "blank", Js.from False )
+        , ( "partial", Js.from False )
+        , ( "allClosed", Js.from True )
+        , ( "matched", Js.from 0 )
+        ]
+
+
+stackDepth : Js.Value → Int
+stackDepth p = get (Js.get p "stack") "length"
+
+
+frameAt : Js.Value, Int → Js.Value
+frameAt p i = Js.at (Js.get p "stack") i
+
+
+tipIndex : Js.Value → Int
+tipIndex p = stackDepth p - 1
+
+
+tip : Js.Value → Js.Value
+tip p = frameAt p (tipIndex p)
+
+
+kindOf : Js.Value → Kind
+kindOf f = get f "kind"
+
+
+lineOf : Js.Value → String
+lineOf p = get p "line"
+
+
+offsetOf : Js.Value → Int
+offsetOf p = get p "offset"
+
+
+columnOf : Js.Value → Int
+columnOf p = get p "column"
+
+
+nextNonspaceOf : Js.Value → Int
+nextNonspaceOf p = get p "nextNonspace"
+
+
+nextNonspaceColumn : Js.Value → Int
+nextNonspaceColumn p = get p "nextNonspaceColumn"
+
+
+childCount : Js.Value → Int
+childCount f = get (Js.get f "children") "length"
+
+
+indentOf : Js.Value → Int
+indentOf p = get p "indent"
+
+
+blankOf : Js.Value → Bool
+blankOf p = get p "blank"
+
+
+indented : Js.Value → Bool
+indented p = indentOf p ≥ 4
+
+
+-- The character at the line's next non-space.
+nextChar : Js.Value → Int
+nextChar p = codeAt (lineOf p) (nextNonspaceOf p)
+
+
+-- The line from its next non-space.
+restOfLine : Js.Value → String
+restOfLine p = after (lineOf p) (nextNonspaceOf p)
+
+
+findNextNonspace : Js.Value → ⊤
+findNextNonspace p = scanSpace p (offsetOf p) (columnOf p)
+
+
+scanSpace : Js.Value, Int, Int → ⊤
+scanSpace p i cols =
+    ch = codeAt (lineOf p) i
+    if ch == 32 then
+        scanSpace p (i + 1) (cols + 1)
+    else if ch == 9 then
+        scanSpace p (i + 1) (cols + 4 - Int.mod cols 4)
+    else
+        put p "blank" (ch == -1)
+        put p "nextNonspace" i
+        put p "nextNonspaceColumn" cols
+        put p "indent" (cols - columnOf p)
+
+
+advanceNextNonspace : Js.Value → ⊤
+advanceNextNonspace p =
+    put p "offset" (nextNonspaceOf p)
+    put p "column" (nextNonspaceColumn p)
+    put p "partial" False
+
+
+-- Move `count` characters on, or `count` columns when `columns`: a tab
+-- that a column count stops inside is partly consumed.
+advanceOffset : Js.Value, Int, Bool → ⊤
+advanceOffset p count columns =
+    ch = codeAt (lineOf p) (offsetOf p)
+    if count ≤ 0 || ch == -1 then
+        ⊤
+    else if ch == 9 then
+        toTab = 4 - Int.mod (columnOf p) 4
+        if columns then
+            partial = toTab > count
+            step = if partial then count else toTab
+            put p "partial" partial
+            put p "column" (columnOf p + step)
+            if not partial then put p "offset" (offsetOf p + 1)
+            advanceOffset p (count - step) columns
+        else
+            put p "partial" False
+            put p "column" (columnOf p + toTab)
+            put p "offset" (offsetOf p + 1)
+            advanceOffset p (count - 1) columns
+    else
+        put p "partial" False
+        put p "offset" (offsetOf p + 1)
+        put p "column" (columnOf p + 1)
+        advanceOffset p (count - 1) columns
+
+
+toEnd : Js.Value → ⊤
+toEnd p = advanceOffset p (size (lineOf p) - offsetOf p) False
+
+
+-- The rest of the line, to the tip's text.
+addLine : Js.Value → ⊤
+addLine p =
+    f = tip p
+    if get p "partial" then
+        put p "offset" (offsetOf p + 1)
+        put
+            f
+            "content"
+            (get f "content"
+                ++ repeatText " " (4 - Int.mod (columnOf p) 4)
+                ++ after (lineOf p) (offsetOf p)
+                ++ "\n"
+            )
+    else
+        put f "content" (get f "content" ++ after (lineOf p) (offsetOf p) ++ "\n")
+
+
+canContain : Kind, Kind → Bool
+canContain parent child =
+    isItem =
+        case child of
+            KItem _ →
+                True
+
+            _ →
+                False
+    case parent of
+        KDocument →
+            not isItem
+
+        KQuote →
+            not isItem
+
+        KItem _ →
+            not isItem
+
+        KList _ →
+            isItem
+
+        _ →
+            False
+
+
+acceptsLines : Kind → Bool
+acceptsLines kind =
+    case kind of
+        KParagraph →
+            True
+
+        KFenced _ _ _ →
+            True
+
+        KIndented →
+            True
+
+        KHtml _ →
+            True
+
+        _ →
+            False
+
+
+isParagraph : Kind → Bool
+isParagraph kind =
+    case kind of
+        KParagraph →
+            True
+
+        _ →
+            False
+
+
+-- Close the tip until it can hold `kind`, then open a block of `kind`.
+addChild : Js.Value, Kind → ⊤
+addChild p kind =
+    if canContain (kindOf (tip p)) kind then
+        _ = Js.call (Js.get p "stack") "push" [ newFrame kind (lineNumber p) ]
+        ⊤
+    else
+        closeTip p (lineNumber p - 1)
+        addChild p kind
+
+
+-- Close the tip, whose last line is `endLine`, into its parent.
+closeTip : Js.Value, Int → ⊤
+closeTip p endLine =
+    closed = Js.call (Js.get p "stack") "pop" []
+    _ = Js.call (Js.get (tip p) "children") "push" [ Js.from (finish closed endLine) ]
+    ⊤
+
+
+-- Close every block above the last one the line matched.
+closeUnmatched : Js.Value → ⊤
+closeUnmatched p =
+    if not (get p "allClosed") then
+        put p "allClosed" True
+        closeAbove p (get p "matched")
+
+
+closeAbove : Js.Value, Int → ⊤
+closeAbove p keep =
+    if tipIndex p > keep then
+        closeTip p (lineNumber p - 1)
+        closeAbove p keep
+
+
+-- The last line of the last node, or `fallback` for none. Written as a
+-- `case`: `Maybe.withDefault (List.get …)` in core crashes the ownership
+-- checker v2 (#1947).
+lastEnd : List Node, Int → Int
+lastEnd nodes fallback =
+    case List.last nodes of
+        Just n →
+            nodeEnd n
+
+        Nothing →
+            fallback
+
+
+nodeEnd : Node → Int
+nodeEnd (Node _ _ end) = end
+
+
+nodeStart : Node → Int
+nodeStart (Node _ start _) = start
+
+
+finish : Js.Value, Int → Node
+finish f endLine =
+    start : Int
+    start = get f "start"
+    content : String
+    content = get f "content"
+    children : List Node
+    children = get f "children"
+    case kindOf f of
+        KParagraph →
+            Node (RParagraph content) start endLine
+
+        KHeading level →
+            Node (RHeading level content) start endLine
+
+        KThematic →
+            Node RThematic start endLine
+
+        KFenced _ _ _ →
+            firstEnd = Js.pure λ⊤ → Js.to (Js.call (Js.from content) "indexOf" [ Js.from "\n" ])
+            info = trimSpace (unescape (cut content 0 firstEnd))
+            word = cut info 0 (lead infoWord info)
+            Node
+                (RCode (if word == "" then Nothing else Just word) (after content (firstEnd + 1)))
+                start
+                endLine
+
+        KIndented →
+            kept = dropBlankTail (String.split content "\n")
+            Node
+                (RCode Nothing (String.join kept "\n" ++ "\n"))
+                start
+                (start + List.length kept - 1)
+
+        KHtml _ →
+            Node
+                (RHtml
+                    (if String.endsWith content "\n" then
+                        cut content 0 (size content - 1)
+                     else
+                        content
+                    )
+                )
+                start
+                endLine
+
+        KQuote →
+            Node (RQuote children) start endLine
+
+        KItem _ →
+            Node
+                (RItem children)
+                start
+                (lastEnd children start)
+
+        KList marker →
+            Node
+                (RList marker (tight children) children)
+                start
+                (lastEnd children endLine)
+
+        KDocument →
+            Node (RQuote children) start endLine
+
+
+-- The first word of an info string: up to the first whitespace.
+infoWord : Js.Value
+infoWord = Js.regExp "^\\S*" ""
+
+
+dropBlankTail : List String → List String
+dropBlankTail lines =
+    case List.last lines of
+        Just last →
+            if holds blankLine last then
+                dropBlankTail (List.take lines (List.length lines - 1))
+            else
+                lines
+
+        Nothing →
+            []
+
+
+blankLine : Js.Value
+blankLine = Js.regExp "^[ \\t]*$" ""
+
+
+-- A list is loose when a blank line separates two of its items, or two
+-- children of one item (spec §5.3).
+tight : List Node → Bool
+tight items = not (gapIn items 0) && List.all items λitem → not (gapIn (itemChildren item) 0)
+
+
+itemChildren : Node → List Node
+itemChildren (Node raw _ _) =
+    case raw of
+        RItem children →
+            children
+
+        _ →
+            []
+
+
+-- Whether a blank line separates two neighbours, from the `i`th on.
+gapIn : List Node, Int → Bool
+gapIn nodes i =
+    case ( List.get nodes i, List.get nodes (i + 1) ) of
+        ( Just a, Just b ) →
+            if nodeEnd a ≠ nodeStart b - 1 then True else gapIn nodes (i + 1)
+
+        _ →
+            False
+
+
+-- ---- Blocks: one line ---------------------------------------------------
+
+-- What a block's continuation rule made of the line.
+type Continued
+    = Go
+    | Stop
+    | Consumed
+
+
+-- Match the line against each open block below the document, the
+-- document's child first (spec appendix, *Phase 1*). `False` when a
+-- closing fence took the whole line.
+matchOpen : Js.Value, Int → Bool
+matchOpen p i =
+    if i > tipIndex p then
+        put p "matched" (i - 1)
+        True
+    else
+        findNextNonspace p
+        case continueBlock p i of
+            Go →
+                matchOpen p (i + 1)
+
+            Stop →
+                put p "matched" (i - 1)
+                True
+
+            Consumed →
+                False
+
+
+continueBlock : Js.Value, Int → Continued
+continueBlock p i =
+    f = frameAt p i
+    case kindOf f of
+        KQuote →
+            if not (indented p) && nextChar p == 62 then
+                advanceNextNonspace p
+                advanceOffset p 1 False
+                if isSpaceOrTab (codeAt (lineOf p) (offsetOf p)) then advanceOffset p 1 True
+                Go
+            else
+                Stop
+
+        KItem m →
+            if indentOf p ≥ m.markerOffset + m.padding then
+                advanceOffset p (m.markerOffset + m.padding) True
+                Go
+            else if blankOf p && (childCount f > 0 || i < tipIndex p) then
+                advanceNextNonspace p
+                Go
+            else
+                Stop
+
+        KFenced fence length fenceOffset →
+            closing =
+                if indentOf p ≤ 3 && nextChar p == fence then
+                    lead closingFence (restOfLine p)
+                else
+                    -1
+            if closing ≥ length then
+                closeTip p (lineNumber p)
+                Consumed
+            else
+                skipIndent p fenceOffset
+                Go
+
+        KIndented →
+            if indentOf p ≥ 4 then
+                advanceOffset p 4 True
+                Go
+            else if blankOf p then
+                advanceNextNonspace p
+                Go
+            else
+                Stop
+
+        KHtml kind →
+            if blankOf p && (kind == 6 || kind == 7) then Stop else Go
+
+        KParagraph →
+            if blankOf p then Stop else Go
+
+        KHeading _ →
+            Stop
+
+        KThematic →
+            Stop
+
+        _ →
+            Go
+
+
+-- Up to `n` spaces or tabs, one column each: a fenced block's lines lose
+-- the fence's indentation.
+skipIndent : Js.Value, Int → ⊤
+skipIndent p n =
+    if n > 0 && isSpaceOrTab (codeAt (lineOf p) (offsetOf p)) then
+        advanceOffset p 1 True
+        skipIndent p (n - 1)
+
+
+closingFence : Js.Value
+closingFence = Js.regExp "^(?:`{3,}|~{3,})(?=[ \\t]*$)" ""
+
+
+-- What a block start made of the line.
+type Started
+    = Container
+    | Leaf
+    | NoStart
+
+
+-- Try each block start, in the spec's order, until one opens a leaf or
+-- none matches; `ci` is the deepest container so far. The answer is the
+-- deepest container then.
+startBlocks : Js.Value, Int → Int
+startBlocks p ci =
+    findNextNonspace p
+    if not (indented p) && not (holds maybeSpecial (restOfLine p)) then
+        advanceNextNonspace p
+        ci
+    else
+        case tryStarts p ci 0 of
+            Container →
+                startBlocks p (tipIndex p)
+
+            Leaf →
+                tipIndex p
+
+            NoStart →
+                advanceNextNonspace p
+                ci
+
+
+maybeSpecial : Js.Value
+maybeSpecial = Js.regExp "^[#`~*+_=<>0-9-]" ""
+
+
+tryStarts : Js.Value, Int, Int → Started
+tryStarts p ci n =
+    started =
+        case n of
+            0 →
+                startQuote p
+
+            1 →
+                startAtxHeading p
+
+            2 →
+                startFence p
+
+            3 →
+                startHtml p ci
+
+            4 →
+                startSetext p ci
+
+            5 →
+                startThematic p
+
+            6 →
+                startItem p ci
+
+            _ →
+                startIndented p
+    case started of
+        NoStart →
+            if n < 7 then tryStarts p ci (n + 1) else NoStart
+
+        _ →
+            started
+
+
+-- Block quotes and lists that stay open once the unmatched ones close:
+-- the nesting cap counts them.
+nesting : Js.Value → Int
+nesting p =
+    top = if get p "allClosed" then tipIndex p else get p "matched"
+    countNesting p 0 top 0
+
+
+countNesting : Js.Value, Int, Int, Int → Int
+countNesting p i top n =
+    if i > top then
+        n
+    else
+        more =
+            case kindOf (frameAt p i) of
+                KQuote →
+                    1
+
+                KList _ →
+                    1
+
+                _ →
+                    0
+        countNesting p (i + 1) top (n + more)
+
+
+startQuote : Js.Value → Started
+startQuote p =
+    if not (indented p) && nextChar p == 62 && nesting p < maxNesting then
+        advanceNextNonspace p
+        advanceOffset p 1 False
+        if isSpaceOrTab (codeAt (lineOf p) (offsetOf p)) then advanceOffset p 1 True
+        closeUnmatched p
+        addChild p KQuote
+        Container
+    else
+        NoStart
+
+
+startAtxHeading : Js.Value → Started
+startAtxHeading p =
+    marker = if indented p then -1 else lead atxMarker (restOfLine p)
+    if marker < 0 then
+        NoStart
+    else
+        level = size (trimSpace (cut (lineOf p) (nextNonspaceOf p) (nextNonspaceOf p + marker)))
+        advanceNextNonspace p
+        advanceOffset p marker False
+        closeUnmatched p
+        addChild p (KHeading level)
+        put
+            (tip p)
+            "content"
+            (replaceAll (replaceAll (after (lineOf p) (offsetOf p)) atxEmptyClose λ_ → "") atxClose λ_ →
+                ""
+            )
+        toEnd p
+        Leaf
+
+
+atxMarker : Js.Value
+atxMarker = Js.regExp "^#{1,6}(?:[ \\t]+|$)" ""
+
+
+atxEmptyClose : Js.Value
+atxEmptyClose = Js.regExp "^[ \\t]*#+[ \\t]*$" ""
+
+
+atxClose : Js.Value
+atxClose = Js.regExp "[ \\t]+#+[ \\t]*$" ""
+
+
+startFence : Js.Value → Started
+startFence p =
+    fence = if indented p then -1 else lead codeFence (restOfLine p)
+    if fence < 0 then
+        NoStart
+    else
+        closeUnmatched p
+        addChild p (KFenced (nextChar p) fence (indentOf p))
+        advanceNextNonspace p
+        advanceOffset p fence False
+        Leaf
+
+
+codeFence : Js.Value
+codeFence = Js.regExp "^`{3,}(?!.*`)|^~{3,}" ""
+
+
+startHtml : Js.Value, Int → Started
+startHtml p ci =
+    if indented p || nextChar p ≠ 60 then
+        NoStart
+    else
+        lazy = not (get p "allClosed") && not (blankOf p) && isParagraph (kindOf (tip p))
+        mayInterrupt = not (isParagraph (kindOf (frameAt p ci))) && not lazy
+        case htmlKind (restOfLine p) 1 mayInterrupt of
+            Just kind →
+                closeUnmatched p
+                addChild p (KHtml kind)
+                Leaf
+
+            Nothing →
+                NoStart
+
+
+-- The first of the seven kinds of HTML block whose start condition the
+-- text meets (spec §4.6); the seventh cannot interrupt a paragraph.
+htmlKind : String, Int, Bool → Maybe Int
+htmlKind s kind mayInterrupt =
+    if kind > 7 then
+        Nothing
+    else if (kind < 7 || mayInterrupt) && holds (htmlOpen kind) s then
+        Just kind
+    else
+        htmlKind s (kind + 1) mayInterrupt
+
+
+htmlOpen : Int → Js.Value
+htmlOpen kind =
+    case kind of
+        1 →
+            htmlOpen1
+
+        2 →
+            htmlOpen2
+
+        3 →
+            htmlOpen3
+
+        4 →
+            htmlOpen4
+
+        5 →
+            htmlOpen5
+
+        6 →
+            htmlOpen6
+
+        _ →
+            htmlOpen7
+
+
+htmlOpen1 : Js.Value
+htmlOpen1 = Js.regExp "^<(?:script|pre|textarea|style)(?:\\s|>|$)" "i"
+
+
+htmlOpen2 : Js.Value
+htmlOpen2 = Js.regExp "^<!--" ""
+
+
+htmlOpen3 : Js.Value
+htmlOpen3 = Js.regExp "^<[?]" ""
+
+
+htmlOpen4 : Js.Value
+htmlOpen4 = Js.regExp "^<![A-Za-z]" ""
+
+
+htmlOpen5 : Js.Value
+htmlOpen5 = Js.regExp "^<!\\[CDATA\\[" ""
+
+
+htmlOpen6 : Js.Value
+htmlOpen6 =
+    Js.regExp
+        "^<[/]?(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[123456]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|search|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul)(?:\\s|[/]?[>]|$)"
+        "i"
+
+
+htmlOpen7 : Js.Value
+htmlOpen7 =
+    Js.regExp
+        "^(?:<[A-Za-z][A-Za-z0-9-]*(?:\\s+[a-zA-Z_:][a-zA-Z0-9:._-]*(?:\\s*=\\s*(?:[^\"'=<>`\\x00-\\x20]+|'[^']*'|\"[^\"]*\"))?)*\\s*/?>|</[A-Za-z][A-Za-z0-9-]*\\s*[>])\\s*$"
+        "i"
+
+
+-- The end condition of the first five kinds, tested on a line's text.
+htmlClose : Int → Js.Value
+htmlClose kind =
+    case kind of
+        1 →
+            htmlClose1
+
+        2 →
+            htmlClose2
+
+        3 →
+            htmlClose3
+
+        4 →
+            htmlClose4
+
+        _ →
+            htmlClose5
+
+
+htmlClose1 : Js.Value
+htmlClose1 = Js.regExp "</(?:script|pre|textarea|style)>" "i"
+
+
+htmlClose2 : Js.Value
+htmlClose2 = Js.regExp "-->" ""
+
+
+htmlClose3 : Js.Value
+htmlClose3 = Js.regExp "\\?>" ""
+
+
+htmlClose4 : Js.Value
+htmlClose4 = Js.regExp ">" ""
+
+
+htmlClose5 : Js.Value
+htmlClose5 = Js.regExp "\\]\\]>" ""
+
+
+startSetext : Js.Value, Int → Started
+startSetext p ci =
+    if
+        indented p
+            || not (isParagraph (kindOf (frameAt p ci)))
+            || lead setextLine (restOfLine p) < 0
+    then
+        NoStart
+    else
+        closeUnmatched p
+        para = tip p
+        content : String
+        content = get para "content"
+        defs = referencesLength content 0
+        if size content ≤ defs then
+            NoStart
+        else
+            start : Int
+            start = get para "start"
+            level = if nextChar p == 61 then 1 else 2
+            defLines = List.length (String.split (cut content 0 defs) "\n")
+            _ = Js.call (Js.get p "stack") "pop" []
+            if defs > 0 then
+                _ =
+                    Js.call (Js.get (tip p) "children") "push"
+                        [ Js.from
+                            (Node (RParagraph (cut content 0 defs)) start (start + defLines - 2))
+                        ]
+                ⊤
+            heading = newFrame (KHeading level) (start + defLines - 1)
+            put heading "content" (after content defs)
+            _ = Js.call (Js.get p "stack") "push" [ heading ]
+            toEnd p
+            Leaf
+
+
+setextLine : Js.Value
+setextLine = Js.regExp "^(?:=+|-+)[ \\t]*$" ""
+
+
+startThematic : Js.Value → Started
+startThematic p =
+    if not (indented p) && holds thematicBreak (restOfLine p) then
+        closeUnmatched p
+        addChild p KThematic
+        toEnd p
+        Leaf
+    else
+        NoStart
+
+
+thematicBreak : Js.Value
+thematicBreak = Js.regExp "^(?:\\*[ \\t]*){3,}$|^(?:_[ \\t]*){3,}$|^(?:-[ \\t]*){3,}$" ""
+
+
+startItem : Js.Value, Int → Started
+startItem p ci =
+    container = kindOf (frameAt p ci)
+    isList =
+        case container of
+            KList _ →
+                True
+
+            _ →
+                False
+    if indented p && not isList then
+        NoStart
+    else
+        case listMarker p container of
+            Nothing →
+                NoStart
+
+            Just marker →
+                closeUnmatched p
+                sameList =
+                    case kindOf (tip p) of
+                        KList m →
+                            m.ordered == marker.ordered && m.char == marker.char
+
+                        _ →
+                            False
+                if not sameList then addChild p (KList marker)
+                addChild p (KItem marker)
+                Container
+
+
+-- A list item's marker at the line's next non-space, with the cursor
+-- moved past it and its spaces (spec §5.2); the line as it was when it is
+-- none, or when a new list would pass the nesting cap.
+listMarker : Js.Value, Kind → Maybe Marker
+listMarker p container =
+    text = restOfLine p
+    inParagraph = isParagraph container
+    found =
+        if indentOf p ≥ 4 then
+            Nothing
+        else if lead bulletMarker text > 0 then
+            Just ( False, codeAt text 0, 1, 1 )
+        else
+            case groups orderedMarker text of
+                Just [ whole, digits, mark ] →
+                    number = Maybe.withDefault (String.toInt digits) 0
+                    if not inParagraph || number == 1 then
+                        Just ( True, codeAt mark 0, number, size whole )
+                    else
+                        Nothing
+
+                _ →
+                    Nothing
+    case found of
+        Nothing →
+            Nothing
+
+        Just ( ordered, char, start, length ) →
+            next = codeAt (lineOf p) (nextNonspaceOf p + length)
+            newList =
+                case container of
+                    KList m →
+                        not (m.ordered == ordered && m.char == char)
+
+                    _ →
+                        True
+            if not (next == -1 || isSpaceOrTab next) then
+                Nothing
+            else if
+                inParagraph && not (holds nonSpace (after (lineOf p) (nextNonspaceOf p + length)))
+            then
+                Nothing
+            else if newList && nesting p ≥ maxNesting then
+                Nothing
+            else
+                markerOffset = indentOf p
+                advanceNextNonspace p
+                advanceOffset p length True
+                startColumn = columnOf p
+                startOffset = offsetOf p
+                spaces p startColumn
+                spacesAfter = columnOf p - startColumn
+                padding =
+                    if
+                        spacesAfter ≥ 5 || spacesAfter < 1 || codeAt (lineOf p) (offsetOf p) == -1
+                    then
+                        put p "column" startColumn
+                        put p "offset" startOffset
+                        if isSpaceOrTab (codeAt (lineOf p) (offsetOf p)) then advanceOffset p 1 True
+                        length + 1
+                    else
+                        length + spacesAfter
+                Just
+                    { ordered = ordered
+                    , char = char
+                    , start = start
+                    , markerOffset = markerOffset
+                    , padding = padding
+                    }
+
+
+-- At least one column on, then on while the next is a space or a tab and
+-- fewer than five columns are gone.
+spaces : Js.Value, Int → ⊤
+spaces p startColumn =
+    advanceOffset p 1 True
+    if columnOf p - startColumn < 5 && isSpaceOrTab (codeAt (lineOf p) (offsetOf p)) then
+        spaces p startColumn
+
+
+bulletMarker : Js.Value
+bulletMarker = Js.regExp "^[*+-]" ""
+
+
+orderedMarker : Js.Value
+orderedMarker = Js.regExp "^(\\d{1,9})([.)])" ""
+
+
+nonSpace : Js.Value
+nonSpace = Js.regExp "[^ \\t\\f\\v\\r\\n]" ""
+
+
+startIndented : Js.Value → Started
+startIndented p =
+    if indented p && not (isParagraph (kindOf (tip p))) && not (blankOf p) then
+        advanceOffset p 4 True
+        closeUnmatched p
+        addChild p KIndented
+        Leaf
+    else
+        NoStart
+
+
+lineNumber : Js.Value → Int
+lineNumber p = get p "lineNumber"
+
+
+-- One line of the document (spec appendix, *Phase 1*).
+incorporate : Js.Value, String → ⊤
+incorporate p raw =
+    put p "line" (if holds nul raw then replaceAll raw nul λ_ → "\u{FFFD}" else raw)
+    put p "lineNumber" (lineNumber p + 1)
+    put p "offset" 0
+    put p "column" 0
+    put p "blank" False
+    put p "partial" False
+    if matchOpen p 1 then
+        matched : Int
+        matched = get p "matched"
+        put p "allClosed" (matched == tipIndex p)
+        container = kindOf (frameAt p matched)
+        leafMatched = not (isParagraph container) && acceptsLines container
+        ci = if leafMatched then matched else startBlocks p matched
+        lastLine p ci
+
+
+lastLine : Js.Value, Int → ⊤
+lastLine p ci =
+    if not (get p "allClosed") && not (blankOf p) && isParagraph (kindOf (tip p)) then
+        addLine p
+    else
+        closeUnmatched p
+        container = kindOf (frameAt p (Basics.min ci (tipIndex p)))
+        if acceptsLines container then
+            addLine p
+            case container of
+                KHtml kind →
+                    if kind ≤ 5 && holds (htmlClose kind) (after (lineOf p) (offsetOf p)) then
+                        closeTip p (lineNumber p)
+
+                _ →
+                    ⊤
+        else if offsetOf p < size (lineOf p) && not (blankOf p) then
+            addChild p KParagraph
+            advanceNextNonspace p
+            addLine p
+
+
+nul : Js.Value
+nul = Js.regExp "\\u0000" ""
+
+
+-- The document's lines, and the block tree (spec appendix, *Phase 1*).
+blocksOf : String → List Node
+blocksOf input = Js.pure λ⊤ →
+    lines : List String
+    lines = Js.to (Js.call (Js.from input) "split" [ lineEnding ])
+    count = if String.endsWith input "\n" then List.length lines - 1 else List.length lines
+    p = newParser ⊤
+    eachLine p lines 0 count
+    closeAll p count
+    get (frameAt p 0) "children"
+
+
+eachLine : Js.Value, List String, Int, Int → ⊤
+eachLine p lines i count =
+    if i < count then
+        case List.get lines i of
+            Just text →
+                incorporate p text
+
+            Nothing →
+                ⊤
+        eachLine p lines (i + 1) count
+
+
+closeAll : Js.Value, Int → ⊤
+closeAll p count =
+    if tipIndex p > 0 then
+        closeTip p count
+        closeAll p count
+
+
+lineEnding : Js.Value
+lineEnding = Js.regExp "\\r\\n|\\n|\\r" ""
+
+
+-- ---- References, then the tree ------------------------------------------
+
+--| A document's blocks (spec §3 to §6). Every text is a document, so
+--| there is no failure.
+--|
+--|     parse "# Hi" == [ Heading 1 [ Text "Hi" ] ]
+--|     parse "*a* b" == [ Paragraph [ Emphasis [ Text "a" ], Text " b" ] ]
+--|     parse "&copy; &#169; &MadeUp;" == [ Paragraph [ Text "\u{A9} \u{A9} &MadeUp;" ] ]
+pub parse : String → List Block
+parse input =
+    ( nodes, refs ) = collect (blocksOf input) Dict.empty
+    toBlocks refs nodes
+
+
+-- The link reference definitions at the start of each paragraph, in
+-- document order (the first of a label wins), and the paragraphs without
+-- them; a paragraph that was only definitions goes.
+collect : List Node, Dict String Definition → List Node × Dict String Definition
+collect nodes refs = List.foldl nodes ( [], refs ) λnode ( acc, r ) →
+    case node of
+        Node (RParagraph content) start end →
+            ( rest, r1 ) = strip content r
+            if size rest < size content && not (holds nonSpace rest) then
+                ( acc, r1 )
+            else
+                ( List.push acc (Node (RParagraph rest) start end), r1 )
+
+        Node (RQuote children) start end →
+            ( kept, r1 ) = collect children r
+            ( List.push acc (Node (RQuote kept) start end), r1 )
+
+        Node (RList marker isTight items) start end →
+            ( kept, r1 ) = collect items r
+            ( List.push acc (Node (RList marker isTight kept) start end), r1 )
+
+        Node (RItem children) start end →
+            ( kept, r1 ) = collect children r
+            ( List.push acc (Node (RItem kept) start end), r1 )
+
+        _ →
+            ( List.push acc node, r )
+
+
+strip : String, Dict String Definition → String × Dict String Definition
+strip content refs =
+    if codeAt content 0 ≠ 91 then
+        ( content, refs )
+    else
+        case definition content of
+            Just d →
+                strip
+                    (after content d.length)
+                    (if Dict.member refs d.label then refs else Dict.insert refs d.label d)
+
+            Nothing →
+                ( content, refs )
+
+
+toBlocks : Dict String Definition, List Node → List Block
+toBlocks refs nodes = List.map nodes (toBlock refs _)
+
+
+toBlock : Dict String Definition, Node → Block
+toBlock refs (Node raw _ _) =
+    case raw of
+        RParagraph content →
+            Paragraph (inlinesOf refs content)
+
+        RHeading level content →
+            Heading level (inlinesOf refs content)
+
+        RThematic →
+            ThematicBreak
+
+        RCode language code →
+            CodeBlock language code
+
+        RHtml html →
+            HtmlBlock html
+
+        RQuote children →
+            BlockQuote (toBlocks refs children)
+
+        RList marker isTight items →
+            blocks = List.map items λitem → toBlocks refs (itemChildren item)
+            if marker.ordered then
+                OrderedList marker.start isTight blocks
+            else
+                BulletList isTight blocks
+
+        RItem children →
+            -- An item is only ever inside a list, which reads it above.
+            BlockQuote (toBlocks refs children)
+
+
+-- ---- Links: labels, destinations, titles, definitions -------------------
+
+-- The length of a link label at `pos` (spec §6.3: at most 999 characters
+-- between the brackets), or 0.
+linkLabel : String, Int → Int
+linkLabel s pos =
+    n = lead linkLabelPattern (after s pos)
+    if n < 0 || n > 1001 then 0 else n
+
+
+linkLabelPattern : Js.Value
+linkLabelPattern = Js.regExp "^\\[(?:[^\\\\\\[\\]]|\\\\.){0,1000}\\]" "s"
+
+
+-- Spaces, at most one line ending, and spaces.
+spnl : String, Int → Int
+spnl s pos = pos + Basics.max 0 (lead spnlPattern (after s pos))
+
+
+spnlPattern : Js.Value
+spnlPattern = Js.regExp "^ *(?:\\n *)?" ""
+
+
+-- A link destination at `pos`, decoded, and the position after it.
+linkDestination : String, Int → Maybe (String × Int)
+linkDestination s pos =
+    braced = lead destinationBraces (after s pos)
+    if braced ≥ 0 then
+        Just ( normalizeUri (unescape (cut s (pos + 1) (pos + braced - 1))), pos + braced )
+    else if codeAt s pos == 60 then
+        Nothing
+    else
+        end = destinationEnd s pos 0
+        if end < 0 || (end == pos && codeAt s end ≠ 41) then
+            Nothing
+        else
+            Just ( normalizeUri (unescape (cut s pos end)), end )
+
+
+destinationBraces : Js.Value
+destinationBraces = Js.regExp "^(?:<(?:[^<>\\n\\\\\\x00]|\\\\.)*>)" ""
+
+
+-- Where a bare destination ends: at whitespace, at a `)` that closes no
+-- `(`, or at the end; -1 when its parentheses do not balance.
+destinationEnd : String, Int, Int → Int
+destinationEnd s pos open =
+    c = codeAt s pos
+    if c == -1 then
+        if open == 0 then pos else -1
+    else if c == 92 && holds escapable (cut s (pos + 1) (pos + 2)) then
+        destinationEnd s (pos + 2) open
+    else if c == 40 then
+        -- cmark's limit (`src/inlines.c:1098`; spec §6.3 allows one): past
+        -- 32 open parentheses a bare destination fails, so that a text of
+        -- unclosed `[a](b` stays linear.
+        if open ≥ 32 then -1 else destinationEnd s (pos + 1) (open + 1)
+    else if c == 41 then
+        if open < 1 then pos else destinationEnd s (pos + 1) (open - 1)
+    else if c == 32 || c == 9 || c == 10 || c == 11 || c == 12 || c == 13 then
+        if open == 0 then pos else -1
+    else
+        destinationEnd s (pos + 1) open
+
+
+escapable : Js.Value
+escapable = Js.regExp "^[!\"#$%&'()*+,./:;<=>?@[\\\\\\]^_`{|}~-]" ""
+
+
+-- A link title at `pos`, decoded, and the position after it.
+linkTitle : String, Int → Maybe (String × Int)
+linkTitle s pos =
+    n = lead linkTitlePattern (after s pos)
+    if n < 0 then Nothing else Just ( unescape (cut s (pos + 1) (pos + n - 1)), pos + n )
+
+
+linkTitlePattern : Js.Value
+linkTitlePattern =
+    Js.regExp
+        "^(?:\"(\\\\[!\"#$%&'()*+,./:;<=>?@[\\\\\\]^_`{|}~-]|\\\\[^\\\\]|[^\\\\\"\\x00])*\"|'(\\\\[!\"#$%&'()*+,./:;<=>?@[\\\\\\]^_`{|}~-]|\\\\[^\\\\]|[^\\\\'\\x00])*'|\\((\\\\[!\"#$%&'()*+,./:;<=>?@[\\\\\\]^_`{|}~-]|\\\\[^\\\\]|[^\\\\()\\x00])*\\))"
+        ""
+
+
+-- A link reference definition at the start of `s` (spec §4.7): its length,
+-- its normalised label, its destination and its title.
+type alias Definition =
+    length : Int
+    label : String
+    destination : String
+    title : Maybe String
+
+
+definition : String → Maybe Definition
+definition s =
+    n = linkLabel s 0
+    if n == 0 || codeAt s n ≠ 58 then
+        Nothing
+    else
+        label = normalizeLabel (cut s 0 n)
+        case linkDestination s (spnl s (n + 1)) of
+            Nothing →
+                Nothing
+
+            Just ( destination, beforeTitle ) →
+                atTitle = spnl s beforeTitle
+                titled = if atTitle ≠ beforeTitle then linkTitle s atTitle else Nothing
+                withTitle =
+                    case titled of
+                        Just ( title, end ) →
+                            eol = lead lineEndPattern (after s end)
+                            if eol ≥ 0 then Just ( Just title, end + eol ) else Nothing
+
+                        Nothing →
+                            Nothing
+                untitled =
+                    eol = lead lineEndPattern (after s beforeTitle)
+                    if eol ≥ 0 then Just ( Nothing, beforeTitle + eol ) else Nothing
+                chosen =
+                    case withTitle of
+                        Just found →
+                            Just found
+
+                        Nothing →
+                            untitled
+                case chosen of
+                    Just ( title, end ) →
+                        if label == "" then
+                            Nothing
+                        else
+                            Just
+                                { length = end
+                                , label = label
+                                , destination = destination
+                                , title =
+                                    Maybe.andThen title λt → if t == "" then Nothing else Just t
+                                }
+
+                    Nothing →
+                        Nothing
+
+
+lineEndPattern : Js.Value
+lineEndPattern = Js.regExp "^ *(?:\\n|$)" ""
+
+
+-- How much of `s`, from `from`, link reference definitions take.
+referencesLength : String, Int → Int
+referencesLength s from =
+    if codeAt s from ≠ 91 then
+        from
+    else
+        case definition (after s from) of
+            Just d →
+                referencesLength s (from + d.length)
+
+            Nothing →
+                from
+
+
+-- A label as references are matched (spec §6.3): without its brackets,
+-- trimmed, its whitespace runs one space, and case-folded.
+normalizeLabel : String → String
+normalizeLabel label =
+    inner = replaceAll (trimJs (cut label 1 (size label - 1))) whitespaceRun λ_ → " "
+    Js.pure λ⊤ →
+        if Js.to (Js.call (Js.from inner) "includes" [ Js.from "\u{131}" ]) then
+            Js.to
+                (Js.call (Js.from inner) "replace"
+                    [ notDotlessI
+                    , Js.method λ_ part → Js.call (Js.call part "toLowerCase" []) "toUpperCase" []
+                    ]
+                )
+        else
+            Js.to (Js.call (Js.call (Js.from inner) "toLowerCase" []) "toUpperCase" [])
+
+
+whitespaceRun : Js.Value
+whitespaceRun = Js.regExp "[ \\t\\r\\n]+" ""
+
+
+notDotlessI : Js.Value
+notDotlessI = Js.regExp "[^\\u0131]+" ""
+
+
+trimJs : String → String
+trimJs s = Js.pure λ⊤ → Js.to (Js.call (Js.from s) "trim" [])
+
+
+-- Spaces and tabs off both ends.
+trimSpace : String → String
+trimSpace s = replaceAll s spaceEnds λ_ → ""
+
+
+spaceEnds : Js.Value
+spaceEnds = Js.regExp "^[ \\t]+|[ \\t]+$" ""
+
+
+-- ---- Escapes, references and URLs ---------------------------------------
+
+-- Backslash escapes and character references decoded (spec §2.4, §2.5).
+unescape : String → String
+unescape s = if holds backslashOrAmp s then replaceAll s escapeOrReference unescapeOne else s
+
+
+backslashOrAmp : Js.Value
+backslashOrAmp = Js.regExp "[\\\\&]" ""
+
+
+escapeOrReference : Js.Value
+escapeOrReference =
+    Js.regExp
+        "\\\\[!\"#$%&'()*+,./:;<=>?@[\\\\\\]^_`{|}~-]|&(?:#x[a-f0-9]{1,6}|#[0-9]{1,7}|[a-z][a-z0-9]{1,31});"
+        "i"
+
+
+unescapeOne : String → String
+unescapeOne m = if codeAt m 0 == 92 then cut m 1 2 else decodeReference m
+
+
+-- A character reference, as `&amp;`, `&#35;` or `&#x22;`, decoded; a
+-- name HTML5 does not have stays as it was written.
+decodeReference : String → String
+decodeReference m =
+    if codeAt m 1 == 35 then
+        hex = codeAt m 2 == 120 || codeAt m 2 == 88
+        digits = if hex then cut m 3 (size m - 1) else cut m 2 (size m - 1)
+        number : Int
+        number = Js.pure λ⊤ →
+            Js.to
+                (Js.apply (Js.global "parseInt")
+                    [ Js.from digits, Js.from (if hex then 16 else 10) ]
+                )
+        fromCodePoint (numericCodePoint number)
+    else
+        Maybe.withDefault (entity (cut m 1 (size m - 1))) m
+
+
+-- HTML's rule for a numeric reference: 0, a surrogate and a number past
+-- Unicode are U+FFFD, and 128 to 159 are Windows-1252's characters.
+numericCodePoint : Int → Int
+numericCodePoint n =
+    if n == 0 || n > 1114111 || (n ≥ 55296 && n ≤ 57343) then
+        65533
+    else if n ≥ 128 && n ≤ 159 then
+        case List.get windows1252 (n - 128) of
+            Just c →
+                c
+
+            Nothing →
+                n
+    else
+        n
+
+
+windows1252 : List Int
+windows1252 =
+    [ 8364
+    , 129
+    , 8218
+    , 402
+    , 8222
+    , 8230
+    , 8224
+    , 8225
+    , 710
+    , 8240
+    , 352
+    , 8249
+    , 338
+    , 141
+    , 381
+    , 143
+    , 144
+    , 8216
+    , 8217
+    , 8220
+    , 8221
+    , 8226
+    , 8211
+    , 8212
+    , 732
+    , 8482
+    , 353
+    , 8250
+    , 339
+    , 157
+    , 382
+    , 376
+    ]
+
+
+fromCodePoint : Int → String
+fromCodePoint n = Js.pure λ⊤ → Js.to (Js.call (Js.global "String") "fromCodePoint" [ Js.from n ])
+
+
+-- A destination as commonmark.js writes it (mdurl's `encode`): an escape
+-- `%XX` stays, a character outside the URL set is percent-encoded, and a
+-- lone surrogate is U+FFFD's encoding.
+normalizeUri : String → String
+normalizeUri s = replaceAll s uriUnsafe encodeOne
+
+
+uriUnsafe : Js.Value
+uriUnsafe =
+    Js.regExp
+        "%[0-9a-fA-F]{2}|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[^A-Za-z0-9;/?:@&=+$,\\-_.!~*'()#]"
+        ""
+
+
+encodeOne : String → String
+encodeOne m =
+    first = codeAt m 0
+    if first == 37 && size m == 3 then
+        m
+    else if first ≥ 55296 && first ≤ 57343 && size m == 1 then
+        "%EF%BF%BD"
+    else
+        Js.pure λ⊤ → Js.to (Js.apply (Js.global "encodeURIComponent") [ Js.from m ])
+
+
+-- The code point of a name of HTML5's table (§9 D3), at first use.
+entity : String → Maybe String
+entity name = Js.pure λ⊤ →
+    found = Js.call (entities ⊤) "get" [ Js.from name ]
+    if Js.isUndefined found then Nothing else Just (Js.to found)
+
+
+-- The table, made once from `entityText` on the first reference by name:
+-- each entry is a name, `:`, and its code points in base 36, `.` apart.
+entities : ⊤ → Js.Value
+entities ⊤ = Js.pure λ⊤ →
+    made = Js.get entityCache "table"
+    if Js.isUndefined made then
+        pairs =
+            Js.call (Js.global "Array") "from"
+                [ Js.call (Js.from entityText) "matchAll" [ everywhere entityEntry ]
+                , Js.method λ_ m → Js.array [ Js.at m 1, codePoints (Js.at m 2) ]
+                ]
+        table = Js.construct (Js.global "Map") [ pairs ]
+        Js.set entityCache "table" table
+        table
+    else
+        made
+
+
+codePoints : Js.Value → Js.Value
+codePoints points =
+    Js.call (Js.get (Js.global "String") "fromCodePoint") "apply"
+        [ Js.null
+        , Js.call (Js.call points "split" [ Js.from "." ]) "map"
+            [ Js.method λ_ digits → Js.apply (Js.global "parseInt") [ digits, Js.from 36 ] ]
+        ]
+
+
+entityCache : Js.Value
+entityCache = Js.pure λ⊤ → Js.object []
+
+
+entityEntry : Js.Value
+entityEntry = Js.regExp "([A-Za-z0-9]+):([0-9a-z.]+)" ""
+
+
+-- ---- Inlines ------------------------------------------------------------
+--
+-- As the block pass, the inline pass keeps its growing state in host
+-- objects written in place: the open brackets, each with its items, and
+-- the open emphasis delimiters, each with what followed it. What it makes
+-- (`Item`, `Inline`) is plain values.
+
+-- A run of `*` or `_` (spec §6.2): its character, the delimiters left and
+-- at first, and whether it can open or close emphasis.
+type alias Delim =
+    char : Int
+    count : Int
+    orig : Int
+    canOpen : Bool
+    canClose : Bool
+
+
+-- What the scanner leaves for the emphasis pass. A bracket that formed no
+-- link is a `Group` of its items, joined to its parent in one step.
+type Item
+    = IText String
+    | IDelim Delim
+    | INode Inline Int
+    | IGroup (List Item)
+
+
+-- An open `[` or `![`: where its label starts, whether it is an image,
+-- and how many links had formed when it opened.
+type alias Bracket =
+    image : Bool
+    index : Int
+    links : Int
+
+
+-- How deep inlines may nest (§7.2).
+maxInlineDepth : Int
+maxInlineDepth = 64
+
+
+-- A paragraph's or a heading's inlines (spec §6).
+inlinesOf : Dict String Definition, String → List Inline
+inlinesOf refs content = Js.pure λ⊤ →
+    subject = trimSubject content
+    st =
+        Js.object
+            [ ( "subject", Js.from subject )
+            , ( "pos", Js.from 0 )
+            , ( "segments", Js.array [ newSegment Nothing ] )
+            , ( "links", Js.from 0 )
+            , ( "refs", Js.from refs )
+            , ( "ticks", backtickRuns subject )
+            , ( "comment", Js.from True )
+            , ( "instruction", Js.from True )
+            , ( "declaration", Js.from True )
+            , ( "cdata", Js.from True )
+            ]
+    scanAll st
+    emphasis (closeSegments st)
+
+
+-- A bracket's state: its opener (none for the root), its items, and
+-- whether a bracket opened after it.
+newSegment : Maybe Bracket → Js.Value
+newSegment opener =
+    Js.object [ ( "opener", Js.from opener ), ( "items", Js.array [] ), ( "after", Js.from False ) ]
+
+
+subjectOf : Js.Value → String
+subjectOf st = get st "subject"
+
+
+posOf : Js.Value → Int
+posOf st = get st "pos"
+
+
+moveTo : Js.Value, Int → ⊤
+moveTo st at = put st "pos" at
+
+
+segments : Js.Value → Js.Value
+segments st = Js.get st "segments"
+
+
+segmentCount : Js.Value → Int
+segmentCount st = get (segments st) "length"
+
+
+topSegment : Js.Value → Js.Value
+topSegment st = Js.at (segments st) (segmentCount st - 1)
+
+
+openerOf : Js.Value → Maybe Bracket
+openerOf seg = get seg "opener"
+
+
+-- Every run of backticks, by its length: a host map of the starts, in
+-- order.
+backtickRuns : String → Js.Value
+backtickRuns s =
+    runs = Js.construct (Js.global "Map") []
+    collectRuns s 0 runs
+    runs
+
+
+collectRuns : String, Int, Js.Value → ⊤
+collectRuns s from runs =
+    at : Int
+    at = Js.to (Js.call (Js.from s) "indexOf" [ Js.from "`", Js.from from ])
+    if at ≥ 0 then
+        n = lead ticksHere (after s at)
+        known = Js.call runs "get" [ Js.from n ]
+        if Js.isUndefined known then
+            _ = Js.call runs "set" [ Js.from n, Js.array [ Js.from at ] ]
+            ⊤
+        else
+            _ = Js.call known "push" [ Js.from at ]
+            ⊤
+        collectRuns s (at + n) runs
+
+
+scanAll : Js.Value → ⊤
+scanAll st =
+    if posOf st < size (subjectOf st) then
+        scanOne st
+        scanAll st
+
+
+scanOne : Js.Value → ⊤
+scanOne st =
+    s = subjectOf st
+    at = posOf st
+    c = codeAt s at
+    if c == 10 then
+        newline st
+    else if c == 92 then
+        backslash st
+    else if c == 96 then
+        backticks st
+    else if c == 42 || c == 95 then
+        delimiterRun st c
+    else if c == 91 then
+        moveTo st (at + 1)
+        openBracket st False at
+    else if c == 33 then
+        if codeAt s (at + 1) == 91 then
+            moveTo st (at + 2)
+            openBracket st True (at + 1)
+        else
+            moveTo st (at + 1)
+            pushText st "!"
+    else if c == 93 then
+        moveTo st (at + 1)
+        closeBracket st
+    else if c == 60 then
+        angle st
+    else if c == 38 then
+        n = lead entityHere (after s at)
+        if n > 0 then
+            moveTo st (at + n)
+            pushText st (decodeReference (cut s at (at + n)))
+        else
+            moveTo st (at + 1)
+            pushText st "&"
+    else
+        n = lead mainText (after s at)
+        size1 = if n > 0 then n else 1
+        moveTo st (at + size1)
+        pushText st (cut s at (at + size1))
+
+
+push : Js.Value, Item → ⊤
+push st item =
+    _ = Js.call (Js.get (topSegment st) "items") "push" [ Js.from item ]
+    ⊤
+
+
+pushText : Js.Value, String → ⊤
+pushText st s = push st (IText s)
+
+
+pushNode : Js.Value, Inline → ⊤
+pushNode st node = push st (INode node 1)
+
+
+-- A line ending: two spaces or more before it make a hard break (spec
+-- §6.7), and the next line's leading spaces go.
+newline : Js.Value → ⊤
+newline st =
+    items = Js.get (topSegment st) "items"
+    count : Int
+    count = get items "length"
+    last : Maybe Item
+    last = if count > 0 then Just (Js.to (Js.at items (count - 1))) else Nothing
+    moveTo st (spaces0 (subjectOf st) (posOf st + 1))
+    case last of
+        Just (IText t) →
+            if String.endsWith t " " then
+                Js.setAt items (count - 1) (Js.from (IText (replaceAll t finalSpaces λ_ → "")))
+                pushNode st (if String.endsWith t "  " then HardBreak else SoftBreak)
+            else
+                pushNode st SoftBreak
+
+        _ →
+            pushNode st SoftBreak
+
+
+spaces0 : String, Int → Int
+spaces0 s at = if codeAt s at == 32 then spaces0 s (at + 1) else at
+
+
+backslash : Js.Value → ⊤
+backslash st =
+    s = subjectOf st
+    at = posOf st
+    next = codeAt s (at + 1)
+    if next == 10 then
+        moveTo st (at + 2)
+        pushNode st HardBreak
+    else if next ≠ -1 && holds escapable (cut s (at + 1) (at + 2)) then
+        moveTo st (at + 2)
+        pushText st (cut s (at + 1) (at + 2))
+    else
+        moveTo st (at + 1)
+        pushText st "\\"
+
+
+-- A code span (spec §6.1): the next run of exactly as many backticks
+-- closes it. The runs are found once, so a long text of unclosed runs
+-- stays linear.
+backticks : Js.Value → ⊤
+backticks st =
+    s = subjectOf st
+    at = posOf st
+    n = lead ticksHere (after s at)
+    opened = at + n
+    starts = Js.call (Js.get st "ticks") "get" [ Js.from n ]
+    closer = firstAfter starts opened
+    if closer ≥ 0 then
+        raw = replaceAll (cut s opened closer) newlines λ_ → " "
+        content =
+            if
+                size raw > 0
+                    && holds notSpace raw
+                    && codeAt raw 0 == 32
+                    && codeAt raw (size raw - 1) == 32
+            then
+                cut raw 1 (size raw - 1)
+            else
+                raw
+        moveTo st (closer + n)
+        pushNode st (CodeSpan content)
+    else
+        moveTo st opened
+        pushText st (cut s at opened)
+
+
+-- The first start at or after `from`, by binary search; -1 for none.
+firstAfter : Js.Value, Int → Int
+firstAfter starts from =
+    if Js.isUndefined starts then -1 else searchFrom starts from 0 (get starts "length")
+
+
+searchFrom : Js.Value, Int, Int, Int → Int
+searchFrom starts from lo hi =
+    if lo ≥ hi then
+        if lo < lengthOf starts then Js.to (Js.at starts lo) else -1
+    else
+        mid = (lo + hi) // 2
+        if intAt starts mid < from then
+            searchFrom starts from (mid + 1) hi
+        else
+            searchFrom starts from lo mid
+
+
+-- A run of `*` or `_`, classed by its neighbours (spec §6.2).
+delimiterRun : Js.Value, Int → ⊤
+delimiterRun st c =
+    s = subjectOf st
+    at = posOf st
+    run = lead (if c == 42 then starRun else underscoreRun) (after s at)
+    before = charBefore s at
+    afterRun = if at + run < size s then charAt s (at + run) else "\n"
+    afterSpace = holds unicodeSpace afterRun
+    afterPunct = holds punctuation afterRun
+    beforeSpace = holds unicodeSpace before
+    beforePunct = holds punctuation before
+    left = not afterSpace && (not afterPunct || beforeSpace || beforePunct)
+    right = not beforeSpace && (not beforePunct || afterSpace || afterPunct)
+    canOpen = if c == 95 then left && (not right || beforePunct) else left
+    canClose = if c == 95 then right && (not left || afterPunct) else right
+    moveTo st (at + run)
+    if canOpen || canClose then
+        push
+            st
+            (IDelim { char = c, count = run, orig = run, canOpen = canOpen, canClose = canClose })
+    else
+        pushText st (cut s at (at + run))
+
+
+-- `[` at `index`, or `![` with its `[` at `index`.
+openBracket : Js.Value, Bool, Int → ⊤
+openBracket st image index =
+    put (topSegment st) "after" True
+    seg = newSegment (Just { image = image, index = index, links = get st "links" })
+    _ = Js.call (Js.get seg "items") "push" [ Js.from (IText (if image then "![" else "[")) ]
+    _ = Js.call (segments st) "push" [ seg ]
+    ⊤
+
+
+-- A `]`: a link or an image when the bracket is active and a destination
+-- or a known reference follows (spec §6.3, §6.4); text otherwise.
+closeBracket : Js.Value → ⊤
+closeBracket st =
+    seg = topSegment st
+    case openerOf seg of
+        Nothing →
+            pushText st "]"
+
+        Just b →
+            if not b.image && b.links < linkCount st then
+                dropBracket st
+                pushText st "]"
+            else
+                case linkAfter st b (get seg "after") of
+                    Just ( destination, title, end ) →
+                        items : List Item
+                        items = get seg "items"
+                        found = emphasisWithDepth (List.drop items 1)
+                        if found.depth + 1 > maxInlineDepth then
+                            dropBracket st
+                            pushText st "]"
+                        else
+                            node =
+                                if b.image then
+                                    Image destination title found.content
+                                else
+                                    Link destination title found.content
+                            _ = Js.call (segments st) "pop" []
+                            moveTo st end
+                            if not b.image then put st "links" (linkCount st + 1)
+                            push st (INode node (found.depth + 1))
+
+                    Nothing →
+                        dropBracket st
+                        pushText st "]"
+
+
+-- The top bracket's items, joined to its parent as text and its items.
+dropBracket : Js.Value → ⊤
+dropBracket st =
+    seg = Js.call (segments st) "pop" []
+    push st (IGroup (get seg "items"))
+
+
+-- After a `]`: an inline destination and title, or a reference.
+linkAfter : Js.Value, Bracket, Bool → Maybe (String × Maybe String × Int)
+linkAfter st b bracketAfter =
+    s = subjectOf st
+    at = posOf st
+    inline =
+        if codeAt s at == 40 then
+            case linkDestination s (spnl s (at + 1)) of
+                Just ( destination, afterDest ) →
+                    beforeTitle = spnl s afterDest
+                    ( title, afterTitle ) =
+                        if beforeTitle > afterDest then
+                            case linkTitle s beforeTitle of
+                                Just ( t, titleEnd ) →
+                                    ( Just t, titleEnd )
+
+                                Nothing →
+                                    ( Nothing, beforeTitle )
+                        else
+                            ( Nothing, beforeTitle )
+                    end = spnl s afterTitle
+                    if codeAt s end == 41 then
+                        Just ( destination, Maybe.andThen title nonEmpty, end + 1 )
+                    else
+                        Nothing
+
+                Nothing →
+                    Nothing
+        else
+            Nothing
+    case inline of
+        Just found →
+            Just found
+
+        Nothing →
+            n = linkLabel s at
+            label =
+                if n > 2 then
+                    Just ( cut s at (at + n), at + n )
+                else if not bracketAfter then
+                    Just ( cut s b.index at, if n == 0 then at else at + n )
+                else
+                    Nothing
+            refs : Dict String Definition
+            refs = get st "refs"
+            Maybe.andThen label λ( labelText, end ) →
+                Maybe.map (Dict.get refs (normalizeLabel labelText)) λd →
+                    ( d.destination, d.title, end )
+
+
+-- `<`: an autolink, raw HTML, or text (spec §6.5, §6.6).
+angle : Js.Value → ⊤
+angle st =
+    s = subjectOf st
+    at = posOf st
+    restText = after s at
+    email = lead emailAutolink restText
+    uri = lead uriAutolink restText
+    if email > 0 then
+        address = unescapeReferences (cut restText 1 (email - 1))
+        moveTo st (at + email)
+        pushNode st (Link (normalizeUri ("mailto:" ++ address)) Nothing [ Text address ])
+    else if uri > 0 then
+        address = unescapeReferences (cut restText 1 (uri - 1))
+        moveTo st (at + uri)
+        pushNode st (Link (normalizeUri address) Nothing [ Text address ])
+    else
+        tag = rawHtml st restText
+        if tag > 0 then
+            moveTo st (at + tag)
+            pushNode st (HtmlInline (cut restText 0 tag))
+        else
+            moveTo st (at + 1)
+            pushText st "<"
+
+
+-- Raw HTML at the start of `text` (spec §6.6): its length, or -1. A kind
+-- whose end a scan did not find through the end of the text is not
+-- scanned again (cmark's `FLAG_SKIP_HTML_*`, `src/inlines.c:974`): no
+-- later start can find an end either.
+rawHtml : Js.Value, String → Int
+rawHtml st text =
+    if String.startsWith text "<!--" then
+        short = lead shortComment text
+        if short > 0 then short else scanKind st "comment" htmlComment text
+    else if String.startsWith text "<![CDATA[" then
+        scanKind st "cdata" htmlCdata text
+    else if String.startsWith text "<!" then
+        if lead declarationStart text > 0 then
+            scanKind st "declaration" htmlDeclaration text
+        else
+            -1
+    else if String.startsWith text "<?" then
+        scanKind st "instruction" htmlInstruction text
+    else
+        lead htmlTag text
+
+
+scanKind : Js.Value, String, Js.Value, String → Int
+scanKind st kind pattern text =
+    if get st kind then
+        n = lead pattern text
+        if n < 0 then put st kind False
+        n
+    else
+        -1
+
+
+-- Every bracket still open at the end is text: its items join its parent.
+closeSegments : Js.Value → List Item
+closeSegments st =
+    if segmentCount st > 1 then
+        dropBracket st
+        closeSegments st
+    else
+        get (topSegment st) "items"
+
+
+-- ---- Emphasis -----------------------------------------------------------
+
+-- The items of a bracket or of a whole paragraph, with emphasis matched
+-- (spec §6.2, appendix *process emphasis*).
+emphasis : List Item → List Inline
+emphasis items = (emphasisWithDepth items).content
+
+
+-- The inlines and how deep they nest. The state is the open delimiters,
+-- each a host object with what followed it, and the twelve lower bounds
+-- of the search for an opener; frame 0 is the start, which opens nothing.
+emphasisWithDepth : List Item → { content : List Inline, depth : Int }
+emphasisWithDepth items = Js.pure λ⊤ →
+    frames =
+        Js.array [ newOpener { char = 0, count = 0, orig = 0, canOpen = False, canClose = False } ]
+    bottoms = Js.call (Js.construct (Js.global "Array") [ Js.from 12 ]) "fill" [ Js.from 1 ]
+    work = Js.array [ Js.array [ Js.from items, Js.from 0 ] ]
+    emphasisLoop work frames bottoms
+    mergeAbove frames 0
+    root = Js.at frames 0
+    { content = get root "content", depth = get root "depth" }
+
+
+newOpener : Delim → Js.Value
+newOpener d =
+    Js.object [ ( "delim", Js.from d ), ( "content", Js.array [] ), ( "depth", Js.from 0 ) ]
+
+
+lengthOf : Js.Value → Int
+lengthOf array = get array "length"
+
+
+intAt : Js.Value, Int → Int
+intAt array i = Js.to (Js.at array i)
+
+
+linkCount : Js.Value → Int
+linkCount st = get st "links"
+
+
+depthOf : Js.Value → Int
+depthOf f = get f "depth"
+
+
+frameCount : Js.Value → Int
+frameCount frames = get frames "length"
+
+
+delimOf : Js.Value → Delim
+delimOf f = get f "delim"
+
+
+-- Walk the items, a group's items in place, with an explicit stack of
+-- (items, position) pairs.
+emphasisLoop : Js.Value, Js.Value, Js.Value → ⊤
+emphasisLoop work frames bottoms =
+    n : Int
+    n = get work "length"
+    if n > 0 then
+        top = Js.at work (n - 1)
+        items : List Item
+        items = Js.to (Js.at top 0)
+        i : Int
+        i = Js.to (Js.at top 1)
+        case List.get items i of
+            Nothing →
+                _ = Js.call work "pop" []
+                emphasisLoop work frames bottoms
+
+            Just item →
+                Js.setAt top 1 (Js.from (i + 1))
+                case item of
+                    IGroup inner →
+                        _ = Js.call work "push" [ Js.array [ Js.from inner, Js.from 0 ] ]
+                        ⊤
+
+                    IText s →
+                        appendTop frames (Text s) 0
+
+                    INode node d →
+                        appendTop frames node d
+
+                    IDelim d →
+                        delimiter frames bottoms d
+                emphasisLoop work frames bottoms
+
+
+appendTop : Js.Value, Inline, Int → ⊤
+appendTop frames node d = appendTo (Js.at frames (frameCount frames - 1)) node d
+
+
+-- A node to a frame's content: text joins the text before it.
+appendTo : Js.Value, Inline, Int → ⊤
+appendTo f node d =
+    content = Js.get f "content"
+    count : Int
+    count = get content "length"
+    last : Maybe Inline
+    last = if count > 0 then Just (Js.to (Js.at content (count - 1))) else Nothing
+    case ( last, node ) of
+        ( Just (Text a), Text b ) →
+            Js.setAt content (count - 1) (Js.from (Text (a ++ b)))
+
+        _ →
+            _ = Js.call content "push" [ Js.from node ]
+            ⊤
+    if d > depthOf f then put f "depth" d
+
+
+appendAll : Js.Value, List Inline, Int → ⊤
+appendAll f nodes d =
+    List.foldl nodes ⊤ λnode _ → appendTo f node 0
+    if d > depthOf f then put f "depth" d
+
+
+delimiter : Js.Value, Js.Value, Delim → ⊤
+delimiter frames bottoms d =
+    if d.canClose then
+        closeWith frames bottoms d
+    else if d.canOpen then
+        _ = Js.call frames "push" [ newOpener d ]
+        ⊤
+    else
+        appendTop frames (Text (delimText d)) 0
+
+
+closeWith : Js.Value, Js.Value, Delim → ⊤
+closeWith frames bottoms d =
+    lowest = Basics.max 1 (Js.to (Js.at bottoms (bottomIndex d)))
+    k = findOpener frames d (frameCount frames - 1) lowest
+    if k ≥ 0 then
+        mergeAbove frames k
+        f = Js.at frames k
+        opener = delimOf f
+        use = if d.count ≥ 2 && opener.count ≥ 2 then 2 else 1
+        content : List Inline
+        content = get f "content"
+        innerDepth : Int
+        innerDepth = get f "depth"
+        remaining = opener.count - use
+        marks = repeatText (delimChar d) use
+        _ = Js.call frames "pop" []
+        held =
+            if remaining > 0 then
+                kept =
+                    newOpener
+                        { char = opener.char
+                        , count = remaining
+                        , orig = opener.orig
+                        , canOpen = opener.canOpen
+                        , canClose = opener.canClose
+                        }
+                _ = Js.call frames "push" [ kept ]
+                kept
+            else
+                Js.at frames (frameCount frames - 1)
+        if innerDepth + 1 > maxInlineDepth then
+            -- Past the cap the delimiters stay as text (§7.2).
+            appendTo held (Text marks) 0
+            appendAll held content innerDepth
+            appendTo held (Text marks) 0
+        else
+            appendTo held (if use == 1 then Emphasis content else Strong content) (innerDepth + 1)
+        height = frameCount frames
+        clampBottoms bottoms height 0
+        if d.count - use > 0 then
+            closeWith frames bottoms
+                { char = d.char
+                , count = d.count - use
+                , orig = d.orig
+                , canOpen = d.canOpen
+                , canClose = d.canClose
+                }
+    else
+        Js.setAt bottoms (bottomIndex d) (Js.from (frameCount frames))
+        if d.canOpen then
+            _ = Js.call frames "push" [ newOpener d ]
+            ⊤
+        else
+            appendTop frames (Text (delimText d)) 0
+
+
+clampBottoms : Js.Value, Int, Int → ⊤
+clampBottoms bottoms height i =
+    if i < 12 then
+        if intAt bottoms i > height then Js.setAt bottoms i (Js.from height)
+        clampBottoms bottoms height (i + 1)
+
+
+-- The nearest frame at or above `lowest` whose opener can match `d`; -1.
+findOpener : Js.Value, Delim, Int, Int → Int
+findOpener frames d j lowest =
+    if j < lowest then
+        -1
+    else
+        o = delimOf (Js.at frames j)
+        odd = (d.canOpen || o.canClose) && Int.mod d.orig 3 ≠ 0 && Int.mod (o.orig + d.orig) 3 == 0
+        if o.char == d.char && o.canOpen && not odd then j else findOpener frames d (j - 1) lowest
+
+
+-- The frames above `k` joined into frame `k`'s content: each opener's
+-- delimiters as text, then what followed it.
+mergeAbove : Js.Value, Int → ⊤
+mergeAbove frames k =
+    if frameCount frames - 1 > k then
+        top = Js.call frames "pop" []
+        below = Js.at frames (frameCount frames - 1)
+        appendTo below (Text (delimText (delimOf top))) 0
+        appendAll below (get top "content") (get top "depth")
+        mergeAbove frames k
+
+
+mainText : Js.Value
+mainText = Js.regExp "^[^\\n`\\[\\]\\\\!<&*_'\"]+" ""
+
+
+entityHere : Js.Value
+entityHere = Js.regExp "^&(?:#x[a-f0-9]{1,6}|#[0-9]{1,7}|[a-z][a-z0-9]{1,31});" "i"
+
+
+finalSpaces : Js.Value
+finalSpaces = Js.regExp " *$" ""
+
+
+ticksHere : Js.Value
+ticksHere = Js.regExp "^`+" ""
+
+
+newlines : Js.Value
+newlines = Js.regExp "\\n" ""
+
+
+notSpace : Js.Value
+notSpace = Js.regExp "[^ ]" ""
+
+
+starRun : Js.Value
+starRun = Js.regExp "^\\*+" ""
+
+
+underscoreRun : Js.Value
+underscoreRun = Js.regExp "^_+" ""
+
+
+unicodeSpace : Js.Value
+unicodeSpace = Js.regExp "^\\s" ""
+
+
+punctuation : Js.Value
+punctuation = Js.regExp "^[!\"#$%&'()*+,\\-./:;<=>?@\\[\\]\\\\^_`{|}~\\p{P}\\p{S}]" "u"
+
+
+charBefore : String, Int → String
+charBefore s pos =
+    if pos == 0 then
+        "\n"
+    else
+        low = codeAt s (pos - 1)
+        if
+            low ≥ 56320
+                && low ≤ 57343
+                && pos ≥ 2
+                && codeAt s (pos - 2) ≥ 55296
+                && codeAt s (pos - 2) ≤ 56319
+        then
+            cut s (pos - 2) pos
+        else
+            cut s (pos - 1) pos
+
+
+charAt : String, Int → String
+charAt s pos =
+    high = codeAt s pos
+    if high ≥ 55296 && high ≤ 56319 && codeAt s (pos + 1) ≥ 56320 && codeAt s (pos + 1) ≤ 57343 then
+        cut s pos (pos + 2)
+    else
+        cut s pos (pos + 1)
+
+
+nonEmpty : String → Maybe String
+nonEmpty t = if t == "" then Nothing else Just t
+
+
+shortComment : Js.Value
+shortComment = Js.regExp "^<!---?>" ""
+
+
+htmlComment : Js.Value
+htmlComment = Js.regExp "^<!--[\\s\\S]*?-->" ""
+
+
+htmlCdata : Js.Value
+htmlCdata = Js.regExp "^<!\\[CDATA\\[[\\s\\S]*?\\]\\]>" ""
+
+
+declarationStart : Js.Value
+declarationStart = Js.regExp "^<![A-Za-z]" ""
+
+
+htmlDeclaration : Js.Value
+htmlDeclaration = Js.regExp "^<![A-Za-z]+[^>]*>" ""
+
+
+htmlInstruction : Js.Value
+htmlInstruction = Js.regExp "^[<][?][\\s\\S]*?[?][>]" ""
+
+
+unescapeReferences : String → String
+unescapeReferences s = replaceAll s referenceAll decodeReference
+
+
+referenceAll : Js.Value
+referenceAll = Js.regExp "&(?:#x[a-f0-9]{1,6}|#[0-9]{1,7}|[a-z][a-z0-9]{1,31});" "i"
+
+
+emailAutolink : Js.Value
+emailAutolink =
+    Js.regExp
+        "^<([a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*)>"
+        ""
+
+
+uriAutolink : Js.Value
+uriAutolink = Js.regExp "^<[A-Za-z][A-Za-z0-9.+-]{1,31}:[^<>\\x00-\\x20]*>" "i"
+
+
+htmlTag : Js.Value
+htmlTag =
+    Js.regExp
+        "^(?:<[A-Za-z][A-Za-z0-9-]*(?:\\s+[a-zA-Z_:][a-zA-Z0-9:._-]*(?:\\s*=\\s*(?:[^\"'=<>`\\x00-\\x20]+|'[^']*'|\"[^\"]*\"))?)*\\s*/?>|</[A-Za-z][A-Za-z0-9-]*\\s*[>])"
+        ""
+
+
+subjectEnds : Js.Value
+subjectEnds = Js.regExp "^[ \\t\\n\\r]+|[ \\t\\n\\r]+$" ""
+
+
+trimSubject : String → String
+trimSubject s = replaceAll s subjectEnds λ_ → ""
+
+
+delimText : Delim → String
+delimText d = repeatText (if d.char == 42 then "*" else "_") d.count
+
+
+delimChar : Delim → String
+delimChar d = if d.char == 42 then "*" else "_"
+
+
+bottomIndex : Delim → Int
+bottomIndex d = (if d.char == 95 then 0 else 6) + (if d.canOpen then 3 else 0) + Int.mod d.orig 3
+
+
+-- HTML5's 2,125 named character references (spec §2.5; `docs/design/markdown.md` §9 D3):
+-- https://html.spec.whatwg.org/entities.json, 2026-11-05, SHA-256
+-- d741d877ac77c4194c4ad526b5b4a19aef8dfe411ab840a466891cdbb9f362e6, the names that end in
+-- `;`. Each entry is a name, `:`, and its code points in base 36. #1936 encodes it
+-- compactly.
+entityText : String
+entityText =
+    \\AElig:5i AMP:12 Aacute:5d Abreve:76 Acirc:5e Acy:sw Afr:2kn8 Agrave:5c Alpha:pd Amacr:74
+    \\And:8cz Aogon:78 Aopf:2koo ApplyFunction:6e9 Aring:5h Ascr:2kkc Assign:6s4 Atilde:5f Auml:5g
+    \\Backslash:6qe Barv:8h3 Barwed:6x2 Bcy:sx Because:6r9 Bernoullis:6jw Beta:pe Bfr:2kn9
+    \\Bopf:2kop Breve:k8 Bscr:6jw Bumpeq:6ry CHcy:tj COPY:4p Cacute:7a Cap:6vm
+    \\CapitalDifferentialD:6kl Cayleys:6jx Ccaron:7g Ccedil:5j Ccirc:7c Cconint:6r4 Cdot:7e
+    \\Cedilla:54 CenterDot:53 Cfr:6jx Chi:pz CircleDot:6u1 CircleMinus:6ty CirclePlus:6tx
+    \\CircleTimes:6tz ClockwiseContourIntegral:6r6 CloseCurlyDoubleQuote:6cd CloseCurlyQuote:6c9
+    \\Colon:6rb Colone:8dw Congruent:6sh Conint:6r3 ContourIntegral:6r2 Copf:6iq Coproduct:6q8
+    \\CounterClockwiseContourIntegral:6r7 Cross:8bz Cscr:2kke Cup:6vn CupCap:6rx DD:6kl
+    \\DDotrahd:841 DJcy:si DScy:sl DZcy:sv Dagger:6ch Darr:6n5 Dashv:8h0 Dcaron:7i Dcy:t0 Del:6pz
+    \\Delta:pg Dfr:2knb DiacriticalAcute:50 DiacriticalDot:k9 DiacriticalDoubleAcute:kd
+    \\DiacriticalGrave:2o DiacriticalTilde:kc Diamond:6v8 DifferentialD:6km Dopf:2kor Dot:4o
+    \\DotDot:6ho DotEqual:6s0 DoubleContourIntegral:6r3 DoubleDot:4o DoubleDownArrow:6oj
+    \\DoubleLeftArrow:6og DoubleLeftRightArrow:6ok DoubleLeftTee:8h0 DoubleLongLeftArrow:7w8
+    \\DoubleLongLeftRightArrow:7wa DoubleLongRightArrow:7w9 DoubleRightArrow:6oi
+    \\DoubleRightTee:6ug DoubleUpArrow:6oh DoubleUpDownArrow:6ol DoubleVerticalBar:6qt
+    \\DownArrow:6mr DownArrowBar:843 DownArrowUpArrow:6ph DownBreve:lt DownLeftRightVector:85s
+    \\DownLeftTeeVector:866 DownLeftVector:6nx DownLeftVectorBar:85y DownRightTeeVector:867
+    \\DownRightVector:6o1 DownRightVectorBar:85z DownTee:6uc DownTeeArrow:6nb Downarrow:6oj
+    \\Dscr:2kkf Dstrok:7k ENG:96 ETH:5s Eacute:5l Ecaron:7u Ecirc:5m Ecy:tp Edot:7q Efr:2knc
+    \\Egrave:5k Element:6q0 Emacr:7m EmptySmallSquare:7i3 EmptyVerySmallSquare:7fv Eogon:7s
+    \\Eopf:2kos Epsilon:ph Equal:8dx EqualTilde:6rm Equilibrium:6oc Escr:6k0 Esim:8dv Eta:pj
+    \\Euml:5n Exists:6pv ExponentialE:6kn Fcy:tg Ffr:2knd FilledSmallSquare:7i4
+    \\FilledVerySmallSquare:7fu Fopf:2kot ForAll:6ps Fouriertrf:6k1 Fscr:6k1 GJcy:sj GT:1q
+    \\Gamma:pf Gammad:rg Gbreve:7y Gcedil:82 Gcirc:7w Gcy:sz Gdot:80 Gfr:2kne Gg:6vt Gopf:2kou
+    \\GreaterEqual:6sl GreaterEqualLess:6vv GreaterFullEqual:6sn GreaterGreater:8f6
+    \\GreaterLess:6t3 GreaterSlantEqual:8e6 GreaterTilde:6sz Gscr:2kki Gt:6sr HARDcy:tm Hacek:jr
+    \\Hat:2m Hcirc:84 Hfr:6j0 HilbertSpace:6iz Hopf:6j1 HorizontalLine:7b4 Hscr:6iz Hstrok:86
+    \\HumpDownHump:6ry HumpEqual:6rz IEcy:t1 IJlig:8i IOcy:sh Iacute:5p Icirc:5q Icy:t4 Idot:8g
+    \\Ifr:6j5 Igrave:5o Im:6j5 Imacr:8a ImaginaryI:6ko Implies:6oi Int:6r0 Integral:6qz
+    \\Intersection:6v6 InvisibleComma:6eb InvisibleTimes:6ea Iogon:8e Iopf:2kow Iota:pl Iscr:6j4
+    \\Itilde:88 Iukcy:sm Iuml:5r Jcirc:8k Jcy:t5 Jfr:2knh Jopf:2kox Jscr:2kkl Jsercy:so Jukcy:sk
+    \\KHcy:th KJcy:ss Kappa:pm Kcedil:8m Kcy:t6 Kfr:2kni Kopf:2koy Kscr:2kkm LJcy:sp LT:1o
+    \\Lacute:8p Lambda:pn Lang:7vu Laplacetrf:6j6 Larr:6n2 Lcaron:8t Lcedil:8r Lcy:t7
+    \\LeftAngleBracket:7vs LeftArrow:6mo LeftArrowBar:6p0 LeftArrowRightArrow:6o6 LeftCeiling:6x4
+    \\LeftDoubleBracket:7vq LeftDownTeeVector:869 LeftDownVector:6o3 LeftDownVectorBar:861
+    \\LeftFloor:6x6 LeftRightArrow:6ms LeftRightVector:85q LeftTee:6ub LeftTeeArrow:6n8
+    \\LeftTeeVector:862 LeftTriangle:6uq LeftTriangleBar:89b LeftTriangleEqual:6us
+    \\LeftUpDownVector:85t LeftUpTeeVector:868 LeftUpVector:6nz LeftUpVectorBar:860 LeftVector:6nw
+    \\LeftVectorBar:85u Leftarrow:6og Leftrightarrow:6ok LessEqualGreater:6vu LessFullEqual:6sm
+    \\LessGreater:6t2 LessLess:8f5 LessSlantEqual:8e5 LessTilde:6sy Lfr:2knj Ll:6vs Lleftarrow:6oq
+    \\Lmidot:8v LongLeftArrow:7w5 LongLeftRightArrow:7w7 LongRightArrow:7w6 Longleftarrow:7w8
+    \\Longleftrightarrow:7wa Longrightarrow:7w9 Lopf:2koz LowerLeftArrow:6mx LowerRightArrow:6mw
+    \\Lscr:6j6 Lsh:6nk Lstrok:8x Lt:6sq Map:83p Mcy:t8 MediumSpace:6e7 Mellintrf:6k3 Mfr:2knk
+    \\MinusPlus:6qb Mopf:2kp0 Mscr:6k3 Mu:po NJcy:sq Nacute:8z Ncaron:93 Ncedil:91 Ncy:t9
+    \\NegativeMediumSpace:6bv NegativeThickSpace:6bv NegativeThinSpace:6bv
+    \\NegativeVeryThinSpace:6bv NestedGreaterGreater:6sr NestedLessLess:6sq NewLine:a Nfr:2knl
+    \\NoBreak:6e8 NonBreakingSpace:4g Nopf:6j9 Not:8h8 NotCongruent:6si NotCupCap:6st
+    \\NotDoubleVerticalBar:6qu NotElement:6q1 NotEqual:6sg NotEqualTilde:6rm.mw NotExists:6pw
+    \\NotGreater:6sv NotGreaterEqual:6sx NotGreaterFullEqual:6sn.mw NotGreaterGreater:6sr.mw
+    \\NotGreaterLess:6t5 NotGreaterSlantEqual:8e6.mw NotGreaterTilde:6t1 NotHumpDownHump:6ry.mw
+    \\NotHumpEqual:6rz.mw NotLeftTriangle:6wa NotLeftTriangleBar:89b.mw NotLeftTriangleEqual:6wc
+    \\NotLess:6su NotLessEqual:6sw NotLessGreater:6t4 NotLessLess:6sq.mw NotLessSlantEqual:8e5.mw
+    \\NotLessTilde:6t0 NotNestedGreaterGreater:8f6.mw NotNestedLessLess:8f5.mw NotPrecedes:6tc
+    \\NotPrecedesEqual:8fj.mw NotPrecedesSlantEqual:6w0 NotReverseElement:6q4 NotRightTriangle:6wb
+    \\NotRightTriangleBar:89c.mw NotRightTriangleEqual:6wd NotSquareSubset:6tr.mw
+    \\NotSquareSubsetEqual:6w2 NotSquareSuperset:6ts.mw NotSquareSupersetEqual:6w3
+    \\NotSubset:6te.6he NotSubsetEqual:6tk NotSucceeds:6td NotSucceedsEqual:8fk.mw
+    \\NotSucceedsSlantEqual:6w1 NotSucceedsTilde:6tb.mw NotSuperset:6tf.6he NotSupersetEqual:6tl
+    \\NotTilde:6rl NotTildeEqual:6ro NotTildeFullEqual:6rr NotTildeTilde:6rt NotVerticalBar:6qs
+    \\Nscr:2kkp Ntilde:5t Nu:pp OElig:9e Oacute:5v Ocirc:5w Ocy:ta Odblac:9c Ofr:2knm Ograve:5u
+    \\Omacr:98 Omega:q1 Omicron:pr Oopf:2kp2 OpenCurlyDoubleQuote:6cc OpenCurlyQuote:6c8 Or:8d0
+    \\Oscr:2kkq Oslash:60 Otilde:5x Otimes:8c7 Ouml:5y OverBar:6da OverBrace:732 OverBracket:71w
+    \\OverParenthesis:730 PartialD:6pu Pcy:tb Pfr:2knn Phi:py Pi:ps PlusMinus:4x Poincareplane:6j0
+    \\Popf:6jd Pr:8fv Precedes:6t6 PrecedesEqual:8fj PrecedesSlantEqual:6t8 PrecedesTilde:6ta
+    \\Prime:6cz Product:6q7 Proportion:6rb Proportional:6ql Pscr:2kkr Psi:q0 QUOT:y Qfr:2kno
+    \\Qopf:6je Qscr:2kks RBarr:840 REG:4u Racute:9g Rang:7vv Rarr:6n4 Rarrtl:846 Rcaron:9k
+    \\Rcedil:9i Rcy:tc Re:6jg ReverseElement:6q3 ReverseEquilibrium:6ob ReverseUpEquilibrium:86n
+    \\Rfr:6jg Rho:pt RightAngleBracket:7vt RightArrow:6mq RightArrowBar:6p1
+    \\RightArrowLeftArrow:6o4 RightCeiling:6x5 RightDoubleBracket:7vr RightDownTeeVector:865
+    \\RightDownVector:6o2 RightDownVectorBar:85x RightFloor:6x7 RightTee:6ua RightTeeArrow:6na
+    \\RightTeeVector:863 RightTriangle:6ur RightTriangleBar:89c RightTriangleEqual:6ut
+    \\RightUpDownVector:85r RightUpTeeVector:864 RightUpVector:6ny RightUpVectorBar:85w
+    \\RightVector:6o0 RightVectorBar:85v Rightarrow:6oi Ropf:6jh RoundImplies:86o Rrightarrow:6or
+    \\Rscr:6jf Rsh:6nl RuleDelayed:8ac SHCHcy:tl SHcy:tk SOFTcy:to Sacute:9m Sc:8fw Scaron:9s
+    \\Scedil:9q Scirc:9o Scy:td Sfr:2knq ShortDownArrow:6mr ShortLeftArrow:6mo ShortRightArrow:6mq
+    \\ShortUpArrow:6mp Sigma:pv SmallCircle:6qg Sopf:2kp6 Sqrt:6qi Square:7fl
+    \\SquareIntersection:6tv SquareSubset:6tr SquareSubsetEqual:6tt SquareSuperset:6ts
+    \\SquareSupersetEqual:6tu SquareUnion:6tw Sscr:2kku Star:6va Sub:6vk Subset:6vk
+    \\SubsetEqual:6ti Succeeds:6t7 SucceedsEqual:8fk SucceedsSlantEqual:6t9 SucceedsTilde:6tb
+    \\SuchThat:6q3 Sum:6q9 Sup:6vl Superset:6tf SupersetEqual:6tj Supset:6vl THORN:66 TRADE:6jm
+    \\TSHcy:sr TScy:ti Tab:9 Tau:pw Tcaron:9w Tcedil:9u Tcy:te Tfr:2knr Therefore:6r8 Theta:pk
+    \\ThickSpace:6e7.6bu ThinSpace:6bt Tilde:6rg TildeEqual:6rn TildeFullEqual:6rp TildeTilde:6rs
+    \\Topf:2kp7 TripleDot:6hn Tscr:2kkv Tstrok:9y Uacute:62 Uarr:6n3 Uarrocir:85l Ubrcy:su
+    \\Ubreve:a4 Ucirc:63 Ucy:tf Udblac:a8 Ufr:2kns Ugrave:61 Umacr:a2 UnderBar:2n UnderBrace:733
+    \\UnderBracket:71x UnderParenthesis:731 Union:6v7 UnionPlus:6tq Uogon:aa Uopf:2kp8 UpArrow:6mp
+    \\UpArrowBar:842 UpArrowDownArrow:6o5 UpDownArrow:6mt UpEquilibrium:86m UpTee:6ud
+    \\UpTeeArrow:6n9 Uparrow:6oh Updownarrow:6ol UpperLeftArrow:6mu UpperRightArrow:6mv Upsi:r6
+    \\Upsilon:px Uring:a6 Uscr:2kkw Utilde:a0 Uuml:64 VDash:6uj Vbar:8h7 Vcy:sy Vdash:6uh
+    \\Vdashl:8h2 Vee:6v5 Verbar:6c6 Vert:6c6 VerticalBar:6qr VerticalLine:3g VerticalSeparator:7rs
+    \\VerticalTilde:6rk VeryThinSpace:6bu Vfr:2knt Vopf:2kp9 Vscr:2kkx Vvdash:6ui Wcirc:ac
+    \\Wedge:6v4 Wfr:2knu Wopf:2kpa Wscr:2kky Xfr:2knv Xi:pq Xopf:2kpb Xscr:2kkz YAcy:tr YIcy:sn
+    \\YUcy:tq Yacute:65 Ycirc:ae Ycy:tn Yfr:2knw Yopf:2kpc Yscr:2kl0 Yuml:ag ZHcy:t2 Zacute:ah
+    \\Zcaron:al Zcy:t3 Zdot:aj ZeroWidthSpace:6bv Zeta:pi Zfr:6js Zopf:6jo Zscr:2kl1 aacute:69
+    \\abreve:77 ac:6ri acE:6ri.mr acd:6rj acirc:6a acute:50 acy:ts aelig:6e af:6e9 afr:2kny
+    \\agrave:68 alefsym:6k5 aleph:6k5 alpha:q9 amacr:75 amalg:8cf amp:12 and:6qv andand:8d1
+    \\andd:8d8 andslope:8d4 andv:8d6 ang:6qo ange:884 angle:6qo angmsd:6qp angmsdaa:888
+    \\angmsdab:889 angmsdac:88a angmsdad:88b angmsdae:88c angmsdaf:88d angmsdag:88e angmsdah:88f
+    \\angrt:6qn angrtvb:6v2 angrtvbd:87x angsph:6qq angst:5h angzarr:70c aogon:79 aopf:2kpe ap:6rs
+    \\apE:8ds apacir:8dr ape:6ru apid:6rv apos:13 approx:6rs approxeq:6ru aring:6d ascr:2kl2
+    \\ast:16 asymp:6rs asympeq:6rx atilde:6b auml:6c awconint:6r7 awint:8b5 bNot:8h9 backcong:6rw
+    \\backepsilon:s6 backprime:6d1 backsim:6rh backsimeq:6vh barvee:6v1 barwed:6x1 barwedge:6x1
+    \\bbrk:71x bbrktbrk:71y bcong:6rw bcy:tt bdquo:6ce becaus:6r9 because:6r9 bemptyv:88g bepsi:s6
+    \\bernou:6jw beta:qa beth:6k6 between:6ss bfr:2knz bigcap:6v6 bigcirc:7hr bigcup:6v7
+    \\bigodot:8ao bigoplus:8ap bigotimes:8aq bigsqcup:8au bigstar:7id bigtriangledown:7gd
+    \\bigtriangleup:7g3 biguplus:8as bigvee:6v5 bigwedge:6v4 bkarow:83x blacklozenge:8a3
+    \\blacksquare:7fu blacktriangle:7g4 blacktriangledown:7ge blacktriangleleft:7gi
+    \\blacktriangleright:7g8 blank:74z blk12:7f6 blk14:7f5 blk34:7f7 block:7ew bne:1p.6hx
+    \\bnequiv:6sh.6hx bnot:6xc bopf:2kpf bot:6ud bottom:6ud bowtie:6vc boxDL:7dj boxDR:7dg
+    \\boxDl:7di boxDr:7df boxH:7dc boxHD:7dy boxHU:7e1 boxHd:7dw boxHu:7dz boxUL:7dp boxUR:7dm
+    \\boxUl:7do boxUr:7dl boxV:7dd boxVH:7e4 boxVL:7dv boxVR:7ds boxVh:7e3 boxVl:7du boxVr:7dr
+    \\boxbox:895 boxdL:7dh boxdR:7de boxdl:7bk boxdr:7bg boxh:7b4 boxhD:7dx boxhU:7e0 boxhd:7cc
+    \\boxhu:7ck boxminus:6u7 boxplus:6u6 boxtimes:6u8 boxuL:7dn boxuR:7dk boxul:7bs boxur:7bo
+    \\boxv:7b6 boxvH:7e2 boxvL:7dt boxvR:7dq boxvh:7cs boxvl:7c4 boxvr:7bw bprime:6d1 breve:k8
+    \\brvbar:4m bscr:2kl3 bsemi:6dr bsim:6rh bsime:6vh bsol:2k bsolb:891 bsolhsub:7uw bull:6ci
+    \\bullet:6ci bump:6ry bumpE:8fi bumpe:6rz bumpeq:6rz cacute:7b cap:6qx capand:8ck capbrcup:8cp
+    \\capcap:8cr capcup:8cn capdot:8cg caps:6qx.1e68 caret:6dd caron:jr ccaps:8ct ccaron:7h
+    \\ccedil:6f ccirc:7d ccups:8cs ccupssm:8cw cdot:7f cedil:54 cemptyv:88i cent:4i centerdot:53
+    \\cfr:2ko0 chcy:uf check:7pv checkmark:7pv chi:qv cir:7gr cirE:88z circ:jq circeq:6s7
+    \\circlearrowleft:6nu circlearrowright:6nv circledR:4u circledS:79k circledast:6u3
+    \\circledcirc:6u2 circleddash:6u5 cire:6s7 cirfnint:8b4 cirmid:8hb cirscir:88y clubs:7kz
+    \\clubsuit:7kz colon:1m colone:6s4 coloneq:6s4 comma:18 commat:1s comp:6pt compfn:6qg
+    \\complement:6pt complexes:6iq cong:6rp congdot:8dp conint:6r2 copf:2kpg coprod:6q8 copy:4p
+    \\copysr:6jb crarr:6np cross:7pz cscr:2kl4 csub:8gf csube:8gh csup:8gg csupe:8gi ctdot:6wf
+    \\cudarrl:854 cudarrr:851 cuepr:6vy cuesc:6vz cularr:6nq cularrp:859 cup:6qy cupbrcap:8co
+    \\cupcap:8cm cupcup:8cq cupdot:6tp cupor:8cl cups:6qy.1e68 curarr:6nr curarrm:858
+    \\curlyeqprec:6vy curlyeqsucc:6vz curlyvee:6vi curlywedge:6vj curren:4k curvearrowleft:6nq
+    \\curvearrowright:6nr cuvee:6vi cuwed:6vj cwconint:6r6 cwint:6r5 cylcty:6y5 dArr:6oj dHar:86d
+    \\dagger:6cg daleth:6k8 darr:6mr dash:6c0 dashv:6ub dbkarow:83z dblac:kd dcaron:7j dcy:tw
+    \\dd:6km ddagger:6ch ddarr:6oa ddotseq:8dz deg:4w delta:qc demptyv:88h dfisht:873 dfr:2ko1
+    \\dharl:6o3 dharr:6o2 diam:6v8 diamond:6v8 diamondsuit:7l2 diams:7l2 die:4o digamma:rh
+    \\disin:6wi div:6v divide:6v divideontimes:6vb divonx:6vb djcy:uq dlcorn:6xq dlcrop:6x9
+    \\dollar:10 dopf:2kph dot:k9 doteq:6s0 doteqdot:6s1 dotminus:6rc dotplus:6qc dotsquare:6u9
+    \\doublebarwedge:6x2 downarrow:6mr downdownarrows:6oa downharpoonleft:6o3 downharpoonright:6o2
+    \\drbkarow:840 drcorn:6xr drcrop:6x8 dscr:2kl5 dscy:ut dsol:8ae dstrok:7l dtdot:6wh dtri:7gf
+    \\dtrif:7ge duarr:6ph duhar:86n dwangle:886 dzcy:v3 dzigrarr:7wf eDDot:8dz eDot:6s1 eacute:6h
+    \\easter:8dq ecaron:7v ecir:6s6 ecirc:6i ecolon:6s5 ecy:ul edot:7r ee:6kn efDot:6s2 efr:2ko2
+    \\eg:8ey egrave:6g egs:8eu egsdot:8ew el:8ex elinters:73b ell:6j7 els:8et elsdot:8ev emacr:7n
+    \\empty:6px emptyset:6px emptyv:6px emsp13:6bo emsp14:6bp emsp:6bn eng:97 ensp:6bm eogon:7t
+    \\eopf:2kpi epar:6vp eparsl:89v eplus:8dt epsi:qd epsilon:qd epsiv:s5 eqcirc:6s6 eqcolon:6s5
+    \\eqsim:6rm eqslantgtr:8eu eqslantless:8et equals:1p equest:6sf equiv:6sh equivDD:8e0
+    \\eqvparsl:89x erDot:6s3 erarr:86p escr:6jz esdot:6s0 esim:6rm eta:qf eth:6o euml:6j euro:6gc
+    \\excl:x exist:6pv expectation:6k0 exponentiale:6kn fallingdotseq:6s2 fcy:uc female:7k0
+    \\ffilig:1dkz fflig:1dkw ffllig:1dl0 ffr:2ko3 filig:1dkx fjlig:2u.2y flat:7l9 fllig:1dky
+    \\fltns:7g1 fnof:b6 fopf:2kpj forall:6ps fork:6vo forkv:8gp fpartint:8b1 frac12:59 frac13:6kz
+    \\frac14:58 frac15:6l1 frac16:6l5 frac18:6l7 frac23:6l0 frac25:6l2 frac34:5a frac35:6l3
+    \\frac38:6l8 frac45:6l4 frac56:6l6 frac58:6l9 frac78:6la frasl:6dg frown:6xu fscr:2kl7 gE:6sn
+    \\gEl:8ek gacute:dx gamma:qb gammad:rh gap:8ee gbreve:7z gcirc:7x gcy:tv gdot:81 ge:6sl
+    \\gel:6vv geq:6sl geqq:6sn geqslant:8e6 ges:8e6 gescc:8fd gesdot:8e8 gesdoto:8ea gesdotol:8ec
+    \\gesl:6vv.1e68 gesles:8es gfr:2ko4 gg:6sr ggg:6vt gimel:6k7 gjcy:ur gl:6t3 glE:8eq gla:8f9
+    \\glj:8f8 gnE:6sp gnap:8ei gnapprox:8ei gne:8eg gneq:8eg gneqq:6sp gnsim:6w7 gopf:2kpk
+    \\grave:2o gscr:6iy gsim:6sz gsime:8em gsiml:8eo gt:1q gtcc:8fb gtcir:8e2 gtdot:6vr gtlPar:87p
+    \\gtquest:8e4 gtrapprox:8ee gtrarr:86w gtrdot:6vr gtreqless:6vv gtreqqless:8ek gtrless:6t3
+    \\gtrsim:6sz gvertneqq:6sp.1e68 gvnE:6sp.1e68 hArr:6ok hairsp:6bu half:59 hamilt:6iz hardcy:ui
+    \\harr:6ms harrcir:85k harrw:6nh hbar:6j3 hcirc:85 hearts:7l1 heartsuit:7l1 hellip:6cm
+    \\hercon:6ux hfr:2ko5 hksearow:84l hkswarow:84m hoarr:6pr homtht:6rf hookleftarrow:6nd
+    \\hookrightarrow:6ne hopf:2kpl horbar:6c5 hscr:2kl9 hslash:6j3 hstrok:87 hybull:6df hyphen:6c0
+    \\iacute:6l ic:6eb icirc:6m icy:u0 iecy:tx iexcl:4h iff:6ok ifr:2ko6 igrave:6k ii:6ko
+    \\iiiint:8b0 iiint:6r1 iinfin:89o iiota:6jt ijlig:8j imacr:8b image:6j5 imagline:6j4
+    \\imagpart:6j5 imath:8h imof:6uv imped:c5 in:6q0 incare:6it infin:6qm infintie:89p inodot:8h
+    \\int:6qz intcal:6uy integers:6jo intercal:6uy intlarhk:8bb intprod:8cc iocy:up iogon:8f
+    \\iopf:2kpm iota:qh iprod:8cc iquest:5b iscr:2kla isin:6q0 isinE:6wp isindot:6wl isins:6wk
+    \\isinsv:6wj isinv:6q0 it:6ea itilde:89 iukcy:uu iuml:6n jcirc:8l jcy:u1 jfr:2ko7 jmath:fr
+    \\jopf:2kpn jscr:2klb jsercy:uw jukcy:us kappa:qi kappav:s0 kcedil:8n kcy:u2 kfr:2ko8
+    \\kgreen:8o khcy:ud kjcy:v0 kopf:2kpo kscr:2klc lAarr:6oq lArr:6og lAtail:84b lBarr:83y lE:6sm
+    \\lEg:8ej lHar:86a lacute:8q laemptyv:88k lagran:6j6 lambda:qj lang:7vs langd:87l langle:7vs
+    \\lap:8ed laquo:4r larr:6mo larrb:6p0 larrbfs:84f larrfs:84d larrhk:6nd larrlp:6nf larrpl:855
+    \\larrsim:86r larrtl:6n6 lat:8ff latail:849 late:8fh lates:8fh.1e68 lbarr:83w lbbrk:7si
+    \\lbrace:3f lbrack:2j lbrke:87f lbrksld:87j lbrkslu:87h lcaron:8u lcedil:8s lceil:6x4 lcub:3f
+    \\lcy:u3 ldca:852 ldquo:6cc ldquor:6ce ldrdhar:86f ldrushar:85n ldsh:6nm le:6sk leftarrow:6mo
+    \\leftarrowtail:6n6 leftharpoondown:6nx leftharpoonup:6nw leftleftarrows:6o7
+    \\leftrightarrow:6ms leftrightarrows:6o6 leftrightharpoons:6ob leftrightsquigarrow:6nh
+    \\leftthreetimes:6vf leg:6vu leq:6sk leqq:6sm leqslant:8e5 les:8e5 lescc:8fc lesdot:8e7
+    \\lesdoto:8e9 lesdotor:8eb lesg:6vu.1e68 lesges:8er lessapprox:8ed lessdot:6vq lesseqgtr:6vu
+    \\lesseqqgtr:8ej lessgtr:6t2 lesssim:6sy lfisht:870 lfloor:6x6 lfr:2ko9 lg:6t2 lgE:8ep
+    \\lhard:6nx lharu:6nw lharul:86i lhblk:7es ljcy:ux ll:6sq llarr:6o7 llcorner:6xq llhard:86j
+    \\lltri:7i2 lmidot:8w lmoust:71s lmoustache:71s lnE:6so lnap:8eh lnapprox:8eh lne:8ef lneq:8ef
+    \\lneqq:6so lnsim:6w6 loang:7vw loarr:6pp lobrk:7vq longleftarrow:7w5 longleftrightarrow:7w7
+    \\longmapsto:7wc longrightarrow:7w6 looparrowleft:6nf looparrowright:6ng lopar:879 lopf:2kpp
+    \\loplus:8bx lotimes:8c4 lowast:6qf lowbar:2n loz:7gq lozenge:7gq lozf:8a3 lpar:14 lparlt:87n
+    \\lrarr:6o6 lrcorner:6xr lrhar:6ob lrhard:86l lrm:6by lrtri:6v3 lsaquo:6d5 lscr:2kld lsh:6nk
+    \\lsim:6sy lsime:8el lsimg:8en lsqb:2j lsquo:6c8 lsquor:6ca lstrok:8y lt:1o ltcc:8fa ltcir:8e1
+    \\ltdot:6vq lthree:6vf ltimes:6vd ltlarr:86u ltquest:8e3 ltrPar:87q ltri:7gj ltrie:6us
+    \\ltrif:7gi lurdshar:85m luruhar:86e lvertneqq:6so.1e68 lvnE:6so.1e68 mDDot:6re macr:4v
+    \\male:7k2 malt:7q8 maltese:7q8 map:6na mapsto:6na mapstodown:6nb mapstoleft:6n8 mapstoup:6n9
+    \\marker:7fy mcomma:8bt mcy:u4 mdash:6c4 measuredangle:6qp mfr:2koa mho:6jr micro:51 mid:6qr
+    \\midast:16 midcir:8hc middot:53 minus:6qa minusb:6u7 minusd:6rc minusdu:8bu mlcp:8gr mldr:6cm
+    \\mnplus:6qb models:6uf mopf:2kpq mp:6qb mscr:2kle mstpos:6ri mu:qk multimap:6uw mumap:6uw
+    \\nGg:6vt.mw nGt:6sr.6he nGtv:6sr.mw nLeftarrow:6od nLeftrightarrow:6oe nLl:6vs.mw nLt:6sq.6he
+    \\nLtv:6sq.mw nRightarrow:6of nVDash:6un nVdash:6um nabla:6pz nacute:90 nang:6qo.6he nap:6rt
+    \\napE:8ds.mw napid:6rv.mw napos:95 napprox:6rt natur:7la natural:7la naturals:6j9 nbsp:4g
+    \\nbump:6ry.mw nbumpe:6rz.mw ncap:8cj ncaron:94 ncedil:92 ncong:6rr ncongdot:8dp.mw ncup:8ci
+    \\ncy:u5 ndash:6c3 ne:6sg neArr:6on nearhk:84k nearr:6mv nearrow:6mv nedot:6s0.mw nequiv:6si
+    \\nesear:84o nesim:6rm.mw nexist:6pw nexists:6pw nfr:2kob ngE:6sn.mw nge:6sx ngeq:6sx
+    \\ngeqq:6sn.mw ngeqslant:8e6.mw nges:8e6.mw ngsim:6t1 ngt:6sv ngtr:6sv nhArr:6oe nharr:6ni
+    \\nhpar:8he ni:6q3 nis:6ws nisd:6wq niv:6q3 njcy:uy nlArr:6od nlE:6sm.mw nlarr:6my nldr:6cl
+    \\nle:6sw nleftarrow:6my nleftrightarrow:6ni nleq:6sw nleqq:6sm.mw nleqslant:8e5.mw
+    \\nles:8e5.mw nless:6su nlsim:6t0 nlt:6su nltri:6wa nltrie:6wc nmid:6qs nopf:2kpr not:4s
+    \\notin:6q1 notinE:6wp.mw notindot:6wl.mw notinva:6q1 notinvb:6wn notinvc:6wm notni:6q4
+    \\notniva:6q4 notnivb:6wu notnivc:6wt npar:6qu nparallel:6qu nparsl:8hp.6hx npart:6pu.mw
+    \\npolint:8b8 npr:6tc nprcue:6w0 npre:8fj.mw nprec:6tc npreceq:8fj.mw nrArr:6of nrarr:6mz
+    \\nrarrc:84z.mw nrarrw:6n1.mw nrightarrow:6mz nrtri:6wb nrtrie:6wd nsc:6td nsccue:6w1
+    \\nsce:8fk.mw nscr:2klf nshortmid:6qs nshortparallel:6qu nsim:6rl nsime:6ro nsimeq:6ro
+    \\nsmid:6qs nspar:6qu nsqsube:6w2 nsqsupe:6w3 nsub:6tg nsubE:8g5.mw nsube:6tk nsubset:6te.6he
+    \\nsubseteq:6tk nsubseteqq:8g5.mw nsucc:6td nsucceq:8fk.mw nsup:6th nsupE:8g6.mw nsupe:6tl
+    \\nsupset:6tf.6he nsupseteq:6tl nsupseteqq:8g6.mw ntgl:6t5 ntilde:6p ntlg:6t4
+    \\ntriangleleft:6wa ntrianglelefteq:6wc ntriangleright:6wb ntrianglerighteq:6wd nu:ql num:z
+    \\numero:6ja numsp:6br nvDash:6ul nvHarr:83o nvap:6rx.6he nvdash:6uk nvge:6sl.6he nvgt:1q.6he
+    \\nvinfin:89q nvlArr:83m nvle:6sk.6he nvlt:1o.6he nvltrie:6us.6he nvrArr:83n nvrtrie:6ut.6he
+    \\nvsim:6rg.6he nwArr:6om nwarhk:84j nwarr:6mu nwarrow:6mu nwnear:84n oS:79k oacute:6r
+    \\oast:6u3 ocir:6u2 ocirc:6s ocy:u6 odash:6u5 odblac:9d odiv:8c8 odot:6u1 odsold:88s oelig:9f
+    \\ofcir:88v ofr:2koc ogon:kb ograve:6q ogt:88x ohbar:88l ohm:q1 oint:6r2 olarr:6nu olcir:88u
+    \\olcross:88r oline:6da olt:88w omacr:99 omega:qx omicron:qn omid:88m ominus:6ty oopf:2kps
+    \\opar:88n operp:88p oplus:6tx or:6qw orarr:6nv ord:8d9 order:6k4 orderof:6k4 ordf:4q ordm:56
+    \\origof:6uu oror:8d2 orslope:8d3 orv:8d7 oscr:6k4 oslash:6w osol:6u0 otilde:6t otimes:6tz
+    \\otimesas:8c6 ouml:6u ovbar:6yl par:6qt para:52 parallel:6qt parsim:8hf parsl:8hp part:6pu
+    \\pcy:u7 percnt:11 period:1a permil:6cw perp:6ud pertenk:6cx pfr:2kod phi:qu phiv:r9
+    \\phmmat:6k3 phone:7im pi:qo pitchfork:6vo piv:ra planck:6j3 planckh:6j2 plankv:6j3 plus:17
+    \\plusacir:8bn plusb:6u6 pluscir:8bm plusdo:6qc plusdu:8bp pluse:8du plusmn:4x plussim:8bq
+    \\plustwo:8br pm:4x pointint:8b9 popf:2kpt pound:4j pr:6t6 prE:8fn prap:8fr prcue:6t8 pre:8fj
+    \\prec:6t6 precapprox:8fr preccurlyeq:6t8 preceq:8fj precnapprox:8ft precneqq:8fp precnsim:6w8
+    \\precsim:6ta prime:6cy primes:6jd prnE:8fp prnap:8ft prnsim:6w8 prod:6q7 profalar:6y6
+    \\profline:6xe profsurf:6xf prop:6ql propto:6ql prsim:6ta prurel:6uo pscr:2klh psi:qw
+    \\puncsp:6bs qfr:2koe qint:8b0 qopf:2kpu qprime:6dz qscr:2kli quaternions:6j1 quatint:8ba
+    \\quest:1r questeq:6sf quot:y rAarr:6or rArr:6oi rAtail:84c rBarr:83z rHar:86c race:6rh.mp
+    \\racute:9h radic:6qi raemptyv:88j rang:7vt rangd:87m range:885 rangle:7vt raquo:57 rarr:6mq
+    \\rarrap:86t rarrb:6p1 rarrbfs:84g rarrc:84z rarrfs:84e rarrhk:6ne rarrlp:6ng rarrpl:85h
+    \\rarrsim:86s rarrtl:6n7 rarrw:6n1 ratail:84a ratio:6ra rationals:6je rbarr:83x rbbrk:7sj
+    \\rbrace:3h rbrack:2l rbrke:87g rbrksld:87i rbrkslu:87k rcaron:9l rcedil:9j rceil:6x5 rcub:3h
+    \\rcy:u8 rdca:853 rdldhar:86h rdquo:6cd rdquor:6cd rdsh:6nn real:6jg realine:6jf realpart:6jg
+    \\reals:6jh rect:7fx reg:4u rfisht:871 rfloor:6x7 rfr:2kof rhard:6o1 rharu:6o0 rharul:86k
+    \\rho:qp rhov:s1 rightarrow:6mq rightarrowtail:6n7 rightharpoondown:6o1 rightharpoonup:6o0
+    \\rightleftarrows:6o4 rightleftharpoons:6oc rightrightarrows:6o9 rightsquigarrow:6n1
+    \\rightthreetimes:6vg ring:ka risingdotseq:6s3 rlarr:6o4 rlhar:6oc rlm:6bz rmoust:71t
+    \\rmoustache:71t rnmid:8ha roang:7vx roarr:6pq robrk:7vr ropar:87a ropf:2kpv roplus:8by
+    \\rotimes:8c5 rpar:15 rpargt:87o rppolint:8b6 rrarr:6o9 rsaquo:6d6 rscr:2klj rsh:6nl rsqb:2l
+    \\rsquo:6c9 rsquor:6c9 rthree:6vg rtimes:6ve rtri:7g9 rtrie:6ut rtrif:7g8 rtriltri:89a
+    \\ruluhar:86g rx:6ji sacute:9n sbquo:6ca sc:6t7 scE:8fo scap:8fs scaron:9t sccue:6t9 sce:8fk
+    \\scedil:9r scirc:9p scnE:8fq scnap:8fu scnsim:6w9 scpolint:8b7 scsim:6tb scy:u9 sdot:6v9
+    \\sdotb:6u9 sdote:8di seArr:6oo searhk:84l searr:6mw searrow:6mw sect:4n semi:1n seswar:84p
+    \\setminus:6qe setmn:6qe sext:7qu sfr:2kog sfrown:6xu sharp:7lb shchcy:uh shcy:ug shortmid:6qr
+    \\shortparallel:6qt shy:4t sigma:qr sigmaf:qq sigmav:qq sim:6rg simdot:8dm sime:6rn simeq:6rn
+    \\simg:8f2 simgE:8f4 siml:8f1 simlE:8f3 simne:6rq simplus:8bo simrarr:86q slarr:6mo
+    \\smallsetminus:6qe smashp:8c3 smeparsl:89w smid:6qr smile:6xv smt:8fe smte:8fg smtes:8fg.1e68
+    \\softcy:uk sol:1b solb:890 solbar:6yn sopf:2kpw spades:7kw spadesuit:7kw spar:6qt sqcap:6tv
+    \\sqcaps:6tv.1e68 sqcup:6tw sqcups:6tw.1e68 sqsub:6tr sqsube:6tt sqsubset:6tr sqsubseteq:6tt
+    \\sqsup:6ts sqsupe:6tu sqsupset:6ts sqsupseteq:6tu squ:7fl square:7fl squarf:7fu squf:7fu
+    \\srarr:6mq sscr:2klk ssetmn:6qe ssmile:6xv sstarf:6va star:7ie starf:7id straightepsilon:s5
+    \\straightphi:r9 strns:4v sub:6te subE:8g5 subdot:8fx sube:6ti subedot:8g3 submult:8g1
+    \\subnE:8gb subne:6tm subplus:8fz subrarr:86x subset:6te subseteq:6ti subseteqq:8g5
+    \\subsetneq:6tm subsetneqq:8gb subsim:8g7 subsub:8gl subsup:8gj succ:6t7 succapprox:8fs
+    \\succcurlyeq:6t9 succeq:8fk succnapprox:8fu succneqq:8fq succnsim:6w9 succsim:6tb sum:6q9
+    \\sung:7l6 sup1:55 sup2:4y sup3:4z sup:6tf supE:8g6 supdot:8fy supdsub:8go supe:6tj
+    \\supedot:8g4 suphsol:7ux suphsub:8gn suplarr:86z supmult:8g2 supnE:8gc supne:6tn supplus:8g0
+    \\supset:6tf supseteq:6tj supseteqq:8g6 supsetneq:6tn supsetneqq:8gc supsim:8g8 supsub:8gk
+    \\supsup:8gm swArr:6op swarhk:84m swarr:6mx swarrow:6mx swnwar:84q szlig:67 target:6xi tau:qs
+    \\tbrk:71w tcaron:9x tcedil:9v tcy:ua tdot:6hn telrec:6xh tfr:2koh there4:6r8 therefore:6r8
+    \\theta:qg thetasym:r5 thetav:r5 thickapprox:6rs thicksim:6rg thinsp:6bt thkap:6rs thksim:6rg
+    \\thorn:72 tilde:kc times:5z timesb:6u8 timesbar:8c1 timesd:8c0 tint:6r1 toea:84o top:6uc
+    \\topbot:6ye topcir:8hd topf:2kpx topfork:8gq tosa:84p tprime:6d0 trade:6jm triangle:7g5
+    \\triangledown:7gf triangleleft:7gj trianglelefteq:6us triangleq:6sc triangleright:7g9
+    \\trianglerighteq:6ut tridot:7ho trie:6sc triminus:8ca triplus:8c9 trisb:899 tritime:8cb
+    \\trpezium:736 tscr:2kll tscy:ue tshcy:uz tstrok:9z twixt:6ss twoheadleftarrow:6n2
+    \\twoheadrightarrow:6n4 uArr:6oh uHar:86b uacute:6y uarr:6mp ubrcy:v2 ubreve:a5 ucirc:6z
+    \\ucy:ub udarr:6o5 udblac:a9 udhar:86m ufisht:872 ufr:2koi ugrave:6x uharl:6nz uharr:6ny
+    \\uhblk:7eo ulcorn:6xo ulcorner:6xo ulcrop:6xb ultri:7i0 umacr:a3 uml:4o uogon:ab uopf:2kpy
+    \\uparrow:6mp updownarrow:6mt upharpoonleft:6nz upharpoonright:6ny uplus:6tq upsi:qt upsih:r6
+    \\upsilon:qt upuparrows:6o8 urcorn:6xp urcorner:6xp urcrop:6xa uring:a7 urtri:7i1 uscr:2klm
+    \\utdot:6wg utilde:a1 utri:7g5 utrif:7g4 uuarr:6o8 uuml:70 uwangle:887 vArr:6ol vBar:8h4
+    \\vBarv:8h5 vDash:6ug vangrt:87w varepsilon:s5 varkappa:s0 varnothing:6px varphi:r9 varpi:ra
+    \\varpropto:6ql varr:6mt varrho:s1 varsigma:qq varsubsetneq:6tm.1e68 varsubsetneqq:8gb.1e68
+    \\varsupsetneq:6tn.1e68 varsupsetneqq:8gc.1e68 vartheta:r5 vartriangleleft:6uq
+    \\vartriangleright:6ur vcy:tu vdash:6ua vee:6qw veebar:6uz veeeq:6sa vellip:6we verbar:3g
+    \\vert:3g vfr:2koj vltri:6uq vnsub:6te.6he vnsup:6tf.6he vopf:2kpz vprop:6ql vrtri:6ur
+    \\vscr:2kln vsubnE:8gb.1e68 vsubne:6tm.1e68 vsupnE:8gc.1e68 vsupne:6tn.1e68 vzigzag:87u
+    \\wcirc:ad wedbar:8db wedge:6qv wedgeq:6s9 weierp:6jc wfr:2kok wopf:2kq0 wp:6jc wr:6rk
+    \\wreath:6rk wscr:2klo xcap:6v6 xcirc:7hr xcup:6v7 xdtri:7gd xfr:2kol xhArr:7wa xharr:7w7
+    \\xi:qm xlArr:7w8 xlarr:7w5 xmap:7wc xnis:6wr xodot:8ao xopf:2kq1 xoplus:8ap xotime:8aq
+    \\xrArr:7w9 xrarr:7w6 xscr:2klp xsqcup:8au xuplus:8as xutri:7g3 xvee:6v5 xwedge:6v4 yacute:71
+    \\yacy:un ycirc:af ycy:uj yen:4l yfr:2kom yicy:uv yopf:2kq2 yscr:2klq yucy:um yuml:73
+    \\zacute:ai zcaron:am zcy:tz zdot:ak zeetrf:6js zeta:qe zfr:2kon zhcy:ty zigrarr:6ot zopf:2kq3
+    \\zscr:2klr zwj:6bx zwnj:6bw
