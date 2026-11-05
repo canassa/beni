@@ -5505,3 +5505,7 @@ tests/corpus/run/SanitiserReturnedClosureApart.beni SanitiserReturnedClosureApar
 tests/corpus/run/SanitiserReturnedClosureApart.beni SanitiserReturnedClosureApart 108:14 #0 :: List.push a :: rejected :: accepted  as above, a recursive declaration
 tests/corpus/run/SanitiserReturnedClosureApart.beni SanitiserReturnedClosureApart 115:14 #0 :: List.push a :: rejected :: accepted  as above, a recursive helper over a supplied fresh lambda
 tests/corpus/run/SanitiserReturnedClosureImported Main 59:14 #0 :: List.push a :: rejected :: accepted  as above, a recursive helper of another module
+tests/corpus/run/SanitiserRowCallbackHolds.beni SanitiserRowCallbackHolds 28:9 #0 :: List.push a :: accepted :: rejected  v1 accepts the edit of a capture a row still runs; written in place it reads the edited list (#2048)
+tests/corpus/run/SanitiserRowCallbackHolds.beni SanitiserRowCallbackHolds 38:9 #0 :: List.push a :: accepted :: rejected  as above, a returned closure
+tests/corpus/run/SanitiserRowCallbackHolds.beni SanitiserRowCallbackHolds 45:9 #0 :: Ref.make <literal> :: absent :: accepted  v2 writes a cell by its `◆`, a line v1 has not
+tests/corpus/run/SanitiserRowCallbackHolds.beni SanitiserRowCallbackHolds 50:5 #0 :: Ref.update r◆ :: absent :: accepted  as above

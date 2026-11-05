@@ -1,0 +1,55 @@
+-- A worded row that runs a callback reads what the callback holds
+-- (`ownership-v2.md` §2.11.5, #2048): a local closure's capture, or a
+-- returned closure's, is still in use until the row has run it, so an edit
+-- before it is refused. Were it accepted, the sanitised run would show the
+-- stale read.
+import List
+import Node exposing (Program)
+import Ref
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+mk : ⊤ → (List Int → List Int)
+mk ⊤ =
+    xs = [ 1 ]
+    λ_ → xs
+
+
+localTaken : ⊤ → String
+localTaken ⊤ =
+    l = [ [ 7 ] ]
+    xs = [ 1 ]
+    g = λ_ → xs
+    a = g []
+    y = List.push a 9
+    m = List.update l 0 g
+    "${show y} ${show (List.concat m)}"
+
+
+returnedTaken : ⊤ → String
+returnedTaken ⊤ =
+    l = [ [ 7 ] ]
+    g = mk ⊤
+    a = g []
+    y = List.push a 9
+    m = List.update l 0 g
+    "${show y} ${show (List.concat m)}"
+
+
+cell : ⊤ → String
+cell ⊤ =
+    r = Ref.make [ 7 ]
+    xs = [ 1 ]
+    g = λ_ → xs
+    a = g []
+    y = List.push a 9
+    Ref.update r g
+    "${show y} ${show (Ref.get r)}"
+
+
+main : Program
+main = Node.print (String.join [ localTaken ⊤, returnedTaken ⊤, cell ⊤ ] "\n")

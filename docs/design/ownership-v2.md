@@ -2308,6 +2308,13 @@ walk made before it is the **creation**. The read-off keeps only what the last c
   at the caller it is that object, or more. An escape of one is an escape of `self`. A write of one is said by nothing:
   a capture write is refused where the closure leaves `D`, and a cell operation stales no reader (§2.11.4).
 - A `fresh` arrival of the last call or of a virtual call under it stays `fresh`: it is a new object per call.
+- A label the creation passes on is another label than one the last call passes on, whatever their origin: `a = app f 1`
+  then `λ⊤ → (app f 2; a)` calls `f` once at creation, and its answer is what the value holds, while the second call's
+  would be new at each call.
+- **A created object is never apart from `own`.** Within one activation a site is apart from any parameter: the parameter
+  was there first. `own` comes later, so it may be that very object, an earlier call's answer: `λv → [ xs, v ]` called
+  as `g (g [])[0]` holds `xs` twice. So in a called code the distinct check (§2.9.3) gives `no` for entries that hold
+  such an object and a part of `own`, and `overlap` says `may`.
 
 **At the caller.** A call of a value that is the result of a walked call `q` at a function slot `s`, `q`'s callee a code
 `D` with `D@s` (or a contract that publishes one), and that is not one parameter's slot (rule 1 above comes first), is a
@@ -2356,7 +2363,10 @@ of the paths of the walk, and the second walk reads the same body, with the same
    `g`, a holder of everything `D` left in the value, was live from there to the call (`k.use` of the callee, whole).
 5. The answer of a call may be a capture, so a holder of the answer holds it (`alias`, `later-use`); a capture answered
    twice is one object twice; a `self` arrival is every object the value holds at the caller, which is what `res` says
-   of it, deep. A copy of the answer is a new object (#2030: `c = List.copy a`, then `c` is no capture).
+   of it, deep. A copy of the answer is a new object (#2030: `c = List.copy a`, then `c` is no capture). A condition read
+   off `D@s` compares objects of one run of the code: two created objects are as apart as the creation left them, a
+   created object and `D`'s parameter too (it was made after it), a `fresh` of the run and anything too, and a created
+   object and `own` are not called apart.
 6. The group's rounds are §2.12's: a candidate `D@s` reads only what a member's draft says, the validation walk is an
    ordinary walk under the candidates, and a code outside its candidate is joined.
 
@@ -2366,6 +2376,13 @@ refused: `run/ClosureTower`), and a returned writer stays refused at the return.
 `ownership/ReturnedClosureAnswer`, `ownership/CopyOfClosureAnswer`, `ownership/RecordFieldLambda`,
 `run/SanitiserReturnedClosure` (twelve shapes, each refused), `run/SanitiserReturnedClosureApart` (eleven, each
 accepted in place), `run/SanitiserReturnedClosureImported`.
+
+The review of #2045 found the two bullets above by the sanitiser (`creationAnswer`, `madeBesideOwn` in
+`run/SanitiserReturnedClosure`), and #2048: a function value handed to a worded row is used whole at the call, since the row
+runs it and no footprint says so. Otherwise a closure's holdings were not live at `List.update`, `Ref.update` or `Ref.modify`
+(`run/SanitiserRowCallbackHolds`, trapping on master too). It is a use of the local, not a read in the row's contract, and a
+parameter's function value has no such use: its label says what it runs, and a read would be an operand at every pass,
+asking a `taken` row's elements plain.
 
 *As built (2026-11-05).* `Called.zig`, `Made.zig`; a walk's `Called.Last` marks where each list's last call begins, zero
 for any other code, so that every reader takes `items[last..]` and no other code changes. `Groups.calledCodes` numbers

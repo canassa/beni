@@ -115,6 +115,7 @@ pub fn evaluate(w: *Walk, contracts: *Contract.Table, ctx: Context, arena: Alloc
     e.* = .{ .w = w, .ev = .{ .f = &w.f, .contracts = contracts, .arena = arena, .routed = paramLeaves }, .contracts = contracts, .ctx = ctx, .solver = solver, .x = x };
     if (solver) |sv| e.ev.live = sv.live;
     e.ev.code_sig = .{ .ctx = ctx.ctx, .of = ctx.codeSig };
+    if (w.code.called != null) e.ev.made = madeOrOwn;
     const f = &w.f;
     const gpa = f.gpa;
     try e.demands.appendSlice(gpa, w.demands.items[w.last.demands..]);
@@ -145,6 +146,16 @@ pub fn evaluate(w: *Walk, contracts: *Contract.Table, ctx: Context, arena: Alloc
         try escapeFns(e, try f.refRoot(c.root), &.{}, .answer, c.point, @intCast(vq));
     q = 0;
     while (q < f.calls.items.len) : (q += 1) if (e.inLast(q)) try callEffects(e, q);
+}
+
+/// A called code's leaf: 1 for an object its creation made, 2 for its own
+/// parameter's. A parameter comes later, so it may be such an object, an
+/// earlier call's answer: `Distinct` never calls the two apart (§2.11.3).
+fn madeOrOwn(ev: *Relation.Eval, l: Value.Leaf) u2 {
+    const e: *Evaluation = @fieldParentPtr("ev", ev);
+    if (l.kind == .site or (l.kind == .fresh and !e.inLast(l.atom))) return 1;
+    const own = l.kind == .ref and ev.f.roots.items[l.root].kind == .param and ev.f.roots.items[l.root].a < e.w.code.called.?.own_places.len;
+    return if (own) 2 else 0;
 }
 
 /// An arrival's leaves at a parameter's slot (`Routed.paramLeaves`), and a
@@ -246,7 +257,8 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
             // what it is supplied may be the taken element (#1760).
             var origin = l.origin;
             if (LabelChain.takenOutward(e.chain(), q)) origin[2] |= RowEnv.taken_origin;
-            const got = try e.w.derived.getOrPut(gpa, .{ j, slot, origin[0], origin[1], origin[2] });
+            // A label a called code's creation passes on is another label than its last call's (§2.11.3).
+            const got = try e.w.derived.getOrPut(gpa, .{ j, slot, origin[0], origin[1], origin[2] | @as(u32, @intFromBool(e.quiet)) << 28 });
             if (!got.found_existing) {
                 got.value_ptr.* = @intCast(f.cbs.items.len);
                 try f.cbs.append(gpa, .{ .j = j, .slot = slot, .origin = origin });
