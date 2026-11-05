@@ -916,11 +916,11 @@ const Walker = struct {
         const ci: u32 = @intCast(fr.calls.items.len);
         // Arguments read through the callee's footprint (§2.7).
         for (arg_insts, 0..) |a, n| {
-            // A row runs its callback, whose reads no footprint says: what a closure of the frame
-            // holds is read here (#2048). A parameter's is its caller's, through the label.
+            // A callee may run a function value, and no footprint says so: what a value of the
+            // frame holds is read here (#2048). A parameter's is its caller's, through the label.
             const v = fr.val(vals[n]);
             const local = v.kind != .ref or fr.roots.items[v.root].kind != .param;
-            const runs = if (fixed) |c| local and k.contracts.head(c).flags.words and fr.places.kind(try k.placeOf(a)) == .closure else false;
+            const runs = local and fr.places.kind(try k.placeOf(a)) == .closure;
             try k.use(a, i, if (runs) .whole else .call, .{ ci, @intCast(n) }, .{ code, fixed orelse none, @intCast(vals.len + captures.len) });
             k.pop(a);
         }
