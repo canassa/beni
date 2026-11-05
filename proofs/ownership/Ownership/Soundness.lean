@@ -639,19 +639,34 @@ theorem map_summary_sound (a b : Ty) (p : Program) (acc : Accepted) (ok : check 
 def Corresponds (heap : Heap) (v : Observation) (w : Value) : Prop :=
   ∀ n, v.depth ≤ n → snapshot heap n w = .ok v
 
-/-- Field projections of a live use (`atomUses` paths are field paths). -/
+/-- Projections of a live use: record fields (`atomUses` paths are field
+    paths), and the one slot of a record object, `.list [.record xs]` on the
+    observation side (`fieldUses`: a field read of an object is its element
+    step and then the field, #316). The element step reads only a one-slot
+    list whose slot is a record, never any other list element (the owner,
+    2026-11-04, `own-record-flat-q1`). -/
 def projectObs : Observation → Path → Option Observation
   | o, [] => some o
   | .record xs, .field i :: rest => match xs[i]? with
     | some x => projectObs x rest
     | none => none
+  | .list [.record xs], .element :: rest => projectObs (.record xs) rest
   | _, _ => none
 
-def projectVal : Value → Path → Option Value
+/-- The value at a live use's path: record fields, and the one slot of a
+    record object, read in the current heap (#316). A record object is a
+    one-slot array whose slot is a record; the element step reads no other
+    array, so a list element is never a live path's value (the owner,
+    2026-11-04, `own-record-flat-q1`). A path of record fields reads no
+    heap. -/
+def projectHeap (heap : Heap) : Value → Path → Option Value
   | w, [] => some w
   | .record xs, .field i :: rest => match xs[i]? with
-    | some x => projectVal x rest
+    | some x => projectHeap heap x rest
     | none => none
+  | .ref c, .element :: rest => match heap[c]? with
+    | some [.record xs] => projectHeap heap (.record xs) rest
+    | _ => none
   | _, _ => none
 
 /-- An origin that may name an array a program-lifetime observer reaches:
@@ -708,7 +723,7 @@ structure LinksValid (hs : InPlaceSemantics.State) : Prop where
     path projects to reaches it, or a registered observer does. -/
 def Protected (hs : InPlaceSemantics.State) (env : List (Var × Observation × Value))
     (live : Live) (c : Nat) : Prop :=
-  (∃ x p o w w', (x, p) ∈ live ∧ env.lookup x = some (o, w) ∧ projectVal w p = some w' ∧
+  (∃ x p o w w', (x, p) ∈ live ∧ env.lookup x = some (o, w) ∧ projectHeap hs.heap w p = some w' ∧
     Reaches hs.heap w' (.ref c)) ∨
   (∃ k ∈ hs.kept.toList, Reaches hs.heap k (.ref c))
 
@@ -755,7 +770,8 @@ theorem linkNamed_of_empty (hs : InPlaceSemantics.State) (env : List (Var × Obs
       by its abstract value, path by path, with its certificates; the
       abstract is read through the binding's type in `tenv` (`entryAbstract`
       with the declarations `ds`, #1796), since a dictionary's value is field
-      1 of its entry;
+      1 of its entry; a field read of a record object projects through the
+      object's one slot in the current heap (`projectHeap`, #316);
     * every binding, live or dead, keeps its arrays at immutable paths
       (fields, captures, the root) named by its abstract value: a dead binding
       may hold an array since written in place, and its value copy then
@@ -775,9 +791,9 @@ structure Invariant (ds : List Decl) (vs : ValueSemantics.State) (hs : InPlaceSe
   kept : ∀ (i : Nat) o w, vs.kept[i]? = some o → hs.kept[i]? = some w → Corresponds hs.heap o w
   keptEscaped : ∀ k ∈ hs.kept.toList, ∀ c, Reaches hs.heap k (.ref c) → ∀ g, c ∈ γ g → Escaped escapes g
   bindings : ∀ x p, (x, p) ∈ live → ∀ o w, env.lookup x = some (o, w) →
-    ∃ o' w', projectObs o p = some o' ∧ projectVal w p = some w' ∧ Corresponds hs.heap o' w'
+    ∃ o' w', projectObs o p = some o' ∧ projectHeap hs.heap w p = some w' ∧ Corresponds hs.heap o' w'
   described : ∀ x p, (x, p) ∈ live → ∀ o w a t w', env.lookup x = some (o, w) → aenv.lookup x = some a →
-    tenv.lookup x = some t → projectVal w p = some w' →
+    tenv.lookup x = some t → projectHeap hs.heap w p = some w' →
       Describes γ hs.heap (entryAbstract ds (fieldType t p) (a.atPath p)) w'
   named : ∀ x o w a, env.lookup x = some (o, w) → aenv.lookup x = some a →
     ∀ q c, immutablePath q = true → ArrayAt hs.heap w q c → named γ (a.cellsAt q) c

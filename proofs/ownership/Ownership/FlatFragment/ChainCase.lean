@@ -155,7 +155,7 @@ theorem tail_post_invariant {declarations : List Decl} {vs : ValueSemantics.Stat
     (Ownership.LinkClauses.linksValid_of_same
       (Ownership.LinkClauses.linksValid_push inv.toInvariant.linksValid (heapInts integers)) heapEq rfl)
     (Ownership.LinkClauses.linkClosed_of_old (hs := hs) inv.toInvariant.linksValid inv.linkClosed old)
-    ?_ ?_ represented ?_ rfl rfl old ?_ separating
+    ?_ ?_ (projected_after_alloc inv heapEq _) represented ?_ rfl rfl old ?_ separating
     inv.reads inv.external (by simp [valueTicked, heapAllocated, inv.fuel]) (fun _ escaped => escaped)
     ⟨kinds', state'⟩
   · intro c different

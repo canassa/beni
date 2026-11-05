@@ -80,39 +80,9 @@ theorem view_pointwise {heap : Heap} (front : Bool) {os : List Observation} {ys 
       · cases ys_i
     · cases os_i
 
-/-! ### Certificates over a sublist of the source's elements -/
+/-! ### Certificates over a sublist of the source's elements
 
-/-- A sublist's representation and the whole list's one make a
-representation of the whole list whose footprint holds the sublist's
-footprint as a sublist. -/
-theorem representsMany_sublist_merge {heap : Heap} :
-    ∀ {zs ys : List Value}, zs.Sublist ys → ∀ {n m : Nat} {os os0 : List Observation} {cs cs0 : List Nat},
-      RepresentsMany heap n zs os cs → RepresentsMany heap m ys os0 cs0 →
-      ∃ os' cs', RepresentsMany heap (max n m) ys os' cs' ∧ cs.Sublist cs' := by
-  intro zs ys sub
-  induction sub with
-  | slnil =>
-    intro n m os os0 cs cs0 kept _
-    cases kept
-    exact ⟨[], [], .nil, List.Sublist.refl _⟩
-  | cons y _ ih =>
-    intro n m os os0 cs cs0 kept all
-    cases all with
-    | @cons _ _ oy0 fy0 _ _ cs0' firstAll restAll =>
-      obtain ⟨os', cs', merged, sub⟩ := ih kept restAll
-      refine ⟨oy0 :: os', fy0 ++ cs', .cons (Ownership.FlatFragment.RepresentsDepth.represents_of_depth firstAll ?_) merged,
-        List.Sublist.trans sub (List.sublist_append_right fy0 cs')⟩
-      exact Nat.le_trans (represents_depth_bound firstAll) (Nat.le_max_right n m)
-  | cons₂ y _ ih =>
-    intro n m os os0 cs cs0 kept all
-    cases kept with
-    | @cons _ _ oy fy _ _ csRest first rest =>
-      cases all with
-      | @cons _ _ oy0 fy0 _ _ cs0' firstAll restAll =>
-        obtain ⟨os', cs', merged, sub⟩ := ih rest restAll
-        refine ⟨oy :: os', fy ++ cs', .cons (Ownership.FlatFragment.RepresentsDepth.represents_of_depth first ?_) merged,
-          List.Sublist.append (List.Sublist.refl fy) sub⟩
-        exact Nat.le_trans (represents_depth_bound first) (Nat.le_max_left n m)
+`representsMany_sublist_merge` is in `Fields.lean`: record objects use it too (#316). -/
 
 /-- A fresh array of some of the source's elements repeats no array when the
 source does not. -/
@@ -449,7 +419,7 @@ theorem view_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
             gamma' := by
           refine flatInvariant_heap_frame inv (inside := (· = hs.heap.size)) (footprint := footprint)
             (fun _ member => member) (by rw [heapEq]; simp) linksValid' linkClosed' ?_ ?_
-            represented ?_ (by rw [heapObserved_kept]; rfl) (by rw [valueObserved_kept]; rfl) old ?_ separating
+            (projected_after_alloc inv heapEq _) represented ?_ (by rw [heapObserved_kept]; rfl) (by rw [valueObserved_kept]; rfl) old ?_ separating
             (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
             (observed_external (valueTicked vs) (heapViewed hs root front ys) inv.keptSize inv.external)
             (by rw [valueObserved_fuel, heapObserved_fuel]; simp [valueTicked, heapViewed, inv.fuel])

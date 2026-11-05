@@ -123,6 +123,9 @@ theorem flatInvariant_state_frame
     heapKinds := by
       obtain ⟨kinds, state⟩ := inv.heapKinds
       exact ⟨kinds, state.of_heap (fun _ _ _ => by rw [heapSame]) linksSame⟩
+    observationsTyped := inv.observationsTyped
+    objectsCertified := by simpa only [heapSame] using inv.objectsCertified
+    liveTags := by simpa only [heapSame] using inv.liveTags
   }
 
 /-- The computed atom post-states change only fuel and external observer

@@ -155,7 +155,7 @@ theorem alloc_post_invariant {declarations : List Decl} {vs : ValueSemantics.Sta
     rw [links]
     exact Ownership.LinkClauses.linkClosed_of_old inv.toInvariant.linksValid inv.linkClosed old
   refine flatInvariant_heap_frame inv (inside := (· = hs.heap.size)) (footprint := footprint)
-    (fun _ member => member) (by rw [heapEq]; simp) linksValid' linkClosed' ?_ ?_
+    (fun _ member => member) (by rw [heapEq]; simp) linksValid' linkClosed' ?_ ?_ ?_
     represented ?_ keptSame valueKeptSame old ?_ separating reads external fuel (fun _ escaped => escaped)
     heapKinds
   · intro c different
@@ -164,6 +164,12 @@ theorem alloc_post_invariant {declarations : List Decl} {vs : ValueSemantics.Sta
   · intro x p _ o w w' binding projected q c located same
     have := live_path_below inv x p o w w' binding projected q c located
     omega
+  · refine projected_of_route (inside := (· = hs.heap.size)) (fun c different => ?_) ?_
+    · rw [heapEq]
+      simp [Array.getElem?_push, show c ≠ hs.heap.size from different]
+    · intro x p _ o w q c rest binding _ located same
+      have := live_path_route_below inv x o w q c binding located
+      omega
   · intro c member same
     have bound := representsMany_bound represented _ member
     omega
@@ -547,6 +553,7 @@ theorem primType_length_success {type : Ty} {ty : Ty} (flat : FlatType ty) (run 
   | record _ _ => simp [primType] at run
   | result _ _ _ _ => simp [primType] at run
   | dict _ _ => simp [primType] at run
+  | object _ _ => simp [primType] at run
   | chainInt => simp [primType] at run
   | list t _ =>
     simp [primType] at run
@@ -1034,6 +1041,9 @@ theorem shared_post_invariant {declarations : List Decl} {vs : ValueSemantics.St
       obtain ⟨kinds, state⟩ := inv.heapKinds
       exact ⟨kinds, state.of_heap (fun _ _ _ => by rw [heapSame])
         (by unfold heapShared; rw [heapObserved_links])⟩
+    observationsTyped := inv.observationsTyped
+    objectsCertified := by simpa only [heapSame] using inv.objectsCertified
+    liveTags := by simpa only [heapSame] using inv.liveTags
   }
   · unfold valueShared heapShared valueObserved heapObserved
     simp [Array.isEmpty, Array.size_push, inv.external]
@@ -1613,11 +1623,17 @@ theorem push_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
       demand_success_observer_footprint inv.toInvariant demanded (componentNamed c connected) represented member
   have separate := demand_success_live_separate inv.separating demanded
   have componentApart : ∀ x p, (x, p) ∈ after → ∀ o w w', env.lookup x = some (o, w) →
-      projectVal w p = some w' → ∀ q c, ArrayAt hs.heap w' q c →
+      projectHeap hs.heap w p = some w' → ∀ q c, ArrayAt hs.heap w' q c →
         ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
     fun x p use o w w' binding projected q c located connected =>
       live_path_apart inv scope afterSub (componentNamed c connected) separate x p use o w w' binding projected
         q c located rfl
+  have routeApart : ∀ x p, (x, p) ∈ after → ∀ o w q c rest, env.lookup x = some (o, w) →
+      p = q ++ .element :: rest → ArrayAt hs.heap w q c →
+        ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
+    fun x p use o w q c rest binding route located connected =>
+      live_path_route_apart inv scope afterSub (componentNamed c connected) separate x p use o w q c rest
+        binding route located rfl
   have itemApartRoot : ¬ Reaches hs.heap w (.ref root) :=
     value_apart_root shapeN describedN.1.1 receiverNamed (demand_success_disjoint inv.separating demanded)
       (fun o' member => mem_union _ _ _ (Or.inr member))
@@ -1760,7 +1776,9 @@ theorem push_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
             (by rw [heapEq, sizeEq]; exact Nat.le_refl _)
             (Ownership.LinkClauses.linksValid_of_same nextValid (by rw [heapEq]) (by rw [heapObserved_links]; rfl))
             (by rw [heapObserved_links]; exact inv.linkClosed)
-            (fun c outside => by rw [heapEq]; exact nextFrame c outside) componentApart represented rootOutside
+            (fun c outside => by rw [heapEq]; exact nextFrame c outside) componentApart
+            (projected_of_route (fun c outside => by rw [heapEq]; exact nextFrame c outside) routeApart)
+            represented rootOutside
             (by rw [heapObserved_kept]; rfl) (by rw [valueObserved_kept]; rfl) (fun _ _ _ => Iff.rfl)
             (by rw [heapEq, sizeEq]; exact inv.namingBound) inv.separating
             (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
@@ -3247,11 +3265,17 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
       demand_success_observer_footprint inv.toInvariant demanded (componentNamed c connected) represented member
   have separate := demand_success_live_separate inv.separating demanded
   have componentApart : ∀ x p, (x, p) ∈ after → ∀ o w w', env.lookup x = some (o, w) →
-      projectVal w p = some w' → ∀ q c, ArrayAt hs.heap w' q c →
+      projectHeap hs.heap w p = some w' → ∀ q c, ArrayAt hs.heap w' q c →
         ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
     fun x p use o w w' binding projected q c located connected =>
       live_path_apart inv scope afterSub (componentNamed c connected) separate x p use o w w' binding projected
         q c located rfl
+  have routeApart : ∀ x p, (x, p) ∈ after → ∀ o w q c rest, env.lookup x = some (o, w) →
+      p = q ++ .element :: rest → ArrayAt hs.heap w q c →
+        ¬ Ownership.LinkedWriteFrame.LinkConnected hs.links root c :=
+    fun x p use o w q c rest binding route located connected =>
+      live_path_route_apart inv scope afterSub (componentNamed c connected) separate x p use o w q c rest
+        binding route located rfl
   have itemApartRoot : ¬ Reaches hs.heap w (.ref root) :=
     value_apart_root shapeN describedN.1.1 receiverNamed (demand_success_disjoint inv.separating demanded)
       (fun o' member => mem_union _ _ _ (Or.inr member))
@@ -3484,7 +3508,9 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
             (by rw [heapEq, sizeEq]; exact Nat.le_refl _)
             (Ownership.LinkClauses.linksValid_of_same nextValid (by rw [heapEq]) (by rw [heapObserved_links]; rfl))
             (by rw [heapObserved_links]; exact inv.linkClosed)
-            (fun c outside => by rw [heapEq]; exact nextFrame c outside) componentApart represented rootOutside
+            (fun c outside => by rw [heapEq]; exact nextFrame c outside) componentApart
+            (projected_of_route (fun c outside => by rw [heapEq]; exact nextFrame c outside) routeApart)
+            represented rootOutside
             (by rw [heapObserved_kept]; rfl) (by rw [valueObserved_kept]; rfl) (fun _ _ _ => Iff.rfl)
             (by rw [heapEq, sizeEq]; exact inv.namingBound) inv.separating
             (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)

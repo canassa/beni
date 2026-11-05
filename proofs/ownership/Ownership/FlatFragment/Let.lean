@@ -147,6 +147,54 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
         exact typed
       · rw [lookup_cons_other _ _ _ same] at declared binding
         exact state.env key ty' o w' declared binding
+    observationsTyped := by
+      intro key ty' o w' declared binding
+      by_cases same : key = v
+      · subst same
+        rw [lookup_cons_same] at declared binding
+        cases Option.some.inj declared
+        cases Option.some.inj binding
+        exact observed
+      · rw [lookup_cons_other _ _ _ same] at declared binding
+        exact inv.observationsTyped key ty' o w' declared binding
+    objectsCertified := by
+      intro key o w' a' q c roots e ex ws binding abstractBinding fields projected at_q slot keep liveKeep
+        n os fps represented
+      by_cases same : key = v
+      · subst same
+        rw [lookup_cons_same] at binding abstractBinding
+        cases Option.some.inj binding
+        cases Option.some.inj abstractBinding
+        by_cases anyKept : ∃ g : Nat, keep[g]? = some true
+        · obtain ⟨g, kept⟩ := anyKept
+          obtain ⟨t, at_p⟩ := liveTyped _ (liveKeep g kept)
+          obtain ⟨ts, at_q'⟩ := tyAt_route_object at_p
+          exact objectCertified_of_described shape flatAbstract described at_q' projected at_q slot keep
+            represented
+        · have empty : selectFields keep ws = [] :=
+            selectFields_nil_of_none (fun g kept => anyKept ⟨g, kept⟩)
+          rw [empty] at represented ⊢
+          cases represented
+          exact ⟨fun _ => by simp, fun _ v member => by simp at member⟩
+      · rw [lookup_cons_other _ _ _ same] at binding abstractBinding
+        exact inv.objectsCertified key o w' a' q c roots e ex ws binding abstractBinding fields projected at_q
+          slot keep (fun g kept => by
+            rcases liveSub _ (liveKeep g kept) with equal | old
+            · exact absurd equal same
+            · exact old) n os fps represented
+    liveTags := by
+      intro key p use o w' ty' a' t o' w'' binding declared abstractBinding at_p obsPath valuePath
+      by_cases same : key = v
+      · subst same
+        rw [lookup_cons_same] at binding declared abstractBinding
+        cases Option.some.inj binding
+        cases Option.some.inj declared
+        cases Option.some.inj abstractBinding
+        exact liveTags_of_value flatAbstract tags chains deep paired at_p obsPath valuePath
+      · rw [lookup_cons_other _ _ _ same] at binding declared abstractBinding
+        rcases liveSub _ use with equal | old
+        · exact absurd equal same
+        · exact inv.liveTags key p old o w' ty' a' t o' w'' binding declared abstractBinding at_p obsPath valuePath
   }
   · intro key p use o w' binding
     by_cases same : key = v
@@ -154,7 +202,7 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
       obtain ⟨t, at_p⟩ := liveTyped p use
       rw [lookup_cons_same] at binding
       cases Option.some.inj binding
-      obtain ⟨w', valuePath, _⟩ := projectVal_of_tyAt shape (tyAt_entryType at_p)
+      obtain ⟨w', valuePath, _⟩ := projectHeap_of_tyAt shape (tyAt_entryType at_p)
       obtain ⟨x', obsPath, _⟩ := projectObs_of_tyAt observed at_p
       exact ⟨x', w', obsPath, valuePath, corresponds_project paired valuePath obsPath⟩
     · rw [lookup_cons_other _ _ _ same] at binding
@@ -210,7 +258,7 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
       rw [lookup_cons_same] at binding declared
       cases Option.some.inj binding
       cases Option.some.inj declared
-      obtain ⟨w'', valuePath, shape'⟩ := projectVal_of_tyAt shape (tyAt_entryType at_p)
+      obtain ⟨w'', valuePath, shape'⟩ := projectHeap_of_tyAt shape (tyAt_entryType at_p)
       obtain ⟨x', obsPath, observed'⟩ := projectObs_of_tyAt observed at_p
       exact ⟨t, x', w'', at_p, obsPath, valuePath, observed', shape'⟩
     · rw [lookup_cons_other _ _ _ same] at binding declared
@@ -323,6 +371,25 @@ theorem flatInvariant_unbind {declarations : List Decl} {vs : ValueSemantics.Sta
       have different := envOther key (o, w') binding
       exact state.env key ty' o w' (by rw [lookup_cons_other _ _ _ different]; exact declared)
         (by rw [lookup_cons_other _ _ _ different]; exact binding)
+    observationsTyped := by
+      intro key ty' o w' declared binding
+      have different := envOther key (o, w') binding
+      exact inv.observationsTyped key ty' o w' (by rw [lookup_cons_other _ _ _ different]; exact declared)
+        (by rw [lookup_cons_other _ _ _ different]; exact binding)
+    objectsCertified := by
+      intro key o w' a' q c roots e ex ws binding abstractBinding fields projected at_q slot keep liveKeep
+      have different := envOther key (o, w') binding
+      exact inv.objectsCertified key o w' a' q c roots e ex ws
+        (by rw [lookup_cons_other _ _ _ different]; exact binding)
+        (by rw [lookup_cons_other _ _ _ different]; exact abstractBinding) fields projected at_q slot keep
+        liveKeep
+    liveTags := by
+      intro key p use o w' ty' a' t o' w'' binding declared abstractBinding at_p obsPath valuePath
+      have different := noUse _ use
+      exact inv.liveTags key p use o w' ty' a' t o' w''
+        (by rw [lookup_cons_other _ _ _ different]; exact binding)
+        (by rw [lookup_cons_other _ _ _ different]; exact declared)
+        (by rw [lookup_cons_other _ _ _ different]; exact abstractBinding) at_p obsPath valuePath
   }
   · intro key p use o w' binding
     have different := noUse _ use

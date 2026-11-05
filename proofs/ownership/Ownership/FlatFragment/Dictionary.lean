@@ -965,6 +965,7 @@ theorem dictRemove_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
     demand_success_observer_footprint inv.toInvariant demanded receiverNamed represented
   have separate := demand_success_live_separate inv.separating demanded
   have apart := live_path_apart inv scope afterSub receiverNamed separate
+  have routeApart := live_path_route_apart inv scope afterSub receiverNamed separate
   subst resultEq
   have valueAtoms : [receiver, key].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
       .ok [.list os, .int k] := except_mapM_cons valueReceiver (except_mapM_cons valueKey rfl)
@@ -1053,7 +1054,8 @@ theorem dictRemove_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
             (by rw [heapEq]) (by rw [heapObserved_links]; rfl))
           (by rw [heapObserved_links]; exact inv.linkClosed)
           (fun c different => by rw [heapEq]; exact lookup_set_other hs.heap root _ different)
-          apart represented (fun c member same => rootOutside (same ▸ member))
+          apart (projected_of_route (fun c different => by rw [heapEq]; exact lookup_set_other hs.heap root _ different)
+            routeApart) represented (fun c member same => rootOutside (same ▸ member))
           (by rw [heapObserved_kept]; rfl) (by rw [valueObserved_kept]; rfl) (fun _ _ _ => Iff.rfl)
           (by rw [heapEq, sizeEq]; exact inv.namingBound) inv.separating
           (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
@@ -1443,6 +1445,7 @@ theorem dictInsert_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
     demand_success_observer_footprint inv.toInvariant demanded receiverNamed represented
   have separate := demand_success_live_separate inv.separating demanded
   have apart := live_path_apart inv scope afterSub receiverNamed separate
+  have routeApart := live_path_route_apart inv scope afterSub receiverNamed separate
   have itemApartRoot : ¬ Reaches hs.heap w (.ref root) :=
     value_apart_root shapeN describedN.1.1 receiverNamed (demand_success_disjoint inv.separating demanded)
       (fun o' member => mem_union _ _ _ (Or.inr member))
@@ -1579,7 +1582,8 @@ theorem dictInsert_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
               (by rw [heapEq]) (by rw [heapObserved_links]; rfl))
             (by rw [heapObserved_links]; exact inv.linkClosed)
             (fun c different => by rw [heapEq]; exact lookup_set_other hs.heap root _ different)
-            apart represented (fun c member same => rootOutside (same ▸ member))
+            apart (projected_of_route (fun c different => by rw [heapEq]; exact lookup_set_other hs.heap root _ different)
+              routeApart) represented (fun c member same => rootOutside (same ▸ member))
             (by rw [heapObserved_kept]; rfl) (by rw [valueObserved_kept]; rfl) (fun _ _ _ => Iff.rfl)
             (by rw [heapEq, sizeEq]; exact inv.namingBound) inv.separating
             (by rw [valueObserved_reads, heapObserved_reads]; exact inv.reads)
