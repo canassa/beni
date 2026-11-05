@@ -1227,6 +1227,12 @@ The root reaches the other members only through guards:
 - the description, only when `core/Schema`'s `nodeOf` survives;
 - each operation's worker set, only when that operation's runner (`parseWith`, `printWith`,
   `decodeWith`, `encodeWith`, `readWith`, `writeWith`) or its slot maker survives.
+  *(Amended 2026-11-05, #1943, #1944:)* only when the build runs that operation (*A runtime
+  builder makes a worker only for an operation the build runs*, below). A runner or a slot maker
+  of the operation decides that, as before. A worker of a runtime builder that runs another
+  operation's worker decides it too: `erased` decodes with its child's `read` worker. Before this
+  amendment, a program that decoded `Schema.erased (X.schema ⊤)` and called no `read` left out
+  `X`'s `read` worker, and its decode stopped on "an eliminated schema worker was reached".
 
 A member the build left out is written `null` in the value, the trailing ones are left out, and
 nothing reads them. So `Http.jsonBody (X.schema ⊤) v` ships `X`'s encoding worker and nothing else
@@ -1237,6 +1243,57 @@ its `schema`, and a generic description takes its arguments' nodes (`describedOf
 `S.parseWith` are the `parse` member, `S.print` and `S.printWith` the `print` member; each reaches
 its worker set. Only a use of them reaches them, so a program that runs `S.schema` alone ships
 neither.
+
+**A runtime builder makes a worker only for an operation the build runs** *(added 2026-11-05,
+the owner's decision, #1943; A.15)*. A runtime builder makes one worker per operation: `list`,
+`nullable`, `converted`, `erased`, `record` with its fields, `variant`, `nullary`, `tagged` and
+`recursive`. Before this paragraph, each builder made all seven workers, and a build shipped every
+worker of every builder it reached. Now a build ships the worker of an operation only when it runs
+that operation. The primitives are the exception (below).
+
+- *An operation runs* when one of its runners or slot makers survives. The table is
+  `SchemaGraph.op_runners`:
+
+  | Operation | Runner | Slot maker |
+  |---|---|---|
+  | `parse` | `parseWith` | `readSlot` |
+  | `print` | `printWith` | `writeSlot` |
+  | `decode` | `decodeWith` | `decodeSlot` |
+  | `encode` | `encodeWith` | `encodeSlot` |
+  | `read` | `readWith` | `readValueSlot` |
+  | `write` | `writeWith` | `writeValueSlot` |
+  | `valid` | `readValid` | `readValidSlot` |
+
+  An operation also runs when a worker of an operation that runs reads its worker. `erased`
+  decodes with its child's `read` worker and encodes with its child's `write` worker. The `valid`
+  worker of a record, a variant, a tagged union and a recursive schema reads its children's `read`
+  workers.
+- *A worker set.* In `core/Schema`, a record literal with a `parse` field and a `print` field is a
+  worker set: a `Workers` or a `Product`. Each of its fields that has the name of an operation is
+  that operation's worker. Apart from the primitives, no other code in `core/Schema` makes a
+  worker that a runner reads.
+- *What reachability does* (`backend.md` §9, *An operation is a node*, amended 2026-11-05). Each
+  operation is a node of the walk. A runner and a slot maker reach the node of their operation.
+  Every edge inside a worker field waits on the node of that field's operation, as an edge inside
+  a `case` arm waits on the arm's constructors. A read of another operation's field inside a
+  worker field reaches the node of that other operation.
+- *What lowering writes.* A worker field of an operation that does not run is written
+  `undefined`. One exception: a field whose value is a local, or a field of a local, is written
+  as it is. Such a value names no declaration, so `declared` and the fields that `erased` passes on
+  do not change. Nothing reads an `undefined` worker. Only a runner, a slot maker or a worker of
+  an operation that runs reads a worker, and each of them makes that operation run.
+- *A declaration's worker sets use the same nodes.* The root reaches the worker set of an
+  operation only when that operation runs (the amendment of *What `S.schema` emits*, above).
+- *The primitives are not a worker set* ([#1958](https://github.com/canassa/beni/issues/1958)).
+  `scalarSchema` passes a primitive's workers to `declared` as arguments, so a build that reaches
+  a primitive ships its workers. In a release build, the specialiser fuses a primitive's worker
+  into its runner through those arguments, and drops the arguments that no operation reads. A
+  worker set stops that fusion: `emit/release/app/SchemaWorkerFusion` grew from 1 627 to 1 775
+  raw bytes, with the worker called through the record. The primitives' workers cost only a
+  program that runs no operation: about 880 B of release brotli in `run/SchemaDescribe`.
+- *What does not change.* A worker that ships is the worker that shipped before, so a run is as
+  fast as before. A program that builds no schema at run time and decodes no erased declaration
+  emits the same output.
 
 **Issues are unchanged** (A.14). Root checks validate options first, then construction
 failures in the order the schema reaches its children. The withdrawn projections no longer
@@ -3842,3 +3899,22 @@ owner-approved residual ordinary compiled parse/print regression for this HostFr
 Re-measure it on the final integration tip and fix any regression above noise before #1616
 reaches `master`. This exception does not establish speed parity or relax the compiled-path
 requirement beyond that integration.
+
+### A.15 — A runtime builder's workers follow the operations a build runs (2026-11-05)
+
+Owner decision, dashboard question `schema-dual-path-q2`, issue #1943: **"Fix it on
+workers-hostfree, but measure first: report the brotli bytes the unused directions cost on the
+affected run/ fixtures. If it's material, specify it in schema.md §6, then open a PR into
+workers-hostfree. … it must not regress compiled-schema speed."**
+
+- The measurement came first (#1943). A runtime builder made all seven workers. Without the
+  workers of the operations that each fixture does not run, `run/SchemaDescribe` fell from 9 710
+  to 6 128 bytes of release brotli (37 %). The other dynamic `run/` fixtures fell by 18 to 292
+  bytes.
+- §6, *A runtime builder makes a worker only for an operation the build runs*, is the rule.
+- The same operation nodes now guard a declaration's worker sets. That repairs #1944, where
+  `Schema.decode` of an erased declaration stopped a program that called no `read`.
+- Reversible choice: a worker set is found by its field names, `parse` and `print`, in
+  `core/Schema` only. A source marker on each field would say the same at more cost to read.
+- Left for later: the primitives' workers, which a worker set would stop the release specialiser
+  from fusing into their runner ([#1958](https://github.com/canassa/beni/issues/1958)).

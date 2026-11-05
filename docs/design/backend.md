@@ -5064,6 +5064,32 @@ representation and the conservative library/schema/core exemptions remain.
   `Cmd.none` ships no fiber runtime*; `Reach.zig`'s unit tests for a chain, the cap and a
   constructor waited on.
 
+**An operation is a node** *(added 2026-11-05, `schema.md` §6, *A runtime builder makes a worker
+only for an operation the build runs*, #1943)*. A schema runs seven operations: `parse`, `print`,
+`decode`, `encode`, `read`, `write` and `valid` (`SchemaGraph.Op`). Each one is a node of the
+walk, `Reach.Kind.op`, in `core/Schema`'s module, by its `Op` number. An operation node emits
+nothing and has no edges of its own, as a constructor has none.
+
+- **What reaches one.** Each runner and slot maker of `SchemaGraph.op_runners` has an edge to the
+  node of its operation. Inside a worker field (below), a field read whose name is another
+  operation's has an edge to that operation's node, guarded as the field is.
+- **What waits on one.** In `core/Schema`, a record literal with a `parse` field and a `print`
+  field is a worker set. Each of its fields whose name is an operation is a worker field. Every
+  edge inside a worker field waits on the node of its operation, as an edge inside a `case` arm
+  waits on the arm's constructors. A declaration's root reaches the worker set of an operation
+  through the same node, where it named the runners before.
+- **Lowering.** A worker field whose operation node the walk did not reach is lowered as
+  `undefined`, through the same set of dead bodies that a dead `case` arm uses. So the funnel's
+  `arm_dead` fact records the answer, and a packed unit of `core/Schema` is lowered again in a
+  build that answers otherwise. One exception: a field whose value is a local, or a field of a
+  local, is lowered as it is, because it names nothing. Reach and Lower read the worker sets and
+  that exception from one function each (`SchemaGraph.workerFields`, `SchemaGraph.passesOn`).
+- **Why it is sound.** Only the runners and the slot makers run a worker, and each one reaches its
+  operation. Every other read of a worker is inside a worker field, where it passes the worker to
+  a worker of the same operation, or reads another operation's worker and so reaches that node.
+  A node is reached only through edges, so the walk stays a monotone function of the program
+  (CLAUDE.md rule 5).
+
 #### When it runs, and what pins the corpus
 
 **Always on, for every `beni build`.** Not release-only: `--release` is about chunking, renaming and
