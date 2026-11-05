@@ -908,8 +908,8 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
     // Labels: the direct ones with their arguments, the passed-on ones with
     // their callees' supplies.
     for (f.cbs.items[w.last.cbs..], w.last.cbs..) |cb, ci| {
-        const at = try Put.labelIndex(s, @intCast(ci));
         if (cb.inst != none) {
+            const at = try Put.labelIndex(s, @intCast(ci));
             const dl = &d.labels.items[at];
             dl.calls = if (cb.calls > 1 or dl.calls == .many) .many else if (dl.calls == .none) .once else .many;
             for (cb.args, 0..) |a, k| {

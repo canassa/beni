@@ -5079,6 +5079,8 @@ L0  Ids  Counters  Scratch
 | `Stored.zig` | 9 | what a cell callback's write-back makes escape: the contents and the answer's objects at a shared slot (§2.13.7, #1729, #1955) | Place, Contract, Relation, Cells, LabelChain |
 | `Contents.zig` | 11 | a cell's contents stay separated: a store that may hold one object twice escapes them; the `stores` a contract publishes (§2.13.7, #1984, #1986), and a move between slots judged as an edit | Ids, Place, Slots, Contract, Relation, Forest, LabelChain, Distinct, Cells, Loans, Stored, Eval |
 | `Loans.zig` | 9 | a cell callback's label by its supply below the `◆`, and what it answers as its caller reads it: a loan of the cell, or `Ref.modify`'s `.0` owned when the stored `.1` keeps none of it (§2.13.7, #1977) | Ids, Place, Slots, Value, Contract, Forest, Relation, LabelChain, Trees |
+| `Called.zig` | 8 | a function value in a result: the closure of a called code a call's result is (§2.11.3, #2028) | Ids, Slots, Value, Contract |
+| `Construction.zig` | 8 | a construction over its base, split from `Walk` (§2.13.2) | Ids, Facts, Place, Value, Relation |
 | `FnRun.zig` | 9 | a function value the frame cannot follow: the one parameter function slot a value is, and the function objects that escape where it is not (§2.11.3, #1773, #1775, #1776) | Contract, LabelChain, RouteWalk, Relation, Value, WalkContext |
 | `Codes.zig` | 12 | a module's codes and one declaration's answer (§2.10, §2.12) | Ids, Walk, Kept |
 | `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Distinct, Walk, Cells, Loans |
@@ -5092,8 +5094,15 @@ L0  Ids  Counters  Scratch
 | `Resolve.zig` | 11 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions, Holders, Sweep, Stack, TagTree, Later, Cells, Kept, Fed |
 | `Deliver.zig` | 9 | a group's deliveries: its members' drafts, who reads which fact, the queue (§2.12 step 2) | Ids, Slots, Contract, Relation, Eval |
 | `Closures.zig` | 9 | a closure that escapes (or a callee hands back) or may run again: its unknown callers' supplies are `⊤`, a `once` code's capture writes refused (§2.11.3–4) | Ids, Relation, Eval |
+| `Once.zig` | 11 | what a closure's creation asks of what its code writes, split from `Eval` (§2.11.4) | Ids, Contract, Relation, Cells, Eval |
+| `Made.zig` | 11 | what a called code says of what its creation made: its `self` parameter (§2.11.3, #2028) | Ids, Slots, Value, Contract, Eval |
+| `CondsOff.zig` | 12 | the conditions of a contract, split from `ReadOff` (§2.10) | as `ReadOff` |
+| `CodeCaps.zig` | 12 | nested codes' captures, split from `Groups` (§2.11.4) | Ids |
+| `TypeVarParam.zig` | 12 | whether a parameter's annotated type is a type variable, split from `Groups` (§2.13.9) | Ids |
 | `Groups.zig` | 10 | the module: adapters, callees, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Worded, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver, Closures |
 | `Block.zig` | 11 | contracts ↔ words, format v-next, validation by re-encoding (§3.6) | Ids, Place, Slots, Contract, Groups |
+| `BlockCalled.zig` | 13 | a contract's called contracts in a block (§3.6, version 23) | Contract, Slots |
+| `SummaryText.zig` | 6 | a declaration's `summary` lines, its called contracts' after it (§2.11.3) | Place, Slots, Contract, ContractText |
 | `BlockNames.zig` | 13 | how a block names a field and a declaration (§3.6), split from `Block` | none |
 | `Within.zig` | 5 | `within`: a contract says no more than another (§2.10, §2.12), split from `Contract` | Ids, Slots, Forest, Contract |
 | `Message.zig` | 11 | diagnostic text | Ids, Facts, Place, Walk, Resolve, Groups, CallGraft |
