@@ -1,0 +1,39 @@
+-- chooseRoot never calls its proof input, calls its factory at most once,
+-- and may return the original general job with all of its aliases.
+import Browser.Bridge as Bridge
+import Html exposing (Html)
+
+
+pub unusedView ⊤ =
+    values = [ 1 ]
+    Bridge.chooseRoot
+        (λ_ →
+            _ = List.push values 2
+            <></>
+        )
+        (λ_ → ⊤)
+        ⊤
+
+
+pub onceFactory view =
+    values = [ 1 ]
+    Bridge.chooseRoot view
+        (λ_ →
+            _ = List.push values 2
+            ⊤
+        )
+        ⊤
+
+
+pub generalAliases view =
+    values = [ 1 ]
+    selected = Bridge.chooseRoot view (λ_ → []) values
+    grown = List.push values 2
+    List.length grown + List.length selected
+
+
+pub factoryAliases view =
+    values = [ 1 ]
+    selected = Bridge.chooseRoot view (λ_ → values) []
+    grown = List.push values 2
+    List.length grown + List.length selected

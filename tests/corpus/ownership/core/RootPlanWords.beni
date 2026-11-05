@@ -1,0 +1,5 @@
+-- Native paired-ABI operations stay inside the owner-fenced typed renderer.
+import Rt
+
+
+paint node block = (Rt.singleRootRenderer node) block

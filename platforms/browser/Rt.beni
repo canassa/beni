@@ -532,6 +532,33 @@ run program =
         λ⊤ → if Js.read ok then ⊤ else stop ⊤
 
 
+-- Private producer connection used only after chooseRoot proves its invariants.
+foreign impure rootConnection :
+    { createRoot : (aliased escaped Runtime.Block → fresh Runtime.Instance)
+    , nodeRoot : (aliased Runtime.Instance → HostNode.Node)
+    , patchRoot : (aliased Runtime.Instance, aliased escaped Runtime.Block → ⊤)
+    }
+
+
+pub singleRootRenderer : HostNode.Node → (Runtime.Block → ⊤)
+singleRootRenderer node =
+    shown = Js.ref (Js.none ⊤)
+    λblock →
+        instance =
+            Js.optMatch (Js.read shown)
+                (λ⊤ →
+                    fresh = rootConnection.createRoot block
+                    HostNode.rendererInsertBefore node (rootConnection.nodeRoot fresh) (Js.none ⊤)
+                    Js.write shown (Js.some fresh)
+                    fresh
+                )
+                λold →
+                    rootConnection.patchRoot old block
+                    old
+        _ = protocol.live instance
+        renderEnded node
+
+
 mountRenderer : HostNode.Node → (Runtime.Block → ⊤)
 mountRenderer node =
     viewSlot = Slots.slot (Js.some node) (Js.none ⊤) protocol.none

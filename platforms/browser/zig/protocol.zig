@@ -43,8 +43,21 @@
 const std = @import("std");
 const m = @import("beni_markup");
 
+// ownership pin begin: domProtocol
+/// The same private layout roles used to emit kinds, blocks and instances.
+/// The typed connection supplies these literals to the compiler; it guesses none.
+pub const root_layout = .{
+    .kind = "t",
+    .mount = "m",
+    .patch = "p",
+    .start = "s",
+    .end = "e",
+    .range = "q",
+    .live = "l",
+};
+
 /// The values of `Rt` this lowering supplies (`Lowering.runtime_protocol`).
-pub const values = [_][]const u8{ "protocol", "text", "map" };
+pub const values = [_][]const u8{ "protocol", "text", "map", "rootConnection" };
 
 /// The names of `runtime`, which a supplied value reaches.
 pub const uses = blk: {
@@ -73,7 +86,6 @@ pub const runtime = [_]m.RuntimeExport{
     .{ .name = "protocolStop", .arity = 0 },
 };
 
-// ownership pin begin: domProtocol
 /// The expression of supplied value `name`, written into Rt's unit. Every
 /// helper is hoisted once in that unit; no factory runs per view or row.
 pub fn supply(cx: *m.Context, name: []const u8) m.Error!m.Expr {
@@ -81,6 +93,7 @@ pub fn supply(cx: *m.Context, name: []const u8) m.Error!m.Expr {
     if (std.mem.eql(u8, name, "text")) return b.text();
     if (std.mem.eql(u8, name, "map")) return b.map();
     if (std.mem.eql(u8, name, "protocol")) return b.record();
+    if (std.mem.eql(u8, name, "rootConnection")) return b.rootConnection();
     unreachable;
 }
 
@@ -130,8 +143,8 @@ const Builder = struct {
         const context = try b.name("context");
         const instance = try b.name("instance");
         const body = try b.js().block();
-        const kind = try b.member(block, "t");
-        try b.js().constant(body, instance, try b.js().call(try b.js().member(kind, "m"), &.{ try b.member(block, "v"), try b.read(context) }));
+        const kind = try b.member(block, root_layout.kind);
+        try b.js().constant(body, instance, try b.js().call(try b.js().member(kind, root_layout.mount), &.{ try b.member(block, "v"), try b.read(context) }));
         try b.js().assign(body, try b.member(instance, "$t"), kind);
         try b.js().assign(body, try b.member(instance, "$b"), try b.read(block));
         try b.js().@"return"(body, try b.read(instance));
@@ -147,8 +160,8 @@ const Builder = struct {
         const replacement = try b.name("replacement");
         const body = try b.js().block();
         const same = try b.js().block();
-        const kind = try b.member(block, "t");
-        try b.js().expression(same, try b.js().call(try b.js().member(kind, "p"), &.{ try b.read(instance), try b.member(block, "v") }));
+        const kind = try b.member(block, root_layout.kind);
+        try b.js().expression(same, try b.js().call(try b.js().member(kind, root_layout.patch), &.{ try b.read(instance), try b.member(block, "v") }));
         try b.js().assign(same, try b.member(instance, "$b"), try b.read(block));
         try b.js().@"return"(same, try b.read(instance));
         try b.js().@"if"(body, try b.js().binary(.strict_eq, kind, try b.member(instance, "$t")), same, null);
@@ -157,6 +170,41 @@ const Builder = struct {
         try b.js().@"return"(body, try b.read(replacement));
         return b.function("domPatch", &.{ instance, block, context }, body);
     }
+
+    // Private producer operations; chooseRoot proves the single-node and same-kind preconditions.
+    // ownership pin begin: rootConnection
+    // ownership pin begin: createRoot
+    // ownership pin begin: nodeRoot
+    // ownership pin begin: patchRoot
+    fn rootConnection(b: Builder) m.Error!m.Expr {
+        const block = try b.name("block");
+        const make_body = try b.js().block();
+        try b.js().@"return"(make_body, try b.js().call(try b.read(try b.unit()), &.{ try b.read(block), try b.js().literal(.null) }));
+        const make = try b.function("domRootCreate", &.{block}, make_body);
+        const node = try b.project("domRootNode", root_layout.start, false);
+        const instance = try b.name("instance");
+        const fresh = try b.name("block");
+        const patch_body = try b.js().block();
+        const kind = try b.member(fresh, root_layout.kind);
+        try b.js().expression(patch_body, try b.js().call(try b.js().member(kind, root_layout.patch), &.{ try b.read(instance), try b.member(fresh, "v") }));
+        try b.js().assign(patch_body, try b.member(instance, "$b"), try b.read(fresh));
+        const patch_ = try b.function("domRootPatch", &.{ instance, fresh }, patch_body);
+        var layout: std.ArrayList(m.Expr) = .empty;
+        inline for (@typeInfo(@TypeOf(root_layout)).@"struct".field_names) |role| {
+            try layout.append(b.cx.arena, try b.js().string(@field(root_layout, role)));
+        }
+        return b.js().object(&.{
+            .{ .key = "$rootLayout", .value = try b.js().array(layout.items) },
+            .{ .key = "createRoot", .value = try b.read(make), .source = true },
+            .{ .key = "nodeRoot", .value = try b.read(node), .source = true },
+            .{ .key = "patchRoot", .value = try b.read(patch_), .source = true },
+        });
+    }
+
+    // ownership pin end: patchRoot
+    // ownership pin end: nodeRoot
+    // ownership pin end: createRoot
+    // ownership pin end: rootConnection
 
     fn live(b: Builder) m.Error!m.Name {
         return b.project("domLive", "$l", true);
@@ -168,7 +216,7 @@ const Builder = struct {
         const body = try b.js().block();
         const block = try b.member(instance, "$b");
         const kind = try b.member(instance, "$t");
-        try b.js().expression(body, try b.js().call(try b.js().member(kind, "p"), &.{ try b.read(instance), try b.js().member(block, "v") }));
+        try b.js().expression(body, try b.js().call(try b.js().member(kind, root_layout.patch), &.{ try b.read(instance), try b.js().member(block, "v") }));
         return b.function("domAgain", &.{instance}, body);
     }
 

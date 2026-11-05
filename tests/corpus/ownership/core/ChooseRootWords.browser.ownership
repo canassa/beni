@@ -1,0 +1,12 @@
+module ChooseRootWords
+  11:17 List.push values: accepted once
+  22:17 List.push values: accepted once
+  31:13 List.push values: rejected call: selected⋆ may hold it through the call at 30:16, and is read at 32:25 (approx)
+  38:13 List.push values: rejected call: selected⋆ may hold it through the call at 37:16, and is read at 39:25 (approx)
+  summary unusedView: unused
+  summary onceFactory: π1 calls 0
+  summary generalAliases: π1 calls 0
+  summary factoryAliases: π1 calls 0
+  demands 4: accepted 2 (fresh 0, call 0, param 0, callback-param 0, once 2, entry 0; assumed 0), pending 0, rejected 2
+total 4: accepted 2 (fresh 0, call 0, param 0, callback-param 0, once 2, entry 0; assumed 0), pending 0, rejected 2
+cause call 2

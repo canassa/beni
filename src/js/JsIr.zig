@@ -102,7 +102,9 @@ pub const Node = struct {
     /// `Suspend`'s loop-mode copy of a tail-call loop's rest).
     flags: Flags = .{},
 
-    pub const Flags = packed struct(u8) { host: bool = false, cell: bool = false, identity: bool = false, _pad: u5 = 0 };
+    pub const ArrayModel = enum(u2) { none, base, offset, allocate };
+
+    pub const Flags = packed struct(u8) { host: bool = false, cell: bool = false, identity: bool = false, root_choice: bool = false, array_model: ArrayModel = .none, root_range: bool = false, root_block: bool = false };
 
     /// Meaning depends on `tag`; see `Tag`. Unused halves are zero.
     pub const Data = struct {

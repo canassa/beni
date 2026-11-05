@@ -1,0 +1,25 @@
+-- A native clock drives the existing Bool root message; no task kernel is needed.
+import Browser
+import Controller
+import Html exposing (Html)
+
+
+view : Int → Html Bool
+view count =
+    _ = Debug.log "paint" count
+    <input id="root" />
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init =
+            λ⊤ →
+                Controller.schedule ⊤
+                0
+        , update =
+            λ_ count →
+                _ = Debug.log "update" count
+                count + 1
+        , view = view
+        }

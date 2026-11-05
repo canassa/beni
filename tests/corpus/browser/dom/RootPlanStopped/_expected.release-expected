@@ -1,0 +1,18 @@
+-- load
+console.log: paint: 0
+<body>
+  <input id="root" .value="">
+</body>
+-- set #root "edited"
+<body>
+  <input id="root" .value="edited">
+</body>
+-- advance 100
+console.log: update: 0
+console.log: paint: 1
+(the DOM did not change)
+-- advance 100
+console.log: update: 1
+(the DOM did not change)
+-- advance 100
+(the DOM did not change)

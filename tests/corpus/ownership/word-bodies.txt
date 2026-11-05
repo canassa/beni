@@ -59,9 +59,9 @@ platforms/node/Node.beni        Node.exitWith       5b2baac4cdc06c32bbd21afba887
 platforms/node/Ssr.beni Ssr.render 4df490b2a50bfbc64d5f31b68027af18d63f6d36b69625064d7f0dcabfe9e431
 
 # Entry protocols audited 2026-10-22: ownership-checker.md §24.8 and §30.3.
-platforms/browser/Browser.beni               Browser.program          63c876c0cf051440b34166cb5681537c619c73058ae2190d2769fb8002b3beb3
-platforms/browser/Browser.beni               Browser.hosted           16f4b5fbd5663b83430659f2860d51395bba8abb11f24c92f79ae51510778da1
-platforms/browser/Browser.beni               Browser.host             177180a00d2c5d731ed117dafded107604846a54f222bf12a839e962a4bc9935
+platforms/browser/Browser.beni Browser.program 1e9c61c9d984dbb4d066ea194d6571677f5dc9eed18be2a32283cdeb4ee712e0
+platforms/browser/Browser.beni Browser.hosted 6542c05aed36faed6b356c666b2949773de4539586ae505fe38e7fb0e0d7e3b2
+platforms/browser/Browser.beni Browser.host 177180a00d2c5d731ed117dafded107604846a54f222bf12a839e962a4bc9935
 platforms/browser-tea/Tea.beni               Tea.sandbox              8e3b27e500a7feac2eb34e69e9fcf30fa4f498653e306168d75936f47cf113e1
 platforms/browser-tea/Tea.beni               Tea.element              b4024695983c46b54e8cf3822573fbefcf65bc38cb76e55468e728e2bac6f523
 platforms/browser-tea/Tea.beni               Tea.document             1f37469ef95b2ebf4b679547bdc80d9432c4ea5b6169438bd44bb70b6aa58c29
@@ -104,7 +104,7 @@ tests/platforms/entry-shape/Start.beni   Start.launch        31d697f6b3153998a89
 # The code generator's inlined forms of List's `at`, `traverseAt`, `put`,
 # `half` and `length`: the code that runs in place of their siblings.
 src/Operator.zig Operator.listPrimitives d33aba76ddf6568562da9cb8e43766fa7f7fbeb7eb646b301c7f92b02f212187
-src/js/Lower.zig Lower.listPrimitives 4e2cfeece19e2a60f07026a742a2a8fef85fdc0963d1f379674d7d8451e171ed
+src/js/Lower.zig Lower.listPrimitives 621707f3525302ab818f171e894f2939c91fa5d2ffcf8798690b6a87e49445b6
 # The code generator's forms of `List.cons`: the re-cons of a scalar view and
 # the cons steps of a loop that builds, which run in place of its body.
 src/js/Lower.zig Lower.listRecons 426b66d3ae9f008c345e1b6a837c3c417ca577210d5c6ccbcc95ada036eafb91
@@ -122,13 +122,13 @@ core/Task.beni Task.entry b9c80b88dd93de378434884e581d3819cea426162c8a6145c66ab0
 core/Task.beni Task.requeue 1afd037bc8b6e28d482171d70cc8d55be370bc8f4cc128838efc7cef55e6b176
 core/Js/Runtime.js               Js.Runtime.parked        cd78ee9414dfa1aa0eb7a27df6392c884bd73f958da80bce43ef92115ef5e432
 core/Js/Runtime.js               Js.Runtime.defect        08aa1744d1ee477e6899bad6084889d9cf0ee880bd04f9dbffd4ec5768b7a5ce
-src/js/Lower.zig Js.cell e4e67769d40e8f867f14d48ae27beb43bca280786445b0ee1e1a261252324e92 intrinsic:core
-src/js/Lower.zig Js.cellRead a48da2ffd9db1c95195a223a122a6d4f6d179124e658aad9bd0cc38c50d8bbb6 intrinsic:core
-src/js/Lower.zig Js.cellWrite e2a04e522208d80034120512ffb416adf96c1d3c0dc505b826a476efe1dd90c8 intrinsic:core
-src/js/Lower.zig Js.none d3fe5c476b9cbadbdc43fb0574cc498324bde52811bd7d042a466c52cbb82384 intrinsic:core
-src/js/Lower.zig Js.some 02efa26897195741eb6aceeec012934ed40cb1c726c5660ff3a6fb5ee9853eb3 intrinsic:core
-src/js/Lower.zig Js.optMatch 4a45e00d8ca632370455fc1c03ecf830129b4de1323c29299c0b62f3d304b413 intrinsic:core
-src/js/Lower.zig Js.optWithDefault 013dfa25fb77d0b967b59d2d5fc736b52ca8a4ff0adcf26d075669a44820d510 intrinsic:core
+src/js/Lower.zig Js.cell d84a91b6a9b65099c515ad85b40fd777fe13fe31784a29c49f6e359e8b6b3c32 intrinsic:core
+src/js/Lower.zig Js.cellRead 08799767b5daa10ebe2927834f240dd1cea4cbc954ea5388e7a41d381fe8d23c intrinsic:core
+src/js/Lower.zig Js.cellWrite 7f5972c5eb60cc1f1e3c02aff09666afbf42ab6a982800796683dd8c50c61392 intrinsic:core
+src/js/Lower.zig Js.none 888410d63c69a21d0871c8a61d00b2ee180d2e7a5eec15905c40eaf73db9d0ff intrinsic:core
+src/js/Lower.zig Js.some 08a4a7fb3ec60bb9ab1a9b67ffcdc5927d6b95409b8e45809ec897ba7c0bbacf intrinsic:core
+src/js/Lower.zig Js.optMatch d71a5e853dd853e4f33d73977261745c526a271053de905acdfb0868ce682d01 intrinsic:core
+src/js/Lower.zig Js.optWithDefault 9fba35ec43397299f80d46127ab56c9230fcecb526a0233ff61242d4ec7aa34c intrinsic:core
 src/bir/Bir.zig Js.cellRead ff2e6c1c664e26923e024f3b4cef61134f0aa488706c506f055f50549a635c0b intrinsic:core
 src/bir/Bir.zig Js.cellWrite a2aa0b9d55af613668718a7c12398432183eefc1af95aeee0070c41050193306 intrinsic:core
 
@@ -275,10 +275,10 @@ src/js/Lower.zig List.traverseAt 65544d38ca829056af84929240a93386cd2b30e763a5bb0
 src/js/Lower.zig List.put 6c0dba2ef22cb9c16864600c891e233ee36e6c19eb5ab1540d492861672eefaa intrinsic:core
 src/js/Lower.zig List.half 580e54a7da47b4ef81faa8f8481958192d7f25a372f618031c6d1dd77f9286f7 intrinsic:core
 src/js/Lower.zig List.length 9bd988aa11e0c776550bb4d4d08c7c8253bf93d19ff74510ac704c8e22bc3261 intrinsic:core
-src/js/Lower.zig List.builder d04f94a41b1980fc9f5f5118f7a41b786c4047f958ea5946469fb66070a3a44e intrinsic:core
+src/js/Lower.zig List.builder 83841abeac27ae00ad8e5c3abd1be2caad88bb26986dbce59904663ebdc1c1c0 intrinsic:core
 src/js/Lower.zig List.done d31f905af35b353fc9b380b3439a2be5c37a1eecd941c2c3deae07bca3b569c0 intrinsic:core
-src/js/Lower.zig List.base 704a3bc0d91ee55579cf7cbf1d2a29a1ad09e20f4c577d223ba0bf20e651065c intrinsic:core
-src/js/Lower.zig List.offset 984e0e3f6c73b00c241302422f8795e4c6e54d7b86d3cdaa88100dc2d946f1d1 intrinsic:core
+src/js/Lower.zig List.base 7247b98d2a0b0ab3547290203a97d1d8ac7016b385d0d5379c38846f428ba52e intrinsic:core
+src/js/Lower.zig List.offset 7aab32c3670ca90e442a758e345fb1582319745cd4162de7398aa1f428662e45 intrinsic:core
 src/js/Lower.zig List.peekArray 3dc517ea18042c9f353de82bb03029a57ab43635c25304a29702b1bd69217b39 intrinsic:core
 src/js/Lower.zig List.writeArray 545c9ac8efd9233b327ec5b944e44a25cbc6d5d23e5f40ec7ab7390d0bca26c5 intrinsic:core
 src/js/Lower.zig List.wrapTree 90b3dded4170630fdd62751e986e910878a36bc2986cfba54ce0ef14bb933a72 intrinsic:core
@@ -296,9 +296,9 @@ src/js/Lower.zig Worker.Object.replyIds a5e4cfb134e387eea1a381ce1b44171a052830f9
 src/js/Lower.zig Worker.Object.replyIds a5e4cfb134e387eea1a381ce1b44171a052830f9bfc7e729556a5dcc2dcac04f intrinsic:platforms/cloudflare
 src/js/ReplyScan.zig Worker.Object.replyIds bc1a0e22ab156b0e697875f1d6be7492bad1baded4bee7fddbbd741305ed2755 intrinsic:tests/platforms/reply-scan
 src/js/ReplyScan.zig Worker.Object.replyIds bc1a0e22ab156b0e697875f1d6be7492bad1baded4bee7fddbbd741305ed2755 intrinsic:platforms/cloudflare
-src/js/Lower.zig Js.Array.arrayAllocate 7bd5fb2bc580f25b3094aff7480b5b84b2ae55a80a18faeb25063199126cae96 intrinsic:core
-src/js/Lower.zig Js.Array.arraySet d0c3806c75efe6adebf0bc42704882d38be34f8631dc2db30d28a717f8df79f9 intrinsic:core
-src/js/Lower.zig Js.Array.arrayDone fbf4ee2745eca4934107f4e9df276a70ca937a21f676bd65316121cff13173c8 intrinsic:core
+src/js/Lower.zig Js.Array.arrayAllocate 4f026c1e02a9f06e336f6b76e159d3056793b65455e706d7139bcfabcb03725d intrinsic:core
+src/js/Lower.zig Js.Array.arraySet 29c11ab1e450d0fc2d4a7ef9d97fe887027539d853eccee6e9090c632b142771 intrinsic:core
+src/js/Lower.zig Js.Array.arrayDone 3c76ad612ba905c43ab27b0d3d53148f52df799d01b2b70593350f5b47b63280 intrinsic:core
 
 # Individually read native/inspection/FIFO bodies, 2026-11-03 (#1804).
 core/Browser/Host/Event.beni Browser.Host.Event.errorMessage f63f209513e42272fb5a73b97990fc321f315b24428a87a43a4b40c008c12111
@@ -477,41 +477,41 @@ core/Browser/Host/Node.beni Browser.Host.Node.append 7480906fdd405c334a4f858a931
 core/Browser/Host/Rejection.js Browser.Host.Rejection.display 4d128c47f2233e1098c7d218846f1c7af379a780ba6e105e73d4555ab0502c16
 src/js/Lower.zig Js.Any.unpackOpt edd04c4ce1ff6ff3097c5aba9ed16dc4b32f151f448042d28086712e7598d214 intrinsic:core
 # Supplied foreign record fields audited 2026-11-04 (§24.4, §24.8).
-platforms/browser/zig/protocol.zig Rt.protocol be161d51e394d8316961bacbd0ad08e2a665de9d3caafa1722c02ab4897c9858
-platforms/browser/zig/protocol.zig Rt.protocol.unit 54a3934a1fdf0b80cba99896105669730bd198b9de7e39da4fcf71059f863e30
-platforms/browser/zig/protocol.zig Rt.protocol.patch e770dcc9ccdfb0377ad197f200b73b99af64f515e1a920e78a0ed93e764f9e02
-platforms/browser/zig/protocol.zig Rt.protocol.again 43bde53962a48d71df6e9ac0a32b381f23874a16463ab5c0985f7be92af8b6be
-platforms/browser/zig/protocol.zig Rt.protocol.live 88ec683fb2d6b9733e24b6563289d8956c4edba16bcf8978ba17653a767a10f7
-platforms/browser/zig/protocol.zig Rt.protocol.eventPayload a9a002d2259124cfae6dfda4e15dcee5a03667b9f554c77c95d12a5e31055aa5
-platforms/browser/zig/protocol.zig Rt.protocol.nodeContext 20e56ce979f3acd384d6df751935468f52abdd996e098b3ca88e8bb6757e070c
-platforms/browser/zig/protocol.zig Rt.protocol.contextPresent bd88f6c47c18c9b7cd7a527722a66d3acd43aa581eebae27893b079e473c6e4e
-platforms/browser/zig/protocol.zig Rt.protocol.contextParent b19f364de7187dd4bdf5d0878c0eddce91ac5069dea049dfb3869399a4a79e83
-platforms/browser/zig/protocol.zig Rt.protocol.contextApply 2ea8f2e7a19dae32bc55f63332eeda58915d8cb191e1260a9c9e2842574a0c6d
-platforms/browser/zig/protocol.zig Rt.protocol.sendRoot 9d5dd488d6cf5b926749c9650bdc27115d59f03f56629b602dfb33dc117fdff0
-platforms/browser/zig/protocol.zig Rt.protocol.controls 638fe747412103e98a9734cdda076642cf4714260308725dd24bd6d985517f4e
-platforms/browser/zig/protocol.zig Rt.protocol.setControls 5c7b8d59d6c1ea8c244d777bd8303acdb3c2fe137a16b785e2e4000746c5e068
-platforms/browser/zig/protocol.zig Rt.protocol.hasRoot d3ce93c37457f4539819bbddaaa3c566d9cb1c9801e00868528f35e08bb9f51c
-platforms/browser/zig/protocol.zig Rt.protocol.hasHandler 5a501903f9b34670ef9d7903f432f63f6631b395c0c7e318ac75b65cf6a2c6d8
-platforms/browser/zig/protocol.zig Rt.protocol.handlerFlags b9bbd834e054381baeed567a23626bdd2cb2f70c7d958d7de068ff51ef3d6ce9
-platforms/browser/zig/protocol.zig Rt.protocol.first 61adbcd8a00fd74e914ec5a8ef0bf14e1b499d8f944cc78d31cd3e39510c0c68
-platforms/browser/zig/protocol.zig Rt.protocol.last f549939d9b6e8a442de51cc3e9be8a0e6bf07f5c5d75235e8e7090f84d96ed7b
-platforms/browser/zig/protocol.zig Rt.protocol.put 0d145a91a4f96e7be4137daaa6f09b93b265408408dd5ec2b5daca5ed30d3fa0
-platforms/browser/zig/protocol.zig Rt.protocol.drop 4ffbb529d892768042952c11eeff8394e1f85e2ab6366d95c99f03502dcffec7
-platforms/browser/zig/protocol.zig Rt.protocol.swap 82eb707da45d8580734012c614d773eef948d8d3acba4857958c9d7b561a96b5
-platforms/browser/zig/protocol.zig Rt.protocol.parentOf 10341d19936b8b6fe78e9db11ffe30d34ef52d780e9ae46117bbe3ce89ef95a9
-platforms/browser/zig/protocol.zig Rt.protocol.childMaybe 58a887ae547a48d2ce5575fb3b37f8dd206a4204a17ae21b32ae452b4681af23
-platforms/browser/zig/protocol.zig Rt.protocol.restate a1656b9af0f70a5b96d53c4676760ec80037ed4fb5dd1b759f1c24a1859b0ae0
-platforms/browser/zig/protocol.zig Rt.protocol.turn 65789c7fc54968723573662f1284a35dd4085ce9188c17e5f770fba065e2cd5c
-platforms/browser/zig/protocol.zig Rt.protocol.dead 0bef0a02ef10da005c0106faa4d9b56ec87b20e47a4f92cba6d926c8f9e126a0
-platforms/browser/zig/protocol.zig Rt.protocol.stop ef2b1f4a916ab2f0300621f1bce3e3c1dfd9e5d55b0567ee0879f12ef9deebca
-platforms/browser/zig/protocol.zig Rt.protocol.makeSite 4fc9f7123e64df1570105abbb3dcd87e9a50e26c127f5185b92f32959634c716
-platforms/browser/zig/protocol.zig Rt.protocol.siteScope 4b6944ed5f6969e5ef1dad6e850d41f53a22bb7e1bfc9ebe4f27508ee14b35c6
-platforms/browser/zig/protocol.zig Rt.protocol.setSiteScope 586f9c82bc1729cac026e6b465aa5df2d1afc3c91a322b8c0ad9246f6338fe9b
-platforms/browser/zig/protocol.zig Rt.protocol.siteData 9c7ee4b27c5df521a417cf888e0fe6e5a8367ed182797026275060c32b8bcac4
-platforms/browser/zig/protocol.zig Rt.protocol.siteHead 0dbf71ee2f1c93269f204179b81cd2201176598e2ba8347fb7bb1b71fcdc227d
-platforms/browser/zig/protocol.zig Rt.protocol.siteTail 13bfa3a555c409daab8b3a7a15b802e9ed491f690b4b7d6c1ca542c7efad7bbe
-platforms/browser/zig/protocol.zig Rt.protocol.siteRestate bc44f20d818021e90fba660441b2cd02e5fffb5873989e5e37f7466fb8dee165
-platforms/browser/zig/protocol.zig Rt.protocol.siteDispose b8596fea9ea8a8af85ad79298e9f7dfa1275d73e461da504f83a7644d9a31a72
+platforms/browser/zig/protocol.zig Rt.protocol e2f1a872a43aa53796bc6525d681b1209d0bd85034fec548a58f6156403702cc
+platforms/browser/zig/protocol.zig Rt.protocol.unit f965b9bce14b7b1cdf333a0b68b0bfba319dc4f552c47e2230439d389b27eeed
+platforms/browser/zig/protocol.zig Rt.protocol.patch cfffe3a92290df3639d864e4a61fb65edcb96bf54c6ad6c697b4615fbad25b20
+platforms/browser/zig/protocol.zig Rt.protocol.again 5911117208586b236ef2ed2265c9c9b0461979e17c679b4143e47b31aec60d4b
+platforms/browser/zig/protocol.zig Rt.protocol.live 8614b82cfec159a2811c0eae306f408a8fd0db8df2ee3175315ffcbde9462366
+platforms/browser/zig/protocol.zig Rt.protocol.eventPayload 2ce838fd2399d3a703874d62e6a73a7b7f0877058cfd6793f8bc8bd359b34fd8
+platforms/browser/zig/protocol.zig Rt.protocol.nodeContext 38af52800f408ff23a193c9a8735ce598a01321845044ef17d729ca03aca53ea
+platforms/browser/zig/protocol.zig Rt.protocol.contextPresent dfac10158298852fbc4b7cefa4db5c9d366cc38572a0c27c0a7e38d895d7122e
+platforms/browser/zig/protocol.zig Rt.protocol.contextParent 1e68726580be78f8e65604f9f473ef9595854e93e95d8a4ae877da007312a0af
+platforms/browser/zig/protocol.zig Rt.protocol.contextApply 09fdbb03fd1befd5bb7399cce0ca338498d90c5f4fdb970e02a1fc1a20b32568
+platforms/browser/zig/protocol.zig Rt.protocol.sendRoot f880f3100051a32df0a2ebe6a35c43c1ed0199aaf93e7e0ce37936a317626700
+platforms/browser/zig/protocol.zig Rt.protocol.controls 10b6f0f771139270fb3ab65f823b6671c4829dca22e3d6a6d9ae023da28e04f9
+platforms/browser/zig/protocol.zig Rt.protocol.setControls 71781e5ef217e299007f5c71c0ff60a292044a31f67399b646d23af7eb8141dc
+platforms/browser/zig/protocol.zig Rt.protocol.hasRoot f944d8c47fafd47d7bdc54da1c9ccef9827aa842103b02fc042f89d744c8a4f0
+platforms/browser/zig/protocol.zig Rt.protocol.hasHandler 67583f3a8ffa3ebb97cb11e83d02919847bc6457f990047322584b5e40cc6116
+platforms/browser/zig/protocol.zig Rt.protocol.handlerFlags 819303aaa44ae92bfe0b5d08c3f077833103512c2e048c3044baf17de8f42fd8
+platforms/browser/zig/protocol.zig Rt.protocol.first b1446ecda7f02ca8ac5cd50b62593a1fd5a0074c73f0554d360817427961aaf3
+platforms/browser/zig/protocol.zig Rt.protocol.last ee036bc409e2df6fd8494e0523e530fd2d6f7e4fa0e9e635df9d64998057c08d
+platforms/browser/zig/protocol.zig Rt.protocol.put f9daca3b0e72f8c7eb6f0aeebc797fe6852647b73fe34537f4f88b24b97ce524
+platforms/browser/zig/protocol.zig Rt.protocol.drop d3844eea1b8b34a51847c2738614a1f0e02b5861c9f9e5e15c620da1081d67ea
+platforms/browser/zig/protocol.zig Rt.protocol.swap 8b674265a15483689f22c52363d058b29e62fd87643cfe1f29cf7d0e8b0361d1
+platforms/browser/zig/protocol.zig Rt.protocol.parentOf 370925cb4a6aeb904facef711d72bf0ea2a1db674688c9139f29e4f7c26b76a2
+platforms/browser/zig/protocol.zig Rt.protocol.childMaybe 2157f1c4adfd1cee785adae64c176594716b3e71a48c05e09a60b19458307683
+platforms/browser/zig/protocol.zig Rt.protocol.restate f94a54d20262920514ee19cc275a59d701090da3e3777cbf177d70a117c8158b
+platforms/browser/zig/protocol.zig Rt.protocol.turn c7ae7c8cf20bd936333e972dcdf37bb50a3eceee7374548cf7d531fefdf5bffc
+platforms/browser/zig/protocol.zig Rt.protocol.dead 787ba80b03d131d61c1cc709b460d4df19c88d0572d5300f43a3c9df4386f4a5
+platforms/browser/zig/protocol.zig Rt.protocol.stop f9cc45edef073f606e96e2540bcdf1fe1181e834dfe1d88d5b15adf888626f20
+platforms/browser/zig/protocol.zig Rt.protocol.makeSite a5471f7422477faeb459ede0e6171a868ab951adaea49231372f8b8bbcb7fe1e
+platforms/browser/zig/protocol.zig Rt.protocol.siteScope 5570b42b00ac8fdc0b9a484736caa3df8a81dd6df32b3755652668fc960cf716
+platforms/browser/zig/protocol.zig Rt.protocol.setSiteScope 72ba703e3486c07499c4be0c7f3b93c5150110e4eb06dfad50571d2918ac0f00
+platforms/browser/zig/protocol.zig Rt.protocol.siteData 0067e8e2fbfa6eb18bfe87a6970b396af4d262846b9f2252adf0d36acaef8d7e
+platforms/browser/zig/protocol.zig Rt.protocol.siteHead 6ea2a939a4f0f614045fea9fbf3c2ad950254981a40ca634b8f6f85b2dc7ee7e
+platforms/browser/zig/protocol.zig Rt.protocol.siteTail b9152e01e0203ba71971e8af2731d7230ae09b28bfbe948f89b97b01f1fab3c6
+platforms/browser/zig/protocol.zig Rt.protocol.siteRestate c030e2f9d7dd5fe3fe90c5f0dfd71b86d1a5509939fd84f7a55a94e27ec1e6e3
+platforms/browser/zig/protocol.zig Rt.protocol.siteDispose 2872734e58a985431dc3f75c853f13a2384616109ae360ac412cefbf910ebb8e
 src/js/Lower.zig Browser.Host.Event.rendererEarlyListeners e086175c545298a8e070454b3eb67b5a16ed29e3977e3dcc57f2b07351edf25e intrinsic:core
 src/js/Lower.zig Browser.Host.Event.rendererEarlyAppend a16d1a2cdabadbc99c7bd7187574d79fbb10f5e9225078bbf36bfceb66045003 intrinsic:core
 src/js/Lower.zig Browser.Host.Event.rendererEarlySize 9ac38bad5c04077c3b5cad57a5a5b0c445470fc44def49ae8227187e148381a4 intrinsic:core
@@ -601,12 +601,12 @@ src/js/Lower.zig Browser.Host.Event.rendererEarlyRemember 213e17e5b2d6bc162e6fca
 src/js/Lower.zig Browser.Host.Event.rendererEarlyValue 5a9ae12a2d96b1d77d3d0072e3317a8486b5c49712077a74f48376a755d96c94 intrinsic:core
 src/js/Lower.zig Browser.Host.Event.rendererEarlyChecked eccaa9a377e18825644c83e3c24fac100b458854a6c3b6b733e425efa712a67f intrinsic:core
 src/js/Lower.zig Browser.Host.Event.rendererEarlySelectedIndex 18304e824bed47690e8bde891cf75851bb937e2fdf4169cc44dac6bd8e5d51b1 intrinsic:core
-src/js/Lower.zig Js.Array.arrayGet 96df2b006057d44fa3cf40847c0c44163e4655f56920c294bc5a2b087fa7a940 intrinsic:core
-src/js/Lower.zig Js.Array.arrayLength ee77092e58a9bfad284347485f87909ada3ed861001250cc482ddfae079411b9 intrinsic:core
-src/js/Lower.zig Js.Array.arrayWrite e7b920afaaf2dcfc064845893a3ef22e017db0049c3db2a42d7807c34bd8e2ce intrinsic:core
+src/js/Lower.zig Js.Array.arrayGet 807f7c10d0064774f585bc62a70d0f70089af91758488ec5917420629427b463 intrinsic:core
+src/js/Lower.zig Js.Array.arrayLength ea6c25b2a007bbb68ee2e9d6d12c98e1dde27c50f78e0a51797f90d9500cbb7b intrinsic:core
+src/js/Lower.zig Js.Array.arrayWrite e10332dfe74429330680ef5cd45f98582e1be1d7f8f4abe43a41c20739baae1c intrinsic:core
 src/js/Lower.zig Js.Kernel.slotPack fcc09c88fd5f8cbec6e39e5cdab6d891956a2e3d7a9c3fe5a723f359d5f75e47 intrinsic:core
 src/js/Lower.zig Js.Kernel.slotRead 7011cab5e184805594ac7a6d9fb250ead44d435b461915695abbebecd9de0caa intrinsic:core
-src/js/Lower.zig Js.Array.arraySort bc26928712f7e992651296148f15e448b4e96e38633ce64bc5b5067ed2a16aaf intrinsic:core
+src/js/Lower.zig Js.Array.arraySort 1dd930fdb922247eead78006921a38eabe9e51d4026344652c954fdebe4eacde intrinsic:core
 core/Browser/Host/Event.js Browser.Host.Event.host_dataOnly 0e46b7533b2260b62d2b689e1b83b35c9a2d915c6b991a061c7e1f54aecaca36
 src/js/NativeHost.zig Browser.Host.Event.host_dataOnly 1843a7df90e2f697d2699af712a0028858304af22a1ac5fef8199e9efac9eba0 intrinsic:core
 src/native/HostValues.zig Browser.Host.Event.host_dataOnly 142799b6f876dc2f60d3e67be181c1b54034065885d3f9e2cd7f4e88b626bb5d intrinsic:core
@@ -732,9 +732,9 @@ src/js/NativeHost.zig Browser.Host.Worker.host_post 070bffc527521144f1500f26739b
 src/native/HostValues.zig Browser.Host.Worker.host_post 367c23afae248fe26fe16828d1dde8de4672aa8195e3104970aa48652397b6b2 intrinsic:core
 src/js/Lower.zig Browser.Host.Worker.host_post 4981e868cbc52e6cd66342d49a215a8ed57cd17a4bf659efd1dff81f4ef0403f intrinsic:core
 core/Browser/Host/Map.js Browser.Host.Map.has d9305088c47c09911c441d2b80a4f79b5157e5e685d716049c4be2770ed7f44f
-src/js/Lower.zig Browser.Bridge.block aed070beae2ee5383ff39992aac5af469418a0f8dd5da88fe279a71f58e74672 intrinsic:platforms/browser
-src/js/Lower.zig Browser.Bridge.installRoot 74b63cb88438e084fb74e1cf903ac33ab81f7afedf881f07ee04ffb80a3da9dd intrinsic:platforms/browser
-src/js/Lower.zig Browser.Bridge.installFuzz b857424ddd6999e7695027b7c4c27d96cb77ea7f0261d0fda483d0e7c0a4c100 intrinsic:platforms/browser
+src/js/Lower.zig Browser.Bridge.block e298b2693da8f3c15101a323359ecdd9cee17dca740c374fca455181fa3b3836 intrinsic:platforms/browser
+src/js/Lower.zig Browser.Bridge.installRoot aa40c16f227d059608f4cdfbf741a379f1e309b87b3248825bfd7ceb50bbcd29 intrinsic:platforms/browser
+src/js/Lower.zig Browser.Bridge.installFuzz 290a6c37c0796bf11a4d5ac826fb2d18a0941ad0df1d72bace41a3ef506d3b7a intrinsic:platforms/browser
 platforms/browser/Rt.beni Rt.protocol 3af7118610bed77a9ac386375657bb116163fef858dcb29fbb2ec84b8d6a030a
 platforms/browser-inline/Browser.beni Browser.client 78fcdee76741fd51004c0854ab32c4901e6d7a69a0157fc1e903d4245b49b6d7
 platforms/browser-inline/Browser.beni Browser.tree f0481f60def63e12dcb7a0dd700eb5c27ce962c47e2e7893364ff8c285ee7d10
@@ -757,8 +757,14 @@ src/js/Lower.zig Browser.Host.Element.host_getAttribute b3f3b93cbcdb23380cd1eb9d
 src/js/Lower.zig Ssr.ssrText f0c5f20c8818cf4c513675390e1ef7a864eca262f1e212fdd6534fdb2ce280be intrinsic:platforms/node
 src/js/Lower.zig WebSocket.fromUpgrade 43d4671f99bc2ab9fa574639a6070dd80aade2d8b306e3ce7b7ca350a21f2f86 intrinsic:platforms/node
 platforms/node/WebSocket.js WebSocket.fromUpgrade 71430084848c07628c987b3fb976e75cdfd05f11acdeee4b5d969bc69a3ed3e0
+src/js/Lower.zig Browser.Bridge.chooseRoot 438fb6c7e0c982276b7d0b07da01bc1e300971ec09c1061b79a97dcc9419e1ac intrinsic:platforms/browser
+platforms/browser/zig/protocol.zig Rt.rootConnection 36f597b4749b0029042eb7c7a4264e1a5df3a803e87d3cb204e249943a512e0d
+platforms/browser/zig/protocol.zig Rt.rootConnection.createRoot fe92f06be4866e3fa56117bfa31ad207e315eb8f750a0dce32aebdb14b1adc81
+platforms/browser/zig/protocol.zig Rt.rootConnection.nodeRoot f985b0036bc4b436e7ceee6dcce94af85e78c2596b60ffff7fc476f72603bc9f
+platforms/browser/zig/protocol.zig Rt.rootConnection.patchRoot efdf09eda73a43ac83c05f248a9705d28379da61adabd68854bf3144543581b9
 
 src/js/Lower.zig Basics.appendTyped b9c0431a0adc2b40037e8d66eb4220e092422fd769f1689b6c77446d7d891cbd intrinsic:core
 core/Basics.beni Basics.plain 17d1ae60dfd79e606d8b8a985040cc57f1c77d6b59da629dbbcef98b766fdc0d
 
 tests/platforms/reply-scan-trie/Trie.js Trie.hasHeader 44f483d49e03ef06c8f950861b5387b2816489d1b3ff30363db6183d3d7a4d79
+platforms/browser/Browser.beni Browser.stored 9ea9bbd84d6c932a3e04f99e81226cfc4afd4f7082ef7db89bccab1d18c47c4e

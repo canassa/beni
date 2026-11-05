@@ -51,6 +51,7 @@ pub const lowering: m.Lowering = .{
     .operand_evidence = .{ .identity = true },
     .runtime = &(protocol.runtime ++ [_]m.RuntimeExport{
         .{ .name = "start", .arity = 1 },
+        .{ .name = "singleRootRenderer", .arity = 1 },
         .{ .name = "delegate", .arity = 1 },
         // `(html)` for a template with no flag, `(html, flags)` for one
         // with any (`backend.md` §15.3, amended 2026-10-15).
@@ -571,7 +572,7 @@ pub const Gen = struct {
         const kind = g.cx.hoisted(n.kind) orelse try g.hoistKind(&b, n);
         if (b.operands.items.len == 0) {
             const hoisted = g.cx.hoisted(n.block) orelse try g.cx.hoist(n.block, try g.jsb().object(&.{
-                .{ .key = "t", .value = try g.ident(kind) },
+                .{ .key = protocol.root_layout.kind, .value = try g.ident(kind) },
                 .{ .key = "v", .value = try g.nul() },
             }));
             return g.ident(hoisted);
@@ -579,7 +580,7 @@ pub const Gen = struct {
         const values = try g.a().alloc(m.Expr, b.operands.items.len);
         for (b.operands.items, values) |o, *v| v.* = try g.make(o);
         return g.jsb().object(&.{
-            .{ .key = "t", .value = try g.ident(kind) },
+            .{ .key = protocol.root_layout.kind, .value = try g.ident(kind) },
             .{ .key = "v", .value = try g.jsb().array(values) },
         });
     }
@@ -620,7 +621,7 @@ pub const Gen = struct {
         if (r.inputs.len == 0 and !g.direct) {
             if (g.cx.hoisted(n.block)) |h| return g.ident(h);
             return g.ident(try g.cx.hoist(n.block, try js.object(&.{
-                .{ .key = "t", .value = try g.ident(kind) },
+                .{ .key = protocol.root_layout.kind, .value = try g.ident(kind) },
                 .{ .key = "v", .value = try g.nul() },
             })));
         }
@@ -638,7 +639,7 @@ pub const Gen = struct {
             break :capture try g.cx.packet(try js.object(fields), try g.cx.tupleEvidence(identities, .identity));
         };
         return js.object(&.{
-            .{ .key = "t", .value = try g.ident(kind) },
+            .{ .key = protocol.root_layout.kind, .value = try g.ident(kind) },
             .{ .key = "v", .value = supplied },
         });
     }
@@ -1110,9 +1111,9 @@ pub const Gen = struct {
         try js.expression(mount.block, try js.call(try g.ident(p_name), &.{ try g.ident(inst), try g.ident(v) }));
         try js.@"return"(mount.block, try g.ident(inst));
         var props: std.ArrayList(m.Property) = .empty;
-        try props.append(a_, .{ .key = "m", .value = try js.arrow(&.{ v, cx }, mount.block) });
-        try props.append(a_, .{ .key = "p", .value = try g.ident(p_name) });
-        if (try g.liveOf(b, self, &patch, false) != null) try props.append(a_, .{ .key = "l", .value = try js.literal(.true) });
+        try props.append(a_, .{ .key = protocol.root_layout.mount, .value = try js.arrow(&.{ v, cx }, mount.block) });
+        try props.append(a_, .{ .key = protocol.root_layout.patch, .value = try g.ident(p_name) });
+        if (try g.liveOf(b, self, &patch, false) != null) try props.append(a_, .{ .key = protocol.root_layout.live, .value = try js.literal(.true) });
         return g.cx.hoist(n.kind, try js.object(props.items));
     }
 
@@ -1144,11 +1145,11 @@ pub const Gen = struct {
         try g.writeMarks(b, &patch, patch.block, null);
         try g.writeLive(b, &patch, self);
         var props: std.ArrayList(m.Property) = .empty;
-        try props.append(g.a(), .{ .key = "m", .value = try js.arrow(&.{ v, cx }, mount.block) });
-        try props.append(g.a(), .{ .key = "p", .value = try js.arrow(&.{ i, pv }, patch.block) });
+        try props.append(g.a(), .{ .key = protocol.root_layout.mount, .value = try js.arrow(&.{ v, cx }, mount.block) });
+        try props.append(g.a(), .{ .key = protocol.root_layout.patch, .value = try js.arrow(&.{ i, pv }, patch.block) });
         // `l`: an instance of the kind can be live, so a slot showing one
         // keeps whether it is (`Rt.held`).
-        if (try g.liveOf(b, self, &patch, false) != null) try props.append(g.a(), .{ .key = "l", .value = try js.literal(.true) });
+        if (try g.liveOf(b, self, &patch, false) != null) try props.append(g.a(), .{ .key = protocol.root_layout.live, .value = try js.literal(.true) });
         return g.cx.hoist(n.kind, try js.object(props.items));
     }
 
@@ -1264,8 +1265,8 @@ pub const Gen = struct {
                     try g.writeMarks(&b, &mount, mount.block, null);
                     try js.@"return"(mount.block, instance);
                 }
-                try props.append(a_, .{ .key = "m", .value = try js.arrow(&.{ item, key, position, cx }, mount.block), .source = true });
-                try props.append(a_, .{ .key = "p", .value = if (shared) |s| try g.ident(s.name) else p_arrow, .source = true });
+                try props.append(a_, .{ .key = protocol.root_layout.mount, .value = try js.arrow(&.{ item, key, position, cx }, mount.block), .source = true });
+                try props.append(a_, .{ .key = protocol.root_layout.patch, .value = if (shared) |s| try g.ident(s.name) else p_arrow, .source = true });
                 // How a live row a render skips is patched again (backend.md
                 // §15.4, as amended after the third review): by `p` with
                 // the item it shows when it has a value evaluated on every
@@ -1312,7 +1313,7 @@ pub const Gen = struct {
                 try js.assign(mount, try g.cell(try g.ident(inst), "kc"), try g.empty());
                 try js.assign(mount, try g.cell(try g.ident(inst), "kt"), try g.empty());
                 try js.@"return"(mount, try g.ident(inst));
-                try props.append(a_, .{ .key = "m", .value = try js.arrow(&.{ mitem, mkey, mposition, cx }, mount), .source = true });
+                try props.append(a_, .{ .key = protocol.root_layout.mount, .value = try js.arrow(&.{ mitem, mkey, mposition, cx }, mount), .source = true });
 
                 // A new instance when the block's kind changed: its row
                 // fields the list's to write but these (`Rt.Rows.patchRow`).
@@ -1327,7 +1328,7 @@ pub const Gen = struct {
                 try g.rowCellWrites(replaced, next, pitem, pposition);
                 try js.@"if"(patch, try js.binary(.strict_ne, try g.ident(next), try g.ident(pi)), replaced, null);
                 try js.@"return"(patch, try g.ident(next));
-                try props.append(a_, .{ .key = "p", .value = try js.arrow(&.{ pi, pitem, pposition }, patch), .source = true });
+                try props.append(a_, .{ .key = protocol.root_layout.patch, .value = try js.arrow(&.{ pi, pitem, pposition }, patch), .source = true });
                 live = true;
                 restate = try g.hoistedArrow("domAgainRow", 1, struct {
                     fn write(gen: *Gen, into: m.Block, params: []const m.Name) m.Error!void {
@@ -1362,7 +1363,7 @@ pub const Gen = struct {
         }.write), .source = true });
         try props.append(a_, .{ .key = "o", .value = try js.literal(if (f.item_is_primitive) .true else .false), .source = true });
         try props.append(a_, .{ .key = "i", .value = try js.literal(if (row.arity == 2) .true else .false), .source = true });
-        try props.append(a_, .{ .key = "l", .value = try js.literal(if (live) .true else .false), .source = true });
+        try props.append(a_, .{ .key = protocol.root_layout.live, .value = try js.literal(if (live) .true else .false), .source = true });
         try props.append(a_, .{ .key = "e", .value = try js.literal(if (every) .true else .false), .source = true });
         try props.append(a_, .{ .key = "f", .value = if (f.fallback) |fb| try g.cx.value(fb) else try g.empty(), .source = true });
         try props.append(a_, .{ .key = "j", .value = if (row.identity_key) |id| try g.cx.value(id) else try g.empty(), .source = true });
@@ -2213,9 +2214,9 @@ pub const Gen = struct {
             .slot => |k| .{ try g.empty(), try g.ident(f.slots[k].?) },
         };
         // The instance prefix (`Runtime.InstanceFields`).
-        try props.append(a_, .{ .key = "s", .value = first, .source = true });
-        try props.append(a_, .{ .key = "q", .value = q, .source = true });
-        try props.append(a_, .{ .key = "e", .value = try g.ident(f.walks[b.last].?), .source = true });
+        try props.append(a_, .{ .key = protocol.root_layout.start, .value = first, .source = true });
+        try props.append(a_, .{ .key = protocol.root_layout.range, .value = q, .source = true });
+        try props.append(a_, .{ .key = protocol.root_layout.end, .value = try g.ident(f.walks[b.last].?), .source = true });
         // A row's cell (`Runtime.RowFields`): its item — `undefined` until
         // a row that mounts through its patch has been patched, so `p`'s
         // test of the item holds — position and key, and links none yet.

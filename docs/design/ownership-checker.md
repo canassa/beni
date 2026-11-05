@@ -4586,6 +4586,54 @@ bodies, including generated siblings and recipe lowering. The bridge is owned
 by the embedded inline layer and cannot be acquired by naming a foreign module
 Inline.Bridge. The tests pin both its owner fence and its native mutation.
 
+**DOM root plan (2026-11-05, Part of #1861).** Boundary.md §9 and backend.md
+§15 own selection and proof. No ownership rule or writer exemption changes.
+
+| Declaration | Words and body rationale | Misuse check |
+|---|---|---|
+| Browser.Bridge.chooseRoot | unused sync view is proof input, never invoked or retained at runtime; once aliased sync factory is invoked once only on a successful proof and may return aliases of its captures; aliased general job is returned unchanged otherwise; result unknown conservatively carries either job's aliases. Impure: factory effects are retained, never assumed allocation-only. | Shared owner fences refuse app/foreign-platform access; callback-word and returned-job alias witnesses exercise the words. |
+| Rt.rootConnection.createRoot | aliased escaped Block; fresh Instance: the existing unit opens its paired kind/payload, mounts at empty context and retains kind and latest Block metadata. | Same fresh-allocation contract as protocol.unit; only the producer creates the Instance. |
+| Rt.rootConnection.nodeRoot | aliased Instance returns an alias of its proven concrete native start node; pure field projection, no allocation or write. | Single-node proof is required; ranges, mapped/deferred and non-empty-fragment roots retain the general renderer. |
+| Rt.rootConnection.patchRoot | aliased Instance, aliased escaped Block; pinned write invokes the paired patch and replaces latest Block metadata, returning unit. | Same-kind proof covers every future paint; conditional/unstable/escaped roots retain the general renderer. |
+
+The supplied connection's reserved `$rootLayout` metadata is a fresh literal
+array of producer layout strings, not an erased user value. Its construction
+adds allocation only to the existing impure supplied value; no operation gains
+weaker words. The actual producer emission and facts share the same constants,
+covered by the protocol body pin. No public field or writer exemption is added.
+
+Browser.host and Browser.stored are additionally pinned for a platform storage
+invariant, not a compiler-proven provenance result (backend.md §15.10).
+`shown` starts at Nothing; the two later writes store Just (p.view model) from
+the same immutable captured p. Restate only reads; failed init/settle/view
+argument evaluation cannot install a fallback. The cell is not passed to user
+callbacks or stored in user state. Its only helper, stored, unwraps or defects
+without retaining or exposing the cell. The private view closure captures
+it directly. Host operations may invoke that closure indirectly, but their
+opaque environments expose no projection of the cell. Successful reads therefore
+return results covered by that view's every-model
+same-kind proof. These body guards add no ownership word or exemption.
+
+The root connection is one private supplied value of the owning DOM runtime;
+Html.Runtime 1.30 is unchanged. Its Source renderer is fenced to core and the
+same platform layer. The new spans and the existing shared spans are pinned to
+the actual producer/compiler bodies. Browser.program and Browser.hosted retain their entry model/update/view contracts:
+the selector runs inside their mount job, selecting the supplied renderer factory
+or returning the general renderer job unchanged, and the proof view is unused at runtime.
+The existing entry words and public pure effects are unchanged. Existing protocol helper bodies are
+unchanged: their shared span now also contains the root-connection dispatch and
+helpers. Existing block/installRoot/installFuzz cases are likewise unchanged;
+their shared span now includes chooseRoot and its eager-argument bindings.
+Those bindings retain each original argument's effect before either branch is
+selected: unused proof/factory/general values never erase their construction
+effects. List.base/offset, List.builder and Js.Array.arrayAllocate emit the same
+JavaScript; their pin changes add only compiler analysis metadata to those
+existing typed readers and fresh native-array allocations. The unchanged
+cell/Opt helpers and listPrimitives also have shared spans containing that
+metadata or the new bridge case; their existing bodies and ownership behavior
+are unchanged. These facts re-justify the existing words rather
+than treating a moved hash as a new proof.
+
 **Browser boot bridge (2026-11-04, Part of #1807).** The three compiler-owned
 Browser.Bridge operations have no Js.Value path and are separate from frozen
 Html.Runtime 1.30. Their words are derived from the pinned Lower bodies:

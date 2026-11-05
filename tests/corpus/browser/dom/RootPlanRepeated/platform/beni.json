@@ -1,0 +1,1 @@
+{ "platform": true, "name": "root-plan-clock", "platforms": ["browser"], "reexports": ["Html", "Browser", "Rt"] }

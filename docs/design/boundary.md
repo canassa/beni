@@ -3433,6 +3433,77 @@ word must be caught by misuse fixtures; unknown callback effects remain refused.
 Html.Runtime's frozen 1.30 API and source SHA are unchanged by this bridge.
 *Amended 2026-11-05 (Part of #1807):* both bridge owners are identified by the compiled-in registered markup lowering (dom or inline) and its layer's runtime module, whether embedded or directory-loaded, and recognition and access retain samePlatformLayer; a matching module spelling or a different registered lowering grants no bridge ownership. The inline marker reads and marks the existing `$$root` property, so a host-premarked root is recognised before mounting.
 
+**Compiler-proven DOM root connection** *(specified 2026-11-05, Part of
+#1861).* Subject to backend.md §15's whole-view and normalized-shape proof, the
+owning DOM producer may supply a private typed connection with these operations:
+
+| Operation | Typed connection | Effects and ownership of the actual operation |
+|---|---|---|
+| Create | `Block → Instance` | Impure; calls the paired kind's mount with the existing empty context, retains the Block and its kind, returns a fresh Instance. The Block is aliased and escaped. |
+| Node | `Instance → Browser.Host.Node.Node` | Pure projection of the proven single-node boundary; returns an alias of the Instance's node, grants no fresh ownership and performs no write. |
+| Patch | `Instance, Block → ⊤` | Impure pinned write of the Instance through its existing paired kind's patch; retains the latest Block as metadata. The Instance is aliased and the Block is aliased and escaped. No replacement or range movement is performed. |
+
+These are producer operations on the existing Block, Instance and native Node,
+not a new representation. The producer preserves mount/patch callback effects;
+no callback may suspend through this synchronous connection. Node requires the
+producer's normalized single-node proof; Patch also requires the same-kind proof
+across all paints. Neither fact may be assumed from a source function name, an
+initial model or a runtime tag test. Only the producer opens the existential
+pair, as for the existing unit/patch protocol; beni source keeps typed storage
+throughout. The operations and their compiler bodies receive the same ownership
+word checks and body pins as other private producer operations. No permission
+to bypass a uniqueness check is introduced.
+
+*Amended 2026-11-05 (Part of #1861, review):* the supplied connection also
+carries reserved native compiler metadata `$rootLayout`: a literal string array
+ordered by kind, mount, patch, start, end, range and live. These are the exact
+layout constants used by the producer bodies. The emitter reads the facts rather
+than guessing producer field names; absent or computed facts decline the plan.
+This metadata adds no Beni record field or operation and contains no user value.
+Its reserved native key cannot pin a Beni source field's spelling. It is unread
+at runtime and eliminated from emitted application code. Html.Runtime is unchanged.
+
+The connection is usable only by core and the owning DOM platform layer, with
+samePlatformLayer ownership as the bridge above; applications and other platform
+layers cannot obtain it through imports, aliases or dispatch. It adds no field,
+type or operation to Html.Runtime 1.30. The compiler removes the unused choice
+before emission: an unproved view retains its existing renderer byte for byte,
+with no allocation, shape test or wrapper for a plan it cannot use. Inline
+lowering is unaffected. Backend.md §15 owns the proof and lifecycle requirements.
+
+**Root selection** *(amended 2026-11-05, Part of #1861).* The fourth private
+bridge operation is `chooseRoot`, with this schematic typed signature (`job` is
+an ordinary type parameter, not an erased value):
+
+```beni
+chooseRoot :
+    unused sync (model → Html.Html msg),
+    once aliased sync ((Browser.Host.Node.Node → (Html.Runtime.Block → ⊤)) → job),
+    aliased job → unknown job
+```
+
+The first argument is proof input only and is never called. A complete successful
+proof invokes the factory exactly once with the typed single-root renderer;
+otherwise the general job is returned unchanged and the factory is not called.
+The factory is aliased because its returned job may retain aliases of its
+captures, as for Task.timeout; once limits invocation rather than promising a
+fresh callback result. The operation is impure: calling the factory retains its actual effects, and it
+is never classified as allocation-only. Argument expressions keep their ordinary
+evaluation order. Unused factory allocations and proof plumbing disappear before
+emission, including development builds and incomplete proofs. Recognition and
+access use the shared bridge-owner rule, with application and foreign-platform
+refusal fixtures and a pinned compiler body with honest ownership words.
+
+Selection must establish all view returns and helper returns, the immutable kind
+and the producer's normalized single-node mount. Escaped, mutable or unknown
+provenance rejects; a literal kind recorded before escape cannot justify a Block
+whose kind could subsequently change. Conditional distinct kinds, mapped,
+deferred, non-empty fragment, escaped-view and unstable-root cases keep the exact
+existing general job, byte for byte. Each mounted root is selected independently.
+The normalized empty fragment qualifies as one comment node. No runtime shape
+test, public API, erasure, frozen-runtime amendment or special case by source
+declaration name is licensed by this operation.
+
 **Bridge owner priority (2026-11-05, Part of #1807).** When the chain includes
 an embedded platform with the registered lowering, its own runtime layer keeps
 bridge ownership ahead of a user layer declaring that lowering. A user layer's

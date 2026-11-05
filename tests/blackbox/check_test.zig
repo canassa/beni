@@ -2403,3 +2403,7 @@ test "ownership words: kernel result slot grants no freshness" {
 test "ownership words: typed browser bridge preserves aliases and escaped callbacks" {
     try expectFlips("ownership/core/BrowserBridgeWords.beni", &.{ "--core", "--platform=browser" });
 }
+
+test "ownership words: flipping chooseRoot's proof, factory and general-job words is noticed" {
+    try expectFlips("ownership/core/ChooseRootWords.beni", &.{ "--core", "--platform=browser" });
+}

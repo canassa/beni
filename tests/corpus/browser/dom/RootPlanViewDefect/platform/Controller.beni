@@ -1,0 +1,2 @@
+-- Test driver: deliver the existing root message on the virtual clock.
+pub foreign impure schedule : ⊤ → ⊤

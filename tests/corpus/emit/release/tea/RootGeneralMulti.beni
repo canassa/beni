@@ -1,0 +1,16 @@
+import Browser
+import Html exposing (Html)
+
+
+view : {} → Html {}
+view _ = <></>
+
+
+main : Browser.Program
+main =
+    Browser.programs
+        [ Browser.program { init = λ⊤ → {}, update = λ_ m → m, view = λ_ → <div id="second" /> }
+        , Browser.mountAt
+            (Browser.program { init = λ⊤ → {}, update = λ_ m → m, view = view })
+            "second"
+        ]

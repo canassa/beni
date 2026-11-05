@@ -12558,11 +12558,14 @@ pub const Lowerer = struct {
                 const n = try l.bindSubject(out, values[0], p);
                 const size = try l.condOf(try l.binary(.gt, n, try l.intNode(0, p), p), n, try l.intNode(0, p), p);
                 const range = try l.b.addRange(&.{size});
-                return l.add(.new_call, p, ctor.int(), @backingInt(try l.b.addRecord(range)));
+                const allocated = try l.add(.new_call, p, ctor.int(), @backingInt(try l.b.addRecord(range)));
+                l.b.nodes.items(.flags)[allocated.int()].array_model = .allocate;
+                return allocated;
             },
             .arraySet => {
                 const builder = try l.bindSubject(out, values[0], p);
                 const slot = try l.add(.index_get, p, builder.int(), values[1].int());
+
                 try out.append(l.scratch, try l.add(.assign_stmt, p, slot.int(), values[2].int()));
                 return builder;
             },
@@ -12570,6 +12573,7 @@ pub const Lowerer = struct {
             .arrayLength => return l.member(values[0], try l.interner.getOrPut(l.gpa, "length"), p),
             .arrayWrite => {
                 const slot = try l.add(.index_get, p, values[0].int(), values[1].int());
+
                 try out.append(l.scratch, try l.add(.assign_stmt, p, slot.int(), values[2].int()));
                 return l.nullNode(p);
             },
@@ -12638,8 +12642,36 @@ pub const Lowerer = struct {
     // ownership pin begin: block
     // ownership pin begin: installRoot
     // ownership pin begin: installFuzz
+    // ownership pin begin: chooseRoot
+    fn browserChooseRootCall(l: *Lowerer, out: *StmtList, args: []const Inst.Index, p: u32) !Node.Index {
+        const values = try l.orderedExprs(out, args, false);
+        // The choice may erase a value, never the work that made an eager
+        // argument. Preserve the source effect on every binding we introduce.
+        for (values, args) |*value, arg| {
+            if (l.isAtom(value.*) or l.b.tagOf(value.*) == .arrow) continue;
+            const n = try l.fresh(l.well.temp);
+            try l.constDecl(out, n, value.*, p);
+            if (l.mayHaveEffect(arg)) try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
+            value.* = try l.ident(n, p);
+        }
+        return l.browserBridgeOperation(out, .browserChooseRoot, values, p);
+    }
+
     fn browserBridgeOperation(l: *Lowerer, out: *StmtList, which: JsIntrinsic.Which, values: []const Node.Index, p: u32) Allocator.Error!Node.Index {
         switch (which) {
+            .browserChooseRoot => {
+                // Preserve argument evaluation before the compile-time choice.
+                const view = try l.bindSubject(out, values[0], p);
+                const factory = if (l.b.tagOf(values[1]) == .arrow) values[1] else try l.bindSubject(out, values[1], p);
+                const general = if (l.b.tagOf(values[2]) == .arrow) values[2] else try l.bindSubject(out, values[2], p);
+                if (if (l.in.markup) |mk| !mk.build.release or mk.build.library else true) return general;
+                const renderer = try l.suppliedName("singleRootRenderer") orelse return general;
+                const planned = try l.call(factory, &.{try l.ident(renderer, p)}, p);
+                // A typed view is a function: an unresolved choice stays general.
+                const marker = try l.condOf(view, general, planned, p);
+                l.b.nodes.items(.flags)[marker.int()].root_choice = true;
+                return marker;
+            },
             .browserBlock => return values[0],
             .browserInstallRoot => {
                 const target = try l.member(values[0], try l.interner.getOrPut(l.gpa, "$$root"), p);
@@ -12655,6 +12687,7 @@ pub const Lowerer = struct {
         }
         return l.nullNode(p);
     }
+    // ownership pin end: chooseRoot
     // ownership pin end: installFuzz
     // ownership pin end: installRoot
     // ownership pin end: block
@@ -12691,7 +12724,7 @@ pub const Lowerer = struct {
     fn jsTypedValue(l: *Lowerer, which: JsIntrinsic.Which, p: u32) !Node.Index {
         if (which == .appendTyped) return l.appendTypedArrow(p);
         const arity: usize = switch (which) {
-            .nodeUpgrade, .optMatch, .arraySet, .arrayWrite => 3,
+            .nodeUpgrade, .browserChooseRoot, .optMatch, .arraySet, .arrayWrite => 3,
             .browserInstallRoot, .any_unpack_opt, .schemaIdentity, .optWithDefault, .arrayDone, .arrayGet, .arraySort => 2,
             else => 1,
         };
@@ -12713,7 +12746,7 @@ pub const Lowerer = struct {
             try body.append(l.scratch, try l.returnStmt(result_, p));
             return l.arrowOf(names[0..arity], body.items, p);
         }
-        if (which == .browserBlock or which == .browserInstallRoot or which == .browserInstallFuzz) {
+        if (which == .browserBlock or which == .browserInstallRoot or which == .browserInstallFuzz or which == .browserChooseRoot) {
             var body: StmtList = .empty;
             const result_ = try l.browserBridgeOperation(&body, which, values[0..arity], p);
             try body.append(l.scratch, try l.returnStmt(result_, p));
@@ -12813,6 +12846,7 @@ pub const Lowerer = struct {
 
     fn jsIntrinsicCall(l: *Lowerer, out: *StmtList, which: JsIntrinsic.Which, args: []const Inst.Index, intrinsic: Inst.Index, p: u32) !Node.Index {
         const W = JsIntrinsic.Which;
+        if (which == .browserChooseRoot) return l.browserChooseRootCall(out, args, p);
         // A `Js.Ref` written as a `let` (§4, *A `Js.Ref` that does not
         // escape is a `let`*): a read is its name, a write assigns it. The
         // name is not an atom, so whatever holds a read pins it before a
@@ -12920,7 +12954,7 @@ pub const Lowerer = struct {
             W.ssrText => l.ssrText(v[0], p),
             W.nodeUpgrade => unreachable,
             W.inlineMarkRoot => l.inlineMarkRoot(out, v[0], p),
-            W.browserBlock, W.browserInstallRoot, W.browserInstallFuzz => l.browserBridgeOperation(out, which, v, p),
+            W.browserBlock, W.browserInstallRoot, W.browserInstallFuzz, W.browserChooseRoot => l.browserBridgeOperation(out, which, v, p),
             W.from, W.to => v[0],
             W.invoke => l.hostCall(v[0], &.{v[1]}, p),
             W.same => l.binary(.strict_eq, v[0], v[1], p),
@@ -13333,6 +13367,7 @@ pub const Lowerer = struct {
                     builder = try l.ident(n, p);
                 }
                 const slot = try l.add(.index_get, p, builder.int(), v[1].int());
+
                 try out.append(l.scratch, try l.add(.assign_stmt, p, slot.int(), v[2].int()));
                 break :blk builder;
             },
@@ -13343,7 +13378,9 @@ pub const Lowerer = struct {
                 const n = try l.bindSubject(out, v[0], p);
                 const size = try l.condOf(try l.binary(.gt, n, try zero.node(l, p), p), n, try zero.node(l, p), p);
                 const range = try l.b.addRange(&.{size});
-                break :blk l.add(.new_call, p, array.int(), @backingInt(try l.b.addRecord(range)));
+                const allocated = try l.add(.new_call, p, array.int(), @backingInt(try l.b.addRecord(range)));
+                l.b.nodes.items(.flags)[allocated.int()].array_model = .allocate;
+                break :blk allocated;
             },
             // ownership pin end: builder
             // ownership pin begin: done
@@ -13367,7 +13404,9 @@ pub const Lowerer = struct {
                     try l.hostCall(try l.member(xs, try l.interner.getOrPut(l.gpa, "$plain"), p), &.{}, p)
                 else
                     try zero.node(l, p);
-                break :blk l.condOf(plain, if (which == .list_base) xs else try zero.node(l, p), try l.condOf(tree, unpacked, ordinary, p), p);
+                const reader = try l.condOf(plain, if (which == .list_base) xs else try zero.node(l, p), try l.condOf(tree, unpacked, ordinary, p), p);
+                l.b.nodes.items(.flags)[reader.int()].array_model = if (which == .list_base) .base else .offset;
+                break :blk reader;
             },
             // ownership pin end: offset
             // ownership pin end: base
@@ -13377,6 +13416,7 @@ pub const Lowerer = struct {
             // ownership pin begin: writeArray
             .list_writeArray => blk: {
                 const slot = try l.add(.index_get, p, v[0].int(), v[1].int());
+
                 try out.append(l.scratch, try l.add(.assign_stmt, p, slot.int(), v[2].int()));
                 break :blk l.nullNode(p);
             },
@@ -21009,7 +21049,12 @@ pub const Lowerer = struct {
             error.OutOfMemory => return error.OutOfMemory,
             error.Reported => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
         };
-        return @fromBackingInt(@intCast(@backingInt(result)));
+        const lowered: Node.Index = @fromBackingInt(@intCast(@backingInt(result)));
+        l.b.nodes.items(.flags)[lowered.int()].root_block = true;
+        const eligible_origin = st.built.tree.kind(root.node) == .element or
+            (st.built.tree.kind(root.node) == .fragment and st.built.tree.childrenOf(st.built.tree.fragment(root.node).children).len == 0);
+        if (!eligible_origin) l.b.nodes.items(.flags)[lowered.int()].root_range = true;
+        return lowered;
     }
 
     /// Whether root `index`'s values are left to the lowering (`cx.grouped`,
