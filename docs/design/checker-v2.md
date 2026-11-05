@@ -5227,8 +5227,9 @@ printed before the platform's own `unbound_variable`. With no row to fall to, it
 Nothing reaches the backend: a refused row is an error the vocabulary module reported, so a build
 that holds one stops before it lowers, and a module that uses one has `dependency_errors` (its
 vocabulary module is a direct import, `frontend.md` §9.8). `tests/corpus/build/bad/VocabRefusedRow/`
-holds the five kinds of refusal, each used from `Main.beni` and once from the vocabulary module's
-own markup.
+holds six refused rows — an element, an event, an attribute, a pattern, a tie of two attributes and
+a tie of an attribute and an event — each used from `Main.beni`, and one used from the vocabulary
+module's own markup.
 
 **In every platform package of the chain**, a `foreign` value whose declared type mentions the
 markup type (after aliases) is **`markup_type_in_foreign`** unless the package's own manifest names a

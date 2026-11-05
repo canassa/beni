@@ -128,6 +128,13 @@ pub fn build(
                 at += 1;
                 break :blk d orelse continue;
             } else null;
+            // In the vocabulary module itself, the failure bits as
+            // `Vocab.check` left them. A bit set later — `sync_boundary` at
+            // an event whose extractor may suspend, once the effects are
+            // inferred — refuses the row at publication only, the one way
+            // the two views differ. The module reports that error, so its
+            // own markup section is never written and no importer reads this
+            // view's verdict; the indices agree either way.
             const refused = if (decl) |d| d.int() < failed.bit_length and failed.isSet(d.int()) else r.refused();
             const name = iface.symbol(r.name);
             const text = cx.interner.slice(name);

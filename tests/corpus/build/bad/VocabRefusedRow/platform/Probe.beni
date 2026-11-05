@@ -1,8 +1,9 @@
---! A vocabulary with five rows the checker refuses (checker-v2.md §25.2):
+--! A vocabulary with six rows the checker refuses (checker-v2.md §25.2):
 --! an element with a fact written twice, an event whose `via` names
 --! nothing, an attribute and a pattern whose value type no lowering writes,
---! and a second `label` that ties with the first. Each refusal is this
---! module's diagnostic, and the only one a use of the name meets.
+--! a second `label` that ties with the first, and an event `title` that
+--! ties with the attribute `title`. Each refusal is this module's
+--! diagnostic, and the only one a use of the name meets.
 
 import Html exposing (Html)
 
@@ -44,6 +45,12 @@ pub attribute "label" : String
 
 
 pub attribute "label" : Int
+
+
+pub attribute "title" : String
+
+
+pub event "title" name "title" : Event
 
 
 --| This module's own markup, against its own refused row.

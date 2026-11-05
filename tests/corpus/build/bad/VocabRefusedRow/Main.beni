@@ -3,9 +3,9 @@
 -- resolves to it and is silent. The platform's own diagnostics are the
 -- whole list. With the compiler before, the refused rows were left out:
 -- `onProbe`, `count` and `data-row` fell through to `pub attribute "*" :
--- String` (`type_mismatch` at each), `label` resolved to the first
--- `label` (`type_mismatch`), and `<dialog>` was `unknown_element`, all
--- printed before the platform's errors.
+-- String` (`type_mismatch` at each), `label` and `title` resolved to the
+-- first row of the tie (`type_mismatch`), and `<dialog>` was
+-- `unknown_element`, all printed before the platform's errors.
 import Browser
 import Html exposing (Html)
 import Probe
@@ -15,7 +15,7 @@ view : String → Html String
 view text =
     <main>
         <button id="box" onProbe={λvalue → value}>send</button>
-        <p count={5} label={5} data-row={5}>{text}</p>
+        <p count={5} label={5} data-row={5} title={5}>{text}</p>
         <dialog>closed</dialog>
         {Probe.badge}
     </main>
