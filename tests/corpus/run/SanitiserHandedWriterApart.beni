@@ -1,0 +1,35 @@
+-- A callee that hands a function to its caller's callback, where nothing is
+-- edited through a writer that escapes (`ownership-v2.md` §2.11.3, *a
+-- function value goes where a value goes*): a reader, a core writer handed as
+-- a value, which writes nothing in place (§2.11.5), and a callee that runs
+-- its own writer on a fresh list before it calls back.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+withLength : ((List Int → Int) → r) → r
+withLength use = use λv → List.length v
+
+
+withPop : ((List Int → List Int) → r) → r
+withPop use = use List.pop
+
+
+withPushed : (List Int → r) → r
+withPushed use =
+    push = λv → List.push v 5
+    use (push [ 1 ])
+
+
+main : Program
+main =
+    n = withLength λp → p [ 1, 2 ]
+    m = [ 3, 4 ]
+    a = withPop λp → p m
+    b = withPushed λl → List.push l 6
+    Node.printLines [ String.fromInt n, show a, show m, show b ]

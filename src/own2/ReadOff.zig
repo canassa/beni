@@ -823,6 +823,7 @@ fn escapeFacts(e: *Evaluation, leaf: u32) Error!void {
 /// its key's), said at `q` (`none`: not kept), noted for a later escape (§2.10).
 fn hosted(s: *Sink, li: u32, q: u32, wide: bool, out: Put.ResList) Error!bool {
     const e = s.e;
+    try Put.handed(s, li, out);
     if (!Host.own(e.fr(), li) or e.ev.expandable(e.fr().leafAt(li))) return false;
     try s.host.tell(e.gpa(), .{ .leaf = li, .q = q, .label = out.label, .k = out.k, .wide = wide, .built = s.building.items.len != 0 or q == none });
     _ = try s.host.sync(&e.ev, e.escapes.items);
