@@ -1,6 +1,12 @@
 # Native host operations
 
 The `Browser.Host` modules expose opaque native types and typed operations.
+HostFree is checked by default on every platform, with no opt-out. Js.Value
+contains plain data: Js.from and Js.to refuse native handles or callbacks,
+including values nested in records, lists and tagged payloads. Keep such values
+in typed containers and pass them to typed host operations. Generic helpers
+retain the same obligation through imports and caches.
+
 A native object has its host representation. `Element.toNode` is an explicit
 identity upcast. There is no implicit native subtyping.
 

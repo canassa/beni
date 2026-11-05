@@ -209,7 +209,6 @@ pub const Input = struct {
     /// Whether to make the keys: an app module (§36). The crossing bits are
     /// made for every module.
     keyed: bool,
-    host_free: bool = false,
     report: ?*@import("Report.zig") = null,
     host_free_uses: []const Instantiate.CrossingUse = &.{},
 };
@@ -459,17 +458,13 @@ pub fn build(in: Input) Error!Output {
         artifact.args = try in.gpa.dupe(TypeKey, b.args.items);
         artifact.labels = try in.gpa.dupe(InternPool.Symbol, b.labels.items);
     }
-    var host_free: []const bool = &.{};
-    if (in.host_free) {
-        var host_input = in;
-        host_input.keyed = false;
-        host_input.uses = in.host_free_uses;
-        var host: Crossing = .{ .in = host_input, .b = &b, .checking_host_free = true };
-        defer host.deinit();
-        try host.run();
-        host_free = host.crossing;
-    }
-    return .{ .artifact = artifact, .crossing = c.crossing, .host_free = host_free };
+    var host_input = in;
+    host_input.keyed = false;
+    host_input.uses = in.host_free_uses;
+    var host: Crossing = .{ .in = host_input, .b = &b, .checking_host_free = true };
+    defer host.deinit();
+    try host.run();
+    return .{ .artifact = artifact, .crossing = c.crossing, .host_free = host.crossing };
 }
 
 /// The instructions that make a value with an identity of its own, by tag;

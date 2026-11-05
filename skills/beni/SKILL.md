@@ -87,7 +87,9 @@ Build and run: `beni new <dir>` writes a project; `beni build` compiles it to `o
 runs a `node` program; `beni serve` serves a page with live reload.
 
 ## References
-Native host types and realm diagnostics: `references/native-host.md`.
+Native host types and realm diagnostics: `references/native-host.md`. HostFree
+is on by default everywhere: Js.Value holds plain data, never erased native
+handles or callbacks. Keep those values typed; there is no opt-out.
 
 
 Open the file that your task needs. Each is short.

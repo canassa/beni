@@ -1,4 +1,4 @@
-//! Structural HostFree facts, computed only under the internal rollout option.
+//! Structural HostFree facts, computed for every checked module.
 //! Nominal representations use monotone summaries of held parameters and two
 //! flags. Recursive types never expand into an unbounded family of applications.
 const std = @import("std");
@@ -279,7 +279,7 @@ fn plainForeign(cx: Environment, entry: Types.Entry) bool {
     if (std.mem.eql(u8, module, "Js")) return std.mem.eql(u8, name, "Value") or std.mem.eql(u8, name, "Ref") or std.mem.eql(u8, name, "Cell") or std.mem.eql(u8, name, "Opt");
     return false;
 }
-test "HostFree internal rollout retains imported generic obligations and rejects opaque native and callback payloads" {
+test "HostFree retains imported generic obligations and rejects opaque native and callback payloads" {
     const TestProject = @import("../resolve/TestProject.zig");
     const Session = @import("../Session.zig");
     const testing = std.testing;
@@ -305,7 +305,7 @@ test "HostFree internal rollout retains imported generic obligations and rejects
         const text = try std.fmt.allocPrintSentinel(testing.allocator, "import Browser.Host.Element as Element\nimport Js\nimport Library\n{s}", .{scenario.body}, 0);
         defer testing.allocator.free(text);
         try modules.append(testing.allocator, .{ .path = "M.beni", .package = .core, .source = text });
-        var p = try TestProject.initWith(testing.allocator, modules.items, .{ .phases = Session.check_phases, .host_free = true });
+        var p = try TestProject.initWith(testing.allocator, modules.items, .{ .phases = Session.check_phases });
         defer p.deinit();
         var found = false;
         for (p.session.diagnostics.items) |item| if (item.code == .host_value_erasure) {
@@ -343,7 +343,7 @@ test "HostFree renderer storage retains imported erasure obligations in platform
         const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, file.file, a, .limited(64 * 1024));
         try modules.append(testing.allocator, .{ .path = file.path, .package = file.package, .source = try std.fmt.allocPrintSentinel(a, "{s}", .{source}, 0) });
     }
-    var p = try TestProject.initWith(testing.allocator, modules.items, .{ .phases = Session.check_phases, .host_free = true });
+    var p = try TestProject.initWith(testing.allocator, modules.items, .{ .phases = Session.check_phases });
     defer p.deinit();
     var refusals: usize = 0;
     for (p.session.diagnostics.items) |item| if (item.code == .host_value_erasure) {
@@ -390,7 +390,7 @@ fn privateDomProtocolCarriers(nested: bool) !void {
         const payload = if (nested) "[ { payload = value } ]" else "value";
         const code = try std.fmt.allocPrintSentinel(a, "import Html.Runtime as Runtime\nimport Js\nimport Library\npub bad : Runtime.{s} → Js.Value\nbad value = Library.erase {s}\n", .{ carrier, payload }, 0);
         try modules.append(testing.allocator, .{ .path = "M.beni", .package = .platform, .source = code });
-        var project = try TestProject.initWith(testing.allocator, modules.items, .{ .phases = Session.check_phases, .host_free = true });
+        var project = try TestProject.initWith(testing.allocator, modules.items, .{ .phases = Session.check_phases });
         defer project.deinit();
         var refusals: usize = 0;
         for (project.session.diagnostics.items) |diagnostic| if (diagnostic.code == .host_value_erasure) {
@@ -451,7 +451,7 @@ test "HostFree typed generated host wrappers preserve natives and payload callba
         \\    ( KeyMap.get keys "socket", found, Headers.get headers "latest" )
         ,
     });
-    var project = try TestProject.initWith(testing.allocator, modules.items, .{ .phases = Session.check_phases, .host_free = true });
+    var project = try TestProject.initWith(testing.allocator, modules.items, .{ .phases = Session.check_phases });
     defer project.deinit();
     if (project.session.diagnostics.items.len != 0) std.debug.print("{s}\n", .{project.stderr.written()});
     try testing.expectEqual(@as(usize, 0), project.session.diagnostics.items.len);
@@ -473,7 +473,7 @@ test "HostFree program boundary reductions retain native and callable refusals" 
             .{ .path = "Js.beni", .package = .core, .source = "pub foreign type Value\npub foreign pure from : a → Value\npub foreign pure to : Value → a\npub foreign impure set : Value, String, Value → ⊤\n" },
             .{ .path = "Reduced.beni", .package = .platform, .source = source },
         });
-        var p = try TestProject.initWith(testing.allocator, modules.items, .{ .phases = Session.check_phases, .host_free = true });
+        var p = try TestProject.initWith(testing.allocator, modules.items, .{ .phases = Session.check_phases });
         defer p.deinit();
         var refused: usize = 0;
         for (p.session.diagnostics.items) |item| {
