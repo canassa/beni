@@ -59,15 +59,15 @@ pub fn escapedWrites(e: *Eval.Evaluation) Eval.Error!void {
         const by: ?Eval.Escape = for (e.w.closures.items) |c2| {
             if (std.mem.indexOfScalar(u32, f.kidsOf(f.val(c2.value)), cl.value) != null) break .{ .leaf = none, .point = c2.point };
         } else null;
-        const at = for (e.escapes.items) |es| {
-            const l = f.leafAt(es.leaf);
-            if (l.kind == .site and l.atom == cl.inst) break es;
-        } else for (back.items) |es| {
-            const l = f.leafAt(es.leaf);
-            if (l.kind == .site and l.atom == cl.inst) break es;
-        } else for (out.items) |l| {
-            if (f.leafAt(l).kind == .site and f.leafAt(l).atom == cl.inst) break Eval.Escape{ .leaf = l, .point = cl.point };
-        } else by orelse continue;
+        // Run by unknown code (`fn_escapes`, §2.11.3): named last.
+        const at = blk: {
+            for ([_][]const Eval.Escape{ e.escapes.items, back.items }) |list| for (list) |es| {
+                if (f.leafAt(es.leaf).kind == .site and f.leafAt(es.leaf).atom == cl.inst) break :blk es;
+            };
+            for (out.items) |l| if (f.leafAt(l).kind == .site and f.leafAt(l).atom == cl.inst) break :blk Eval.Escape{ .leaf = l, .point = cl.point };
+            for (e.fn_escapes.items) |es| if (f.leafAt(es.leaf).atom == cl.inst) break :blk Eval.Escape{ .leaf = es.leaf, .point = if (es.point == none) cl.point else es.point, .call = es.call };
+            break :blk by orelse continue;
+        };
         const caps = f.kidsOf(f.val(cl.value));
         for (writes) |wr| {
             const t_start: u32 = @intCast(e.w.leaf_runs.items.len);

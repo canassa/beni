@@ -1993,6 +1993,75 @@ many refuses `once`.
 Where the function value is **unknown** (`⊤`, a call's result, a value stored in a cell), the answer is `⊤`,
 every supply escapes, and a supplied object can no longer be written.
 
+*Amended 2026-11-03 (#1773, #1775, #1776): a function value goes where a value goes.* A function value
+carries its code's writes and its call count to every call that runs it, along every route a value takes: a
+call's result, an argument a callee hands a code, a label's supply, a label's answer. Three routes lost them.
+On each, a call ran a function value that no label named, so the writes its code made relying on its callers
+(`param`) and how often it ran were judged by nobody, and the sanitised runs read a stale list:
+
+- **A call's result.** `first v f = (g = pick f 0; g v)`, `case List.head fs of Just g → g v`, a callback that
+  answers `f` (`answered v λ_ → f`): the call `g v` was unknown code, whose answer is `⊤` and whose arguments
+  escape, and it labelled nothing (`run/SanitiserFunctionResult`).
+- **A callee's supply.** `each v f = app1 f λg → g v`, `List.map fs λg → g v`: the lambda's label of `g`,
+  applied at the callee's label, had the supply as its function value. The application read it as unknown: the
+  supplies escaped, the function did not (`run/SanitiserSuppliedFunction`).
+- **A callee's own writer.** `withPush use = use λv → List.push v 5`: a supply describes the objects a label is
+  handed, never a code, so nothing at the caller said that the handed function writes its parameter, or that
+  the callback runs it twice (`run/SanitiserHandedWriter`).
+
+The rule has two halves.
+
+1. **Followed where it can be.** A value that is, by every arrival and under any tags, one parameter function
+   slot `(j, s)` of the frame is that slot (`FnRun.oneParam`). A call of it is a callback call of `(j, s)`, a
+   label of the frame, as `f v` is. The walk reads the value through the contracts settled when the caller is
+   walked (an earlier group's, an import's, words), as the identity control does (§2.11.2): `pick f 0`, `List.head
+   fs` and `Just f` taken apart are followed; a lambda of the caller's own group is not. A callee's label
+   applied to such a value passes on as that slot's label, with the outer labels' count and supply conditions
+   (#1721), as when `f` itself is handed: `app1 f λg → g v` gives `each` the label `π2ε`, `List.map fs λg → g
+   v` the label `π2[*]`, `many`.
+2. **Escaped where it cannot.** Anywhere else (a choice of two codes, `⊤`, a label's answer, a lambda of the
+   caller's own group), the code that runs the value is unknown, so the value escapes there, as an argument of
+   unknown code does (§2.4). Only its **function objects** escape: each parameter function slot it arrives
+   from, so the contract says `escapes π…` and at each caller the code handed there has escaped, and each
+   closure of the frame it is. An escaped closure's parameter writes are `callsite` demands on `⊤`, refused
+   `unknown`, and its capture writes are `once` (§2.11.4). Four things run a value as unknown code: a call whose
+   callee value is not followed; a label applied to a value that is not; a label handed a closure of the frame,
+   directly or as a label the frame passes on, since a supply names objects and never a code; and a callee that
+   a known code answers its label to, since the answer goes back to code the frame does not see (§2.11.4,
+   #1709, now a parameter's function slot as well as a closure). The value's other objects (a closure's
+   captures) do not escape here: they are not run, and the closure's escape makes its capture writes `once`.
+   A worded row's value (`use List.pop`) does not escape: it writes nothing in place (§2.11.5 *Evidence*). What
+   a growing draft adds later is read the same way, through an `escape_fn` subscription (§2.12 *Deliveries*),
+   so it too gives function objects only.
+
+Sound because every call of a function value now runs a code that a label names, or a code that has escaped.
+For a label, its writes become demands where the label is applied and its count adds up outward (§2.11.3).
+For an escaped code, its writes are refused in the frame that made it. There is no third case. A call of a
+value is a call of a closure (a code call), of a choice of them (each arm), of a followed slot (a label), or of
+anything else (an escape). A label applied to a value meets a known code (a virtual call), a followed slot
+(it passes on), or anything else (an escape). A supply and an answer carry objects, so a closure or a
+parameter's function in one escapes. A parameter's escape is projected onto every caller's argument, so a
+closure there escapes at that call, or the caller's own parameter escapes, outward. A function value stored
+in a cell is read back as `⊤` (§2.13.7), and the closure escaped where it was stored.
+
+Precision. The followed half makes some programs precise that were refused before: a reader reached through a
+call's result no longer escapes the list it is handed (`g v` was unknown code and escaped `v`), so the caller
+may edit that list in place afterwards (`run/SanitiserFunctionResultApart`, `run/SanitiserSuppliedFunctionApart`).
+Refused that a perfect checker accepts: a writer handed through a list of two closures (as a pattern of the
+parameter already was), through a lambda of the caller's own group, as a callback's answer, or by a callee to a
+label, even on a list nothing else holds. A reader or a core writer handed the same way is accepted
+(`run/SanitiserHandedWriterApart`).
+*As built (2026-11-03).* `FnRun.zig` (L9). The walk asks `Context.settledParam`, which reads the value with
+each walk call's settled contract filled in for that read only (`FnRun.settled`); an evaluation's label asks
+`FnRun.oneParam`. A call the walk reads as unknown code keeps its callee in `Walk.runs`, and the evaluation
+escapes its function objects; so does a label applied to a value it cannot follow, and every virtual call's answer
+whose place holds a closure (an answer that cannot hold one is skipped before it is read). A closure is noted
+where the read-off says it into a label's supply (`Put.handed`, from `hosted`), which already walks every leaf of
+every supply, direct or passed on, so it costs no reading of its own. A closure's escape goes into
+`fn_escapes`, which `Closures` reads after the frame's other escapes and its hand-backs, so a demand already
+named by the call that hands a closure back keeps that name. Measured (Debug): the oracle's 1 332 probes, 31 of
+them trapping before, 0 TRAP, 0 DIFF; the cost table unchanged in growth.
+
 #### 2.11.4 Closures
 
 A `lambda` (also `f a _`, which `Lower` makes a lambda) and a local function (`let_def` with parameters) are
@@ -2074,6 +2143,9 @@ escaped at that call: the caller's later call of it is unknown code that instant
 its parameter writes are `callsite` demands on `⊤` there, refused `unknown`, and a capture write is refused
 `once`, as at any escape. Before this, the hand-back was not an escape, and the write the code accepted as
 `param` ran on a list the caller still read (`same λl → List.push l 1` applied to `xs`, then `xs` read).
+*Amended 2026-11-03 (#1773):* a parameter's function slot a callee hands back is followed when the value is that
+slot by every arrival, and escapes otherwise; a known code's answer to a label escapes the parameters' function
+slots it holds as well as its closures (§2.11.3, *a function value goes where a value goes*).
 
 *Amended 2026-11-03 (#1758): a captured closure called by a closure.* `g = λv → List.push v 5`, `h = λv → g v`,
 `h k`: `h`'s call of its capture `g` is a label of `h`, and at `h k` the label is applied to `g`'s code (§2.11.3).
@@ -4413,6 +4485,11 @@ RowEnv, LabelChain, Graft, Distinct, Eval). L12: `Codes` (a module's codes and o
 Ids, Walk, Kept), out of `Groups`. `Walk`, `Groups` and `Eval` re-export what their readers named.*
 *Amended 2026-11-05 (#1772): `Captures` (L8: a closure's captures in what holds it, added to every parameter
 arrival through `Relation.Eval.routed` by `Eval`; Ids, Place, Value, Relation) is new beside `Routed`.*
+*Amended 2026-11-03 (#1773, #1775, #1776): L9 `FnRun` (a function value the frame cannot follow, §2.11.3: the one
+parameter function slot a value is, read in an evaluation or through the contracts settled at the walk, and the
+function objects of a value run by unknown code; Contract, LabelChain, RouteWalk, Relation, Value, WalkContext),
+so that `Eval`, `Walk` and `Closures` stay under their targets; `Eval.supplyLeaves` moved into it. `WalkContext`
+names `Value` for the walk's `settledParam`; `Put` names `FnRun` for `handed`, a closure said into a supply.*
 
 ```
 L13 Enforce
@@ -4474,10 +4551,11 @@ L0  Ids  Counters  Scratch
 | `Cells.zig` | 7 | a cell's `◆` as an evaluation reads it: cell operations and their targets behind the barrier, a cell callback's supply, the contents an answer may share (§2.13.7, #1729) | Ids, Place, Slots, Contract, Value, Relation, Forest |
 | `Fed.zig` | 8 | a label's answer handed back to it: what a pass reads and judges for that answer (§2.11.3, #1713); below `Distinct` | Ids, Slots, Contract, Relation |
 | `FedCall.zig` | 8 | a callee's `fed` occurrence at a call, renamed or decided, and the label argument a callee's parameter arrives at whole (§2.11.3, #1713, #1721); below `Distinct` | Ids, Slots, Forest, Contract, Relation |
-| `WalkContext.zig` | 8 | the module's services a walk reads; `Groups` implements them (§2.6, §2.11.3) | Ids, Contract, Relation |
+| `WalkContext.zig` | 8 | the module's services a walk reads; `Groups` implements them (§2.6, §2.11.3) | Ids, Contract, Relation, Value |
 | `LabelChain.zig` | 8 | the labels a virtual call's supply comes through, outward (§2.11.3, #1758, #1760, #1721) | Ids, Forest, Contract, RowEnv, Value |
 | `Outward.zig` | 11 | what the outward labels add: a demand's instantiated `req` and outer conditions, a passed-on label's outer supplies (§2.11.2 item 4, §2.11.3) | Ids, Contract, RowEnv, LabelChain, Graft, Distinct, Eval |
 | `Captures.zig` | 8 | a closure's captures in what holds it: a parameter arrival at an argument closure takes them, deep (§2.10, #1772) | Ids, Place, Value, Relation |
+| `FnRun.zig` | 9 | a function value the frame cannot follow: the one parameter function slot a value is, and the function objects that escape where it is not (§2.11.3, #1773, #1775, #1776) | Contract, LabelChain, RouteWalk, Relation, Value, WalkContext |
 | `Codes.zig` | 12 | a module's codes and one declaration's answer (§2.10, §2.12) | Ids, Walk, Kept |
 | `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Distinct, Walk, Cells |
 | `Holders.zig` | 8 | what resolution reads of a frame's leaves: their base keys, the escape index, the operand index (§2.8) | Ids, Place, Value, Relation, Distinct, Contract, Walk, Regions |

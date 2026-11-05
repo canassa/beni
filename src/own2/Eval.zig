@@ -27,6 +27,7 @@ const RowEnv = @import("RowEnv.zig");
 const Host = @import("Host.zig");
 const LabelChain = @import("LabelChain.zig");
 const Captures = @import("Captures.zig");
+const FnRun = @import("FnRun.zig");
 const W = @import("Walk.zig");
 
 pub const Error = Ids.ChargeError;
@@ -55,6 +56,8 @@ pub const Evaluation = struct {
     /// The walk's demands, then the calls' (this evaluation's).
     demands: std.ArrayList(Demand) = .empty,
     escapes: std.ArrayList(Escape) = .empty,
+    /// The frame's closures run by unknown code (§2.11.3), read by `Closures` after the others.
+    fn_escapes: std.ArrayList(Escape) = .empty,
     /// Per frame label: the calls whose callee's label passes on to it, as `(call, callee label)` pairs, for the read-off of its supplies.
     passes: std.ArrayList([3]u32) = .empty,
     /// The group being solved, and this code's index in it (§2.12).
@@ -70,6 +73,7 @@ pub const Evaluation = struct {
         e.ev.deinit();
         e.demands.deinit(g);
         e.escapes.deinit(g);
+        e.fn_escapes.deinit(g);
         e.passes.deinit(g);
         if (e.facts_on) {
             inline for (.{ &e.sink.label_at, &e.sink.described, &e.sink.effected, &e.sink.building, &e.sink.nodes, &e.sink.acyclic, &e.sink.host, &e.sink.reads }) |l| l.deinit(g);
@@ -120,6 +124,10 @@ pub fn evaluate(w: *Walk, contracts: *Contract.Table, ctx: Context, arena: Alloc
     };
     var q: u32 = 0;
     while (q < f.calls.items.len) : (q += 1) try labelsOf(e, q);
+    // Function values run by unknown code: called, handed on, answered (§2.11.3).
+    for (w.runs.items) |r| try escapeFns(e, r[0], &.{}, .run, r[1], none);
+    for (f.calls.items, 0..) |c, vq| if (c.virtual and f.roots.items[c.root].place != .none and f.places.holds(f.roots.items[c.root].place).closure)
+        try escapeFns(e, try f.refRoot(c.root), &.{}, .answer, c.point, @intCast(vq));
     q = 0;
     while (q < f.calls.items.len) : (q += 1) try callEffects(e, q);
     try onceDemands(e);
@@ -225,17 +233,37 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
             continue;
         }
         // Unknown code: its answer is unknown, and what it is handed escapes.
-        for (e.contracts.suppliesOf(l.supplies)) |s| for ((try entriesOf(e, s.res_root)).items.items) |rs| {
-            var ls: std.ArrayList(u32) = .empty;
-            defer ls.deinit(gpa);
-            const saved = e.ev.cur_sub;
-            e.ev.cur_sub = .{ .kind = .escape, .a = call.point };
-            defer e.ev.cur_sub = saved;
-            for (rs.arrivals) |a| try supplyLeaves(e, q, a, &ls);
-            e.ev.cur_sub = saved;
-            for (ls.items) |lf| try addEscape(e, lf, call.point);
-        };
+        var ls: std.ArrayList(u32) = .empty;
+        defer ls.deinit(gpa);
+        const saved = e.ev.cur_sub;
+        e.ev.cur_sub = .{ .kind = .escape, .a = call.point };
+        defer e.ev.cur_sub = saved;
+        try FnRun.supplied(&e.ev, e.chain(), q, l, &ls);
+        e.ev.cur_sub = saved;
+        for (ls.items) |lf| try addEscape(e, lf, call.point);
     }
+}
+
+/// The function objects of value `v` at `words` that unknown code runs at
+/// `point`, as `mode` says, escape there (§2.11.3, *a function value goes
+/// where a value goes*).
+fn escapeFns(e: *Evaluation, v: u32, words: []const u32, mode: FnRun.Mode, point: u32, call: u32) Error!void {
+    var ls: std.ArrayList(u32) = .empty;
+    defer ls.deinit(e.gpa());
+    try FnRun.escapes(&e.ev, e.ctx, e.w.closures.items, v, words, mode, point, call, &ls);
+    for (ls.items) |lf| try addFn(e, lf, point, call);
+}
+
+/// A leaf a growing draft delivers to `escapeFns`' subscription `sub`: its function objects escape.
+pub fn deliverFns(e: *Evaluation, sub: Relation.Sub, leaf: u32) Error!void {
+    var ls: std.ArrayList(u32) = .empty;
+    defer ls.deinit(e.gpa());
+    try FnRun.delivered(&e.ev, e.ctx, e.w.closures.items, sub, leaf, &ls);
+    for (ls.items) |lf| try addFn(e, lf, sub.a, sub.c);
+}
+
+fn addFn(e: *Evaluation, lf: u32, point: u32, call: u32) Error!void {
+    if (e.fr().leafAt(lf).kind == .site) try e.fn_escapes.append(e.gpa(), .{ .leaf = lf, .point = point, .call = call }) else try addEscape(e, lf, point);
 }
 
 /// Every entry of tree `root`, in the canonical order, in the round.s arena.
@@ -276,22 +304,6 @@ fn cellTaint(e: *Evaluation, q: u32, cs: Contract.Arrival, bw: []const u32, drop
     defer ps.deinit(gpa);
     try e.ev.project(call.args[cs.j], words, true, 0, 0, &ps);
     for (ps.items) |p| try addEscapeAt(e, p.leaf, call.point, vi);
-}
-
-/// An arrival of call `q`'s supply, as leaves (`Relation.arrivalLeaves`' rule, read from outside).
-pub fn supplyLeaves(e: *Evaluation, q: u32, a: Contract.Arrival, out: *std.ArrayList(u32)) Error!void {
-    const f = e.fr();
-    const call = f.calls.items[q];
-    switch (a.kind) {
-        .param => {
-            if (a.j >= call.args.len) return out.append(e.gpa(), try f.leaf(.{ .kind = .top }));
-            var ps: std.ArrayList(Relation.Proj) = .empty;
-            defer ps.deinit(e.gpa());
-            try e.ev.project(call.args[a.j], f.slots.relWords(a.slot), true, 0, 0, &ps);
-            for (ps.items) |p| try out.append(e.gpa(), p.leaf);
-        },
-        else => try e.ev.arrivalLeaves(q, call.contract, a, &.{}, out),
-    }
 }
 
 /// Call `q`'s writes and escapes (§2.11.2 items 4, 5): demands and escapes.

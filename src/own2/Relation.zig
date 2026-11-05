@@ -60,7 +60,7 @@ pub const Ov = struct {
 /// leaves reach it once each, the ones it saw when it subscribed and every
 /// one added after. `forward` adds them to another key (`a`); the other
 /// kinds are the read-off's (`Eval.zig` delivers them).
-pub const SubKind = enum(u8) { forward, forward_below, describe, describe_below, effect, supply, escape };
+pub const SubKind = enum(u8) { forward, forward_below, describe, describe_below, effect, supply, escape, escape_fn };
 /// `d`: a `describe_below` consumer's prefix slot (its key's).
 pub const Sub = struct { kind: SubKind, a: u32 = 0, b: u32 = 0, c: u32 = 0, d: u32 = 0, tags: u32 = 0 };
 

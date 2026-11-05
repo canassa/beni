@@ -1,0 +1,43 @@
+-- A function value that reaches a call through another call's result, on
+-- lists nothing else holds (`ownership-v2.md` §2.11.3, *a function value goes
+-- where a value goes*): the call `g v` is the label of the parameter `g`
+-- comes from, as `f v` is, so a writer handed there is judged at its caller
+-- and accepted in place; a reader handed there lets the caller edit its list
+-- after the call.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+pick : (List Int → b), Int → (List Int → b)
+pick f _ = f
+
+
+first : List Int, (List Int → b) → b
+first v f =
+    g = pick f 0
+    g v
+
+
+viaHead : List Int, List (List Int → List Int) → List Int
+viaHead v fs =
+    case List.head fs of
+        Just g →
+            g v
+
+        Nothing →
+            v
+
+
+main : Program
+main =
+    a = first [ 1 ] λv → List.push v 5
+    b = viaHead [ 2 ] [ λv → List.push v 6 ]
+    k = [ 3 ]
+    n = first k λv → List.length v
+    k2 = List.push k 7
+    Node.printLines [ show a, show b, String.fromInt n, show k2 ]
