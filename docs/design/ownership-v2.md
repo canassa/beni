@@ -176,6 +176,10 @@ record place with no `.b`, and a schema member inside a nominal type is read thr
 cannot name is `⊤` at any place but `cross`, which holds no object, and a schema member in a template is a `var` place, as a fold is. Refused
 that a perfect checker accepts: any write through such a step, over fresh data too (#2038). Fixtures `run/SanitiserUnnamedStep`,
 `run/SanitiserUnnamedStepApart`.
+*Amended 2026-11-05 (#2047):* an arrival read past an argument's fold reads empty, and an empty reading tells a caller the object is fresh, so
+the value at the fold is read whole: a parameter's deep, any other root's as `⊤` (`FoldRead.zig`), and an open arrival at a `var` slot is
+read deep whatever it says (`Subtree.readAt`); a read that runs past a fold is that fold's slot, in each arm of a choice (`FoldRead.prefix`). `f t c = if c then t else Leaf []`, whose result is wide, and `PW (PW _ x) _ → List.concat x`,
+whose own slot runs past the fold, are refused.
 
 **Identity.** Initial construction uses a dense `by_var` memo for structural source nodes and the adapter's
 `(head, argument places)` memo for nominal applications. Each source graph node and outgoing edge is visited
