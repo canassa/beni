@@ -2393,8 +2393,8 @@ of their slots (§3.6, version 23). A called code's label carries `Called.last_o
 job, against master at `db3480e28`): 1 018 oracle probes: 0 DIFF, 1 TRAP, on master too, of a label's answer (#2036), two
 more accepted; a generated sweep of 1 820 programs (26 ways to make a closure × 10 ways to call it × 7 things to do with
 the answer): 0 TRAP, 0 DIFF, 710 master refused accepted, none master accepts refused. The review sweeps' 11 312
-programs: 0 TRAP, 0 DIFF. The ledger of 2 361 roots, by position: 32 refused → accepted (15 of them the new fixtures), and
-2 accepted → refused, both `run/SanitiserRowCallbackHolds`, which trap on master (#2048). Cost: core's
+programs: 0 TRAP, 0 DIFF. The ledger of 2 361 roots, by position, against master at `fae30693b`: 32 refused → accepted (15 of them the new
+fixtures), and 3 accepted → refused, all `run/SanitiserRowCallbackHolds`, whose programs trap on master (#2048). Cost: core's
 3.3 s unchanged, every root's records +0.6 %, growth unchanged everywhere, the highest declaration ×2.9
 (`Tea.startAfter`, one body walked twice), and `ClosureTower` flat at 939 records a level at depths 1, 8, 16 and 24 (503
 before), growth 0.
