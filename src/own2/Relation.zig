@@ -194,6 +194,7 @@ pub const Eval = struct {
     /// A projection whose routes nobody reads (`arrivalLeaves`): a level walk meets a value once a place,
     /// not once a place and literal route.
     no_routes: bool = false,
+    tail_place: PlaceId = .none, // The next `project`'s start, a walk's place; it clears it.
     /// An arrival's leaves at a parameter's slot (its path, when known): `Routed.paramLeaves`, set by an evaluation that instantiates.
     routed: *const fn (e: *Eval, v: u32, words: []const u32, deep: bool, path: u32, out: *std.ArrayList(u32)) Error!void = noRouted,
 
@@ -372,6 +373,8 @@ pub const Eval = struct {
     /// The objects of value `v` at relative steps `words`: what an arrival
     /// at those steps names in this frame. `deep`: every object below too.
     pub fn project(e: *Eval, v: u32, words: []const u32, deep: bool, tags: u32, route: u32, out: *std.ArrayList(Proj)) Error!void {
+        const given = e.tail_place;
+        e.tail_place = .none;
         const Item = struct { v: u32, at: u32, tags: u32, route: u32 };
         var stack: std.ArrayList(Item) = .empty;
         defer stack.deinit(e.gpa());
@@ -457,7 +460,7 @@ pub const Eval = struct {
                             // A closure's environment: its captures, whole.
                             for (ks, 0..) |k, n| try stack.append(e.gpa(), .{ .v = k, .at = @intCast(words.len), .tags = it.tags, .route = try e.routeStep(it.route, @intCast(n)) });
                         },
-                        .level => try e.projectLevels(it.v, LevelCycle.of(e.places(), LevelCycle.rootOf(e.f, v), words[0..it.at], x.place), words[it.at + 1 ..], deep, it.tags, it.route, out),
+                        .level => try e.projectLevels(it.v, LevelCycle.of(e.places(), if (given != .none) given else LevelCycle.rootOf(e.f, v), words[0..it.at], x.place), words[it.at + 1 ..], deep, it.tags, it.route, out),
                         else => {
                             // A step the literal cannot follow: every object of it.
                             try e.readAt(it.v, true, it.tags, try e.routeStep(it.route, none), out);

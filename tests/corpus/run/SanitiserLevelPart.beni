@@ -1,0 +1,41 @@
+-- Two paths part below a `⟲` (`ownership-v2.md` §2.1, #2062): the rest of each goes on
+-- from the walk's place, not the kid's own, or it reads no level and the write edits `k`.
+import List
+import Node exposing (Program)
+import String
+
+
+type alias D =
+    List (List (List (List Int)))
+
+
+type T a
+    = Leaf (List Int) a
+    | Wrap (T (List a)) (T (List a))
+
+
+wr : T a → Int
+wr t =
+    case t of
+        Leaf xs _ →
+            List.length (List.push xs 1)
+        Wrap u _ →
+            wr u
+
+
+two : T a → Int
+two t =
+    case t of
+        Wrap (Wrap x _) (Wrap y _) →
+            wr x + wr y
+        _ →
+            0
+
+
+main : Program
+main =
+    k = [ 1 ]
+    q = Leaf [] [ [ [ 1 ] ] ]
+    r = Leaf [] [ [ 1 ] ]
+    w = Wrap (Leaf k [ [ [ 1 ] ] ]) q
+    Node.print (String.fromInt (two (Wrap (Wrap w r) (Wrap w r))))
