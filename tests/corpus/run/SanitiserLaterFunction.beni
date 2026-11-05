@@ -1,0 +1,71 @@
+-- A runtime catch for a function a row runs later (`ownership-v2.md` §2.11.3,
+-- *a later function*): `w zs` writes a list, and a row then runs `f`, which
+-- holds that list. A row's footprint says nothing of its callback, so nothing
+-- asked `f`'s holdings apart. Each edit is refused; asked nothing, the
+-- sanitised runs trap on a stale read.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+run :
+      (List Int → List Int)
+    , (List Int → List Int)
+    , List Int
+    , List (List Int)
+    → List Int × List (List Int)
+run f w zs l =
+    y = w zs
+    ( y, List.update l 0 f )
+
+
+inner : (List Int → List Int), List (List Int) → List (List Int)
+inner f l = List.update l 0 f
+
+
+run2 :
+      (List Int → List Int)
+    , (List Int → List Int)
+    , List Int
+    , List (List Int)
+    → List Int × List (List Int)
+run2 f w zs l =
+    y = w zs
+    ( y, inner f l )
+
+
+self : (List Int → List Int), List Int, List (List Int) → List Int × List (List Int)
+self f zs l =
+    y = f zs
+    ( y, List.update l 0 f )
+
+
+pair : List Int → (List Int → List Int) × List Int
+pair xs = ( (λ_ → xs), xs )
+
+
+main : Program
+main =
+    a = [ 1 ]
+    b = [ 1 ]
+    d = [ 1 ]
+    ( y4, m4 ) = self (λv → List.push v (List.length d)) d [ [ 7 ] ]
+    ( f, c ) = pair [ 1 ]
+    ( y1, m1 ) = run (λ_ → a) (λv → List.push v 9) a [ [ 7 ] ]
+    ( y2, m2 ) = run2 (λ_ → b) (λv → List.push v 9) b [ [ 7 ] ]
+    ( y3, m3 ) = run f (λv → List.push v 9) c [ [ 7 ] ]
+    lines =
+        [ show y1 ++ "|" ++ shows m1
+        , show y2 ++ "|" ++ shows m2
+        , show y3 ++ "|" ++ shows m3
+        , show y4 ++ "|" ++ shows m4
+        ]
+    Node.print (String.join lines "\n")

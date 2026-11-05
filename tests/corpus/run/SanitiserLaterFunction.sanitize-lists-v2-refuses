@@ -1,0 +1,5 @@
+# v2 refuses an edit a function a row runs later reaches (§2.11.3, a later function).
+60:18 list_may_be_shared SanitiserLaterFunction.self
+62:18 list_may_be_shared SanitiserLaterFunction.run
+63:18 list_may_be_shared SanitiserLaterFunction.run2
+64:18 list_may_be_shared SanitiserLaterFunction.run
