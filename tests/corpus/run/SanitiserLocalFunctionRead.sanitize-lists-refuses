@@ -1,0 +1,3 @@
+# v1 refuses each write that a binding of the block reads afterwards (§18.8, #1956).
+14:13 list_still_used `List.push`
+21:13 list_still_used `List.push`

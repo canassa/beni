@@ -1,0 +1,42 @@
+-- ownership: a list pattern's record stored back into its list inside a lambda
+-- (#1956). The list holds one record twice, so `edit`'s write of its head is
+-- refused. `rotated` stores the head beside the rest: accepted.
+import List
+
+
+type alias R =
+    n : Int
+
+
+dup : List R → List R
+dup l =
+    h =
+        λ⊤ →
+            case l of
+                [ p, …_ ] →
+                    List.push l p
+
+                _ →
+                    []
+    h ⊤
+
+
+rotated : List R → List R
+rotated l =
+    h =
+        λ⊤ →
+            case l of
+                [ p, …r ] →
+                    List.push r p
+
+                _ →
+                    []
+    h ⊤
+
+
+pub edit : ⊤ → List R
+edit ⊤ = List.update (dup [ { n = 1 } ]) 0 λv → { v | n = 9 }
+
+
+pub editRotated : ⊤ → List R
+editRotated ⊤ = List.update (rotated [ { n = 1 }, { n = 2 } ]) 0 λv → { v | n = 9 }

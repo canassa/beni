@@ -1,0 +1,5 @@
+# v1 refuses each edit of a list that holds its head twice, made in a closure (#1956).
+63:56 list_may_be_shared `List.push`
+67:54 list_may_be_shared `List.push`
+71:59 list_may_be_shared `List.push`
+75:69 list_may_be_shared `List.push`

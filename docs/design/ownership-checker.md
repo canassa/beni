@@ -3286,9 +3286,11 @@ hands it destructively (each call gets another position).
 *Amended 2026-11-05 (#1956).* A cell does not tell a pattern's rest from the list it split, because a rest is a
 view of the same cells. So a split element is apart from its container's element cell only until something other
 than that pattern's own bindings reaches that cell: a read of any other local, or an operand evaluated before the
-match and still waiting. From there the pair is `lost`. `[ …l, p ]`, `List.push l p` and `List.reverse l` beside
+match and still waiting. In a lambda both sides are read as the frames that bind them hold them, a read of a binding
+not made yet reaches every element, and a capture's lost condition is the list's too, because the lambda's summary
+does not carry it out. A local group's next round starts from the state before the round. From there the pair is `lost`. `[ …l, p ]`, `List.push l p` and `List.reverse l` beside
 `p` hold one list twice and are refused; `[ …rest, p ]` is not. The price: `[ el, …xs ]` followed by its tail holds
-each element once, and is refused too.
+each element once, and is refused too, as are an alias of the rest and a read of `l`'s length beside `[ …rest, p ]`.
 
 A callee's `xreq` that fails at a call is reported on the call-site demand of the argument it names; an
 `xreq` is recorded only beside a write of that parameter, so the line exists.
@@ -3371,7 +3373,9 @@ once"). `captured-edit` is left for a write of a capture the walk cannot place i
 *Amended 2026-11-05 (#1956).* A write of a capture also meets, in the closure's own body, every later read of
 what holds that list outside: a local, a function value that captured it, or a lambda made there, whose captures
 of enclosing frames are reads where it is made. The list is one capture cell inside the closure, which no other
-local names, so the check looks each local up in the frame that binds it.
+local names, so the check looks each local up in the frame that binds it. An enclosing frame's locals are asked once
+the walk is done, because a local function's body is walked before its block's other bindings; the frame's own are
+asked at the demand, because one bound later may hold the write's result.
 
 ### 18.9 Capture paths of function parameters
 

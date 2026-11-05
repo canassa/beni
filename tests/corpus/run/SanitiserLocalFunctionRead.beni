@@ -1,0 +1,32 @@
+-- A runtime catch for a local function that writes a capture and reads a
+-- binding of its block that holds the same list (`ownership-checker.md`
+-- §18.8, #1956). Its body is walked before those bindings. Each prints the
+-- edited list's length and what was read. Accepted, the sanitised run prints
+-- the edited length twice.
+import List
+import Node exposing (Program)
+import String
+
+
+viaLocal : List Int → List Int × Int
+viaLocal xs =
+    zs = xs
+    f ⊤ = ( List.push xs 1, List.length zs )
+    f ⊤
+
+
+viaFunction : List Int → List Int × Int
+viaFunction xs =
+    h = λ⊤ → List.length xs
+    f ⊤ = ( List.push xs 1, h ⊤ )
+    f ⊤
+
+
+show : List Int × Int → String
+show p =
+    ( a, n ) = p
+    "${String.fromInt (List.length a)} ${String.fromInt n}"
+
+
+main : Program
+main = Node.printLines [ show (viaLocal [ 5 ]), show (viaFunction [ 5 ]) ]

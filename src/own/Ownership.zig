@@ -8260,6 +8260,8 @@ const Walker = struct {
     /// element cell it stands for: that read may hold its position too, so
     /// it is no longer apart from the container's other positions.
     split_taken: std.ArrayList(u32) = .empty,
+    /// #1956: losses of a capture's condition before it was bound.
+    unbound_losses: std.ArrayList(struct { local: u32, path: u32, k: u32, record: bool }) = .empty,
     split_exposed: []bool = &.{},
     /// §18.9: calls of the declaration's function parameters inside lambdas.
     env_calls: std.ArrayList(EnvCall) = .empty,
@@ -9372,6 +9374,31 @@ const Walker = struct {
         const now = try w.condAnd(try w.cellCond(c), k);
         w.noteWrite(.cond, c, w.cell_cond.items[c], now);
         w.cell_cond.items[c] = now;
+        // #1956: a lambda that loses a capture's condition loses the list's,
+        // which its summary does not carry out of the lambda.
+        if (k == cond_lost or k == cond_shared or k == cond_limit) {
+            try w.noteUnboundLoss(c, k, false);
+            for (try w.capturedCells(c)) |e| try w.lowerCond(e.cell, k);
+        }
+    }
+
+    /// A local function loses the condition of a capture its block binds
+    /// later: `bindLocal` passes it on.
+    fn noteUnboundLoss(w: *Walker, c: u32, k: u32, record: bool) Allocator.Error!void {
+        const x = w.cells.items[c];
+        if (x.kind != .env or x.a >= w.local_av.len or w.local_av[x.a] != null) return;
+        try w.unbound_losses.append(w.a, .{ .local = x.a, .path = x.path, .k = k, .record = record });
+    }
+
+    /// What capture `c` stands for in the frames that hold it; empty for any
+    /// other cell.
+    fn capturedCells(w: *Walker, c: u32) Allocator.Error!AV {
+        if (w.cells.items[c].kind != .env) return &.{};
+        var out: std.ArrayList(Entry) = .empty;
+        for (try w.outerView(try w.a.dupe(Entry, &.{.{ .path = eps, .cell = c }}), w.frame)) |e| {
+            if (e.path == eps and w.cells.items[e.cell].kind != .env) try out.append(w.a, e);
+        }
+        return out.items;
     }
 
     /// Counts a change of a cell's entry in a condition table (§16.3's
@@ -10033,6 +10060,7 @@ const Walker = struct {
             // The container itself holds the taken element still.
             if (other != base and (try w.covers(other, base)) != null) return cond_lost;
             if (other == base or (try w.covers(base, other)) != null) return if (w.splitExposed(t)) cond_lost else w.cellCond(t);
+            if (try w.exposedThroughCapture(t, other)) return cond_lost;
         }
         if (cx.kind == .shared or cy.kind == .shared) return cond_yes;
         if (madeHere(cx.kind) or madeHere(cy.kind)) {
@@ -10807,6 +10835,10 @@ const Walker = struct {
         const now = try w.rcondAnd(try w.rcellCond(b), k);
         w.noteWrite(.rcond, b, w.cell_rcond.items[b], now);
         w.cell_rcond.items[b] = now;
+        if (k == cond_lost or k == cond_shared or k == cond_limit) {
+            try w.noteUnboundLoss(c, k, true);
+            for (try w.capturedCells(c)) |e| try w.rlowerCond(e.cell, k);
+        }
     }
 
     fn arrived(k: CellKind) bool {
@@ -10833,6 +10865,7 @@ const Walker = struct {
             const base = try w.takenBase(t);
             if (other != base and (try w.covers(other, base)) != null) return cond_lost;
             if (other == base or (try w.covers(base, other)) != null) return if (w.splitExposed(t)) cond_lost else w.rcellCond(t);
+            if (try w.exposedThroughCapture(t, other)) return cond_lost;
         }
         if (cx.kind == .shared or cy.kind == .shared) return cond_yes;
         if (madeHere(cx.kind) or madeHere(cy.kind)) {
@@ -11696,7 +11729,9 @@ const Walker = struct {
         // enclosing one: a closure that gave up what it captured must not
         // read it again (§18.8, §23.7).
         if (l >= w.local_frame.len) return;
-        if (w.local_frame[l] != w.frame and (w.local_av[l] == null or !w.inFrameOf(w.local_frame[l]))) return;
+        // One not bound yet is a later binding of an enclosing block, read by
+        // a local function walked before it.
+        if (w.local_frame[l] != w.frame and !w.inFrameOf(w.local_frame[l])) return;
         try w.uses.append(w.a, .{ .local = l, .path = path, .except = except, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = tok, .at = w.use_at, .call = w.use_call, .call_at = w.use_call_at, .destructure = w.use_destructure, .reads_none = w.use_reads_none, .grown = w.use_grown });
     }
 
@@ -11939,6 +11974,15 @@ const Walker = struct {
         w.local_frame[l] = w.frame;
         w.local_ctx[l] = w.ctx;
         if (w.logs_bindings) try w.bound_log.append(w.a, l);
+        var i: usize = 0;
+        while (i < w.unbound_losses.items.len) : (i += 1) {
+            const loss = w.unbound_losses.items[i];
+            if (loss.local != l) continue;
+            for (try w.projPath(av, loss.path, null)) |e| {
+                if (e.path != eps) continue;
+                if (loss.record) try w.rlowerCond(e.cell, loss.k) else try w.lowerCond(e.cell, loss.k);
+            }
+        }
     }
 
     fn bindPattern(w: *Walker, pat: Inst.Index, av: AV) Allocator.Error!void {
@@ -13272,7 +13316,11 @@ const Walker = struct {
         if (ty) |v| if (!try w.trackedVar(v)) return &.{};
         const bound = w.local_av[l] != null;
         if (w.early[l] == 1) w.early[l] = 2;
-        if (bound and w.split_taken.items.len != 0) try w.exposeSplits(l, try w.projPath(w.local_av[l].?, path, null));
+        if (w.split_taken.items.len != 0) {
+            // A local function reads a later binding of its block: nothing
+            // says what it holds, so it may hold any split position.
+            if (bound) try w.exposeSplits(l, try w.projPath(w.local_av[l].?, path, null)) else @memset(w.split_exposed, true);
+        }
         if (bound and w.local_frame[l] == w.frame) return w.typeFilter(try w.projPath(w.local_av[l].?, path, ty), ty);
         // Not bound yet in the declaration's own frame: nothing is known.
         if (w.frame == 0) return &.{};
@@ -13966,7 +14014,12 @@ const Walker = struct {
 
     /// Whether the walk is inside frame `f` or a frame it encloses.
     fn inFrameOf(w: *const Walker, f: u32) bool {
-        var at = w.frame;
+        return w.frameWithin(w.frame, f);
+    }
+
+    /// Whether frame `inner` is `f` or a frame it encloses.
+    fn frameWithin(w: *const Walker, inner: u32, f: u32) bool {
+        var at = inner;
         while (at != none) : (at = w.frames.items[at].parent) {
             if (at == f) return true;
         }
@@ -14142,6 +14195,8 @@ const Walker = struct {
         local_av: []const ?AV,
         local_frame: []const u32,
         local_ctx: []const u32,
+        split_taken: usize,
+        split_exposed: []const bool,
     };
 
     fn snapshot(w: *Walker) Allocator.Error!Snapshot {
@@ -14189,6 +14244,8 @@ const Walker = struct {
             .local_av = try w.a.dupe(?AV, w.local_av),
             .local_frame = try w.a.dupe(u32, w.local_frame),
             .local_ctx = try w.a.dupe(u32, w.local_ctx),
+            .split_taken = w.split_taken.items.len,
+            .split_exposed = try w.a.dupe(bool, w.split_exposed),
         };
     }
 
@@ -14238,6 +14295,8 @@ const Walker = struct {
         @memset(w.cell_spine.items[s.cell_spine.len..], none);
         w.esc_index = try s.esc_index.clone(w.a);
         w.esc_heads = try s.esc_heads.clone(w.a);
+        w.split_taken.shrinkRetainingCapacity(s.split_taken);
+        @memcpy(w.split_exposed, s.split_exposed);
         @memcpy(w.local_av, s.local_av);
         @memcpy(w.local_frame, s.local_frame);
         @memcpy(w.local_ctx, s.local_ctx);
@@ -21323,15 +21382,15 @@ const Walker = struct {
             const x = w.cells.items[try w.takenBase(e.cell)];
             if (x.kind != .env or x.a >= w.local_frame.len or w.local_frame[x.a] == w.frame) continue;
             try holders.append(w.a, .{ .local = x.a, .path = x.path, .approx = e.approx });
-            try w.captureHolders(&holders, x.a, x.path, e.approx);
         }
+        try holders.appendSlice(w.a, try w.captureHolders(rec, true));
         rec.holders = try holders.toOwnedSlice(w.a);
         try w.demands.append(w.a, rec);
     }
 
     /// `av` with each capture replaced by what its own frame holds, through
     /// every frame the capture crosses. An unbound capture stays.
-    fn outerView(w: *Walker, av: AV) Allocator.Error!AV {
+    fn outerView(w: *Walker, av: AV, frame: u32) Allocator.Error!AV {
         var cur = av;
         var hops: u32 = 0;
         while (hops < w.frames.items.len) : (hops += 1) {
@@ -21339,7 +21398,7 @@ const Walker = struct {
             var out: std.ArrayList(Entry) = .empty;
             for (cur) |e| {
                 const c = w.cells.items[e.cell];
-                if (c.kind == .env and c.a < w.local_av.len and w.local_frame[c.a] != w.frame) if (w.local_av[c.a]) |held| {
+                if (c.kind == .env and c.a < w.local_av.len and w.local_frame[c.a] != frame) if (w.local_av[c.a]) |held| {
                     changed = true;
                     for (try w.projPath(held, c.path, null)) |h| {
                         try out.append(w.a, .{ .path = try w.o.concat(e.path, h.path), .cell = h.cell, .approx = if (e.approx != 0) e.approx else h.approx, .grown = gJoin(e.grown, h.grown) });
@@ -21354,23 +21413,32 @@ const Walker = struct {
         return cur;
     }
 
-    /// #1956: a lambda's write of a capture `local.path`. Inside the lambda
-    /// that list is a capture cell, which no other local's cells name: a
-    /// function value, or any other value, that holds the same list outside
-    /// and is read later in this frame is a holder all the same (§18.8).
-    fn captureHolders(w: *Walker, holders: *std.ArrayList(Holder), local: u32, path: u32, approx: u32) Allocator.Error!void {
-        const held = w.local_av[local] orelse return;
-        const targets = try w.expand(try w.outerView(try w.projPath(held, path, null)));
-        for (w.local_av, 0..) |bound, l| {
-            const av = bound orelse continue;
-            if (!w.inFrameOf(w.local_frame[l])) continue;
-            for (try w.expand(try w.outerView(av))) |e| for (targets) |t| {
-                const tc = w.cells.items[t.cell];
-                if (tc.kind == .closure or tc.kind == .func) continue;
-                const cv = (try w.coversAt(e.cell, t.cell)) orelse continue;
-                try holders.append(w.a, .{ .local = @intCast(l), .path = try w.o.concat(e.path, cv.rest), .approx = if (approx != 0) approx else if (e.approx != 0) e.approx else if (cv.approx) approx_place else 0 });
-            };
+    /// #1956: a lambda's write of a capture. Inside the lambda that list is a
+    /// capture cell, which no other local's cells name: a function value, or
+    /// any other value, that holds the same list outside and is read later in
+    /// this frame is a holder all the same (§18.8). This frame's own locals are
+    /// asked at the demand: one bound after it may hold the write's result.
+    /// Enclosing frames' are asked once the walk is done (`own` false): a
+    /// local function's body is walked before the block's other bindings.
+    fn captureHolders(w: *Walker, rec: DemandRec, own: bool) Allocator.Error![]const Holder {
+        var holders: std.ArrayList(Holder) = .empty;
+        for (rec.cells) |c| {
+            const x = w.cells.items[try w.takenBase(c.cell)];
+            if (x.kind != .env or x.a >= w.local_frame.len or w.local_frame[x.a] == rec.frame) continue;
+            const held = w.local_av[x.a] orelse continue;
+            const targets = try w.expand(try w.outerView(try w.projPath(held, x.path, null), rec.frame));
+            for (w.local_av, 0..) |bound, l| {
+                const av = bound orelse continue;
+                if ((w.local_frame[l] == rec.frame) != own or !w.frameWithin(rec.frame, w.local_frame[l])) continue;
+                for (try w.expand(try w.outerView(av, rec.frame))) |e| for (targets) |t| {
+                    const tc = w.cells.items[t.cell];
+                    if (tc.kind == .closure or tc.kind == .func) continue;
+                    const cv = (try w.coversAt(e.cell, t.cell)) orelse continue;
+                    try holders.append(w.a, .{ .local = @intCast(l), .path = try w.o.concat(e.path, cv.rest), .approx = if (c.approx != 0) c.approx else if (e.approx != 0) e.approx else if (cv.approx) approx_place else 0 });
+                };
+            }
         }
+        return holders.items;
     }
 
     /// The locals a demand here may find a holder among: bound, in this
@@ -21435,17 +21503,20 @@ const Walker = struct {
         try w.split_taken.append(w.a, t);
         const item = w.cells.items[t].b -% w.decl.inst_start.int();
         if (item >= w.split_exposed.len) return;
-        const base = try w.takenBase(t);
         for (w.pending.items) |p| {
             if (w.split_exposed[item]) return;
-            if (try w.reachesSplit(try w.expand(p.av), base)) w.split_exposed[item] = true;
+            if (try w.reachesSplit(try w.expand(try w.outerView(p.av, w.frame)), t)) w.split_exposed[item] = true;
         }
     }
 
-    fn reachesSplit(w: *Walker, cells: AV, base: u32) Allocator.Error!bool {
-        for (cells) |e| {
-            if (e.cell == base or (try w.covers(e.cell, base)) != null or (try w.covers(base, e.cell)) != null) return true;
-        }
+    /// Whether `cells`, in the view of the frames that bind them, reach the
+    /// element cell the taken cell `t` stands for. In a lambda that cell is a
+    /// capture, and `outerView` names it as the frame that holds it does.
+    fn reachesSplit(w: *Walker, cells: AV, t: u32) Allocator.Error!bool {
+        const base = try w.single(w.cells.items[try w.takenBase(t)]);
+        for (try w.expand(try w.outerView(base, w.frame))) |b| for (cells) |e| {
+            if (e.cell == b.cell or (try w.covers(e.cell, b.cell)) != null or (try w.covers(b.cell, e.cell)) != null) return true;
+        };
         return false;
     }
 
@@ -21463,10 +21534,20 @@ const Walker = struct {
             const item = w.cells.items[t].b -% w.decl.inst_start.int();
             if (item >= w.split_exposed.len or w.split_exposed[item]) continue;
             if (own != none and own == w.split_list[item]) continue;
-            const base = try w.takenBase(t);
-            if (cells == null) cells = try w.expand(av);
-            if (try w.reachesSplit(cells.?, base)) w.split_exposed[item] = true;
+            if (cells == null) cells = try w.expand(try w.outerView(av, w.frame));
+            if (try w.reachesSplit(cells.?, t)) w.split_exposed[item] = true;
         }
+    }
+
+    /// #1956: an exposed split element against a capture of another local:
+    /// two captures are two cells however much the frames that bind them
+    /// share. What they hold decides, and nothing is known of a capture of a
+    /// binding not made yet.
+    fn exposedThroughCapture(w: *Walker, t: u32, other: u32) Allocator.Error!bool {
+        const c = w.cells.items[other];
+        if (c.kind != .env or !w.splitExposed(t)) return false;
+        if (c.a < w.local_av.len and w.local_av[c.a] == null) return true;
+        return w.reachesSplit(try w.expand(try w.outerView(try w.single(c), w.frame)), t);
     }
 
     /// Whether the taken cell `t`'s element was reached by a read other than
@@ -21856,7 +21937,7 @@ const Walker = struct {
         // holders reach it (a local holding the object at two paths).
         var hoisted: std.ArrayList(u32) = .empty;
         var best: ?struct { cause: Cause, holder: Holder, use: Use } = null;
-        for (rec.holders) |h| {
+        for ([_][]const Holder{ rec.holders, try w.captureHolders(rec, false) }) |group| for (group) |h| {
             var first: ?Use = null;
             const range = if (h.local < w.use_start.len - 1) w.use_order[w.use_start[h.local]..w.use_start[h.local + 1]] else &[_]u32{};
             // The uses are in the order they were recorded, so by point:
@@ -21961,7 +22042,7 @@ const Walker = struct {
                 if (!(better_kind or (same_kind and (u.point < bst.use.point or (u.point == bst.use.point and w.holderBefore(h, bst.holder)))))) continue;
             }
             best = .{ .cause = cause, .holder = h, .use = u };
-        }
+        };
         std.mem.sort(u32, hoisted.items, {}, std.sort.asc(u32));
         for (hoisted.items, 0..) |ui, i| {
             if (i == 0 or hoisted.items[i - 1] != ui) d.hoists += 1;
