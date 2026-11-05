@@ -17,6 +17,7 @@ import Duration exposing (Duration)
 import Js
 import Js.Any as Any
 import Js.Chain as Chain
+import Js.Fifo as Fifo
 import Js.Protocol as Protocol
 import Schema exposing (Issue)
 import Task exposing (Scope)
@@ -73,7 +74,7 @@ type alias PeerFields =
     offer : V → Bool
     end : ⊤ → ⊤
     fail : TransportError → ⊤
-    listeners : Chain.Chain (⊤ → ⊤)
+    listeners : Fifo.Fifo (⊤ → ⊤)
     failure : Maybe TransportError
     alive : Int
     owned : Bool
@@ -460,7 +461,7 @@ newPeer endpoint native entry fingerprint wire opts =
                 , offer = λ_ → False
                 , end = λ_ → ⊤
                 , fail = λ_ → ⊤
-                , listeners = Chain.make ⊤
+                , listeners = Fifo.make ⊤
                 , failure = Nothing
                 , alive = 0
                 , owned = False
@@ -519,18 +520,15 @@ listen peer name callback =
     cell = peerCell peer
     remove =
         NativeEvents.listen (NativeWorker.toEventTarget (Js.cellRead cell .endpoint)) name guarded
-    Chain.push (Js.cellRead cell .listeners) remove
+    Fifo.push (Js.cellRead cell .listeners) remove
 
 
 unlisten : Peer → ⊤
 unlisten peer =
     listeners = Js.cellRead (peerCell peer) .listeners
-    case Chain.shift listeners of
-        Nothing →
-            ⊤
-        Just remove →
-            Protocol.call remove ⊤
-            unlisten peer
+    if not (Fifo.empty listeners) then
+        Protocol.call (Fifo.shift listeners) ⊤
+        unlisten peer
 
 
 wakeStartup : Peer, Result (OpenReason V) ⊤ → ⊤
@@ -1485,39 +1483,38 @@ requireSyncStart callback = callback
 -- helper; neither JSON conversion nor a user codec runs here.
 wireBytes : V, Int → Int
 wireBytes value limit =
-    pending = Chain.make ⊤
-    _ = Chain.append pending value
+    pending = Fifo.make ⊤
+    Fifo.unshift pending value
     sizeLoop pending 0 limit
 
 
-sizeLoop : Chain.Chain V, Int, Int → Int
+sizeLoop : Fifo.Fifo V, Int, Int → Int
 sizeLoop pending size limit =
     if size > limit then
         size
+    else if Fifo.empty pending then
+        size
     else
-        case Chain.pop pending of
-            Nothing →
-                size
-            Just item →
-                if Js.typeIs item "string" then
-                    text : String
-                    text = Js.to item
-                    bytes = TextEncoder.encode (TextEncoder.create ⊤) text
-                    sizeLoop pending (size + Uint8Array.byteLength bytes + 8) limit
-                else if Js.isNullish item || not (Js.typeIs item "object") then
-                    sizeLoop pending (size + 8) limit
-                else
-                    appendFields pending item (Data.keys item)
-                    sizeLoop pending (size + 8) limit
+        item = Fifo.shift pending
+        if Js.typeIs item "string" then
+            text : String
+            text = Js.to item
+            bytes = TextEncoder.encode (TextEncoder.create ⊤) text
+            sizeLoop pending (size + Uint8Array.byteLength bytes + 8) limit
+        else if Js.isNullish item || not (Js.typeIs item "object") then
+            sizeLoop pending (size + 8) limit
+        else
+            appendFields pending item (Data.keys item)
+            sizeLoop pending (size + 8) limit
 
 
-appendFields : Chain.Chain V, V, List String → ⊤
+appendFields : Fifo.Fifo V, V, List String → ⊤
 appendFields pending item fields =
     case fields of
         [] →
             ⊤
         [ field, …rest ] →
-            _ = Chain.append pending (Js.get item field)
+            Fifo.unshift pending (Js.get item field)
             appendFields pending item rest
 
 

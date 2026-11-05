@@ -7033,7 +7033,13 @@ for a WebSocket — is §9.11.)*
 
 *As built, 2026-11-02:* the browser socket keeps its native WebSocket handle,
 unread text, waiting resume capabilities and subscription listener typed.
-Queues use the shared core Chain module. Generated native operations supply
+*Amended 2026-11-05:* unread socket text, worker stream buffers, worker
+listener cleanup and Cloudflare trampoline jobs use core's ring FIFO. Queues
+that cancel an individual registration retain Chain removal tokens. A
+trampoline replaces its current queue before invoking any job in that batch,
+so work enqueued by a running job belongs to the next batch. The bounded
+worker wire walk uses the ring's front insertion/removal to keep its existing
+depth-first order. Generated native operations supply
 construction, events, send and close; only constructor SecurityError maps to
 Blocked. Unknown exceptions retain their identity. Binary-message policy,
 reader cancellation and connection lifetime remain beni.

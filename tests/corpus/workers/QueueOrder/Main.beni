@@ -1,0 +1,22 @@
+-- Initial jobs run in creation order; their yielded continuations form the
+-- next batch in the same order. The request owns its trace.
+import List
+import Ref
+import Task
+import Worker exposing (Context, Request, Response)
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [] }
+
+
+route : Context, Request → Response
+route _ _ =
+    trace = Ref.make ""
+    jobs = List.map (List.range 1 20) λnumber →
+        Task.spawn λ⊤ →
+            Ref.update trace λtext → "${text}${number},"
+            Task.yieldNow ⊤
+            Ref.update trace λtext → "${text}${number + 100},"
+    List.foldl jobs ⊤ λjob _ → Task.join job
+    Worker.text 200 (Ref.get trace)

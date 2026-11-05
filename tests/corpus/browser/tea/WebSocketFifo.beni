@@ -1,0 +1,62 @@
+-- Let text accumulate before reading, wrap the ring, then close with unread
+-- text. Buffered text still arrives in order before the close result.
+import Cmd
+import Html exposing (Html)
+import Sub
+import Tea
+import Time
+import WebSocket
+
+
+type Msg
+    = Done String
+
+
+read : WebSocket.Socket, Int, List String → List String
+read socket count values =
+    if count == 0 then
+        values
+    else
+        case WebSocket.read socket of
+            Ok text →
+                read socket (count - 1) [ …values, text ]
+            Err _ →
+                [ …values, "early close" ]
+
+
+session : WebSocket.Socket → String
+session socket =
+    Time.sleep (Time.millis 10)
+    first = read socket 3 []
+    Time.sleep (Time.millis 10)
+    rest = read socket 8 []
+    ending =
+        case WebSocket.read socket of
+            Err close →
+                String.fromInt close.code
+            Ok _ →
+                "late text"
+    firstText = String.join first ","
+    restText = String.join rest ","
+    "${firstText}|${restText}|${ending}"
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init =
+            λ⊤ →
+                ( "waiting"
+                , Cmd.perform λsend →
+                    text =
+                        case WebSocket.connect "/fifo" [] session of
+                            Ok result →
+                                result
+                            Err _ →
+                                "connection failed"
+                    send (Done text)
+                )
+        , update = λ(Done text) _ → ( text, Cmd.none )
+        , view = λtext → <p>{text}</p>
+        , subscriptions = λ_ → Sub.none
+        }
