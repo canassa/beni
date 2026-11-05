@@ -1,0 +1,15 @@
+socket 1 open
+socket 1 message "1"
+socket 1 message "2"
+socket 1 message "3"
+socket 1 message "4"
+socket 1 message "5"
+socket 1 message "6"
+socket 1 message "7"
+socket 1 message "8"
+advance 10
+socket 1 message "9"
+socket 1 message "10"
+socket 1 message "11"
+socket 1 close 4000 "done"
+advance 10
