@@ -375,6 +375,7 @@ module Html
   attribute "spellcheck" : String
   attribute "spreadMethod" on "linearGradient" "radialGradient" : String
   attribute "src" on "audio" "embed" "iframe" "img" "input" "source" "track" "video" url : String
+  attribute "start" on "ol" : Int
   attribute "startOffset" on "textPath" : String
   attribute "stdDeviation" on "feDropShadow" "feGaussianBlur" : String
   attribute "step" on "input" : String
@@ -455,4 +456,7 @@ module Html
   event "onPointerUp" delegated via pointer : Pointer
   event "onScroll" : Event
   event "onSubmit" on "form" delegated preventDefault : Event
+module Html.Markdown
+  value fromString : String → Html msg
+  value view : List Block → Html msg
 ```

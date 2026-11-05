@@ -5,7 +5,7 @@
   "html": "index.html",
   "host": "page",
   "platforms": ["html"],
-  "reexports": ["Html"],
+  "reexports": ["Html", "Html.Markdown"],
   "markup": { "lowering": "dom", "module": "Rt" },
   "zig": "zig/root.zig"
 }

@@ -102,7 +102,7 @@ Open the file that your task needs. Each is short.
 - `references/dates.md` — `Date`: ISO 8601 text, zones by name, the calendar parts of a moment.
 - `references/schemas.md` — the `schema` declaration, `Type` and `Encoded`, `parse` and `print`, the modifiers,
   `tagged`, `Json` with a derived `codec`.
-- `references/markdown.md` — `Markdown.parse`: the CommonMark tree, raw HTML as text, the limits.
+- `references/markdown.md` — `Markdown.parse` and `Html.Markdown`: the CommonMark tree, rendering, raw HTML as text, limits.
 - `references/markup.md` — elements, attributes, holes, events, components, `For`, `Show`, `class` and `style`
   lists, `Html.map`, what is refused.
 - `references/platforms.md` — `node`, `browser`, `browser-tea`, `browser-inline`, `html` and `cloudflare`: what `main` is on
