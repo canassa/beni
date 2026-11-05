@@ -79,9 +79,15 @@ pub fn emit(l: anytype, out: *List, row: Operations.Row, callee: ?N, values: []N
             const absent = try l.call(try l.optCoreValue("some", p), &.{none}, p);
             const invalid = try l.call(try l.optCoreValue("some", p), &.{absent}, p);
             const error_name = try l.member(value, try l.interner.getOrPut(l.gpa, "name"), p);
-            const security = try l.condOf(try l.binary(.strict_eq, error_name, try l.stringNode("SecurityError", p), p), absent, invalid, p);
-            const failure = try l.condOf(try l.binary(.strict_eq, error_name, try l.stringNode("SyntaxError", p), p), none, security, p);
-            break :blk l.condOf(try l.unary(.not, try l.binary(.instance_of, value, try l.member(global, try l.interner.getOrPut(l.gpa, "Worker"), p), p), p), failure, value, p);
+            const dom = try l.binary(.instance_of, value, try l.member(global, try l.interner.getOrPut(l.gpa, "DOMException"), p), p);
+            const syntax = try l.binary(.logical_and, dom, try l.binary(.strict_eq, error_name, try l.stringNode("SyntaxError", p), p), p);
+            const security = try l.binary(.logical_and, dom, try l.binary(.strict_eq, error_name, try l.stringNode("SecurityError", p), p), p);
+            const type_error = try l.binary(.instance_of, value, try l.member(global, try l.interner.getOrPut(l.gpa, "TypeError"), p), p);
+            const failure = try l.condOf(syntax, none, try l.condOf(security, absent, invalid, p), p);
+            // The sibling catches only documented failures. A constructor
+            // wrapper can return a real Worker outside its own prototype chain.
+            const failed = try l.binary(.logical_or, syntax, try l.binary(.logical_or, security, type_error, p), p);
+            break :blk l.condOf(failed, failure, value, p);
         },
     };
 }

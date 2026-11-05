@@ -1,0 +1,31 @@
+import Browser.Host.Worker as Worker
+
+
+foreign impure install : String → ⊤
+
+
+attempt : String → String
+attempt mode =
+    install mode
+    case Worker.tryCreate "unused" "wrapped" "same-origin" of
+        Ok worker →
+            Worker.terminate worker
+            "ok"
+        Err Worker.SyntaxError →
+            "syntax"
+        Err Worker.SecurityError →
+            "security"
+        Err Worker.TypeError →
+            "type"
+
+
+pub check : ⊤ → String
+check ⊤ =
+    results =
+        [ attempt "wrapped"
+        , attempt "syntax"
+        , attempt "security"
+        , attempt "type"
+        , attempt "renamed-type"
+        ]
+    String.join results " "

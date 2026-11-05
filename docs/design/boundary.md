@@ -436,6 +436,14 @@ and TypeError. The catalogue validates both the public signature and its typed
 host projection, preserving native identities, shared type variables, arities,
 realms and effects. HostFree applies to the wrappers without an exemption.
 
+*Worker constructor correction, 2026-11-05 (#1941, fixes after #1937):*
+construction failure is identified by the documented caught types: DOMException
+with name SyntaxError or SecurityError, or TypeError independent of its name.
+A successful result is passed through as the native Worker identity. A wrapped
+or proxied constructor may return a real Worker that is not an instance of the
+current global constructor; success must not be tested with `instanceof Worker`.
+The existing sibling rethrows all other exceptions; no broader catch is added.
+
 *Review amendment 2026-11-05:* a private `host_*` projection may appear
 only as the direct callee of a saturated call. Taking it as a value, passing
 it as an argument or using a `_` placeholder is `invalid_native_binding`:

@@ -4266,6 +4266,15 @@ lambda a result carries prints `λ` at its path (§24.9).
 
 ### 24.8 The annotated surface
 
+*Native-host correction re-read, 2026-11-05 (#1941, fixes after #1937):*
+the shared `NativeHost.zig` span identifies worker-construction failures by
+DOMException with the documented name or TypeError, and passes successful native
+identities through. All worded `host_*` operations sharing this pinned span retain
+their existing argument/result aliases, field writes and callback counts; their
+branches are unchanged. No constructor wrapper can create a false failure merely
+by returning a Worker outside its own prototype chain. The complete shared span
+was re-read before updating its pins; no ownership or publication rule changes.
+
 *Integration re-read, 2026-11-05 (#1941 with #1937):* the shared Lower span for
 `Js.cell`, `cellRead`, `cellWrite`, `none`, `some`, `optMatch` and `optWithDefault`
 now exposes `optNone`/`optCoreValue` to the native-host adapter. This changes Zig
