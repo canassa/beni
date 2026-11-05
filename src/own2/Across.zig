@@ -10,7 +10,6 @@ const std = @import("std");
 const Ids = @import("Ids.zig");
 const Value = @import("Value.zig");
 const LabelChain = @import("LabelChain.zig");
-const Contract = @import("Contract.zig");
 
 const Error = Value.Error;
 
@@ -22,18 +21,11 @@ pub fn capture(f: *const Value.Frame, q: u32, j: u32) bool {
     return j + f.kidsOf(f.val(call.callee_val)).len >= call.args.len;
 }
 
-/// No argument is left out.
-pub fn none(_: LabelChain.Chain, _: Contract.Label, _: usize) Error!bool {
-    return false;
-}
-
 /// The operands of a capture write of virtual call `q`, appended to `out`:
 /// at each label outward, the call's arguments but the one that hands the
 /// code (the label's function slot is the root of it), and the answers of
-/// the call's other labels applied to known codes. `takes`: for an answer in
-/// the code, an argument the label takes, whose separation its own conditions
-/// ask, is left out (`Supplied.takes`).
-pub fn operands(c: LabelChain.Chain, q: u32, takes: anytype, out: *std.ArrayList(u32)) Error!void {
+/// the call's other labels applied to known codes.
+pub fn operands(c: LabelChain.Chain, q: u32, out: *std.ArrayList(u32)) Error!void {
     const f = c.f;
     const gpa = f.gpa;
     var cur = q;
@@ -42,7 +34,7 @@ pub fn operands(c: LabelChain.Chain, q: u32, takes: anytype, out: *std.ArrayList
         const oc = f.calls.items[o[0]];
         const lab = c.contracts.labelsOf(c.contracts.head(oc.contract).labels)[o[1]];
         const whole = f.slots.relWords(lab.slot).len == 0;
-        for (oc.args, 0..) |a, k| if ((k != lab.j or !whole) and !try takes(c, lab, k)) try out.append(gpa, a);
+        for (oc.args, 0..) |a, k| if (k != lab.j or !whole) try out.append(gpa, a);
         const it = c.virt.keys.items;
         var i: usize = 0;
         while (i + 1 < it.len) : (i += 2) {

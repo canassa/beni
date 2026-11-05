@@ -212,7 +212,7 @@ const layers = [_]Entry{
     .{ .file = "EntryHeld.zig", .layer = 11, .max_lines = 70 },
     .{ .file = "SupplyCond.zig", .layer = 11, .max_lines = 90 },
     // A supplied part judged, split from `Resolve` (§2.11.3, #2013).
-    .{ .file = "Supplied.zig", .layer = 11, .max_lines = 185 },
+    .{ .file = "Supplied.zig", .layer = 11, .max_lines = 165 },
     // A label's answer in another label's supply (§2.11.3, #2013).
     .{ .file = "SupplyAnswers.zig", .layer = 11, .max_lines = 70 },
     .{ .file = "ReadOff.zig", .layer = 12, .max_lines = 1160 },
