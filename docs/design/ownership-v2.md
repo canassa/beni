@@ -171,6 +171,12 @@ below that slot, since its contract names none. Before this,
 the step read as a scalar: no demand was made, no write reached the contract, and the build emitted a copying push, a silent fallback
 `PolyRecCps`'s `useCps` shows (Appendix B, the `cps` site). Refused that a perfect checker accepts: any write past the fold, over fresh data too (#2038). Fixtures `run/SanitiserFoldedType`, `run/SanitiserFoldedTypeApart`.
 
+A level read on a built value is read at the place the path names, not the value's own. A non-regular type's instantiations never repeat, so
+`Wrap (Wrap (Leaf k))` of `T (List Int)` sits at a place of its own, and `#1.0⟲` met no kid on a cycle, read empty, and `k` was edited in place (#2062). The path's
+steps from the value it starts at reach the place of the `⟲` (`LevelCycle.of`), the fold here, and the literal's kids are walked along that place's cycle. So an
+element `a` of a literal, which reaches the type's own nominal only by what `a` stands for, is no level, and a type with both a plain recursion and a fold reads the
+fold when the path does.
+
 **A step no place names** (#2043). A fold is not the only such step. `Q { r | a : List Int }` in a template drops its row, so `Q { b : List Int }` has a
 record place with no `.b`, and a schema member inside a nominal type is read through a template that cannot name its fields. A step a place
 cannot name is `⊤` at any place but `cross`, which holds no object, and a schema member in a template is a `var` place, as a fold is. Refused
@@ -5178,6 +5184,7 @@ L0  Ids  Counters  Scratch
 | `Facts.zig` | 2 | the records that cross layers: uses, demand kinds, verdicts, causes, the pre-pass's facts, report lines | Ids |
 | `TagTree.zig` | 2 | a run of tag lists as the tree of their shared tails; the members a list may hold with (§2.8, #1714) | Ids, Routes |
 | `PlaceBelow.zig` | 2 | what a place graph says below a path: object slots counted, a family read off (§2.3.1, #1714) | Ids, Place |
+| `LevelCycle.zig` | 2 | the place a path's `⟲` means on a built value (§2.1, #2062) |
 | `Steps.zig` | 2 | one step of a position, §2.3.2's relation of two steps of one parent, and the protocol by which every index of positions files and asks (#1963) | Ids, Place |
 | `PlaceIdentity.zig` | 2 | a place graph's structural identity: `encode`, `decode`, `equals` (§2.1, §3.1), split from `Place` (#1714) | Ids, Place |
 | `Slots.zig` | 2 | slot sets, `below`, canonical names, relative steps (§2.3.1, §3.2) | Ids, Place, Runs |

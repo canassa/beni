@@ -1,0 +1,147 @@
+-- A level of a non-regular type's literal (`ownership-v2.md` §2.1, *A step past
+-- a fold*, #2062): a literal's place is an instantiation on no cycle, so `⟲` met
+-- no kid and read empty, and the write below edited `k` in place. The way to the
+-- fold can run through a call's answer, a list, a record, a tuple or `Maybe`, and
+-- a type can have a plain recursion beside its fold (`G`): the path names which.
+-- Each write here is of a list `k` is, and is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+type L a
+    = LLeaf a
+    | LWrap (List (L (List a)))
+
+
+type R a
+    = RLeaf a
+    | RWrap { sub : R (List a) }
+
+
+type P a
+    = PLeaf a
+    | PWrap (P (List a) × Int)
+
+
+type M a
+    = MLeaf a
+    | MWrap (Maybe (M (List a)))
+
+
+type G a
+    = GLeaf a
+    | GSame (G a)
+    | GWrap (G (List a))
+
+
+type alias Deep =
+    List (List (List (List Int)))
+
+
+leaf : Deep → T Deep
+leaf k = Leaf k
+
+
+viaCall : T (List Int) → Deep
+viaCall t =
+    case t of
+        Wrap (Wrap (Wrap (Leaf ys))) →
+            ys
+        _ →
+            []
+
+
+viaList : L (List Int) → Deep
+viaList t =
+    case t of
+        LWrap [ LWrap [ LWrap [ LLeaf ys ] ] ] →
+            ys
+        _ →
+            []
+
+
+viaRecord : R (List Int) → Deep
+viaRecord t =
+    case t of
+        RWrap { sub } →
+            case sub of
+                RWrap r →
+                    case r.sub of
+                        RWrap q →
+                            case q.sub of
+                                RLeaf ys →
+                                    ys
+                                _ →
+                                    []
+
+                        _ →
+                            []
+
+                _ →
+                    []
+
+        _ →
+            []
+
+
+viaTuple : P (List Int) → Deep
+viaTuple t =
+    case t of
+        PWrap ( PWrap ( PWrap ( PLeaf ys, _ ), _ ), _ ) →
+            ys
+        _ →
+            []
+
+
+viaMaybe : M (List Int) → Deep
+viaMaybe t =
+    case t of
+        MWrap (Just (MWrap (Just (MWrap (Just (MLeaf ys)))))) →
+            ys
+        _ →
+            []
+
+
+viaBoth : G (List Int) → Deep
+viaBoth t =
+    case t of
+        GWrap (GWrap (GWrap (GLeaf ys))) →
+            ys
+        _ →
+            []
+
+
+main : Program
+main =
+    k1 = [ [ [ [ 1 ] ] ] ]
+    a = List.push (viaCall (Wrap (Wrap (Wrap (leaf k1))))) []
+    k2 = [ [ [ [ 1 ] ] ] ]
+    b = List.push (viaList (LWrap [ LWrap [ LWrap [ LLeaf k2 ] ] ])) []
+    k3 = [ [ [ [ 1 ] ] ] ]
+    c = List.push (viaRecord (RWrap { sub = RWrap { sub = RWrap { sub = RLeaf k3 } } })) []
+    k4 = [ [ [ [ 1 ] ] ] ]
+    d = List.push (viaTuple (PWrap ( PWrap ( PWrap ( PLeaf k4, 1 ), 2 ), 3 ))) []
+    k5 = [ [ [ [ 1 ] ] ] ]
+    m = List.push (viaMaybe (MWrap (Just (MWrap (Just (MWrap (Just (MLeaf k5)))))))) []
+    k6 = [ [ [ [ 1 ] ] ] ]
+    g = List.push (viaBoth (GWrap (GWrap (GWrap (GLeaf k6))))) []
+    Node.print
+        (String.join
+            (List.map
+                [ List.length a + List.length k1
+                , List.length b + List.length k2
+                , List.length c + List.length k3
+                , List.length d + List.length k4
+                , List.length m + List.length k5
+                , List.length g + List.length k6
+                ]
+                String.fromInt
+            )
+            ","
+        )

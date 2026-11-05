@@ -19,6 +19,7 @@ const std = @import("std");
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const LevelCycle = @import("LevelCycle.zig");
 const Relation = @import("Relation.zig");
 const Coexist = @import("Coexist.zig");
 
@@ -43,6 +44,7 @@ const Item = struct { v: u32, at: u32, route: u32, run: u32, tags: u32 = 0, rout
 const Walk = struct {
     e: *Eval,
     reqs: []const Req,
+    root: Place.PlaceId, // the place of the value the paths start at
     items: std.ArrayList(Item) = .empty,
     /// `(value, at, route, run, place, origin)` → its item.
     index: Ids.FixedDict(6) = .{},
@@ -65,6 +67,9 @@ const Walk = struct {
     }
 
     /// The run of paths `xs`, one id per content.
+    fn levelPlace(w: *Walk, it: Item, x: anytype) u32 {
+        return LevelCycle.of(w.e.places(), w.root, w.reqs[w.runs.items[it.run][0]].words[0..it.at], x.place).int();
+    }
     fn run(w: *Walk, xs: []const u32) Error!u32 {
         const g = w.e.gpa();
         const h = std.hash.Wyhash.hash(3, std.mem.sliceAsBytes(xs));
@@ -288,7 +293,7 @@ pub fn project(e: *Eval, v: u32, reqs: []const Req, route: u32, pass: u32) Error
     const saved = e.pass;
     e.pass = pass;
     defer e.pass = saved;
-    var w: Walk = .{ .e = e, .reqs = reqs };
+    var w: Walk = .{ .e = e, .reqs = reqs, .root = LevelCycle.rootOf(e.f, v) };
     defer w.deinit();
     const all = try e.arena.alloc(u32, reqs.len);
     for (all, 0..) |*x, i| x.* = @intCast(i);
@@ -359,7 +364,7 @@ pub fn project(e: *Eval, v: u32, reqs: []const Req, route: u32, pass: u32) Error
             const kid_run = try w.run(grp.items);
             const kid: Item = .{ .v = 0, .at = it.at + 1, .route = 0, .run = kid_run, .tags = it.tags, .routes = it.routes };
             switch (st.kind) {
-                .level => try w.arrive(.{ .v = it.v, .at = it.at, .route = it.route, .run = kid_run, .tags = it.tags, .routes = it.routes, .lvl = it.at, .place = x.place.int(), .origin = x.place.int() }),
+                .level => try w.arrive(.{ .v = it.v, .at = it.at, .route = it.route, .run = kid_run, .tags = it.tags, .routes = it.routes, .lvl = it.at, .place = w.levelPlace(it, x), .origin = w.levelPlace(it, x) }),
                 .ctor_arg => {
                     const ca = e.places().ctorArgOf(st);
                     if (ca[0] == x.head and ca[1] < ks.len) try w.arrive(withKid(kid, ks[ca[1]], try kidRoute(e, it.route, ca[1])));
