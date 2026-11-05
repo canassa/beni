@@ -374,3 +374,12 @@ pub const Rounds = struct {
         r.nonempty -= 1;
     }
 };
+
+/// Whether, in a called code, `ents` hold an object its creation made and
+/// a part of its own parameter (`Relation.Eval.made`, §2.11.3).
+pub fn madeMeetsOwn(e: anytype, ents: []const Ent) bool {
+    const m = e.made orelse return false;
+    var seen: u2 = 0;
+    for (ents) |en| seen |= m(e, e.f.leafAt(en.leaf));
+    return seen == 3;
+}

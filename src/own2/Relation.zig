@@ -186,6 +186,9 @@ pub const Eval = struct {
     /// below the slot gives each part's own objects at its own route.
     parts: bool = false,
     code_sig: ?CodeSig = null,
+    /// A called code: 1 for a leaf its creation made, 2 for its own
+    /// parameter's, 0 else; the two may be one object (§2.11.3).
+    made: ?*const fn (e: *Eval, l: Value.Leaf) u2 = null,
     /// A projection whose routes nobody reads (`arrivalLeaves`): a level walk meets a value once a place,
     /// not once a place and literal route.
     no_routes: bool = false,

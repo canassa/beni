@@ -88,6 +88,35 @@ twice : (⊤ → List Int) → List (List Int)
 twice g = [ g ⊤, g ⊤ ]
 
 
+app : (Int → List Int), Int → List Int
+app f x = f x
+
+
+oneAnswer : (Int → List Int) → (⊤ → List Int)
+oneAnswer f =
+    a = app f 1
+    λ⊤ →
+        _ = app f 2
+        a
+
+
+beside : ⊤ → (List Int → List (List Int))
+beside ⊤ =
+    xs = [ 1 ]
+    λv → [ xs, v ]
+
+
+type alias Pair =
+    put : List Int → List (List Int)
+    get : ⊤ → List Int
+
+
+pair2 : ⊤ → Pair
+pair2 ⊤ =
+    xs = [ 1 ]
+    { put = λv → [ xs, v ], get = λ⊤ → xs }
+
+
 captureReadAfter : ⊤ → String
 captureReadAfter ⊤ =
     xs = [ 0 ]
@@ -185,6 +214,43 @@ handedOn ⊤ =
             ""
 
 
+creationAnswer : ⊤ → String
+creationAnswer ⊤ =
+    g = oneAnswer λx → [ x ]
+    a = g ⊤
+    y = List.push a 9
+    "${show y} ${show (g ⊤)}"
+
+
+madeBesideOwn : ⊤ → String
+madeBesideOwn ⊤ =
+    g = beside ⊤
+    case g [] of
+        [ p, …_ ] →
+            case g p of
+                [ u, w ] →
+                    y = List.push u 9
+                    "${show y} ${show w}"
+
+                _ →
+                    ""
+
+        _ →
+            ""
+
+
+madeBesideOwnField : ⊤ → String
+madeBesideOwnField ⊤ =
+    r = pair2 ⊤
+    case r.put (r.get ⊤) of
+        [ u, w ] →
+            y = List.push u 9
+            "${show y} ${show w}"
+
+        _ →
+            ""
+
+
 main : Program
 main =
     Node.print
@@ -201,6 +267,9 @@ main =
             , fieldReplaced ⊤
             , fieldUntouched ⊤
             , handedOn ⊤
+            , creationAnswer ⊤
+            , madeBesideOwn ⊤
+            , madeBesideOwnField ⊤
             ]
             "\n"
         )

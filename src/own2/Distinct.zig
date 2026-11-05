@@ -430,7 +430,7 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
     while (true) : (rounds += 1) {
         const ents = st.ents.items;
         try e.charge(.cond, @intCast(1 + ents.len - fresh));
-        if (try answerMeets(f, ents, st.alive.items, fresh)) return Cond.unprovable;
+        if (try answerMeets(f, ents, st.alive.items, fresh) or Entries.madeMeetsOwn(e, ents)) return Cond.unprovable;
         // The new entries into their groups; a second parameter's group
         // makes every parameter group ask its occurrences.
         const params = st.params;
@@ -614,8 +614,8 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
         if (tp.kind == .plain and Step.fromWord(tp.a).kind == .contents) return .no;
     }
     if (x.kind == .top or t.kind == .top or x.kind == .loan or t.kind == .loan) return .may;
-    // A host object is no target that is still writable (§2.10, *host
-    // objects*): it may be another host object only.
+    if (e.made) |m| if (m(e, x) | m(e, t) == 3) return .may;
+    // A host object is no target that is still writable: it may be another host object only (§2.10).
     if (x.kind == .host or t.kind == .host) return if (x.kind == t.kind) .may else .no;
     const xr = x.kind == .ref;
     const tr = t.kind == .ref;
