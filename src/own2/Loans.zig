@@ -58,7 +58,7 @@ fn cellAt(t: *const Trees.Table, slots: *const Slots.Table, n: Contract.Node, pa
 /// of the cell and of the call, which type `.1` and `.0` at this call.
 pub fn answer(c: LabelChain.Chain, ev: *Relation.Eval, q: u32, li: u32, modify: bool, cs: Contract.Arrival, vi: u32, cell: ?Ids.PlaceId, result: ?Ids.PlaceId) Error!void {
     const vc = c.f.calls.items[vi];
-    if (modify and try Cells.oneObject(c.f, cell)) {
+    if (modify) {
         const f = c.f;
         const parts = [2]?Ids.PathId{ if (result) |p| try f.places.rootPath(f.gpa, p) else null, if (cell) |p| try f.places.extend(f.gpa, f.gc(), try f.places.rootPath(f.gpa, p), Step.contents) else null };
         if (!try lends(f, f.roots.items[vc.root].path, parts, try LabelChain.entriesOf(c, c.contracts.head(vc.contract).res_root))) return;

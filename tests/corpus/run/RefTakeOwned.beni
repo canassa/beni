@@ -97,5 +97,13 @@ otherLoan ⊤ =
     "otherLoan ${ints u} ${ints v} ${ints (Ref.get a)}"
 
 
+pairTake : ⊤ → String
+pairTake ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    case Ref.modify r λo → ( o, ( [], [] ) ) of
+        ( a, b ) →
+            "pairTake ${ints (List.push a 8)} ${ints b}"
+
+
 main : Program
-main = Node.printLines [ helper ⊤, inline ⊤, emptied ⊤, moved ⊤, grown ⊤, otherLoan ⊤ ]
+main = Node.printLines [ helper ⊤, inline ⊤, emptied ⊤, moved ⊤, grown ⊤, otherLoan ⊤, pairTake ⊤ ]
