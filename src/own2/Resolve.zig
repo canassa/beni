@@ -369,7 +369,7 @@ const Resolver = struct {
         relied.no = d.relies.no;
         if (debug) std.debug.print("judge point {d} kind {t} relies no={} sel={d}\n", .{ d.point, d.kind, d.relies.no, d.relies.sel.len });
         // Unescaped.
-        for (targets) |t| if (try r.escaped(t, d.point, d.call, &relied)) {
+        for (targets) |t| if (try r.escaped(t, d.point, d.call, &relied) and (d.beside == none or try r.escaped(t, d.point, d.beside, &relied))) {
             refuse(o, .escaped);
             return line;
         };

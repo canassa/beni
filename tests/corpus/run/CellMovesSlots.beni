@@ -114,6 +114,38 @@ noLoan ⊤ =
     pair r
 
 
+upd : Ref a, (a → a) → ⊤
+upd c f = Ref.update c f
+
+
+throughLabel : ⊤ → String
+throughLabel ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    upd r swap
+    pair r
+
+
+partial : Ref (List Int × List Int), List Int, (List Int × List Int → List Int × List Int) → ⊤
+partial c put f =
+    Ref.update c λp →
+        case p of
+            ( _, y ) →
+                ( put, y )
+    Ref.update c f
+
+
+helperEscapesOneSlot : ⊤ → String
+helperEscapesOneSlot ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    put = [ 7 ]
+    partial r put swap
+    Ref.update r λp →
+        case p of
+            ( x, y ) →
+                ( x, List.push y 8 )
+    "${ints put} ${pair r}"
+
+
 main : Program
 main =
     Node.printLines
@@ -124,4 +156,6 @@ main =
         , viaHelper ⊤
         , record ⊤
         , noLoan ⊤
+        , throughLabel ⊤
+        , helperEscapesOneSlot ⊤
         ]
