@@ -489,7 +489,7 @@ pub const Adapter = struct {
         const t: Types.TypeId = @fromBackingInt(n.head);
         const e = a.in.types.entries[t.int()];
         const arg0 = a.listAt(n.a, 0);
-        if (e.schema_endpoint) return .{ .kind = .@"opaque", .head = n.head };
+        if (e.schema_endpoint) return .{ .kind = .@"var" };
         const bir = a.in.birs[e.module.int()];
         const decl = bir.decl(e.decl);
         switch (decl.own_kind) {

@@ -138,6 +138,12 @@ fn valueBody(s: *Sink, v: u32, q: PathId, out: Put.ResList, stack: ?*std.ArrayLi
     }
 }
 
+/// Whether no step below slot `sl` names what it holds.
+fn unnamed(f: *Value.Frame, sl: PathId) bool {
+    const k = f.places.kind(f.places.pathPlace(sl));
+    return k == .@"var";
+}
+
 /// A leaf at result slot `q`: its arrivals at `q` and below it. `whole`:
 /// every object of it arrives at `q` itself.
 fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Error!void {
@@ -207,7 +213,7 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Err
                 }
                 try describeOne(s, l, r, sl, at, out);
                 // Past a fold (§2.1): no slot below a concrete `at` names it.
-                if (mapped and f.places.kind(f.places.pathPlace(.from(sl))) == .@"var" and f.places.kind(f.places.pathPlace(at)) != .@"var") {
+                if (mapped and unnamed(f, .from(sl)) and f.places.kind(f.places.pathPlace(at)) != .@"var") {
                     // A parameter's by its slot; any other root's contract names no such slot.
                     if (r.kind == .param) try Put.arriveWide(s, at, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, .from(sl)), .deep = true, .path = sl }, out) else try Put.arriveWide(s, at, .{ .kind = .top }, out);
                 }
@@ -865,7 +871,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
     d.flags.returns = rv.kind != .bot;
     d.flags.cross = !Slots.holdsAny(f.places, rpath);
     if (d.flags.returns and !d.flags.cross) try describe(s, w.result, rpath, .{});
-    // Reads: every use of a local whose value is a parameter's, in one pass (§2.3.4).
+    // Reads: every local whose value is a parameter's, in one pass (§2.3.4).
     const pass = f.sets.newPass();
     if (code.called) |cd| for (0..cd.own_places.len) |j| {
         _ = try Contract.Draft.addEffect(&d.reads, arena, .{ .j = @intCast(j), .slot = Slots.root, .deep = true });

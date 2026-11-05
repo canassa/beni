@@ -171,6 +171,12 @@ below that slot, since its contract names none. Before this,
 the step read as a scalar: no demand was made, no write reached the contract, and the build emitted a copying push, a silent fallback
 `PolyRecCps`'s `useCps` shows (Appendix B, the `cps` site). Refused that a perfect checker accepts: any write past the fold, over fresh data too (#2038). Fixtures `run/SanitiserFoldedType`, `run/SanitiserFoldedTypeApart`.
 
+**A step no place names** (#2043). A fold is not the only such step. `Q { r | a : List Int }` in a template drops its row, so `Q { b : List Int }` has a
+record place with no `.b`, and a schema member inside a nominal type is read through a template that cannot name its fields. A step a place
+cannot name is `⊤` at any place but `cross`, which holds no object, and a schema member in a template is a `var` place, as a fold is. Refused
+that a perfect checker accepts: any write through such a step, over fresh data too (#2038). Fixtures `run/SanitiserUnnamedStep`,
+`run/SanitiserUnnamedStepApart`.
+
 **Identity.** Initial construction uses a dense `by_var` memo for structural source nodes and the adapter's
 `(head, argument places)` memo for nominal applications. Each source graph node and outgoing edge is visited
 once; no global structural interning is required to construct its cycles. SCC/reverse-edge work computes
