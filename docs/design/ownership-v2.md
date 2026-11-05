@@ -2990,6 +2990,17 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
      crossing place (`Groups.Adapter.close`, `Kind.scalar`), so `( List.push (List.copy xs) 5, xs )` answers a list
      owned, Appendix B's `ModifyResultPaths` (`run/RefModifyIndependent`). The same fact took eight `disjoint` refusals
      of fold accumulators over numeric literals off the corpus; each had a real `escaped` refusal or none needed.
+   - **P-sync, pinned per platform.** `tests/corpus/ownership/p-sync.txt` lists the bodies each platform's host enters
+     beni through, and each is pinned in `word-bodies.txt` (R-5.10.7). A gate test fails on a platform not listed
+     and on a listener (`addEventListener`, an emitter's `on` or `once`) added in a declaration not listed.
+     | Platform | Bodies | Why no program code runs inside a host call |
+     |---|---|---|
+     | `node` | `Http.Server.startListen`, `receive`, `takeUpgrade`, `WebSocket.fromUpgrade`, `Io.run` | an emitter's listener resumes a fiber (`Task.resume`), which queues it; `Io.run`'s `beforeExit` only reports |
+     | `browser` | `Rt.turn`, `delegate`, `delegated`, `listen`, `watchEdits`, `crashScreen`, `Listen.on`, `on2`, `WebSocket.attach` | a message a handler sends is queued for the turn's flush; a `Listen` value is queued for a fiber. **One exception, #2006:** a DOM handler's own extractor runs at the dispatch, so under a `focus()` it runs inside that host call |
+     | `browser-inline` | `Inline.on`, `onArm`, `listen`, `crashScreen`, `Listen.on`, `Browser.Navigation.listen`, `listenOne` | the same, and the same exception |
+     | `browser-tea`, `html` | none | no host code of their own |
+     | `cloudflare` | `Worker.listenForAbort` | the listener stops the scheduler; a request's handlers are the host's calls with nothing beneath them, and resume fibers |
+     Core's own half, `Task.schedule`, `drain` and `fromHost`, was pinned with `Task`.
    Fixtures: `run/CellStoresTwice` (each store, each edit refused; each traps with the rule removed),
    `run/CellStoresApart` (the greens, and a store of one object twice that is only read).
    **Slot state and loans.** A versioned frame relation `contents(handle-origin, ◆)` supplies current stored
