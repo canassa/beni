@@ -958,6 +958,11 @@ alone: a `method_call` adds no `refs` edge (`static-dispatch-spike.md` §1.4) an
 dispatch table carries those edges, the same three legs `emissionOrder` and `js/Reach.zig` read.
 That is also why it was its own slice.
 
+*Amended 2026-11-05 (§13.11; specified, not built):* **a value binding is evaluated once, where it is
+written, in every build, `number` included.** It is never a function of its numeric evidence, so a
+checked build adds no thunk, and a value's crash and its `Debug.log` come when a monomorphic value's
+would. A value whose right side computes at a `number` variable is not generic over it.
+
 **Tests are not evaluations, and that is what a decision tree trades on.** `backend.md` §7 compiles
 a whole `case` to one tree, which may test the parts of the scrutinee in whatever order it likes,
 test one part on several paths, and skip a test it has already made. All of that is reading a value
@@ -3632,6 +3637,12 @@ that change, no operation makes a fraction, and the overflow test keeps out the 
 prerequisite** of this section: until it lands, `2 ^ (0 - 1)` is a fractional `Int` that no check of
 this section sees.
 
+**A `number` nothing settles is `Int`.** *Decided 2026-11-05 (§13.10).* `9007199254740991 + 2` has no
+receiver and needs none: its type is open until something fixes it, and at a monomorphic site
+nothing may, as in `Debug.toString (3000000 * 3000000 * 3000000)`. Then it is `Int`, so that program
+crashes, and the message says to annotate `Float` if that was meant. This is `static-dispatch-spike.md`
+§8.6's rule for identities, applied to evidence.
+
 **Literals.** An `int` literal past `M` at any type but `Float` is refused at compile time, in every
 build: `int_literal_out_of_range` (*not built; it joins §10's list when it is*). A literal still typed
 by a `number` variable counts as an `Int`. A hex literal follows the same rule, so `Int32.fromInt
@@ -3784,7 +3795,8 @@ assumes a check would have passed** (`backend.md` §16.5).
 
 **Its baseline.** *Decided by the owner, 2026-11-05.* `--release` output changes only by named
 repairs, each a correctness fix that changes every build and is reviewed with its golden changes.
-**The named repairs are the repairs of `backend.md` §16.8 step 2**, with #1985's `^`: `Duration`'s saturation, `Int.mod`'s exact answer, wide `Random.int`
+**The named repairs are the repairs of `backend.md` §16.8 step 2**, with #1985's `^` and the
+refusals of §13.11: `Duration`'s saturation, `Int.mod`'s exact answer, wide `Random.int`
 (#1992), stable `degrees` and `toPolar` (#2021), the clock and deadline answers (#2022),
 `Html.targetValue`'s type (#1993), the stop paths (#1994), the host wrappers (#1995, #2020), the
 Cloudflare import (#2019), the repairs of the predicate sweep, and the refusal of out-of-range
@@ -3875,7 +3887,11 @@ recommended. They are normative where the sections above use them.
 
 - **D1. Arithmetic under a `number` type variable** (#1996): compiler-owned numeric evidence, one
   discriminator per independent `number` variable, so `twice 9007199254740991` crashes and `twice
-  1.0e308` does not. `backend.md` §16.3 is the ABI.
+  1.0e308` does not. *Refined by the owner, 2026-11-05:* it is delivered on the checker's existing
+  wanted and evidence path, not a parallel mechanism: each instantiation of a `number` variable
+  raises one hidden wanted. The ABI is read from the scheme, not from a body. It is narrowed to `+`,
+  `-` and `*`, and so `sum` and `product`; comparisons, `negate` and `abs` need no discriminator.
+  `backend.md` §16.3 is the ABI.
 - **D2. The wall** (#1997): exact scalar checks at `Js.to` and a crashing default arm for `case`, with
   explicit trusted escapes, and the statement that the defence is partial. The host audit continues
   whatever the checks find (`boundary.md` §4.3 (h)).
@@ -3897,12 +3913,71 @@ recommended. They are normative where the sections above use them.
   promises it (`Duration`).
 - **`Html.targetValue : Event → Maybe String`** (#1993): `Nothing` on an element with no string
   `value`.
+- **D7. `number` and values** (#2077; the owner, 2026-11-05, on `research/112`; §13.11 is the rule):
+  1. `+` stays `Basics.add`, closed over `number`. It is not a public method. `+` on user types
+     would be a separate feature.
+  2. A value binding whose right side computes at a `number` variable is never generalised over
+     it. An annotated `big : number` over a computing value is refused, with a hint naming the way
+     out, a parameter: `big ⊤ = …`. A value that computes nothing, such as `zero = 0` or `xs = [ 1, 2
+     ]`, stays generic. In a `let`, the existing rule 2 of `checker-v2.md` §8.4 does this once the
+     variable carries the wanted.
+  3. The top-level default is `Int`, decided in the value's own group and **not** by first use,
+     which would defeat the interface firewall. This is the one new rule.
+  4. `ops = { double = λx → x + x }` is held like the rest. The way out is `ops ⊤`.
+  5. Unannotated functions stay generic over `number`: the variant that would make them monomorphic
+     is not taken. An unresolved `number` at a monomorphic site still means `Int` (§13.3).
 - **D8. What a crash stops** (#1994): a scheduler a program makes does not contain a defect; only
   a platform's per-request or per-object scheduler does. §13.6 defines "stops" per platform:
   a page, every program of it; Node, the process; a Worker, that request or object. This overrides
   `core/Task.beni`'s doc comment and `transparent-effects-proposal.md` §17.5.
 - **`Duration.times`** keeps its promised answers on a non-finite factor, as a named row of §13.4.
   The first draft kept them without saying so. This does not reopen D6.
+
+### 13.11 A value is not generic over what it computes
+
+*Decided by the owner, 2026-11-05 (D7), on [`research/112`](research/112-number-evidence.md).
+Specified, not built (#2077). The hold was prototyped; numeric evidence (§13.10 D1) was not.* Numeric
+evidence goes in a parameter, and a value has none. Today `big = 9007199254740991 + 2` serves `asInt
+: Int` and `asFloat : Float` at once, though it is one evaluation that must crash at `Int` and must
+not at `Float`. Running it once per type does not help: `Int` and `Float` share `Basics.add`, so a
+memo cannot tell them apart, and with distinct evidence the value re-runs at each change of type,
+effects included, where `--release` runs it once (`research/112`). So the value is held.
+
+**The rule.** A **value binding**, at top level or in a block, is a binding with no parameters whose
+right side is not a lambda. It is never generalised over a `number` variable that **carries the
+hidden numeric wanted** (`backend.md` §16.3): one raised where the right side instantiates a scheme
+that takes a discriminator, such as `+`, `-`, `*`, `sum`, `product`, or a program's `twice`, whether
+that is at the top of the right side or in a lambda or a data structure inside it.
+
+| Binding | Result |
+|---|---|
+| `zero = 0`, `xs = [ 1, 2 ]`, `p = ( zero, Just (-1) )`, `h = List.singleton 2` | computes nothing that needs evidence, so it stays generic and takes no evidence: a literal is the same number at both types |
+| `big = M + 2`, `y = Just (M + 2)`, `n = twice 3` | held |
+| `ops = { double = λx → x + x }` | held like the rest: a function stored in a value has nowhere to take evidence either. The way out is a parameter, `ops ⊤ = { double = λx → x + x }` |
+| `double x = x + x`, `double = λx → x + x` | function bindings: generic, with evidence |
+
+- **In a block**, a held variable belongs to the enclosing frame. Its uses fix it, and a use at another
+  type is `type_mismatch`, whichever is written first. This is the existing rule 2 of `checker-v2.md`
+  §8.4, which needs nothing new once the variable carries the wanted.
+- **At top level**, it defaults to `Int` **in the value's own group**. That is the one new rule. A
+  use never decides it: a first use across a module would make a declaration's type depend on its
+  uses, which defeats the interface firewall, and declaration order must not change whether a
+  program checks. So `asInt = big` type-checks and `big` crashes when it is evaluated, and `asFloat =
+  big + 0.5` is `type_mismatch`; write `big : Float`.
+- **An annotation does not lift this.** `big : number` or `pick : Maybe number` over a computing right
+  side is refused as `constrained_constant`, the existing refusal of a value that would need
+  evidence, and its hint names the way out, a parameter: `big ⊤ = …`. Write `Int` or `Float` if one
+  type was meant.
+
+**Why it is sound.** If a value's `number` root carries no numeric wanted, its values at that root
+come only from `int` literals passed through parametric code. A literal is within `M`, or refused, so
+it is true of `Int` and of `Float`, and one evaluation is right for both. The one exception is `Js.to`,
+whose `a` has no kind: that is trusted code (§13.2), and core and the platforms have no such site.
+
+**What it costs.** Across 3 904 programs and fixtures, the prototype changed no program between
+accepted and refused, and no annotated value computes at `number` (`research/112`, with its limits:
+476 of the cases gave no data, and neither the full gates, Chrome nor Miniflare were run on it).
+A value used at two types would be refused. None exists in this tree.
 
 ## Appendix A. The prelude
 

@@ -13555,8 +13555,10 @@ accepts the cost in speed and bytes in the two checked builds, so this section h
 serves the release pass. **The flag is not accepted until §16.8 step 5**: before then the checks are
 reached only through a hidden flag that the tests use (`language.md` §13.1).
 
-The mode is part of every cache key and every interface that holds emitted code, because §16.3's ABI
-differs between the checked builds and `--release`.
+**The mode is not part of the check cache key.** `--release` is not in it today, since no emitted byte
+is cached (`Key.zig`), and the checker always computes the numeric evidence rows; `Lower` drops
+them under `--release` (§16.3). A cache or an artifact that does hold emitted code keys on the
+mode. This is reasoned, not run, and step 3 proves it.
 
 ### 16.2 What a checked build emits
 
@@ -13570,13 +13572,11 @@ does not depend on what the comparison answers.
 | `a + b`, `a - b`, `a * b` at `Float` | the operator | if `r` is finite, `r`. Otherwise crash if `a` or `b` is not finite, else `r`. A non-finite operand of `+`, `-` or `*` always gives a non-finite result (`research/111` §7.2), so the fast path is one test |
 | `a / b` | the operator | crash if `a` or `b` is not finite, else the operator. Input tests are needed: `1 / Infinity` is `0` |
 | `a ^ b` | `a ** b` | the same as `/`: `NaN ** 0` is `1`. Its type is #1985's |
-| `negate`, prefix `-`, `abs` at `Float` | as today | crash if the operand is not finite (`NaN` **or** `±Infinity`), else as today. A `NaN` test alone is not enough here |
-| `negate`, prefix `-`, `abs` at `Int` | as today | nothing: a true `Int` stays true |
+| `negate`, prefix `-`, `abs` | as today | crash if the operand is not finite (`NaN` **or** `±Infinity`), else as today. A `NaN` test alone is not enough here. The test is right at either type, since a true `Int` passes it, so it needs no discriminator |
 | `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `Float.log` | as today | crash if an argument is not finite, else as today |
 | `round`, `floor`, `ceiling`, `truncate` | the `Math` call | crash unless `r >= -M && r <= M` on the result |
 | `toFloat` | as today | as today: `-0` keeps its sign (D3) |
-| `<`, `≤`, `>`, `≥`, `==`, `≠` at `Float` | the operator | crash if either operand is `NaN`, tested before the operator. This covers `≠`, which answers `true` for `NaN` |
-| the same operators at `Int` | the operator | nothing: a true `Int` is never `NaN` |
+| `<`, `≤`, `>`, `≥`, `==`, `≠` on numbers | the operator | crash if either operand is `NaN`, tested before the operator. This covers `≠`, which answers `true` for `NaN`. The test is right at either type, since a true `Int` is never `NaN`, so it needs no discriminator. Removing it where the type is known to be `Int` is step 6 |
 | `compare`, a derived `eq` or `compare` over a `Float`, `List.eq`, `List.compare` | as today | the same operand test at every place a number is compared. Each is a separate lowering path and each needs its test and its fixture: `primitiveOperator` (`src/js/Lower.zig:10131`, `==` and `≠` written in place), `eqPrimDecl` (`$x === $y`, `(==)` as a value and as evidence), `orderOf` (`:9555`, used by `comparePrimDecl` at `:9507` and `compareKeyDecl` at `:9536`), `orderTest` (`:10181`, `≤` and `≥` over an `Order`), the derived comparisons the lowering generates, and `listCompare` in `src/js/derived_runtime.mjs` |
 | an operator passed as a value: `(<)`, `(==)`, `(≠)`, `(+)` | as today | the same check as the operator, in the function value; under a type variable through §16.3's evidence |
 | an `int` literal pattern at `Float` or at a `number` variable (there is no float pattern, `language.md` §3) | `===` | the scrutinee is tested with `x !== x` before the literal arms. That test is right at either type, so no evidence is needed |
@@ -13588,28 +13588,48 @@ does not depend on what the comparison answers.
 well-known `eq` or `compare` stays `sync` (§4): a crash is not a suspension.
 
 **§4's *Arithmetic is an operator* changes in a checked build.** Its table says "no type is read":
-`number` is `Int` or `Float`, and both are a JavaScript number. A checked build reads the type: at a
-monomorphic site statically, and under a type variable through §16.3.
+`number` is `Int` or `Float`, and both are a JavaScript number. A checked build reads the type for
+`+`, `-` and `*` alone: at a monomorphic site statically, and under a type variable through §16.3.
 
 ### 16.3 Arithmetic under a `number` type variable: compiler-owned numeric evidence
 
-*Decided by the owner, 2026-11-05 (D1, #1996).* `List.sum`, `List.product` and a program's `twice :
-number → number` have one body today, with no type information: `Main$twice = (x) => x + x`. At
-run time a whole double does not say whether it is an `Int` or a `Float`, so `twice 9007199254740991`
-(must crash) and `twice 1.0e308` (must not) are told apart only by what the compiler knows.
+*Decided by the owner, 2026-11-05 (D1, #1996; refined the same day on `research/112`, `language.md`
+§13.10). Specified, not built (#2080).* **D1 itself was not prototyped.** The value hold of `language.md`
+§13.11 was built and run; this ABI was not, so what this section says of `--release` is reasoned, and
+step 3 of §16.8 must prove it. `List.sum`, `List.product` and a program's `twice : number → number`
+have one body today, with no type information: `Main$twice = (x) => x + x`. At run time a whole
+double does not say whether it is an `Int` or a `Float`, so `twice 9007199254740991` (must crash) and
+`twice 1.0e308` (must not) are told apart only by what the compiler knows.
 
-**The rule.** In a checked build, every declaration whose **scheme** is generic over a `number`
-type variable receives **numeric evidence**, whether or not its body uses it. *Corrected 2026-11-05,
-after the third review of #1999 (#2080):* this said "whose body or callees do arithmetic", which made
-the ABI depend on a body, so adding `x + 1` would change what callers emit, defeat the interface
-firewall, and change a `--library` ABI on an internal edit. The evidence is one hidden discriminator per **independent** `number` variable of its scheme,
-saying `Int` or `Float`. Two independent variables are two discriminators, not one: `f : number,
-number2 → …` has four instantiations. The evidence is the existing `number` kind elaborated by the
-compiler; it is not a method a program can name, define or override, and it is not an open type
-class.
+**The rule.** `number` stays a closed kind, and `+` stays `Basics.add`, not a public method. Each
+instantiation of a scheme's `number` variable raises **one hidden wanted**, on the checker's existing
+wanted and evidence path (`Evidence.requirements`), not a parallel mechanism, so group calls, `let`
+promotion, `Convention`, sub-wanteds and `$s` carry it as they carry a `where` requirement. Its
+answer is a **discriminator** saying `Int` or `Float`. The evidence is the kind elaborated by the
+compiler: it is not a method a program can name, define or override, and it is not an open type class.
 
-- **Monomorphic sites** choose the check statically and pass no evidence.
-- **In a generic body**, an operation at the variable chooses the `Int` test or the `Float` test from
+**The ABI is read from the scheme.** A declaration takes one discriminator per **independent**
+`number` variable of its scheme, used or not. Two variables are two discriminators: `f : number,
+number2 → …` has four instantiations. Schemes already publish the kind, so an importer counts the
+quantifiers with no change to the interface. *Corrected 2026-11-05, after the third review of #1999:*
+this said "whose body or callees do arithmetic", which made the ABI depend on a body, so adding `x
++ 1` would change what callers emit, defeat the interface firewall, and change a `--library` ABI on
+an internal edit.
+
+**What reads a discriminator: `+`, `-` and `*`,** and so `sum` and `product`. Only those three
+have a different test at `Int` and `Float` (§16.2). Comparisons, `negate`, `abs`, `min`, `max`,
+`clamp`, `round` and its kin and `int` literal patterns need none: a `NaN` or finiteness test is right
+at `Int`, because a true `Int` passes it. So the `Basics` declarations that are those operations take
+no discriminator and raise no wanted. That list is fixed in the operator table, `src/Operator.zig`,
+and reads no body. A program's own function generic over `number` follows its scheme, whatever its
+body does.
+
+- **Monomorphic sites.** The wanted's answer is a constant, so the check is chosen statically and no
+  evidence is passed. A `+` site is an instantiation of `Basics.add`, so its answer is its **per-site
+  numeric class** (§16.8, step 3).
+- **Unresolved.** A `number` nothing settles at a monomorphic site is `Int` (`language.md` §13.3), the
+  rule `static-dispatch-spike.md` §8.6 has for identities.
+- **In a generic body**, `+`, `-` and `*` at the variable choose the `Int` test or the `Float` test from
   the discriminator.
 - **Calls.** A call of a generic function passes the evidence its instantiation fixes, or, inside
   another generic body, the evidence it received. Source function types stay n-ary and source calls
@@ -13618,12 +13638,15 @@ class.
   and a partial application with `_` are closed over their evidence where the instantiation is
   fixed, and receive it where it is not, through an adapter that keeps the order below.
 - **Recursion** passes its own evidence, polymorphic recursion its instantiation's.
-- **Order.** Numeric evidence comes in a canonical order beside the existing `where` evidence
-  (`static-dispatch-spike.md` §8.6): first the `where` evidence in its order, then one numeric
-  discriminator per `number` variable in the order the scheme's variables are numbered, which is
+- **`where` methods.** A `where` method generic over `number` compiles today, and sub-wanteds should
+  carry its evidence (reasoned, not run).
+- **Values.** A value has no parameter. One that raises no numeric wanted takes no evidence, and any
+  other is not generic over `number` (`language.md` §13.11, #2077).
+- **Order.** After the `where` evidence in its order (`static-dispatch-spike.md` §8.6) comes one
+  discriminator per `number` variable, in the order the scheme's variables are numbered, which is
   input-derived and never depends on thread completion or on the cache. **Identity parameters
-  (`static-dispatch-spike.md` §8.6) come after all of it**, since that section places them "after
-  its evidence parameters" and numeric evidence is evidence.
+  (§8.6) come after all of it**, since that section places them "after its evidence parameters".
+- **The cap.** Numeric wanteds do not count towards the 64-constraint cap (`checker-v2.md` §8.4).
 - **Unused evidence.** Reach or a later specialiser may drop a discriminator nothing reads in a closed
   build, never in a `--library` export.
 - **Suspension.** A declaration's `name$s` form (`§4`, *`Js.suspending`*) receives the same evidence
@@ -13631,24 +13654,31 @@ class.
   tracked apart from "may suspend"**, so adding a check changes no inferred effect rung and no
   `$s` decision.
 - **`foreign`.** Numeric evidence is never passed to a `foreign` sibling, and check 4's arity
-  (`boundary.md` §4) does not count it. A `foreign` generic over `number` is a host operation and
-  answers for its own result (`boundary.md` §4.3 (e)).
-- **Modules and `--library`.** The evidence is part of a declaration's checked ABI, written in its
-  interface, so a caller in another module passes it without seeing the body. An exported generic
+  (`boundary.md` §4) does not count it. No `foreign` in the tree is generic over `number`.
+- **`Js.to` at a `number` variable** raises no wanted, because its `a` has no kind. No such site exists
+  in core or a platform, and it is trusted code (`boundary.md` §4.3 (h)).
+- **Modules and `--library`.** The evidence is part of a declaration's checked ABI, read from its
+  scheme, so a caller in another module passes it without seeing the body. An exported generic
   function of a `--library` build exposes that ABI, documented with the module, because a future
-  caller cannot be predicted from the build's reachability. The mode is part of the interface and
-  cache identity (§16.1). The order of evidence and the numbering of any helper or variant are
-  input-derived. For the **same source tree**, output is byte-identical across scheduling, `--jobs`
-  and cache state. *Corrected 2026-11-05, after the second review of #1999:* this said "and
-  declaration order", which no build can keep: reordering declarations changes the input, the
-  emitted order and every source map's `sourcesContent` (§11.1). Declaration order is a guarantee
-  about acceptance and behaviour (`language.md` §6, `ordering_test.zig`), not about bytes.
-- **`--release`** passes no evidence, and its emission is unchanged.
+  caller cannot be predicted from the build's reachability. The order of evidence and the numbering
+  of any helper or variant are input-derived. For the **same source tree**, output is byte-identical
+  across scheduling, `--jobs` and cache state. *Corrected 2026-11-05, after the second review of
+  #1999:* this said "and declaration order", which no build can keep: reordering declarations changes
+  the input, the emitted order and every source map's `sourcesContent` (§11.1). Declaration order is
+  a guarantee about acceptance and behaviour (`language.md` §6, `ordering_test.zig`), not about bytes.
+- **`--release` passes no evidence, and its emission is unchanged.** The checker computes the rows in
+  every build and `Lower` drops the numeric ones, so the checker's output is the same in every mode
+  (§16.1). `Convention` and `Cycles` must not count them, or acceptance would depend on the mode.
+  *This is reasoned, not run: step 3 must prove it, with `--release` goldens.* What was run is the
+  hold alone: 634 `run/` programs, development and `--release`, 1 268 builds, 1 262 byte-identical,
+  and the other 6 differ only in that `Debug$log` became `Debug$logAs`, a path `--release` refuses
+  (`research/112`).
 
 **Later, and only on proof.** A specialiser may clone a body for a constant evidence value and drop
 the branch it cannot take, under the rule of §16.6: never as a size-capped fallback to unchecked
-arithmetic, and only where the result is identical. Whether evidence or clones are faster or smaller
-is not measured; the owner chose evidence for correctness and completeness first.
+arithmetic, and only where the result is identical. Clones and evidence use the same per-site table.
+Whether evidence or clones are faster or smaller is not measured; the owner chose evidence for
+correctness and completeness first.
 
 ### 16.4 Core
 
@@ -13762,6 +13792,13 @@ only: range analysis and evidence specialisation are step 6.
   consumer of a generic export; both the `sync` and the `$s` form of a generic function; the schema
   paths compiled and through the hidden `--schema-library`; JSON text and host-value encoding of
   `NaN`.
+- **Values** (`language.md` §13.11, #2077): `check/bad/` fixtures from the third review's probes, a
+  computing value used at two types in a block (`LetGen`), holding a lambda (`PolyList`), and
+  annotated (`NumberAnn`, which also pins the hint naming `big ⊤ = …`); the same at top level
+  (`PolyCaf`), where `asFloat` is the `type_mismatch` and `big` defaults in its own group, used from
+  another module too; `run/` fixtures that `zero = 0`, `xs = [ 1, 2 ]` and `-1` stay generic, that
+  `ops ⊤` and `big ⊤` work at both types, and, in the checked-crash category, that an unresolved
+  `number` crashes as `Int` (`NumberDefault`) and a value `big` crashes once, where written.
 - **Order** (`language.md` §6): two failing top-level values, two failing modules, and a tree whose
   two literal tests both meet a `NaN`, each reporting the same crash in both checked builds.
 - **Pages and workers.** A crash in each path of `language.md` §13.6: module load, a plain
@@ -13784,16 +13821,20 @@ guarantee is not. #1985 is a dependency of step 4.
    reviewed baseline change: `Int.mod`, wide `Random.int`, `Duration` (#1992); stable core math
    (#2021); clocks and deadlines (#2022); host reads and arguments (#1993, #1995, #2020); the
    Cloudflare development import (#2019); the browser startup and fiber stop paths (#1994). The literal
-   refusal can land here, as a deliberate source-compatibility change. **Run the exact predicates in logging form across the whole corpus
+   refusal and the value hold can land here, as deliberate source-compatibility changes (the hold
+   needs the numeric wanted of step 3, or a syntactic stand-in until then, `language.md` §13.11,
+   #2077). **Run the exact predicates in logging form across the whole corpus
    and repair every hit before step 4 (#2078)**: a logging prototype found thousands of hits in
    `Rt.beni` and `Inline.beni` (`language.md` §13.9), so a builder who skips this finds the whole
    browser corpus red. These repairs are the named repairs of `language.md` §13.7. None of them is
    called a safe mode.
 3. **The compiler's foundation, internal:** mode plumbing and cache identity; `Js.checked`, `Js.cast`
-   and `Js.peek` (`boundary.md` §4.2); **a per-site numeric class** for each arithmetic, comparison
-   and conversion call, and **the instantiated type at each `Js.to`**, made by the checker and carried
-   in cached and packed module data (#2079), because `src/Operator.zig` and `Dispatch` have no type
-   today; numeric evidence (§16.3, #2080); a possibly-throwing operation representation, and a failure fact that survives
+   and `Js.peek` (`boundary.md` §4.2); **a per-site numeric class** for each arithmetic
+   call that §16.3 says reads one (`+`, `-`, `*`; it is the answer of that site's wanted), and **the
+   instantiated type at each `Js.to`**, made by the checker and carried in cached and packed module
+   data (#2079), because `src/Operator.zig` and `Dispatch` have no type today; numeric evidence on
+   the existing wanted path (§16.3, #2080), **with the proof that `--release` output stays as it was**,
+   since D1 was not prototyped; a possibly-throwing operation representation, and a failure fact that survives
    `Js.pure`, `foreign pure`, wrappers, callable aliases and module boundaries (§16.6), with
    `Totality.zig` and the lowering's eager-markup tests (`instSafeMode`, `valueSafe`,
    `valuePureTotal`) reading it; totality, dead-binding removal, constant

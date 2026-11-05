@@ -373,15 +373,19 @@ decisions faithfully recorded. Its findings, all applied:
 
 - **A value generic over `number` has nowhere to take evidence.** Run: `big = 9007199254740991 + 2`
   served `Int` and `Float` at once, in a `let` too, and `ops = { double = λx → x + x }` did the same.
-  This is pending the owner's decision, and the contract has no text for it yet.
+  [Report 112](112-number-evidence.md) tested the ways out, and the owner decided on it: such a value
+  is held, a top-level one defaults to `Int` in its own group, and numeric evidence goes on the
+  existing wanted path, read from the scheme and narrowed to `+`, `-` and `*` (`language.md` §13.10,
+  §13.11, `backend.md` §16.3, #2077, #2080). The hold was prototyped; D1 was not.
 - **A crash under a program-made `Task.scheduler` leaves a page running.** Run, happy-dom. The owner
   decided a program's scheduler contains nothing (`language.md` §13.6, #1994).
 - **The exact tests crash correct-looking code in the tree.** Prototype: 5 916 `Js.at` reads past the
   end and 3 365 `undefined` `Bool` reads, in `Rt.beni` and `Inline.beni`. The first draft of
   `language.md` §13.6 said such reads did not exist. The rules stand (rule 10), and a sweep is a step
   of the order of work (#2078).
-- **The compiler has no type at the site** (#2079), **the evidence ABI depended on a body** (#2080),
-  and **`Js.cast` must be `Js.to` to every pass** (#2079).
+- **The compiler has no type at the site** (#2079; report 112 narrowed what needs one to `+`, `-` and
+  `*`, and `Js.to`), **the evidence ABI depended on a body** (#2080), and **`Js.cast` must be `Js.to`
+  to every pass** (#2079).
 - **`language.md` §6's unspecified order is observable by a crash**, which is why the order is now
   part of the checked contract.
 - Smaller: a `Float` written to a host, a `NaN` `For` key, `^^` by squaring, "unread" against
