@@ -11455,7 +11455,8 @@ order. Each release pass changes the printed bytes, and each has a rule.
    binding that the printer marks at its declaration gets its beni name in `names`, a local as well
    as a module's top-level name. A temporary that the lowering invented (`$tâ¦`) still has no entry.
    A named function's first mapping carries its name, as in Â§11.1, so a stack frame under Node's
-   `--enable-source-maps` names the beni function and not its short name.
+   `--enable-source-maps` names the beni function and not its short name. *Amended 2026-11-05:* a
+   parameter is marked too, with its beni name (*Parameters*, below).
 6. **Decided branches** (Â§9, *Whole-program specialisation*): specialisation writes the operand
    that a decided `cond`, `&&` or `||` keeps in place of the node (`Spec.foldTo`). The node takes
    the kept operand's position too. The kept code is what runs, so it maps to where it was written
@@ -11534,6 +11535,99 @@ copied `Aid.boom` maps to `Aid.beni`, the frame too; the copied `Aid.twice` maps
 copy); *a release library map names the module a copied body came from* (the multi-file layout:
 `Lib.mjs.map` has `Aid.beni` as its second source). `SourceMap`'s unit test *a far mark maps to
 its row's source* holds the encoder. Each test fails when the copy gives its nodes no position.
+
+*Amended 2026-11-05 (issue #141, part 3): **parameters** map to the place where they are written,
+with their beni names.* The owner chose the representation (Cesar, 2026-11-05, of two: a sorted
+table of (name, position) rows for each module, or a range of positions in each `JsIr.Func`). A
+table that a name keys cannot work. `JsIr` keeps one `NameIndex` for each distinct name, and the
+tag of a parameter's name is `local_tag_base + index + 1`, with the base set to 0 for each
+declaration (`Lower.localName`). So the `x` of `f x` and the `x` of `g x` in one module are one
+`NameIndex` at two places. The rules:
+
+- **The record.** `JsIr.Func` has a third range, `param_pos`, after `params` and the body. It holds
+  one `pos` for each parameter, in the order of `params` and of its length. A `pos` here is what a
+  node's `pos` is: an offset into the module's source, `no_pos`, or a row of `JsIr.far` (*Copied
+  bodies*, above). The body stays two words into the record, so a pass that rewrites a body in
+  place does not change.
+- **Who gives a position.** Only `Lower` gives a real one (`Builder.addFuncAt`), to each parameter
+  that the beni source writes: the place of its pattern (`functionOf`, `loopOf`). That is a
+  variable, a `_`, and the fresh name of a pattern that the body destructures. An evidence
+  parameter gets `no_pos`. A function that the compiler invents gets `no_pos` for each parameter,
+  through one helper, `Builder.addFunc`: a derived function, a continuation of `Suspend`, a
+  schema's function, a markup lowering's function, a constructor used as a value.
+- **What keeps them.** A pass that makes a function from another keeps the place of each parameter
+  that it keeps: the copy that `Suspend` makes for a `$s` body, `Lower.methodFunc` (the parameters
+  after the receiver), the drop of a parameter in `Spec.applyDrops`, and `Spec.Copy`. A copy into
+  another module gives each parameter its place in the module where it was written, by part 2's
+  rule for a node (`Copy.posAt`). A copy gives each local a fresh name (`$i`), which has no entry
+  in `names` by item 5, so a copied parameter maps to its place with no name (issue #1962).
+- **The printer**, under `--release` only. Each parameter that has a position gets a mark at its
+  first byte, with its beni name in `names`, by item 5's rule (a `$` name has no entry). A
+  parameter that is its arrow's first token (`a=>…`, one written parameter) carries no name of its
+  own, by the rule of *Hand-written JavaScript*: the mark keeps the function's name, or no name for
+  a function that has none. So Node still names the frame after the function, and not after the
+  parameter. A development build prints a parameter as written, so it records no mark for it, and
+  its maps do not change (§11.1).
+
+**Memory.** Every function pays now: 8 bytes for the range and 4 for each parameter, in every
+build, because `Lower` does not know whether a map will be written. Measured
+2026-11-05 with the ReleaseSafe beni, part 2 (`8005777321`) against this amendment. The counts are
+of every range that a build writes: the builder's, each drop and each copy, before a copy inside
+one module shared its range with the function it copies (below), so they are an upper bound.
+
+| Build | Ranges | Parameters | Words added, at most | Peak RSS without maps | Peak RSS with maps |
+|---|---|---|---|---|---|
+| `bench/corpus`, `--release --library` | 742 | 1 517 | 3 001 (12 004 bytes) | 95 192 → 95 356 KB | 97 224 → 95 084 KB |
+| `bench/corpus`, `--library` | 563 | 1 128 | 2 254 (9 016 bytes) | 51 088 → 50 636 KB | 51 140 → 52 668 KB |
+| `examples/conduit`, `--release` | 1 464 | 2 913 | 5 841 (23 364 bytes) | 140 524 → 140 872 KB | 140 796 → 142 488 KB |
+| `examples/sternhalma`, `--release` | 442 | 786 | 1 670 (6 680 bytes) | 89 352 → 89 244 KB | 89 076 → 89 420 KB |
+
+The peak RSS moves within its noise, which is about 2 MB. A copy inside one module shares the
+range of the function that it copies, because its parameters are at the same places; a copy into
+another module writes a range of its own.
+
+**Cost**, measured as the table under *Cost*, below, part 2 (`8005777321`) against this
+amendment:
+
+| Build | Instructions without maps | Instructions with maps | Map bytes | Segments |
+|---|---|---|---|---|
+| `bench/corpus`, `--release --library` | 2 687.36 M → 2 692.19 M | 2 745.74 M → 2 753.53 M | 400 364 → 408 261 | 9 144 → 10 092 |
+| `bench/corpus`, `--library` | 1 586.98 M → 1 588.43 M | 1 651.04 M → 1 652.18 M | 336 301 → 336 301 | 11 923 → 11 923 |
+| `examples/conduit`, `--release` | 5 041.58 M → 5 053.25 M | 5 154.50 M → 5 169.17 M | 876 763 → 885 357 | 13 806 → 14 693 |
+| `examples/sternhalma`, `--release` | 1 490.70 M → 1 494.04 M | 1 539.16 M → 1 543.60 M | 505 581 → 508 466 | 3 980 → 4 298 |
+
+Without maps the output is the same, byte for byte, in each build, and with maps the code is the
+same. The development maps are the same files. Without maps, the instructions grow by 0.09% in the
+development build and by 0.18% to 0.23% in a release build. A profile of `bench/corpus` puts the
+growth in `Spec`. Its walks read a whole `Func` record (`extraData`) to find the body, and the
+record is 6 words now. The tests' beni comes from Zig's self-hosted backend, which reads and checks
+each word. The ReleaseFast beni that LLVM builds grows by 0.04% to 0.07% without maps and by 0.07%
+to 0.13% with maps:
+
+| Build, ReleaseFast | Instructions without maps | Instructions with maps |
+|---|---|---|
+| `bench/corpus`, `--release --library` | 446.59 M → 446.77 M | 457.87 M → 458.47 M |
+| `bench/corpus`, `--library` | 255.68 M → 255.86 M | 268.42 M → 268.60 M |
+| `examples/conduit`, `--release` | 814.24 M → 814.56 M | 837.07 M → 837.88 M |
+| `examples/sternhalma`, `--release` | 246.34 M → 246.45 M | 256.44 M → 256.73 M |
+
+With maps, a release map gains the segments of the parameters: 948 on `bench/corpus`, 887 on
+Conduit and 318 on Sternhalma. A bare parameter adds none, because its mark is at the byte of the
+function's mark and replaces it.
+
+**Tests.** `build_test`: *a release map gives each parameter the place where it is written and its
+beni name* (`before x y` and `after x y` in one module: one `x` in
+`names`, at `Lib.beni:2:8` and `7:7`; `twice x` prints as `c=a=>a*2`, and its `a` keeps the
+function's name); *a release map gives a copied lambda's parameters their places in the module
+they came from* (the lambda of `Aid.bumpAll`, copied into `main`: `i` and `v` map to
+`Aid.beni:3:26` and `3:28`, with no name, issue #1962). Two tests that check a frame also check
+that the mark of a bare parameter keeps the function's name: *a release build maps the one
+hoisted file back to each module's beni source* (`spread`, `describe`, `total`, `report`) and
+*a release library build writes a map beside every module* (`spread`, `label`). Each of the four
+fails when `Lower` gives no position. The first and the two frame tests fail when a bare parameter
+carries its own name: the frame of `describe` becomes `step`. The copy test fails when
+`Spec.Copy` keeps the offsets of the module the lambda came from (`Main.beni:8:3`, `8:5`).
+`JsIr`'s unit test *a function's parameters each have a place* holds the builder and `verify`.
 
 **The join.** The printer prints each module of the hoisted file on its own, with marks relative
 to the module's own bytes (Â§9). The link step joins the pieces, and the map follows the join:
@@ -11638,7 +11732,8 @@ without `--release`, as in development.
    lines it came from, a position needs a source index with its offset. *Amended 2026-11-04:*
    built (issue #141, part 2); *Copied bodies* above.
 3. **Parameter names.** A parameter is a `NameIndex` with no node in `JsIr`, so it has no position
-   to mark, and `names` gives it no beni name. A debugger shows its short name.
+   to mark, and `names` gives it no beni name. A debugger shows its short name. *Amended
+   2026-11-05:* built (issue #141, part 3); *Parameters* above.
 4. **A map without the comment line** ("hidden" maps, for an error-reporting service that reads
    maps the page does not name). It needs a flag of its own.
 5. **Â§10's chunks**: each chunk file gets a map by the join above.
