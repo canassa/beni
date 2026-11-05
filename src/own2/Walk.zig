@@ -144,6 +144,8 @@ pub const Walk = struct {
     escapes: std.ArrayList(Escape) = .empty,
     sites: std.ArrayList(CallSite) = .empty,
     closures: std.ArrayList(Closure) = .empty,
+    /// `(value, point)`: a function value called as unknown code (§2.11.3).
+    runs: std.ArrayList([2]u32) = .empty,
     pending_runs: std.ArrayList(u32) = .empty,
     entries: std.ArrayList(Entry) = .empty,
     value_runs: std.ArrayList(u32) = .empty,
@@ -165,7 +167,7 @@ pub const Walk = struct {
         const gpa = w.f.gpa;
         w.f.deinit();
         gpa.free(w.bindings);
-        inline for (.{ &w.uses, &w.foots, &w.foot_of, &w.demands, &w.escapes, &w.sites, &w.closures, &w.pending_runs, &w.entries }) |l| l.deinit(gpa);
+        inline for (.{ &w.uses, &w.foots, &w.foot_of, &w.demands, &w.escapes, &w.sites, &w.closures, &w.pending_runs, &w.entries, &w.runs }) |l| l.deinit(gpa);
         inline for (.{ &w.value_runs, &w.leaf_runs, &w.index, &w.virt, &w.derived, &w.supply_of }) |l| l.deinit(gpa);
     }
 
@@ -850,21 +852,24 @@ const Walker = struct {
                 if (depth == 0) for (arg_insts) |a| k.pop(a);
                 return fr.mk(.{ .kind = .alt, .head = x.head, .kids = try fr.mkKids(arms.items) });
             },
-            .ref => if (fr.roots.items[x.root].kind == .param and x.family == Slots.empty) {
-                // A callback call (§2.11.3): a label of the frame.
-                const r = fr.roots.items[x.root];
-                const slot = try fr.slots.relOf(k.gpa, fr.account, fr.places, fr.pos.items[x.pos].slot);
+            // A callback call (§2.11.3): a label of the frame, of a parameter's
+            // function slot or of a value that is one by the contracts settled
+            // now (`g = pick f 0`, #1773).
+            .ref => if (if (fr.roots.items[x.root].kind == .param and x.family == Slots.empty) .{ fr.roots.items[x.root].a, try fr.slots.relOf(k.gpa, fr.account, fr.places, fr.pos.items[x.pos].slot) } else try k.ctx.settledParam(k.ctx.ctx, fr, fv)) |js| {
+                const slot = js[1];
                 const at = try k.placeOf(i);
                 const cbi: u32 = @intCast(fr.cbs.items.len);
                 const root = try fr.addRoot(.cb, cbi, at);
                 for (arg_insts) |a| try k.consume(a, i);
-                try fr.cbs.append(k.gpa, .{ .j = r.a, .slot = slot, .origin = .{ k.module, k.w.code.decl_index, i - k.w.code.decl.inst_start.int() }, .root = root, .inst = i, .point = i, .args = try fr.mkKids(vals), .calls = 1, .pending = try k.pendingRun() });
+                try fr.cbs.append(k.gpa, .{ .j = js[0], .slot = slot, .origin = .{ k.module, k.w.code.decl_index, i - k.w.code.decl.inst_start.int() }, .root = root, .inst = i, .point = i, .args = try fr.mkKids(vals), .calls = 1, .pending = try k.pendingRun() });
                 return fr.refRoot(root);
             },
             else => {},
         }
-        // Unknown code: its answer is unknown and what it is handed escapes.
+        // Unknown code: its answer is unknown, what it is handed escapes,
+        // and so does the function value, which it runs (§2.11.3).
         for (vals) |v| try k.escapeValue(v, i);
+        try k.w.runs.append(k.gpa, .{ fv, i });
         if (depth == 0) for (arg_insts) |a| try k.consume(a, i);
         return fr.top();
     }

@@ -132,6 +132,10 @@ pub const Solver = struct {
     fn deliverFn(ctx: *anyopaque, ev: *Relation.Eval, sub: Relation.Sub, leaf: u32, at: u32) Error!void {
         _ = ctx;
         const e: *Evaluation = @fieldParentPtr("ev", ev);
+        // An escape the evaluation subscribed before its read-off began
+        // (a function value run by unknown code) is read off with the rest.
+        if (sub.kind == .escape_fn) return Eval.deliverFns(e, sub, leaf);
+        if (!e.facts_on and sub.kind == .escape) return Eval.addEscape(e, (try e.fr().withTags(leaf, sub.tags)) orelse return, sub.a);
         try e.hooks.deliver(e, sub, leaf, at);
     }
 

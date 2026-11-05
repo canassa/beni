@@ -133,6 +133,8 @@ const layers = [_]Entry{
     .{ .file = "LabelChain.zig", .layer = 8, .max_lines = 145 },
     // A demand says whether it is a cell operation (#1727).
     .{ .file = "Walk.zig", .layer = 9, .max_lines = 1240 },
+    // A function value run by unknown code: the function objects that escape (#1773, #1775, #1776).
+    .{ .file = "FnRun.zig", .layer = 9, .max_lines = 250 },
     // One entry of many objects; an answer apart from nothing (#1710,
     // #1711); what an answer may hold (§2.9.2 step 7).
     .{ .file = "Distinct.zig", .layer = 9, .max_lines = 750 },
@@ -468,7 +470,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 77), layers.len);
+    try testing.expectEqual(@as(usize, 78), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 
