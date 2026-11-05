@@ -1,0 +1,5 @@
+# v2 refuses a write of a key rows share, a walker that hands one element again, a callee that returns the rest, two maps of one list (§2.11.3).
+59:14 list_may_be_shared List.map
+60:13 list_still_used SanitiserTraversal.again
+62:23 list_may_be_shared SanitiserTraversal.onHead
+64:23 list_may_be_shared SanitiserTraversal.twoMaps

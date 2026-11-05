@@ -371,7 +371,7 @@ pub const Group = struct {
                 const ss = contracts.suppliesOf(l.supplies);
                 try p.append(g, @intCast(ss.len));
                 for (ss) |s| {
-                    try p.appendSlice(g, &.{ s.k, s.res_root });
+                    try p.appendSlice(g, &.{ s.k, s.res_root, @intFromBool(s.each) });
                     try putEffects(p, g, contracts.effectsOf(s.kept));
                     try putCond(p, g, contracts.occsOf(s.cond), s.cond.no);
                     try putCond(p, g, contracts.occsOf(s.below), s.below.no);

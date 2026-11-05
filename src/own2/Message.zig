@@ -249,6 +249,7 @@ pub fn line(f: Frame, a: Allocator, l: Resolve.Line, op_name: []const u8) Alloca
             },
             .captured => w.print("{s}, a closure holding it, is used at {d}:{d}", .{ localName(f, l.holder.?.who), up.line, up.col }),
             .once => w.writeAll("it is written by a closure that may run more than once"),
+            .call => w.print("{s} still holds it when it runs the function", .{op_name}),
             .held_operand => blk: {
                 const pp = f.names.position(f.names.ctx, f.module, l.holder.?.token);
                 break :blk w.print("the value at {d}:{d}, evaluated before it, holds it until its consumer runs", .{ pp.line, pp.col });

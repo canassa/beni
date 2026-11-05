@@ -113,6 +113,10 @@ pub const Supply = struct {
     /// What a write below the supply's root relies on: the callee's own
     /// claim about what it hands, derived from it (§2.11.3).
     below: StoredCond = .{},
+    /// A traversal's (§2.11.3, *a traversal's supply*): each run is handed
+    /// one element of one family, each position at most once, and the
+    /// callee holds none of it after the run.
+    each: bool = false,
 };
 
 pub const Flags = packed struct(u8) {
@@ -196,6 +200,13 @@ pub const Draft = struct {
         calls: Calls = .none,
         supplies: std.ArrayList(DraftSupply) = .empty,
 
+        /// A block's supply word: `k`, its top bit the `each` mark.
+        pub fn supplyOfWord(l: *DraftLabel, arena: Allocator, w: u32) Allocator.Error!*DraftSupply {
+            const s = try l.supplyOf(arena, w & 0x7fff_ffff);
+            s.each = w >> 31 != 0;
+            return s;
+        }
+
         pub fn supplyOf(l: *DraftLabel, arena: Allocator, k: u32) Allocator.Error!*DraftSupply {
             for (l.supplies.items) |*s| if (s.k == k) return s;
             try l.supplies.append(arena, .{ .k = k });
@@ -208,6 +219,7 @@ pub const Draft = struct {
         kept: std.ArrayList(Effect) = .empty,
         cond: Cond = .{},
         below: Cond = .{},
+        each: bool = false,
     };
 
     /// Every plain arrival at `slot` is open (a type variable's slot).
@@ -617,7 +629,7 @@ pub const Table = struct {
             var made: std.ArrayList(Supply) = .empty;
             defer made.deinit(gpa);
             for (l.supplies.items) |*s| {
-                try made.append(gpa, .{ .k = s.k, .res_root = try t.putRes(gpa, slots, &s.res, rank), .kept = try t.putEffects(gpa, slots, s.kept.items), .cond = try t.putCond(gpa, slots, s.cond), .below = try t.putCond(gpa, slots, s.below) });
+                try made.append(gpa, .{ .k = s.k, .res_root = try t.putRes(gpa, slots, &s.res, rank), .kept = try t.putEffects(gpa, slots, s.kept.items), .cond = try t.putCond(gpa, slots, s.cond), .below = try t.putCond(gpa, slots, s.below), .each = s.each });
             }
             try t.supplies.appendSlice(gpa, made.items);
             try t.labels.append(gpa, .{ .j = l.j, .slot = l.slot, .origin = l.origin, .calls = l.calls, .supplies = .{ .start = sstart, .len = @intCast(made.items.len) } });
@@ -641,7 +653,7 @@ pub const Table = struct {
         for (t.labelsOf(h.labels)) |l| {
             var dl: Draft.DraftLabel = .{ .j = l.j, .slot = l.slot, .origin = l.origin, .calls = l.calls };
             for (t.suppliesOf(l.supplies)) |s| {
-                var ds: Draft.DraftSupply = .{ .k = s.k, .cond = try t.cond(arena, s.cond), .below = try t.cond(arena, s.below) };
+                var ds: Draft.DraftSupply = .{ .k = s.k, .cond = try t.cond(arena, s.cond), .below = try t.cond(arena, s.below), .each = s.each };
                 ds.res.base = s.res_root;
                 try ds.kept.appendSlice(arena, t.effectsOf(s.kept));
                 try dl.supplies.append(arena, ds);
@@ -682,7 +694,11 @@ pub const Table = struct {
             const dl = &d.labels.items[at];
             dl.calls = @fromBackingInt(@intCast(@max(@backingInt(dl.calls), @backingInt(l.calls))));
             for (t.suppliesOf(l.supplies)) |s| {
+                const had = for (dl.supplies.items) |x| {
+                    if (x.k == s.k) break true;
+                } else false;
                 const ds = try dl.supplyOf(arena, s.k);
+                ds.each = s.each and (ds.each or !had);
                 try t.mergeRes(gpa, slots, &ds.res, s.res_root, map);
                 for (t.effectsOf(s.kept)) |e| _ = try Draft.addEffect(&ds.kept, arena, e);
                 ds.cond = try weakest(arena, account, ds.cond, try t.cond(arena, s.cond));
@@ -720,7 +736,7 @@ pub const Table = struct {
             if (p.j != q.j or p.slot != q.slot or !std.mem.eql(u32, &p.origin, &q.origin) or p.calls != q.calls) return false;
             if (p.supplies.len != q.supplies.len) return false;
             for (t.suppliesOf(p.supplies), t.suppliesOf(q.supplies)) |s, u| {
-                if (!t.condEql(s.below, u.below)) return false;
+                if (s.each != u.each or !t.condEql(s.below, u.below)) return false;
                 if (s.k != u.k or s.res_root != u.res_root or !t.effectsEql(s.kept, u.kept) or !t.condEql(s.cond, u.cond)) return false;
             }
         }

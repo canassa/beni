@@ -162,6 +162,8 @@ const layers = [_]Entry{
     // The labels a virtual call's supply comes through, outward, split
     // from `Eval` (#1758, #1760, #1721).
     .{ .file = "LabelChain.zig", .layer = 8, .max_lines = 145 },
+    // What a traversal's supply says, below the labels' chain's readers.
+    .{ .file = "Each.zig", .layer = 8, .max_lines = 100 },
     // A closure's captures in what holds it, beside `Routed` (#1772).
     .{ .file = "Captures.zig", .layer = 8, .max_lines = 55 },
     // A function value in a result: its called code (#2028).
@@ -224,6 +226,8 @@ const layers = [_]Entry{
     // What a called code says of what its creation made (#2028).
     .{ .file = "Made.zig", .layer = 11, .max_lines = 55 },
     .{ .file = "SupplyCond.zig", .layer = 11, .max_lines = 90 },
+    // A traversal's supply, derived from the walk (§2.11.3).
+    .{ .file = "Traversal.zig", .layer = 11, .max_lines = 230 },
     // A supplied part judged, split from `Resolve` (§2.11.3, #2013).
     .{ .file = "LaterFunctions.zig", .layer = 11, .max_lines = 40 },
     .{ .file = "Supplied.zig", .layer = 11, .max_lines = 165 },
@@ -540,7 +544,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 108), layers.len);
+    try testing.expectEqual(@as(usize, 110), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

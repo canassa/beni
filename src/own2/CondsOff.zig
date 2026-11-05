@@ -16,6 +16,7 @@ const Distinct = @import("Distinct.zig");
 const Eval = @import("Eval.zig");
 const Outward = @import("Outward.zig");
 const SupplyCond = @import("SupplyCond.zig");
+const Traversal = @import("Traversal.zig");
 const SupplyAnswers = @import("SupplyAnswers.zig");
 const Canon = @import("Canon.zig");
 const Put = @import("Put.zig");
@@ -72,6 +73,7 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
         }
     }
     try SupplyCond.publish(e, s, arena, Put.labelIndex);
+    try Traversal.publish(e, s, arena, Put.labelIndex);
     try SupplyAnswers.repeated(e, s.d, arena);
     var flat: std.ArrayList(Contract.Effect) = .empty;
     defer flat.deinit(e.gpa());

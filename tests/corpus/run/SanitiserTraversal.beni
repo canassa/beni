@@ -1,0 +1,75 @@
+-- A label that is no traversal, or a write a traversal does not license
+-- (`ownership-v2.md` §2.11.3, *a traversal's supply*). A callback edits the
+-- key two rows share; a hand-written walker hands one element twice; a callee
+-- hands one element and returns the rest, and the callback's answer is one of
+-- the rest; two maps hand one list. Each is refused; with the rule unasked,
+-- the sanitised runs trap or print the edit.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+pairs : List (List Int × List Int) → String
+pairs ps = String.join (List.map ps λ( p, q ) → show p ++ "/" ++ show q) ";"
+
+
+again : Int, List a, (a → b) → List b
+again n xs f =
+    case xs of
+        [ x, …_ ] →
+            if n == 0 then [] else [ f x, …again (n - 1) xs f ]
+
+        _ →
+            []
+
+
+headRest : List a, (a → b) → Maybe b × List a
+headRest xs p =
+    case xs of
+        [ h, …t ] →
+            ( Just (p h), t )
+
+        _ →
+            ( Nothing, xs )
+
+
+onHead :
+      List (List Int)
+    , (List Int → List Int)
+    , (List Int → List Int)
+    → Maybe (List Int) × List (List Int)
+onHead xs f g = headRest xs λv → g (f v)
+
+
+twoMaps : List a, List a, (a → b) → List b × List b
+twoMaps xs ys f = ( List.map xs f, List.map ys f )
+
+
+main : Program
+main =
+    k = [ 0 ]
+    shared = List.map [ ( k, [ 1 ] ), ( k, [ 2 ] ) ] λ( p, q ) → ( List.push p 3, q )
+    twice = again 2 [ [ 1 ] ] λl → List.push l 4
+    m = [ 2 ]
+    ( first, rest ) = onHead [ [ 1 ], m ] (λ_ → m) λw → List.push w 5
+    one = [ [ 1 ], [ 2 ] ]
+    ( left, right ) = twoMaps one one λl → List.push l 6
+    Node.print
+        (String.join
+            [ pairs shared
+            , shows twice
+            , shows rest
+            , Maybe.withDefault (Maybe.map first show) ""
+            , shows left
+            , shows right
+            ]
+            "\n"
+        )
