@@ -428,7 +428,13 @@ pub const Pass = struct {
         for (tree) |n| {
             if (p.joinValue(n, j)) |value| {
                 const at = p.posOf(n);
-                try out.append(p.scratch, try p.add(.const_decl, at, @backingInt(param), value.int()));
+                const binding = try p.add(.const_decl, at, @backingInt(param), value.int());
+                // A joined value can do work even when the rest ignores it.
+                switch (p.tag(value)) {
+                    .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .arrow => {},
+                    else => if (p.keep) |keep| try keep.append(p.scratch, binding),
+                }
+                try out.append(p.scratch, binding);
                 try out.appendSlice(p.scratch, try p.cloneList(rest));
                 continue;
             }

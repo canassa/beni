@@ -1,0 +1,30 @@
+-- A discarded join value may still perform an effect. Both straight-line
+-- joins and tail-loop joins must preserve it in release output.
+import Io
+import Node
+import Ref
+import Task
+
+
+branch : Ref.Ref Int, Bool → ⊤
+branch cell immediate =
+    if immediate then Ref.set cell 1 else Task.yieldNow ⊤
+    ⊤
+
+
+loop : Ref.Ref Int, Int → ⊤
+loop cell n =
+    if n > 0 then
+        if n == 2 then Ref.set cell 5 else Task.yieldNow ⊤
+        loop cell (n - 1)
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    cell = Ref.make 0
+    branch cell True
+    first = Ref.get cell
+    branch cell False
+    loop cell 3
+    last = Ref.get cell
+    Node.print "${first} ${last}"
