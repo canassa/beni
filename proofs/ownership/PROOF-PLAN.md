@@ -838,6 +838,48 @@ and `accepted_traces_agree` did not change, and the pinned `sorryAx` set did
 not change. Probes (`Trace.lean`): `fieldRead` and ten accepted programs of
 `RecordPrograms.lean` with trace theorems, and seven refused controls.
 
+As built (2026-11-05, #316, slice 3, #1872): `Summary.fieldWrites` (`W{F}`,
+§31.7) refines `writes` with the fields that a record write updates; `writes`
+still names every written cell, so `CallSound.writes` and every other reader
+are unchanged. The update records its fields (`recordDemand`, which differs
+from `demand` only in what it records: `recordDemand_success`); `demand` drops
+the entry of a cell it writes whole; `joinFieldWrites` and `normalized` keep
+the row in step. At a call, `rowDemand` demands a `W{F}` row with the update's
+Dead per field. `applyCall_demands` now says that each row passed its tests
+against some live set, which is all that `linkedWritesCovered_of_applyCall`
+reads (its Disjoint part). The assign case of the flat fragment's
+`assignStep` names `recordDemand`; `assign_preserved` reads the whole demand
+from the same state (`Push.demand_run_none`). `accepted_traces_agree` and
+`accepted_flat_anf_traces_agree` keep their statements, `summary_sound` claims
+more (below), and the pinned `sorryAx` set did not change. The
+probes: `calleeKept`, `layersKept` and `eitherKept` are accepted and their runs
+agree; `updateThenCallee`, `calleeTwice`, `layersWritten` and `eitherWritten`
+are refused and their runs differ; `callbackKept` is refused although its runs
+agree (a consume row has no field set). The bridge compares record verdicts
+(`BRIDGE.md`; counts in `RECORD-BRIDGE-RESULTS.md`); generator v7 and the
+targeted product draw record objects; the
+controls `record-dead`, `update-base` and `call-fields` have fixed witnesses
+(`Sync.holes`).
+
+**`CallSound` claims more** (Jayson, 2026-11-05 12:35 UTC, dashboard question
+`own-record-bridge-q1`, option A: "Add the clause"). The call case of
+`invariant_preserved` reads a `W{F}` row per field, so it needs the callee to
+keep every field outside `F`, and clauses 1–3 do not say how a written array
+changes. `CallSound` gets clause 4, `fields`: where an input's array at a
+canonical path holds one record before the call and the summary's row for that
+path has the field set `F` (`fieldRow`), it holds one record after the call,
+as long, with the same values outside `F`. `summary_sound` and
+`map_summary_sound` conclude it and stay `sorry`; the pinned `sorryAx` set
+does not change, and `accepted_traces_agree` and
+`accepted_flat_anf_traces_agree` keep their statements. The two statement
+checks that refute `CallSound` (`LinkSummary.no_call_sound`,
+`SummaryObservers.no_call_sound`) read clause 1 and are unchanged. The
+falsifier checks clause 4 (`Falsify.fieldsClause`) on every checked call of a
+generator v7 campaign, whose programs hold record objects, and requires that
+it applies to some of them. The mutual induction proves clause 4 at an
+update from `assignFields` (as `assign_projected` does in the flat fragment)
+and at a call from the callee's own clause 4.
+
 #704 (the pairwise-apart construction atom) is not in slice 1. This core has
 no summary atom vocabulary: it tests a construction's separation once, with
 `separatedValues` and `separatedPaths`, and `separatedPaths_iff_pairwise`

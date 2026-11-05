@@ -1282,6 +1282,10 @@ conspicuously lacks, and its sanctioned workaround demonstrably reintroduces cra
 virtual-DOM patch. It also establishes the validated-newtype pattern that every later capability
 reuses.
 
+*Amended 2026-11-04:* the time half has its first part, §9.8.21: moments, zones by name (correct
+across DST), the calendar's parts and ISO 8601. Locale formatting (`Intl.DateTimeFormat`,
+`NumberFormat`, `Collator`) is still open.
+
 Then, in rough order of how well the typing is understood: typed arrays and binary data; `fetch` and
 streaming; `localStorage` and structured storage; Web Workers; direct DOM access beyond the virtual
 DOM. Each needs its own analysis of what its failure modes are and whether they are all constructors;
@@ -4993,7 +4997,8 @@ calling fiber's clock; `Time.now` reads `Clock.now`. `Http`'s `timeout : Maybe D
 page's signatures are unchanged, and a page that never calls `Clock.run` still runs on the host's
 `setTimeout` and `Date`, so the test driver's virtual clock governs it as before. `node`'s
 `Io.sleep : Int → ()` keeps its signature as `Task.sleep (Duration.millis ms)`, and `Io.js`'s
-`startTimer` is deleted.
+`startTimer` is deleted. *Amended 2026-11-04 (§9.8.21 (a)):* `Time.Posix` is an alias of core's
+`Date.Posix`, and `Time.toMillis`, `Time.fromMillis` and `Time.now` call `Date`'s.
 
 **(b) The log moves into core** (§17.11). `platforms/browser/Log.beni` is removed; core's `Log`
 keeps `info`, `warn` and `error : String → ()` with the same output on a page (the default sink is
@@ -5965,6 +5970,128 @@ specified, with these findings:
   `listen` and no walk. Now it has the walk and `delegate`: 405 bytes raw more, and 4 321 → 4 449
   brotli. A page that delegates no event is the same bytes.
 
+#### 9.8.21 Dates: the calendar, time zones and ISO 8601 (2026-11-04)
+
+*Added 2026-11-04, #1912, for #239; built the same day (`core/Date.beni`,
+`run/DateCalendar`). **Decided 2026-11-04 by the owner (Cesar, dashboard `conduit-fixes-q1`):**
+a new core module, for every platform, as (a) says. The other answer was the browser's `Time`,
+as in Elm, which gives only pages a calendar.*
+
+A program can print a moment as a date only if it can parse the text that a server sends, know the
+reader's time zone, and get the year, the month and the day of the moment in that zone. Core and the
+platforms gave none of the three. Elm gives the second and the third in `elm/time`, and
+`rtfeldman/elm-iso8601-date-strings` gives the first. Only a platform can write `foreign`
+(CLAUDE.md rule 6), so the gap is filled here, inside the wall (rule 7).
+
+**(a) Core's `Date`** holds it, for every platform. `Posix` moves into it from the browser's `Time`,
+and `Time.Posix` becomes an alias, as `Time.Duration` became an alias of `Duration.Duration`
+(§9.8.15 (a)). `Time.toMillis`, `Time.fromMillis`, `Time.now` and `Time.every` keep their
+signatures. A core module cannot be named `Time`, because the browser's `Time` shadows a core module
+of its name (§9.8.11 (a)).
+
+```text
+-- core/Date.beni
+pub type Posix = Posix Int                         -- milliseconds since the Unix epoch
+pub toMillis : Posix → Int
+pub fromMillis : Int → Posix
+pub now : ⊤ → Posix                                -- impure: Clock.now
+
+pub opaque type Zone                               -- `Utc` or a name; `==` compares names
+pub utc : Zone
+pub here : ⊤ → Zone                                -- impure: the host's zone
+pub named : String → Maybe Zone                    -- an IANA name that the host knows
+pub name : Zone → String                           -- "UTC", or the IANA name
+
+pub type Month = Jan | Feb | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov | Dec
+pub type Weekday = Mon | Tue | Wed | Thu | Fri | Sat | Sun
+pub type alias Parts =
+    year : Int
+    month : Month
+    day : Int                                      -- 1 to 31
+    weekday : Weekday
+    hour : Int                                     -- 0 to 23
+    minute : Int
+    second : Int
+    millis : Int
+    offset : Int                                   -- minutes east of UTC, in this zone at this moment
+pub toParts : Posix, Zone → Parts
+
+pub fromIso8601 : String → Maybe Posix
+pub toIso8601 : Posix → String                     -- UTC, `2016-02-18T03:22:56.637Z`
+```
+
+**(b) A zone is a name, never a fixed offset.** Elm's `Time.here` builds a zone from
+`getTimezoneOffset()` with no eras, so a moment on the other side of a DST change is one hour wrong
+(research 13 §5): a silent wrong answer. Here a zone is `utc` or a host-known IANA name, and the host's
+time zone database gives the offset for each moment.
+
+- `here ⊤` is `named` of the name that `Intl.DateTimeFormat().resolvedOptions().timeZone`
+  gives. A host that gives no name, or a name it does not know, gives `utc`.
+- `named "UTC"` is `utc`. `named s` makes the host's formatter for `s` once, with `timeZone: s`
+  and `timeZoneName: "longOffset"`, and the zone is the name that the formatter resolves `s` to
+  (`resolvedOptions().timeZone`). So a name in any case and an old link are one zone
+  (`us/eastern` is `America/New_York`), `Etc/UTC` is `utc`, and an offset name (`+01:00`), which
+  ECMA-402 accepts, is `Nothing`: an offset is not a name of the database. The canonical name is
+  the host's: Node 24 resolves `Asia/Kolkata` to `Asia/Calcutta`, as ICU does, and an engine
+  that keeps the link's name gives `Asia/Kolkata`. *Added 2026-11-05, from the review of #1929.* ECMA-402 throws a `RangeError` for a name it does not know;
+  that one error is `Nothing`, and every other error is thrown again (rule 9). `Date` keeps one
+  formatter per name, made on the first `named` of it, so `toParts` makes none. A `Zone` is plain
+  data (`Utc` or a name), so `eq` and `compare` derive: two zones are `==` when their names are. A
+  `pub eq` for `Zone` is not possible, because a module's `pub eq` is the `eq` of every type it
+  declares (`static-dispatch-spike.md` §11), here `Posix`, `Month` and `Weekday` too.
+- `toParts t utc` is arithmetic in beni (Howard Hinnant's `civil_from_days`). `toParts t z` for a
+  named zone asks the zone's formatter for one part, the offset at `t` (`GMT`, `GMT+01:00`, or with
+  seconds, `GMT+00:53:28`, for a local mean time; a text of another form is a defect, never an
+  offset of 0), through `Js.pure`, and then does the same
+  arithmetic on `t` plus the offset. The answer depends only on `t`, the name and the host's
+  database. The offset is asked of the host because only the host has the database; the
+  calendar is not, so the parts of every moment come from one piece of code.
+- **The host's range.** A JavaScript `Date` holds ±8.64 × 10¹⁵ ms (ECMA-262 §21.4.1.1). Outside
+  it, a formatter throws. `toParts` of a moment outside the range uses the zone's offset at the
+  nearer end of the range, so it is total.
+
+**(c) `fromIso8601` is one pattern and range checks, never `Date.parse`.** `Date.parse` gives
+`NaN` or an implementation-defined answer for text outside ECMAScript's own format (ECMA-262
+§21.4.3.2). `fromIso8601` matches the text with one `RegExp` (`Js.regExp`, whose `\d` is ASCII's
+ten digits), and beni checks each field's range. The pattern is 359 bytes of brotli smaller in
+Conduit's release build than the same parser written over `String` (29,110 against 29,469), and
+it gives the same answers on `run/DateCalendar`. It accepts exactly:
+
+- a date, `YYYY-MM-DD`, which is that day's midnight UTC; the year is four digits, or a sign
+  and six digits (`+275760`, never `-000000`), the form `toIso8601` writes outside 0 to 9999;
+- a date, `T` (or `t`, or one space), and a time `HH:MM`, `HH:MM:SS` or `HH:MM:SS.f…` with one to
+  nine digits of fraction, truncated to milliseconds; a fraction needs the seconds, and its mark
+  is `.`;
+- after a time, `Z` (or `z`), `±HH:MM`, `±HHMM` or `±HH`. A time with no offset is UTC.
+
+Each field must be in range: month 1–12, the day valid for its month and year (leap years by the
+Gregorian rule), hour 0–23, minute 0–59, second 0–59 (a leap second, `60`, is refused), an offset
+hour 0–23 and minute 0–59; and the moment must be inside the host's range. Anything else is
+`Nothing`: there is no partial answer. These are the
+forms of RFC 3339 §5.6 and of `elm-iso8601-date-strings`' `toTime`, which elm-spa-example decodes
+dates with.
+
+`toIso8601 t` is `t`'s UTC parts as `YYYY-MM-DDTHH:MM:SS.sssZ`, as `Date.prototype.toISOString`
+writes them; a year outside 0–9999 is written `±YYYYYY`, as that method writes it. So
+`fromIso8601 (toIso8601 t) == Just t` for every `t` in the host's range.
+
+**(d) No names, no locale.** `Date` gives `Month` and `Weekday` as types, not as English words.
+A program writes its own names (elm-spa-example's `Timestamp.format` does), and formatting by
+locale is the `Intl` capability of §6, specified on its own.
+
+**(e) The test harness pins `TZ=UTC`.** The harness started every program with an empty
+environment (`tests/blackbox/world.zig`), and Chrome with its own, so a program read the
+machine's zone: Europe/Berlin on one machine, UTC on CI. A program that calls `here` printed a
+different date on each. Every child of the harness, Chrome included, now gets `TZ=UTC`
+(`world.time_zone`). A DST case is tested with `named`, not with `here`.
+
+*Tests:* `run/DateCalendar` parses and print each accepted form and refuse each malformed one (a day
+31 of April, 29 February of 2100, hour 24, a leap second, an offset of `+24:00`, trailing text);
+round-trips moments at both ends of the host's range; gives the parts of moments on each side of the
+2026 DST changes in `America/New_York` (8 March) and `Europe/Berlin` (29 March, 25 October); and
+refuses an unknown zone name. Its last line is `here`, which is `UTC` under (e). The
+Conduit pages show their dates through it (`Article.timestamp`).
+
 ### 9.9 SVG in the `html` vocabulary (2026-10-12)
 
 *Specified and built 2026-10-12.* The language could mark an element `svg` (`language.md` §11.14) and the
@@ -6081,6 +6208,27 @@ it is worth compiling.
   `Event` and reads it (§9.8.10). MathML stays undeclared: its foreign-content rules are (d)'s, with
   `mi`, `mo`, `mn`, `ms`, `mtext` and `annotation-xml` as its integration points, written when its
   vocabulary is.
+
+*Amended 2026-11-05* (#1074). **`<feOffset>` takes `dx` and `dy`**, which the list above left on `text`
+and `tspan` only. Without them the standard drop-shadow recipe (`feGaussianBlur`, `feOffset`, `feMerge`)
+needs the quoted escape `"dy"="3"`, a `String` the build never checks. **`<feDropShadow>` is declared**,
+the first element that elm/svg does not have. It is Filter Effects 1's (§9.12), and every current
+browser draws it. The facts, each from Filter Effects 1 (W3C Working Draft, 18 December 2018):
+
+- `feDropShadow` is an element `svg`, as the other filter primitives are.
+- It is in the `on` lists of `x`, `y`, `width`, `height` and `result`, the attributes of every filter
+  primitive (§9.2), and of `in`, which its attribute list names (§9.12).
+- `dx` and `dy` are on `feOffset` (§9.18) and `feDropShadow` (§9.12), added to the `on` list of the one
+  `dx` and `dy` declarations of `text` and `tspan`. `stdDeviation` is on `feGaussianBlur` (§9.14) and
+  `feDropShadow` (§9.12).
+- `flood-color` and `flood-opacity` apply to `feFlood` and `feDropShadow` (§9.13.1, §9.13.2). They are
+  presentation attributes, which (c) declares for every element, so they need no change.
+- Every value is a `String`, as (b) says of every SVG attribute. The type of each copies the declaration
+  it joins. The specification's types are `<number>` for `dx` and `dy`, `<number-optional-number>` for
+  `stdDeviation` (`"1.5 3"`) and `<alpha-value>` for `flood-opacity`. A `Float` would refuse the
+  second number of `stdDeviation` and a percentage `flood-opacity`.
+
+The element count of (g) is 59, and the count of attribute declarations does not change.
 
 **(h) What it costs.** A page without SVG does not move a byte: no runtime changed, and every `emit/`
 golden and `run/` record is what it was. A markup program reads a vocabulary of 410 declarations where it
@@ -8970,6 +9118,280 @@ has no form for a set of tokens (§9.3), and no guarantee needs one: a token tha
 not know lifts no restriction, so a misspelt one keeps the frame restricted. A frame takes its
 restrictions when it navigates, so the attribute's doc comment asks for text when `src` comes from
 a hole; #1911 checks the order of the two holes. Pinned by `tests/corpus/browser/tea/IframeSandbox`.
+
+### 9.14 The `node` platform runs a program (2026-11-05)
+
+*Added 2026-11-05, for issue #2015. Status: normative for the first slice, output captured whole.
+Three choices are the owner's, asked on the dashboard as `node-process-spawn-q1` (the shape of
+(a)), `q2` (the environment, (b)) and `q3` (the kill policy, (d)). All three are decided as
+recommended (Jayson, 2026-11-05); (i) records the answers.* A `node` program cannot start
+another program today. Rex web (`jaysonsantos/rex-web`) must call the installed `rex` CLI (`rex ls
+--json`, `rex api call …`) from a beni server. The `node` platform gains one module,
+**`ChildProcess`** (`platforms/node/ChildProcess.beni`), beni over `Js` with no sibling, as `Io` and
+`Http.Server` are. It wraps `node:child_process`'s `spawn` as `Io.readFile` wraps
+`fs.promises.readFile` (§4.1, `CLAUDE.md` rule 9): each failure Node documents is one constructor
+of a typed error, a cancelled fiber stops its child, and any other error is thrown again and is a
+defect.
+
+**(a) The API.** *(The shape — one record with a constructor, not separate functions — is the
+owner's decision `node-process-spawn-q1`, (i).)* A program describes the child with a record, starts it with `run`, and waits on
+its fiber until the child has exited and its output has ended.
+
+```elm
+module ChildProcess
+
+pub type alias Command =
+    { program : String       -- a path ("/usr/bin/rex", "./tool"), or a name looked up in PATH ("rex")
+    , args : List String     -- each one argument, as it is: no shell reads it
+    , cwd : Maybe String     -- the child's working directory; Nothing: the program's own
+    , env : Environment      -- the child's environment, (b)
+    , killAfter : Duration   -- the grace between SIGTERM and SIGKILL, (d); 1 s by default
+    , maxOutput : Int        -- the most bytes kept of standard output, and of standard error; 16 MiB by default
+    }
+
+pub type Environment
+    = Inherit                             -- the program's own environment, as it is
+    | Extend (List (String × String))     -- the program's own, with these variables set
+    | Only (List (String × String))       -- these variables, and no other
+
+pub type alias Output =
+    { status : Status
+    , stdout : String        -- standard output, decoded as UTF-8
+    , stderr : String        -- standard error, decoded as UTF-8
+    }
+
+pub type Status
+    = Exited Int             -- the child exited with this code, 0 to 255
+    | Signalled String       -- a signal ended the child: its name, "SIGTERM", "SIGSEGV", …
+
+pub type RunError
+    = NotFound | PermissionDenied | NotADirectory | ArgumentsTooLong | NameTooLong
+    | SymlinkLoop | FileBusy | BadExecutable | TooManyOpenFiles | TooManyProcesses
+    | OutOfMemory | InvalidArgument | OutputTooLarge     -- (e)
+
+pub command : String, List String → Command    -- the program and its arguments, every other field its default
+pub run : Command → Result RunError Output      -- suspends until the child has exited and its output has ended
+```
+
+The canonical program:
+
+```elm
+main : Program
+main = Io.run λ⊤ →
+    case ChildProcess.run (ChildProcess.command "rex" [ "ls", "--json" ]) of
+        Err error →
+            Node.exitWith "cannot run rex" 1
+
+        Ok output →
+            case output.status of
+                ChildProcess.Exited 0 →
+                    Node.print output.stdout
+
+                _ →
+                    Node.exitWith output.stderr 1
+```
+
+A program changes a default with record update: `{ ChildProcess.command "make" [] | cwd = Just
+"build" }`. `command` gives `cwd = Nothing`, `env = Inherit`, `killAfter = Duration.seconds 1` and
+`maxOutput = 16 777 216`. A field a later slice adds gets a default in `command`, so a program that
+builds its `Command` with `command` does not change.
+
+**There is no shell, and there is no string form.** `run` calls `spawn(program, args, { shell:
+false })`: the operating system starts `program` with exactly `args`, and no character of any
+argument has a meaning. A program that builds a command line from strings and hands it to a shell
+(`exec`, `shell: true`) runs whatever an attacker puts in those strings: that is command
+injection, and this module has no way to write it. A program that wants a shell starts one by
+name, as any other program — `ChildProcess.command "/bin/sh" [ "-c", script ]` — and the script is
+then its own text, written on purpose.
+
+- **The program** is a path when it holds a `/`, and a relative path is resolved from the child's
+  working directory (`cwd`, else the program's). Without a `/`, it is looked up in the `PATH` of
+  the **child's** environment, (b): under `Only` with no `PATH`, the operating system's default
+  path is searched (`/bin:/usr/bin` on Linux and macOS; measured on Node 24.19).
+- **Standard input** is `/dev/null` (Node's `"ignore"`): a child that reads it gets an end of
+  file at once and never waits for a terminal. Input to the child is a later slice, (j).
+- **The output** of each stream is kept whole, then decoded as UTF-8 when the child has ended;
+  an invalid sequence decodes to U+FFFD, and a byte order mark is kept, as the bytes are. More
+  than `maxOutput` bytes on either stream is `Err OutputTooLarge`, (e); `maxOutput` is the bound a
+  program sets, by rule 7, and is never more than the longest string the engine can hold
+  (`buffer.constants.MAX_STRING_LENGTH`): a larger one is taken as that, and a negative one as 0.
+- **When `run` returns.** On Node's `close` event: the child has exited and both of its output
+  pipes have reached their end. A descendant of the child that keeps a pipe open (`sh -c "server
+  &"`) keeps `run` waiting until it closes the pipe or exits (measured: `sh -c "sleep 1 &"` took one
+  second) — Node's `execFile` and Effect's `ChildProcessSpawner.string` wait the same way. A
+  program that starts a daemon redirects the daemon's output.
+- **A non-zero exit and a signal are values, not errors.** `run` answers `Ok` whenever the child
+  started and ended: `Exited 3` is how the child said it failed, and a program reads `stderr` to
+  learn why. `Signalled` keeps the output too, which is why it is a `Status` and not a
+  `RunError`: a child that crashes with `SIGSEGV` often explains itself on standard error first.
+  Effect makes a signal fail `exitCode`; here the output survives it.
+- **A timeout is a cancellation.** There is no `timeout` field: `Task.timeout (Duration.seconds 5)
+  λ⊤ → ChildProcess.run cmd` cancels the fiber at the deadline, and (d) stops the child.
+
+**(b) The environment.** *(The owner's decision `node-process-spawn-q2`, (i).)* `Inherit` passes `process.env` as it is when `run` is called. `Extend
+pairs` passes a copy of it with each pair set, in order, so a later pair of the same name wins.
+`Only pairs` passes the pairs and nothing else. A name that is empty or holds `=` is `Err
+InvalidArgument` and Node is not called: Node passes `A=B` as the variable `A` with the value
+`B=x` (measured), a silent wrong answer, so beni checks it first, as `Http.Server` checks
+`InvalidPort`. The default is `Inherit` because the typical child is a tool found on `PATH`;
+Node's and Effect's `env` replace the whole environment, and Effect's own documentation warns
+that the child then has no `PATH` (`ChildProcess.ts:383-396`). Reading the program's own
+environment as a value is #357's.
+
+**(c) The lifetime: the fiber that calls `run` owns the child.** `run` starts the child at once,
+inside the call, and parks its fiber on `Task.callback`. Nothing else holds the child: there is no
+handle to leak, and the child's end is the call's end. One fiber runs at a time (§17.1 item 3 of
+`transparent-effects-proposal.md`), so several fibers that each call `run` run their children at
+the same time, and each is answered when its own child ends.
+
+**(d) Cancellation, and the kill policy.** *(The signals, the grace and the process group are the
+owner's decision `node-process-spawn-q3`, (i).)* A fiber cancelled while its child runs (by
+`Task.cancel`, a `Task.timeout`, a lost `Task.race`, the end of its scope, or `Io.run`'s end) must
+not leave the child behind:
+
+1. The wait's canceller sends **`SIGTERM`** to the child, and arms a host timer of `killAfter`.
+   The bracket's release does the same when the canceller has not: an interrupt latched before
+   the wait — a fiber cancelled while masked, then restored around `run` — makes `Task.callback`
+   unwind without calling its function, so no canceller exists (`run/ChildProcessCancelledLatched`;
+   found by the review of #2044). Sending is done once, whichever comes first.
+2. The fiber's cleanup (a `Task.bracket` release) **waits until the child has exited**. When the
+   timer fires first, it sends **`SIGKILL`**, which no process can ignore, and the wait goes on to
+   the exit. So `Task.cancel` returns only after the child is gone, as Effect's scope release
+   waits for it, and a program that starts the same child again does not meet the first one.
+3. When the child has exited, the platform closes its ends of the two pipes, so a descendant that
+   holds them keeps nothing of beni waiting, and drops what was captured: a cancelled fiber gets
+   no value.
+
+The signal goes to the child's own process, not to a process group: the child is not `detached`
+and stays in beni's process group, so the terminal's Ctrl-C reaches it with the program. A
+descendant the child started is the child's to stop; a child that leaves descendants running
+when it gets `SIGTERM` leaves them running. Effect makes the child a group leader and signals the
+group instead; that waits for beni's own signal handling (#338), since a detached child does not
+get the terminal's Ctrl-C and a beni program cannot yet catch it to pass it on.
+
+At the end of `Io.run`, `Task.shutdown` gives cleanup 1 000 ms (§9.8.15 (c)), which is the default
+`killAfter`. A cleanup past that deadline is cut short at its wait, but the host timer is not a
+fiber's: it still sends `SIGKILL`, and Node's handle on the child keeps the process alive until the
+child has exited. So a program never exits leaving a child it started, unless it **crashes**: a
+defect ends Node at once (§16.5 *A defect on Node*), no cleanup runs, and a running child is left
+to the operating system, as an open socket is.
+
+**(e) Every failure Node documents, and what it becomes.** `spawn` reports a failure in one of
+two ways, and the platform handles both by the error's `code`: `EACCES`, `EAGAIN`, `EMFILE`,
+`ENFILE` and `ENOENT` arrive as the child's `error` event, and every other code is thrown from the
+`spawn` call itself (Node's `ChildProcess.prototype.spawn`; measured). The thrown ones are caught
+with `Js.catchIf`, which takes an `Error` whose `code` is in the table and throws everything else
+again. **One table serves both routes**: which route a code takes is Node's choice and can move
+between versions, and what the code means does not, so a named code is the same `RunError` by
+either. The names are the reader's, as `Io.FileError`'s are; where a name is `FileError`'s, it
+means the same.
+
+| Node's failure | Becomes |
+|---|---|
+| `ENOENT`, an `error` event: no such program (on `PATH`, or at its path), or no such working directory | `Err NotFound` |
+| `EACCES`, an `error` event: the program is not executable or is a directory, or the working directory may not be entered | `Err PermissionDenied` |
+| `EPERM`, thrown: the system forbids it (a set-user-ID file on a `nosuid` mount, a sandbox) | `Err PermissionDenied` |
+| `ENOTDIR`, thrown: the working directory, or a directory on a path, is a file | `Err NotADirectory` |
+| `E2BIG`, thrown: the arguments and the environment are longer than the system takes | `Err ArgumentsTooLong` |
+| `ENAMETOOLONG`, thrown: a path, or a name on it, is too long | `Err NameTooLong` |
+| `ELOOP`, thrown: a path has too many symbolic links to follow | `Err SymlinkLoop` |
+| `ETXTBSY`, thrown: the program's file is open for writing | `Err FileBusy` |
+| `ENOEXEC`, thrown: the file is in no format the system can run, and no shell took it | `Err BadExecutable` |
+| `EMFILE` or `ENFILE`, an `error` event: no file descriptor to spare for the pipes | `Err TooManyOpenFiles` |
+| `EAGAIN`, an `error` event: the user's or the system's process limit is reached | `Err TooManyProcesses` |
+| `ENOMEM`, thrown: no memory for a new process | `Err OutOfMemory` |
+| `ERR_INVALID_ARG_VALUE`, a thrown `TypeError`: the program is `""`, or a NUL character is in the program, an argument, `cwd` or the environment | `Err InvalidArgument` |
+| an environment name that is empty or holds `=` | `Err InvalidArgument`, checked in beni, (b); Node is not called |
+| more than `maxOutput` bytes on standard output or standard error | `Err OutputTooLarge`: the platform stops the child as (d) does — `SIGTERM`, `SIGKILL` after `killAfter` — and answers when it has exited |
+| any other code, thrown or as an `error` event before the child started | thrown again, whether or not a fiber still waits |
+| an `error` event after the child started (Node's `kill` failed with `EPERM`, say) | thrown again: nothing names it |
+| an `error` event of an output pipe | no listener: Node throws it, a defect |
+
+A file with no `#!` line and no format the system knows is run by `/bin/sh` on Linux (`execvp`'s
+`ENOEXEC` rule; measured: a file of bad bytes exits 126, `Ok (Exited 126)`), so `BadExecutable`
+comes only where the system's spawn has no such rule. After an `error` event Node still emits
+`close`, with a negative code and no `exit` (measured); the platform answers once, at the error.
+
+`NotFound` names a missing program and a missing working directory alike, and `PermissionDenied`
+a program that may not run and a directory that may not be entered: the child changes directory
+and then executes the program, and libuv reports either failure with the same errno and nothing
+else (measured: `cwd = "/nonexistent"` is `spawn /bin/echo ENOENT`). Effect checks `cwd` with a
+`stat` first; a check before the start can race the start, so this slice does not split them.
+
+**(f) Effect v4 parity.** Research 48 has no row for a child process; this is it. Effect's
+`unstable/process` (`ChildProcess.ts`, `ChildProcessSpawner.ts`, the Node spawner in
+`platform/node-shared`, at `4.0.0-rc.116`) builds a `Command` value (`make(cmd, args, options)`,
+`setCwd`, `setEnv`, `pipeTo`) and runs it with a scoped handle (`spawn`: `pid`, `exitCode`,
+`isRunning`, `kill`, `stdin`, `stdout`, `stderr`, `all`, extra descriptors, `unref`) or with a
+collector (`string`, `lines`, `exitCode`, `streamString`, `streamLines`). Copied: the command as a
+value with options (a); `cwd` and `env`; argv with no shell; each errno as a typed failure (Effect's
+`PlatformError` by `handleErrnoException`, here one constructor each); cancellation that stops the
+child and waits for its exit (d); `string`'s meaning for the output, waiting for the pipes' end.
+Changed (the first by `q2`, the second and third by `q3`, (i)): the environment inherits by default and extends by a case, (b), not by a second
+`extendEnv` field; `SIGKILL` follows `SIGTERM` by default, not only when `forceKillAfter` is set,
+because a child that ignores `SIGTERM` would otherwise outlive the fiber that owns it; the child is
+not a group leader, (d); a signal exit is a `Status`, (a). Left out of this slice, each later: a
+handle with streaming output and input (beni has no `Stream`, §17 decision 17); `pipeTo`, which a
+program writes as two `run`s or one `sh -c`; `shell`, by design; `detached`, `unref` and extra
+descriptors; a template-string command, which is a parser of command lines by another name.
+
+**(g) Order and determinism.** What a program observes depends on the children it starts and on
+the scheduler's FIFO, never on a pid or a timer: `run` gives no pid, the output is whole, and two
+children's answers reach their fibers in the order their `close` events arrive, which is the order
+they end. A fixture prints what its children wrote, never when.
+
+**(h) The fixtures**, by the rows of (e) and the parts above. Every child is `/bin/sh`, which
+Linux, macOS and NixOS all have at that path, or a name it finds on `PATH` (`sh`, `sleep`);
+none uses `/bin/echo`, which NixOS lacks.
+
+- (a), (b), (c): `ChildProcessRun` (standard output, standard error and an exit code; a program
+  found on `PATH`; `cwd`; each case of `Environment`, the later pair winning; a signal exit;
+  invalid UTF-8; two children at once).
+- (e), the failures a program can arrange: `ChildProcessErrors` (a missing program, at a path and
+  on `PATH`; a missing `cwd`; the fixture's own `.beni` file, which is not executable; a
+  directory; a `cwd` that is a file; a path through a file; an argument of 3 000 000 bytes; a
+  5 000-byte path; `""`; a NUL in the program, an argument, `cwd`, an environment value and an
+  environment name; an environment name with `=`, and an empty one; output over `maxOutput` on
+  each stream, output of exactly `maxOutput`, and a child that writes forever, which is stopped).
+- (e), the failures a program cannot arrange: `ChildProcessFaults`, whose test platform replaces
+  `child_process.spawn` with one that fails with the code named, by the route Node takes for it
+  (`ENOENT`, `EACCES`, `EAGAIN`, `EMFILE`, `ENFILE` as an event, with no pipes; `EPERM`, `ENOTDIR`,
+  `E2BIG`, `ENAMETOOLONG`, `ELOOP`, `ETXTBSY`, `ENOEXEC`, `ENOMEM` thrown);
+  `ChildProcessUnknownCode` (`EIO`, thrown) and `ChildProcessUnknownEvent` (`toString`, a key every
+  object inherits, as an event): each a defect, with a `.crash` golden.
+- (d): `ChildProcessCancelled` (a child that traps `SIGTERM` writes a file and exits; the file is
+  there when `Task.cancel` returns, and is not when the release does not wait — checked by hand
+  on the emitted JavaScript; then a `Task.timeout` ends a child that sleeps); `ChildProcessKillAfter` (a child that ignores `SIGTERM` is
+  killed after a `killAfter` of 50 ms; without `SIGKILL` the case would run into its hang
+  guard); `ChildProcessShutdown` (`Io.run` ends while a child sleeps 1 000 seconds; the program
+  exits at once); `ChildProcessCancelledLatched` (a cancellation latched while masked reaches
+  `run`'s wait, and the release alone signals the child; without that, a hang).
+- The rows with no fixture: `OutputTooLarge`'s clamp to `MAX_STRING_LENGTH` (a string of 512 MiB
+  is no test); an `error` event after the start (no program can make Node's `kill` fail); an
+  output pipe's `error` (left to Node).
+
+**(i) The owner's decisions**, taken on the dashboard.
+
+- `node-process-spawn-q1`, the shape of (a): **one record, a constructor with defaults** (Jayson,
+  2026-11-05 15:57:41 UTC). `ChildProcess.command program args` gives a `Command` with defaults, a
+  program changes fields with record update, and `run` takes the record. Separate functions per
+  setting were offered and declined. The error type is named `RunError`, as `Io` names
+  `FileError` and `Http.Server` names `ListenError`.
+- `node-process-spawn-q2`, the environment of (b): **one field, three cases, inherit by default**
+  (Jayson, 2026-11-05 15:58:15 UTC): `env : Environment` with `Inherit`, `Extend pairs` and `Only
+  pairs`. Effect's `env` plus `extendEnv` was offered and declined.
+- `node-process-spawn-q3`, the kill policy of (d): **`SIGTERM`, then `SIGKILL` after a grace
+  period** (Jayson, 2026-11-05 15:58:44 UTC). `SIGTERM` to the child's own process; `SIGKILL` if it
+  has not exited after `killAfter`, a field of the command, 1 s by default. The child stays in
+  beni's process group, so Ctrl-C reaches it; process groups wait for #338. Effect's policy, a
+  group signal with no `SIGKILL` unless the program asks, was offered and declined. The capture of the output whole, with streaming later, is the issue's own scope and the
+coordinator's instruction of 2026-11-05.
+
+**(j) Not in this slice.** Standard input, a `String` written and closed, then a stream (#2023);
+streaming output and a handle (`pid`, `kill`, line by line), which waits for a `Stream` (§17
+decision 17; #2024); process groups and the signals they need (#338); output as bytes (with
+#335's bytes). Windows is not a target of the `node` platform's tests today: its signals are
+emulated and its `PATH` lookup has its own rules, and this section says nothing of it.
 
 ## Appendix — what is deliberately not done
 

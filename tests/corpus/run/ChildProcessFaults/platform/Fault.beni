@@ -1,0 +1,10 @@
+--! A test platform's one capability: make every later `child_process.spawn`
+--! fail with an error code of the caller's choosing, by the route Node
+--! takes for that code, to reach the failures `ChildProcess.run` names
+--! that no program can arrange by itself (no process to spare, no memory,
+--! a busy file).
+
+--| From now on, every `child_process.spawn` fails with an error whose
+--| `code` is the given one: as the child's `error` event for `EACCES`,
+--| `EAGAIN`, `EMFILE`, `ENFILE` and `ENOENT`, thrown for any other.
+pub foreign impure failSpawns : String → ⊤

@@ -721,6 +721,9 @@ pub element "feDisplacementMap" svg
 pub element "feDistantLight" svg
 
 
+pub element "feDropShadow" svg
+
+
 pub element "feFlood" svg
 
 
@@ -930,6 +933,11 @@ pub attribute "selected" property stateful on "option" : Bool
 pub attribute "src" url on "audio" "embed" "iframe" "img" "input" "source" "track" "video" : String
 
 
+-- The number an ordered list starts at (HTML's `start`): CommonMark's
+-- `3. three` is `<ol start="3">` (`docs/design/markdown.md` §5).
+pub attribute "start" on "ol" : Int
+
+
 pub attribute "step" on "input" : String
 
 
@@ -1122,22 +1130,22 @@ pub attribute "writing-mode" : String
 
 -- SVG attributes of some elements: geometry.
 
-pub attribute "x" on "svg" "rect" "image" "foreignObject" "use" "pattern" "mask" "filter" "symbol" "text" "tspan" "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" "fePointLight" "feSpotLight" :
+pub attribute "x" on "svg" "rect" "image" "foreignObject" "use" "pattern" "mask" "filter" "symbol" "text" "tspan" "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" "fePointLight" "feSpotLight" :
     String
 
 
-pub attribute "y" on "svg" "rect" "image" "foreignObject" "use" "pattern" "mask" "filter" "symbol" "text" "tspan" "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" "fePointLight" "feSpotLight" :
+pub attribute "y" on "svg" "rect" "image" "foreignObject" "use" "pattern" "mask" "filter" "symbol" "text" "tspan" "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" "fePointLight" "feSpotLight" :
     String
 
 
 pub attribute "z" on "fePointLight" "feSpotLight" : String
 
 
-pub attribute "width" on "svg" "rect" "image" "foreignObject" "use" "pattern" "mask" "filter" "symbol" "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" :
+pub attribute "width" on "svg" "rect" "image" "foreignObject" "use" "pattern" "mask" "filter" "symbol" "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" :
     String
 
 
-pub attribute "height" on "svg" "rect" "image" "foreignObject" "use" "pattern" "mask" "filter" "symbol" "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" :
+pub attribute "height" on "svg" "rect" "image" "foreignObject" "use" "pattern" "mask" "filter" "symbol" "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" :
     String
 
 
@@ -1195,10 +1203,10 @@ pub attribute "preserveAspectRatio" on "svg" "symbol" "image" "marker" "pattern"
 
 -- SVG attributes of some elements: text.
 
-pub attribute "dx" on "text" "tspan" : String
+pub attribute "dx" on "text" "tspan" "feOffset" "feDropShadow" : String
 
 
-pub attribute "dy" on "text" "tspan" : String
+pub attribute "dy" on "text" "tspan" "feOffset" "feDropShadow" : String
 
 
 pub attribute "rotate" on "text" "tspan" "animateMotion" : String
@@ -1290,14 +1298,14 @@ pub attribute "primitiveUnits" on "filter" : String
 
 -- SVG attributes of some elements: filter primitives.
 
-pub attribute "in" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feGaussianBlur" "feMergeNode" "feMorphology" "feOffset" "feSpecularLighting" "feTile" :
+pub attribute "in" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feGaussianBlur" "feMergeNode" "feMorphology" "feOffset" "feSpecularLighting" "feTile" :
     String
 
 
 pub attribute "in2" on "feBlend" "feComposite" "feDisplacementMap" : String
 
 
-pub attribute "result" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" :
+pub attribute "result" on "feBlend" "feColorMatrix" "feComponentTransfer" "feComposite" "feConvolveMatrix" "feDiffuseLighting" "feDisplacementMap" "feDropShadow" "feFlood" "feGaussianBlur" "feImage" "feMerge" "feMorphology" "feOffset" "feSpecularLighting" "feTile" "feTurbulence" :
     String
 
 
@@ -1341,7 +1349,7 @@ pub attribute "amplitude" on "feFuncA" "feFuncB" "feFuncG" "feFuncR" : String
 pub attribute "exponent" on "feFuncA" "feFuncB" "feFuncG" "feFuncR" : String
 
 
-pub attribute "stdDeviation" on "feGaussianBlur" : String
+pub attribute "stdDeviation" on "feGaussianBlur" "feDropShadow" : String
 
 
 pub attribute "edgeMode" on "feGaussianBlur" "feConvolveMatrix" : String

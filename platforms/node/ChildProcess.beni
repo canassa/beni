@@ -1,0 +1,554 @@
+--! Running another program, on Node (`boundary.md` §9.14): a program and
+--! its arguments, with no shell, its output captured whole, and its end
+--! as a value.
+--!
+--!     main : Program
+--!     main = Io.run λ⊤ →
+--!         case ChildProcess.run (ChildProcess.command "rex" [ "ls", "--json" ]) of
+--!             Ok output →
+--!                 Node.print output.stdout
+--!
+--!             Err _ →
+--!                 Node.exitWith "cannot run rex" 1
+--!
+--! The module is beni over `Js`, as `Io` is: it has no sibling, and
+--! reaches `node:child_process` through `process.getBuiltinModule`.
+
+import Duration exposing (Duration)
+import Js exposing (Value)
+import Task exposing (Exit, Resume)
+
+
+--| What to run. Build one with `command`, and change a default with record
+--| update: `{ ChildProcess.command "make" [] | cwd = Just "build" }`.
+--|
+--| - `program`: a path when it holds a `/` (a relative one is resolved
+--|   from the child's working directory), else a name looked up in the
+--|   `PATH` of the child's environment.
+--| - `args`: the arguments, each one as it is. No shell reads them, so no
+--|   character in them has a meaning.
+--| - `cwd`: the child's working directory; `Nothing` is the program's own.
+--| - `env`: the child's environment.
+--| - `killAfter`: when the fiber is cancelled, the child gets `SIGTERM`,
+--|   and `SIGKILL` if it has not exited this long after.
+--| - `maxOutput`: the most bytes kept of standard output, and of standard
+--|   error. More is `OutputTooLarge`.
+pub type alias Command =
+    program : String
+    args : List String
+    cwd : Maybe String
+    env : Environment
+    killAfter : Duration
+    maxOutput : Int
+
+
+--| The child's environment.
+--|
+--| - `Inherit`: the program's own environment, as it is.
+--| - `Extend pairs`: the program's own, with each pair set; a later pair
+--|   of the same name wins.
+--| - `Only pairs`: these variables and no other. Without a `PATH`, a
+--|   program name is looked up in the system's default path.
+pub type Environment
+    = Inherit
+    | Extend (List (String × String))
+    | Only (List (String × String))
+
+
+--| How the child ended, and what it wrote. Both streams are decoded as
+--| UTF-8; an invalid sequence is U+FFFD.
+pub type alias Output =
+    status : Status
+    stdout : String
+    stderr : String
+
+
+--| How the child ended: it exited with a code, or a signal ended it. Both
+--| are values: a program reads `stderr` to learn why.
+pub type Status
+    = Exited Int
+    | Signalled String
+
+
+--| Why the child could not run: one constructor for each failure Node
+--| documents, and `OutputTooLarge`. Any other failure is a defect and ends
+--| the program.
+--|
+--| - `NotFound`: no such program, on `PATH` or at its path, or no such
+--|   working directory.
+--| - `PermissionDenied`: the program is not executable or is a directory,
+--|   the working directory may not be entered, or the system forbids it.
+--| - `NotADirectory`: the working directory, or a directory on a path, is
+--|   a file.
+--| - `ArgumentsTooLong`: the arguments and the environment are longer than
+--|   the system takes.
+--| - `NameTooLong`: a path, or a name on it, is too long.
+--| - `SymlinkLoop`: a path has too many symbolic links to follow.
+--| - `FileBusy`: the program's file is open for writing.
+--| - `BadExecutable`: the file is in no format the system can run.
+--| - `TooManyOpenFiles`: no file descriptor to spare for the pipes.
+--| - `TooManyProcesses`: the process limit is reached.
+--| - `OutOfMemory`: no memory for a new process.
+--| - `InvalidArgument`: the program is `""`; a NUL character is in the
+--|   program, an argument, `cwd` or the environment; or an environment
+--|   name is empty or holds `=`.
+--| - `OutputTooLarge`: standard output or standard error passed
+--|   `maxOutput` bytes. The child is stopped as a cancelled one is, and
+--|   the answer comes when it has exited.
+pub type RunError
+    = NotFound
+    | PermissionDenied
+    | NotADirectory
+    | ArgumentsTooLong
+    | NameTooLong
+    | SymlinkLoop
+    | FileBusy
+    | BadExecutable
+    | TooManyOpenFiles
+    | TooManyProcesses
+    | OutOfMemory
+    | InvalidArgument
+    | OutputTooLarge
+
+
+--| `program` with `args`, and every other field its default: the
+--| program's own working directory and environment, a `killAfter` of one
+--| second and a `maxOutput` of 16 MiB.
+pub command : String, List String → Command
+command program args =
+    { program = program
+    , args = args
+    , cwd = Nothing
+    , env = Inherit
+    , killAfter = Duration.seconds 1
+    , maxOutput = 16777216
+    }
+
+
+--| Start the child and wait, on this fiber only, until it has exited and
+--| its output has ended: `Ok` with how it ended and what it wrote, or
+--| `Err` with why it could not run. A non-zero exit and a signal are `Ok`.
+--|
+--| A descendant of the child that keeps its output open keeps `run`
+--| waiting. Standard input is empty.
+--|
+--| When the fiber is cancelled, the child gets `SIGTERM`, then `SIGKILL`
+--| after `killAfter`, and the cancellation ends when the child has exited.
+--| What it wrote is dropped.
+pub run : Command → Result RunError Output
+run cmd =
+    if not (validNames cmd.env) then
+        Err InvalidArgument
+    else
+        Task.bracket (λ⊤ → start cmd) release answer
+
+
+-- An environment name that is empty or holds `=`: Node would pass `A=B`
+-- as the variable `A` with the value `B=…` (measured), a silent wrong
+-- answer, so it is refused before Node is called (`boundary.md` §9.14 (b)).
+validNames : Environment → Bool
+validNames env =
+    case env of
+        Inherit →
+            True
+
+        Extend pairs →
+            allNamed pairs
+
+        Only pairs →
+            allNamed pairs
+
+
+allNamed : List (String × String) → Bool
+allNamed pairs = not (List.any pairs λ( name, _ ) → String.isEmpty name || String.contains name "=")
+
+
+-- Start one `child_process.spawn` and return the record that tracks it.
+-- `spawn` fails in one of two ways (Node's `ChildProcess.prototype.spawn`;
+-- measured): `EACCES`, `EAGAIN`, `EMFILE`, `ENFILE` and `ENOENT` come as
+-- the child's `error` event, and every other code is thrown from the call,
+-- caught here by name alone. The module is asked of `process` at each
+-- call, so a test platform that replaces `spawn` is seen.
+--
+-- The record: `child` (null when the call threw), `answer` (the result
+-- once known), `waiter` (the fiber's resume while it waits), `spawned`
+-- (the child started), `exited` (the child's process is gone, or never
+-- was), `exitWaiter` (the release's resume), `stopping` (the signals are
+-- sent), `timer` (the `SIGKILL` timer), `out` and `err` (each stream's
+-- chunks and their byte count), `max` and `killAfter`.
+start : Command → Value
+start cmd =
+    p =
+        Js.object
+            [ ( "child", Js.null )
+            , ( "answer", Js.null )
+            , ( "waiter", Js.null )
+            , ( "spawned", Js.from False )
+            , ( "exited", Js.from False )
+            , ( "exitWaiter", Js.null )
+            , ( "stopping", Js.from False )
+            , ( "timer", Js.null )
+            , ( "out", sink ⊤ )
+            , ( "err", sink ⊤ )
+            , ( "max", Js.from (outputLimit cmd.maxOutput) )
+            , ( "killAfter", Js.from (grace cmd.killAfter) )
+            ]
+    childProcess = Js.call (Js.global "process") "getBuiltinModule" [ Js.from "node:child_process" ]
+    child =
+        Js.catchIf
+            (λ⊤ →
+                Js.call childProcess "spawn"
+                    [ Js.from cmd.program, strings cmd.args, options cmd ]
+            )
+            (λerror → named error)
+            λerror → refused p error
+    if not (Js.isNull child) then
+        Js.set p "child" child
+        listen p child
+    p
+
+
+sink : ⊤ → Value
+sink ⊤ = Js.object [ ( "chunks", Js.array [] ), ( "bytes", Js.from 0 ) ]
+
+
+-- The bound on each stream, as §9.14 (a) gives it: never negative, and
+-- never more than the longest string the engine can hold.
+outputLimit : Int → Int
+outputLimit limit =
+    most =
+        Js.to
+            (Js.get
+                (Js.get
+                    (Js.call (Js.global "process") "getBuiltinModule" [ Js.from "node:buffer" ])
+                    "constants"
+                )
+                "MAX_STRING_LENGTH"
+            )
+    if limit < 0 then 0 else if limit > most then most else limit
+
+
+-- The grace in milliseconds, as a host timer can take it: a timer over
+-- 2³¹ − 1 ms fires after 1 ms in Node, with a warning, so a longer grace
+-- is that bound (about 24 days).
+grace : Duration → Int
+grace duration =
+    ms = Duration.toMillis duration
+    if ms < 0 then 0 else if ms > 2147483647 then 2147483647 else ms
+
+
+-- The host array of a list's strings.
+strings : List String → Value
+strings list =
+    array = Js.array []
+    pushAll array list
+    array
+
+
+pushAll : Value, List String → ⊤
+pushAll array list =
+    case list of
+        [] →
+            ⊤
+
+        [ item, …rest ] →
+            push array (Js.from item)
+            pushAll array rest
+
+
+push : Value, Value → ⊤
+push array value =
+    _ = Js.call array "push" [ value ]
+    ⊤
+
+
+-- `spawn`'s options: no shell, standard input empty, both outputs piped,
+-- the working directory when there is one, and the environment when it
+-- is not the program's own as it is.
+options : Command → Value
+options cmd =
+    o =
+        Js.object
+            [ ( "shell", Js.from False )
+            , ( "stdio", Js.array [ Js.from "ignore", Js.from "pipe", Js.from "pipe" ] )
+            ]
+    case cmd.cwd of
+        Just dir →
+            Js.set o "cwd" (Js.from dir)
+
+        Nothing →
+            ⊤
+    case cmd.env of
+        Inherit →
+            ⊤
+
+        Extend pairs →
+            Js.set o "env" (variables (Js.get (Js.global "process") "env") pairs)
+
+        Only pairs →
+            Js.set o "env" (variables Js.null pairs)
+    o
+
+
+-- An environment object with no prototype, so a variable named
+-- `__proto__` is a variable: `base`'s own variables, then each pair.
+variables : Value, List (String × String) → Value
+variables base pairs =
+    env = Js.call (Js.global "Object") "create" [ Js.null ]
+    if not (Js.isNull base) then
+        _ = Js.call (Js.global "Object") "assign" [ env, base ]
+        ⊤
+    setAll env pairs
+    env
+
+
+setAll : Value, List (String × String) → ⊤
+setAll env pairs =
+    case pairs of
+        [] →
+            ⊤
+
+        [ ( name, value ), …rest ] →
+            Js.set env name (Js.from value)
+            setAll env rest
+
+
+-- The child's events. `spawn` and `exit` track the process; `close` comes
+-- when it has exited and both pipes have ended, and answers. A pipe is
+-- missing after `EMFILE` and `ENFILE`, which Node reports before it makes
+-- them. A pipe's own `error` has no listener: Node throws it, a defect.
+listen : Value, Value → ⊤
+listen p child =
+    _ = Js.call child "on" [ Js.from "error", Js.from λerror → failed p error ]
+    _ = Js.call child "on" [ Js.from "spawn", Js.from λ_ → Js.set p "spawned" (Js.from True) ]
+    _ = Js.call child "on" [ Js.from "exit", Js.from λ_ → exited p ]
+    _ = Js.call child "on" [ Js.from "close", Js.from λcode signal → closed p code signal ]
+    collectFrom p (Js.get child "stdout") (Js.get p "out")
+    collectFrom p (Js.get child "stderr") (Js.get p "err")
+
+
+collectFrom : Value, Value, Value → ⊤
+collectFrom p stream into =
+    if not (Js.isNullish stream) then
+        _ = Js.call stream "on" [ Js.from "data", Js.from λchunk → collect p into chunk ]
+        ⊤
+
+
+-- One chunk of a stream. Past `max` bytes the answer is `OutputTooLarge`:
+-- the pipes are closed and the child is stopped, and `close` delivers the
+-- answer once it has exited.
+collect : Value, Value, Value → ⊤
+collect p into chunk =
+    if Js.isNull (Js.get p "answer") then
+        bytes = Js.to (Js.get into "bytes") + Js.to (Js.get chunk "length")
+        if bytes > Js.to (Js.get p "max") then
+            Js.set p "answer" (Js.from (Err OutputTooLarge))
+            closePipes p
+            stop p
+        else
+            Js.set into "bytes" (Js.from bytes)
+            push (Js.get into "chunks") chunk
+
+
+-- The use of `run`'s bracket: the answer, at once when the call threw,
+-- else when an event gives it.
+answer : Value → Result RunError Output
+answer p =
+    if Js.isNull (Js.get p "answer") then
+        Task.callback λresume → wait p resume
+    else
+        Js.to (Js.get p "answer")
+
+
+-- Park until the answer, and return what cancels the wait: the fiber is
+-- answered by no one, and the child is stopped (`boundary.md` §9.14 (d)).
+wait : Value, Resume (Result RunError Output) → (⊤ → ⊤)
+wait p resume =
+    Js.set p "waiter" (Js.from resume)
+    λ⊤ →
+        Js.set p "waiter" Js.null
+        stop p
+
+
+-- Resume the waiting fiber, once, with the answer; nothing when it waits
+-- no more.
+deliver : Value → ⊤
+deliver p =
+    waiter = Js.get p "waiter"
+    if not (Js.isNull waiter) then
+        Js.set p "waiter" Js.null
+        Task.resume (Js.to waiter) (Js.to (Js.get p "answer"))
+
+
+closed : Value, Value, Value → ⊤
+closed p code signal =
+    if Js.isNull (Js.get p "answer") then
+        Js.set p "answer" (Js.from (Ok (outputOf p code signal)))
+    deliver p
+
+
+outputOf : Value, Value, Value → Output
+outputOf p code signal =
+    { status = if Js.isNull code then Signalled (Js.to signal) else Exited (Js.to code)
+    , stdout = decode (Js.get p "out")
+    , stderr = decode (Js.get p "err")
+    }
+
+
+-- A stream's bytes as text. `Buffer`'s UTF-8 decoder puts U+FFFD for each
+-- invalid sequence and keeps a byte order mark.
+decode : Value → String
+decode from =
+    bytes = Js.call (Js.global "Buffer") "concat" [ Js.get from "chunks" ]
+    Js.to (Js.call bytes "toString" [ Js.from "utf8" ])
+
+
+exited : Value → ⊤
+exited p =
+    Js.set p "exited" (Js.from True)
+    timer = Js.get p "timer"
+    if not (Js.isNull timer) then
+        Js.set p "timer" Js.null
+        _ = Js.apply (Js.global "clearTimeout") [ timer ]
+        ⊤
+    waiter = Js.get p "exitWaiter"
+    if not (Js.isNull waiter) then
+        Js.set p "exitWaiter" Js.null
+        Task.resume (Js.to waiter) ⊤
+
+
+-- Stop the child, once: `SIGTERM` now, and `SIGKILL` after `killAfter` if
+-- it has not exited. The timer is the host's and not a fiber's, so it
+-- fires when a teardown has cut the fiber's cleanup short; Node's handle
+-- on the child keeps the process alive until then. `kill` on a child
+-- whose start failed signals nothing and returns `false` (measured).
+-- There is nothing to stop when `spawn` threw: no child.
+stop : Value → ⊤
+stop p =
+    child = Js.get p "child"
+    if
+        not (Js.isNull child)
+            && not (Js.to (Js.get p "exited"))
+            && not (Js.to (Js.get p "stopping"))
+    then
+        Js.set p "stopping" (Js.from True)
+        _ = Js.call child "kill" [ Js.from "SIGTERM" ]
+        Js.set p
+            "timer"
+            (Js.apply (Js.global "setTimeout")
+                [ Js.from λ_ → forceKill p, Js.get p "killAfter" ]
+            )
+
+
+forceKill : Value → ⊤
+forceKill p =
+    Js.set p "timer" Js.null
+    if not (Js.to (Js.get p "exited")) then
+        _ = Js.call (Js.get p "child") "kill" [ Js.from "SIGKILL" ]
+        ⊤
+
+
+-- Close beni's ends of the child's pipes, so a descendant that holds the
+-- other ends keeps nothing waiting.
+closePipes : Value → ⊤
+closePipes p =
+    child = Js.get p "child"
+    destroy (Js.get child "stdout")
+    destroy (Js.get child "stderr")
+
+
+destroy : Value → ⊤
+destroy stream =
+    if not (Js.isNullish stream) then
+        _ = Js.call stream "destroy" []
+        ⊤
+
+
+-- The release of `run`'s bracket. A cancelled fiber's cleanup stops the
+-- child, waits until it has exited, then closes the pipes (§9.14 (d)).
+-- The wait's canceller has usually sent the signals already, but not
+-- when the interrupt was latched before the wait — a fiber cancelled
+-- while masked, then restored: `Task.callback` then unwinds without
+-- calling `wait`, and only this `stop` reaches the child
+-- (`run/ChildProcessCancelledLatched`). A cleanup may wait; past a
+-- teardown's deadline the wait is cut short and the `SIGKILL` timer
+-- still fires.
+release : Value, Exit (Result RunError Output) → ⊤
+release p exit =
+    case exit of
+        Task.Done _ →
+            ⊤
+
+        Task.Cancelled →
+            stop p
+            if not (Js.to (Js.get p "exited")) then
+                Task.callback λresume → awaitExit p resume
+            if not (Js.isNull (Js.get p "child")) then
+                closePipes p
+
+
+awaitExit : Value, Resume ⊤ → (⊤ → ⊤)
+awaitExit p resume =
+    Js.set p "exitWaiter" (Js.from resume)
+    λ⊤ → Js.set p "exitWaiter" Js.null
+
+
+-- The child's `error` event. Before the child started, a code Node
+-- documents is the answer, and the process never was; after it started
+-- (Node's `kill` failed, say), or with a code nothing names, it is a
+-- defect, thrown again whether or not anyone waits (`CLAUDE.md` rule 9).
+-- `close` still follows a failed start, and finds the answer given.
+failed : Value, Value → ⊤
+failed p error =
+    if Js.to (Js.get p "spawned") || not (named error) then
+        Js.throw error
+    else
+        Js.set p "exited" (Js.from True)
+        if Js.isNull (Js.get p "answer") then
+            Js.set p "answer" (Js.from (Err (errorOf error)))
+        deliver p
+
+
+-- A failure thrown by the `spawn` call itself, by a code in `codes`.
+refused : Value, Value → Value
+refused p error =
+    Js.set p "exited" (Js.from True)
+    Js.set p "answer" (Js.from (Err (errorOf error)))
+    Js.null
+
+
+named : Value → Bool
+named error =
+    Js.instanceOf error (Js.global "Error")
+        && Js.typeIs (Js.get error "code") "string"
+        && Js.to (Js.call (Js.global "Object") "hasOwn" [ codes, Js.get error "code" ])
+
+
+errorOf : Value → RunError
+errorOf error = Js.to (Js.call (Js.global "Reflect") "get" [ codes, Js.get error "code" ])
+
+
+-- `RunError`'s constructor for each failure Node documents for
+-- `child_process.spawn`, by the error's `code`: one object, read by its
+-- own keys alone (`Object.hasOwn`). The values are the constructors as
+-- `Js.from` gives them, which keeps `RunError`'s string tags in a release
+-- build (`backend.md` §9 item 4), as `Io.codes` does.
+codes : Value
+codes =
+    Js.object
+        [ ( "ENOENT", Js.from NotFound )
+        , ( "EACCES", Js.from PermissionDenied )
+        , ( "EPERM", Js.from PermissionDenied )
+        , ( "ENOTDIR", Js.from NotADirectory )
+        , ( "E2BIG", Js.from ArgumentsTooLong )
+        , ( "ENAMETOOLONG", Js.from NameTooLong )
+        , ( "ELOOP", Js.from SymlinkLoop )
+        , ( "ETXTBSY", Js.from FileBusy )
+        , ( "ENOEXEC", Js.from BadExecutable )
+        , ( "EMFILE", Js.from TooManyOpenFiles )
+        , ( "ENFILE", Js.from TooManyOpenFiles )
+        , ( "EAGAIN", Js.from TooManyProcesses )
+        , ( "ENOMEM", Js.from OutOfMemory )
+        -- A TypeError: an empty program, or a NUL character in a string.
+        , ( "ERR_INVALID_ARG_VALUE", Js.from InvalidArgument )
+        ]

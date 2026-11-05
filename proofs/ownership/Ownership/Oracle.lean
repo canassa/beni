@@ -532,12 +532,26 @@ def generateV6 : Gen (String × Program) := do
     let (_, p) ← Generator.generalV5 true extra Generator.generatedTableV6
     return ("construct-declarations", p)
 
+/-- Generator v7 (opt-in, 2026-11-05, #1872): v5's general families with the
+    record-object moves drawn three times as often as each other move, half of
+    them after a declaration table that may hold a declaration writing its
+    object parameter. v5 and v6 are unchanged; v7 is a stream of its own. -/
+def generateV7 : Gen (String × Program) := do
+  let extra := Generator.objectMoves ++ Generator.objectMoves ++ Generator.objectMoves
+  if (← draw 2) == 0 then
+    let (_, p) ← Generator.generalV5 false extra
+    return ("objects", p)
+  else
+    let (_, p) ← Generator.generalV5 true extra Generator.generatedTableV7 Generator.objectCallMoves
+    return ("object-declarations", p)
+
 def generateVersion (version : Nat) : Gen (String × Program) :=
   match version with
   | 1 => do return ("frozen-legacy", ← OracleLegacy.generate)
   | 3 => generateFamily
   | 4 => generateV4
   | 6 => generateV6
+  | 7 => generateV7
   | _ => generateV5
 
 structure Options where

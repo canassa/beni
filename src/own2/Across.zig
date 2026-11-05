@@ -1,12 +1,7 @@
 //! L9: what a callee may hold across a run of a known code it is handed
-//! (`docs/design/ownership-v2.md` §2.11.3, *a capture written across the
-//! callee's run*; §2.13.7, #1955). A known code applied at a callee's
-//! label runs inside the callee, while the callee holds what it was handed:
-//! its other arguments (a closure's captures among them), the contents of
-//! every cell they reach (a loan taken of them, `Ref.get r`, is a holder
-//! behind the barrier the caller cannot see) and the answers of its other
-//! labels. A capture the code writes is the caller's object, so each of
-//! these is an operand of that write, at every label outward.
+//! (`docs/design/ownership-v2.md` §2.11.3, §2.13.7, #1955): its other
+//! arguments, the contents of every cell they reach, and its other labels'
+//! answers. Each is an operand of a capture the code writes.
 //!
 //! Obligations kept here: none of §2.14's directly (`Resolve` judges the
 //! operands as it judges a call's other arguments).
@@ -17,13 +12,12 @@ const Value = @import("Value.zig");
 const LabelChain = @import("LabelChain.zig");
 
 const Error = Value.Error;
-const none: u32 = Ids.none_int;
 
 /// Whether virtual call `q`'s argument `j` is a capture of its code, not a
 /// supply: a closure's captures follow its own parameters.
 pub fn capture(f: *const Value.Frame, q: u32, j: u32) bool {
     const call = f.calls.items[q];
-    if (!call.virtual or call.callee_val == none) return false;
+    if (!call.virtual or call.callee_val == Ids.none_int) return false;
     return j + f.kidsOf(f.val(call.callee_val)).len >= call.args.len;
 }
 

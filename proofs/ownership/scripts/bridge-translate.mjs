@@ -20,6 +20,7 @@ const atoms = e => {
     case 'recur': return e[1];
     case 'focus': return [e[1],e[2]];
     case 'traverse': return [e[2],e[3]];
+    case 'assign': return [e[3], ...e[4]];
     default: return [];
   }
 };
@@ -68,6 +69,8 @@ function exprType(e, types, ds, self) {
       types.set(e[6], at(e[3])); sub(e[7]); return at(e[3]);
     }
     case 'focus': types.set(e[3], elem(at(e[1]))); sub(e[4]); return at(e[1]);
+    // An update's result is its base's object (§31.3).
+    case 'assign': return at(e[3]);
     case 'prim': {
       const op = e[1], xs = e[2].map(at);
       switch (op[0]) {
@@ -84,6 +87,9 @@ function exprType(e, types, ds, self) {
         case 'builder': return ['builder', op[1]];
         case 'close': return ['list', elem(xs[0])];
         case 'construct': return xs[op[1].indexOf(true)];
+        // A record object (#316): a literal, a field read and a copy.
+        case 'object': return ['object', xs];
+        case 'get': return xs[0]?.[0] === 'object' ? xs[0][1][op[1]] : undefined;
         default: return xs[0];
       }
     }
@@ -270,9 +276,16 @@ export function translate(ds, main) {
           text = aa[0];
         } else if (['length', 'copy', 'push', 'set'].includes(op)) text = `List.${op} ${args(xs)}`;
         else if (op === 'at') text = `case List.get (${aa[0]}) (${aa[1]}) of\n    Just found${serial} →\n        found${serial++}\n    Nothing →\n        ${aa[2]}`;
+        // A record object (#316, #1872): a beni record. A literal makes one,
+        // `r.fi` reads a field, `Record.copy` copies it (§31.15).
+        else if (op === 'object') {
+          if (!aa.length) fail('empty-record-representation');
+          text = `{ ${aa.map((x, i) => `f${i} = ${x}`).join(', ')} }`;
+        }
+        else if (op === 'get') text = `${aa[0]}.f${e[1][1]}`;
+        else if (op === 'record-copy') text = `Record.copy ${args(xs)}`;
         else fail(({builder:'private-builder', put:'private-put', close:'private-close',
-          events:'abstract-event-boundary', owned:'abstract-owned-boundary',
-          object:'record-object', get:'record-object', 'record-copy':'record-object'})[op] ?? `primitive-${op}`);
+          events:'abstract-event-boundary', owned:'abstract-owned-boundary'})[op] ?? `primitive-${op}`);
         if (["length", "at"].includes(op)) text = `bridgeRead (\n${ind(text)}\n)`;
         return text;
       }
@@ -294,9 +307,18 @@ export function translate(ds, main) {
         const src = e[1] === 'list' ? a(e[2]) : `(List.range 0 (${a(e[2])} - 1))`;
         return `List.foldl (${src}) (${a(e[3])}) (λ${e[1] === 'list' ? item : index} ${acc} →\n${ind(emit(e[7], next, key + '/body', self))}\n)`;
       }
-      // A record object (#316) has no bridge spelling yet: its record lines
-      // are not compared (BRIDGE.md, the record update demands).
-      case 'assign': fail('record-object');
+      // `{ base | fi = v, … }`, an update written in place (§31.3, #1872).
+      // The update target is a plain name (language.md §6.3), so a base that
+      // is a field of a positional record is bound to a local first: the
+      // local holds the object, as the field does.
+      case 'assign': {
+        const fields = e[2], values = e[4].map(a);
+        if (!fields.length) fail('empty-record-update');
+        const update = target => `{ ${target} | ${fields.map((f, i) => `f${f} = ${values[i]}`).join(', ')} }`;
+        if (e[3][0] === 'var') return update(a(e[3]));
+        const local = `base${serial++}`;
+        return `(\n${ind(`${local} =\n${ind(a(e[3]))}\n${update(local)}`)}\n)`;
+      }
       default: throw Error(`unknown expression ${e[0]}`);
     }
   }

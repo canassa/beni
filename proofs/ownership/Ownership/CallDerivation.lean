@@ -98,27 +98,76 @@ theorem forIn_demands (items : List Origin) (cells others : Origin → List Orig
     · rw [← escapes]
       exact all w member
 
+/-- A successful default row demand (`rowDemand`: whole, or `W{F}` with its
+    Dead test per field, #1872) passed the four tests against the escapes
+    recorded before it, with some live set, and it keeps the escapes. -/
+theorem rowDemand_success {s : Summary} {w : Origin} {cs later others : List Origin}
+    {dead : List Nat → List Origin → List Origin} {before after : St} {u : Unit}
+    (run : (rowDemand ({} : Config) s w cs later others dead).run before = .ok (u, after)) :
+    (∃ live, demandProblem ({} : Config) before.facts.escapes cs live others = none) ∧
+      after.facts.escapes = before.facts.escapes := by
+  unfold rowDemand at run
+  split at run
+  · obtain ⟨problem, escapes⟩ := recordDemand_success run
+    exact ⟨⟨_, problem⟩, escapes⟩
+  · exact ⟨⟨_, demand_success_problem run⟩, demand_escapes run⟩
+
+/-- Every row of a successful row-demand loop passed its test against the
+    escapes recorded before the loop, with some live set. -/
+theorem forIn_rowDemands (s : Summary) (items : List Origin) (cells others : Origin → List Origin)
+    (later : List Origin) (dead : List Nat → List Origin → List Origin) {before after : St} {u : PUnit}
+    (run : (forIn (m := CheckM) items PUnit.unit (fun w (_ : PUnit) => do
+        rowDemand ({} : Config) s w (cells w) later (others w) dead
+        pure (ForInStep.yield PUnit.unit))).run before = .ok (u, after)) :
+    after.facts.escapes = before.facts.escapes ∧
+      ∀ w ∈ items, ∃ live,
+        demandProblem ({} : Config) before.facts.escapes (cells w) live (others w) = none := by
+  induction items generalizing before with
+  | nil =>
+    rw [List.forIn_nil] at run
+    change Except.ok (PUnit.unit, before) = Except.ok (u, after) at run
+    cases run
+    exact ⟨rfl, by intro w member; simp at member⟩
+  | cons item items ih =>
+    rw [List.forIn_cons] at run
+    obtain ⟨step, middle, stepRun, rest⟩ := checkM_bind_success run
+    obtain ⟨_, afterDemand, demandRun, yieldRun⟩ := checkM_bind_success stepRun
+    change Except.ok (ForInStep.yield PUnit.unit, afterDemand) = Except.ok (step, middle) at yieldRun
+    cases yieldRun
+    obtain ⟨problem, escapes⟩ := rowDemand_success demandRun
+    change (forIn (m := CheckM) items PUnit.unit _).run _ = Except.ok (u, after) at rest
+    obtain ⟨escapesRest, all⟩ := ih rest
+    refine ⟨escapesRest.trans escapes, ?_⟩
+    intro w member
+    simp only [List.mem_cons] at member
+    rcases member with rfl | member
+    · exact problem
+    · rw [← escapes]
+      exact all w member
+
 /-- The default configuration keeps the callee's captures as operand paths.
     Both `rfl` facts below hold by the default `Config` (`mutant := none`); a
     changed default breaks them loudly. -/
 theorem default_no_calleeCapture : ({} : Config).has .calleeCapture = false := rfl
 
 /-- Every write and consume row of a successful default `applyCall` passed
-    its demand against the escapes recorded before the call, the live cells
-    after it, and the other operand paths. -/
+    its demand against the escapes recorded before the call, a live set (the
+    live cells after the call, or for a `W{F}` row the ones its Dead test
+    reads per field, #1872), and the other operand paths. -/
 theorem applyCall_demands {ctx : Context} (config : ctx.config = {}) {s : Summary}
     {site : List Nat} {args caps : List Abstract} {later : List Origin}
+    {dead : List Nat → List Origin → List Origin}
     {before after : St} {result : Abstract}
-    (run : (applyCall ctx s site args caps later).run before = .ok (result, after)) :
-    ∀ w ∈ s.writes ++ s.consumes,
-      demandProblem ({} : Config) before.facts.escapes (instantiateOrigin site args caps w) later
+    (run : (applyCall ctx s site args caps later dead).run before = .ok (result, after)) :
+    ∀ w ∈ s.writes ++ s.consumes, ∃ live,
+      demandProblem ({} : Config) before.facts.escapes (instantiateOrigin site args caps w) live
         (otherPaths args caps w) = none := by
   unfold applyCall at run
   rw [config] at run
   simp only [default_no_calleeCapture, Bool.false_eq_true, if_false] at run
   obtain ⟨_, middle, loopRun, _⟩ := checkM_bind_success run
-  exact (forIn_demands (s.writes ++ s.consumes) (fun w => instantiateOrigin site args caps w)
-    (fun w => otherPaths args caps w) later loopRun).2
+  exact (forIn_rowDemands s (s.writes ++ s.consumes) (fun w => instantiateOrigin site args caps w)
+    (fun w => otherPaths args caps w) later dead loopRun).2
 
 /-- A value found at a path is reached. -/
 theorem atPath_reaches {heap : Heap} {v : Value} {q : Path} {w : Value}
@@ -550,7 +599,8 @@ theorem linkedWritesCovered_of_applyCall
     (known : ∀ a ∈ actuals, ∀ entry ∈ a.paths, Origin.unknown ∉ entry.2)
     (noClosures : ∀ w ∈ args, ∀ d caps, w ≠ .closure d caps)
     (rowsBase : ∀ w ∈ s.writes ++ s.consumes, w.base = w)
-    (run : (applyCall ctx s site actuals [] later).run before = .ok (result, after))
+    {dead : List Nat → List Origin → List Origin}
+    (run : (applyCall ctx s site actuals [] later dead).run before = .ok (result, after))
     (ins : List Abstract) :
     LinkedWritesCovered s ins tys args args.length hs := by
   intro i q c _ arrayAtC permitted d connected j p _ arrayAtD
@@ -604,7 +654,7 @@ theorem linkedWritesCovered_of_applyCall
       rw [if_pos iLt]
     rw [param] at base
     subst base
-    have problem := applyCall_demands config run _ wMember
+    obtain ⟨_, problem⟩ := applyCall_demands config run _ wMember
     rw [instantiateOrigin_parameter site actuals [] i q notEnv, actualI] at problem
     simp only [Option.getD_some] at problem
     have disjoint := (demandProblem_sound γ inv.separating ({} : Config) before.facts.escapes _ _ _ problem).2.2

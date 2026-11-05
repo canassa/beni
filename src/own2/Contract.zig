@@ -39,6 +39,7 @@ pub const occRel = Conds.occRel;
 pub const fed_bit = Conds.fed_bit;
 pub const occFed = Conds.occFed;
 pub const isFed = Conds.isFed;
+pub const fresh_arg = Conds.fresh_arg;
 pub const fedParam = Conds.fedParam;
 pub const fedArg = Conds.fedArg;
 pub const weakest = Conds.weakest;
@@ -79,6 +80,28 @@ pub const Label = struct {
 };
 
 pub const Calls = enum(u8) { none, once, many };
+
+/// The high bit of a closure's `head`: a fixed contract, not a code.
+pub const fixed_bit: u32 = 1 << 31;
+
+/// What a call runs (`Context.callee`).
+pub const Callee = union(enum) {
+    /// The result and every argument cross: nothing to track.
+    harmless,
+    /// A constructor applied: `(ordinal, arity)`.
+    ctor: [2]u32,
+    /// A code of the module (`Groups`' numbering): its current contract.
+    code: u32,
+    /// A fixed contract: words, an import, a derived method, pessimistic.
+    contract: Id,
+    /// A function value: the head is evaluated.
+    value,
+    /// A record field of function type, `r.f x`: the receiver's field's value.
+    field,
+};
+
+/// Marks a label origin's offset: a called code's last call (`Called`).
+pub const last_origin: u32 = 1 << 29;
 
 pub const Supply = struct {
     k: u32,
@@ -247,9 +270,17 @@ pub const Table = struct {
     supplies: std.ArrayList(Supply) = .empty,
     /// `res` and supplies' `res` as result trees (§2.10), by node.
     trees: Trees.Table = .{},
+    /// Per `(contract, function slot of its result)`: its called contract
+    /// (§2.11.3), and per contract its run of `(slot, called contract)`.
+    called: Ids.FixedDict(2) = .{},
+    called_list: std.ArrayList([2]u32) = .empty,
+    called_runs: Ids.FixedDict(1) = .{},
 
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.trees.deinit(gpa);
+        t.called.deinit(gpa);
+        t.called_list.deinit(gpa);
+        t.called_runs.deinit(gpa);
         t.heads.deinit(gpa);
         t.effects.deinit(gpa);
         t.stores.deinit(gpa);
@@ -261,6 +292,21 @@ pub const Table = struct {
 
     pub fn head(t: *const Table, c: Id) Head {
         return t.heads.items[c];
+    }
+    pub fn calledOf(t: *const Table, c: Id, rel: Rel) ?Id {
+        return t.called.get(.{ c, rel });
+    }
+    /// A contract's called contracts are put one after another.
+    pub fn putCalled(t: *Table, gpa: Allocator, c: Id, rel: Rel, called: Id) Ids.IndexError!void {
+        try t.called.put(gpa, .{ c, rel }, called);
+        const got = try t.called_runs.getOrPut(gpa, .{c});
+        if (!got.found_existing) got.value_ptr.* = @intCast(t.called_list.items.len << 8);
+        got.value_ptr.* += 1;
+        try t.called_list.append(gpa, .{ rel, called });
+    }
+    pub fn calledRun(t: *const Table, c: Id) []const [2]u32 {
+        const x = t.called_runs.get(.{c}) orelse return &.{};
+        return t.called_list.items[x >> 8 ..][0 .. x & 0xff];
     }
     /// The parameter whose whole subtree `c`'s result is, at its own path,
     /// when `c` writes nothing of it (§2.11.2, *the identity control*).

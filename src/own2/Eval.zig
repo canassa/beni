@@ -31,6 +31,7 @@ const Stored = @import("Stored.zig");
 const Loans = @import("Loans.zig");
 const Captures = @import("Captures.zig");
 const FnRun = @import("FnRun.zig");
+const Called = @import("Called.zig");
 const W = @import("Walk.zig");
 
 pub const Error = Ids.ChargeError;
@@ -71,6 +72,8 @@ pub const Evaluation = struct {
     sink: Sink = undefined,
     facts_on: bool = false,
     hooks: Hooks = undefined,
+    /// A called code's creation: what it escapes and passes on is its body's (§2.11.3).
+    quiet: bool = false,
 
     pub fn deinit(e: *Evaluation) void {
         const g = e.w.f.gpa;
@@ -93,6 +96,14 @@ pub const Evaluation = struct {
     pub fn chain(e: *Evaluation) LabelChain.Chain {
         return .{ .f = &e.w.f, .virt = &e.w.virt, .contracts = e.contracts, .arena = e.ev.arena };
     }
+    /// Whether call `q` is the walk's last call or a virtual call under it;
+    /// every call is, in any other code (`first` 0).
+    pub fn inLast(e: *Evaluation, q: u32) bool {
+        if (e.w.last.calls == 0) return true;
+        var x = q;
+        while (x >= e.w.walk_calls) x = (LabelChain.virtualOuter(e.chain(), x) orelse return false)[0];
+        return x >= e.w.last.calls;
+    }
     fn account(e: *Evaluation) *Ids.Account {
         return e.w.f.account;
     }
@@ -104,10 +115,11 @@ pub fn evaluate(w: *Walk, contracts: *Contract.Table, ctx: Context, arena: Alloc
     e.* = .{ .w = w, .ev = .{ .f = &w.f, .contracts = contracts, .arena = arena, .routed = paramLeaves }, .contracts = contracts, .ctx = ctx, .solver = solver, .x = x };
     if (solver) |sv| e.ev.live = sv.live;
     e.ev.code_sig = .{ .ctx = ctx.ctx, .of = ctx.codeSig };
+    if (w.code.called != null) e.ev.made = madeOrOwn;
     const f = &w.f;
     const gpa = f.gpa;
-    try e.demands.appendSlice(gpa, w.demands.items);
-    try e.escapes.appendSlice(gpa, w.escapes.items);
+    try e.demands.appendSlice(gpa, w.demands.items[w.last.demands..]);
+    try e.escapes.appendSlice(gpa, w.escapes.items[w.last.escapes..]);
     // The contracts the walk's calls read now.
     for (f.calls.items[0..w.walk_calls]) |*c| {
         if (c.code != none) c.contract = (ctx.contractOf(ctx.ctx, c.code)) orelse try ctx.pessimistic(ctx.ctx, @intCast(c.args.len));
@@ -129,12 +141,21 @@ pub fn evaluate(w: *Walk, contracts: *Contract.Table, ctx: Context, arena: Alloc
     var q: u32 = 0;
     while (q < f.calls.items.len) : (q += 1) try labelsOf(e, q);
     // Function values run by unknown code: called, handed on, answered (§2.11.3).
-    for (w.runs.items) |r| try escapeFns(e, r[0], &.{}, .run, r[1], none);
-    for (f.calls.items, 0..) |c, vq| if (c.virtual and f.roots.items[c.root].place != .none and f.places.holds(f.roots.items[c.root].place).closure)
+    for (w.runs.items[w.last.runs..]) |r| try escapeFns(e, r[0], &.{}, .run, r[1], none);
+    for (f.calls.items, 0..) |c, vq| if (c.virtual and f.roots.items[c.root].place != .none and f.places.holds(f.roots.items[c.root].place).closure and e.inLast(@intCast(vq)))
         try escapeFns(e, try f.refRoot(c.root), &.{}, .answer, c.point, @intCast(vq));
     q = 0;
-    while (q < f.calls.items.len) : (q += 1) try callEffects(e, q);
-    try onceDemands(e);
+    while (q < f.calls.items.len) : (q += 1) if (e.inLast(q)) try callEffects(e, q);
+}
+
+/// A called code's leaf: 1 for an object its creation made, 2 for its own
+/// parameter's. A parameter comes later, so it may be such an object, an
+/// earlier call's answer: `Distinct` never calls the two apart (§2.11.3).
+fn madeOrOwn(ev: *Relation.Eval, l: Value.Leaf) u2 {
+    const e: *Evaluation = @fieldParentPtr("ev", ev);
+    if (l.kind == .site or (l.kind == .fresh and !e.inLast(l.atom))) return 1;
+    const own = l.kind == .ref and ev.f.roots.items[l.root].kind == .param and ev.f.roots.items[l.root].a < e.w.code.called.?.own_places.len;
+    return if (own) 2 else 0;
 }
 
 /// An arrival's leaves at a parameter's slot (`Routed.paramLeaves`), and a
@@ -150,12 +171,19 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
     const gpa = e.gpa();
     const call = f.calls.items[q];
     if (call.contract == none) return;
+    e.quiet = !e.inLast(q);
+    defer e.quiet = false;
     const h = e.contracts.head(call.contract);
     for (e.contracts.labelsOf(h.labels), 0..) |l, li| {
         if (l.j >= call.args.len) continue;
         const arg = call.args[l.j];
-        const fv = try e.ev.valueAt(arg, f.slots.relWords(l.slot));
-        const x = f.val(fv);
+        var fv = try e.ev.valueAt(arg, f.slots.relWords(l.slot));
+        var x = f.val(fv);
+        // A call's result at a slot with a called contract, unless it is a parameter's slot.
+        if (try Called.value(f, e.ctx, e.contracts, fv)) |cv| if (try FnRun.oneParam(&e.ev, arg, f.slots.relWords(l.slot)) == null) {
+            fv = cv;
+            x = f.val(cv);
+        };
         if (x.kind == .built and x.form == .closure and x.head & fixed_bit == 0) {
             // A known code: a virtual call of it on the label's supplies.
             const got = try e.w.virt.getOrPut(gpa, .{ q, @intCast(li) });
@@ -229,13 +257,14 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
             // what it is supplied may be the taken element (#1760).
             var origin = l.origin;
             if (LabelChain.takenOutward(e.chain(), q)) origin[2] |= RowEnv.taken_origin;
-            const got = try e.w.derived.getOrPut(gpa, .{ j, slot, origin[0], origin[1], origin[2] });
+            // A label a called code's creation passes on is another label than its last call's (§2.11.3).
+            const got = try e.w.derived.getOrPut(gpa, .{ j, slot, origin[0], origin[1], origin[2] | @as(u32, @intFromBool(e.quiet)) << 28 });
             if (!got.found_existing) {
                 got.value_ptr.* = @intCast(f.cbs.items.len);
                 try f.cbs.append(gpa, .{ .j = j, .slot = slot, .origin = origin });
             }
             try e.ev.label_map.put(gpa, .{ q, @intCast(li) }, got.value_ptr.*);
-            try e.passes.append(gpa, .{ got.value_ptr.*, q, @intCast(li) });
+            if (!e.quiet) try e.passes.append(gpa, .{ got.value_ptr.*, q, @intCast(li) });
             // What the passed-on code answers is stored in the cell, and it is unknown here (§2.13.7).
             if (h.flags.words) if (try Loans.supply(f, e.contracts, l)) |cs| blk: {
                 try Loans.lend(&e.ev, q, @intCast(li), cs);
@@ -264,7 +293,7 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
 /// The function objects of value `v` at `words` that unknown code runs at
 /// `point`, as `mode` says, escape there (§2.11.3, *a function value goes
 /// where a value goes*).
-fn escapeFns(e: *Evaluation, v: u32, words: []const u32, mode: FnRun.Mode, point: u32, call: u32) Error!void {
+pub fn escapeFns(e: *Evaluation, v: u32, words: []const u32, mode: FnRun.Mode, point: u32, call: u32) Error!void {
     var ls: std.ArrayList(u32) = .empty;
     defer ls.deinit(e.gpa());
     try FnRun.escapes(&e.ev, e.ctx, e.w.closures.items, v, words, mode, point, call, &ls);
@@ -482,6 +511,7 @@ pub fn addEscape(e: *Evaluation, leaf: u32, point: u32) Error!void {
 }
 
 pub fn addEscapeAt(e: *Evaluation, leaf: u32, point: u32, call: u32) Error!void {
+    if (e.quiet) return;
     try e.escapes.append(e.gpa(), .{ .leaf = leaf, .point = point, .call = call });
     if (e.facts_on) try e.hooks.escape(e, leaf);
 }
@@ -519,7 +549,7 @@ fn supplyingArg(e: *Evaluation, q: u32, lab: Contract.Label, k: u32, words: []co
 }
 
 /// The path `words` replays to below place `at`, for a demand's text.
-fn pathAt(e: *Evaluation, at: Place.PlaceId, words: []const u32) Error!PathId {
+pub fn pathAt(e: *Evaluation, at: Place.PlaceId, words: []const u32) Error!PathId {
     if (words.len == 0) return .none;
     const f = e.fr();
     var ps: std.ArrayList(u32) = .empty;
@@ -530,49 +560,6 @@ fn pathAt(e: *Evaluation, at: Place.PlaceId, words: []const u32) Error!PathId {
 
 pub fn tokenOf(e: *Evaluation, inst: u32) u32 {
     return e.w.bir.insts.items(.main_token)[inst];
-}
-
-/// A closure whose code writes a capture (§2.11.4, R-2.8): a `once`
-/// demand at its creation on each written capture. A cell operation on a
-/// captured `Ref` is a `writer` demand on the cell's `◆` there instead,
-/// never `once`: the code's frame keeps the write (§2.13.7).
-fn onceDemands(e: *Evaluation) Error!void {
-    const f = e.fr();
-    const gpa = e.gpa();
-    for (e.w.closures.items) |cl| {
-        const c = (e.ctx.contractOf(e.ctx.ctx, cl.code)) orelse continue;
-        const h = e.contracts.head(c);
-        const sig = try e.ctx.codeSig(e.ctx.ctx, cl.code);
-        const x = f.val(cl.value);
-        const caps = f.kidsOf(x);
-        var flat: std.ArrayList(Contract.Effect) = .empty;
-        try e.contracts.writesFlat(gpa, e.ev.arena, f.account, f.slots, f.places, h.writes, &flat);
-        for (flat.items) |wr| {
-            if (wr.j < sig.own or wr.j - sig.own >= caps.len) continue;
-            const cell = cellWrite(f.slots, wr);
-            if (!cell and !h.flags.once) continue;
-            const t_start: u32 = @intCast(e.w.leaf_runs.items.len);
-            if (cell) try Cells.targets(&e.ev, caps[wr.j - sig.own], f.slots.relWords(wr.slot), &e.w.leaf_runs) else {
-                var ps: std.ArrayList(Relation.Proj) = .empty;
-                defer ps.deinit(gpa);
-                try e.ev.project(caps[wr.j - sig.own], f.slots.relWords(wr.slot), wr.deep, 0, 0, &ps);
-                for (ps.items) |p| try e.w.leaf_runs.append(gpa, p.leaf);
-            }
-            const cap_local = e.ctx.capturesOf(e.ctx.ctx, cl.code)[wr.j - sig.own];
-            const write_path: PathId = if (cap_local != none) try pathAt(e, try e.ctx.placeOfLocal(e.ctx.ctx, cap_local), f.slots.relWords(wr.slot)) else .none;
-            try e.demands.append(gpa, .{
-                .point = cl.point,
-                .kind = if (cell) .writer else .once,
-                .cell = cell,
-                .token = tokenOf(e, cl.inst),
-                .base_inst = cl.inst,
-                .base_local = cap_local,
-                .write_path = write_path,
-                .targets = .{ .start = t_start, .len = @intCast(e.w.leaf_runs.items.len - t_start) },
-                .deep = wr.deep,
-            });
-        }
-    }
 }
 
 // ---- read-off --------------------------------------------------------------
@@ -613,6 +600,17 @@ pub const Sink = struct {
     cut: usize = std.math.maxInt(usize),
     /// The sources the frame's escapes reach (§2.10, *host objects*).
     host: Host.State = .{},
+
+    /// Frame label `cb`'s index in the draft.
+    pub fn labelIndex(s: *Sink, cb: u32) Error!u32 {
+        const gpa = s.e.gpa();
+        while (s.label_at.items.len <= cb) try s.label_at.append(gpa, none);
+        if (s.label_at.items[cb] != none) return s.label_at.items[cb];
+        const c = s.e.fr().cbs.items[cb];
+        const at = try s.d.labelOf(s.arena, c.j, c.slot, c.origin);
+        s.label_at.items[cb] = at;
+        return at;
+    }
 };
 
 /// A subtree being described at path `q` (`depth` steps from its root). `depth`: its serial number in the evaluation.

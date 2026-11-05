@@ -17,6 +17,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
+const Supplied = @import("Supplied.zig");
+const FnRun = @import("FnRun.zig");
 const Facts = @import("Facts.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
@@ -103,13 +105,13 @@ const Resolver = struct {
     /// The code's kept judgements across the group's rounds (§2.12).
     kept: ?*Kept.Table = null,
 
-    fn f(r: *Resolver) *Value.Frame {
+    pub fn f(r: *Resolver) *Value.Frame {
         return &r.e.w.f;
     }
-    fn ev(r: *Resolver) *Relation.Eval {
+    pub fn ev(r: *Resolver) *Relation.Eval {
         return &r.e.ev;
     }
-    fn gpa(r: *Resolver) Allocator {
+    pub fn gpa(r: *Resolver) Allocator {
         return r.e.w.f.gpa;
     }
     fn account(r: *Resolver) *Ids.Account {
@@ -349,7 +351,7 @@ const Resolver = struct {
             fx.join(try r.keys.factsOf(r.ev(), t));
         }
         // A host object escaped, or JavaScript made it (§2.10, *host objects*).
-        if (fx.unknown or fx.host or targets.len == 0) {
+        if ((fx.unknown and !r.ev().keeping) or fx.host or targets.len == 0) {
             refuse(o, if (fx.loan != none) .loan else if (fx.unknown or targets.len == 0) .unknown else .escaped);
             if (fx.loan != none) o.loan = Holders.calleeAndCell(fr, fx.loan) else if (targets.len != 0) o.exactness = .approximate;
             return line;
@@ -512,43 +514,25 @@ const Resolver = struct {
         return k.judged(r, d, try r.judge(d), found, at);
     }
 
-    /// A supplied leaf `t` judged as a write the callback may make, the
-    /// call's other arguments its operands (§2.11.3) but `skip`: a passed-on
-    /// label's own function value, which is no more an operand of its supply
-    /// than a direct label's callee is of its arguments (its captures are
-    /// asked apart by the label's condition).
-    /// A supplied part `t` judged at a label's call. A part that comes
-    /// partly from unknown code (a callback's answer: a fold's accumulator)
-    /// is `unknown` whole, yet its known objects are still kept where they
-    /// are held after the call: each is judged on its own (§2.11.3).
-    fn judgeSupplied(r: *Resolver, t: u32, point: u32, inst: u32, args: []const u32, k: usize, skip: usize, pending: u32) Error!Line {
-        const l = try r.judgeSuppliedLeaf(t, point, inst, args, k, skip, pending);
-        if (l.outcome.verdict != .refused or !l.outcome.cause.unseen()) return l;
-        const fr = r.f();
-        var stack: std.ArrayList(u32) = .empty;
-        defer stack.deinit(r.gpa());
-        var seen: Ids.FixedDict(1) = .{};
-        defer seen.deinit(r.gpa());
-        try stack.append(r.gpa(), t);
-        while (stack.pop()) |x| {
-            if ((try seen.getOrPut(r.gpa(), .{x})).found_existing) continue;
-            const xl = fr.leafAt(x);
-            switch (xl.kind) {
-                .answer, .top, .host => continue,
-                .ref => switch (fr.roots.items[xl.root].kind) {
-                    .cb => continue,
-                    .call, .supply => {
-                        try r.ev().expand(x, &stack);
-                        continue;
-                    },
-                    .param => {},
-                },
-                else => {},
-            }
-            const lb = try r.judgeSuppliedLeaf(x, point, inst, args, k, skip, pending);
-            if (lb.outcome.verdict == .refused and !lb.outcome.cause.unseen()) return lb;
+    /// A supplied leaf judged as a write the callback may make, the call's
+    /// other arguments its operands (§2.11.3) but `skip`: a passed-on label's
+    /// own function value, which is no more an operand of its supply than a
+    /// direct label's callee is of its arguments (its captures are asked apart
+    /// by the label's condition).
+    const Leaf = struct {
+        point: u32,
+        inst: u32,
+        args: []const u32,
+        k: usize,
+        skip: usize,
+        pending: u32,
+        pub fn of(s: Leaf, r: *Resolver, t: u32) Error!Line {
+            return r.judgeSuppliedLeaf(t, s.point, s.inst, s.args, s.k, s.skip, s.pending);
         }
-        return l;
+    };
+
+    pub fn mayBeHeld(r: *Resolver, x: u32, leaf: Leaf) Error!bool {
+        return Supplied.mayBeHeld(r, x, leaf);
     }
 
     fn judgeSuppliedLeaf(r: *Resolver, t: u32, point: u32, inst: u32, args: []const u32, k: usize, skip: usize, pending: u32) Error!Line {
@@ -595,6 +579,16 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
             defer es.deinit(f.gpa);
             try es.of(&e.contracts.trees, f.gpa, f.places, su.res_root, &.{});
             for (es.items.items) |rs| for (rs.arrivals) |a| {
+                // Another label's answer in the callee: judged against what the
+                // frame holds; the call's arguments are the callee's to judge.
+                if (a.kind == .cb and a.j != p[2]) {
+                    var ls: std.ArrayList(u32) = .empty;
+                    defer ls.deinit(f.gpa);
+                    try FnRun.supplyLeaves(&e.ev, p[1], a, &ls);
+                    const pending = if (p[1] < e.w.sites.items.len) e.w.sites.items[p[1]].pending else none;
+                    const at = try f.slots.relOfWords(f.gpa, f.account, f.places, es.wordsOf(rs));
+                    for (ls.items) |l| try jobs.append(arena, .{ .kind = .pass, .point = call.point, .i = @intCast(pi), .k = su.k, .t = l, .at = at, .aj = none, .skip = lab.j, .pending = pending, .judged = l });
+                }
                 if (a.kind != .param or a.j >= call.args.len) continue;
                 const v = try e.ev.valueAt(call.args[a.j], f.slots.relWords(a.slot));
                 var ls: std.ArrayList(Relation.Part) = .empty;
@@ -634,11 +628,11 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
             },
             .cb => blk: {
                 const cb = f.cbs.items[j.i];
-                break :blk try r.judgeSupplied(j.t, cb.point, cb.inst, cb.args, j.k, j.skip, j.pending);
+                break :blk try Supplied.judge(Line, &r, j.t, Resolver.Leaf{ .point = cb.point, .inst = cb.inst, .args = cb.args, .k = j.k, .skip = j.skip, .pending = j.pending });
             },
             .pass => blk: {
                 const call = f.calls.items[e.passes.items[j.i][1]];
-                break :blk try r.judgeSupplied(j.judged, call.point, call.inst, call.args, j.aj, j.skip, j.pending);
+                break :blk try Supplied.judge(Line, &r, j.judged, Resolver.Leaf{ .point = call.point, .inst = call.inst, .args = try Supplied.operandsOf(e, e.passes.items[j.i][1], j.aj), .k = j.aj, .skip = j.skip, .pending = j.pending });
             },
         };
     }
@@ -661,11 +655,11 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
             if (l.outcome.verdict == .accepted) try req.addBoth(arena, f.account, l.demand.relies, l.extra);
         },
         .cb => switch (l.outcome.verdict) {
-            .refused => if (!l.outcome.cause.unseen()) try kept.append(arena, .{ j.i, j.k, j.t }),
+            .refused => if (!l.outcome.cause.unseen()) try kept.append(arena, .{ j.i, j.k, j.t }) else try conds[j.i * width + j.k].add(arena, f.account, l.extra),
             .accepted => try conds[j.i * width + j.k].addBoth(arena, f.account, l.demand.relies, l.extra),
         },
-        .pass => switch (l.outcome.verdict) {
-            .refused => if (!l.outcome.cause.unseen()) try pkept.append(arena, .{ j.i, j.k, j.t, j.at }),
+        .pass => if (Supplied.heldByClosure(e, e.passes.items[j.i][1], j.aj)) try pkept.append(arena, .{ j.i, j.k, j.t, j.at }) else switch (l.outcome.verdict) {
+            .refused => if (!l.outcome.cause.unseen()) try pkept.append(arena, .{ j.i, j.k, j.t, j.at }) else try pconds[j.i * width + j.k].add(arena, f.account, l.extra),
             .accepted => try pconds[j.i * width + j.k].addBoth(arena, f.account, l.demand.relies, l.extra),
         },
     };

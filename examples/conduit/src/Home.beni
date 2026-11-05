@@ -152,10 +152,10 @@ view model =
     , content =
         <div class="home-page">
             {case model.session of
-                Session.LoggedIn _ _ →
+                Session.LoggedIn _ _ _ →
                     <></>
 
-                Session.Guest _ →
+                Session.Guest _ _ →
                     <div class="banner">
                         <div class="container">
                             <h1 class="logo-font">conduit</h1>

@@ -1,0 +1,2 @@
+A closure a declaration returns, called by its caller (ownership-v2.md §2.11.3, *a function value in a result*):
+built again under --ownership=v2 and the list stale-read sanitiser. v2 refuses each edit of a list its called contract says is still read; were it to accept one, the sanitised run would show the stale read.

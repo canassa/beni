@@ -1,0 +1,2 @@
+Writes below a non-regular type's fold of lists no other holder reads (ownership-v2.md §2.1, A step past a fold): built
+again under --ownership=v2 and the list stale-read sanitiser. v2 accepts each in place, and the run prints what the plain run prints.

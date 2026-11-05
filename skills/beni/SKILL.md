@@ -99,9 +99,10 @@ Open the file that your task needs. Each is short.
   `where`, `eq` and `compare`, return-type dispatch, `Dict` and `Set` keys.
 - `references/effects.md` — the two inferred bits, `Result` and no exceptions, `Task`, `Ref`, `Deferred`,
   `Semaphore`, `Queue`, `Latch`, `Task.forever`, `Debug` in a release build, `Log`.
+- `references/dates.md` — `Date`: ISO 8601 text, zones by name, the calendar parts of a moment.
 - `references/schemas.md` — the `schema` declaration, `Type` and `Encoded`, `parse` and `print`, the modifiers,
   `tagged`, `Json` with a derived `codec`.
-- `references/markdown.md` — `Markdown.parse`: the CommonMark tree, raw HTML as text, the limits.
+- `references/markdown.md` — `Markdown.parse` and `Html.Markdown`: the CommonMark tree, rendering, raw HTML as text, limits.
 - `references/markup.md` — elements, attributes, holes, events, components, `For`, `Show`, `class` and `style`
   lists, `Html.map`, what is refused.
 - `references/platforms.md` — `node`, `browser`, `browser-tea`, `browser-inline`, `html` and `cloudflare`: what `main` is on
@@ -112,6 +113,8 @@ Open the file that your task needs. Each is short.
   `browser-inline`.
 - `references/websocket.md` — the `WebSocket` module: the shared operations, a server on `node` with
   `listenWith`, `accept` and `refuse`, and a page on `browser-tea` with `listen` and `send`.
+- `references/child-process.md` — `ChildProcess.run` on `node`: a program and its arguments with no
+  shell, the output and the exit status, `cwd` and `env`, the errors, cancellation.
 - `references/project.md` — `beni.json`, `beni new`, the output tree, `beni serve`.
 - `references/ownership-words.md` — the ownership words core and platform packages write,
   `misplaced_ownership_word`, and `@ownership_summary_size`.

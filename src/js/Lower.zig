@@ -4000,6 +4000,8 @@ pub const Lowerer = struct {
     /// of the two it becomes without lowering the body twice.
     fn functionOf(l: *Lowerer, evidence: u32, ev_let: Inst.OptionalIndex, params: []const Inst.Index, body: Inst.Index, suspendable: bool) !JsIr.ExtraIndex {
         var names: std.ArrayList(JsIr.NameIndex) = .empty;
+        // Each parameter's place: its pattern's, `no_pos` for evidence.
+        var positions: std.ArrayList(u32) = .empty;
         var stmts: StmtList = .empty;
         // A new function is a new label scope (§7).
         const depth = l.case_depth;
@@ -4014,7 +4016,9 @@ pub const Lowerer = struct {
         // never has any, and reads its enclosing binders' by capture.
         var k: u16 = 0;
         while (k < evidence) : (k += 1) try names.append(l.scratch, try l.evidenceNameOf(ev_let, k));
+        try positions.appendNTimes(l.scratch, Node.no_pos, evidence);
         for (params[0..l.writtenParams(params)]) |param| {
+            try positions.append(l.scratch, l.pos(param));
             // A bare variable pattern IS the JavaScript parameter; anything
             // else (a tuple, a record, a constructor) needs a name of its
             // own and a destructuring statement at the top of the body.
@@ -4040,7 +4044,7 @@ pub const Lowerer = struct {
         // instruction — so this no longer takes one.
         try l.tailStmts(&stmts, body, null);
         const split = try l.splitSuspensions(stmts.items, null, .closure);
-        return l.funcRecord(names.items, split);
+        return l.funcRecordAt(names.items, positions.items, split);
     }
 
     /// Trailing unit literals in positions the named declaration omits
@@ -4385,15 +4389,21 @@ pub const Lowerer = struct {
         return names;
     }
 
+    /// The `Func` record of a function this file invents: its parameters
+    /// have no position (`JsIr.Builder.addFunc`).
     fn funcRecord(l: *Lowerer, params: []const JsIr.NameIndex, body: []const Node.Index) !JsIr.ExtraIndex {
         const param_range = try l.b.addNames(params);
         const body_range = try l.b.addRange(body);
-        return l.b.addRecord(JsIr.Func{
-            .params_start = param_range.start,
-            .params_end = param_range.end,
-            .body_start = body_range.start,
-            .body_end = body_range.end,
-        });
+        return l.b.addFunc(param_range, body_range);
+    }
+
+    /// The `Func` record of a function the source writes: `positions` has
+    /// each parameter's place (`backend.md` §11.2, *Deferred* item 3,
+    /// amended 2026-11-05).
+    fn funcRecordAt(l: *Lowerer, params: []const JsIr.NameIndex, positions: []const u32, body: []const Node.Index) !JsIr.ExtraIndex {
+        const param_range = try l.b.addNames(params);
+        const body_range = try l.b.addRange(body);
+        return l.b.addFuncAt(param_range, positions, body_range);
     }
 
     pub fn arrowOf(l: *Lowerer, params: []const JsIr.NameIndex, body: []const Node.Index, p: u32) !Node.Index {
@@ -4601,22 +4611,24 @@ pub const Lowerer = struct {
         const outer = l.enterFunction(suspendable);
         defer l.leaveFunction(outer);
         const built = try l.loopOf(&loop, body, p);
-        return l.funcRecord(built.names, built.stmts);
+        return l.funcRecordAt(built.names, built.positions, built.stmts);
     }
 
     /// A loop's parameter names and its statements (§8): `functionOrLoop`'s
     /// function, or the loop a function called once is written as in its
     /// caller (§9, *A function called once is written where it is called*).
-    fn loopOf(l: *Lowerer, loop: *Loop, body: Inst.Index, p: u32) !struct { names: []const JsIr.NameIndex, stmts: []const Node.Index } {
+    fn loopOf(l: *Lowerer, loop: *Loop, body: Inst.Index, p: u32) !struct { names: []const JsIr.NameIndex, positions: []const u32, stmts: []const Node.Index } {
         const slots = loop.slots;
         const evidence = loop.evidence;
         const ev_let = loop.ev_let;
         const label = loop.label;
         const jumps = loop.jumps;
         var names: std.ArrayList(JsIr.NameIndex) = .empty;
+        var positions: std.ArrayList(u32) = .empty;
         for (slots, 0..) |*slot, i| {
             const index: u32 = @intCast(i);
             if (slot.unwritten) continue;
+            try positions.append(l.scratch, if (slot.pattern.unwrap()) |pattern| l.pos(pattern) else Node.no_pos);
             slot.body = if (index < evidence)
                 try l.evidenceNameOf(ev_let, @intCast(index))
             else if (slot.local != Loop.no_local)
@@ -4746,7 +4758,7 @@ pub const Lowerer = struct {
         }
         if (loop.builds) try head.append(l.scratch, before);
         try head.append(l.scratch, while_node);
-        return .{ .names = names.items, .stmts = head.items };
+        return .{ .names = names.items, .positions = positions.items, .stmts = head.items };
     }
 
     /// §8's *Scalar views*: which list slots of `loop` are walked — every
@@ -10882,14 +10894,7 @@ pub const Lowerer = struct {
             try l.report(.internal, lambda, refused, .{});
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         }
-        // The `Func` record's four indexes, in field order.
-        const at = l.b.dataOf(arrow).lhs;
-        const f: JsIr.Func = .{
-            .params_start = @fromBackingInt(@intCast(l.b.extra.items[at])),
-            .params_end = @fromBackingInt(@intCast(l.b.extra.items[at + 1])),
-            .body_start = @fromBackingInt(@intCast(l.b.extra.items[at + 2])),
-            .body_end = @fromBackingInt(@intCast(l.b.extra.items[at + 3])),
-        };
+        const f = l.b.record(l.b.dataOf(arrow).lhs, JsIr.Func);
         const params = try l.scratch.dupe(u32, l.b.extra.items[@backingInt(f.params_start)..@backingInt(f.params_end)]);
         if (params.len == 0) {
             try l.report(.internal, lambda, refused, .{});
@@ -10899,9 +10904,17 @@ pub const Lowerer = struct {
         try l.constDecl(&stmts, @fromBackingInt(@intCast(params[0])), try l.add(.this_lit, p, Node.Data.unused, Node.Data.unused), p);
         for (l.b.extra.items[@backingInt(f.body_start)..@backingInt(f.body_end)]) |s| try stmts.append(l.scratch, @fromBackingInt(@intCast(s)));
         const body = try l.b.addRange(stmts.items);
-        // The parameters after the receiver are the `function`'s.
+        // The parameters after the receiver are the `function`'s, each at
+        // its place.
         const rest = try l.b.addNames(@ptrCast(params[1..]));
-        const record = try l.b.addRecord(JsIr.Func{ .params_start = rest.start, .params_end = rest.end, .body_start = body.start, .body_end = body.end });
+        const record = try l.b.addRecord(JsIr.Func{
+            .params_start = rest.start,
+            .params_end = rest.end,
+            .body_start = body.start,
+            .body_end = body.end,
+            .param_pos_start = @fromBackingInt(@backingInt(f.param_pos_start) + 1),
+            .param_pos_end = f.param_pos_end,
+        });
         return l.add(.arrow, p, @backingInt(record), Node.arrow_method);
     }
 

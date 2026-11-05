@@ -20,6 +20,7 @@ const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 pub const Fed = @import("Fed.zig");
 const Taken = @import("Taken.zig");
+const AnswerKeep = @import("AnswerKeep.zig");
 const FedCall = @import("FedCall.zig");
 const Entries = @import("Entries.zig");
 const RouteWalk = @import("RouteWalk.zig");
@@ -429,7 +430,7 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
     while (true) : (rounds += 1) {
         const ents = st.ents.items;
         try e.charge(.cond, @intCast(1 + ents.len - fresh));
-        if (try answerMeets(f, ents, st.alive.items, fresh)) return Cond.unprovable;
+        if (try answerMeets(f, ents, st.alive.items, fresh) or Entries.madeMeetsOwn(e, ents)) return Cond.unprovable;
         // The new entries into their groups; a second parameter's group
         // makes every parameter group ask its occurrences.
         const params = st.params;
@@ -585,7 +586,7 @@ fn expandEntry(e: *Eval, en: Ent, list: *std.ArrayList(u32), rs: *std.ArrayList(
 /// `target`: `t` is a shallow write target.
 pub fn overlap(e: *Eval, x: u32, t: u32, target: bool) Error!Ov {
     try e.charge(.cond, 1);
-    const key: [3]u32 = .{ x, t, @intFromBool(target) };
+    const key: [3]u32 = .{ x, t, @as(u32, @intFromBool(target)) | @as(u32, @intFromBool(e.keeping)) << 1 };
     const got = try e.ov_memo.getOrPut(e.gpa(), key);
     if (got.found_existing) {
         return if (got.value_ptr.* == none) Ov.no else e.ovs.items[got.value_ptr.*];
@@ -613,16 +614,15 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
         if (tp.kind == .plain and Step.fromWord(tp.a).kind == .contents) return .no;
     }
     if (x.kind == .top or t.kind == .top or x.kind == .loan or t.kind == .loan) return .may;
-    // A host object is no target that is still writable (§2.10, *host
-    // objects*): it may be another host object only.
+    if (e.made) |m| if (m(e, x) | m(e, t) == 3) return .may;
+    // A host object is no target that is still writable: it may be another host object only (§2.10).
     if (x.kind == .host or t.kind == .host) return if (x.kind == t.kind) .may else .no;
     const xr = x.kind == .ref;
     const tr = t.kind == .ref;
     if (Taken.side(e.f, e.contracts, x, t)) |w| return Taken.apartFromOthers(Ov, e, xi, ti, w, target, apartOf, overlap);
-    // An unknown label's answer may be anything its closure was handed:
-    // written, anything; holding the target, what it was supplied or its
-    // label's function slot holds.
-    if (t.kind == .answer or (tr and e.f.roots.items[t.root].kind == .cb)) return .may;
+    // An unknown label's answer, written: anything; holding the target,
+    // what it was supplied or its label's function slot holds.
+    if (t.kind == .answer or (tr and e.f.roots.items[t.root].kind == .cb)) return if (e.keeping) AnswerKeep.kept(Ov, e, xi, ti, overlap, answerHolds) else .may;
     if (x.kind == .answer or (xr and e.f.roots.items[x.root].kind == .cb)) return answerHolds(e, x, ti, target);
     if (xr and tr and x.root == t.root) return positional(e, xi, ti, target);
     if (xr or tr) {

@@ -34,15 +34,7 @@ pub fn handed(s: *Sink, li: u32, out: ResList) Error!void {
     try e.fn_escapes.append(e.gpa(), .{ .leaf = li, .point = none });
 }
 
-pub fn labelIndex(s: *Sink, cb: u32) Error!u32 {
-    const gpa = s.e.gpa();
-    while (s.label_at.items.len <= cb) try s.label_at.append(gpa, none);
-    if (s.label_at.items[cb] != none) return s.label_at.items[cb];
-    const c = s.e.fr().cbs.items[cb];
-    const at = try s.d.labelOf(s.arena, c.j, c.slot, c.origin);
-    s.label_at.items[cb] = at;
-    return at;
-}
+pub const labelIndex = Sink.labelIndex;
 
 pub fn resList(s: *Sink, l: ResList) Error!*Contract.Draft.Res {
     if (l.label == none) return &s.d.res;

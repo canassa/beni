@@ -1,0 +1,11 @@
+module CopyOfClosureAnswer
+  15:7 List.push c: accepted call
+  22:7 List.push c: accepted call
+  39:7 List.push <call List.copy>: accepted call
+  summary mk: π1 RA; res λr{lost}, ◇ π1
+  summary viaMk: res .0 fresh2{lost}, .0[*] ~fresh3{lost}, .1 fresh1
+  summary viaParam: π1 R; res .0 fresh1{lost}, .0[*] cb1[*]{excl cb1[*]}r{excl cb1[*]} condition(fresh4) ~condition(fresh2) ~fresh2{lost}, .1 cb1{excl cb1} ~condition(fresh5), condition(fresh3){lost}; π1 calls ≤1
+  summary grow: π2 RA; res λ?r{lost} λr{lost}, ◇ π2, ◇⟨◇⟩◇ π2
+  summary copyAlias: res .0 fresh2{lost} ~condition(fresh6), .0[*] ~condition(fresh3) ~fresh3{lost} ⊤call{lost}r{lost}, .0[*]⋆ ~condition(fresh4) ~fresh1, .1 ~condition(fresh7) ⊤call{lost}r{lost}, .1⋆ ~condition(fresh8) ~fresh1, condition(fresh5){shared}r{shared}
+  demands 3: accepted 3 (fresh 0, call 3, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 3: accepted 3 (fresh 0, call 3, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

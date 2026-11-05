@@ -1,0 +1,39 @@
+-- A page reads the reader's zone with `Date.here` (boundary.md §9.8.21),
+-- and the harness pins every page's zone to UTC (§9.8.21 (e)), in
+-- happy-dom and in Chrome. Before the pin, a page read the machine's
+-- zone. The moment 2016-02-18T23:30Z is on the 18th in UTC and on the
+-- 19th in Berlin, so the day shows the zone as well as its name.
+import Browser
+import Date
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    zone : String
+    day : Int
+
+
+init : ⊤ → Model
+init ⊤ =
+    zone = Date.here ⊤
+    day =
+        case Date.fromIso8601 "2016-02-18T23:30:00Z" of
+            Just t →
+                (Date.toParts t zone).day
+
+            Nothing →
+                0
+    { zone = Date.name zone, day = day }
+
+
+view : Model → Html ⊤
+view model =
+    <main>
+        <p id="zone">{model.zone}</p>
+        <p id="day">{String.fromInt model.day}</p>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = init, update = λmsg model → model, view = view }

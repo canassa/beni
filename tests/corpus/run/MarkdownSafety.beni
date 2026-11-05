@@ -1,0 +1,67 @@
+-- run: `Html.Markdown` puts no element, attribute or script of the text's own
+-- into a page (docs/design/markdown.md §6). The six article-body payloads
+-- of the RealWorld e2e suite (specs/e2e/xss-security.spec.ts:66) are raw
+-- HTML, shown as text (§6.1). A link's or an image's script URL, in each
+-- spelling `safeUrl`'s pattern names, is written as "" (§6.2). A tab, a line
+-- end, a space or a NUL inside a destination is percent-encoded, so the URL
+-- has no scheme and a browser reads it as a relative path. A character
+-- reference decodes to text, never to a tag (§6.3). A quote in a code
+-- block's language is escaped inside `class`, so it adds no attribute. A text
+-- nested far past the cap renders 64 levels, with no runtime error (§7.2).
+import Html.Markdown
+import Node exposing (Program)
+import Ssr
+
+
+show : String → String
+show text = "${text}\n  ${Ssr.render (Html.Markdown.fromString text)}"
+
+
+payload : String → String
+payload p = show ("Before payload: ${p} After payload")
+
+
+-- How many `tag`s the rendering of `text` holds.
+depth : String, String, String → String
+depth name text tag =
+    html = Ssr.render (Html.Markdown.fromString text)
+    "${name}: ${String.fromInt (List.length (String.split html tag) - 1)} ${tag}"
+
+
+main : Program
+main =
+    quote = "> "
+    star = "*"
+    open = "["
+    close = "](/u)"
+    Node.printLines
+        [ payload "<script>alert(1)</script>"
+        , payload "<img src=x onerror=\"alert(1)\">"
+        , payload "<svg onload=\"alert(1)\">"
+        , payload "<iframe srcdoc=\"<script>alert(1)</script>\">"
+        , payload "<a href=\"javascript:alert(1)\">click me</a>"
+        , payload "<div onmouseover=\"alert(1)\">hover me</div>"
+        , show "<script>\nalert(1)\n</script>"
+        , show "[a](javascript:alert(1)) [b](JaVaScRiPt:alert(1)) [c](&#106;avascript:alert(1))"
+        , show "[d](<javascript:alert(1)>) <javascript:alert(1)> [e](data:text/html,<b>x</b>)"
+        , show "![f](javascript:alert(1)) ![g](data:text/html;base64,PHNjcmlwdD4=)"
+        , show "[h][ref]\n\n[ref]: javascript:alert(1)"
+        , show
+            "&lt;script&gt;alert(1)&lt;/script&gt; `<script>` and\n\n    <script>alert(1)</script>"
+        , show "[safe](https://example.com/a?b=1&c=2 \"t\") ![safe](/img.png)"
+        , show
+            "[i](java&#9;script:alert(1)) [j](<java\tscript:alert(1)>) [k](java&#10;script:alert(1))"
+        , show
+            "[l](&#32;javascript:alert(1)) ![m](java&#13;script:alert(1)) [n](\u{0}javascript:alert(1))"
+        , show "123456789. a list that starts at 123456789"
+        , show "```a\"onclick=alert(1)\ncode\n```"
+        , depth "100000 quotes" "${String.repeat quote 100000}x" "<blockquote>"
+        , depth
+            "50000 stars on each side"
+            "${String.repeat star 50000}a${String.repeat star 50000}"
+            "<strong>"
+        , depth
+            "50000 nested links"
+            "${String.repeat open 50000}a${String.repeat close 50000}"
+            "<a "
+        ]

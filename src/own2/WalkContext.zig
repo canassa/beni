@@ -16,19 +16,7 @@ const Bir = @import("../bir/Bir.zig");
 const Error = Ids.ChargeError;
 const PlaceId = Ids.PlaceId;
 
-/// What a call runs (`Context.callee`).
-pub const Callee = union(enum) {
-    /// The result and every argument cross: nothing to track.
-    harmless,
-    /// A constructor applied: `(ordinal, arity)`.
-    ctor: [2]u32,
-    /// A code of the module (`Groups`' numbering): its current contract.
-    code: u32,
-    /// A fixed contract: words, an import, a derived method, pessimistic.
-    contract: Contract.Id,
-    /// A function value: the head is evaluated.
-    value,
-};
+pub const Callee = Contract.Callee;
 
 /// The module's services a walk reads (`Groups` implements them).
 pub const Context = struct {
@@ -55,6 +43,8 @@ pub const Context = struct {
     capturesOf: *const fn (ctx: *anyopaque, code: u32) []const u32,
     /// A code's current contract, or null.
     contractOf: *const fn (ctx: *anyopaque, code: u32) ?Contract.Id,
+    /// The called code of body code `code`'s function slot `rel` (§2.11.3), or null.
+    calledOf: *const fn (ctx: *anyopaque, code: u32, rel: u32) ?u32,
     /// A code's places: its parameters' (own, then captures) and its result's.
     codeSig: *const fn (ctx: *anyopaque, code: u32) Error!Relation.Sig,
     /// The places of the function type instruction `inst` has at its site:

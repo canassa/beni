@@ -456,10 +456,21 @@ function measureFloor(options, beni, work) {
 const pageImports = "import Browser\nimport Html exposing (Html)\n";
 const teaImports = `${pageImports}import Tea\n`;
 const helloBody = '<main><h1 class="title">Hello</h1><p>A static page.</p></main>';
+const markdownBody = '<main>{Html.Markdown.fromString "# Hello\\n\\nA *short* text, a [link](/x) and &copy;."}</main>';
 const pages = [
   { name: "browser", platform: "browser", imports: pageImports, main: "Browser.program { init = λ⊤ → {}, update = λ_ m → m, view = view }" },
   { name: "browser-tea", platform: "browser-tea", imports: teaImports, main: "Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = view }" },
   { name: "browser-tea hello", platform: "browser-tea", imports: teaImports, main: "Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = view }", body: helloBody },
+  // A page that renders Markdown (`docs/design/markdown.md` §7.3): core's
+  // parser, the `html` renderer and HTML5's table of 2,125 references, the
+  // baseline that #1936's compact table encoding is measured against.
+  {
+    name: "browser-tea markdown",
+    platform: "browser-tea",
+    imports: `${teaImports}import Html.Markdown\n`,
+    main: "Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = view }",
+    body: markdownBody,
+  },
   {
     name: "browser-tea element",
     platform: "browser-tea",

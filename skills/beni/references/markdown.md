@@ -44,10 +44,27 @@ titles text = List.filterMap (Markdown.parse text) λb →
             Nothing
 ```
 
+## Rendering it
+
+`Html.Markdown.fromString text` is the document as `Html msg`, and `Html.Markdown.view blocks`
+renders a tree you have. Every platform with markup has it: `node`, `browser`, `browser-tea`
+and `browser-inline`. The elements are CommonMark's own (`<p>`, `<h1>`, `<pre><code
+class="language-…">`, `<ul>`, `<ol start>`, `<blockquote>`, `<em>`, `<strong>`, `<a>`, `<img>`), so
+a stylesheet for any CommonMark renderer fits.
+
+```beni platform=browser-tea
+import Html exposing (Html)
+import Html.Markdown
+
+
+pub article : String → Html msg
+article body = <div class="article-content">{Html.Markdown.fromString body}</div>
+```
+
 ## Raw HTML and URLs
 
-- Raw HTML is in the tree as `HtmlBlock` and `HtmlInline`, as its text. Never make an element of
-  it. Show it as text, or leave it out.
+- Raw HTML is in the tree as `HtmlBlock` and `HtmlInline`, as its text. `Html.Markdown` shows it
+  as text. If you render the tree yourself, never make an element of it.
 - A destination is in the tree as it was written, escapes and references decoded and unsafe
   characters percent-encoded. A `javascript:` URL is in the tree too: an `href` or `src` in markup
   writes it as `""`.
@@ -58,4 +75,4 @@ titles text = List.filterMap (Markdown.parse text) λb →
   marker stays as text.
 - `parse` takes time linear in the text's length.
 
-Sources: `docs/design/markdown.md` §3, §4, §6, §7; `core/Markdown.beni`.
+Sources: `docs/design/markdown.md` §3, §4, §5, §6, §7; `core/Markdown.beni`; `platforms/html/Html/Markdown.beni`.

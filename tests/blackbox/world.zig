@@ -562,6 +562,7 @@ pub const World = struct {
         const cwd = options.cwd orelse std.process.Child.Cwd{ .dir = world.tmp.dir };
         var env = std.process.Environ.Map.init(world.gpa);
         defer env.deinit();
+        try env.put("TZ", time_zone);
         if (options.path) |path| try env.put("PATH", path);
         var result = try spawnAndCaptureIn(arena, world.io, argv.items, cwd, options.timeout_ms, &env);
         if (wants_json) {
@@ -661,9 +662,15 @@ fn findOnPath(arena: Allocator, io: Io, name: []const u8) ?[]const u8 {
     return null;
 }
 
-/// Spawn `argv` with an EMPTY environment, capture both streams to EOF
-/// within `timeout_ms`, reap, and return everything. `arena` owns the
-/// captured bytes.
+/// The one variable every child gets: the time zone. With no `TZ`, a
+/// program reads the machine's zone from `/etc/localtime`, so a program
+/// that shows a date in the reader's zone (`Date.here`) printed one date
+/// on one machine and another on CI (`boundary.md` §9.8.21 (e)).
+pub const time_zone = "UTC";
+
+/// Spawn `argv` with an environment that holds only `TZ` (`time_zone`),
+/// capture both streams to EOF within `timeout_ms`, reap, and return
+/// everything. `arena` owns the captured bytes.
 pub fn spawnAndCapture(
     arena: Allocator,
     gpa: Allocator,
@@ -674,6 +681,7 @@ pub fn spawnAndCapture(
 ) !Result {
     var env = std.process.Environ.Map.init(gpa);
     defer env.deinit();
+    try env.put("TZ", time_zone);
     return spawnAndCaptureIn(arena, io, argv, cwd, timeout_ms, &env);
 }
 

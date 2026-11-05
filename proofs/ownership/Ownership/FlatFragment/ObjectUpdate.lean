@@ -761,7 +761,10 @@ theorem assign_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
     exact ⟨origin, cellsAt_atPath_list shape0 at_p0 atQ member, address⟩
   rw [show ({ctx with escaped := union ctx.escaped before.facts.escapes} : Context).config = {} from
     defaultConfig] at demanded
-  have nextEscapes : next.facts.escapes = before.facts.escapes := demand_success_escapes demanded
+  -- The record demand passed the whole demand's tests (`W{F}` is only what it
+  -- records, #1872), so the whole demand from the same state succeeds too.
+  obtain ⟨problemNone, nextEscapes⟩ := recordDemand_success demanded
+  have demanded := Push.demand_run_none problemNone
   -- the values, typed as the fields they write
   have valueField : ∀ (j : Nat) (v : Atom), values[j]? = some v → ∃ f, written[j]? = some f ∧
       ∃ t, ts[f]? = some t ∧ atomType tenv v = .ok t := by

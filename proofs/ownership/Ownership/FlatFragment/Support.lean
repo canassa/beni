@@ -258,6 +258,29 @@ theorem demand_success_problem
     change Except.error detail = Except.ok (result, after) at run
     contradiction
 
+/-- A successful default record demand (`W{F}`, #1872) passed the whole
+demand's four tests, and it keeps the recorded escapes: it differs from
+`demand` only in the field set it records. -/
+theorem recordDemand_success {fields : List Nat}
+    (run : (recordDemand ({} : Config) cs fields later others).run before = .ok (result, after)) :
+    demandProblem ({} : Config) before.facts.escapes cs later others = none ∧
+      after.facts.escapes = before.facts.escapes := by
+  cases problem : demandProblem ({} : Config) before.facts.escapes cs later others with
+  | some detail =>
+    dsimp [recordDemand, getFacts, StateT.run, StateT.bind, StateT.map, StateT.get] at run
+    simp only [pure_bind] at run
+    rw [problem] at run
+    change Except.error detail = Except.ok (result, after) at run
+    contradiction
+  | none =>
+    refine ⟨rfl, ?_⟩
+    dsimp [recordDemand, getFacts, modifyFacts, StateT.run, StateT.bind, StateT.map, StateT.get,
+      modify, modifyGet, StateT.modifyGet] at run
+    simp only [pure_bind, problem] at run
+    change Except.ok ((), _) = Except.ok (result, after) at run
+    cases run
+    rfl
+
 theorem demand_success_not_escaped
     (run : (demand ({} : Config) cs later others).run before = .ok (result, after)) :
     ∀ origin ∈ cs, ¬ Escaped before.facts.escapes origin :=

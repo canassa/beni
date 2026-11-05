@@ -140,7 +140,7 @@ update msg model =
 
         CompletedSave (Ok viewer) →
             key = Session.navKey model.session
-            ( { model | session = Session.LoggedIn key viewer }
+            ( { model | session = Session.signIn model.session viewer }
             , Cmd.batch
                 [ Cmd.do λ⊤ → Api.storeViewer viewer, Route.replaceUrl key Route.Home RouteRefused ]
             )

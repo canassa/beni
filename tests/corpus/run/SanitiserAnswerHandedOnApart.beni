@@ -1,0 +1,64 @@
+-- The twin of `SanitiserAnswerHandedOn` (`ownership-v2.md` §2.11.3, *An answer
+-- handed on*): each run of the label gets its own object, because the function
+-- makes it or runs once. v2 accepts every edit
+-- in place; the sanitised run prints what the plain run prints.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+once : a, (a → b), (b → c) → c
+once x f g = g (f x)
+
+
+held : a, (a → b), (b → c) → c × b
+held x f g =
+    y = f x
+    a = g (f x)
+    ( a, y )
+
+
+each : a, (a → b), (b → c) → c × c
+each x f g = ( g (f x), g (f x) )
+
+
+mapped : List Int, a, (a → b), (b → c) → List c
+mapped xs x f g = List.map xs λ_ → g (f x)
+
+
+looped : Int, a, (a → b), (b → c), List c → List c
+looped n x f g acc =
+    if n == 0 then
+        acc
+    else
+        looped (n - 1) x f g (List.push acc (g (f x)))
+
+
+pair : List Int × List Int → String
+pair ( a, b ) = show a ++ "|" ++ show b
+
+
+push3 : List Int → List Int
+push3 l = List.push l 3
+
+
+main : Program
+main =
+    k = [ 1 ]
+    lines =
+        [ show (once [ 1 ] (λw → w) push3)
+        , show (once [ 1 ] (λ_ → k) push3)
+        , pair (held [ 1 ] (λ_ → [ 2 ]) push3)
+        , pair (each [ 1 ] (λ_ → [ 2 ]) push3)
+        , shows (mapped [ 1, 2 ] [ 1 ] (λ_ → [ 2 ]) push3)
+        , shows (looped 2 [ 1 ] (λ_ → [ 2 ]) push3 [])
+        ]
+    Node.print (String.join lines "\n")

@@ -1,0 +1,94 @@
+-- run: `ChildProcess.run` starts a program with its arguments and no
+-- shell, and answers how it ended and what it wrote, both as values
+-- (boundary.md §9.14 (a)–(c)). Every child is `/bin/sh`, or a name found
+-- on `PATH`: Linux, macOS and NixOS all have it.
+--
+--   - standard output, standard error and a non-zero exit, all `Ok`;
+--   - a program found by name on `PATH`;
+--   - each argument passed as it is: a space, a `$`, a `*`, an empty one;
+--   - `cwd`;
+--   - each case of `Environment`, the later of two pairs winning, and
+--     `Only []` with no `PATH`, where the system's default path finds `sh`;
+--   - a signal that ends the child, with what it wrote kept;
+--   - a byte that is not UTF-8, as U+FFFD;
+--   - two children at once, each answered with its own output.
+import ChildProcess exposing (Command, Output, RunError)
+import Io
+import Node exposing (Program)
+import Task
+
+
+sh : String → Command
+sh script = ChildProcess.command "/bin/sh" [ "-c", script ]
+
+
+describe : String, Result RunError Output → String
+describe label result =
+    case result of
+        Ok output →
+            label
+                ++ ": "
+                ++ status output.status
+                ++ ", stdout "
+                ++ quote output.stdout
+                ++ ", stderr "
+                ++ quote output.stderr
+
+        Err _ →
+            label ++ ": an error"
+
+
+status : ChildProcess.Status → String
+status s =
+    case s of
+        ChildProcess.Exited code →
+            "exited " ++ String.fromInt code
+
+        ChildProcess.Signalled name →
+            "signalled " ++ name
+
+
+quote : String → String
+quote text = "\"" ++ String.replace text "\n" "\\n" ++ "\""
+
+
+main : Program
+main = Io.run λ⊤ →
+    both = Task.par (λ⊤ → ChildProcess.run (sh "sleep 0.05; printf first")) λ⊤ →
+        ChildProcess.run (sh "printf second")
+    Node.printLines
+        [ describe "streams" (ChildProcess.run (sh "printf out; printf err >&2; exit 3"))
+        , describe "on PATH" (ChildProcess.run (ChildProcess.command "sh" [ "-c", "echo found" ]))
+        , describe "arguments"
+            (ChildProcess.run
+                (ChildProcess.command "/bin/sh"
+                    [ "-c", "printf '[%s]' \"$@\"", "sh", "a b", "$HOME", "*", "" ]
+                )
+            )
+        , describe "cwd" (ChildProcess.run { sh "pwd" | cwd = Just "/" })
+        , describe "inherit" (ChildProcess.run (sh "test -n \"$PATH\" && echo has PATH"))
+        , describe "extend"
+            (ChildProcess.run
+                { sh "echo \"$BENI_A $BENI_B\"; test -n \"$PATH\" && echo has PATH"
+                    | env =
+                        ChildProcess.Extend
+                            [ ( "BENI_A", "1" ), ( "BENI_B", "x" ), ( "BENI_A", "2" ) ]
+                }
+            )
+        , describe "only"
+            (ChildProcess.run
+                { ChildProcess.command "/usr/bin/env" []
+                    | env = ChildProcess.Only [ ( "BENI_ONLY", "this" ) ]
+                }
+            )
+        , describe "only, no PATH"
+            (ChildProcess.run
+                { ChildProcess.command "sh" [ "-c", "echo default path" ]
+                    | env = ChildProcess.Only []
+                }
+            )
+        , describe "signal" (ChildProcess.run (sh "printf 'before '; kill -KILL $$"))
+        , describe "not UTF-8" (ChildProcess.run (sh "printf 'a\\377b'"))
+        , describe "first of two" both.0
+        , describe "second of two" both.1
+        ]

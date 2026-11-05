@@ -93,6 +93,17 @@ All take the list first and a callback last (`calls.md`). The callback takes the
 
 `api-core.md` has the whole module.
 
+An `Int` is a double, so it can hold a fraction: `2 ^ (0 - 1)` is `0.5`. No list function throws
+on one:
+
+- An index that is not a whole number is out of range. `List.get` gives `Nothing`, and `List.set`,
+  `List.update`, `List.insertAt`, `List.removeAt` and `List.swap` give the list back.
+- `List.slice`, `List.take` and `List.drop` cut a fraction toward zero.
+- A count is cut toward zero: `List.repeat`, `List.range` (its count is `hi - lo + 1`),
+  `List.initialize`, `String.repeat`, `String.pad`, `String.padLeft` and `String.padRight`.
+  `List.range 0 1.5` is `[ 0, 1 ]`.
+- A count too large for memory stops the program, as any program that runs out of memory stops.
+
 ## Ownership
 
 A write — `List.push`, `List.set`, `[ …xs, x ]` — edits the array in place when the compiler can

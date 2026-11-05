@@ -424,6 +424,10 @@ pub const Chrome = struct {
         const dir = try profile.projectPath();
         const log = try profile.tmp.dir.createFile(io, "chrome.log", .{});
         defer log.close(io);
+        // The test process's environment, with the zone every other child
+        // of the harness has (`world.time_zone`): Chrome reads `TZ`.
+        var env = try std.testing.environ.createMap(arena);
+        try env.put("TZ", world.time_zone);
         var child = std.process.spawn(io, .{
             .argv = &.{
                 exe,
@@ -446,6 +450,7 @@ pub const Chrome = struct {
                 "--disable-backgrounding-occluded-windows",
                 "about:blank",
             },
+            .environ_map = &env,
             .stdin = .ignore,
             .stdout = .ignore,
             .stderr = .{ .file = log },

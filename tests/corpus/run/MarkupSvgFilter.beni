@@ -1,0 +1,49 @@
+-- The filter primitives that move a shadow, rendered to a string by the
+-- `ssr` lowering (boundary.md §9.9 (g), amended 2026-11-05, #1074).
+-- `<feOffset>` takes `dx` and `dy` (Filter Effects 1 §9.18), so the
+-- standard drop-shadow recipe needs no quoted escape. `<feDropShadow>`
+-- (§9.12) is an element, with `dx`, `dy`, `stdDeviation` and `in`, the
+-- attributes of every filter primitive (§9.2: `x`, `y`, `width`, `height`,
+-- `result`), and `flood-color` and `flood-opacity` (§9.13.1–§9.13.2). Every
+-- value is a `String`, as every SVG attribute's is, so a hole takes one.
+-- The names keep their case (`feDropShadow`, `stdDeviation`).
+import Html exposing (Html)
+import Node
+import Ssr
+
+
+shadows : String, String → Html msg
+shadows dy opacity =
+    <svg viewBox="0 0 10 10">
+        <filter id="recipe">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="2" />
+            <feOffset dx="1" dy={dy} result="blur" />
+            <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+            </feMerge>
+        </filter>
+        <filter id="primitive">
+            <feDropShadow
+                in="SourceGraphic"
+                dx="0"
+                dy={dy}
+                stdDeviation="1.5 3"
+                flood-color="#000000"
+                flood-opacity={opacity}
+                x="-10%"
+                y="-10%"
+                width="120%"
+                height="120%"
+                result="shadow"
+            />
+        </filter>
+    </svg>
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Ssr.render (shadows "3" "0.55")
+        , Ssr.render (shadows "-1.5" "1")
+        ]

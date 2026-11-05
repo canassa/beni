@@ -28,6 +28,7 @@ const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
 const KeySets = @import("KeySets.zig");
 const Value = @import("Value.zig");
+const FoldRead = @import("FoldRead.zig");
 pub const Dests = @import("Dests.zig");
 
 pub const Error = Ids.ChargeError;
@@ -133,6 +134,8 @@ pub const Eval = struct {
     /// Per call: 0 unset, 1 in progress, 2 done (`cond_of`); bit 4: `Distinct.instCondMixed` asks it.
     cond_state: std.ArrayList(u8) = .empty,
     cond_of: std.ArrayList(Cond) = .empty,
+    /// A holder is judged against a label's answer (§2.11.3, *An answer handed on*).
+    keeping: bool = false,
     /// `(leaf, leaf, target)` → `ovs` index; `none` while in progress.
     ov_memo: Ids.FixedDict(3) = .{},
     ovs: std.ArrayList(Ov) = .empty,
@@ -184,6 +187,9 @@ pub const Eval = struct {
     /// below the slot gives each part's own objects at its own route.
     parts: bool = false,
     code_sig: ?CodeSig = null,
+    /// A called code: 1 for a leaf its creation made, 2 for its own
+    /// parameter's, 0 else; the two may be one object (§2.11.3).
+    made: ?*const fn (e: *Eval, l: Value.Leaf) u2 = null,
     /// A projection whose routes nobody reads (`arrivalLeaves`): a level walk meets a value once a place,
     /// not once a place and literal route.
     no_routes: bool = false,
@@ -408,7 +414,7 @@ pub const Eval = struct {
                                 // A call's result read on past its place: through what arrives there.
                                 if (x.family == Slots.empty and try e.throughCall(x.root, .from(t), rest, deep, it.tags, it.route, out)) continue;
                                 try inside.append(e.gpa(), t);
-                            }
+                            } else if (try FoldRead.prefix(e, .from(t), rest, &inside) and e.f.roots.items[x.root].kind != .param) try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .top, .tags = it.tags }), .route = it.route });
                         }
                     }
                     var set = try e.f.slots.setOf(e.gpa(), e.account(), e.places(), all.items);
@@ -1137,6 +1143,7 @@ pub const Eval = struct {
             .param, .lent => {
                 if (a.j >= cl.args.len) return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
                 try e.routed(e, cl.args[a.j], words.items, a.deep, if (suffix.len == 0 and a.kind == .param) a.path else none, out);
+                if (out.items.len == start and words.items.len != 0) try FoldRead.read(e, cl.args[a.j], words.items, out);
                 if (a.kind == .lent) try e.lend(out, start, null, call);
             },
             .cb => {

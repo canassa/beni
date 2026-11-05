@@ -158,6 +158,29 @@ the `Enforce`/`Groups` boundary (§8, S3a) and is the one piece of `own2/` that 
 | `var` | none | any | a type variable may hold anything (R-5.5.11) |
 | `cross` | none | none | primitives, `⊤`, `⊥`, a nominal type reaching no tracked place, a crossing foreign type |
 
+**A step past a fold** (#1957). A `var` place a non-regular type folded to has no steps, yet its value has structure: `Wrap
+(Leaf [ ys ])` of `T (List Int)`, where `T a = Leaf a | Wrap (T (List a))`, steps past the `var` at `Leaf`'s payload. No other `var` place
+is ever stepped, because code cannot take a type variable's value apart. So a value projected by a step such a place cannot name is `⊤`: no slot says
+what is below the fold, so a write of it is refused `unknown`, and a `⊤` that leaves as a result arrives at its slot and open below it,
+since a step of it is no more fresh than it is. A value *at* the `var` slot, not stepped past it, is a parameter's as ever: a write of it is
+deep, since the slot's own object may be a list of lists. A result
+that leaves by a concrete type over the fold (`pick t = case t of Wrap (Leaf ys) → ys`, `List (List Int)` over `var`) arrives at its slot
+and open below it, deep, and a caller's suffix past its own argument's fold reads what arrived whole (`Relation.arrivalLeaves`). Only a
+slot below a root counts: a lambda's own parameter is a `var` place too, with no fold in it. A call's or an answer's value mapped so is `⊤`
+below that slot, since its contract names none. Before this,
+the step read as a scalar: no demand was made, no write reached the contract, and the build emitted a copying push, a silent fallback
+`PolyRecCps`'s `useCps` shows (Appendix B, the `cps` site). Refused that a perfect checker accepts: any write past the fold, over fresh data too (#2038). Fixtures `run/SanitiserFoldedType`, `run/SanitiserFoldedTypeApart`.
+
+**A step no place names** (#2043). A fold is not the only such step. `Q { r | a : List Int }` in a template drops its row, so `Q { b : List Int }` has a
+record place with no `.b`, and a schema member inside a nominal type is read through a template that cannot name its fields. A step a place
+cannot name is `⊤` at any place but `cross`, which holds no object, and a schema member in a template is a `var` place, as a fold is. Refused
+that a perfect checker accepts: any write through such a step, over fresh data too (#2038). Fixtures `run/SanitiserUnnamedStep`,
+`run/SanitiserUnnamedStepApart`.
+*Amended 2026-11-05 (#2047):* an arrival read past an argument's fold reads empty, and an empty reading tells a caller the object is fresh, so
+the value at the fold is read whole: a parameter's deep, any other root's as `⊤` (`FoldRead.zig`), and an open arrival at a `var` slot is
+read deep whatever it says (`Subtree.readAt`); a read that runs past a fold is that fold's slot, in each arm of a choice (`FoldRead.prefix`). `f t c = if c then t else Leaf []`, whose result is wide, and `PW (PW _ x) _ → List.concat x`,
+whose own slot runs past the fold, are refused.
+
 **Identity.** Initial construction uses a dense `by_var` memo for structural source nodes and the adapter's
 `(head, argument places)` memo for nominal applications. Each source graph node and outgoing edge is visited
 once; no global structural interning is required to construct its cycles. SCC/reverse-edge work computes
@@ -2067,10 +2090,18 @@ The rule has two halves.
    directly or as a label the frame passes on, since a supply names objects and never a code; and a callee that
    a known code answers its label to, since the answer goes back to code the frame does not see (§2.11.4,
    #1709, now a parameter's function slot as well as a closure). The value's other objects (a closure's
-   captures) do not escape here: they are not run, and the closure's escape makes its capture writes `once`.
+   captures) do not escape here: they are not run, and the closure's escape makes its capture writes `once`, but for what the
+   closure's own code lets escape (#2041).
    A worded row's value (`use List.pop`) does not escape: it writes nothing in place (§2.11.5 *Evidence*). What
    a growing draft adds later is read the same way, through an `escape_fn` subscription (§2.12 *Deliveries*),
    so it too gives function objects only.
+
+*Amended 2026-11-05 (#2041):* a closure's own labels of its captures escape with it (`ClosureRuns.zig`). A captured function is not run by the
+value's escape, but it is by the code the escape hands to unknown callers: `chain y g = List.map [ (λ⊤ → g y), (λ⊤ → []) ] λq → q ⊤` runs `g`
+on `y` in a place no label names, and its write was judged by nobody. So each closure in `fn_escapes`, a captured closure among them, and
+each closure an escape reaches (stored by a callee, spawned), which joins `fn_escapes` and so `Closures`' own writes, has the function slots
+its contract's labels and `escapes` name escape in turn, a deep escape deep, and a writer handed to `chain` is refused `unknown`. A reading `g` is accepted (`run/SanitiserClosureList`,
+`run/SanitiserClosureListApart`). Refused that a perfect checker accepts: a writer of a list the closure itself makes, `λ⊤ → g [ 1 ]`.
 
 Sound because every call of a function value now runs a code that a label names, or a code that has escaped.
 For a label, its writes become demands where the label is applied and its count adds up outward (§2.11.3).
@@ -2187,6 +2218,66 @@ a top-level value is never written, and `⊤` holds only what has escaped, and a
 
 **A cell's contents are a list the condition can read, since the contents relation (#1991, §2.13.7).** A condition over what a cell holds reads what `Ref.make` was given, or an answer as the cell's own. That is sound because a store that may hold one object twice makes the contents escape: after `Ref.set c [ a, a ]`, `Ref.update c λr → List.map r push1` is refused `escaped`, at the caller too when a helper makes the edit (`run/SanitiserTakenElementCell`). `CellEdit.elementEdit`, which refused every write through a `◆` then a `[*]` while v2 could not tell, is gone, so an element of a list in a cell is edited in place when its stores keep the elements apart.
 
+*Amended 2026-11-05 (#2013, #2025): **An answer handed on.*** A label's answer in another label's supply (`y = f x; g y`)
+was never judged: `unknown` as a whole, the kept check skipped it, and nothing asked that two runs of a label get two objects. So
+`chain x f g = ( y = f x; ( g y, g y ) )` with `λw → w` and a writer pushed one list twice in place, and so did `( g y, y )`,
+`( g (f x), x )`, `[ y ]` and a closure over `y` held beside `g y`. Unknown code answers what it was handed or what its closure
+holds, or makes something, so there are three rules, and the third asks of the code the caller knows.
+
+1. **A holder of the answer keeps the supply.** The answer is judged as a supplied part with the relation read the other way
+   (`AnswerKeep.kept`): the same call's answer, in a local, an operand or a pending operand, is `may`; another label's answer that
+   was handed it is `may` under that function's `fresh`; anything else is what §2.9.2 step 7 says the answer may hold, and where
+   that is not `no`, `fresh` of the function that answered. The answer may also be whatever its call was supplied and whatever its
+   function holds, so those are judged too, each as a supplied part (`Supplied.mayBeHeld`): one held after the call, or apart from a
+   holder only under a selection, asks the same `fresh`. A selection of the holder is not asked instead: at a recursive call it reads
+   the accumulator that already holds earlier answers, and no such selection can hold. The same holds of an answer in a callee: a pass
+   whose callee supply arrives from another label's answer judges that answer against what the frame holds after the call, with no
+   operands, since the call's arguments are the callee's to judge (`( pipe x f g, x )`, `pipe x f g = g (f x)`). A label's own answer
+   at a pass is §2.11.3's feedback.
+2. **`fresh`** is the `fed` occurrence with no argument, printed `π2{ε!}`: the function at `π2ε` answers only objects it makes.
+   §2.11.3's rule for `fed` decides it at a known code, with no argument to allow, and it passes on as `fed` does. A fresh object is
+   apart from every object that existed before it, and each run makes its own. A `top-level`, a capture and an argument all fail it.
+3. **A function that runs more than once may answer one object each time.** Where a supply holds the answer of a label whose function
+   runs at least twice in the frame (direct calls, passes and outer labels add up as `calls` does), the supply's `sep` asks that the
+   answers be apart (`SupplyAnswers.repeated`): `ε!k` with that label's own `sep` and `below`, when it has one supply and keeps none of
+   it, since then each answer is a part of what that run was handed; `fresh` otherwise. A label's own answer handed back to it is
+   §2.11.3's feedback and asks `fed` as before. So `( g (f x), g (f x) )` with `λ_ → k`, and `List.map xs λ_ → g (f x)`, are refused,
+   and `twice f x = f (f x)` with a writer stays accepted.
+
+**A capture handed to a label in a code run many times.** `chain xs y g = List.map xs λ_ → g y` hands `y` to `g` once per element. The
+closure holds `y` for its next run, exactly as it does when the code writes the capture, which is `once`. So a capture supplied to a
+label passed on inside a code run more than once keeps the slot, at the pass (`Supplied.heldByClosure`). A code runs more than once when
+an outer label is many, when two labels of that call have one function slot (`two h = ( h ⊤, h ⊤ )`, which `LabelChain.outwardMany` now
+adds up). What the callee holds across the run is judged too: a capture supplied, or an answer in a known code, has as operands what
+§2.11.3 *a capture written across the callee's run* gives a capture write (`Across.operands`), so `pair (λ⊤ → g y) y` and `both (λ⊤ → g1 y)
+(λ⊤ → g2 y)` keep the slot. No argument is left out for an answer: a callee keeps one (`pair2 l p = ( p l, l )`), hands one element and holds the rest (`sel xs p = case xs
+of [ h, …t ] → ( p h, t )`), or, as `List.update`, returns the other positions, and a contract tells none of these from a traversal. So
+`List.map xs λv → g (f v)` and `List.update xs i λv → g (f v)` are refused with `f` an identity, sound or not (#2046).
+
+Refused that a perfect checker accepts: an answer of a capture beside a held argument the capture is not (`( g (f x), x )` with `λ_ → k`);
+two answers of an identity over apart arguments, `( g (f x), g (f y) )` with `λw → w`, since only `fresh` is asked of a holder;
+one fresh answer per run over a list with a duplicate, because `ε!k` also asks the supply's `below`; and a chain of two different
+functions over one label (`g (f (g x))`). Sound because the three sources are all an answer can be (§2.9.2 step 7): a holder of the
+answer itself is `may`; what its call was handed and what its function holds are judged or asked `fresh`; another run's answer is asked by
+rule 3. Fixtures `run/SanitiserAnswerHandedOn` (every case traps or differs under the sanitiser on master) and its twin
+`run/SanitiserAnswerHandedOnApart`, where the function makes its own object, runs once, or answers an apart element.
+
+*Amended 2026-11-05 (#2017): **A pass closes what it describes.*** At a pass at the call's function type, read-off describes a callee
+supply's `.param` arrivals by structure and drops the entry's open mark (`ReadOff`, `at_site`). An arrival of another kind stays at the
+entry's slot, so a write below that slot lands on none of it. That is not a hole, by this invariant, which `SupplyAnswers.closesAtSite`
+checks under runtime safety on every closed entry:
+
+- an entry is open only at a type variable's place or a family (§2.10 *Read-off*). Anywhere else `describe` wrote its structure out, and
+  there is nothing to close;
+- a callee's value at such a slot that is no `.param` is `fresh`, or a label's answer, `⊤`, a loan, a host object or a top-level value.
+  `fresh` is the callee's own object, which no caller holds. Every other one gives the distinct check `no` (§2.9.3: a family's answer,
+  `shared`; an entry holding `⊤` stays open at the pass, since `⊤` is unknown below its slot), so at the direct call the supply publishes `below no`, unless the arrival is the label's own answer under `fed`, which
+  holds only what `.param` arrivals describe, or fresh objects;
+- `below` instantiated at a pass stays `no`, and a write below a supply's root asks it (`Outward.finishDemands`).
+
+So a write the close loses is refused `disjoint`, or `unknown` when it has no target at all, even over fresh data, which is where the
+precision goes. Fixture: `run/SanitiserAnswerHandedOn`'s last line. The check held over the ledger's 2 300 roots and the oracle.
+
 **As built: an `entry` function's list stays held, until S7 (#1020).** v2 makes no demand at an `entry` argument, so no
 caller judges a write of a parameter of `update`, `view` or `init`, and the kept supply was all that stopped a traversal
 editing the model: `init = λ⊤ → [ a, a ]` with `update msg m = List.map m λl → List.push l 1` trapped on the first click,
@@ -2218,6 +2309,126 @@ probes: 0 DIFF, and 3 TRAP, of #1986 and #2013, which trap on master too and hol
 Refused that a perfect checker accepts: rows that share a part the callback does not write, because the condition is
 deep and plain and not per written slot, as `takenOccs` is for `List.update`; and an edit of the elements of a list
 `List.map` answered or `List.reverse` built, because a result's separation is another rule (Appendix C.6, *As built*).
+
+*Amended 2026-11-05 (#2028, #2029, #2030): **a function value in a result.*** A closure a declaration returns was
+followed by nobody: `res ε fresh π1ε` says what it holds and nothing of what it does, so at `g = mk xs` the call `g ⊤`
+was unknown code. Its answer was `⊤`, and whatever its code answered was refused `unknown` or `alias` at every write
+(`GrowFresh`, `CallFeedbackGeneration`, a `List.copy` of the answer). Function slots of a result now have a contract.
+
+**The called contract.** For a declaration's code `D` and a function slot `s` of its result (*Which slots*, below), the
+**called contract** `D@s` is what one call of the value at `s` does, as a code of its own, a **called code**. Its
+parameters are, in order, the function type's own parameters (`own`, as a closure's own come first), `D`'s parameters
+and captures, and one more, **`self`**: the function value itself, a closure-kinded parameter that is read deep. So
+`D@s` is a closure code whose captures are everything that made the value, and a value of it is an ordinary closure
+value: `built(closure, D@s, kids = (D's arguments at that call, the value))`. It carries what the task of the call
+needs to know: its answer, its reads, escapes and stores, its labels and its conditions. A call of it is a code call
+(§2.11.2), with its count and its supplies, and a label applied to it a virtual call (§2.11.3), by the rules that
+already stand. `grow` above gives `grow@ε`: `res ε fresh`; `mk xs = λ⊤ → xs` gives `mk@ε`: `res ε π2ε`.
+
+**How it is read off.** `D@s` is read off a second walk of `D`'s body, which ends in a call: the value at `s` of the
+result, applied to `own`. That call is the walk's **last call**. It is walked as `g own` would be (a closure: a code
+call; a choice: each arm; a parameter: a label; anything else: unknown code, whose arguments escape). Everything the
+walk made before it is the **creation**. The read-off keeps only what the last call does, its virtual calls included:
+
+- The creation's demands, escapes, reads, labels and closures are `D`'s, instantiated at `D`'s call, and are not said
+  again. `D@s` makes no verdict line: a code that writes its own parameter or a capture is refused where the closure
+  leaves `D` (§2.11.4), whatever `D@s` says.
+- An object the creation made (a site, a creation call's `fresh`), or the answer of a label the creation called, was
+  made once, when the value was, so it is not fresh at each call: it arrives as `π_self ε`, deep, *what the value holds*.
+  The value holds it by §2.11.4 (`built(closure)` kids; `res` says every object of a capture at the closure's slot), so
+  at the caller it is that object, or more. An escape of one is an escape of `self`. A write of one is said by nothing:
+  a capture write is refused where the closure leaves `D`, and a cell operation stales no reader (§2.11.4).
+- A `fresh` arrival of the last call or of a virtual call under it stays `fresh`: it is a new object per call.
+- A label the creation passes on is another label than one the last call passes on, whatever their origin: `a = app f 1`
+  then `λ⊤ → (app f 2; a)` calls `f` once at creation, and its answer is what the value holds, while the second call's
+  would be new at each call.
+- **A created object is never apart from `own`.** Within one activation a site is apart from any parameter: the parameter
+  was there first. `own` comes later, so it may be that very object, an earlier call's answer: `λv → [ xs, v ]` called
+  as `g (g [])[0]` holds `xs` twice. So in a called code the distinct check (§2.9.3) gives `no` for entries that hold
+  such an object and a part of `own`, and `overlap` says `may`.
+
+**At the caller.** A call of a value that is the result of a walked call `q` at a function slot `s`, `q`'s callee a code
+`D` with `D@s` (or a contract that publishes one), and that is not one parameter's slot (rule 1 above comes first), is a
+call of `built(closure, D@s, kids = q's arguments, the value)`. A label applied to such a value is a virtual call of the
+same closure. Both are decided from the code's numbering and the position's slot, so they are known at the walk,
+before any contract of `D`'s group is. A value that is not such a reference (a label's answer, a supply, `⊤`, the
+result of a called code) stays what §2.11.3 says: unknown code, or an escape.
+
+**Recursion and the bound.** `D@s` calls `D` in its creation and may call `D@s` in its last call: both are members of
+`D`'s group, and `§2.12` solves them with `D`. `previous ⊤` in `grow`'s second lambda is a label of that lambda, on a
+capture. Applied in `grow@ε`'s walk, the capture is `grow (n - 1)`'s result, so it is a virtual call of `grow@ε`, and
+the answer is the least fixed point of `fresh ∪ answer`, which is `fresh`. A chain of levels (`ClosureTower`, `wk`
+over two closures of `w(k-1)`) has a called contract per level, of constant size: `wk@ε` answers what the arms of its
+last call answer, in `wk`'s parameters, `self` and `fresh`, so no creation context is enumerated and none is written
+down. Every level's cost is its own, one more walk of a body. The tower is bounded by construction, with no limit to trip.
+
+**Why not the code and its captures as arrivals.** An arrival naming a code with arrivals for its captures has no
+finite form on `grow` (its capture is its own result, whose capture is its own result) and doubles on `ClosureTower`.
+It needs a fold, and each fold needs an argument that it is sound. The called contract *is* that fold: the captures are
+closed over by `D`'s parameters and `self`, so what stays is what the call does.
+
+**Which slots.** `ε` of a function result and, below it, a record's field or a tuple's part, on through records and
+tuples (`{ run = λ⊤ → … }`). A slot's type has to be read to know its parameters, and a constructor's argument needs
+the type's definition instantiated: a function in a `Maybe`, or under a `[*]`, a `◆` or a `⟲`, has none and is what it
+was. Only a declaration's body has them: a local function's or a lambda's result is what it was. Each is a walk, so a
+declaration pays once per function slot of its result, and at most `below_min` (16) slots a declaration, by field rank:
+a tuple of tuples doubles its slots. `D@s` of a called code does not exist: what a call of a function value answers is
+unknown code when it is called in turn. Each of these is a precision gap of the `⊤` kind, never a change of what is
+checked (#2039).
+
+**Sound.** Take any call `g a` that runs a value `v` that `D(b)` returned at `s`. It runs a code `K` with `v`'s captures
+(§2.11.4). `D@s`'s last call is that run, with `own` for `a` and `D`'s parameters for `b`: every activation of `D` is one
+of the paths of the walk, and the second walk reads the same body, with the same contracts, as the first. So:
+
+1. Every object the run reaches comes from `a`, from `b`, from what `v` holds, or from the run. By the read-off's cases
+   these are `own`'s, `D`'s and `self`'s arrivals and `fresh`, and §2.11.2 instantiates each on the call's arguments. A
+   leaf the walk cannot name is `⊤` (O1).
+2. Every write the run makes of `a` or `b` is a write of the contract, a demand at the call; one of what `v` holds is
+   refused where the closure left `D`, or is a cell operation. Nothing changed in `Closures`: a closure in a result, or
+   handed back, has escaped there, so a writer is refused as it was, and the `once` rules stand. A value a caller loses
+   (in a cell, to unknown code) has the same escape behind it. So this is only an answer's precision.
+3. Every call of `v` that reaches `g a` is a call of `D@s`, with a count of its own, so labels add up as for any call,
+   and each is one activation of the code the label names, supplied by the run. Nothing is run that no label names:
+   the §2.11.3 case split gains a case for a call and one for a label (a known code, by another name).
+4. The creation's facts are dropped from `D@s` and read at `D`'s call instead, once. They happened before `g a`, and
+   `g`, a holder of everything `D` left in the value, was live from there to the call (`k.use` of the callee, whole).
+5. The answer of a call may be a capture, so a holder of the answer holds it (`alias`, `later-use`); a capture answered
+   twice is one object twice; a `self` arrival is every object the value holds at the caller, which is what `res` says
+   of it, deep. A copy of the answer is a new object (#2030: `c = List.copy a`, then `c` is no capture). A condition read
+   off `D@s` compares objects of one run of the code: two created objects are as apart as the creation left them, a
+   created object and `D`'s parameter too (it was made after it), a `fresh` of the run and anything too, and a created
+   object and `own` are not called apart.
+6. The group's rounds are §2.12's: a candidate `D@s` reads only what a member's draft says, the validation walk is an
+   ordinary walk under the candidates, and a code outside its candidate is joined.
+
+Refused that a perfect checker accepts: a `self` arrival is everything the value holds, so two captures of one
+closure are one object to a holder (the second `ClosureTower` arm's list is not the first's, and the write is still
+refused: `run/ClosureTower`), and a returned writer stays refused at the return. Fixtures:
+`ownership/ReturnedClosureAnswer`, `ownership/CopyOfClosureAnswer`, `ownership/RecordFieldLambda`,
+`run/SanitiserReturnedClosure` (fifteen shapes, each refused), `run/SanitiserReturnedClosureApart` (eleven, each
+accepted in place), `run/SanitiserReturnedClosureImported`.
+
+The review of #2045 found the two bullets above by the sanitiser (`creationAnswer`, `madeBesideOwn` in
+`run/SanitiserReturnedClosure`), and #2048: a value of the frame that may hold a function, handed to a call, is used whole there, since the
+callee may run it and no footprint says so. Otherwise a closure's holdings were not live at `List.update`, `Ref.update` or
+`Ref.modify`, directly or through a helper (`run/SanitiserRowCallbackHolds`, trapping on master too). It is a use of the local,
+not a read in a contract, and a frame's parameter has no such use: its caller makes that use, and a read there would be an
+operand at every pass, asking a `taken` row's elements plain. That leaves a parameter's holdings not live at a row, which traps on master and here (#2050).
+
+*As built (2026-11-05).* `Called.zig`, `Made.zig`; a walk's `Called.Last` marks where each list's last call begins, zero
+for any other code, so that every reader takes `items[last..]` and no other code changes. `Groups.calledCodes` numbers
+the called codes after the body, so a group's order walks them after the nested codes. A contract keeps its called
+contracts in `Contract.Table.called`, a run a contract, and a block writes them after the contract, in the canonical order
+of their slots (§3.6, version 23). A called code's label carries `Called.last_origin`, since no instruction has its type.
+`summary f@.get` is its dump line; it has no `account` line, and its records are charged to `f`'s. Measured (Debug, one
+job, against master at `db3480e28`): 1 018 oracle probes: 0 DIFF, 1 TRAP, on master too, of a label's answer (#2036), two
+more accepted; a generated sweep of 1 820 programs (26 ways to make a closure × 10 ways to call it × 7 things to do with
+the answer): 0 TRAP, 0 DIFF, 710 master refused accepted, none master accepts refused. The review sweeps' 11 312
+programs: 0 TRAP, 0 DIFF. The ledger of 2 361 roots, by position, against master at `fae30693b`: 32 refused → accepted (15 of them the new
+fixtures), and 3 accepted → refused, all `run/SanitiserRowCallbackHolds`, whose programs trap on master (#2048). Cost: core's
+3.3 s unchanged, every root's records +0.6 %, growth unchanged everywhere, the highest declaration ×2.9
+(`Tea.startAfter`, one body walked twice), and `ClosureTower` flat at 939 records a level at depths 1, 8, 16 and 24 (503
+before), growth 0.
 
 #### 2.11.4 Closures
 
@@ -2310,7 +2521,8 @@ v2 sound across fibers when it has no suspension rule (§2.13.7, *loans across a
 starter (`Task.par`, `race`, `spawn`, …) is given is escaped, so its edit in place is refused there. If the edit is
 exempt from `once`, `run/SanitiserFiberBranch` reads a list that another branch changed while it slept.
 
-A function value returned by a callee is unknown code at the caller (§2.11.3): its answer is `⊤`. *Amended
+A function value returned by a callee is unknown code at the caller (§2.11.3): its answer is `⊤`. *Amended 2026-11-05
+(#2028):* unless a called contract follows it (§2.11.3, *a function value in a result*). *Amended
 2026-11-02 (#1709):* so a closure that a callee **hands back** — an arrival of the callee's `res` (itself,
 `same f = f`; captured by a closure the callee returns, `later f = λx → f x`; in a record, `{ run = f }`) — has
 escaped at that call: the caller's later call of it is unknown code that instantiates none of its writes, so
@@ -2357,6 +2569,11 @@ same shapes on apart or fresh lists, accepted in place).
   holds its arguments, so the former row (every argument read, the result `fresh`) let `List.push` write a
   top-level list through `apply Fixed.parse input` (SchemaMemberHanded).
 - **A `method_call`**: the code `Dispatch` names, as a `call`; unresolved, the pessimistic contract.
+  *Amended 2026-11-05 (#2029):* `r.f x` on a record field of function type is a call of the field's value, as `f = r.f; f x`
+  is: a lambda built in the frame is a code call, a parameter's field a label, any other value what §2.11.3 says.
+  Before, the dispatch site's `field` term read as a method without a code, the pessimistic contract, so the
+  lambda was unknown, and so was a parameter's own `r.on`, whatever its callers handed. A record update replaces the
+  field's value in the record the walk built, so the call reads the new field.
 - **Evidence.** *Amended 2026-11-02 (#1708):* a declaration a dispatch site passes as `where`-clause evidence (every
   `top`/`ext` term of the site, however deep) is a function value of that declaration's code, made at the site and
   escaped there (§2.11.4): the binder calls it through a type variable (`x.bump 1`), an unresolved `method_call`
@@ -3009,7 +3226,7 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
      and on a listener (`addEventListener`, an emitter's `on` or `once`) added in a declaration not listed.
      | Platform | Bodies | Why no program code runs inside a host call |
      |---|---|---|
-     | `node` | `Http.Server.startListen`, `receive`, `takeUpgrade`, `WebSocket.fromUpgrade`, `Io.run` | an emitter's listener resumes a fiber (`Task.resume`), which queues it; `Io.run`'s `beforeExit` only reports |
+     | `node` | `Http.Server.startListen`, `receive`, `takeUpgrade`, `WebSocket.fromUpgrade`, `Io.run`, `ChildProcess.listen`, `collectFrom` | an emitter's listener resumes a fiber (`Task.resume`), which queues it; `Io.run`'s `beforeExit` only reports; a child's `data` listener keeps a chunk, or closes the pipes and signals the child, and Node emits nothing back inside those calls (`boundary.md` §9.14) |
      | `browser` | `Rt.turn`, `delegate`, `delegated`, `listen`, `watchEdits`, `crashScreen`, `Listen.on`, `on2`, `WebSocket.attach` | a message a handler sends is queued for the turn's flush; a `Listen` value is queued for a fiber. **One exception, #2006:** a DOM handler's own extractor runs at the dispatch, so under a `focus()` it runs inside that host call |
      | `browser-inline` | `Inline.on`, `onArm`, `listen`, `crashScreen`, `Listen.on`, `Browser.Navigation.listen`, `listenOne` | the same, and the same exception |
      | `browser-tea`, `html` | none | no host code of their own |
@@ -4058,6 +4275,9 @@ checker a build runs; a v2 word error in core or a platform is not carried eithe
 import as unknown (no block, or one that does not decode) says so in its report: `unknown block <Module>: its
 declarations read the pessimistic contract`.
 
+*As built (#2028): version 23.* After a contract's labels, a count, then per function slot of its result the slot's
+steps and its called contract, written as a contract is, in the canonical order of the slots (§2.11.3).
+
 *As built (#1991): version 22, the cell facts' envelope.* After `escapes` a contract writes `stores`: a count, then
 each store's parameter, its `◆` slot and its condition. With `writes π◆`, `escapes`, a cell label's supply and the
 `lent` arrival (version 20), that is all a caller reads of a cell. **Regions and effect rungs are not written, and need
@@ -4908,6 +5128,8 @@ L0  Ids  Counters  Scratch
 | `Stored.zig` | 9 | what a cell callback's write-back makes escape: the contents and the answer's objects at a shared slot (§2.13.7, #1729, #1955) | Place, Contract, Relation, Cells, LabelChain |
 | `Contents.zig` | 11 | a cell's contents stay separated: a store that may hold one object twice escapes them; the `stores` a contract publishes (§2.13.7, #1984, #1986), and a move between slots judged as an edit | Ids, Place, Slots, Contract, Relation, Forest, LabelChain, Distinct, Cells, Loans, Stored, Eval |
 | `Loans.zig` | 9 | a cell callback's label by its supply below the `◆`, and what it answers as its caller reads it: a loan of the cell, or `Ref.modify`'s `.0` owned when the stored `.1` keeps none of it (§2.13.7, #1977) | Ids, Place, Slots, Value, Contract, Forest, Relation, LabelChain, Trees |
+| `Called.zig` | 8 | a function value in a result: the closure of a called code a call's result is (§2.11.3, #2028) | Ids, Slots, Value, Contract |
+| `Construction.zig` | 8 | a construction over its base, split from `Walk` (§2.13.2) | Ids, Facts, Place, Value, Relation |
 | `FnRun.zig` | 9 | a function value the frame cannot follow: the one parameter function slot a value is, and the function objects that escape where it is not (§2.11.3, #1773, #1775, #1776) | Contract, LabelChain, RouteWalk, Relation, Value, WalkContext |
 | `Codes.zig` | 12 | a module's codes and one declaration's answer (§2.10, §2.12) | Ids, Walk, Kept |
 | `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Distinct, Walk, Cells, Loans |
@@ -4921,8 +5143,15 @@ L0  Ids  Counters  Scratch
 | `Resolve.zig` | 11 | demands offline: holders, the six conditions, verdicts (§2.8) | Ids, Facts, Place, Slots, Subtree, Value, Relation, Distinct, Walk, Eval, Liveness, Regions, Holders, Sweep, Stack, TagTree, Later, Cells, Kept, Fed |
 | `Deliver.zig` | 9 | a group's deliveries: its members' drafts, who reads which fact, the queue (§2.12 step 2) | Ids, Slots, Contract, Relation, Eval |
 | `Closures.zig` | 9 | a closure that escapes (or a callee hands back) or may run again: its unknown callers' supplies are `⊤`, a `once` code's capture writes refused (§2.11.3–4) | Ids, Relation, Eval |
+| `Once.zig` | 11 | what a closure's creation asks of what its code writes, split from `Eval` (§2.11.4) | Ids, Contract, Relation, Cells, Eval |
+| `Made.zig` | 11 | what a called code says of what its creation made: its `self` parameter (§2.11.3, #2028) | Ids, Slots, Value, Contract, Eval |
+| `CondsOff.zig` | 12 | the conditions of a contract, split from `ReadOff` (§2.10) | as `ReadOff` |
+| `CodeCaps.zig` | 12 | nested codes' captures, split from `Groups` (§2.11.4) | Ids |
+| `TypeVarParam.zig` | 12 | whether a parameter's annotated type is a type variable, split from `Groups` (§2.13.9) | Ids |
 | `Groups.zig` | 10 | the module: adapters, callees, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Worded, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver, Closures |
 | `Block.zig` | 11 | contracts ↔ words, format v-next, validation by re-encoding (§3.6) | Ids, Place, Slots, Contract, Groups |
+| `BlockCalled.zig` | 13 | a contract's called contracts in a block (§3.6, version 23) | Contract, Slots |
+| `SummaryText.zig` | 6 | a declaration's `summary` lines, its called contracts' after it (§2.11.3) | Place, Slots, Contract, ContractText |
 | `BlockNames.zig` | 13 | how a block names a field and a declaration (§3.6), split from `Block` | none |
 | `Within.zig` | 5 | `within`: a contract says no more than another (§2.10, §2.12), split from `Contract` | Ids, Slots, Forest, Contract |
 | `Message.zig` | 11 | diagnostic text | Ids, Facts, Place, Walk, Resolve, Groups, CallGraft |
@@ -7940,7 +8169,7 @@ must accept; a resource twin is expected to fail compilation with `ownership_lim
 |---|---|---|---|
 | `GrowFresh` | `grow n = if n == 0 then (λ⊤ → [0]) else (previous = grow (n - 1); λ⊤ → previous ⊤)`; `g=grow n; a=g ⊤; b=g ⊤; (List.push a 1,b)` accepts with owned local results. Recursive dependency backreference, each invocation reaches a fresh allocation, no feedback result stored. | R-5.4.8, R-5.6.3 | S4 |
 | `GrowAlias` | replace base with `λ⊤ → xs`, thread xs through recursion; `g=grow n xs; a=g ⊤; b=g ⊤; (List.push a 1,b)` refuses (`alias`/`disjoint` according to the consuming probe). Same original xs through all captured backreferences. Copy a at the write gives the green twin. | R-3.1, R-5.4.8, R-5.6.2 | S4 |
-| `ClosureTower` | `w0 ⊤=(xs=[0]; λflag → xs)`; each written `wk ⊤=(a=w(k−1) ⊤; b=w(k−1) ⊤; λflag → if flag then a flag else b flag)`. Fixed type `⊤ → (Bool → List Int)`, zero formal callback labels, no recursive dependency: enumerate exact ordinary creation contexts at export, trip the summary-growth limit, never fold by repeated CodeId. Generate k=24; smaller/raised twins test preserved captures. | R-7.2–R-7.4, R-7.12 | S4 |
+| `ClosureTower` | `w0 ⊤=(xs=[0]; λflag → xs)`; each written `wk ⊤=(a=w(k−1) ⊤; b=w(k−1) ⊤; λflag → if flag then a flag else b flag)`. Fixed type `⊤ → (Bool → List Int)`, zero formal callback labels, no recursive dependency. *Restated 2026-11-05 (#2028):* written for the old engine, this row asked to enumerate exact creation contexts at export and trip the summary-growth limit. No context is enumerated now: a level has one called contract of constant size (§2.11.3, *a function value in a result*), so the tower is bounded by construction, flat per level at k = 8/16/24 with growth 0 and no limit, and the write is refused because `self` is one object to a holder. It never folds by repeated CodeId. Generate k=24; smaller/raised twins test preserved captures. | R-7.2–R-7.4, R-7.12 | S4 |
 | `OwnershipSummarySizeRaised` | source syntax below; a generated acyclic wrapper owner exceeding 65,536 growth records but below 131,072 errors unannotated, checks with function raise and with module raise; a deliberately shared-result write still refuses at both settings. A 262,144 module default plus 131,072 function value is invalid (cannot lower); duplicate/local/zero/overflow attributes refuse `invalid_ownership_summary_size`. S2b pins the syntax and the invalid attributes on BIR only; S3a owns the behavioural cases (#1056). | R-7.3, R-7.4, R-7.6 | S2b, S3a |
 
 The raise fixture's source preamble and declaration forms (replace the body with the generator's wrapper):

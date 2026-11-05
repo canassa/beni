@@ -27,6 +27,8 @@ browser-inline    platforms/browser-inline/Browser/Navigation.beni  Browser.Navi
 browser-tea       none                                            none
 cloudflare        platforms/cloudflare/Worker.beni                Worker.listenForAbort
 html              none                                            none
+node              platforms/node/ChildProcess.beni                ChildProcess.listen
+node              platforms/node/ChildProcess.beni                ChildProcess.collectFrom
 node              platforms/node/Http/Server.beni                 Http.Server.startListen
 node              platforms/node/Http/Server.beni                 Http.Server.receive
 node              platforms/node/Http/Server.beni                 Http.Server.takeUpgrade

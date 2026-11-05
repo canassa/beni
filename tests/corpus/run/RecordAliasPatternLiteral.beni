@@ -1,0 +1,34 @@
+-- A record alias's constructor pattern over a record no constructor built
+-- (`backend.md` §9, *A `case` arm on a constructor nothing builds*): a record
+-- literal names no constructor, so the arm was read as dead and its body wrote
+-- `undefined`.
+import Node exposing (Program)
+import String
+
+
+type alias Pt =
+    n : Int
+    m : Int
+
+
+sum : Pt → Int
+sum (Pt a b) = a + b
+
+
+main : Program
+main =
+    x =
+        case { n = 1, m = 2 } of
+            Pt a b →
+                a + b
+    r = { n = 3, m = 4 }
+    y =
+        case r of
+            Pt a b →
+                a * b
+    lines =
+        [ String.fromInt x
+        , String.fromInt y
+        , String.fromInt (sum { n = 5, m = 6 })
+        ]
+    Node.print (String.join lines "\n")

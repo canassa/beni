@@ -597,6 +597,12 @@ fn exempt(in: Input, scratch: Allocator, modules: []Live) Allocator.Error!void {
     for (modules, 0..) |*live, i| {
         const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         if (all or in.store.package(in.graph.moduleFile(m)) == .core) live.ctors.setAll();
+        // A record alias's constructor names no value: any record of its shape
+        // is one, literal or not, so an arm on it is never dead.
+        const bir = in.birOf(m);
+        for (bir.ctors, 0..) |c, ci| {
+            if (bir.decls[c.decl.int()].kind == .type_alias) live.ctors.set(ci);
+        }
     }
     // A library's callers may call any builder, so only an application
     // build leaves `core/Schema`'s `Engine` and `Made` to the code that

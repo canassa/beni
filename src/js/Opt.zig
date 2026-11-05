@@ -1695,12 +1695,7 @@ fn planDeepChain() !void {
     const ret = try testNode(&b, .return_stmt, chain.int(), 0);
     const params = try b.addNames(&.{a});
     const stmts = try b.addRange(&.{ bind, ret });
-    const func = try b.addRecord(JsIr.Func{
-        .params_start = params.start,
-        .params_end = params.end,
-        .body_start = stmts.start,
-        .body_end = stmts.end,
-    });
+    const func = try b.addFunc(params, stmts);
     const decl = try testNode(&b, .func_decl, f.int(), @backingInt(func));
     var ir = try b.toOwned(try b.addRange(&.{decl}));
     defer ir.deinit(gpa);
@@ -1806,7 +1801,7 @@ fn walkCase(gpa: Allocator, walk: Walk, links: u32) !bool {
     };
     const params = try b.addNames(&.{ c, h, k, a });
     const range = try b.addRange(stmts);
-    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = range.start, .body_end = range.end });
+    const func = try b.addFunc(params, range);
     const decl = try testNode(&b, .func_decl, f.int(), @backingInt(func));
     var ir = try b.toOwned(try b.addRange(&.{decl}));
     defer ir.deinit(gpa);
@@ -1866,12 +1861,7 @@ test "a binding nothing reads is kept when it writes a record in place" {
     const ret = try testNode(&b, .return_stmt, (try testNode(&b, .null_lit, 0, 0)).int(), 0);
     const params = try b.addNames(&.{r});
     const stmts = try b.addRange(&.{ drop_y, keep_x, ret });
-    const func = try b.addRecord(JsIr.Func{
-        .params_start = params.start,
-        .params_end = params.end,
-        .body_start = stmts.start,
-        .body_end = stmts.end,
-    });
+    const func = try b.addFunc(params, stmts);
     const decl = try testNode(&b, .func_decl, f.int(), @backingInt(func));
     var ir = try b.toOwned(try b.addRange(&.{decl}));
     defer ir.deinit(gpa);
@@ -1912,7 +1902,7 @@ fn nextStatementCase(gpa: std.mem.Allocator, call_first: bool, between: bool) !b
     const body: []const Index = if (between) &.{ write, bind, g_stmt, ret } else &.{ write, bind, ret };
     const params = try b.addNames(&.{ c, g, k });
     const stmts = try b.addRange(body);
-    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = stmts.start, .body_end = stmts.end });
+    const func = try b.addFunc(params, stmts);
     const decl = try testNode(&b, .func_decl, f.int(), @backingInt(func));
     var ir = try b.toOwned(try b.addRange(&.{decl}));
     defer ir.deinit(gpa);
@@ -1988,7 +1978,7 @@ fn readsCase(gpa: std.mem.Allocator, shape: ReadsShape, listed: bool) !bool {
     };
     const params = try b.addNames(&.{ c, g, k, h, e, t });
     const stmts = try b.addRange(&.{ bind, next });
-    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = stmts.start, .body_end = stmts.end });
+    const func = try b.addFunc(params, stmts);
     const decl = try testNode(&b, .func_decl, f.int(), @backingInt(func));
     var ir = try b.toOwned(try b.addRange(&.{decl}));
     defer ir.deinit(gpa);
@@ -2047,7 +2037,7 @@ test "an alias of a moved call is not moved again where the call may not go" {
     const ret = try testNode(&b, .return_stmt, cond.int(), 0);
     const params = try b.addNames(&.{ c, h, t });
     const stmts = try b.addRange(&.{ bind, alias, ret });
-    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = stmts.start, .body_end = stmts.end });
+    const func = try b.addFunc(params, stmts);
     const decl = try testNode(&b, .func_decl, f.int(), @backingInt(func));
     var ir = try b.toOwned(try b.addRange(&.{decl}));
     defer ir.deinit(gpa);

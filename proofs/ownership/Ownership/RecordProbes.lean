@@ -11,12 +11,13 @@ nothing is proved.
 
 An accepted program's two runs agree. A refused program's runs differ, except
 where the comment says that the refusal is this core's imprecision:
-`calleeKept` (a summary's write names the object, not its fields). Two
-refusals differ from the Zig checker on purpose: `writtenRead` (the Zig
-lowering hoists the read, §31.14; this core has no hoist) and `calleeKept`
-(no `W{F}` yet). One acceptance differs: `sameFieldTwice` (Zig reads an
-update's base as a whole use, §31.4 item 5; this core reads the fields the
-update keeps, which is sound). -/
+`callbackKept` (a write through a callback has no field set). One refusal
+differs from the Zig checker on purpose: `writtenRead` (the Zig lowering
+hoists the read, §31.14; this core has no hoist). One acceptance differs:
+`sameFieldTwice` (Zig reads an update's base as a whole use, §31.4 item 5;
+this core reads the fields the update keeps, which is sound). Since #1872 a
+summary's write names its fields (`W{F}`, §31.7), so `calleeKept` is
+accepted. -/
 
 namespace Ownership.RecordProbes
 
@@ -168,14 +169,73 @@ def dead := "Dead: an old holder is live after the demand"
 
 -- A callee that writes its record parameter: accepted where the argument is
 -- dead after the call, refused where the caller reads the written field, and
--- refused where it reads a kept field (this core's imprecision: no `W{F}`),
--- although those runs agree.
+-- accepted where it reads a kept field: the summary's write names its field
+-- (`π1 W{a}`, §31.7, #1872).
 #guard (check callee).isOk && agree callee
 #guard refused calleeWritten dead
 #guard match ValueSemantics.run calleeWritten 200, InPlaceSemantics.run calleeWritten 200 with
   | .ok t, .ok t' => t.finalValue == .int 5 && t'.finalValue == .int 8
   | _, _ => false
-#guard refused calleeKept dead && agree calleeKept
+#guard (check calleeKept).isOk && agree calleeKept
+#guard match ValueSemantics.run calleeKept 200 with
+  | .ok t => t.finalValue == .int 6 | _ => false
+#guard match check calleeKept with
+  | .ok a => a.cache.toList.any fun e => e.summary.fieldWrites == [(.parameter 0 [], [0])]
+  | .error _ => false
+
+-- A callee that reads the written field still makes the earlier write
+-- refused: an argument is a whole use. After an update, the in-place callee
+-- reads the new field; after a call, the second call reads the first one's
+-- write.
+#guard refused updateThenCallee dead
+#guard match ValueSemantics.run updateThenCallee 200, InPlaceSemantics.run updateThenCallee 200 with
+  | .ok t, .ok t' => t.finalValue == .int 9 && t'.finalValue == .int 16
+  | _, _ => false
+#guard refused calleeTwice dead
+#guard match ValueSemantics.run calleeTwice 200, InPlaceSemantics.run calleeTwice 200 with
+  | .ok t, .ok t' => t.finalValue == .int 8 && t'.finalValue == .int 14
+  | _, _ => false
+
+-- The field set joins through a callee's call (`shiftAB` writes `a` through
+-- `shiftA` and `b` itself) and across a branch's arms (`either`): a later
+-- read of the third field is accepted, a read of a written one refused.
+#guard (check layersKept).isOk && agree layersKept
+#guard match ValueSemantics.run layersKept 200 with
+  | .ok t => t.finalValue == .int 7 | _ => false
+#guard refused layersWritten dead
+#guard match ValueSemantics.run layersWritten 200, InPlaceSemantics.run layersWritten 200 with
+  | .ok t, .ok t' => t.finalValue == .int 6 && t'.finalValue == .int 13
+  | _, _ => false
+#guard (check eitherKept).isOk && agree eitherKept
+#guard match ValueSemantics.run eitherKept 200 with
+  | .ok t => t.finalValue == .int 10 | _ => false
+#guard refused eitherWritten dead
+#guard match ValueSemantics.run eitherWritten 200, InPlaceSemantics.run eitherWritten 200 with
+  | .ok t, .ok t' => t.finalValue == .int 8 && t'.finalValue == .int 14
+  | _, _ => false
+
+-- A write through a callback is a consume row, which has no field set: the
+-- later read of a kept field is refused, although the runs agree.
+#guard !(check callbackKept).isOk && agree callbackKept
+
+/-! ## The `W{F}` rows (#1872) -/
+
+-- A whole write before an update keeps the cell whole; a whole write after
+-- one makes it whole; two updates join their fields; a join keeps a set only
+-- where each side that writes the cell has one.
+#guard addFieldWrites { writes := [.parameter 0 []] } [.parameter 0 []] [1] == []
+#guard addFieldWrites { writes := [.parameter 0 []], fieldWrites := [(.parameter 0 [], [0])] }
+  [.parameter 0 []] [1] == [(.parameter 0 [], [0, 1])]
+#guard addFieldWrites {} [.position [3] true (.parameter 0 [])] [1] == [(.parameter 0 [], [1])]
+#guard wholeFieldWrites [(.parameter 0 [], [0])] [.position [3] true (.parameter 0 [])] == []
+#guard joinFieldWrites { writes := [.parameter 0 []], fieldWrites := [(.parameter 0 [], [0])] }
+  { writes := [.parameter 0 []] } == []
+#guard joinFieldWrites { writes := [.parameter 0 []], fieldWrites := [(.parameter 0 [], [0])] }
+  {} == [(.parameter 0 [], [0])]
+/-- A row that is written by an update and also consumed through a callback. -/
+def consumedRow : Summary :=
+  { writes := [.parameter 0 []], consumes := [.parameter 0 []], fieldWrites := [(.parameter 0 [], [0])] }
+#guard fieldRow consumedRow (.parameter 0 []) == none
 
 /-! ## Write extent (#670) -/
 

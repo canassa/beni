@@ -1,13 +1,10 @@
 //! L8: the labels a virtual call's supply comes through, outward
-//! (`docs/design/ownership-v2.md` §2.11.3). A known code applied to a
-//! callee's label is a virtual call; where the call it applies the label
-//! of is virtual too (`λv → f v` handed to `List.update`), its supply is in
-//! turn that code's own parameter's, so the outer labels' count, `taken`
-//! mark, conditions and kept slots hold what it is supplied as well (#1721,
-//! #1758, #1760). `Eval` makes the demands; `Outward` reads the chain off.
+//! (`docs/design/ownership-v2.md` §2.11.3). Where the call a known code
+//! applies a label of is virtual too, its supply is that code's own
+//! parameter's, so the outer labels' count, `taken` mark, conditions and
+//! kept slots hold what it is supplied as well (#1721, #1758, #1760).
 //!
-//! Obligations kept here: none of §2.14's directly (the chain names the
-//! labels; `Eval` and `Outward` put their conditions on the demands).
+//! Obligations kept here: none of §2.14's directly.
 
 const std = @import("std");
 const Ids = @import("Ids.zig");
@@ -49,7 +46,12 @@ pub fn outwardMany(c: Chain, q: u32) bool {
     var cur = q;
     while (c.f.calls.items[cur].virtual) {
         const o = virtualOuter(c, cur) orelse return false;
-        if (labelAt(c, o).calls == .many) return true;
+        const lab = labelAt(c, o);
+        if (lab.calls == .many) return true;
+        // Labels of one function slot add up: `two h = ( h ⊤, h ⊤ )`.
+        for (c.contracts.labelsOf(c.contracts.head(c.f.calls.items[o[0]].contract).labels), 0..) |x, li| {
+            if (li != o[1] and x.j == lab.j and x.slot == lab.slot and x.calls != .none) return true;
+        }
         cur = o[0];
     }
     return false;

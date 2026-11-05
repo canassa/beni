@@ -1,0 +1,10 @@
+# v2 refuses a writer a closure in a list captures (§2.11.3, a function value goes where a value goes).
+72:9 list_may_be_shared once
+112:16 list_may_be_shared SanitiserClosureList.held
+113:16 list_may_be_shared SanitiserClosureList.nestedChain
+114:16 list_may_be_shared SanitiserClosureList.throughInner
+118:10 list_still_used List.push
+119:18 list_may_be_shared SanitiserClosureList.stored
+121:18 list_may_be_shared SanitiserClosureList.deepEscape
+124:18 list_may_be_shared SanitiserClosureList.twice
+125:18 list_may_be_shared SanitiserClosureList.nested

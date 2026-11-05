@@ -8,5 +8,5 @@
   "lists": "in-place",
   "markup": { "lowering": "inline", "module": "Inline" },
   "zig": "zig/root.zig",
-  "reexports": ["Html", "Browser", "Cmd", "Sub", "Tea"]
+  "reexports": ["Html", "Html.Markdown", "Browser", "Cmd", "Sub", "Tea"]
 }

@@ -1,0 +1,30 @@
+-- run: a cancellation latched before `run`'s wait still stops the child
+-- (boundary.md §9.14 (d)). The fiber is cancelled while it is masked and
+-- waits on a gate; it then restores the mask and calls `run`, which starts
+-- the child and reaches its wait with the interrupt already latched.
+-- `Task.callback` then unwinds without calling the wait's function, so
+-- its canceller never runs: the bracket's release must send the signals
+-- itself. Before it did, the release waited for a child that sleeps 1 000
+-- seconds and was never signalled, and `Task.cancel` did not return: the
+-- case ran into its hang guard.
+import ChildProcess
+import Debug
+import Deferred
+import Io
+import Node exposing (Program)
+import Task
+
+
+main : Program
+main = Io.run λ⊤ →
+    gate = Deferred.make ⊤
+    child = Task.spawn λ⊤ →
+        Task.uninterruptibleMask λtoken →
+            Deferred.wait gate
+            Debug.log "the fiber starts the child" ⊤
+            Task.restore token λ⊤ →
+                ChildProcess.run (ChildProcess.command "/bin/sh" [ "-c", "exec sleep 1000" ])
+    Task.yieldNow ⊤
+    _ = Deferred.complete gate ⊤
+    Task.cancel child
+    Node.print "cancel returned"

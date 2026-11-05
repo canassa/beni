@@ -3,7 +3,7 @@
   "name": "node",
   "program": "Node.Program",
   "platforms": ["html"],
-  "reexports": ["Html"],
+  "reexports": ["Html", "Html.Markdown"],
   "markup": { "lowering": "ssr", "module": "Rt" },
   "zig": "zig/root.zig"
 }

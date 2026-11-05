@@ -37,7 +37,7 @@ pub fn check(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void {
     var q: u32 = 0;
     while (q < f.calls.items.len) : (q += 1) {
         const call = f.calls.items[q];
-        if (call.contract == none) continue;
+        if (call.contract == none or !e.inLast(q)) continue;
         const h = e.contracts.head(call.contract);
         for (e.contracts.storesOf(h.stores)) |s| {
             if (s.j >= call.args.len or !try several(e, q, s.j, s.slot)) continue;

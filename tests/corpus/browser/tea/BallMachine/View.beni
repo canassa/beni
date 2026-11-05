@@ -853,7 +853,7 @@ defs =
         </clipPath>
         <filter id="shadow" x="-20%" y="-30%" width="140%" height="180%">
             <feGaussianBlur in="SourceAlpha" stdDeviation="4" />
-            <feOffset "dy"="3" result="blur" />
+            <feOffset dy="3" result="blur" />
             <feFlood flood-color="#000000" flood-opacity="0.55" />
             <feComposite in2="blur" operator="in" />
             <feMerge>
@@ -863,7 +863,7 @@ defs =
         </filter>
         <filter id="rodShadow" x="-10%" y="-10%" width="120%" height="120%">
             <feGaussianBlur in="SourceAlpha" stdDeviation="2" />
-            <feOffset "dy"="1.5" result="blur" />
+            <feOffset dy="1.5" result="blur" />
             <feFlood flood-color="#000000" flood-opacity="0.55" />
             <feComposite in2="blur" operator="in" />
             <feMerge>

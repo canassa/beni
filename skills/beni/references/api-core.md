@@ -88,6 +88,43 @@ module Clock
   value now : ⊤ → Int  -- impure
   value run : Virtual, (⊤ → a) → a  -- impure
   value virtual : Int → Virtual  -- impure
+module Date
+  type Month
+    Jan
+    Feb
+    Mar
+    Apr
+    May
+    Jun
+    Jul
+    Aug
+    Sep
+    Oct
+    Nov
+    Dec
+  alias Parts
+    Parts
+  type Posix
+    Posix
+  type Weekday
+    Mon
+    Tue
+    Wed
+    Thu
+    Fri
+    Sat
+    Sun
+  opaque type Zone
+  value fromIso8601 : String → Maybe Posix
+  value fromMillis : Int → Posix
+  value here : ⊤ → Zone  -- impure
+  value name : Zone → String
+  value named : String → Maybe Zone
+  value now : ⊤ → Posix  -- impure
+  value toIso8601 : Posix → String
+  value toMillis : Posix → Int
+  value toParts : Posix, Zone → Parts
+  value utc : Zone
 module Debug
   value log : String, a → a  -- impure
   value logAs : Value, String, a → a  -- impure

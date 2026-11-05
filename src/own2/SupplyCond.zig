@@ -36,7 +36,7 @@ pub fn width(f: *const Value.Frame, jobs: anytype) usize {
 /// known code, each outer label's its supply comes through.
 pub fn publish(e: *Eval.Evaluation, s: anytype, arena: Allocator, labelIndex: anytype) Error!void {
     const f = e.fr();
-    for (f.cbs.items, 0..) |cb, ci| if (cb.inst != none) {
+    for (f.cbs.items[e.w.last.cbs..], e.w.last.cbs..) |cb, ci| if (cb.inst != none) {
         const at = try labelIndex(s, @intCast(ci));
         for (cb.args, 0..) |a, k| {
             const sup = try s.d.labels.items[at].supplyOf(arena, @intCast(k));

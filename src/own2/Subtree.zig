@@ -28,8 +28,9 @@ const empty = Slots.empty;
 /// them (a type variable's or an opaque place). A plain one is as it is.
 pub fn readAt(places: *const Place.Table, a: Trees.Arrival, slot: PathId, open: bool) Trees.Arrival {
     var x = a;
-    if (open) x.deep = a.deep and switch (places.kind(places.pathPlace(slot))) {
-        .@"var", .@"opaque" => true,
+    if (open) x.deep = switch (places.kind(places.pathPlace(slot))) {
+        .@"var" => true,
+        .@"opaque" => a.deep,
         else => false,
     };
     return x;
