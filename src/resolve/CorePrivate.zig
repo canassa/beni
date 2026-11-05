@@ -10,6 +10,7 @@ const Entry = struct {
 };
 
 const entries = [_]Entry{
+    .{ .module = "Ssr", .name = "ssrText", .access = .same_platform },
     .{ .module = "Browser", .name = "client", .access = .same_platform },
     .{ .module = "Browser", .name = "tree", .access = .same_platform },
     .{ .module = "Browser", .name = "runAt", .access = .same_platform },

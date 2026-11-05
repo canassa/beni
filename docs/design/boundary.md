@@ -3464,6 +3464,30 @@ coverage, jobs 1/8 byte identity and full gates against that base.
 
 **Supplied record rungs** *(amended 2026-11-04, Part of #1807).* Rt.protocol is a foreign impure record. Its positive function fields inherit that rung; obtaining the record runs no callback. The complete lowering-body audit and all 34 field rows are ownership-checker.md §24.8. Mount/patch, event and map callbacks, root sends, controls, DOM and row operations, turns and shutdown must retain their effects even when their unit results are unused. Metadata readers and the site allocator conservatively inherit impure too. text and map stay pure block constructors; their deferred kind operations run later. This corrects a false pure declaration without weakening release elimination or changing the frozen Html.Runtime ABI. run/ProtocolEffects pins the actual supplied sendRoot in development and release.
 
+**Typed Node reads** *(amended 2026-11-05, Part of #1807).* Under the
+registered node `ssr` lowering, `Ssr.ssrText : borrowed Html msg → String`
+is a compiler-owned pure read of the already-escaped `t` string. A direct
+use lowers to the field read, with no call, wrapper or allocation. It lends
+no mutable structure and preserves the public `Ssr.render` behaviour. The
+operation belongs only to the registered lowering's own platform layer,
+identified by the shared registered-lowering owner rule (the existing SSR
+runtime is a JavaScript file, so its layer needs no beni runtime-module anchor).
+Recognition and the access fence both require that layer;
+application and foreign-platform modules receive no built-in implementation.
+Html.Runtime 1.30 is unchanged. The lowering body is pinned.
+
+`WebSocket.fromUpgrade : Js.Value, String, Int → Js.Opt Socket` is impure.
+Its existing sibling performs the handshake and creates the native socket,
+or returns null when the client has gone away. The compiler's private Node
+recipe maps precisely that null to Opt's absent sentinel and keeps a present
+native socket directly, using the existing collision-safe Opt representation.
+The adapter evaluates the handshake exactly once and applies equally to a
+first-class reference and a direct call; no cast from Js.Value constructs a
+Socket. `WebSocket.upgraded` retains its Maybe and finish callback API and
+both successful-upgrade and went-away behaviour. No fresh word is claimed
+for host input or native handles; the ordinary body-derived summary applies.
+The nullable sibling and adapter bodies are pinned, and no new catch is added.
+
 ### 9.5 How a lowering is compiled into beni
 
 **No dynamic loading, ever**: a lowering is Zig linked into the binary, and a platform is trusted

@@ -1,0 +1,1 @@
+{"platform":true,"name":"private-ssr-text-app","platforms":["node"],"reexports":["Node","Ssr"]}

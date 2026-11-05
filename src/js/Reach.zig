@@ -1043,6 +1043,12 @@ pub const Builder = struct {
                 // instructions like a value's body (`schema.md` §6).
                 .value, .schema => {},
                 .foreign_value => {
+                    if (b.in.interner) |interner| if (b.in.graph.isSsr(m) and
+                        std.mem.eql(u8, interner.slice(b.in.graph.moduleName(m)), "WebSocket") and
+                        std.mem.eql(u8, interner.slice(bir.symbol(d.name)), "fromUpgrade"))
+                    {
+                        if (b.opt_none) |sentinel| try decl_targets.append(b.scratch, .{ .node = sentinel });
+                    };
                     if (b.in.interner) |interner| if (b.in.graph.modulePackage(m) == .core and
                         std.mem.eql(u8, interner.slice(b.in.graph.moduleName(m)), "Js.Any") and
                         std.mem.eql(u8, interner.slice(bir.symbol(d.name)), "unpackOpt"))
@@ -1301,6 +1307,8 @@ pub const Builder = struct {
                 } else if (replies and @import("../check/Wire.zig").replyIntrinsic(b.in.graph, b.in.interfaces, bir, m, @fromBackingInt(@intCast(d.lhs)), interner)) {
                     marks[d.lhs] = true;
                 } else if (WorkerIntrinsic.isReference(b.in.worker_events_module, m, b.in.interfaces, bir, @fromBackingInt(@intCast(d.lhs)), interner)) {
+                    marks[d.lhs] = true;
+                } else if (JsIntrinsic.localSsrText(b.in.graph, bir, m, @fromBackingInt(@intCast(d.lhs)), interner)) {
                     marks[d.lhs] = true;
                 } else if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @fromBackingInt(@intCast(d.lhs)), interner)) |which| {
                     // Any packing and unpacking call their shared sibling.

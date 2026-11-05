@@ -2382,6 +2382,7 @@ const Emitter = struct {
 
     fn compilerOwnedJs(e: *Emitter, m: Graph.Index, d: Bir.Decl) bool {
         if (e.loweringSupplied(m, d)) return true;
+        if (e.graph().isSsr(m) and std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Ssr") and std.mem.eql(u8, e.session.interner.slice(e.bir(m).symbol(d.name)), "ssrText")) return true;
         if (e.graph().isInline(m) and std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Inline.Bridge")) return std.mem.eql(u8, e.session.interner.slice(e.bir(m).symbol(d.name)), "markRoot");
         if (e.graph().isBrowser(m) and std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Browser.Bridge")) return @import("JsIntrinsic.zig").browserBridge(e.session.interner.slice(e.bir(m).symbol(d.name))) != null;
         if (e.graph().modulePackage(m) == .core) {

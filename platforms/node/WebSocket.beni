@@ -126,16 +126,11 @@ drain socket = Task.callback λresume → awaitDrain socket resume
 --| when the session returns, or `Nothing` when the client went away first.
 pub upgraded : Js.Value, String, Int → Maybe (Socket × (⊤ → ⊤))
 upgraded incoming chosenProtocol limit =
-    s = fromUpgrade incoming chosenProtocol limit
-    if Js.isNull s then
-        Nothing
-    else
-        socket : Socket
-        socket = Js.to s
+    Js.optMatch (fromUpgrade incoming chosenProtocol limit) (λ⊤ → Nothing) λsocket →
         Just ( socket, λ⊤ → finish socket )
 
 
-foreign impure fromUpgrade : Js.Value, String, Int → Js.Value
+foreign impure fromUpgrade : Js.Value, String, Int → Js.Opt Socket
 
 
 foreign impure next : Socket, Resume (Result Close String) → (⊤ → ⊤)

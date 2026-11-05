@@ -117,6 +117,7 @@ sees: []const u64 = &.{},
 cloudflare_layer: ?u8 = null,
 browser_owner: ?Index = null,
 inline_owner: ?Index = null,
+ssr_owner: ?Index = null,
 /// The markup vocabulary the chain names (`boundary.md` §9.2), resolved.
 markup: Markup = .{},
 /// Set during the existing name-index build; no native pass on ordinary builds.
@@ -177,6 +178,7 @@ pub const Platforms = struct {
     cloudflare_layer: ?u8 = null,
     browser_runtime: ?RuntimeOwner = null,
     inline_runtime: ?RuntimeOwner = null,
+    ssr_runtime: ?RuntimeOwner = null,
 
     /// The `"reexports"` of every package of the chain.
     reexports: []const Reexport = &.{},
@@ -195,7 +197,9 @@ pub const Platforms = struct {
     /// Selected lowering capabilities, known before lazy source discovery.
     operand_evidence: u8 = 0,
 
-    pub const RuntimeOwner = struct { layer: u8, module: []const u8 };
+    /// A JavaScript markup runtime has no beni module; its registered layer
+    /// still anchors samePlatformLayer through any module loaded on that layer.
+    pub const RuntimeOwner = struct { layer: u8, module: ?[]const u8 };
 
     pub const Reexport = struct {
         /// The module name as the manifest spells it.
@@ -492,6 +496,7 @@ pub fn build(
     g.modules = modules.toOwnedSlice();
     g.browser_owner = g.markupBridgeOwner(interner, platforms.browser_runtime);
     g.inline_owner = g.markupBridgeOwner(interner, platforms.inline_runtime);
+    g.ssr_owner = g.markupBridgeOwner(interner, platforms.ssr_runtime);
     g.markup = try resolveMarkup(&g, gpa, artifacts, interner, platforms);
 
     // 2. Edges: one per import the module uses, then one per module that
@@ -1451,13 +1456,19 @@ fn markupBridgeOwner(g: *const Graph, interner: *const InternPool.Global, owner:
     for (0..g.modules.len) |i| {
         const m: Index = @fromBackingInt(@intCast(i));
         if (g.modulePackage(m) == .platform and g.modules.items(.layer)[i] == selected.layer and
-            std.mem.eql(u8, interner.slice(g.moduleName(m)), selected.module)) return m;
+            (if (selected.module) |module_name| std.mem.eql(u8, interner.slice(g.moduleName(m)), module_name) else true)) return m;
     }
     return null;
 }
 
 pub fn isBrowser(g: *const Graph, m: Index) bool {
     const owner = g.browser_owner orelse return false;
+    return g.samePlatformLayer(m, owner);
+}
+
+/// Typed SSR reads and nullable sockets belong to the registered SSR layer.
+pub fn isSsr(g: *const Graph, m: Index) bool {
+    const owner = g.ssr_owner orelse return false;
     return g.samePlatformLayer(m, owner);
 }
 

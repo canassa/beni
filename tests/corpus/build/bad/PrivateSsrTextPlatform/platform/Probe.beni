@@ -1,0 +1,5 @@
+import Ssr
+
+
+pub text : String
+text = Ssr.ssrText (<p>Hello</p>)

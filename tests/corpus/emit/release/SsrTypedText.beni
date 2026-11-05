@@ -1,0 +1,7 @@
+-- The typed SSR bridge erases to the already-escaped string read.
+import Html exposing (Html)
+import Ssr
+
+
+pub render : Html msg → String
+render html = Ssr.render html

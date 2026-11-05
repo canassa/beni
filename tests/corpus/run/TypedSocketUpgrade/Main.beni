@@ -1,0 +1,18 @@
+-- A nullable host handshake must never be mistaken for a present Socket.
+import Node
+import Probe
+import Ssr
+import WebSocket
+
+
+check : Bool → String
+check gone =
+    case WebSocket.upgraded (Probe.incoming gone) "typed" 1024 of
+        Nothing →
+            "gone"
+        Just ( socket, _ ) →
+            WebSocket.protocol socket
+
+
+main : Node.Program
+main = Node.print (Ssr.render (<p>typed</p>) ++ "/" ++ check True ++ "/" ++ check False)

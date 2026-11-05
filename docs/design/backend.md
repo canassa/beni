@@ -12860,6 +12860,10 @@ DOM (research 36 Â§2.12, Â§5.5): the same tree, and the same template split,
   `platforms/node/Ssr.beni` — and `Ssr.js` is gone; reading `.t` is legal for the same reason. Where
   the sibling's `render` was a function, `.t` is now read at each call, and every `run/Markup*`
   program is 8–38 brotli bytes smaller in release; `plans/core-in-beni.md`, step 4.)*
+  *(Amended 2026-11-05, Part of #1807: `Ssr.render` now calls the private pure typed
+  `Ssr.ssrText` read, supplied by the owning registered SSR layer. It emits the same `.t`
+  projection with no cast through Js.Value, wrapper call or allocation; boundary.md §9.4
+  specifies the fence and body pin. The public render signature and escaped text are unchanged.)*
 
 *As built, 2026-09-29* (`platforms/node/zig/ssr.zig`, `platforms/node/markup.js`,
 `platforms/html/zig/parser_table.zig`; `tests/corpus/run/Markup*`, `emit/MarkupSsr`). The list above
@@ -12897,8 +12901,8 @@ holds, with these readings:
   outside a table; `li`, `dt`, `dd`, `option` and `optgroup` directly inside their own kind; and
   text straight in a table, which the parser moves out. Each is `markup_restructured`, one per root.
 - **`Html.map`** is `map(h, f) => h`, so nested maps render their markup unchanged.
-- **A view is printed with `Node.print (Ssr.render (view model))`**: `render` is the `foreign` of
-  `node`'s module `Ssr`, not of `Node`, so a program that writes no markup does not check the
+- **A view is printed with `Node.print (Ssr.render (view model))`**: `render` is beni in
+  `node`'s module `Ssr` over its private typed `ssrText` read, so a program that writes no markup does not check the
   vocabulary (`boundary.md` Â§9.3, *As built â¦ with the first lowering*).
 
 *Amended 2026-10-12* (`boundary.md` Â§9.9 (d), (f)): **SVG is written as declared** â names and case as the

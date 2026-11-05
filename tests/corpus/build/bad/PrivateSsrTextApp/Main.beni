@@ -1,0 +1,6 @@
+import Node
+import Ssr
+
+
+main : Node.Program
+main = Node.print (Ssr.ssrText (<p>Hello</p>))
