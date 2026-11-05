@@ -94,7 +94,11 @@ pub const Flags = packed struct(u8) {
     /// 1, read through the certified traversal, so a holder of that
     /// container holds the others for the rest of the frame (§2.11.3).
     taken: bool = false,
-    _pad: u2 = 0,
+    /// A traversal's element, at some level, is written where it reaches a
+    /// parameter (§2.11.3, *a taken supply*): no `entry` caller judges that.
+    taken_write: bool = false,
+    /// An argument's function values run as `entry` functions (`EntryHeld`).
+    entry: bool = false,
 };
 
 pub const Head = struct {
@@ -585,6 +589,8 @@ pub const Table = struct {
         d.flags.returns = a_returns or b_returns;
         if (!a_returns) d.flags.cross = hb.flags.cross else if (b_returns) d.flags.cross = d.flags.cross and hb.flags.cross;
         d.flags.once = d.flags.once or hb.flags.once;
+        d.flags.taken_write = d.flags.taken_write or hb.flags.taken_write;
+        d.flags.entry = d.flags.entry or hb.flags.entry;
         // A side that does not return says nothing of the result's condition.
         const bc = try t.cond(arena, hb.res_cond);
         if (!a_returns) d.res_cond = bc else if (b_returns) d.res_cond = try weakest(arena, account, d.res_cond, bc);
@@ -654,6 +660,7 @@ pub const Table = struct {
         const c = t.heads.items[claim];
         if (g.flags.returns and !c.flags.returns) return false;
         if (g.flags.once and !c.flags.once) return false;
+        if ((g.flags.taken_write and !c.flags.taken_write) or (g.flags.entry and !c.flags.entry)) return false;
         if (g.flags.returns and !c.res_cond.no) {
             if (!(try t.cond(arena, g.res_cond)).weakerIn(slots, try t.cond(arena, c.res_cond))) return false;
         }

@@ -1290,6 +1290,14 @@ its own (`Relation.Eval.readAt`), so it is a second entry, as the kids it came f
 
 - An entry that is a family (`ref` not `at_position`) asks its root's own separation on its slots; `⊤` and
   `shared` entries make the check `no`.
+*Amended 2026-11-05 (#1975, the review of #1981): **a family behind a supply.*** A supply's leaf expands through a read that
+gives a value's objects each once under their route sets (`no_routes`, §2.11.2): the right read for what a value may
+hold, the wrong one for how many times it holds it. So `[ a, a ]` behind a callback's supply was one entry, and `sep`
+asked nothing of it: `app [ a, a ] λl → List.update l 0 push1` pushed `a` twice in place, on master, through `Maybe.map`,
+`Result.map` or any callee that calls a callback once. A family of a supply is now read from the argument it comes
+from, each position at a route of its own (`SupplyRead.zig`), so the check counts both. Fixtures
+`run/SanitiserOnceCallbackShared` (the sanitised runs trapped) and `run/SanitiserOnceCallbackApart`.
+
 - Entries are **grouped by root**. Within a group, a conflict is two entries at related positions whose slots
   meet. It is found through position ancestry: each entry is indexed at `(position, slot)` for each of its
   slots, and an entry is checked against the index at its own position and each ancestor, never against every
@@ -2139,7 +2147,7 @@ supply was kept, and `List.map xs λl → List.push l 1` was refused `call` even
 of a taken supply is a `callsite` demand on that argument, judged as any write of it. The element is the callback's
 exactly when the caller's list is dead after the call or fresh: a live holder is refused `later-use` or `alias`, as a
 direct write would be, and a parameter's list makes it the frame's own write of `π1[*]`, which its callers judge in
-turn. The write also relies on the supply's condition, which a kept supply never needed. Each supply has its own
+turn (an `entry` function's have none yet: *As built*, below). The write also relies on the supply's condition, which a kept supply never needed. Each supply has its own
 condition: what judging that supply relied on. For `List.map`, `indexedMap`, `filterMap` and `concatMap` it reads
 `sep ⇐ sel π1{ε,[*]*} π2{ε*~}`, and for `foldl` and `foldr`'s element `π1{ε,[*]*} π2{ε*~} π3{ε*~,ε!2}`, while the
 accumulator's stays `π1{ε~,[*]*~} π2{ε*} π3{ε*~,ε!2}`, so a fold that reads its own list writes its accumulator in
@@ -2165,18 +2173,30 @@ shared: after `Ref.set c [ a, a ]`, `Ref.update c λr → List.map r push1` push
 `run/SanitiserTakenElementCell`). An edit of the contents' own list or of a field stays accepted, and a field's sharing
 is the same defect, still open (#1986): a state's fields are read this way too often to refuse without the slot state, S8-ref.
 
+**As built: an `entry` function's list stays held, until S7 (#1020).** v2 makes no demand at an `entry` argument, so no
+caller judges a write of a parameter of `update`, `view` or `init`, and the kept supply was all that stopped a traversal
+editing the model: `init = λ⊤ → [ a, a ]` with `update msg m = List.map m λl → List.push l 1` trapped on the first click,
+and a `view` that maps over the model trapped with no sharing at all. So a contract records `taken_write`: a many label's
+element write, at this level or in a callee, that reaches a parameter. A function value so marked, handed to a parameter
+worded `entry`, is refused `call` at that call (`EntryHeld.zig`), where v1 refuses the same programs; a frame that hands
+its own parameter on is marked `entry` in turn. A list `update` makes for itself is not reached from an argument, and is
+edited in place (`browser/tea/EntryFreshTraversal`). A function in a top-level record or a call's answer is refused
+`unknown` already (§2.11.3). This holds the line and fixes nothing else: `List.push m 1` in `view` misbehaves on master and
+here (#2004). S7's demands replace this rule. Fixture: `ownership/EntryTakenElement`.
+
 Sound in full because every object a taken write reaches is judged. Against the callee, by the holders that keep it
 and by Lemma 1's split clause for the container (O9's pinned obligation on every body that reads a `taken` result: the
 seven loops of `core/List`). Between invocations, by `π1[*]*`: a write of one element reaches nothing another
 element holds, which the next invocation would read. Against the code's own holds, by `K.req` instantiated over the
-whole family. Against the caller, by the `callsite` demand. Through a helper, by §2.11.3's passes: the condition is
+whole family, read position by position (§2.9.3, *a family behind a supply*). Against the caller, by the `callsite` demand. Through a helper, by §2.11.3's passes: the condition is
 instantiated at the pass, and the helper's own read of the list keeps the slot.
 
 Measured (2026-11-05, Debug, against master at `89acc9741`). Accepted: C.6's first row over a parameter and a local,
 its `edit` row, and the same shapes through `indexedMap`, `filterMap`, `concatMap`, `foldl`, `foldr`, a helper, nested
 maps, a field and a tuple's part, all in place (`run/SanitiserTakenElementApart`, refused on master). Refused:
-`run/SanitiserTakenElement`, whose probed shapes trap when the supply's condition is not asked. The oracle's 2 042
-probes: 0 DIFF, and 1 TRAP, the field sharing of #1986, which traps on master too and holds no traversal. The ledger of 2 280 roots:
+`run/SanitiserTakenElement`, whose probed shapes trap when the supply's condition is not asked. The oracle's 2 362
+probes: 0 DIFF, and 2 TRAP, both of #1986, which trap on master too and hold no traversal. Two generated sweeps, 6 578
+programs: 0 TRAP, 0 DIFF, none master accepts refused, 1 129 master refuses accepted. The ledger of 2 298 roots:
 11 positions refused → accepted, 2 accepted → refused, each a call into a callee whose own write both sides refuse:
 `Differential`'s `t42Repeated`, whose `[ tags, tags ]` master accepted only because it refused the write inside `t42`, and
 `BallMachine`'s `Ref.modify` of `step`, refused at `Physics` 299:14. Cost: growth unchanged everywhere, `Schema.shapeOf`

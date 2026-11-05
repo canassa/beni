@@ -1,0 +1,79 @@
+-- A runtime catch for a list that holds one object twice, handed through a
+-- callback's supply (`ownership-v2.md` §2.9.3, *a family behind a supply*): a
+-- callee calls its callback once, and that callback edits each element. Read
+-- through the supply, `[ a, a ]` was one object, so nothing was asked of it. A
+-- literal behind `app`, `Maybe.map`, `Result.map`, a user's holder, a tuple,
+-- two levels of `app`, a named function, `filterMap`, `foldl` and
+-- `List.update` each hold one list twice. Each edit is refused; read as one
+-- object, the sanitised runs trap on a stale read.
+import List
+import Node exposing (Program)
+import String
+
+
+type Box a
+    = Box a
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+push1 : List Int → List Int
+push1 l = List.push l 1
+
+
+bumpAll : List (List Int) → List (List Int)
+bumpAll rows = List.map rows push1
+
+
+app : a, (a → b) → b
+app v f = f v
+
+
+unbox : Box a, (a → b) → b
+unbox (Box v) f = f v
+
+
+second : Int × a, (a → b) → b
+second ( _, v ) f = f v
+
+
+main : Program
+main =
+    a = [ 1 ]
+    viaApp = app [ a, a ] λl → List.map l push1
+    b = [ 1 ]
+    viaMaybe = Maybe.withDefault (Maybe.map (Just [ b, b ]) λl → List.map l push1) []
+    c = [ 1 ]
+    viaResult = Result.withDefault (Result.map (Ok [ c, c ]) λl → List.map l push1) []
+    d = [ 1 ]
+    viaBox = unbox (Box [ d, d ]) λl → List.map l push1
+    p = [ 1 ]
+    viaTuple = second ( 0, [ p, p ] ) λl → List.map l push1
+    f = [ 1 ]
+    twoLevels = app [ f, f ] λl → app l λm → List.map m push1
+    g = [ 1 ]
+    named = app [ g, g ] bumpAll
+    h = [ 1 ]
+    filtered = app [ h, h ] λl → List.filterMap l λx → Just (push1 x)
+    i = [ 1 ]
+    folded = app [ i, i ] λl → List.foldl l 0 λx n → n + List.length (push1 x)
+    j = [ 1 ]
+    updated = app [ j, j ] λl → List.update l 0 push1
+    Node.printLines
+        [ shows viaApp
+        , shows viaMaybe
+        , shows viaResult
+        , shows viaBox
+        , shows viaTuple
+        , shows twoLevels
+        , shows named
+        , shows filtered
+        , String.fromInt folded
+        , shows updated
+        ]

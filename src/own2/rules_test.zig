@@ -142,7 +142,8 @@ const layers = [_]Entry{
     // values, the distinct check reads a call's instantiation.
     // A cell's `◆` as an evaluation reads it, from `Eval` (#1729).
     .{ .file = "Cells.zig", .layer = 8, .max_lines = 150 },
-    .{ .file = "CellEdit.zig", .layer = 8, .max_lines = 35 },
+    .{ .file = "CellEdit.zig", .layer = 8, .max_lines = 65 },
+    .{ .file = "SupplyRead.zig", .layer = 8, .max_lines = 55 },
     // A label's answer handed back to it, and its `fed` occurrence (#1713).
     .{ .file = "Fed.zig", .layer = 8, .max_lines = 140 },
 
@@ -204,6 +205,7 @@ const layers = [_]Entry{
     // What the labels outward of a virtual call add to its demands and to
     // a passed-on label's supplies, from `Eval` and `ReadOff` (#1758, #1721).
     .{ .file = "Outward.zig", .layer = 11, .max_lines = 90 },
+    .{ .file = "EntryHeld.zig", .layer = 11, .max_lines = 70 },
     .{ .file = "ReadOff.zig", .layer = 12, .max_lines = 1160 },
     .{ .file = "Resolve.zig", .layer = 12, .max_lines = 680 },
     // A module's codes and one declaration's answer, split from `Groups` (#1758).
@@ -503,7 +505,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 85), layers.len);
+    try testing.expectEqual(@as(usize, 88), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

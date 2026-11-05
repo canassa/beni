@@ -18,7 +18,8 @@ const PlaceBelow = @import("PlaceBelow.zig");
 const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
-const Fed = @import("Fed.zig");
+pub const Fed = @import("Fed.zig");
+const SupplyRead = @import("SupplyRead.zig");
 const Taken = @import("Taken.zig");
 const FedCall = @import("FedCall.zig");
 const Entries = @import("Entries.zig");
@@ -100,12 +101,9 @@ fn sepLeaf(e: *Eval, li: u32) Error!Cond {
         .call => instCond(e, r.a),
         .supply, .cb => blk: {
             if (!e.expandable(l)) break :blk Cond.unprovable;
-            var ls: std.ArrayList(u32) = .empty;
-            defer ls.deinit(e.gpa());
-            try e.expand(li, &ls);
             var ps: std.ArrayList(Proj) = .empty;
             defer ps.deinit(e.gpa());
-            for (ls.items, 0..) |x, k| try ps.append(e.gpa(), .{ .leaf = x, .route = @intCast(k + 1) });
+            try SupplyRead.entries(e, li, &ps);
             break :blk distinct(e, ps.items, false);
         },
     };
@@ -237,9 +235,7 @@ pub fn instSel(e: *Eval, c: Cond, call: u32) Error!Cond {
 /// `instSel` at a call that may pass the frame's label on (`feed`, §2.11.3,
 /// *a label's answer handed back to it*): `Fed` reads the label's own answer
 /// handed back as what its call was handed, and decides `fed` occurrences.
-pub fn instSelFeed(e: *Eval, c0: Cond, call: u32, feed0: ?Fed.Feed) Error!Cond {
-    var feed = feed0;
-    if (feed) |*fd| fd.covered = Fed.covering(e, c0, e.f.calls.items[call]);
+pub fn instSelFeed(e: *Eval, c0: Cond, call: u32, feed: ?Fed.Feed) Error!Cond {
     if (c0.no) return Cond.unprovable;
     if (c0.sel.len == 0) return Cond.yes;
     var fed: std.ArrayList(u64) = .empty;

@@ -56,6 +56,7 @@ pub const Evaluation = struct {
     ev: Relation.Eval,
     contracts: *Contract.Table,
     ctx: Context,
+    marks: Contract.Flags = .{},
     /// The walk's demands, then the calls' (this evaluation's).
     demands: std.ArrayList(Demand) = .empty,
     escapes: std.ArrayList(Escape) = .empty,
@@ -471,7 +472,7 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
     try addDemand(e, d);
 }
 
-fn addDemand(e: *Evaluation, d: Demand) Error!void {
+pub fn addDemand(e: *Evaluation, d: Demand) Error!void {
     try e.demands.append(e.gpa(), d);
     if (e.facts_on) try e.hooks.demand(e, e.demands.items.len - 1);
 }
