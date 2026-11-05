@@ -2080,10 +2080,18 @@ The rule has two halves.
    directly or as a label the frame passes on, since a supply names objects and never a code; and a callee that
    a known code answers its label to, since the answer goes back to code the frame does not see (§2.11.4,
    #1709, now a parameter's function slot as well as a closure). The value's other objects (a closure's
-   captures) do not escape here: they are not run, and the closure's escape makes its capture writes `once`.
+   captures) do not escape here: they are not run, and the closure's escape makes its capture writes `once`, but for what the
+   closure's own code lets escape (#2041).
    A worded row's value (`use List.pop`) does not escape: it writes nothing in place (§2.11.5 *Evidence*). What
    a growing draft adds later is read the same way, through an `escape_fn` subscription (§2.12 *Deliveries*),
    so it too gives function objects only.
+
+*Amended 2026-11-05 (#2041):* a closure's own labels of its captures escape with it (`ClosureRuns.zig`). A captured function is not run by the
+value's escape, but it is by the code the escape hands to unknown callers: `chain y g = List.map [ (λ⊤ → g y), (λ⊤ → []) ] λq → q ⊤` runs `g`
+on `y` in a place no label names, and its write was judged by nobody. So each closure in `fn_escapes`, a captured closure among them, and
+each closure an escape reaches (stored by a callee, spawned), which joins `fn_escapes` and so `Closures`' own writes, has the function slots
+its contract's labels and `escapes` name escape in turn, a deep escape deep, and a writer handed to `chain` is refused `unknown`. A reading `g` is accepted (`run/SanitiserClosureList`,
+`run/SanitiserClosureListApart`). Refused that a perfect checker accepts: a writer of a list the closure itself makes, `λ⊤ → g [ 1 ]`.
 
 Sound because every call of a function value now runs a code that a label names, or a code that has escaped.
 For a label, its writes become demands where the label is applied and its count adds up outward (§2.11.3).

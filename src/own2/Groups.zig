@@ -1591,7 +1591,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             const called = mod.codes.items[id].kind == .called;
             if (!called) try EntryHeld.demands(e);
             try Outward.finishDemands(e);
-            if (!called) try Closures.escapedWrites(e);
+            if (!called) for ([_]bool{ false, true }) |w| if (w) try Closures.escapedWrites(e) else try @import("ClosureRuns.zig").labels(e);
             const got = try Resolve.resolve(e, &regions.items[k], ra, if (validating or !solver.used) null else &kg.tables[i]);
             // R-5.13.1: in a comparison's walk, a write of what arrived is `comparison_changes_value`;
             // a write of a fresh value stays accepted, and the contract keeps its writes (§2.13.13 item 13).
