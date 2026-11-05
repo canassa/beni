@@ -167,8 +167,6 @@ const Walk = struct {
     fn emit(w: *Walk, r: u32, it: Item) Error!void {
         const e = w.e;
         const g = e.gpa();
-        var tmp: std.ArrayList(Proj) = .empty;
-        defer tmp.deinit(g);
         const q = w.reqs[r];
         const x = e.f.val(it.v);
         if (it.routes == 0 and q.words.len == it.at and q.deep and !e.parts and (x.kind == .alt or x.kind == .built)) {
@@ -194,11 +192,9 @@ const Walk = struct {
             }
             return;
         }
-        try e.project(it.v, q.words[it.at..], q.deep, it.tags, it.route, &tmp);
-        for (tmp.items) |p| {
-            if (it.routes != 0 and !try Coexist.setsMeet(&e.f.sets.tags, g, e.account(), e.f.leafAt(p.leaf).tags, it.routes, 0, 0)) continue;
-            try q.out.append(g, .{ .leaf = p.leaf, .route = p.route, .occ = p.occ, .routes = it.routes });
-        }
+        // Two paths parted here: the rest starts at the walk's place, not the kid's own.
+        e.tail_place = LevelCycle.of(e.places(), w.root, q.words[0..it.at], x.place);
+        try emitWords(w, r, it, q.words[it.at..]);
     }
 };
 

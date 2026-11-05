@@ -175,7 +175,7 @@ A level read on a built value is read at the place the path names, not the value
 `Wrap (Wrap (Leaf k))` of `T (List Int)` sits at a place of its own, and `#1.0⟲` met no kid on a cycle, read empty, and `k` was edited in place (#2062). The path's
 steps from the value it starts at reach the place of the `⟲` (`LevelCycle.of`), the fold here, and the literal's kids are walked along that place's cycle. So an
 element `a` of a literal, which reaches the type's own nominal only by what `a` stands for, is no level, and a type with both a plain recursion and a fold reads the
-fold when the path does.
+fold when the path does. Where two paths of one read part (`RouteWalk`), the rest of each goes on from the place the walk has reached, never the kid's own (`Eval.tail_place`): `Wrap (Wrap x _) (Wrap y _)` read `wr x + wr y` at `x`'s own place, met no level, and edited `k` (#2062, `run/SanitiserLevelPart`). Refused that a perfect checker accepts: `⟲` takes every kid on the cycle, so a literal that holds an unwritten sibling twice is refused `disjoint` at the write, as a regular type's is.
 A function past the fold is a value no slot names, and it runs: `pf t a = case t of Wrap (Leaf [ f ]) → f a`, or `ap f a`, or `List.map fs λf → f a`. No label can
 name it. The `⊤` a step past a fold gives keeps the value at the fold, its **origin** (§2.3.4), so a run of it runs what the fold holds: the origin's objects escape whole
 (`FnRun.expanded`), a caller's closure there has escaped, and a writer is refused `unknown` (§2.11.3). A `var` slot read by a run is the same fact reached without a step, as in `List.head fs` of

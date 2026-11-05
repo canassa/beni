@@ -1,0 +1,3 @@
+# v2 refuses a write at a level below where two paths part (§2.1, #2062)
+41:33 list_may_be_shared SanitiserLevelPart.two
+41:33 list_may_be_shared SanitiserLevelPart.two
