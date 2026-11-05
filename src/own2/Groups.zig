@@ -958,9 +958,9 @@ pub const Module = struct {
                 .ext => |u| if (mod.in.provenance.len > u.module.int()) if (mod.in.provenance[u.module.int()].valueDecl(@backingInt(u.value))) |d| {
                     target = .{ u.module.int(), d.int() };
                 },
-                // A record field of function type: its value, unknown here
-                // (the pessimistic contract), never a comparison.
-                .param, .codec, .field => {},
+                // A record field of function type: its value, called (§2.11.5).
+                .field => return .field,
+                .param, .codec => {},
                 else => composed = true,
             }
         };

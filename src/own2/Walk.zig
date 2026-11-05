@@ -835,6 +835,12 @@ const Walker = struct {
                 return k.codeCall(i, c, null, arg_insts, vals.items, caps.items);
             },
             .contract => |c| return k.codeCall(i, none, c, arg_insts, vals.items, &.{}),
+            .field => {
+                const name = k.bir.extraData(@fromBackingInt(k.data(i).rhs), Bir.MethodCall).name;
+                const fv = try k.project(vals.items[0], .plain, (try Step.field(fr.account, k.ctx.fieldRank(k.ctx.ctx, name))).word(), 0);
+                try k.consume(arg_insts[0], i);
+                return k.valueCall(i, fv, arg_insts[1..], vals.items[1..], 0);
+            },
             .value => {
                 const fv = if (head != none) try k.valueOf(head) else try fr.top();
                 if (head != none) {

@@ -28,6 +28,8 @@ pub const Callee = union(enum) {
     contract: Contract.Id,
     /// A function value: the head is evaluated.
     value,
+    /// A record field of function type, `r.f x`: the receiver's field's value.
+    field,
 };
 
 /// The module's services a walk reads (`Groups` implements them).
