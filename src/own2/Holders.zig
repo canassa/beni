@@ -51,7 +51,10 @@ pub const Facts = struct {
 /// The callee of call `q` and its first argument, as instructions.
 pub fn calleeAndCell(f: *const Value.Frame, q: u32) [2]u32 {
     const c = f.calls.items[q];
-    return .{ c.head, if (c.arg_insts.len != 0) c.arg_insts[0] else none };
+    // A code handed as a value: the reference it was made at, or the call that runs it.
+    const made = if (c.virtual) f.val(c.callee_val).site else none;
+    const named = if (c.head != none) c.head else if (made != none) made else c.inst;
+    return .{ named, if (c.arg_insts.len != 0) c.arg_insts[0] else none };
 }
 
 /// Conditions gathered (§2.9.4): each met condition's occurrences appended,

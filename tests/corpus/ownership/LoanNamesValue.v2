@@ -1,0 +1,1 @@
+#2094: a loan through a function passed as a value crashed v2's message, which named an instruction the call does not have.
