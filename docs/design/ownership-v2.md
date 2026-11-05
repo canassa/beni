@@ -2375,7 +2375,8 @@ of their slots (§3.6, version 23). A called code's label carries `Called.last_o
 `summary f@.get` is its dump line; it has no `account` line, and its records are charged to `f`'s. Measured (Debug, one
 job, against master at `db3480e28`): 1 018 oracle probes: 0 DIFF, 1 TRAP, on master too, of a label's answer (#2036), two
 more accepted; a generated sweep of 1 820 programs (26 ways to make a closure × 10 ways to call it × 7 things to do with
-the answer): 0 TRAP, 0 DIFF, 710 master refused accepted, none master accepts refused. The ledger of 2 354 roots: 17
+the answer): 0 TRAP, 0 DIFF, 710 master refused accepted, none master accepts refused. The review sweeps' 11 312
+programs: 0 TRAP, 0 DIFF. The ledger of 2 354 roots: 17
 positions refused → accepted, 0 accepted → refused, and 7 refusals give a precise cause in place of `unknown`. Cost: core's
 3.3 s unchanged, every root's records +0.6 %, growth unchanged everywhere, the highest declaration ×2.9
 (`Tea.startAfter`, one body walked twice), and `ClosureTower` flat at 939 records a level at depths 1, 8, 16 and 24 (503
