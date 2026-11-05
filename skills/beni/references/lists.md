@@ -93,8 +93,8 @@ All take the list first and a callback last (`calls.md`). The callback takes the
 
 `api-core.md` has the whole module.
 
-An `Int` is a double, so it can hold a fraction: `2 ^ (0 - 1)` is `0.5`. No list function throws
-on one:
+An `Int` is a double. No operator makes a fraction in one (`^` gives a `Float`), and no list
+function throws on an `Int` that is not a whole number:
 
 - An index that is not a whole number is out of range. `List.get` gives `Nothing`, and `List.set`,
   `List.update`, `List.insertAt`, `List.removeAt` and `List.swap` give the list back.

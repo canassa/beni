@@ -530,7 +530,7 @@ viewBall w sleeper b =
         else
             "url(#ballOrange)"
     waiting = sleeper == Just b.id
-    wait = 0.2 * toFloat (2 ^ b.attempts)
+    wait = 0.2 * toFloat (2 ^^ b.attempts)
     rest = if waiting then clamp (1 - (w.t - max b.waitFrom w.bayFree) / wait) 0 1 else 0
     opacity = max 0 b.alpha * (if b.stage == Pool then 0.8 else 1)
     <g transform={"translate(${n1 b.x} ${n1 b.y})"} opacity={n1 opacity}>

@@ -1,0 +1,1 @@
+{ "platform": true, "name": "fraction", "platforms": ["node"], "reexports": ["Node"] }

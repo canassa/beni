@@ -35,6 +35,33 @@
       (pow
         (ident b)
         (ident c))))
+  (definition rightIntPow
+    (pat_var a)
+    (pat_var b)
+    (pat_var c)
+    (int_pow
+      (ident a)
+      (int_pow
+        (ident b)
+        (ident c))))
+  (definition mixedPow
+    (pat_var a)
+    (pat_var b)
+    (pat_var c)
+    (pow
+      (ident a)
+      (int_pow
+        (ident b)
+        (ident c))))
+  (definition intPowOverMul
+    (pat_var a)
+    (pat_var b)
+    (pat_var c)
+    (mul
+      (ident a)
+      (int_pow
+        (ident b)
+        (ident c))))
   (definition notAnd
     (pat_var a)
     (pat_var b)

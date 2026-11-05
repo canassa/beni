@@ -147,11 +147,48 @@ idiv a b =
                 )
 
 
---| Exponentiation. What `^` desugars to.
+--| Exponentiation. What `^` desugars to. The operands are `Int` or `Float`
+--| in any mix, and the result is always a `Float`: `pow 2 (-1)` is `0.5`.
+--| For an `Int` power, use `^^` (`ipow`).
 --|
 --|     pow 3 2 == 9
-pub pow : number, number → number
+--|     pow 2 (-1) == 0.5
+pub pow : number, number2 → Float
 pow a b = a ^ b
+
+
+--| The integer power. What `^^` desugars to. A non-negative exponent gives
+--| the exact power, computed with `*`; a negative one is `1 // (x ^^ n)`,
+--| so `2 ^^ -1` is 0 and `0 ^^ -1` is 0. A fractional exponent is cut
+--| toward zero first.
+--|
+--|     ipow 3 4 == 81
+--|     ipow 2 0 == 1
+--|     ipow 2 (-1) == 0
+--|     ipow (-1) (-1) == -1
+pub ipow : Int, Int → Int
+ipow x n =
+    p = truncate (toFloat n)
+    if p < 0 then
+        1 // ipow x (negate p)
+    else if Js.pure λ⊤ → Js.to (Js.call (Js.global "Number") "isFinite" [ Js.from p ]) then
+        powFrom x p 1
+    else
+        -- Infinity or NaN, which squaring would halve forever: what `**`
+        -- answers (Cesar's decision, 2026-11-05).
+        Js.pure λ⊤ → Js.to (Js.call (Js.global "Math") "pow" [ Js.from x, Js.from p ])
+
+
+-- `acc` times `x` to the power `p`, `p` a whole number from 0 up: each step
+-- squares `x` and halves `p`, so a finite `p` takes at most 1 024 steps.
+-- Only `*` multiplies, because `**` and `Math.pow` need not be exact.
+powFrom : Int, Int, Int → Int
+powFrom x p acc =
+    if p == 0 then
+        acc
+    else
+        h = p // 2
+        powFrom (x * x) h (if p == 2 * h then acc else acc * x)
 
 
 --| Check if two values are equal, by their type's own `eq`: exactly what

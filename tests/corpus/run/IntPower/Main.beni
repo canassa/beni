@@ -1,0 +1,65 @@
+-- `^^` is the integer power and `^` always gives a `Float` (`language.md`
+-- §6.5, amended 2026-11-05). A non-negative exponent is exact, computed with
+-- `*`: `3 ^^ 33` is 5559060566555523, which needs every bit of a double's
+-- 53. A negative exponent is `1 // (x ^^ n)`, so `2 ^^ -1` is 0 and
+-- `0 ^^ -1` is 0. A fractional exponent is cut toward zero first:
+-- `2 ^^ (3 + half)` is `2 ^^ 3`. `^` no longer makes a fraction in an `Int`,
+-- so `half`, `0.5`, comes from this project's test platform
+-- (`platform/Fraction.beni`). `^^` is right-associative at `^`'s level, and
+-- the two mix: `2 ^^ 3 ^^ 2` is `2 ^^ 9`. `(^^)` is a function. Overflow
+-- stays what it is for every `Int`: `2 ^^ 1024` is Infinity. An exponent of
+-- Infinity or NaN (only an overflow makes one) answers what `**` answers, and
+-- -Infinity takes the negative rule, `1 // (x ^^ Infinity)` (Cesar's
+-- decision, 2026-11-05): the lines after `2 ^^ 1024`.
+import Fraction exposing (half)
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs = "[" ++ String.join (List.map xs String.fromInt) "," ++ "]"
+
+
+power : Int, Int → Int
+power = (^^)
+
+
+inf : Int
+inf = 2 ^^ 1024
+
+
+nan : Int
+nan = inf - inf
+
+
+main : Program
+main =
+    Node.printLines
+        [ ints [ 2 ^^ 0, 2 ^^ 1, 2 ^^ 10, 3 ^^ 4, 10 ^^ 15, (-2) ^^ 3, (-2) ^^ 4 ]
+        , String.fromInt (3 ^^ 33)
+        , String.fromInt (2 ^^ 53)
+        , ints [ 2 ^^ -1, 1 ^^ -1, (-1) ^^ -1, 0 ^^ -1, (-1) ^^ -2, 2 ^^ -10 ]
+        , ints [ 0 ^^ 0, 0 ^^ 5, 1 ^^ 1000, (-1) ^^ 1001 ]
+        , ints
+            [ 2 ^^ (3 + half)
+            , 2 ^^ half
+            , 2 ^^ negate (1 + half)
+            , (-2) ^^ (1 + half)
+            , 0 ^^ negate half
+            ]
+        , String.fromInt (2 ^^ 3 ^^ 2)
+        , String.fromInt ((2 ^^ 3) ^^ 2)
+        , String.fromInt (2 * 3 ^^ 2)
+        , String.fromInt (negate 2 ^^ 2)
+        , String.fromInt (power 5 3)
+        , String.fromInt (List.foldl [ 1, 2, 3 ] 0 λn acc → acc + 2 ^^ n)
+        , String.fromInt (2 ^^ 1024)
+        , ints [ 2 ^^ inf, (-2) ^^ inf, 0 ^^ inf, 1 ^^ inf, (-1) ^^ inf ]
+        , ints [ 2 ^^ nan, 0 ^^ nan, 1 ^^ nan ]
+        , ints [ 2 ^^ negate inf, 0 ^^ negate inf, 1 ^^ negate inf, (-1) ^^ negate inf ]
+        , String.fromFloat (2 ^ 3)
+        , String.fromFloat (2 ^ -1)
+        , String.fromFloat (2 ^ 0.5)
+        , String.fromFloat (2.5 ^ 2)
+        , String.fromFloat (2 ^ 3 ^ 2)
+        ]

@@ -1,10 +1,12 @@
--- An `Int` is a double, so `2 ^ (0 - 1)` is `0.5` and `2 ^ 1024 - 2 ^ 1024`
--- is NaN. A function that reads or edits a list by position must not read
--- `xs[0.5]`: an index that is not a whole number is out of range, so `get`
--- is `Nothing` and `set`, `update`, `insertAt`, `removeAt` and `swap` give
--- the list back. `slice`, `take`, `drop` and the `String` family cut a
--- fraction toward zero first, as `Array.slice` does, and read NaN as 0.
--- Whole numbers keep their old answers: the last block.
+-- An `Int` is a double, so it can hold `0.5`, which this project's test
+-- platform hands over (`platform/Fraction.beni`), and NaN, which
+-- `2 ^^ 1024 - 2 ^^ 1024` is. A function that reads or edits a list by
+-- position must not read `xs[0.5]`: an index that is not a whole number is
+-- out of range, so `get` is `Nothing` and `set`, `update`, `insertAt`,
+-- `removeAt` and `swap` give the list back. `slice`, `take`, `drop` and the
+-- `String` family cut a fraction toward zero first, as `Array.slice` does,
+-- and read NaN as 0. Whole numbers keep their old answers: the last block.
+import Fraction exposing (half)
 import List
 import Node exposing (Program)
 import String
@@ -24,16 +26,12 @@ shown m =
             "Nothing"
 
 
-half : Int
-half = 2 ^ (0 - 1)
-
-
 nan : Int
-nan = 2 ^ 1024 - 2 ^ 1024
+nan = 2 ^^ 1024 - 2 ^^ 1024
 
 
 huge : Int
-huge = 2 ^ 32
+huge = 2 ^^ 32
 
 
 abc : List Int

@@ -12,6 +12,15 @@ leftPipe f g x = x ▷ f ▷ g
 rightPow a b c = a ^ b ^ c
 
 
+rightIntPow a b c = a ^^ b ^^ c
+
+
+mixedPow a b c = a ^ b ^^ c
+
+
+intPowOverMul a b c = a * b ^^ c
+
+
 notAnd a b c = not (a == b) && c
 
 
