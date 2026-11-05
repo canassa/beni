@@ -1,5 +1,5 @@
 //! L7: a `taken` element out of its container (`docs/design/ownership-v2.md`
-//! §2.11.3, *A taken supply*; §2.13.6). The result of a `taken` row
+//! §2.11.3, *a taken supply*; §2.13.6). The result of a `taken` row
 //! (`traverseAt`) is one element of its argument 1; for the rest of the
 //! frame the body reads that container only through the traversal, once per
 //! index (the index obligation, pinned). So a leaf of the container's root
