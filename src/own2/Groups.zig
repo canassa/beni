@@ -264,7 +264,7 @@ pub const Adapter = struct {
                 }
                 continue;
             }
-            const id = try a.close(r, c, &kids, &ids);
+            const id = try a.close(c, &kids, &ids);
             const knot = a.open.get(r.int()).?;
             a.open.remove(r.int());
             if (knot != none) {
@@ -299,11 +299,11 @@ pub const Adapter = struct {
         return a.ofVar(v);
     }
 
-    fn close(a: *Adapter, r: Var, c: TypeStore.Content, kids: *std.ArrayList(Kid), ids: *std.ArrayList(u32)) Error!u32 {
-        _ = r;
+    fn close(a: *Adapter, c: TypeStore.Content, kids: *std.ArrayList(Kid), ids: *std.ArrayList(u32)) Error!u32 {
         const store = a.in.store;
         switch (c) {
-            .flex, .rigid, .err, .alias => return a.leaf(&a.var_id, .@"var"),
+            .flex, .rigid => |fl| return if (fl.kind.scalar()) a.leaf(&a.cross_id, .cross) else a.leaf(&a.var_id, .@"var"), // `[ 0 ]` is `List number`: no object
+            .err, .alias => return a.leaf(&a.var_id, .@"var"),
             .structure => |s| switch (s) {
                 .unit => return a.leaf(&a.cross_id, .cross),
                 .func => return a.leaf(&a.closure_id, .closure),
