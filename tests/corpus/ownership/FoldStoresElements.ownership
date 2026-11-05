@@ -7,5 +7,8 @@ module FoldStoresElements
   17:30 call List.foldr <literal>: accepted fresh (<lambda> writes what List.foldr supplies it)
   17:54 List.push a: accepted callback-param (List.foldr supplies it owned)
   17:76 List.push a: accepted callback-param (List.foldl supplies it owned)
+  summary copyAll: π1 R, π1[*] A; res [*] ~condition(fresh2) ~π1[*], ~fresh1{lost}
+  summary fromLiteral: res [*] ~condition(fresh1) ~fresh1, ~fresh2{lost}
+  summary overFold: π1 R, π1[*] A; res [*] ~condition(fresh2) ~π1[*], ~fresh1{lost}
   demands 8: accepted 8 (fresh 4, call 0, param 0, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 0
 total 8: accepted 8 (fresh 4, call 0, param 0, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 0

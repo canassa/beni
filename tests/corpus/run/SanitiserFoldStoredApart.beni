@@ -1,0 +1,40 @@
+-- The twin of `SanitiserFoldStored` (`ownership-v2.md` §2.11.3, *a fold's
+-- storage*): a fold stores the elements it is handed in its accumulator, whose
+-- storage alone it writes. Over a parameter's list, a literal, a fold of the
+-- same list, a hand-written fold, and with a tuple accumulator. v2 accepts every
+-- write; the sanitised run prints what the plain run prints.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+myFold : List a, b, (a, b → b) → b
+myFold xs acc f =
+    case xs of
+        [ x, …rest ] →
+            myFold rest (f x acc) f
+
+        _ →
+            acc
+
+
+collect : List (List Int) → List (List Int)
+collect xs = List.foldl xs [] λx acc → List.push acc x
+
+
+main : Program
+main =
+    xs = [ [ 1 ], [ 2 ] ]
+    all = collect xs
+    twice = List.foldl xs (List.foldr xs [] λx acc → List.push acc x) λx acc → List.push acc x
+    mine = myFold xs [] λx acc → List.push acc x
+    ( _, last ) = List.foldl xs ( [], [] ) λx ( p, acc ) → ( x, List.push (List.push acc p) x )
+    Node.printLines (List.map [ all, twice, mine, last, xs ] shows)
