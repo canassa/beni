@@ -24,6 +24,24 @@ module Browser
   value prerender : Program, List String → Program
   value program : { init : ⊤ → model, update : msg, model → model, view : model → Html msg } → Program  -- impure
   value programs : List Program → Program  -- impure
+module Browser.Canvas
+  alias Canvas
+  type Error
+    Unsupported
+    NotFound
+    WrongElement
+    InvalidDimension
+    AlreadyControlled
+    Detached
+  alias OffscreenCanvas
+  value byId : String → Result Error Canvas  -- impure
+  value create : Int, Int → Result Error Canvas  -- impure
+  value offscreen : Int, Int → Result Error OffscreenCanvas  -- impure
+  value offscreenSize : OffscreenCanvas → { height : Int, width : Int }  -- impure
+  value resize : Canvas, Int, Int → Result Error ⊤  -- impure
+  value resizeOffscreen : OffscreenCanvas, Int, Int → Result Error ⊤  -- impure
+  value size : Canvas → { height : Int, width : Int }  -- impure
+  value transfer : Canvas → Result Error OffscreenCanvas  -- impure
 module Browser.Events
   alias Size
     Size
@@ -70,6 +88,22 @@ module Browser.Navigation
   value reloadPage : ⊤ → ⊤  -- impure
   value replace : Key, String → Result Error ⊤  -- impure
   value replaceUrl : Key, String, (Error → msg) → Cmd msg  -- impure
+module Browser.Source
+  type Bitmap
+  type CanvasElement
+  type ImageElement
+  type Input
+    FromImage
+    FromBitmap
+    FromPixels
+    FromVideo
+    FromFrame
+    FromCanvas
+    FromOffscreen
+  type OffscreenCanvas
+  type Pixels
+  type VideoElement
+  type VideoFrame
 module Cmd
   type Cmd a
     Cmd

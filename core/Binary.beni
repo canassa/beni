@@ -1,0 +1,638 @@
+--! Fixed binary storage and native typed views. Every runtime operation is
+--! beni over Js; docs/design/binary.md owns the boundary and failure contract.
+
+import Js
+
+
+--| Native, fixed-length ArrayBuffer storage. Transfer detaches every alias.
+pub foreign type Buffer
+
+
+--| Native, fixed-length SharedArrayBuffer storage. Sharing is explicit.
+pub foreign type SharedBuffer
+
+
+--| A native DataView or typed-array view. Offsets for scalar access are bytes.
+pub foreign type View
+
+
+--| A checked native AllowSharedBufferSource, passed directly to host APIs.
+pub foreign type Source
+
+
+--| Which storage a view shares.
+pub type Backing
+    = Local Buffer
+    | Shared SharedBuffer
+
+
+--| Every Web IDL buffer-view kind. Data counts bytes; the others count elements.
+pub type ViewKind
+    = I8
+    | U8
+    | U8Clamped
+    | I16
+    | U16
+    | I32
+    | U32
+    | I64
+    | U64
+    | F16
+    | F32
+    | F64
+    | Data
+
+
+--| Byte order for values wider than one byte.
+pub type Endian
+    = Little
+    | Big
+
+
+--| An exact unsigned 64-bit bit pattern, represented by two unsigned words.
+pub opaque type Word64
+    = Words Int Int
+
+
+--| A binary operation's checked failure. Unknown host failures are defects.
+pub type Error
+    = Unsupported String
+    | InvalidSize Int
+    | InvalidRange Int Int Int
+    | Misaligned Int Int
+    | InvalidInteger Int Int Int
+    | Detached
+    | ResizableBacking
+    | AllocationFailed Int
+    | PrecisionLost
+    | WrongViewKind
+
+
+--| Source dimensions after validating its current backing state.
+pub type alias SourceInfo =
+    byteLength : Int
+    byteOffset : Int
+    elementLength : Int
+    bytesPerElement : Int
+    shared : Bool
+
+
+--| Allocate zero-filled, fixed ArrayBuffer storage.
+pub allocate : Int → Result Error Buffer
+allocate size =
+    validSize size?
+    Js.catchIf
+        (λ⊤ → Ok (Js.to (Js.construct (Js.global "ArrayBuffer") [ Js.from size ])))
+        isRangeError
+        λ_ → Err (AllocationFailed size)
+
+
+--| Allocate fixed shared storage when the host exposes SharedArrayBuffer.
+pub shared : Int → Result Error SharedBuffer
+shared size =
+    validSize size?
+    constructor = Js.global "SharedArrayBuffer"
+    if not (Js.typeIs constructor "function") then
+        Err (Unsupported "SharedArrayBuffer")
+    else
+        Js.catchIf (λ⊤ → Ok (Js.to (Js.construct constructor [ Js.from size ]))) isRangeError λ_ →
+            Err (AllocationFailed size)
+
+
+--| Make a view without copying. Offset is bytes, count is elements (Data: bytes).
+pub view : Backing, ViewKind, Int, Maybe Int → Result Error View
+view storage kind offset count =
+    buffer = backingValue storage
+    validBacking buffer?
+    total : Int
+    total = Js.to (Js.get buffer "byteLength")
+    validSize offset?
+    if offset > total then
+        Err (InvalidRange offset 0 total)
+    else
+        stride = elementSize kind
+        if Int.rem offset stride ≠ 0 then
+            Err (Misaligned offset stride)
+        else
+            length = viewCount (total - offset) stride count?
+            constructor = Js.global (constructorName kind)
+            if not (Js.typeIs constructor "function") then
+                Err (Unsupported (constructorName kind))
+            else
+                Ok (Js.to (Js.construct constructor [ buffer, Js.from offset, Js.from length ]))
+
+
+--| A source over an entire ArrayBuffer. It is revalidated at each use.
+pub bufferSource : Buffer → Result Error Source
+bufferSource buffer = checkedSource (Js.from buffer)
+
+
+--| A source over an entire SharedArrayBuffer.
+pub sharedSource : SharedBuffer → Result Error Source
+sharedSource buffer = checkedSource (Js.from buffer)
+
+
+--| A source retaining a native view's element type and byte offset.
+pub viewSource : View → Result Error Source
+viewSource value = checkedSource (Js.from value)
+
+
+checkedSource : Js.Value → Result Error Source
+checkedSource value =
+    validBacking (sourceBuffer value)?
+    Ok (Js.to value)
+
+
+--| Validate fixed backing again and read this source's current dimensions.
+pub sourceInfo : Source → Result Error SourceInfo
+sourceInfo source =
+    value = Js.from source
+    buffer = sourceBuffer value
+    validBacking buffer?
+    isView : Bool
+    isView = Js.to (Js.call (Js.global "ArrayBuffer") "isView" [ value ])
+    length : Int
+    length = Js.to (Js.get value "byteLength")
+    offset : Int
+    offset = if isView then Js.to (Js.get value "byteOffset") else 0
+    stride : Int
+    stride =
+        if Js.isUndefined (Js.get value "BYTES_PER_ELEMENT") then
+            1
+        else
+            Js.to (Js.get value "BYTES_PER_ELEMENT")
+    Ok
+        { byteLength = length
+        , byteOffset = offset
+        , elementLength = length // stride
+        , bytesPerElement = stride
+        , shared = isShared buffer
+        }
+
+
+--| Copy byte values into new fixed storage. Every input is checked before allocation.
+pub fromList : List Int → Result Error Buffer
+fromList values =
+    checked = Js.ref (Ok ⊤)
+    _ = List.foldl values ⊤ λvalue _ →
+        case Js.read checked of
+            Err _ →
+                ⊤
+            Ok ⊤ →
+                Js.write checked (validInteger value 0 255)
+    Js.read checked?
+    buffer = allocate (List.length values)?
+    bytes = Js.construct (Js.global "Uint8Array") [ Js.from buffer ]
+    index = Js.ref 0
+    _ = List.foldl values ⊤ λvalue _ →
+        Js.setAt bytes (Js.read index) (Js.from value)
+        Js.write index (Js.read index + 1)
+    Ok buffer
+
+
+--| Copy a source's bytes to a persistent beni list.
+pub toList : Source → Result Error (List Int)
+toList source =
+    info = sourceInfo source?
+    bytes =
+        Js.construct (Js.global "Uint8Array")
+            [ sourceBuffer (Js.from source), Js.from info.byteOffset, Js.from info.byteLength ]
+    output = Js.array []
+    Js.each bytes λvalue →
+        _ = Js.call output "push" [ value ]
+        ⊤
+    Ok (Js.to output)
+
+
+--| Copy the bytes of a checked source into new independent storage.
+pub copy : Source → Result Error Buffer
+copy source =
+    info = sourceInfo source?
+    buffer = allocate info.byteLength?
+    target = Js.construct (Js.global "Uint8Array") [ Js.from buffer ]
+    bytes =
+        Js.construct (Js.global "Uint8Array")
+            [ sourceBuffer (Js.from source), Js.from info.byteOffset, Js.from info.byteLength ]
+    _ = Js.call target "set" [ bytes ]
+    Ok buffer
+
+
+--| Copy source bytes into destination. Native set preserves overlapping-copy semantics.
+pub copyInto : View, Int, Source → Result Error ⊤
+copyInto destination offset source =
+    targetInfo = sourceInfo (Js.to (Js.from destination))?
+    inputInfo = sourceInfo source?
+    validRange offset inputInfo.byteLength targetInfo.byteLength?
+    target =
+        Js.construct (Js.global "Uint8Array")
+            [ sourceBuffer (Js.from destination)
+            , Js.from (targetInfo.byteOffset + offset)
+            , Js.from inputInfo.byteLength
+            ]
+    bytes =
+        Js.construct (Js.global "Uint8Array")
+            [ sourceBuffer (Js.from source)
+            , Js.from inputInfo.byteOffset
+            , Js.from inputInfo.byteLength
+            ]
+    _ = Js.call target "set" [ bytes ]
+    Ok ⊤
+
+
+--| Exact words, high first. Both are checked in 0 through 2^32 - 1.
+pub word64 : Int, Int → Result Error Word64
+word64 high low =
+    validInteger high 0 4294967295?
+    validInteger low 0 4294967295?
+    Ok (Words high low)
+
+
+--| Both words, without conversion through an inexact number.
+pub words : Word64 → { high : Int, low : Int }
+words (Words high low) = { high = high, low = low }
+
+
+--| Convert an exactly representable Number to words. Nonnegative safe integers only.
+pub word64FromInt : Int → Result Error Word64
+word64FromInt value =
+    validSize value?
+    Ok (Words (value // 4294967296) (Int.rem value 4294967296))
+
+
+--| Convert words only if the integer is exactly representable by beni Int.
+pub word64ToInt : Word64 → Result Error Int
+word64ToInt (Words high low) =
+    if high > 2097151 then
+        Err PrecisionLost
+    else
+        Ok (high * 4294967296 + low)
+
+
+--| Read an exact 64-bit word pair, with no BigInt-to-Number truncation.
+pub readWord64 : View, Int, Endian → Result Error Word64
+readWord64 value offset endian =
+    data = scalarView value offset 8?
+    lowOffset = if endian == Little then offset else offset + 4
+    highOffset = if endian == Little then offset + 4 else offset
+    low : Int
+    low = Js.to (Js.call data "getUint32" [ Js.from lowOffset, Js.from (endian == Little) ])
+    high : Int
+    high = Js.to (Js.call data "getUint32" [ Js.from highOffset, Js.from (endian == Little) ])
+    Ok (Words high low)
+
+
+--| Write an exact 64-bit word pair.
+pub writeWord64 : View, Int, Endian, Word64 → Result Error ⊤
+writeWord64 value offset endian (Words high low) =
+    data = scalarView value offset 8?
+    lowOffset = if endian == Little then offset else offset + 4
+    highOffset = if endian == Little then offset + 4 else offset
+    _ = Js.call data "setUint32" [ Js.from lowOffset, Js.from low, Js.from (endian == Little) ]
+    _ = Js.call data "setUint32" [ Js.from highOffset, Js.from high, Js.from (endian == Little) ]
+    Ok ⊤
+
+
+--| Whether the underlying native buffer was detached by a transfer or owner.
+pub detached : Buffer → Bool
+detached buffer = isDetached (Js.from buffer)
+
+
+--| Byte length of live fixed backing.
+pub byteLength : Backing → Result Error Int
+byteLength storage =
+    buffer = backingValue storage
+    validBacking buffer?
+    Ok (Js.to (Js.get buffer "byteLength"))
+
+
+backingValue : Backing → Js.Value
+backingValue storage =
+    case storage of
+        Local buffer →
+            Js.from buffer
+        Shared buffer →
+            Js.from buffer
+
+
+sourceBuffer : Js.Value → Js.Value
+sourceBuffer source =
+    if Js.to (Js.call (Js.global "ArrayBuffer") "isView" [ source ]) then
+        Js.get source "buffer"
+    else if isShared source || Js.instanceOf source (Js.global "ArrayBuffer") then
+        source
+    else
+        Js.throw
+            (Js.construct (Js.global "Error")
+                [ Js.from "Binary received a non-buffer native handle" ]
+            )
+
+
+isShared : Js.Value → Bool
+isShared buffer =
+    constructor = Js.global "SharedArrayBuffer"
+    Js.typeIs constructor "function" && Js.instanceOf buffer constructor
+
+
+isDetached : Js.Value → Bool
+isDetached buffer =
+    if isShared buffer then
+        False
+    else
+        state = Js.get buffer "detached"
+        if Js.typeIs state "boolean" then
+            Js.to state
+        else
+            -- The native zero-length view constructor's only possible TypeError
+            -- for a genuine ArrayBuffer with these arguments is detachment.
+            Js.catchIf
+                (λ⊤ →
+                    _ = Js.construct (Js.global "Uint8Array") [ buffer, Js.from 0, Js.from 0 ]
+                    False
+                )
+                (λerror → Js.instanceOf error (Js.global "TypeError"))
+                λ_ → True
+
+
+validBacking : Js.Value → Result Error ⊤
+validBacking buffer =
+    if isDetached buffer then
+        Err Detached
+    else if
+        Js.same (Js.get buffer "resizable") (Js.from True)
+            || Js.same (Js.get buffer "growable") (Js.from True)
+    then
+        Err ResizableBacking
+    else
+        Ok ⊤
+
+
+validSize : Int → Result Error ⊤
+validSize value =
+    if
+        value < 0 || not (Js.to (Js.call (Js.global "Number") "isSafeInteger" [ Js.from value ]))
+    then
+        Err (InvalidSize value)
+    else
+        Ok ⊤
+
+
+validInteger : Int, Int, Int → Result Error ⊤
+validInteger value lower upper =
+    if
+        value < lower
+            || value > upper
+            || not (Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from value ]))
+    then
+        Err (InvalidInteger value lower upper)
+    else
+        Ok ⊤
+
+
+validRange : Int, Int, Int → Result Error ⊤
+validRange offset size total =
+    validSize offset?
+    validSize size?
+    if offset > total || size > total - offset then
+        Err (InvalidRange offset size total)
+    else
+        Ok ⊤
+
+
+viewCount : Int, Int, Maybe Int → Result Error Int
+viewCount remaining stride count =
+    case count of
+        Nothing →
+            if Int.rem remaining stride ≠ 0 then
+                Err (Misaligned remaining stride)
+            else
+                Ok (remaining // stride)
+        Just length →
+            validSize length?
+            if length > remaining // stride then
+                Err (InvalidRange 0 length (remaining // stride))
+            else
+                Ok length
+
+
+scalarView : View, Int, Int → Result Error Js.Value
+scalarView value offset size =
+    info = sourceInfo (Js.to (Js.from value))?
+    validRange offset size info.byteLength?
+    Ok
+        (Js.construct (Js.global "DataView")
+            [ sourceBuffer (Js.from value), Js.from info.byteOffset, Js.from info.byteLength ]
+        )
+
+
+isRangeError : Js.Value → Bool
+isRangeError error = Js.instanceOf error (Js.global "RangeError")
+
+
+constructorName : ViewKind → String
+constructorName kind =
+    case kind of
+        I8 →
+            "Int8Array"
+        U8 →
+            "Uint8Array"
+        U8Clamped →
+            "Uint8ClampedArray"
+        I16 →
+            "Int16Array"
+        U16 →
+            "Uint16Array"
+        I32 →
+            "Int32Array"
+        U32 →
+            "Uint32Array"
+        I64 →
+            "BigInt64Array"
+        U64 →
+            "BigUint64Array"
+        F16 →
+            "Float16Array"
+        F32 →
+            "Float32Array"
+        F64 →
+            "Float64Array"
+        Data →
+            "DataView"
+
+
+--| The native element width, in bytes.
+pub elementSize : ViewKind → Int
+elementSize kind =
+    case kind of
+        I8 →
+            1
+        U8 →
+            1
+        U8Clamped →
+            1
+        I16 →
+            2
+        U16 →
+            2
+        I32 →
+            4
+        U32 →
+            4
+        I64 →
+            8
+        U64 →
+            8
+        F16 →
+            2
+        F32 →
+            4
+        F64 →
+            8
+        Data →
+            1
+
+
+--| Read Int8 at a byte offset.
+pub readI8 : View, Int → Result Error Int
+readI8 value offset =
+    data = scalarView value offset 1?
+    Ok (Js.to (Js.call data "getInt8" [ Js.from offset ]))
+
+
+--| Write Int8 at a byte offset.
+pub writeI8 : View, Int, Int → Result Error ⊤
+writeI8 value offset number =
+    validInteger number (-128) 127?
+    data = scalarView value offset 1?
+    _ = Js.call data "setInt8" [ Js.from offset, Js.from number ]
+    Ok ⊤
+
+
+--| Read Uint8 at a byte offset.
+pub readU8 : View, Int → Result Error Int
+readU8 value offset =
+    data = scalarView value offset 1?
+    Ok (Js.to (Js.call data "getUint8" [ Js.from offset ]))
+
+
+--| Write Uint8 at a byte offset.
+pub writeU8 : View, Int, Int → Result Error ⊤
+writeU8 value offset number =
+    validInteger number 0 255?
+    data = scalarView value offset 1?
+    _ = Js.call data "setUint8" [ Js.from offset, Js.from number ]
+    Ok ⊤
+
+
+--| Read Int16 at a byte offset.
+pub readI16 : View, Int, Endian → Result Error Int
+readI16 value offset endian =
+    data = scalarView value offset 2?
+    Ok (Js.to (Js.call data "getInt16" [ Js.from offset, Js.from (endian == Little) ]))
+
+
+--| Write Int16 at a byte offset.
+pub writeI16 : View, Int, Endian, Int → Result Error ⊤
+writeI16 value offset endian number =
+    validInteger number (-32768) 32767?
+    data = scalarView value offset 2?
+    _ = Js.call data "setInt16" [ Js.from offset, Js.from number, Js.from (endian == Little) ]
+    Ok ⊤
+
+
+--| Read Uint16 at a byte offset.
+pub readU16 : View, Int, Endian → Result Error Int
+readU16 value offset endian =
+    data = scalarView value offset 2?
+    Ok (Js.to (Js.call data "getUint16" [ Js.from offset, Js.from (endian == Little) ]))
+
+
+--| Write Uint16 at a byte offset.
+pub writeU16 : View, Int, Endian, Int → Result Error ⊤
+writeU16 value offset endian number =
+    validInteger number 0 65535?
+    data = scalarView value offset 2?
+    _ = Js.call data "setUint16" [ Js.from offset, Js.from number, Js.from (endian == Little) ]
+    Ok ⊤
+
+
+--| Read Int32 at a byte offset.
+pub readI32 : View, Int, Endian → Result Error Int
+readI32 value offset endian =
+    data = scalarView value offset 4?
+    Ok (Js.to (Js.call data "getInt32" [ Js.from offset, Js.from (endian == Little) ]))
+
+
+--| Write Int32 at a byte offset.
+pub writeI32 : View, Int, Endian, Int → Result Error ⊤
+writeI32 value offset endian number =
+    validInteger number (-2147483648) 2147483647?
+    data = scalarView value offset 4?
+    _ = Js.call data "setInt32" [ Js.from offset, Js.from number, Js.from (endian == Little) ]
+    Ok ⊤
+
+
+--| Read Uint32 at a byte offset.
+pub readU32 : View, Int, Endian → Result Error Int
+readU32 value offset endian =
+    data = scalarView value offset 4?
+    Ok (Js.to (Js.call data "getUint32" [ Js.from offset, Js.from (endian == Little) ]))
+
+
+--| Write Uint32 at a byte offset.
+pub writeU32 : View, Int, Endian, Int → Result Error ⊤
+writeU32 value offset endian number =
+    validInteger number 0 4294967295?
+    data = scalarView value offset 4?
+    _ = Js.call data "setUint32" [ Js.from offset, Js.from number, Js.from (endian == Little) ]
+    Ok ⊤
+
+
+--| Read Float16 at a byte offset.
+pub readF16 : View, Int, Endian → Result Error Float
+readF16 value offset endian =
+    data = scalarView value offset 2?
+    if not (Js.typeIs (Js.get data "getFloat16") "function") then
+        Err (Unsupported "DataView.getFloat16")
+    else
+        Ok (Js.to (Js.call data "getFloat16" [ Js.from offset, Js.from (endian == Little) ]))
+
+
+--| Write Float16 at a byte offset.
+pub writeF16 : View, Int, Endian, Float → Result Error ⊤
+writeF16 value offset endian number =
+    data = scalarView value offset 2?
+    if not (Js.typeIs (Js.get data "setFloat16") "function") then
+        Err (Unsupported "DataView.setFloat16")
+    else
+        _ = Js.call data "setFloat16" [ Js.from offset, Js.from number, Js.from (endian == Little) ]
+        Ok ⊤
+
+
+--| Read Float32 at a byte offset.
+pub readF32 : View, Int, Endian → Result Error Float
+readF32 value offset endian =
+    data = scalarView value offset 4?
+    Ok (Js.to (Js.call data "getFloat32" [ Js.from offset, Js.from (endian == Little) ]))
+
+
+--| Write Float32 at a byte offset.
+pub writeF32 : View, Int, Endian, Float → Result Error ⊤
+writeF32 value offset endian number =
+    data = scalarView value offset 4?
+    _ = Js.call data "setFloat32" [ Js.from offset, Js.from number, Js.from (endian == Little) ]
+    Ok ⊤
+
+
+--| Read Float64 at a byte offset.
+pub readF64 : View, Int, Endian → Result Error Float
+readF64 value offset endian =
+    data = scalarView value offset 8?
+    Ok (Js.to (Js.call data "getFloat64" [ Js.from offset, Js.from (endian == Little) ]))
+
+
+--| Write Float64 at a byte offset.
+pub writeF64 : View, Int, Endian, Float → Result Error ⊤
+writeF64 value offset endian number =
+    data = scalarView value offset 8?
+    _ = Js.call data "setFloat64" [ Js.from offset, Js.from number, Js.from (endian == Little) ]
+    Ok ⊤
