@@ -1,0 +1,40 @@
+-- The declarations `Main` calls across a block (`ownership-v2.md` §3.6).
+pub mk : List Int → (⊤ → List Int)
+mk xs = λ⊤ → xs
+
+
+pub fresh : ⊤ → (⊤ → List Int)
+fresh ⊤ = λ⊤ → [ 0 ]
+
+
+pub made : ⊤ → (⊤ → List Int)
+made ⊤ =
+    xs = [ 0 ]
+    λ⊤ → xs
+
+
+pub chain : Int, (⊤ → List Int) → (⊤ → List Int)
+chain n f =
+    if n == 0 then
+        λ⊤ → f ⊤
+    else
+        previous = chain (n - 1) f
+        λ⊤ → previous ⊤
+
+
+pub grow : Int, List Int → (⊤ → List Int)
+grow n xs =
+    if n == 0 then
+        λ⊤ → xs
+    else
+        previous = grow (n - 1) xs
+        λ⊤ → previous ⊤
+
+
+type alias Box =
+    get : ⊤ → List Int
+    put : ⊤ → List Int
+
+
+pub box : List Int → Box
+box xs = { get = λ⊤ → xs, put = λ⊤ → [ 1 ] }

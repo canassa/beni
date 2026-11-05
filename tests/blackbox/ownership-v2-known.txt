@@ -5500,3 +5500,8 @@ tests/corpus/run/SanitiserHandedBackCallback.beni SanitiserHandedBackCallback 48
 tests/corpus/run/SanitiserHandedBackCallback.beni SanitiserHandedBackCallback 56:9 #0 :: h xs :: absent :: rejected  as above, through a lambda around the callback
 tests/corpus/run/SanitiserHandedBackCallback.beni SanitiserHandedBackCallback 64:12 #0 :: xs :: absent :: rejected  as above, through a record's field
 tests/corpus/run/SanitiserHandedBackCallback.beni SanitiserHandedBackCallback 71:9 #0 :: th <call> :: absent :: rejected  as above, through a thunk over the list
+tests/corpus/run/SanitiserReturnedClosureApart.beni SanitiserReturnedClosureApart 92:14 #0 :: List.push a :: rejected :: accepted  a returned closure has a called contract (§2.11.3): its answer is fresh per call; v1 calls it unknown
+tests/corpus/run/SanitiserReturnedClosureApart.beni SanitiserReturnedClosureApart 100:14 #0 :: List.push a :: rejected :: accepted  as above, a `case` of two codes
+tests/corpus/run/SanitiserReturnedClosureApart.beni SanitiserReturnedClosureApart 108:14 #0 :: List.push a :: rejected :: accepted  as above, a recursive declaration
+tests/corpus/run/SanitiserReturnedClosureApart.beni SanitiserReturnedClosureApart 115:14 #0 :: List.push a :: rejected :: accepted  as above, a recursive helper over a supplied fresh lambda
+tests/corpus/run/SanitiserReturnedClosureImported Main 59:14 #0 :: List.push a :: rejected :: accepted  as above, a recursive helper of another module

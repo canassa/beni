@@ -1,0 +1,76 @@
+-- A closure another module's declaration returns: its called contract
+-- crosses in the block (`ownership-v2.md` §2.11.3, §3.6). `Main`'s refusals
+-- and acceptances are those of the same module.
+import Lib
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+capture : ⊤ → String
+capture ⊤ =
+    xs = [ 0 ]
+    g = Lib.mk xs
+    y = List.push (g ⊤) 1
+    "${show y} ${show xs}"
+
+
+made : ⊤ → String
+made ⊤ =
+    g = Lib.made ⊤
+    a = g ⊤
+    y = List.push a 1
+    "${show y} ${show (g ⊤)}"
+
+
+recursive : ⊤ → String
+recursive ⊤ =
+    xs = [ 0 ]
+    g = Lib.grow 2 xs
+    y = List.push (g ⊤) 1
+    "${show y} ${show xs}"
+
+
+field : ⊤ → String
+field ⊤ =
+    xs = [ 0 ]
+    b = Lib.box xs
+    y = List.push (b.get ⊤) 1
+    "${show y} ${show xs}"
+
+
+fresh : ⊤ → String
+fresh ⊤ =
+    g = Lib.fresh ⊤
+    a = g ⊤
+    b = g ⊤
+    "${show (List.push a 1)} ${show b}"
+
+
+chained : ⊤ → String
+chained ⊤ =
+    g = Lib.chain 2 λ⊤ → [ 3 ]
+    a = g ⊤
+    b = g ⊤
+    "${show (List.push a 1)} ${show b}"
+
+
+fieldFresh : ⊤ → String
+fieldFresh ⊤ =
+    b = Lib.box [ 0 ]
+    a = b.put ⊤
+    c = b.put ⊤
+    "${show (List.push a 1)} ${show c}"
+
+
+main : Program
+main =
+    Node.print
+        (String.join
+            [ capture ⊤, made ⊤, recursive ⊤, field ⊤, fresh ⊤, chained ⊤, fieldFresh ⊤ ]
+            "\n"
+        )
