@@ -1477,13 +1477,11 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
         r.walks += 1;
     }
     // Every code of the group starts at ⊥ (§2.12).
-    {
-        var bot: Contract.Draft = .{ .arity = 0 };
-        for (codes.items) |id| {
-            const c = &mod.codes.items[id];
-            bot.arity = c.params.len;
-            c.contract = try mod.contracts.commit(gpa, &rs[0].account, &mod.slots, &bot);
-        }
+    var bot: Contract.Draft = .{ .arity = 0 };
+    for (codes.items) |id| {
+        const c = &mod.codes.items[id];
+        bot.arity = c.params.len;
+        c.contract = try mod.contracts.commit(gpa, &rs[0].account, &mod.slots, &bot);
     }
     // Rounds of evaluations, until nothing moved after it was read.
     var round: u32 = 0;

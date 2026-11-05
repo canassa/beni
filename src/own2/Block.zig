@@ -20,7 +20,7 @@ const Forest = @import("Forest.zig");
 const BlockNames = @import("BlockNames.zig");
 
 pub const magic: u32 = 0x324e574f;
-pub const version: u32 = 21;
+pub const version: u32 = 22;
 pub const Error = Ids.ChargeError || error{BadBlock};
 const Step = Place.Step;
 
