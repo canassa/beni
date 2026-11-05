@@ -18,6 +18,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Supplied = @import("Supplied.zig");
+const LaterFunctions = @import("LaterFunctions.zig");
 const FnRun = @import("FnRun.zig");
 const Facts = @import("Facts.zig");
 const Place = @import("Place.zig");
@@ -665,6 +666,8 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
     };
     // A twin takes its first's verdict (§2.8, *Twin demands*).
     Twins.copy(lines, twins, e.demands.items);
+    for (f.cbs.items, 0..) |cb, ci| if (cb.inst != none) for (0..cb.args.len) |k| try LaterFunctions.ask(e, cb.point, &conds[ci * width + k]);
+    for (e.passes.items, 0..) |p, pi| for (0..width) |k| try LaterFunctions.ask(e, f.calls.items[p[1]].point, &pconds[pi * width + k]);
     const cs = try arena.alloc(Cond, conds.len);
     for (conds, cs) |*x, *c| c.* = try x.cond(e.ev.arena, f.account);
     const ps = try arena.alloc(Cond, pconds.len);

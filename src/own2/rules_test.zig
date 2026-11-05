@@ -224,6 +224,7 @@ const layers = [_]Entry{
     .{ .file = "Made.zig", .layer = 11, .max_lines = 55 },
     .{ .file = "SupplyCond.zig", .layer = 11, .max_lines = 90 },
     // A supplied part judged, split from `Resolve` (§2.11.3, #2013).
+    .{ .file = "LaterFunctions.zig", .layer = 11, .max_lines = 40 },
     .{ .file = "Supplied.zig", .layer = 11, .max_lines = 165 },
     // A label's answer in another label's supply (§2.11.3, #2013).
     .{ .file = "SupplyAnswers.zig", .layer = 11, .max_lines = 70 },
@@ -538,7 +539,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 106), layers.len);
+    try testing.expectEqual(@as(usize, 107), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 
