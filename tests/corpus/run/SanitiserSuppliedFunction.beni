@@ -1,0 +1,63 @@
+-- A runtime catch for a lambda that calls a function its callee hands it
+-- (`ownership-v2.md` §2.11.3, *a function value goes where a value goes*):
+-- `app1 f λg → g v`, `List.map fs λg → g v`, a function out of a call's
+-- result passed to `List.map`, and a list of functions folded over. The
+-- lambda's label of `g` was never read as a label of the function handed to
+-- it, so the writer handed as `f` was accepted `param`, its write and its
+-- count checked by nobody. Each edit of a list read again, handed twice or
+-- run twice by a capture is refused now; accepted, the sanitised run shows
+-- the stale read.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+app1 : a, (a → b) → b
+app1 x g = g x
+
+
+pick : (List Int → List Int), Int → (List Int → List Int)
+pick f _ = f
+
+
+each : List Int, (List Int → List Int) → List Int
+each v f = app1 f λg → g v
+
+
+eachOf : List Int, List (List Int → List Int) → List (List Int)
+eachOf v fs = List.map fs λg → g v
+
+
+rep : (⊤ → List Int) → List (List Int)
+rep f = app1 f λg → [ g ⊤, g ⊤ ]
+
+
+mp : List (List Int), (List Int → List Int) → List (List Int)
+mp rs f = List.map rs (pick f 0)
+
+
+folded : List (List Int), List (List Int → List Int) → List (List Int)
+folded rs fs = List.map rs λv → List.foldl fs v λg acc → g acc
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = each k λv → List.push v 5
+    m = [ 2 ]
+    b = eachOf m [ λv → List.push v 6 ]
+    n = [ 3 ]
+    c = rep λ⊤ → List.push n 7
+    p = [ 4 ]
+    d = mp [ p, p ] λv → List.push v 8
+    q = [ 5 ]
+    r = folded [ q, q ] [ λv → List.push v 9 ]
+    Node.printLines [ show a, show k, shows b, show m, shows c, shows d, shows r ]
