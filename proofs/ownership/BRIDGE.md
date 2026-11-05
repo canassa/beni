@@ -26,9 +26,12 @@ node scripts/bridge-mutants.mjs [control…]    # opt-in, isolated Zig source ed
 
 `--no-build` uses an existing compiler; `--compiler=/absolute/path` selects it.
 `--input=...jsonl` replays an export. `--out=...` isolates artifacts. The default
-long seeds are 17, 20261011 and 314159. CI uses all 937 fixed programs,
-enumeration bound 1, and 128 programs of each generator (v5, `generator`, and v6,
-`generator6`: constructions, views and record updates) at seed 17. Runs use at most eight
+long seeds are 17, 20261011 and 314159. CI uses all 1,065 fixed programs
+(2026-11-05: the record probes are the `record` family, and the targeted
+product's record part is targeted 740–795), enumeration bound 1, and 128
+programs of each generator (v5, `generator`; v6, `generator6`: constructions,
+views and record updates; v7, `generator7`: record objects, CI only until
+#2010) at seed 17. Runs use at most eight
 workers, with each compiler child on one thread. On Linux pin the parent with
 `taskset -c 0-7` to bound its entire process tree. Never rebuild the oracle
 executable while a campaign is spawning its exporter or reducer.

@@ -57,7 +57,7 @@ if (options.input) inputs.push(resolve(options.input));
 else {
   // Generator v7 (record objects, #1872) runs in CI only: the long
   // campaign's recorded baseline (`bridge-coverage.json`) has no v7 stream
-  // yet, and a long run that added one would fail that check (#1872's debt).
+  // yet, and a long run that added one would fail that check (#2010).
   const suites = options.suite ? [options.suite] :
     ['fixtures','enumerate','generator','generator6', ...(options.ci ? ['generator7'] : [])];
   for (const suite of suites) {
@@ -77,7 +77,7 @@ if(options.ci) await must(process.execPath,[resolve(own,'scripts/bridge-read-sel
 const total = { programs: 0, translated: 0, skipped: 0, valueChecked: 0, agreements: 0, precision: 0, leads: 0,
   sites: { agreement: 0, precision: 0, lead: 0, unknown: 0, extra: 0, pending: 0,
     ambiguousAgreement:0,ambiguousPrecision:0 },
-  recordSites: { agreement: 0, precision: 0, lead: 0, unknown: 0, extra: 0, pending: 0 },
+  recordSites: { agreement: 0, precision: 0, lead: 0, unknown: 0, extra: 0, pending: 0, hoistLead: 0 },
   skipReasons: {}, constructs: {}, families: {}, precisionPatterns: {}, precisionPrograms: {}, precisionExamples: {}, cases: [], jobs,
   minimization: options['no-minimize'] ? 'disabled; original checks and paired executions unchanged' : 'historical persistent-runtime relation',
   environment:{node:process.version,platform:inPlace,compilerSha256:createHash('sha256').update(await readFile(compiler)).digest('hex'),
@@ -387,6 +387,10 @@ async function checkBatch(programs, n) {
       // A site with a record line (#1872): an update or a call that writes a
       // record argument. Its counts are a subset of the sites'.
       if(ds.some(d=>d.record))total.recordSites[kind]++;
+      // A lead whose Zig record line hoists a read before its write: the
+      // oracle has no hoist and refuses that read on purpose (DESIGN.md,
+      // *Records written in place*).
+      if(kind==='lead'&&ds.some(d=>d.record&&/\[hoisted \d+\]/.test(d.detail)))total.recordSites.hoistLead++;
       if(kind==='lead')siteLeads.push(site);
     }
     // A non-accepted record line refuses the program (§31.9), as a list
@@ -411,7 +415,7 @@ async function checkBatch(programs, n) {
       const originalRuntime = zig ? await confirmation(p,evidence) : {status:"blocked-by-other-refusals"};
       const reduction = !options['no-minimize'] && ["unconfirmed","confirmed"].includes(originalRuntime.status) ? await minimize(p,evidence,originalRuntime) : null;
       const runtime = reduction?.runtime ?? originalRuntime;
-      const report = { id:p.record[2], family:p.record[1], lean:p.record[8], leanSite:failed, siteLeads, programLead:category==='leads', demands, limits, originalRuntime, runtime, reduction };
+      const report = { id:p.record[2], family:p.record[1], lean:p.record[8], leanSite:failed, siteLeads, programLead:category==='leads', demands, updates:demands.updates ?? [], limits, originalRuntime, runtime, reduction };
       await writeFile(resolve(evidence,'evidence.json'),JSON.stringify({ ...report, record:p.record, declarations:p.ds },null,2));
       total.cases.push(report);
       console.log(`bridge lead ${p.record[2]}: ${runtime.status}`);
@@ -475,7 +479,8 @@ if(options.ci) {
   for(const [family,floor] of Object.entries({fixture:85,sync:61,targeted:548,enumerate:139,
     general:8,declarations:28,'branch-traversal':3,'fresh-tower':2,captures:4,
     'once-many-wrappers':3,'indexed-chain':5,'recursive-higher-order-limit':5,
-    recursion:1,'fresh-nested':2,constructions:26,'construct-declarations':30})) {
+    recursion:1,'fresh-nested':2,constructions:26,'construct-declarations':30,
+    record:34,objects:37,'object-declarations':27})) {
     if((total.families[family]?.translated??0)<floor) throw Error(`CI translation coverage fell below ${family} floor ${floor}`);
   }
   if(total.translated*4<total.programs) throw Error('CI translation coverage fell below 25%');

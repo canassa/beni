@@ -849,13 +849,15 @@ Dead per field. `applyCall_demands` now says that each row passed its tests
 against some live set, which is all that `linkedWritesCovered_of_applyCall`
 reads (its Disjoint part). The assign case of the flat fragment's
 `assignStep` names `recordDemand`; `assign_preserved` reads the whole demand
-from the same state (`Push.demand_run_none`). No theorem statement of the
-soundness chain changed, and the pinned `sorryAx` set did not change. The
+from the same state (`Push.demand_run_none`). `accepted_traces_agree` and
+`accepted_flat_anf_traces_agree` keep their statements, `summary_sound` claims
+more (below), and the pinned `sorryAx` set did not change. The
 probes: `calleeKept`, `layersKept` and `eitherKept` are accepted and their runs
 agree; `updateThenCallee`, `calleeTwice`, `layersWritten` and `eitherWritten`
 are refused and their runs differ; `callbackKept` is refused although its runs
 agree (a consume row has no field set). The bridge compares record verdicts
-(`BRIDGE.md`); generator v7 and the targeted product draw record objects; the
+(`BRIDGE.md`; counts in `RECORD-BRIDGE-RESULTS.md`); generator v7 and the
+targeted product draw record objects; the
 controls `record-dead`, `update-base` and `call-fields` have fixed witnesses
 (`Sync.holes`).
 
