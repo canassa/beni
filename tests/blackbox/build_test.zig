@@ -8929,7 +8929,7 @@ test "the checker v2's dump names a shared value, a method call, and gives lists
     try testing.expectEqual(@as(u8, 0), dump.exit_code);
     // The slot domain prints a top-level value's arrival as `shared`
     // (§2.10): `writeTop` answers it, `other` is never written.
-    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary writeTop: res ε shared; nondup yes\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dump.stdout, "  summary writeTop: res ε… shared; nondup yes\n") != null);
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "  13:5 List.push Main.helper: rejected top-level: Main.helper is a top-level value\n") != null);
     try testing.expect(std.mem.indexOf(u8, dump.stdout, "Main.other") == null);
     try testing.expect(std.mem.indexOf(u8, dump.stdout, " List.push xs: rejected later-use: xs is read again at ") != null);

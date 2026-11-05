@@ -12,6 +12,7 @@ const std = @import("std");
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const Subtree = @import("Subtree.zig");
 const Value = @import("Value.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
@@ -55,9 +56,9 @@ fn cellAt(t: *const Trees.Table, slots: *const Slots.Table, n: Contract.Node, pa
 /// virtual call `vi`: what it answers is a loan of the cell, but for a
 /// `modify` (a worded `cellmodify` whose code's contract is final) whose
 /// `.0` the stored `.1` cannot share (`lends`).
-pub fn answer(c: LabelChain.Chain, ev: *Relation.Eval, q: u32, li: u32, modify: bool, cs: Contract.Arrival, vi: u32) Error!void {
+pub fn answer(c: LabelChain.Chain, ev: *Relation.Eval, q: u32, li: u32, modify: bool, cs: Contract.Arrival, vi: u32, cell: ?Ids.PlaceId) Error!void {
     const vc = c.f.calls.items[vi];
-    if (modify and !try lends(c.f, c.f.roots.items[vc.root].path, try LabelChain.entriesOf(c, c.contracts.head(vc.contract).res_root))) return;
+    if (modify and try oneObject(c.f, cell) and !try lends(c.f, c.f.roots.items[vc.root].path, try LabelChain.entriesOf(c, c.contracts.head(vc.contract).res_root))) return;
     try lend(ev, q, li, cs);
 }
 
@@ -79,14 +80,15 @@ pub fn lends(f: *Value.Frame, from: Ids.PathId, es: *const Forest.Entries) Error
     var at = [2]u8{ 0, 0 };
     for (es.items.items) |rs| {
         const ws = es.wordsOf(rs);
-        // The answer's own tuple is neither part; an open entry is both.
-        if (ws.len == 0 and !rs.open) continue;
+        // The answer's own tuple is neither part. An open entry is both, and
+        // so is an answer that is no tuple of the callback's (a shared one).
+        if (ws.len == 0 and !rs.open and allFresh(rs.arrivals)) continue;
         if (!try holds(f, from, ws)) continue;
         var bits: u8 = 0;
         for (rs.arrivals) |a| bits |= switch (a.kind) {
             .param => @intFromBool(a.j == 0 or a.deep or Cells.throughContents(f.slots, a.slot)),
             .fresh => 2,
-            .shared => 0,
+            .shared => if (ws.len == 0) 4 else 0,
             else => 4,
         };
         const st: ?Step = if (ws.len != 0) Step.fromWord(ws[0]) else null;
@@ -94,7 +96,28 @@ pub fn lends(f: *Value.Frame, from: Ids.PathId, es: *const Forest.Entries) Error
             x.* |= bits;
         };
     }
-    return at[1] & 4 != 0 or at[0] & at[1] & 3 != 0;
+    // A label's answer at `.0` may be whatever `.1` holds.
+    return at[1] & 4 != 0 or at[0] & at[1] & 3 != 0 or (at[0] & 4 != 0 and at[1] != 0);
+}
+
+fn allFresh(arrivals: []const Contract.Arrival) bool {
+    for (arrivals) |a| if (a.kind != .fresh) return false;
+    return true;
+}
+
+/// Whether what a cell of handle place `cell` holds is at most one object:
+/// with no slot state, a stored value may hold one object at two of the
+/// contents' slots, and the frame reads two names (`Ref.set r ( n, n )`).
+/// A type variable's slot may hold any number.
+fn oneObject(f: *Value.Frame, cell: ?Ids.PlaceId) Error!bool {
+    const c = (try f.places.extend(f.gpa, f.gc(), try f.places.rootPath(f.gpa, cell orelse return false), Step.contents)) orelse return false;
+    var n: u32 = 0;
+    for (f.slots.items(try Subtree.belowAll(f.slots, f.gpa, f.account, f.places, c))) |s| {
+        const k = f.places.kind(f.places.pathPlace(.from(s)));
+        if (k == .@"var" or k == .@"opaque") return false;
+        if (Slots.isObject(f.places, .from(s))) n += 1;
+    }
+    return n <= 1;
 }
 
 /// Whether a slot at `words` below `from` may hold an object; one the

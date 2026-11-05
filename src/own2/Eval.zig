@@ -300,7 +300,8 @@ fn cellAnswer(e: *Evaluation, q: u32, li: u32, modify: bool, cs: Contract.Arriva
     const unknown = e.contracts.head(vc.contract).flags.pessimistic or solving;
     try Stored.leaves(e.chain(), &e.ev, q, modify, cs, vi, unknown, &ls);
     for (ls.items) |lf| try addEscapeAt(e, lf, e.fr().calls.items[q].point, vi);
-    try Loans.answer(e.chain(), &e.ev, q, li, modify and !unknown, cs, vi);
+    const ai = e.fr().calls.items[q].arg_insts;
+    try Loans.answer(e.chain(), &e.ev, q, li, modify and !unknown, cs, vi, if (cs.j < ai.len) try e.ctx.placeOfInst(e.ctx.ctx, ai[cs.j]) else null);
 }
 
 /// Call `q`'s writes and escapes (§2.11.2 items 4, 5): demands and escapes.

@@ -169,7 +169,7 @@ const layers = [_]Entry{
     .{ .file = "Stored.zig", .layer = 9, .max_lines = 65 },
     // A cell callback's label, and what it answers: a loan of the cell or
     // `modify`'s owned `.0` (#1977).
-    .{ .file = "Loans.zig", .layer = 9, .max_lines = 110 },
+    .{ .file = "Loans.zig", .layer = 9, .max_lines = 135 },
     // The subtree symbol's read-off beside the passed-on labels (§2.3.1).
     // A closure's cell operations on its captures, at its creation (#1727).
     .{ .file = "Eval.zig", .layer = 10, .max_lines = 640 },
