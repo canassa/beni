@@ -722,15 +722,38 @@ driver counts from the post to the delivery. A step that starts more
 fibers than 64 therefore shows them all run
 (`browser/tea/SettlesManyFibers`).
 
+**A turn is one task of the host's event loop, and it waits for no real
+time.** The driver queues it in the queue core's scheduler goes on in: a
+`setImmediate` under happy-dom, and in Chrome a message to a
+`MessagePort` of the driver's own, which the prelude makes before the page
+runs and does not count. A turn guarantees three things. It is a task and
+not a microtask, so every microtask queued before it has run when it runs.
+The host can run the tasks queued before it: under happy-dom every
+`setImmediate` queued before it has run. And it is the host's own, taken
+before the page runs, so a page that replaces `setImmediate` or
+`MessageChannel` does not change it. A turn does not guarantee where it falls
+among the scheduler's tasks: the count of what is pending decides when the
+page has settled, not the turn, so a turn that runs before a continuation
+costs one more turn and does not change the page. For the work the driver
+counts, a step's page therefore does not depend on how long a turn is. A
+turn does not wait for a timer of the host, for an answer from the
+network, or for anything else that becomes ready in real time; this
+includes happy-dom's own zero-delay timers, which carry its
+`window.postMessage`, `hashchange` and `FileReader` events. A turn is not a
+`setTimeout(…, 0)`: Node holds that to 1 ms and Chrome holds a nested one
+to 4 ms. A `frame` step settles after each frame it draws, so a page of
+many frames would wait mostly on that floor (`browser/tea/BallMachine`
+draws 340).
+
 After 1 000 turns the driver stops waiting and fails the step: `Error: the
 page still had a setImmediate to run after 1 000 turns` (`a message to
 deliver` in Chrome), `core's scheduler never ran dry` — a `throws` step
 too, which does not take the cap for the throw it expects. The step fires
 no later timer, frame or chunk, and a later settle of that page waits one
 turn, so a page that keeps the scheduler busy forever costs one capped
-settle — about 4 s in Chrome, which holds a nested timer to 4 ms — and not
-one per timer. (Such a page also grows core's queue without end, and V8
-refuses the queue's array, `RangeError: Invalid array length`, after a few
+settle — 1 000 turns, which add no real time to the scheduler's own work —
+and not one per timer. (Such a page also grows core's queue without end,
+and V8 refuses the queue's array, `RangeError: Invalid array length`, after a few
 seconds of work.) A message that is never delivered keeps the count above
 zero, so the next settle reaches the cap. Five things leave a message
 undelivered: a port the page never starts, a port closed (`close()`) with

@@ -242,7 +242,9 @@
 // loop while the scheduler has a continuation queued — a `setImmediate`
 // under happy-dom, a message to a `MessagePort` in Chrome, which has no
 // `setImmediate` and whose messages the prelude counts from the post to the
-// delivery. After 1 000 such turns the driver stops waiting and fails the
+// delivery. A turn is one task the driver queues in that same queue — a
+// `setImmediate`, a message to a port of its own — and waits for no real
+// time. After 1 000 such turns the driver stops waiting and fails the
 // step with an error that says so; the step fires no later timer, frame or
 // chunk, and a later settle of that page waits one turn. Work a page starts
 // outside that scheduler — a
@@ -401,6 +403,27 @@ function prelude() {
     for (const f of clock.drawing) if (f.id === id) f.cancelled = true;
     clock.frames = clock.frames.filter((f) => f.id !== id);
   };
+  // `settle`'s turn of the event loop: one task the driver queues in the
+  // queue core's scheduler goes on in, and no timer, which Node holds to
+  // 1 ms and Chrome, nested, to 4 ms. Under happy-dom it is Node's
+  // `setImmediate`; in Chrome, which has none, a message to a port of the
+  // driver's own channel, made here before the page runs and before the
+  // ports below are counted, so the count never sees it. Each message
+  // resolves the oldest turn waiting.
+  if (typeof process === "object") {
+    const immediate = globalThis.setImmediate;
+    record.turn = () => new Promise((done) => immediate(done));
+  } else {
+    const channel = new MessageChannel();
+    const send = MessagePort.prototype.postMessage;
+    const waiting = [];
+    channel.port1.onmessage = () => waiting.shift()();
+    record.turn = () =>
+      new Promise((done) => {
+        waiting.push(done);
+        send.call(channel.port2, null);
+      });
+  }
   // Where the host has no `setImmediate` — Chrome — core's scheduler goes on
   // in a message to a `MessagePort`, so the messages the page posted and
   // that were not yet delivered are counted, for `settle`: a post that did
@@ -1634,17 +1657,21 @@ function step(s) {
 // 64 tasks a turn and escapes for the rest to a `setImmediate` where the
 // host has one (happy-dom, in Node) and to a message to a `MessagePort`
 // where it has not (Chrome), so a phase that starts more work than that is
-// not over after one timer's turn, and where the timer fell among those
+// not over after one turn, and where the turn fell among those
 // turns would be what a transcript shows (`browser/tea/SettlesManyFibers`,
 // `browser/direct/SettlesManyFibers`). Under happy-dom a pending
 // `setImmediate` is one Node lists; in Chrome a message is pending from its
-// post to its delivery (the prelude counts them). A page that queues one
+// post to its delivery (the prelude counts them). A turn is the prelude's
+// (`record.turn`): a task in the queue the scheduler goes on in, which
+// waits for no real time; where it falls among the scheduler's tasks
+// changes only how many turns a settle takes, since the count, not the
+// turn, says when the page has settled. A page that queues one
 // forever is not waited for after 1 000 turns: the step fails, and every
 // later settle of the page waits one turn. Resolves to whether the page
 // settled.
 async function settle() {
   const record = globalThis.__beniHarness;
-  const turn = () => new Promise((done) => record.clock.real(done, 0));
+  const turn = record.turn;
   const node = typeof process === "object";
   const busy = () => (node ? process.getActiveResourcesInfo().includes("Immediate") : record.ports.pending > 0);
   await turn();
