@@ -211,11 +211,14 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
             if (h.flags.words) if (Cells.supply(e.contracts, f.slots, l)) |cs| try cellAnswer(e, q, l, cs, got.value_ptr.*);
             continue;
         }
-        if (x.kind == .ref and x.family == Slots.empty and f.roots.items[x.root].kind == .param) {
-            // The frame's own parameter: the label passes on (one label per
-            // origin and function slot, whatever call met it).
-            const slot = try f.slots.relOf(gpa, f.account, f.places, f.pos.items[x.pos].slot);
-            const j = f.roots.items[x.root].a;
+        // The frame's own parameter, or a value that is one by every
+        // arrival (a callee's supply of it, `app1 f λg → g v`): the label
+        // passes on (one label per origin and function slot, whatever call
+        // met it; §2.11.3, #1775).
+        const own = x.kind == .ref and x.family == Slots.empty and f.roots.items[x.root].kind == .param;
+        if (if (own) .{ f.roots.items[x.root].a, try f.slots.relOf(gpa, f.account, f.places, f.pos.items[x.pos].slot) } else try FnRun.oneParam(&e.ev, arg, f.slots.relWords(l.slot))) |js| {
+            const j = js[0];
+            const slot = js[1];
             // Passed on by a known code a `taken` label runs (`λv → f v`
             // handed to `List.update`), the label keeps that row's mark:
             // what it is supplied may be the taken element (#1760).
@@ -232,7 +235,8 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
             if (h.flags.words) if (Cells.supply(e.contracts, f.slots, l)) |cs| try cellTaint(e, q, cs, &.{}, false, none);
             continue;
         }
-        // Unknown code: its answer is unknown, and what it is handed escapes.
+        // Unknown code: its answer is unknown, what it is handed escapes,
+        // and so does the function value, which it runs (§2.11.3).
         var ls: std.ArrayList(u32) = .empty;
         defer ls.deinit(gpa);
         const saved = e.ev.cur_sub;
@@ -241,6 +245,7 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
         try FnRun.supplied(&e.ev, e.chain(), q, l, &ls);
         e.ev.cur_sub = saved;
         for (ls.items) |lf| try addEscape(e, lf, call.point);
+        try escapeFns(e, arg, f.slots.relWords(l.slot), .run, call.point, q);
     }
 }
 
