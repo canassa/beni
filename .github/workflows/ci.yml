@@ -667,13 +667,16 @@ jobs:
       contents: read
 
   # The Pages deploy, on a push to master only: the site that `pages`
-  # built, after `browser` loaded it in Chrome with Pages' 404 rule. A
-  # site whose 404 stand-in fails is never deployed (the owner,
-  # 2026-11-05). Each push to master has a run of its own, and the Chrome
-  # jobs of two quick pushes can end in either order. Thus a run whose
-  # commit is no longer master's head deploys nothing, and the run of the
-  # head deploys: an older site never replaces a newer one. This job has
-  # no environment, so a run that does not deploy writes no deployment.
+  # built, after the whole `browser` job passed. Thus a site whose 404
+  # stand-in fails in Chrome is never deployed (the owner, 2026-11-05),
+  # and a failed Chrome corpus also stops the deploy. Each push to master
+  # has a run of its own, and the Chrome jobs of two quick pushes can end
+  # in either order. Thus a run whose commit is no longer master's head
+  # deploys nothing, and the run of the head deploys: an older site never
+  # replaces a newer one. When the run of the head fails, the site stays
+  # on an older commit until a newer push passes, or a re-run of the
+  # head's failed jobs. This job has no environment, so a run that does
+  # not deploy writes no deployment.
   pages-head:
     name: compare with master's head
     needs: [pages, browser]
