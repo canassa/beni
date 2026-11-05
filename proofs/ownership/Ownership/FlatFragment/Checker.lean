@@ -957,7 +957,7 @@ def assignStep (ctx : Context) (aenv : Env Abstract) (after : Live) (written : L
   match b with
   | .bottom => pure .bottom
   | .list cs (.record fs) ex => do
-    demand ctx.config cs (union (recordLiveCells written cs aenv after) ctx.pinned)
+    recordDemand ctx.config cs written (union (recordLiveCells written cs aenv after) ctx.pinned)
       (union (cellsOf (assignKept written fs)) (cellsOf vs))
     pure (assignResult ctx (union (liveCellsWith ctx.config aenv after) ctx.pinned) written cs fs ex vs)
   | _ => throw "abstract update shape"
@@ -1032,7 +1032,7 @@ theorem assignStep_success {ctx : Context} {aenv : Env Abstract} {after : Live} 
     (run : (assignStep ctx aenv after written b vs).run before = .ok (result, next)) :
     (b = .bottom ∧ result = .bottom ∧ next = before) ∨
     ∃ cs fs ex, b = .list cs (.record fs) ex ∧
-      (demand ctx.config cs (union (recordLiveCells written cs aenv after) ctx.pinned)
+      (recordDemand ctx.config cs written (union (recordLiveCells written cs aenv after) ctx.pinned)
         (union (cellsOf (assignKept written fs)) (cellsOf vs))).run before = .ok ((), next) ∧
       result = assignResult ctx (union (liveCellsWith ctx.config aenv after) ctx.pinned) written cs fs ex vs := by
   unfold assignStep at run

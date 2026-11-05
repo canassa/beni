@@ -21,8 +21,10 @@ export function historicalFixedPrefix(text, expectedSha256) {
     }
     assert.equal(row[0], 'program');
     assert.equal(row.length, 14);
-    const family = row[1], match = row[2].match(/^(fixture|sync|targeted)-(\d+)$/);
-    assert(match && match[1] === family && Object.hasOwn(limits, family));
+    const family = row[1], match = row[2].match(/^(fixture|sync|targeted|record)-(\d+)$/);
+    assert(match && match[1] === family);
+    // A later fixed family (`record`, #1872) is appended after the pinned ones.
+    if (!Object.hasOwn(limits, family)) continue;
     if (Number(match[2]) >= limits[family]) continue;
     assert.equal(row[2], `${family}-${counts[family]++}`, 'historical fixed id/order changed');
     const declarations = tables.get(row[3]);

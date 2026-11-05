@@ -26,13 +26,15 @@ grammar plus 740 targeted programs, required negative controls (including `set-e
 and a falsifier that fails when summary coverage is excessively vacuous.
 The sync models branch-local escapes, inductive model/container conditions,
 fold accumulators, markup event slots, constructor callbacks and returns-owned
-tagger obligations. Twenty-two holes are required through the seed-independent
+tagger obligations. Twenty-seven holes (`Mutant.enumeratorRequired`) are required through the seed-independent
 targeted enumerator, including the retained-reader-after-append hole. The
 case-lowered withDefault rule also has a required `branch-live` witness.
 The §29 result/capture/fold/callee rules have six independent required holes. Six further holes cover
 Err payloads, recursive payloads, shared initialization, retained entry captures,
 repeated transfer authority and its frame boundary. Two more (`construct-disjoint`,
-`view-alias`) cover constructions and list views. Result, Chain, construction and view fixtures
+`view-alias`) cover constructions and list views, and three (`record-dead`, `update-base`,
+`call-fields`, #1872) cover records written in place. Result, Chain, construction, view and
+record fixtures
 cross the shipping bridge; entry projections remain counted skips. `Sync.lean` and DESIGN.md
 state the projections and their runtime boundaries.
 `no-scope` is a checker-level probe: typed programs cannot reach an unbound

@@ -1,5 +1,6 @@
 import Ownership.Fixtures
 import Ownership.BridgeWire
+import Ownership.RecordPrograms
 
 /-! File protocol for the external, black-box compiler differential. It exports
     the existing program streams, never a separately generated lookalike. -/
@@ -209,9 +210,12 @@ def writeExport (path suite : String) (count seed bound : Nat) : IO Unit := do
     for (f, i) in Fixtures.all.zipIdx do emit "fixture" s!"fixture-{i}" f.program
     for ((_, p, _), i) in Sync.fixtures.zipIdx do emit "sync" s!"sync-{i}" p
     for (p, i) in Targeted.programs.zipIdx do emit "targeted" s!"targeted-{i}" p
-  else if suite == "generator" || suite == "generator6" then
-    let version := if suite == "generator" then 5 else 6
-    let tag := if suite == "generator" then "seed" else "v6"
+    -- The record objects' probes (#316, #1872), after every earlier family,
+    -- so no historical id or table moves.
+    for (p, i) in RecordPrograms.all.zipIdx do emit "record" s!"record-{i}" p
+  else if suite == "generator" || suite == "generator6" || suite == "generator7" then
+    let version := if suite == "generator" then 5 else if suite == "generator6" then 6 else 7
+    let tag := if suite == "generator" then "seed" else if suite == "generator6" then "v6" else "v7"
     let mut state := seed
     for i in List.range count do
       let ((family, p), next) := (Oracle.generateVersion version).run state

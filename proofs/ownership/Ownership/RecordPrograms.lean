@@ -312,8 +312,9 @@ def calleeWritten : Program := { declarations := shifts, main := (
   .letE 4 (.prim (.get 0) [v 2]) <|
   .prim .add [v 3, v 4]) }
 
-/-- `shift r`, then `r.b`, a field the callee keeps. A summary's write names
-    the object, not its fields (no `W{F}` yet), so this core refuses it. -/
+/-- `shift r`, then `r.b`, a field the callee keeps. The summary's write names
+    its field, `π1 W{a}` (§31.7, #1872), so the call's Dead test reads the
+    later `r.b` per field: no use of the object. -/
 def calleeKept : Program := { declarations := shifts, main := (
   .letE 0 (.prim .object [.int 1, .int 2]) <|
   .letE 1 (.closure 0 []) <|
@@ -321,6 +322,99 @@ def calleeKept : Program := { declarations := shifts, main := (
   .letE 3 (.prim (.get 1) [v 0]) <|
   .letE 4 (.prim (.get 0) [v 2]) <|
   .prim .add [v 3, v 4]) }
+
+/-- `s = { r | a = 5 }`, then `shift r`: the callee reads `r.a`, the field
+    the update wrote. An argument is a whole use, so the update is refused. -/
+def updateThenCallee : Program := { declarations := shifts, main := (
+  .letE 0 (.prim .object [.int 1, .int 2]) <|
+  .letE 1 (.closure 0 []) <|
+  .letE 2 (.assign 2 [0] (v 0) [.int 5]) <|
+  .letE 3 (.app (v 1) [v 0]) <|
+  .letE 4 (.prim (.get 0) [v 2]) <|
+  .letE 5 (.prim (.get 0) [v 3]) <|
+  .prim .add [v 4, v 5]) }
+
+/-- `shift r` twice: the second call hands `r` whole to a callee that reads
+    `r.a`, which the first call wrote (§31.7's `(shift 3 origin).x`). The
+    first call is refused. -/
+def calleeTwice : Program := { declarations := shifts, main := (
+  .letE 0 (.prim .object [.int 1, .int 2]) <|
+  .letE 1 (.closure 0 []) <|
+  .letE 2 (.app (v 1) [v 0]) <|
+  .letE 3 (.app (v 1) [v 0]) <|
+  .letE 4 (.prim (.get 0) [v 2]) <|
+  .letE 5 (.prim (.get 0) [v 3]) <|
+  .prim .add [v 4, v 5]) }
+
+/-- `{ a : Int, b : Int, c : Int }`. -/
+def tQ : Ty := .object [.int, .int, .int]
+
+/-- Declaration 0, `shiftA p = { p | a = p.a + 3 }`; declaration 1,
+    `shiftAB p = { shiftA p | b = 9 }`, which writes `a` through its callee
+    and `b` itself: `π1 W{a, b}`. Declaration 2, `either c p`, which writes
+    `a` in one arm and `b` in the other: the arms join to `π2 W{a, b}`. -/
+def layers : List Decl := [
+  { name := "shiftA", parameters := [tQ], result := tQ,
+    body := .letE 1 (.prim (.get 0) [v 0]) <| .letE 2 (.prim .add [v 1, .int 3]) <|
+      .assign 3 [0] (v 0) [v 2] },
+  { name := "shiftAB", parameters := [tQ], result := tQ,
+    body := .letE 1 (.closure 0 []) <| .letE 2 (.app (v 1) [v 0]) <|
+      .assign 3 [1] (v 2) [.int 9] },
+  { name := "either", parameters := [.int, tQ], result := tQ,
+    body := .branch (v 0) (.assign 3 [0] (v 1) [.int 7]) (.assign 3 [1] (v 1) [.int 8]) }]
+
+/-- `s = shiftAB r`, then `r.c`: neither layer writes `c`. -/
+def layersKept : Program := { declarations := layers, main := (
+  .letE 0 (.prim .object [.int 1, .int 2, .int 3]) <|
+  .letE 1 (.closure 1 []) <|
+  .letE 2 (.app (v 1) [v 0]) <|
+  .letE 3 (.prim (.get 2) [v 0]) <|
+  .letE 4 (.prim (.get 0) [v 2]) <|
+  .prim .add [v 3, v 4]) }
+
+/-- `s = shiftAB r`, then `r.b`: the outer layer wrote `b`. -/
+def layersWritten : Program := { declarations := layers, main := (
+  .letE 0 (.prim .object [.int 1, .int 2, .int 3]) <|
+  .letE 1 (.closure 1 []) <|
+  .letE 2 (.app (v 1) [v 0]) <|
+  .letE 3 (.prim (.get 1) [v 0]) <|
+  .letE 4 (.prim (.get 0) [v 2]) <|
+  .prim .add [v 3, v 4]) }
+
+/-- `s = either 0 r`, then `r.c`: no arm writes `c`. -/
+def eitherKept : Program := { declarations := layers, main := (
+  .letE 0 (.prim .object [.int 1, .int 2, .int 3]) <|
+  .letE 1 (.closure 2 []) <|
+  .letE 2 (.app (v 1) [.int 0, v 0]) <|
+  .letE 3 (.prim (.get 2) [v 0]) <|
+  .letE 4 (.prim (.get 0) [v 2]) <|
+  .prim .add [v 3, v 4]) }
+
+/-- `s = either 0 r`, then `r.a`: the arm that the run takes writes `a`. -/
+def eitherWritten : Program := { declarations := layers, main := (
+  .letE 0 (.prim .object [.int 1, .int 2, .int 3]) <|
+  .letE 1 (.closure 2 []) <|
+  .letE 2 (.app (v 1) [.int 0, v 0]) <|
+  .letE 3 (.prim (.get 0) [v 0]) <|
+  .letE 4 (.prim (.get 0) [v 2]) <|
+  .prim .add [v 3, v 4]) }
+
+/-- Declaration 0, `shift`; declaration 1, `applyTo f p = f p`. A write
+    through a callback is a consume row, which has no field set. -/
+def applies : List Decl := shifts ++ [
+  { name := "applyTo", parameters := [.fn [tP] tP, tP], result := tP,
+    body := .app (v 0) [v 1] }]
+
+/-- `s = applyTo shift r`, then `r.b`: the consume is whole, so the later
+    read of the kept field is a use. Refused, although the runs agree. -/
+def callbackKept : Program := { declarations := applies, main := (
+  .letE 0 (.prim .object [.int 1, .int 2]) <|
+  .letE 1 (.closure 0 []) <|
+  .letE 2 (.closure 1 []) <|
+  .letE 3 (.app (v 2) [v 1, v 0]) <|
+  .letE 4 (.prim (.get 1) [v 0]) <|
+  .letE 5 (.prim (.get 0) [v 3]) <|
+  .prim .add [v 4, v 5]) }
 
 /-! ## Write extent (#670): an update is a storage write of the object -/
 
@@ -370,5 +464,81 @@ def bumpTwice : Program := { declarations := bumps, main := (
   .letE 4 (.prim (.get 1) [v 2]) <|
   .letE 5 (.prim (.get 1) [v 3]) <|
   .prim .add [v 4, v 5]) }
+
+/-! ## The targeted product (#1872)
+
+Templates of the record rules, over a starting value `n`: a read after an
+update, at the written field or the kept one; two updates through one holder;
+a read after a call that writes a field, at that field or the kept one; an
+update and then a call that reads the written field; two calls in turn. Under
+the record controls (`record-dead`, `update-base`, `call-fields`) the refused
+ones are accepted and their runs differ. -/
+
+/-- `r = { a = n, b = n + 1 }; s = { r | f_written = n + 5 }`, then `r.f_later`. -/
+def readAfter (n : Int) (written later : Nat) : Program := { main := (
+  .letE 0 (.prim .object [.int n, .int (n + 1)]) <|
+  .letE 1 (.assign 2 [written] (v 0) [.int (n + 5)]) <|
+  .letE 2 (.prim (.get later) [v 0]) <|
+  .letE 3 (.prim (.get 0) [v 1]) <|
+  .prim .add [v 2, v 3]) }
+
+/-- `{ r | f_first = n + 5 }`, the result dead, then `{ r | f_second = n + 7 }`. -/
+def updateTwice (n : Int) (first second : Nat) : Program := { main := (
+  .letE 0 (.prim .object [.int n, .int (n + 1)]) <|
+  .letE 1 (.assign 2 [first] (v 0) [.int (n + 5)]) <|
+  .letE 2 (.assign 2 [second] (v 0) [.int (n + 7)]) <|
+  .atom (v 2)) }
+
+/-- Declaration 0, `p ↦ { p | f_written = p.f_written + 3 }`. -/
+def writerOf (written : Nat) : List Decl := [
+  { name := "writeField", parameters := [tP], result := tP,
+    body := .letE 1 (.prim (.get written) [v 0]) <| .letE 2 (.prim .add [v 1, .int 3]) <|
+      .assign 2 [written] (v 0) [v 2] }]
+
+/-- `s = writeField r`, then `r.f_later`. -/
+def callRead (n : Int) (written later : Nat) : Program := { declarations := writerOf written, main := (
+  .letE 0 (.prim .object [.int n, .int (n + 1)]) <|
+  .letE 1 (.closure 0 []) <|
+  .letE 2 (.app (v 1) [v 0]) <|
+  .letE 3 (.prim (.get later) [v 0]) <|
+  .letE 4 (.prim (.get 0) [v 2]) <|
+  .prim .add [v 3, v 4]) }
+
+/-- `s = { r | a = n + 5 }`, then `writeField r`, which reads `r.a`. -/
+def updateThenCall (n : Int) : Program := { declarations := writerOf 0, main := (
+  .letE 0 (.prim .object [.int n, .int (n + 1)]) <|
+  .letE 1 (.closure 0 []) <|
+  .letE 2 (.assign 2 [0] (v 0) [.int (n + 5)]) <|
+  .letE 3 (.app (v 1) [v 0]) <|
+  .letE 4 (.prim (.get 0) [v 2]) <|
+  .letE 5 (.prim (.get 0) [v 3]) <|
+  .prim .add [v 4, v 5]) }
+
+/-- `writeField r` twice. -/
+def callTwice (n : Int) : Program := { declarations := writerOf 0, main := (
+  .letE 0 (.prim .object [.int n, .int (n + 1)]) <|
+  .letE 1 (.closure 0 []) <|
+  .letE 2 (.app (v 1) [v 0]) <|
+  .letE 3 (.app (v 1) [v 0]) <|
+  .letE 4 (.prim (.get 0) [v 2]) <|
+  .letE 5 (.prim (.get 0) [v 3]) <|
+  .prim .add [v 4, v 5]) }
+
+/-- The product, complete at these bounds: 14 programs per starting value. -/
+def product : List Program := [-1, 0, 1, 2].flatMap fun n =>
+  [0, 1].flatMap (fun w => [0, 1].map (readAfter n w)) ++
+  [0, 1].flatMap (fun f => [0, 1].map (updateTwice n f)) ++
+  [0, 1].flatMap (fun w => [0, 1].map (callRead n w)) ++
+  [updateThenCall n, callTwice n]
+
+/-- Every probe program, in the order of this file: the bridge exports them as
+    the fixed `record` family (#1872), after every earlier fixed family. -/
+def all : List Program := [
+  keptRead, writtenRead, hoistedRead, wholeUse, allFields, allFieldsCaptured, aliasKept,
+  payloadRead, payloadKept, twoPaths, twoForms, captureWhole, captureField, forItems,
+  forShared, forLive, topLevel, copied, nested, twoUpdates, sameFieldTwice, selfHandler,
+  fieldHandler, callee, calleeWritten, calleeKept, updateThenCallee, calleeTwice,
+  layersKept, layersWritten, eitherKept, eitherWritten, callbackKept, heldField,
+  heldFieldKept, bumpOnce, bumpTwice]
 
 end Ownership.RecordPrograms

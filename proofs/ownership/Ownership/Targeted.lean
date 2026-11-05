@@ -1,5 +1,6 @@
 import Ownership.Enumerate
 import Ownership.Sync
+import Ownership.RecordPrograms
 
 namespace Ownership.Targeted
 open Generator (tL tN tR fIL fIR)
@@ -69,7 +70,9 @@ def programs : List Program :=
   ints.flatMap (fun n => ints.flatMap fun c => [Prim.eq, Prim.lt].flatMap fun op => [0,1].map (shapeJoin n c op)) ++
   ints.flatMap (fun n => [0,1].map (setExclusive n)) ++
   ints.flatMap (fun n => [0,1,2].flatMap fun steps => [Prim.eq, Prim.lt].flatMap fun op => [false,true].map (recursion n steps op)) ++ Sync.extraPrograms ++
-  Sync.constructionPrograms
+  Sync.constructionPrograms ++
+  -- Records written in place (#1872), appended so no targeted id moves.
+  RecordPrograms.product
 
 def run (config : Config := {}) (mode : Enumerate.Mode := .full)
     (acceptedOut : Option System.FilePath := none) : IO Bool := do

@@ -1343,7 +1343,8 @@ theorem demand_run_none {before : St} {cs : List Origin} {later : List Origin} {
     (problem : demandProblem ({} : Config) before.facts.escapes cs later others = none) :
     (demand ({} : Config) cs later others).run before =
       .ok ((), {before with facts :=
-        {before.facts with writes := union before.facts.writes (cs.filter external)}}) := by
+        {before.facts with writes := union before.facts.writes (cs.filter external),
+                           fieldWrites := wholeFieldWrites before.facts.fieldWrites (cs.filter external)}}) := by
   dsimp [demand, getFacts, StateT.run, StateT.bind, StateT.map, StateT.get]
   simp only [pure_bind]
   rw [problem]
@@ -1355,7 +1356,8 @@ theorem demand_success_escapes {before : St} {next : St} {cs : List Origin} {lat
   rw [demand_run_none (demand_success_problem run)] at run
   have equal := Except.ok.inj run
   have same : next = {before with facts :=
-      {before.facts with writes := union before.facts.writes (cs.filter external)}} :=
+      {before.facts with writes := union before.facts.writes (cs.filter external),
+                         fieldWrites := wholeFieldWrites before.facts.fieldWrites (cs.filter external)}} :=
     (congrArg Prod.snd equal).symm
   subst same
   rfl
