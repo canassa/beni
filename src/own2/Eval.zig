@@ -27,6 +27,7 @@ const RowEnv = @import("RowEnv.zig");
 const Host = @import("Host.zig");
 const LabelChain = @import("LabelChain.zig");
 const Across = @import("Across.zig");
+const Stored = @import("Stored.zig");
 const Captures = @import("Captures.zig");
 const FnRun = @import("FnRun.zig");
 const W = @import("Walk.zig");
@@ -209,7 +210,8 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
                 }
             }
             try e.ev.known.put(gpa, .{ q, @intCast(li) }, got.value_ptr.*);
-            if (h.flags.words) if (Cells.supply(e.contracts, f.slots, l)) |cs| try cellAnswer(e, q, l, cs, got.value_ptr.*);
+            // A label supplied one cell's contents may store what it answers there, passed on or not (#1955).
+            if (Cells.supply(e.contracts, f.slots, l)) |cs| try cellAnswer(e, q, h.flags.words and l.origin[2] == 1, cs, got.value_ptr.*);
             continue;
         }
         // The frame's own parameter, or a value that is one by every
@@ -233,7 +235,13 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
             try e.ev.label_map.put(gpa, .{ q, @intCast(li) }, got.value_ptr.*);
             try e.passes.append(gpa, .{ got.value_ptr.*, q, @intCast(li) });
             // What the passed-on code answers is stored in the cell, and it is unknown here (§2.13.7).
-            if (h.flags.words) if (Cells.supply(e.contracts, f.slots, l)) |cs| try cellTaint(e, q, cs, &.{}, false, none);
+            if (h.flags.words) if (Cells.supply(e.contracts, f.slots, l)) |cs| blk: {
+                var ls: std.ArrayList(u32) = .empty;
+                defer ls.deinit(gpa);
+                try Stored.taint(&e.ev, q, cs, &.{}, false, &ls);
+                for (ls.items) |lf| try addEscapeAt(e, lf, call.point, none);
+                break :blk;
+            };
             continue;
         }
         // Unknown code: its answer is unknown, what it is handed escapes,
@@ -278,38 +286,17 @@ pub fn entriesOf(e: *Evaluation, root: Contract.Node) Error!*Forest.Entries {
 }
 
 /// What a known cell callback answers is stored back in the cell
-/// (§2.13.7). Where it may share what the cell holds with something else
-/// (`Cells.shared`: a capture, a top-level value, an unknown answer), that
-/// part of the contents escapes at the call (`cellTaint`), so a later edit
-/// of it in place is refused `escaped`.
-fn cellAnswer(e: *Evaluation, q: u32, l: Contract.Label, cs: Contract.Arrival, vi: u32) Error!void {
-    const f = e.fr();
-    const vc = f.calls.items[vi];
-    const kh = e.contracts.head(vc.contract);
+/// (§2.13.7): where it may share what the cell holds with something else,
+/// that part of the contents and the answer's objects there escape at the
+/// call (`Stored`), so a later edit of either in place is refused.
+fn cellAnswer(e: *Evaluation, q: u32, modify: bool, cs: Contract.Arrival, vi: u32) Error!void {
+    const vc = e.fr().calls.items[vi];
     // A code of the group being solved has no final contract yet.
     const solving = if (e.solver) |sv| vc.code != none and sv.member(sv.ctx, vc.code) != null else false;
-    if (kh.flags.pessimistic or solving) return cellTaint(e, q, cs, &.{}, false, vi);
-    var sh: std.ArrayList(Cells.Shared) = .empty;
-    defer sh.deinit(e.gpa());
-    // `Rows.fromWords` gives a `cellmodify` label offset 1: only `.1` is stored.
-    try Cells.shared(try entriesOf(e, kh.res_root), l.origin[2] == 1, &sh, e.gpa());
-    for (sh.items) |x| try cellTaint(e, q, cs, x.words, x.drop, vi);
-}
-
-/// What call `q`'s cell holds at `below` under its `◆` (less its first
-/// step when `drop`) escapes at the call (§2.13.7): it may be held elsewhere
-/// now. `vi`: the callback's virtual call, whose own writes of what it was
-/// supplied this does not refuse.
-fn cellTaint(e: *Evaluation, q: u32, cs: Contract.Arrival, bw: []const u32, drop: bool, vi: u32) Error!void {
-    const f = e.fr();
-    const gpa = e.gpa();
-    const call = f.calls.items[q];
-    if (cs.j >= call.args.len) return;
-    const words = try std.mem.concat(e.ev.arena, u32, &.{ f.slots.relWords(cs.slot), bw[@min(@intFromBool(drop), bw.len)..] });
-    var ps: std.ArrayList(Relation.Proj) = .empty;
-    defer ps.deinit(gpa);
-    try e.ev.project(call.args[cs.j], words, true, 0, 0, &ps);
-    for (ps.items) |p| try addEscapeAt(e, p.leaf, call.point, vi);
+    var ls: std.ArrayList(u32) = .empty;
+    defer ls.deinit(e.gpa());
+    try Stored.leaves(e.chain(), &e.ev, q, modify, cs, vi, e.contracts.head(vc.contract).flags.pessimistic or solving, &ls);
+    for (ls.items) |lf| try addEscapeAt(e, lf, e.fr().calls.items[q].point, vi);
 }
 
 /// Call `q`'s writes and escapes (§2.11.2 items 4, 5): demands and escapes.

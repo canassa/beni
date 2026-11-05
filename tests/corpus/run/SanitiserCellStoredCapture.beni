@@ -1,0 +1,65 @@
+-- A runtime catch for a cell callback that stores a list its caller still
+-- names (`ownership-v2.md` §2.13.7, *what the callback answers is stored
+-- back*; #1955). `Ref.update`'s answer, or `Ref.modify`'s `.1`, is a
+-- captured list; the caller then edits that list in place and reads the
+-- cell. The callback is handed to the cell directly, through a helper that
+-- passes it on, and through a helper whose own callback calls it. Each
+-- prints the edited list's length and then the cell's: the list the cell
+-- holds is the one before the edit.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+upd : Ref (List Int), (List Int → List Int) → ⊤
+upd r f = Ref.update r f
+
+
+wrapped : Ref (List Int), (List Int → List Int) → ⊤
+wrapped r f = Ref.update r λxs → f xs
+
+
+viaUpdate : ⊤ → Int
+viaUpdate ⊤ =
+    put = [ 7 ]
+    r = Ref.make [ 0 ]
+    Ref.update r λ_ → put
+    n = List.length (List.push put 1)
+    n * 10 + List.length (Ref.get r)
+
+
+viaModify : ⊤ → Int
+viaModify ⊤ =
+    put = [ 7 ]
+    r = Ref.make [ 0 ]
+    _ = Ref.modify r λxs → ( List.length xs, put )
+    n = List.length (List.push put 1)
+    n * 10 + List.length (Ref.get r)
+
+
+viaHelper : ⊤ → Int
+viaHelper ⊤ =
+    put = [ 7 ]
+    r = Ref.make [ 0 ]
+    upd r λ_ → put
+    n = List.length (List.push put 1)
+    n * 10 + List.length (Ref.get r)
+
+
+viaWrapped : ⊤ → Int
+viaWrapped ⊤ =
+    put = [ 7 ]
+    r = Ref.make [ 0 ]
+    wrapped r λ_ → put
+    n = List.length (List.push put 1)
+    n * 10 + List.length (Ref.get r)
+
+
+main : Program
+main =
+    Node.print
+        (String.join
+            (List.map [ viaUpdate ⊤, viaModify ⊤, viaHelper ⊤, viaWrapped ⊤ ] String.fromInt)
+            " "
+        )
