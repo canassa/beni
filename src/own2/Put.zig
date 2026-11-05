@@ -12,6 +12,7 @@ const Slots = @import("Slots.zig");
 const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
 const Eval = @import("Eval.zig");
+const FnRun = @import("FnRun.zig");
 
 const Error = Eval.Error;
 const PathId = Ids.PathId;
@@ -24,6 +25,14 @@ const none = std.math.maxInt(u32);
 pub const ResList = struct { label: u32 = none, k: u32 = 0 };
 /// Where a parameter effect goes.
 pub const EffList = enum(u8) { reads, writes, escapes };
+
+/// A closure of the frame said into a label's supply (which names objects,
+/// never a code) is handed to unseen code: it escapes (§2.11.3, #1776).
+pub fn handed(s: *Sink, li: u32, out: ResList) Error!void {
+    const e, const l = .{ s.e, s.e.fr().leafAt(li) };
+    if (out.label == none or l.kind != .site or !FnRun.frameSite(e.contracts, e.ctx, e.w.closures.items, l.atom)) return;
+    try e.fn_escapes.append(e.gpa(), .{ .leaf = li, .point = none });
+}
 
 pub fn labelIndex(s: *Sink, cb: u32) Error!u32 {
     const gpa = s.e.gpa();
