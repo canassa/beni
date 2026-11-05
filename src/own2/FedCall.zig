@@ -68,7 +68,7 @@ pub fn at(e: *Eval, call: u32, o: u64) Error!Got {
             for (rs.arrivals) |a| switch (a.kind) {
                 .param => if (a.j != k) {
                     const x = if (a.j < e.f.calls.items[vi].args.len) e.f.val(e.f.calls.items[vi].args[a.j]) else return .no;
-                    if (x.kind != .ref or try holdsAt(e, e.f.roots.items[x.root].path, e.f.slots.relWords(a.slot))) return .no;
+                    if (x.kind != .ref or try holdsAt(e, e.f.pos.items[x.pos].slot, e.f.slots.relWords(a.slot))) return .no;
                 },
                 .fresh => {},
                 .cb => {

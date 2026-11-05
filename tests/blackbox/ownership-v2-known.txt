@@ -4219,7 +4219,6 @@ tests/corpus/ownership/WriteExtents.beni [browser-inline] WriteExtents 56:7 #0 :
 tests/corpus/ownership/core/CastOccurrence.beni [node] CastOccurrence 16:5 #0 :: List.map rows[*] :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/core/CastOccurrence.beni [node] CastOccurrence 9:5 #0 :: List.map rows[*] :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/ownership/core/FullCast.beni [node] FullCast 99:5 #0 :: List.map rows[*] :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
-tests/corpus/run/ListForms.beni ListForms 106:24 #0 :: List.map others[*] :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/run/ListForms.beni ListForms 166:31 #0 :: List.foldl <literal> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/run/OwnershipFoldElementPaths.beni OwnershipFoldElementPaths 21:12 #0 :: List.foldl <literal> :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
 tests/corpus/run/OwnershipFoldElementPaths.beni OwnershipFoldElementPaths 21:12 #0 :: List.foldl <literal>[*].1 :: accepted :: rejected  v2 refuses where v1 accepted: the slot domain is less precise here (#1713)
@@ -5585,3 +5584,5 @@ tests/corpus/run/SanitiserAnswersApart.beni SanitiserAnswersApart 53:14 #0 :: Sa
 tests/corpus/run/SanitiserAnswersApart.beni SanitiserAnswersApart 54:16 #0 :: SanitiserAnswersApart.pushAll <call>[*] :: rejected :: accepted  v2 reads the code's answers (§2.11.3, a traversal's supply); v1 refuses, or has no such demand.
 tests/corpus/run/SanitiserAnswersApart.beni SanitiserAnswersApart 57:12 #0 :: Ref.make <call> :: absent :: accepted  v2 reads the code's answers (§2.11.3, a traversal's supply); v1 refuses, or has no such demand.
 tests/corpus/run/SanitiserAnswersApart.beni SanitiserAnswersApart 58:14 #0 :: SanitiserAnswersApart.pushAll <call>[*] :: rejected :: accepted  v2 reads the code's answers (§2.11.3, a traversal's supply); v1 refuses, or has no such demand.
+tests/corpus/run/SanitiserAnswers.beni SanitiserAnswers 94:13 #0 :: List.update <literal>[*] :: accepted :: rejected  v2 refuses at the call what v1 refuses at the write, or reads the code's answers (§2.11.3, a traversal's supply).
+tests/corpus/run/SanitiserAnswers.beni SanitiserAnswers 94:49 #0 :: List.push r :: rejected :: accepted  v2 refuses at the call what v1 refuses at the write, or reads the code's answers (§2.11.3, a traversal's supply).

@@ -429,8 +429,7 @@ fn check(e: *Eval, ps: []const Proj, routed: bool, read: ?*Answers.Reader) Error
                     gr.must = 0;
                     if (read != null and try Answers.allMade(e, r.a)) {
                         if (try Chains.gather(e, &occs, try instCond(e, r.a))) return Cond.unprovable;
-                        taken.clearRetainingCapacity();
-                        try st.take(g, gr.root, &taken);
+                        gr.settled = true;
                         continue;
                     }
                     if ((idx.len >= 2 or Entries.manyObjects(f, ents, idx)) and !Entries.allApart(ents, idx)) {
@@ -465,7 +464,7 @@ fn check(e: *Eval, ps: []const Proj, routed: bool, read: ?*Answers.Reader) Error
         }.ok);
         const latest = must orelse st.top(&st.expandable, struct {
             fn ok(gr: *const Entries.Group) bool {
-                return gr.members.items.len != 0;
+                return gr.members.items.len != 0 and !gr.settled;
             }
         }.ok) orelse break;
         if (must == null and st.nonempty < 2) break;
