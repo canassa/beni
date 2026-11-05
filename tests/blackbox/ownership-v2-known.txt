@@ -2244,7 +2244,6 @@ tests/corpus/ownership/FoldCertificateImportedPair [node] Main 27:14 #0 :: Main.
 # The slot domain (#1685): v2 rebuilt on the slot domain; each line's reason names its category.
 #
 # acc: 67
-tests/corpus/browser/tea/BallMachine Machine 108:39 #0 :: Physics.step w.balls :: rejected :: accepted  v2 reads the parts apart where v1 approximates (§2.3); the sanitiser oracle of #1685 checked this position or its kind
 tests/corpus/browser/tea/BallMachine Physics 306:29 #0 :: List.push faded.trail :: rejected :: accepted  v2 reads the parts apart where v1 approximates (§2.3); the sanitiser oracle of #1685 checked this position or its kind
 tests/corpus/ownership/ApartAcrossModules [node] Main 22:26 #0 :: List.push r :: rejected :: accepted  v2 reads the parts apart where v1 approximates (§2.3); the sanitiser oracle of #1685 checked this position or its kind
 tests/corpus/ownership/BesideRecordHelper.beni [node+everywhere] BesideRecordHelper 18:40 #0 :: List.push p.items :: rejected :: accepted  v2 reads the parts apart where v1 approximates (§2.3); the sanitiser oracle of #1685 checked this position or its kind
@@ -2333,7 +2332,6 @@ bench/corpus FormValidation 214:11 #0 :: FormValidation.andMap <call>#Invalid.0 
 bench/corpus FormValidation 215:11 #0 :: FormValidation.andMap <call>#Invalid.0 :: accepted :: rejected  #1704: under v2 core's and the platforms' contracts read as pessimistic, so a value through them is unknown or escapes
 bench/corpus FormValidation 216:11 #0 :: FormValidation.andMap <call>#Invalid.0 :: accepted :: rejected  #1704: under v2 core's and the platforms' contracts read as pessimistic, so a value through them is unknown or escapes
 platforms/browser-tea Tea 216:13 #0 :: Tea.performItems <call>.jobs#Table.0 :: accepted :: rejected  #1704: under v2 core's and the platforms' contracts read as pessimistic, so a value through them is unknown or escapes
-tests/corpus/browser/inline/FunctionElements.beni FunctionElements 34:13 #0 :: List.push xs :: accepted :: rejected  #1704: under v2 core's and the platforms' contracts read as pessimistic, so a value through them is unknown or escapes
 tests/corpus/browser/inline/ReturnedValidator.beni ReturnedValidator 33:13 #0 :: List.push xs :: accepted :: rejected  #1704: under v2 core's and the platforms' contracts read as pessimistic, so a value through them is unknown or escapes
 tests/corpus/browser/tea/RandomValues.beni RandomValues 85:21 #0 :: ++ rolls :: accepted :: rejected  #1704: under v2 core's and the platforms' contracts read as pessimistic, so a value through them is unknown or escapes
 tests/corpus/ownership/BridgeReturnedParameter.beni [browser-inline] BridgeReturnedParameter 106:26 #0 :: List.push <call> :: accepted :: rejected  #1704: under v2 core's and the platforms' contracts read as pessimistic, so a value through them is unknown or escapes
@@ -2465,8 +2463,6 @@ tests/corpus/run/SchemaTypeConstructorArgument Main 66:13 #0 :: Main.update seco
 platforms/browser-tea Tea 202:34 #0 :: Tea.perform <expression>.jobs#Table.0 :: absent :: accepted  the same demand under each checker's text: v2 names a path by its canonical slot and a callback write by its outer callee (§2.2)
 platforms/browser-tea Tea 202:34 #0 :: Tea.perform <record>.jobs#Table.0 :: accepted :: absent  the same demand under each checker's text: v2 names a path by its canonical slot and a callback write by its outer callee (§2.2)
 tests/corpus/browser/inline/FunctionElements.beni FunctionElements 14:17 #0 :: List.foldl Valid#Invalid.0 :: accepted :: absent  the same demand under each checker's text: v2 names a path by its canonical slot and a callback write by its outer callee (§2.2)
-tests/corpus/browser/tea/BallMachine Machine 57:23 #0 :: Ref.update world◆ :: absent :: accepted  the same demand under each checker's text: v2 names a path by its canonical slot and a callback write by its outer callee (§2.2)
-tests/corpus/browser/tea/BallMachine Machine 57:23 #0 :: value Physics.openTrap :: rejected :: absent  the same demand under each checker's text: v2 names a path by its canonical slot and a callback write by its outer callee (§2.2)
 tests/corpus/browser/tea/BallMachine Physics 294:10 #0 :: Physics.spawn <expression>.balls :: absent :: accepted  the same demand under each checker's text: v2 names a path by its canonical slot and a callback write by its outer callee (§2.2)
 tests/corpus/browser/tea/BallMachine Physics 294:10 #0 :: Physics.spawn <record>.balls :: accepted :: absent  the same demand under each checker's text: v2 names a path by its canonical slot and a callback write by its outer callee (§2.2)
 tests/corpus/browser/tea/HttpTrack.beni HttpTrack 117:15 #0 :: HttpTrack.said <expression>.lines :: absent :: accepted  the same demand under each checker's text: v2 names a path by its canonical slot and a callback write by its outer callee (§2.2)
@@ -3106,16 +3102,9 @@ examples/todo/server Main 38:17 #0 :: Deferred.complete self◆ :: absent :: acc
 examples/todo/server Main 58:13 #0 :: Api.handle store◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
 tests/corpus/browser/tea/BallMachine Machine 107:9 #0 :: Ref.update m.world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
 tests/corpus/browser/tea/BallMachine Machine 108:15 #0 :: Ref.modify m.world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
-tests/corpus/browser/tea/BallMachine Machine 159:33 #0 :: Machine.simulate m.world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
-tests/corpus/browser/tea/BallMachine Machine 43:23 #0 :: Ref.update world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
-tests/corpus/browser/tea/BallMachine Machine 47:23 #0 :: Machine.openBay world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
-tests/corpus/browser/tea/BallMachine Machine 51:23 #0 :: Ref.update world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
-tests/corpus/browser/tea/BallMachine Machine 52:24 #0 :: Machine.closeBucket world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
-tests/corpus/browser/tea/BallMachine Machine 58:24 #0 :: Ref.update world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
 tests/corpus/browser/tea/BallMachine Machine 84:5 #0 :: Ref.update world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
 tests/corpus/browser/tea/BallMachine Machine 99:5 #0 :: Ref.update world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
 tests/corpus/browser/tea/BallMachine Main 34:5 #0 :: Ref.update m.world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
-tests/corpus/browser/tea/BallMachine Main 64:30 #0 :: Ref.update m.world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
 tests/corpus/browser/tea/LogCommandContext.beni LogCommandContext 136:27 #0 :: LogCommandContext.keep model.kept◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
 tests/corpus/browser/tea/LogCommandContext.beni LogCommandContext 276:19 #0 :: Ref.update kept◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
 tests/corpus/browser/tea/RetryRequest.beni RetryRequest 29:9 #0 :: Ref.modify calls◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
@@ -4014,8 +4003,6 @@ tests/corpus/run/SanitiserForwardedLabel.beni SanitiserForwardedLabel 44:9 #0 ::
 # The slot domain rebuilt (#1685), regenerated on its head: one category per block.
 #
 # acc-moved: 25
-tests/corpus/browser/tea/BallMachine Machine 108:39 #0 :: Physics.step w.balls[*].trail :: rejected :: accepted  the cell's callback (`Ref.modify`) owns what the cell holds: v2 reads its write of the contents where v1 takes the supply as `borrowed (⊤)`; pinned by run/SanitiserCellEdit and the oracle's cell probes (#1685)
-tests/corpus/browser/tea/BallMachine Machine 108:39 #0 :: Physics.step w.events :: rejected :: accepted  the cell's callback (`Ref.modify`) owns what the cell holds: v2 reads its write of the contents where v1 takes the supply as `borrowed (⊤)`; pinned by run/SanitiserCellEdit and the oracle's cell probes (#1685)
 tests/corpus/ownership/BridgeResultPaths.beni [browser-inline] BridgeResultPaths 100:39 #0 :: List.push <call> :: rejected :: accepted  the refusal moved to the list's supplier: v2 refuses `first <call>` at 100:50 (`disjoint`)
 tests/corpus/ownership/Callbacks.beni [node] Callbacks 40:15 #0 :: construction picked :: rejected :: accepted  R-4.3.5 (#1072): `List.length rows` reads the outer list, not the element written; the write's need goes to `t15`'s callers
 tests/corpus/ownership/DictFocus.beni [node] DictFocus 29:26 #0 :: Maybe.map m#Just.0 :: rejected :: accepted  the refusal moved to the enclosing call: v2 refuses `Dict.update` at 29:5
@@ -4227,15 +4214,12 @@ tests/corpus/browser/tea/BallMachine Machine 108:15 #0 :: Ref.modify m.world◆.
 tests/corpus/browser/tea/BallMachine Machine 159:28 #0 :: cell m.world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
 tests/corpus/browser/tea/BallMachine Machine 159:28 #0 :: once m.world◆.balls :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
 tests/corpus/browser/tea/BallMachine Machine 159:28 #0 :: once m.world◆.events :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
-tests/corpus/browser/tea/BallMachine Machine 159:33 #0 :: Machine.simulate m.world◆.balls :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
-tests/corpus/browser/tea/BallMachine Machine 159:33 #0 :: Machine.simulate m.world◆.events :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
 tests/corpus/browser/tea/BallMachine Machine 43:18 #0 :: cell world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
 tests/corpus/browser/tea/BallMachine Machine 47:18 #0 :: cell world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
 tests/corpus/browser/tea/BallMachine Machine 51:18 #0 :: cell world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
 tests/corpus/browser/tea/BallMachine Machine 52:19 #0 :: cell world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
 tests/corpus/browser/tea/BallMachine Machine 57:18 #0 :: cell world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
 tests/corpus/browser/tea/BallMachine Machine 57:18 #0 :: once world◆.sparks :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
-tests/corpus/browser/tea/BallMachine Machine 57:23 #0 :: Ref.update world◆.sparks :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
 tests/corpus/browser/tea/BallMachine Machine 58:19 #0 :: cell world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
 tests/corpus/browser/tea/BallMachine Main 36:5 #0 :: Control.run m.world◆ :: absent :: rejected  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
 tests/corpus/browser/tea/BallMachine Main 36:5 #0 :: Control.run m.world◆.balls :: absent :: rejected  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
@@ -4616,3 +4600,46 @@ tests/corpus/run/SanitiserHandedWriter.beni SanitiserHandedWriter 27:20 #0 :: on
 tests/corpus/run/SanitiserHandedWriter.beni SanitiserHandedWriter 31:23 #0 :: once buf :: absent :: accepted  v2 escapes a writer a callee hands to a label, which names objects, never a code (§2.11.3, *a function value goes where a value goes*); v1 leaves it to unchecked callers
 tests/corpus/run/SanitiserHandedWriter.beni SanitiserHandedWriter 31:23 #0 :: once <lambda> :: absent :: rejected  v2 escapes a writer a callee hands to a label, which names objects, never a code (§2.11.3, *a function value goes where a value goes*); v1 leaves it to unchecked callers
 tests/corpus/run/SanitiserHandedWriter.beni SanitiserHandedWriter 31:28 #0 :: List.push buf :: pending :: accepted  v2 escapes a writer a callee hands to a label, which names objects, never a code (§2.11.3, *a function value goes where a value goes*); v1 leaves it to unchecked callers
+#
+# The slot domain rebuilt (#1685), regenerated on its head: one category per block.
+#
+# acc-moved: 3
+tests/corpus/browser/tea/BallMachine Machine 108:40 #0 :: Physics.step w.balls :: rejected :: accepted  the cell's callback (`Ref.modify`) owns what the cell holds: v2 reads its write of the contents where v1 takes the supply as `borrowed (⊤)`; pinned by run/SanitiserCellEdit and the oracle's cell probes (#1685)
+tests/corpus/browser/tea/BallMachine Machine 108:40 #0 :: Physics.step w.balls[*].trail :: rejected :: accepted  the cell's callback (`Ref.modify`) owns what the cell holds: v2 reads its write of the contents where v1 takes the supply as `borrowed (⊤)`; pinned by run/SanitiserCellEdit and the oracle's cell probes (#1685)
+tests/corpus/browser/tea/BallMachine Machine 108:40 #0 :: Physics.step w.events :: rejected :: accepted  the cell's callback (`Ref.modify`) owns what the cell holds: v2 reads its write of the contents where v1 takes the supply as `borrowed (⊤)`; pinned by run/SanitiserCellEdit and the oracle's cell probes (#1685)
+#
+# text: 2
+tests/corpus/browser/tea/BallMachine Machine 57:25 #0 :: Ref.update world◆ :: absent :: accepted  the same demand under each checker's text: v2 names a path by its canonical slot and a callback write by its outer callee (§2.2)
+tests/corpus/browser/tea/BallMachine Machine 57:25 #0 :: Ref.update world◆.sparks :: absent :: accepted  the same demand under each checker's text: v2 names a path by its canonical slot and a callback write by its outer callee (§2.2)
+#
+# v1-refused-v2-none: 1
+tests/corpus/browser/tea/BallMachine Machine 57:25 #0 :: value Physics.openTrap :: rejected :: absent  v2 refuses the enclosing closure at 57:18 (`once`, §2.11.4): it may run more than once
+#
+# v2-cell: 24
+tests/corpus/browser/tea/BallMachine Machine 159:35 #0 :: Machine.simulate m.world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/browser/tea/BallMachine Machine 159:35 #0 :: Machine.simulate m.world◆.balls :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/browser/tea/BallMachine Machine 159:35 #0 :: Machine.simulate m.world◆.events :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/browser/tea/BallMachine Machine 43:25 #0 :: Ref.update world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/browser/tea/BallMachine Machine 47:25 #0 :: Machine.openBay world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/browser/tea/BallMachine Machine 51:24 #0 :: Ref.update world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/browser/tea/BallMachine Machine 52:26 #0 :: Machine.closeBucket world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/browser/tea/BallMachine Machine 58:26 #0 :: Ref.update world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/browser/tea/BallMachine Main 64:31 #0 :: Ref.update m.world◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/emit/release/app/HttpServe.beni HttpServe 19:17 #0 :: Deferred.complete stop◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/emit/release/app/HttpServe.beni HttpServe 34:25 #0 :: HttpServe.handle stop◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/emit/release/app/HttpServe.beni HttpServe 34:25 #0 :: cell stop◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/emit/release/app/WebSocketEcho.beni WebSocketEcho 21:21 #0 :: WebSocketEcho.echo stop◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/emit/release/app/WebSocketEcho.beni WebSocketEcho 28:21 #0 :: Deferred.complete stop◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/emit/release/app/WebSocketEcho.beni WebSocketEcho 36:78 #0 :: WebSocketEcho.echo stop◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/emit/release/app/WebSocketEcho.beni WebSocketEcho 36:78 #0 :: cell stop◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/emit/release/app/WebSocketEcho.beni WebSocketEcho 39:28 #0 :: WebSocketEcho.echo stop◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/emit/release/app/WebSocketEcho.beni WebSocketEcho 39:28 #0 :: cell stop◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/emit/release/app/WebSocketEcho.beni WebSocketEcho 46:17 #0 :: Deferred.complete stop◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/emit/release/app/WebSocketEcho.beni WebSocketEcho 58:25 #0 :: WebSocketEcho.handle stop◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/emit/release/app/WebSocketEcho.beni WebSocketEcho 58:25 #0 :: cell stop◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/emit/release/app/WebSocketEcho.beni WebSocketEcho 58:50 #0 :: WebSocketEcho.upgrade stop◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/emit/release/app/WebSocketEcho.beni WebSocketEcho 58:50 #0 :: cell stop◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+tests/corpus/workers/ObjectWake Main 82:17 #0 :: Deferred.complete state.gate◆ :: absent :: accepted  v2 checks the write into a cell (`Ref`, `Deferred`; the `◆` slot, §2.13.12); v1 makes no such demand
+#
+# v2-core: 1
+tests/corpus/workers/ObjectWake Main 32:5 #0 :: Worker.Object.define Main.serve :: absent :: rejected  #1704: v2 makes the demand at a call into core or a platform whose contract it reads as pessimistic; v1 reads the real contract
