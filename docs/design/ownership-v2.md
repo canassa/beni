@@ -2101,6 +2101,23 @@ outward, carries the mark in its origin. Sound because what such a label is supp
 supplied, or a part of it, or objects that are not the row's at all. The condition is then asked of its param
 arrivals. An arrival from elsewhere only asks more. Fresh elements, and rows that share only a key the callback
 does not write, are still accepted (`run/SanitiserListUpdateForwardApart`).
+*Amended 2026-11-05 (#1954 review): the condition of a supply passed on by structure.* The condition was read
+off the supply's root: its first parameter arrival `a` gave `π{a*~, a·s}` for a write at `s`. A label passed on
+projects its supply by structure (§2.11.3), so for an element that holds no object of its own (a tuple, a
+constructor, a `Maybe`) the root lists the parts, `ε π1[*].0 π1[*].1, .0 π1[*].0, .1 π1[*].1`, or nothing at all
+(inside a forwarding lambda). The write of `.1` then asked `π1{[*].0*~, [*].0·.1}`, a slot below the wrong part,
+or nothing, and `upd rs f = List.update rs 1 f` with `upd [ ( a, v ), ( b, v ) ] λ( k, vs ) → ( k, List.push vs 8 )`
+pushed onto `v` in place while the other row held it. So did a key write, a forwarding lambda, two helpers, a
+helper that updates twice, nested tuples, three-tuples, constructors, `Maybe` and a lambda that swaps the parts
+(`run/SanitiserPassedTupleRow`; the sanitised runs trapped). Now a write at `s` asks, at the caller, every
+parameter arrival of the supply deep and apart, and plain the arrivals of the deepest entry at a prefix `p` of
+`s` (and of an open entry at a prefix), each continued by the rest of `s`. Sound because the supply's arrivals
+name every caller slot whose objects the callback is handed, so together they are the element whose objects
+must be apart from the written ones, as `π1[*]*~` was; and the entry at the longest prefix, or an open one,
+names where the written slot's objects come from, as the root did when it held the element: a shorter entry
+that is not open names a part, whose steps do not continue to `s`. Where the element has an object of its
+own, the root and the entries say the same as before. Rows that share only a key the callback does not write,
+fresh rows, and parts swapped onto apart rows are still accepted (`run/SanitiserPassedTupleRowApart`).
 
 The value of a lambda is `built(closure, site ι, kids = the captures' values at creation)`: the closure holds
 its captures, so a holder of the closure holds them (§2.8 *Dead*: `captured`). Calling a closure value is a

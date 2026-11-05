@@ -115,18 +115,35 @@ pub const Env = struct {
 
 /// A write at `words` of a `taken` label's supply `su` (§2.13.6): its
 /// container stays, so what is written occurs once in it, and apart from
-/// everything else it holds. The supply's slot asked deep and apart, the
-/// written slot plain, as occurrences of the label's caller. A supply that
-/// is no parameter's slot was judged where the label was passed on.
-pub fn takenOccs(contracts: *const Contract.Table, places: *const Place.Table, slots: *Slots.Table, account: *Ids.Account, gpa: Allocator, arena: Allocator, su: Contract.Supply, words: []const u32, deep: bool) Error!?[2]u64 {
+/// everything else it holds. As the label's caller's occurrences: every
+/// parameter slot of the supply (the element) deep and apart, the written
+/// slot plain from the deepest entry at a prefix of `words`, or an open
+/// one; a supply passed on by structure names a tuple's parts at its root,
+/// or nothing. A written slot no parameter's was judged at the pass.
+pub fn takenOccs(contracts: *const Contract.Table, places: *const Place.Table, slots: *Slots.Table, account: *Ids.Account, gpa: Allocator, arena: Allocator, su: Contract.Supply, words: []const u32, deep: bool) Error!?[]u64 {
     var es: Forest.Entries = .{};
     defer es.deinit(gpa);
     try es.of(&contracts.trees, gpa, places, su.res_root, &.{});
+    var best: ?u32 = null;
     for (es.items.items) |rs| for (rs.arrivals) |a| {
-        if (a.kind != .param or rs.len != 0) continue;
-        const at = try std.mem.concat(arena, u32, &.{ slots.relWords(a.slot), words });
-        const o = Contract.occ(a.j, try slots.relOfWords(gpa, account, places, at));
-        return .{ Contract.occDeep(Contract.occApart(a.j, a.slot)), if (deep or a.deep) Contract.occDeep(o) else o };
+        if (a.kind == .param and std.mem.startsWith(u32, words, es.wordsOf(rs))) best = @max(best orelse 0, rs.len);
     };
-    return null;
+    const at_best = best orelse return null;
+    var out: std.ArrayList(u64) = .empty;
+    for (es.items.items) |rs| for (rs.arrivals) |a| {
+        if (a.kind != .param) continue;
+        // An arrival below another's is in its deep occurrence already.
+        const covered = blk: {
+            for (es.items.items) |rt| for (rt.arrivals) |b| {
+                if (b.kind == .param and b.j == a.j and b.slot != a.slot and std.mem.startsWith(u32, slots.relWords(a.slot), slots.relWords(b.slot))) break :blk true;
+            };
+            break :blk false;
+        };
+        if (!covered) try out.append(arena, Contract.occDeep(Contract.occApart(a.j, a.slot)));
+        if (!std.mem.startsWith(u32, words, es.wordsOf(rs)) or (rs.len != at_best and !rs.open)) continue;
+        const at = try std.mem.concat(arena, u32, &.{ slots.relWords(a.slot), words[rs.len..] });
+        const o = Contract.occ(a.j, try slots.relOfWords(gpa, account, places, at));
+        try out.append(arena, if (deep or a.deep) Contract.occDeep(o) else o);
+    };
+    return out.items;
 }
