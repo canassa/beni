@@ -1,0 +1,17 @@
+-- CK-321: #2032. A fold that pushes the elements it is given into its
+-- accumulator writes the accumulator's storage only, and is accepted by v1;
+-- v2 refuses the fold `disjoint` (approx), over a parameter and over a
+-- literal. `overFold` is Appendix B FoldOverFoldShared's two folds with no
+-- element write after them. The red twins (run/FoldOverFoldShared,
+-- run/FeedbackPrevTwice) stay refused. The golden claims the verdict lines and
+-- the totals.
+pub copyAll : List (List Int) → List (List Int)
+copyAll xs = List.foldl xs [] λx a → List.push a x
+
+
+pub fromLiteral : ⊤ → List (List Int)
+fromLiteral ⊤ = List.foldl [ [ 1 ], [ 2 ] ] [] λx a → List.push a x
+
+
+pub overFold : List (List Int) → List (List Int)
+overFold xs = List.foldl xs (List.foldr xs [] λx a → List.push a x) λx a → List.push a x

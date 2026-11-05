@@ -1,0 +1,23 @@
+-- FeedbackFresh (Appendix B, S4): ViewFeedback's control. The accumulator is
+-- written and handed back with no view of the previous one: accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+build : List Int → List Int
+build xs = List.foldl xs [] λx s → List.push s x
+
+
+main : Program
+main = Node.print (ints (build [ 1, 2 ]))

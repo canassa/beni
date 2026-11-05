@@ -4,3 +4,4 @@ emptied [1,2] []
 moved [1,2,3] empty
 grown [1,9] []
 otherLoan [1,2] [5] []
+pairTake [1,8] [2]

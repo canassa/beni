@@ -1,0 +1,34 @@
+# P-sync (docs/design/ownership-v2.md §2.13.7): the listeners each platform
+# registers, which a host may call inside a host call beni made. (A promise
+# reaction or a timer starts on an empty stack, so it needs no row.) One runs
+# there only where the spec's table says so; each hands what it is told
+# to a queue, or resumes a fiber, and runs no program code but a DOM
+# handler's. Every declaration below is pinned in word-bodies.txt, and
+# `check_test.zig` fails on a listener added in a declaration not listed
+# here, or a platform not listed: read it, then add it.
+#
+# platform        file                                            declaration
+browser           platforms/browser/Rt.beni                       Rt.turn
+browser           platforms/browser/Rt.beni                       Rt.delegate
+browser           platforms/browser/Rt.beni                       Rt.delegated
+browser           platforms/browser/Rt.beni                       Rt.listen
+browser           platforms/browser/Rt.beni                       Rt.watchEdits
+browser           platforms/browser/Rt.beni                       Rt.crashScreen
+browser           platforms/browser/Listen.beni                   Listen.on
+browser           platforms/browser/Listen.beni                   Listen.on2
+browser           platforms/browser/WebSocket.beni                WebSocket.attach
+browser-inline    platforms/browser-inline/Inline.beni            Inline.on
+browser-inline    platforms/browser-inline/Inline.beni            Inline.onArm
+browser-inline    platforms/browser-inline/Inline.beni            Inline.listen
+browser-inline    platforms/browser-inline/Inline.beni            Inline.crashScreen
+browser-inline    platforms/browser-inline/Listen.beni            Listen.on
+browser-inline    platforms/browser-inline/Browser/Navigation.beni  Browser.Navigation.listen
+browser-inline    platforms/browser-inline/Browser/Navigation.beni  Browser.Navigation.listenOne
+browser-tea       none                                            none
+cloudflare        platforms/cloudflare/Worker.beni                Worker.listenForAbort
+html              none                                            none
+node              platforms/node/Http/Server.beni                 Http.Server.startListen
+node              platforms/node/Http/Server.beni                 Http.Server.receive
+node              platforms/node/Http/Server.beni                 Http.Server.takeUpgrade
+node              platforms/node/Io.beni                          Io.run
+node              platforms/node/WebSocket.beni                   WebSocket.fromUpgrade

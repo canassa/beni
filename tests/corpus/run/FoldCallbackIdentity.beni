@@ -1,0 +1,25 @@
+-- FoldCallbackIdentity (Appendix B, S4; R-5.2.2, R-5.3.2): `List.map` of a
+-- callback that answers one captured list holds that list at every position,
+-- so the element write is refused. Fresh answers of different invocations are
+-- the control (FoldCallbackFresh).
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+main : Program
+main =
+    c = [ 1 ]
+    ys = List.map [ 1, 2 ] λ_ → c
+    zs = List.map ys λl → List.push l 9
+    Node.print (show zs)

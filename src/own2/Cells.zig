@@ -10,6 +10,7 @@ const std = @import("std");
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
@@ -93,6 +94,21 @@ pub fn targets(ev: *Relation.Eval, arg: u32, words: []const u32, out: *std.Array
 fn atPos(f: *Value.Frame, l: Value.Leaf, cp: u32) Error!u32 {
     const set = try f.slots.internSorted(f.gpa, f.account, &.{f.pos.items[cp].slot.int()});
     return f.leaf(.{ .kind = .ref, .root = l.root, .pos = cp, .slots = set, .tags = l.tags, .at_pos = true });
+}
+
+/// Whether what a cell of handle place `cell` holds is at most one object:
+/// with no slot state, a stored value may hold one object at two of the
+/// contents' slots, and the frame reads two names (`Ref.set r ( n, n )`).
+/// A type variable's slot may hold any number.
+pub fn oneObject(f: *Value.Frame, cell: ?Ids.PlaceId) Error!bool {
+    const c = (try f.places.extend(f.gpa, f.gc(), try f.places.rootPath(f.gpa, cell orelse return false), Step.contents)) orelse return false;
+    var n: u32 = 0;
+    for (f.slots.items(try Subtree.belowAll(f.slots, f.gpa, f.account, f.places, c))) |s| {
+        const k = f.places.kind(f.places.pathPlace(.from(s)));
+        if (k == .@"var" or k == .@"opaque") return false;
+        if (Slots.isObject(f.places, .from(s))) n += 1;
+    }
+    return n <= 1;
 }
 
 /// A slot of the contents, below the cell's `◆`: the result slot `rel`

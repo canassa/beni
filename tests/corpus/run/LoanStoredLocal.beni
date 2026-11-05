@@ -1,0 +1,61 @@
+-- Appendix B's `LoanStoredLocal`, the `List` half (`ownership-v2.md`
+-- §2.13.7), and R-5.12.3's room: a loan may be read and used to build
+-- values while it is live, here or through a helper, and the cell may be
+-- changed once the built value is dead. A built value that outlives the
+-- loan's region refuses the edit.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+local : ⊤ → String
+local ⊤ =
+    r = Ref.make [ 0 ]
+    xs = Ref.get r
+    ys = List.push [] xs
+    String.fromInt (List.length ys)
+
+
+keep : List Int → List (List Int)
+keep xs = List.push [] xs
+
+
+forwarded : ⊤ → String
+forwarded ⊤ =
+    r = Ref.make [ 0 ]
+    ys = keep (Ref.get r)
+    String.fromInt (List.length ys)
+
+
+returned : Ref (List Int) → List (List Int)
+returned r =
+    xs = Ref.get r
+    List.push [] xs
+
+
+outlives : ⊤ → String
+outlives ⊤ =
+    r = Ref.make [ 0 ]
+    ys = returned r
+    Ref.update r λxs → List.push xs 1
+    String.fromInt (List.length ys)
+
+
+room : ⊤ → String
+room ⊤ =
+    members = Ref.make [ 1 ]
+    Ref.update members λm → [ …m, 2 ]
+    told = List.filter (Ref.get members) λm → m > 1
+    Ref.update members λm → [ …m, 3 ]
+    "${ints told} ${ints (Ref.get members)}"
+
+
+main : Program
+main = Node.printLines [ local ⊤, forwarded ⊤, outlives ⊤, room ⊤ ]

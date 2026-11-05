@@ -1,0 +1,96 @@
+-- A store that keeps a cell's slots apart leaves its contents the cell's
+-- own (`ownership-v2.md` §2.13.7, *The contents relation*): a new pair,
+-- the old lists swapped, a helper's generic store of one object or of a
+-- pair the caller made apart. Each edit is accepted in place. And a store
+-- of one object twice is only a problem for an edit: read, it is accepted.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    joined = String.join (List.map xs String.fromInt) sep
+    "[${joined}]"
+
+
+pair : Ref (List Int × List Int) → String
+pair r =
+    case Ref.get r of
+        ( a, b ) →
+            "${ints a} ${ints b}"
+
+
+edit : Ref (List Int × List Int) → ⊤
+edit r = Ref.update r λp →
+    case p of
+        ( x, y ) →
+            ( List.push x 8, y )
+
+
+put : Ref a, a → ⊤
+put r x = Ref.set r x
+
+
+set : ⊤ → String
+set ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    Ref.set r ( [ 3 ], [ 4 ] )
+    edit r
+    pair r
+
+
+swapped : ⊤ → String
+swapped ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    Ref.update r λp →
+        case p of
+            ( x, y ) →
+                ( y, x )
+    edit r
+    pair r
+
+
+generic : ⊤ → String
+generic ⊤ =
+    r = Ref.make [ 1 ]
+    put r [ 7 ]
+    Ref.update r λl → List.push l 8
+    ints (Ref.get r)
+
+
+genericPair : ⊤ → String
+genericPair ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    put r ( [ 3 ], [ 4 ] )
+    edit r
+    pair r
+
+
+field : ⊤ → String
+field ⊤ =
+    c = Ref.make { p = [ 1 ], q = [ 2 ] }
+    Ref.update c λs → { p = List.push s.p 9, q = s.q }
+    "${ints (Ref.get c).p} ${ints (Ref.get c).q}"
+
+
+onlyRead : ⊤ → String
+onlyRead ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    n = [ 7 ]
+    Ref.set r ( n, n )
+    pair r
+
+
+main : Program
+main =
+    Node.printLines
+        [ set ⊤
+        , swapped ⊤
+        , generic ⊤
+        , genericPair ⊤
+        , field ⊤
+        , onlyRead ⊤
+        ]

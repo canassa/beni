@@ -1,0 +1,27 @@
+-- FeedbackPrevTwice (Appendix B, S4; R-5.3.2, R-3.1): each list is in `st` twice,
+-- once as `x` and once as the next round's `prev`, so the element write is
+-- refused. Two cells that came back through the feedback are never called
+-- apart (ownership-v2.md Appendix C.9).
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+build : List (List Int) → List (List Int)
+build xs =
+    ( _, st ) = List.foldl xs ( [], [] ) λx ( prev, s ) → ( x, List.push (List.push s prev) x )
+    List.update st 1 λl → List.push l 7
+
+
+main : Program
+main = Node.print (show (build [ [ 1 ], [ 2 ] ]))

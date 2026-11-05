@@ -94,6 +94,8 @@ const layers = [_]Entry{
     .{ .file = "RowEnv.zig", .layer = 5, .max_lines = 150 },
     .{ .file = "Regions.zig", .layer = 5, .max_lines = 450 },
     .{ .file = "ContractText.zig", .layer = 5, .max_lines = 160 },
+    // `within`, split from `Contract` (#1991).
+    .{ .file = "Within.zig", .layer = 5, .max_lines = 140 },
     // A value's leaf set (#1714): made with the value, read by `Relation`.
     .{ .file = "Leaves.zig", .layer = 5, .max_lines = 600 },
     // Worded contracts by declaration and places, one footprint a callee (#1714).
@@ -199,6 +201,8 @@ const layers = [_]Entry{
     .{ .file = "Deliver.zig", .layer = 11, .max_lines = 300 },
     // A callee's hand-back is an escape too (#1709).
     .{ .file = "Closures.zig", .layer = 11, .max_lines = 140 },
+    // A store that may hold one object twice escapes the cell's contents (#1984).
+    .{ .file = "Contents.zig", .layer = 11, .max_lines = 140 },
     // A group's judgements kept across its rounds (§2.12, #1714).
     .{ .file = "Kept.zig", .layer = 11, .max_lines = 420 },
     // What the labels outward of a virtual call add to its demands and to
@@ -212,6 +216,10 @@ const layers = [_]Entry{
     .{ .file = "Codes.zig", .layer = 12, .max_lines = 55 },
     // Evidence terms as function values (#1708).
     .{ .file = "Groups.zig", .layer = 13, .max_lines = 1900 },
+    // A refused loan's text, split from `Message` (#1991).
+    .{ .file = "LoanNote.zig", .layer = 13, .max_lines = 35 },
+    // How a block names what is local to a module, split from `Block` (#1991).
+    .{ .file = "BlockNames.zig", .layer = 13, .max_lines = 30 },
     .{ .file = "Block.zig", .layer = 14, .max_lines = 380 },
     .{ .file = "Message.zig", .layer = 14, .max_lines = 280 },
     .{ .file = "Report.zig", .layer = 14, .max_lines = 150 },
@@ -270,7 +278,7 @@ const literal_allowlist = [_]Allowed{};
 const causes = [_][]const u8{
     "unknown",   "escaped",  "top_level", "captured_edit", "disjoint", "held_operand", "later_use",
     "alias",     "captured", "element",   "call",          "supply",   "need",         "limit",
-    "exclusive", "once",     "payload",   "read_only",     "level",    "comparison",
+    "exclusive", "once",     "payload",   "read_only",     "level",    "comparison",   "loan",
 };
 
 const test_marker = "\nconst testing = std.testing;";
@@ -505,8 +513,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 88), layers.len);
-    try testing.expectEqual(@as(usize, 20), causes.len);
+    try testing.expectEqual(@as(usize, 92), layers.len);
 }
 
 test "the import verdict refuses back doors and accepts the base layer" {

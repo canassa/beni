@@ -1,0 +1,21 @@
+-- CK-320: #2031. A callee stores its callback's answers in a list, and the
+-- caller edits an element of it over a fresh lambda: refused `disjoint`
+-- (approx). The answers of different invocations are lists of their own.
+-- `viaOne` and `viaTwo` are accepted by v1; the tuple form of `two` is
+-- accepted by v2 already (Appendix B CallbackPairWrapper's green). The
+-- captured twin (run/CallbackResultTwice) stays refused. The golden claims
+-- the verdict lines and the totals.
+one : (⊤ → List Int) → List (List Int)
+one f = [ f ⊤ ]
+
+
+two : (⊤ → List Int) → List (List Int)
+two f = [ f ⊤, f ⊤ ]
+
+
+pub viaOne : ⊤ → List (List Int)
+viaOne ⊤ = List.update (one λ⊤ → [ 1 ]) 0 λl → List.push l 9
+
+
+pub viaTwo : ⊤ → List (List Int)
+viaTwo ⊤ = List.update (two λ⊤ → [ 1 ]) 0 λl → List.push l 9

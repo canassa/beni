@@ -1,0 +1,24 @@
+-- CallbackTakenDuplicate (Appendix B, S4; R-4.6.9, R-5.2.9): `List.map` of the
+-- identity over `[ x, x ]` may run, but its result is not exclusive, and
+-- mapping an inner writer over it is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+main : Program
+main =
+    x = [ 1 ]
+    ys = List.map [ x, x ] λl → l
+    zs = List.map ys λl → List.push l 9
+    Node.print (show zs)

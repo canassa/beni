@@ -1,0 +1,9 @@
+module CallbackAnswerInList
+  17:12 List.update <call CallbackAnswerInList.one>: accepted call
+  17:12 List.update <call CallbackAnswerInList.one>[*]: accepted call (<lambda> writes what List.update supplies it)
+  17:48 List.push l: accepted callback-param (List.update supplies it owned)
+  21:12 List.update <call CallbackAnswerInList.two>: accepted call
+  21:12 List.update <call CallbackAnswerInList.two>[*]: accepted call (<lambda> writes what List.update supplies it)
+  21:48 List.push l: accepted callback-param (List.update supplies it owned)
+  demands 6: accepted 6 (fresh 0, call 4, param 0, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 6: accepted 6 (fresh 0, call 4, param 0, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 0

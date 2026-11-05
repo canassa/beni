@@ -63,6 +63,11 @@ pub const StoredCond = struct {
     run: Range = .{},
 };
 
+/// A store a caller judges (§2.13.7, *The contents relation*): a value is
+/// stored in the `◆` at parameter `j`'s `slot`, and what that cell holds
+/// escapes at the call unless `cond` holds there.
+pub const Store = struct { j: u32, slot: Rel, cond: StoredCond };
+
 /// A callback label (§2.11.3): the function slot it calls, its origin
 /// `(module, declaration, offset)`, how often, and its supplies.
 pub const Label = struct {
@@ -118,6 +123,7 @@ pub const Head = struct {
     writes: Range = .{},
     req: StoredCond = .{},
     escapes: Range = .{},
+    stores: Range = .{},
     labels: Range = .{},
 };
 
@@ -131,7 +137,19 @@ pub const Draft = struct {
     writes: std.ArrayList(Effect) = .empty,
     req: Cond = .{},
     escapes: std.ArrayList(Effect) = .empty,
+    stores: std.ArrayList(DraftStore) = .empty,
     labels: std.ArrayList(DraftLabel) = .empty,
+
+    pub const DraftStore = struct { j: u32, slot: Rel, cond: Cond };
+
+    /// A store into the cell at `(j, slot)`, which asks every condition stored there.
+    pub fn addStore(d: *Draft, arena: Allocator, account: *Ids.Account, s: DraftStore) Error!void {
+        for (d.stores.items) |*x| if (x.j == s.j and x.slot == s.slot) {
+            x.cond = try Cond.conj(arena, account, x.cond, s.cond);
+            return;
+        };
+        try d.stores.append(arena, s);
+    }
 
     /// A result (or supply) being built: arrivals at slots, plain or wide (at
     /// the slot and, by structure, below it, §2.10 *Read-off*), and subtrees
@@ -221,6 +239,7 @@ pub const Draft = struct {
 pub const Table = struct {
     heads: std.ArrayList(Head) = .empty,
     effects: std.ArrayList(Effect) = .empty,
+    stores: std.ArrayList(Store) = .empty,
     /// The reads and the writes: `(j, tree)` a parameter.
     eroots: std.ArrayList([2]u32) = .empty,
     occs: std.ArrayList(u64) = .empty,
@@ -233,6 +252,7 @@ pub const Table = struct {
         t.trees.deinit(gpa);
         t.heads.deinit(gpa);
         t.effects.deinit(gpa);
+        t.stores.deinit(gpa);
         t.eroots.deinit(gpa);
         t.occs.deinit(gpa);
         t.labels.deinit(gpa);
@@ -255,6 +275,9 @@ pub const Table = struct {
     pub fn holdsNothing(t: *const Table, c: Id) bool {
         const h = t.head(c);
         return h.flags.returns and !h.flags.pessimistic and h.res_root == 0;
+    }
+    pub fn storesOf(t: *const Table, r: Range) []const Store {
+        return t.stores.items[r.start..][0..r.len];
     }
     pub fn effectsOf(t: *const Table, r: Range) []const Effect {
         return t.effects.items[r.start..][0..r.len];
@@ -368,6 +391,21 @@ pub const Table = struct {
         return .{ .run = .{ .start = start, .len = @intCast(run.len) } };
     }
 
+    /// A draft's stores, by cell in the canonical order (§2.10).
+    fn putStores(t: *Table, gpa: Allocator, slots: *const Slots.Table, list: []Draft.DraftStore) Allocator.Error!Range {
+        std.mem.sort(Draft.DraftStore, list, slots, struct {
+            fn lt(sl: *const Slots.Table, a: Draft.DraftStore, b: Draft.DraftStore) bool {
+                return if (a.j != b.j) a.j < b.j else sl.relOrder(a.slot, b.slot) == .lt;
+            }
+        }.lt);
+        const start: u32 = @intCast(t.stores.items.len);
+        for (list) |s| {
+            const c = try t.putCond(gpa, slots, s.cond);
+            try t.stores.append(gpa, .{ .j = s.j, .slot = s.slot, .cond = c });
+        }
+        return .{ .start = start, .len = @intCast(t.stores.items.len - start) };
+    }
+
     fn putEffects(t: *Table, gpa: Allocator, slots: *const Slots.Table, list: []Effect) Allocator.Error!Range {
         std.mem.sort(Effect, list, slots, effectLess);
         const start: u32 = @intCast(t.effects.items.len);
@@ -406,17 +444,6 @@ pub const Table = struct {
             if (n != 0) try t.eroots.append(gpa, .{ j, n });
         }
         return .{ .start = start, .len = @intCast(t.eroots.items.len - start) };
-    }
-
-    fn readsWithin(t: *const Table, arena: Allocator, a: Range, b: Range) Ids.IndexError!bool {
-        var memo: Ids.FixedDict(2) = .{};
-        for (t.readsOf(a)) |x| {
-            const y = for (t.readsOf(b)) |y| {
-                if (y[0] == x[0]) break y[1];
-            } else 0;
-            if (!try Forest.effectsWithin(&t.trees, arena, &memo, x[1], y)) return false;
-        }
-        return true;
     }
 
     // ---- result trees (§2.10, *a contract is a tree of shared subtrees*) ---
@@ -530,6 +557,7 @@ pub const Table = struct {
         h.writes = try t.putReads(gpa, slots, d.writes.items);
         h.req = try t.putCond(gpa, slots, d.req);
         h.escapes = try t.putEffects(gpa, slots, d.escapes.items);
+        h.stores = try t.putStores(gpa, slots, d.stores.items);
         const lstart: u32 = @intCast(t.labels.items.len);
         for (order) |o| {
             const l = &d.labels.items[o];
@@ -563,6 +591,7 @@ pub const Table = struct {
         for (t.writesOf(h.writes)) |x| try d.writes.append(arena, .{ .j = x[0], .slot = Slots.root, .node = x[1] });
         d.req = try t.cond(arena, h.req);
         try d.escapes.appendSlice(arena, t.effectsOf(h.escapes));
+        for (t.storesOf(h.stores)) |s| try d.stores.append(arena, .{ .j = s.j, .slot = s.slot, .cond = try t.cond(arena, s.cond) });
         for (t.labelsOf(h.labels)) |l| {
             var dl: Draft.DraftLabel = .{ .j = l.j, .slot = l.slot, .origin = l.origin, .calls = l.calls };
             for (t.suppliesOf(l.supplies)) |s| {
@@ -618,6 +647,7 @@ pub const Table = struct {
         for (t.readsOf(hb.reads)) |x| _ = try Draft.addEffect(&d.reads, arena, .{ .j = x[0], .slot = Slots.root, .node = x[1] });
         for (t.writesOf(hb.writes)) |x| _ = try Draft.addEffect(&d.writes, arena, .{ .j = x[0], .slot = Slots.root, .node = x[1] });
         for (t.effectsOf(hb.escapes)) |e| _ = try Draft.addEffect(&d.escapes, arena, e);
+        for (t.storesOf(hb.stores)) |s| try d.addStore(arena, account, .{ .j = s.j, .slot = s.slot, .cond = try t.cond(arena, s.cond) });
     }
 
     /// Tree `n` (its labels `map`ped) joined into a draft's base.
@@ -638,7 +668,8 @@ pub const Table = struct {
         if (!t.condEql(x.res_cond, y.res_cond) or !t.condEql(x.req, y.req)) return false;
         if (x.res_root != y.res_root) return false;
         if (!std.mem.eql([2]u32, t.readsOf(x.reads), t.readsOf(y.reads)) or !std.mem.eql([2]u32, t.writesOf(x.writes), t.writesOf(y.writes)) or !t.effectsEql(x.escapes, y.escapes)) return false;
-        if (x.labels.len != y.labels.len) return false;
+        if (x.stores.len != y.stores.len or x.labels.len != y.labels.len) return false;
+        for (t.storesOf(x.stores), t.storesOf(y.stores)) |p, q| if (p.j != q.j or p.slot != q.slot or !t.condEql(p.cond, q.cond)) return false;
         for (t.labelsOf(x.labels), t.labelsOf(y.labels)) |p, q| {
             if (p.j != q.j or p.slot != q.slot or !std.mem.eql(u32, &p.origin, &q.origin) or p.calls != q.calls) return false;
             if (p.supplies.len != q.supplies.len) return false;
@@ -660,108 +691,8 @@ pub const Table = struct {
         return true;
     }
 
-    /// `within(got, claim)` (§2.10): `got` says no more than `claim`.
-    pub fn within(t: *const Table, arena: Allocator, slots: *const Slots.Table, got: Id, claim: Id) Ids.IndexError!bool {
-        const g = t.heads.items[got];
-        const c = t.heads.items[claim];
-        if (g.flags.returns and !c.flags.returns) return false;
-        if (g.flags.once and !c.flags.once) return false;
-        if ((g.flags.taken_write and !c.flags.taken_write) or (g.flags.entry and !c.flags.entry)) return false;
-        if (g.flags.returns and !c.res_cond.no) {
-            if (!(try t.cond(arena, g.res_cond)).weakerIn(slots, try t.cond(arena, c.res_cond))) return false;
-        }
-        if (!(try t.cond(arena, g.req)).weakerIn(slots, try t.cond(arena, c.req))) return false;
-        if (!try t.readsWithin(arena, g.reads, c.reads) or !try t.readsWithin(arena, g.writes, c.writes) or !t.effectsWithin(slots, g.escapes, c.escapes)) return false;
-        const ids: [2]Id = .{ got, claim };
-        // Labels by identity; `cb` arrivals compared through them.
-        for (t.labelsOf(g.labels)) |l| {
-            const m = t.findLabel(c, l) orelse return false;
-            if (@backingInt(l.calls) > @backingInt(m.calls)) return false;
-            for (t.suppliesOf(l.supplies)) |s| {
-                const u = for (t.suppliesOf(m.supplies)) |u| {
-                    if (u.k == s.k) break u;
-                } else return false;
-                if (!try t.treeWithin(arena, slots, ids, s.res_root, u.res_root)) return false;
-                if (!t.effectsWithin(slots, s.kept, u.kept)) return false;
-                if (!u.below.no and !(try t.cond(arena, s.below)).weakerIn(slots, try t.cond(arena, u.below))) return false;
-                if (!u.cond.no and !(try t.cond(arena, s.cond)).weakerIn(slots, try t.cond(arena, u.cond))) return false;
-            }
-        }
-        return t.treeWithin(arena, slots, ids, g.res_root, c.res_root);
-    }
-
-    fn findLabel(t: *const Table, h: Head, l: Label) ?Label {
-        for (t.labelsOf(h.labels)) |m| if (m.j == l.j and m.slot == l.slot and std.mem.eql(u32, &m.origin, &l.origin)) return m;
-        return null;
-    }
-
-    /// Every effect of `a` is one of `b`'s, or below a deep one of `b`'s.
-    fn effectsWithin(t: *const Table, slots: *const Slots.Table, a: Range, b: Range) bool {
-        for (t.effectsOf(a)) |x| {
-            const found = for (t.effectsOf(b)) |y| {
-                if (x.j != y.j) continue;
-                if (x.slot == y.slot and (!x.deep or y.deep)) break true;
-                if (y.deep and continues(slots, y.slot, &.{}, x.slot, true)) break true;
-            } else false;
-            if (!found) return false;
-        }
-        return true;
-    }
-
-    /// Every arrival of tree `a` is one of `b`'s at its slot: of `b`'s run
-    /// of the same kind there, or of an open node of `b` above it,
-    /// continued by the steps between (an atom is the same at every slot
-    /// below). A node of `a` is checked once per node of `b` its slot
-    /// reaches with the same open nodes above it.
-    fn treeWithin(t: *const Table, arena: Allocator, slots: *const Slots.Table, ids: [2]Id, a: Node, b: Node) Allocator.Error!bool {
-        var path: std.ArrayList(u32) = .empty;
-        var above: std.ArrayList([2]u32) = .empty;
-        return t.nodeWithin(arena, slots, ids, a, b, &path, &above);
-    }
-
-    fn nodeWithin(t: *const Table, arena: Allocator, slots: *const Slots.Table, ids: [2]Id, a: Node, b: Node, path: *std.ArrayList(u32), above: *std.ArrayList([2]u32)) Allocator.Error!bool {
-        if (a == 0) return true;
-        const tr = &t.trees;
-        for ([_]bool{ false, true }) |open| for (if (open) tr.open(a) else tr.here(a)) |p| {
-            const found = blk: {
-                // `b`'s runs at this slot: its plain one only for a plain arrival.
-                if (!open) for (tr.here(b)) |q| if (t.arrivalHas(slots, ids, q, p, &.{})) break :blk true;
-                for (tr.open(b)) |q| if (t.arrivalHas(slots, ids, q, p, &.{})) break :blk true;
-                for (above.items) |ab| for (tr.open(ab[0])) |q| if (t.arrivalHas(slots, ids, q, p, path.items[ab[1]..])) break :blk true;
-                break :blk false;
-            };
-            if (!found) return false;
-        };
-        const pushed = tr.open(b).len != 0;
-        if (pushed) try above.append(arena, .{ b, @intCast(path.items.len) });
-        defer if (pushed) {
-            _ = above.pop();
-        };
-        for (tr.kids(a)) |k| {
-            try path.append(arena, k[0]);
-            defer _ = path.pop();
-            if (!try t.nodeWithin(arena, slots, ids, k[1], tr.kidAt(b, k[0]) orelse 0, path, above)) return false;
-        }
-        return true;
-    }
-
-    /// Whether claim's arrival `q` holds `got`'s `p` once continued by `suffix`.
-    fn arrivalHas(t: *const Table, slots: *const Slots.Table, ids: [2]Id, q: Arrival, p: Arrival, suffix: []const u32) bool {
-        if (p.kind != q.kind) return false;
-        switch (p.kind) {
-            .fresh, .top, .host => return true,
-            .shared => return p.j == q.j and p.slot == q.slot,
-            .cb => {
-                const lp = t.labelAt(ids[0], p.j);
-                const lq = t.labelAt(ids[1], q.j);
-                return lp.j == lq.j and lp.slot == lq.slot and std.mem.eql(u32, &lp.origin, &lq.origin) and continues(slots, q.slot, suffix, p.slot, false);
-            },
-            .param, .lent => return p.j == q.j and (!p.deep or q.deep) and continues(slots, q.slot, suffix, p.slot, q.deep),
-        }
-    }
-
     /// Whether slot `p` is `q` continued by `suffix` (or below it, `deep`).
-    fn continues(slots: *const Slots.Table, q: Rel, suffix: []const u32, p: Rel, deep: bool) bool {
+    pub fn continues(slots: *const Slots.Table, q: Rel, suffix: []const u32, p: Rel, deep: bool) bool {
         const qw = slots.relWords(q);
         const pw = slots.relWords(p);
         if (pw.len < qw.len or !std.mem.eql(u32, qw, pw[0..qw.len])) return false;
@@ -793,29 +724,3 @@ fn effectLess(slots: *const Slots.Table, a: Effect, b: Effect) bool {
 }
 
 const testing = std.testing;
-
-test "a join keeps every result slot of both sides" {
-    const gpa = testing.allocator;
-    var arena_state: std.heap.ArenaAllocator = .init(gpa);
-    defer arena_state.deinit();
-    const arena = arena_state.allocator();
-    var account: Ids.Account = .{};
-    defer account.deinit(gpa);
-    var slots: Slots.Table = .{};
-    defer slots.deinit(gpa);
-    var places: Place.Table = .{};
-    defer places.deinit(gpa);
-    var t: Table = .{};
-    defer t.deinit(gpa);
-    const r1 = try slots.relOfWords(gpa, &account, &places, &.{1});
-    const r2 = try slots.relOfWords(gpa, &account, &places, &.{2});
-    var da: Draft = .{ .arity = 1, .flags = .{ .returns = true } };
-    _ = try Draft.addArrival(&da.res, arena, r1, .{ .kind = .param, .j = 0, .slot = r1 });
-    var db: Draft = .{ .arity = 1, .flags = .{ .returns = true } };
-    _ = try Draft.addArrival(&db.res, arena, r2, .{ .kind = .fresh });
-    const a = try t.commit(gpa, &account, &slots, &da);
-    const b = try t.commit(gpa, &account, &slots, &db);
-    const j = try t.join(gpa, arena, &account, &slots, a, b);
-    try testing.expectEqual(@as(u32, 2), t.trees.count(t.head(j).res_root));
-    try testing.expect(try t.within(arena, &slots, a, j) and try t.within(arena, &slots, b, j) and !try t.within(arena, &slots, j, a));
-}

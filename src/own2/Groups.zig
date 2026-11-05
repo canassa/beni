@@ -54,6 +54,8 @@ const Resolve = @import("Resolve.zig");
 const Kept = @import("Kept.zig");
 const Deliver = @import("Deliver.zig");
 const Closures = @import("Closures.zig");
+const Contents = @import("Contents.zig");
+const Within = @import("Within.zig");
 const Outward = @import("Outward.zig");
 const EntryHeld = @import("EntryHeld.zig");
 const FnRun = @import("FnRun.zig");
@@ -262,7 +264,7 @@ pub const Adapter = struct {
                 }
                 continue;
             }
-            const id = try a.close(r, c, &kids, &ids);
+            const id = try a.close(c, &kids, &ids);
             const knot = a.open.get(r.int()).?;
             a.open.remove(r.int());
             if (knot != none) {
@@ -297,11 +299,11 @@ pub const Adapter = struct {
         return a.ofVar(v);
     }
 
-    fn close(a: *Adapter, r: Var, c: TypeStore.Content, kids: *std.ArrayList(Kid), ids: *std.ArrayList(u32)) Error!u32 {
-        _ = r;
+    fn close(a: *Adapter, c: TypeStore.Content, kids: *std.ArrayList(Kid), ids: *std.ArrayList(u32)) Error!u32 {
         const store = a.in.store;
         switch (c) {
-            .flex, .rigid, .err, .alias => return a.leaf(&a.var_id, .@"var"),
+            .flex, .rigid => |fl| return if (fl.kind.scalar()) a.leaf(&a.cross_id, .cross) else a.leaf(&a.var_id, .@"var"), // `[ 0 ]` is `List number`: no object
+            .err, .alias => return a.leaf(&a.var_id, .@"var"),
             .structure => |s| switch (s) {
                 .unit => return a.leaf(&a.cross_id, .cross),
                 .func => return a.leaf(&a.closure_id, .closure),
@@ -1475,13 +1477,11 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
         r.walks += 1;
     }
     // Every code of the group starts at ⊥ (§2.12).
-    {
-        var bot: Contract.Draft = .{ .arity = 0 };
-        for (codes.items) |id| {
-            const c = &mod.codes.items[id];
-            bot.arity = c.params.len;
-            c.contract = try mod.contracts.commit(gpa, &rs[0].account, &mod.slots, &bot);
-        }
+    var bot: Contract.Draft = .{ .arity = 0 };
+    for (codes.items) |id| {
+        const c = &mod.codes.items[id];
+        bot.arity = c.params.len;
+        c.contract = try mod.contracts.commit(gpa, &rs[0].account, &mod.slots, &bot);
     }
     // Rounds of evaluations, until nothing moved after it was read.
     var round: u32 = 0;
@@ -1530,6 +1530,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             charging(mod, &r.account);
             mod.cur_locals = in.bir.decls[r.decl].locals_start;
             try ReadOff.factsOff(&evals[i], ra, &drafts[i]);
+            try Contents.check(&evals[i], ra, &drafts[i]);
             if (sv) |v| try v.pump();
         }
         if (!validating and solver.used) try kg.round(gpa, &rs[0].account, &mod.contracts, mod.codes.items, ids, drafts, evals);
@@ -1558,7 +1559,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             if (validating) {
                 // Not within its candidate: an inference defect, joined and
                 // validated again (§2.12 step 3), never silent.
-                if (try mod.contracts.within(ra, &mod.slots, c, code.contract)) {
+                if (try Within.within(&mod.contracts, ra, &mod.slots, c, code.contract)) {
                     // Within: the code's own contract is what it does under the candidates, so it is
                     // what callers read (no reliance a round of the inference made and a later one dropped).
                     code.contract = c;

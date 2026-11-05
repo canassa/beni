@@ -17,28 +17,15 @@ const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
+const BlockNames = @import("BlockNames.zig");
 
 pub const magic: u32 = 0x324e574f;
-pub const version: u32 = 21;
+pub const version: u32 = 22;
 pub const Error = Ids.ChargeError || error{BadBlock};
 const Step = Place.Step;
 
-/// How the writer names a field rank, a top-level value and an origin, as
-/// string indices of the block's table.
-pub const Names = struct {
-    ctx: *anyopaque,
-    field: *const fn (ctx: *anyopaque, rank: u32) u32,
-    /// `(module, declaration)` as a qualified name.
-    decl: *const fn (ctx: *anyopaque, md: [2]u32) u32,
-};
-
-/// The reader's inverse: a field name string to this module's rank, a
-/// qualified name string to `(module, declaration)`.
-pub const Remap = struct {
-    ctx: *anyopaque,
-    field: *const fn (ctx: *anyopaque, string: u32) ?u32,
-    decl: *const fn (ctx: *anyopaque, string: u32) ?[2]u32,
-};
+pub const Names = BlockNames.Names;
+pub const Remap = BlockNames.Remap;
 
 /// A writer's node to its index in the node table (from 1).
 const Index = std.AutoHashMapUnmanaged(Contract.Node, u32);
@@ -156,6 +143,12 @@ const Writer = struct {
         }
         try w.cond(h.req);
         try w.effects(h.escapes);
+        try w.word(h.stores.len);
+        for (w.t.storesOf(h.stores)) |s| {
+            try w.word(s.j);
+            try w.rel(s.slot);
+            try w.cond(s.cond);
+        }
         try w.word(h.labels.len);
         for (w.t.labelsOf(h.labels)) |l| {
             try w.word(l.j);
@@ -319,6 +312,11 @@ const Reader = struct {
         };
         d.req = try r.cond();
         try r.effects(&d.escapes);
+        for (0..try r.count()) |_| {
+            const j = try r.next();
+            const slot = try r.rel();
+            try d.stores.append(r.arena, .{ .j = j, .slot = slot, .cond = try r.cond() });
+        }
         for (0..try r.count()) |_| {
             const j = try r.next();
             const slot = try r.rel();

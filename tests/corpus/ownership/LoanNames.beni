@@ -1,0 +1,38 @@
+-- A loan's refusal names the loan and its cell, and a fix as deep as the
+-- write (`ownership-v2.md` §2.13.7, *Copy depth and diagnostics*).
+import List
+import Ref exposing (Ref)
+
+
+get : Ref (List Int) → List Int
+get r =
+    v = Ref.get r
+    List.push v 1
+
+
+viaField : { c : Ref (List Int) } → List Int
+viaField h = List.push (Ref.get h.c) 1
+
+
+modify : Ref (List Int) → List Int
+modify r = List.push (Ref.modify r λo → ( o, o )) 1
+
+
+outerCopy : Ref (List (List Int)) → List (List Int)
+outerCopy r =
+    c = List.copy (Ref.get r)
+    List.map c λl → List.push l 1
+
+
+outerEdit : Ref (List (List Int)) → List (List Int)
+outerEdit r = List.push (Ref.get r) [ 1 ]
+
+
+twoLevels : Ref (List (List (List Int))) → List (List (List Int))
+twoLevels r = List.map (Ref.get r) λm → List.map m λl → List.push l 1
+
+
+deepCopy : Ref (List (List Int)) → List (List Int)
+deepCopy r =
+    c = List.map (Ref.get r) List.copy
+    List.map c λl → List.push l 1

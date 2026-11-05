@@ -1,0 +1,29 @@
+-- DeadDuplicateLive (Appendix B, S4; R-4.6.7, R-8.3): `a` holds `r` twice, but
+-- `a` is dead when `b` is written. The sharing lives in `a`'s own snapshot
+-- and never reaches `b`'s: accepted, as v1 accepts it.
+import List
+import Node exposing (Program)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show xss = String.join (List.map xss ints) ";"
+
+
+build : ⊤ → List (List Int)
+build ⊤ =
+    r = [ 1 ]
+    a = [ r, r ]
+    b = [ r ]
+    _ = List.length a
+    List.update b 0 λl → List.push l 9
+
+
+main : Program
+main = Node.print (show (build ⊤))

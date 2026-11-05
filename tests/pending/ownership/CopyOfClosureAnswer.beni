@@ -1,0 +1,39 @@
+-- CK-319: #2030. `List.copy` of the answer of a closure that a declaration
+-- returns is refused `alias`: `a` is said to hold the copy, which `List.copy`
+-- exists to separate. `viaParam`, the same copy of a callback parameter's
+-- answer, is accepted. `copyAlias` is Appendix B GrowAlias's green twin (copy
+-- `a` at the write). The golden claims the verdict lines and the totals.
+mk : List Int → (⊤ → List Int)
+mk xs = λ⊤ → xs
+
+
+pub viaMk : ⊤ → List Int × List Int
+viaMk ⊤ =
+    g = mk [ 0 ]
+    a = g ⊤
+    c = List.copy a
+    ( List.push c 1, a )
+
+
+pub viaParam : (⊤ → List Int) → List Int × List Int
+viaParam g =
+    a = g ⊤
+    c = List.copy a
+    ( List.push c 1, a )
+
+
+grow : Int, List Int → (⊤ → List Int)
+grow n xs =
+    if n == 0 then
+        λ⊤ → xs
+    else
+        previous = grow (n - 1) xs
+        λ⊤ → previous ⊤
+
+
+pub copyAlias : Int → List Int × List Int
+copyAlias n =
+    g = grow n [ 0 ]
+    a = g ⊤
+    b = g ⊤
+    ( List.push (List.copy a) 1, b )

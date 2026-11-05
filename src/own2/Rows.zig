@@ -206,7 +206,13 @@ pub fn fromWords(env: Env, sig: Signature) Error!Contract.Id {
             const cs = if (try env.places.extend(env.gpa, .growth(env.account), from, Place.Step.contents)) |c| try env.rel(c) else Slots.root;
             _ = try Draft.addEffect(&d.writes, env.arena, .{ .j = j, .slot = cs, .deep = false });
         }
-        if (Env.has(ws, .cellstored)) _ = try Draft.addEffect(&d.escapes, env.arena, .{ .j = j, .slot = Slots.root, .deep = true });
+        if (Env.has(ws, .cellstored)) {
+            _ = try Draft.addEffect(&d.escapes, env.arena, .{ .j = j, .slot = Slots.root, .deep = true });
+            if (j > 0) if (try env.places.extend(env.gpa, .growth(env.account), try env.root(sig.params[0].place), Place.Step.contents)) |c| {
+                var occ = [1]u64{Contract.occDeep(Contract.occ(j, Slots.root))};
+                try d.addStore(env.arena, env.account, .{ .j = 0, .slot = try env.rel(c), .cond = try Contract.Cond.of(env.account, &occ) });
+            };
+        }
         if (d.flags.cross) continue;
         if (Env.has(ws, .returned)) {
             try env.identity(&d, r, j, from);

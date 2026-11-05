@@ -1,0 +1,7 @@
+# v2 refuses a loan stored behind another cell's ◆, and the edit of what it lends (§2.13.7).
+21:5 list_still_used Ref.set
+22:5 list_still_used Ref.update
+29:10 list_still_used Ref.make
+30:5 list_still_used Ref.update
+47:5 list_still_used Ref.set
+48:5 list_still_used Ref.update

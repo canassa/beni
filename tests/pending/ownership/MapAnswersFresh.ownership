@@ -1,0 +1,15 @@
+module MapAnswersFresh
+  13:5 call List.map ys[*]: accepted call (<lambda> writes what List.map supplies it)
+  13:22 List.push l: accepted callback-param (List.map supplies it owned)
+  19:5 call List.map zs[*][*]: accepted call (<lambda> writes what List.map supplies it)
+  19:26 call List.map inner[*]: accepted fresh
+  19:46 List.push l: accepted callback-param (List.map supplies it owned)
+  25:5 call List.map ys[*][*]: accepted call (<lambda> writes what List.map supplies it)
+  25:25 call List.map pair[*]: accepted fresh
+  25:44 List.push l: accepted callback-param (List.map supplies it owned)
+  31:5 call List.map ys[*]: accepted param (<lambda> writes what List.map supplies it)
+  31:22 List.push l: accepted callback-param (List.map supplies it owned)
+  37:5 call List.map a[*]: accepted param (<lambda> writes what List.map supplies it)
+  37:21 List.push l: accepted callback-param (List.map supplies it owned)
+  demands 12: accepted 12 (fresh 2, call 3, param 2, callback-param 5, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 12: accepted 12 (fresh 2, call 3, param 2, callback-param 5, once 0, entry 0; assumed 0), pending 0, rejected 0

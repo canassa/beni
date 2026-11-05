@@ -1,0 +1,4 @@
+A runtime catch for one object stored at two slots of a cell (ownership-v2.md §2.13.7, #1984, #1986): by Ref.set, a
+callback's answer, Ref.modify's .1, the old contents, a list, a record, a helper, a closure, and a call before a store.
+Built again under --ownership=v2 and the list stale-read sanitiser. v2 refuses each edit; were one accepted, the sanitised
+run would trap where the second slot is read.

@@ -1,0 +1,2 @@
+Ref.modify's independent result under --ownership=v2 and the list stale-read sanitiser (§2.13.7): each edit is accepted
+in place, and the sanitised run prints what the plain run prints.

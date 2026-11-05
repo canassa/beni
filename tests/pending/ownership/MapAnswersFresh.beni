@@ -1,0 +1,37 @@
+-- CK-322: #1978. The answers of a many label are one per invocation, so a
+-- `List.map` whose callback answers a list of its own gives a list whose
+-- elements are exclusive. v2 refuses the element write `disjoint` (approx) in
+-- every function below; v1 accepts them. They are the greens of Appendix B
+-- BuilderCallbackSharing, NestedTraversalShared, LinkedSupplyVersion,
+-- FoldCallbackIdentity and SplitTraversalJoin. The captured twins
+-- (run/BuilderCallbackSharing, run/NestedTraversalShared,
+-- run/LinkedSupplyVersion, run/FoldCallbackIdentity) stay refused. The
+-- golden claims the verdict lines and the totals.
+pub fresh : List Int → List (List Int)
+fresh xs =
+    ys = List.map xs λn → [ n ]
+    List.map ys λl → List.push l 9
+
+
+pub nested : List Int, List (List Int) → List (List (List Int))
+nested ws xs =
+    zs = List.map ws λ_ → List.map xs λ_ → [ 1 ]
+    List.map zs λinner → List.map inner λl → List.push l 1
+
+
+pub linked : List (List Int) → List (List (List Int))
+linked xs =
+    ys = List.map xs λ_ → [ [ 1 ], [ 2 ] ]
+    List.map ys λpair → List.map pair λl → List.push l 1
+
+
+pub identity : List (List Int) → List (List Int)
+identity xs =
+    ys = List.map xs λl → l
+    List.map ys λl → List.push l 1
+
+
+pub joined : Bool, List (List Int) → List (List Int)
+joined c xs =
+    a = if c then List.map xs λl → l else List.map xs λl → l
+    List.map a λl → List.push l 1

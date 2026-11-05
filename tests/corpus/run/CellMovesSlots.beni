@@ -1,0 +1,161 @@
+-- A callback that moves what it was supplied to another slot of its cell
+-- (`ownership-v2.md` §2.13.7, *The contents relation*). The frame's names
+-- then no longer say which object a slot holds, so a move is judged as an
+-- edit of what it moves: a loan taken before it and live after it refuses
+-- it. Each loan below is read after an edit: were the move accepted, the
+-- edit would reach the list the loan holds.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    joined = String.join (List.map xs String.fromInt) sep
+    "[${joined}]"
+
+
+pair : Ref (List Int × List Int) → String
+pair r =
+    case Ref.get r of
+        ( a, b ) →
+            "${ints a} ${ints b}"
+
+
+swap : List Int × List Int → List Int × List Int
+swap p =
+    case p of
+        ( x, y ) →
+            ( y, x )
+
+
+edit : Ref (List Int × List Int) → ⊤
+edit r = Ref.update r λp →
+    case p of
+        ( x, y ) →
+            ( List.push x 8, y )
+
+
+swapped : ⊤ → String
+swapped ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    case Ref.get r of
+        ( _, b ) →
+            Ref.update r swap
+            edit r
+            "${ints b} ${pair r}"
+
+
+taken : ⊤ → String
+taken ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    case Ref.get r of
+        ( _, b ) →
+            Ref.update r swap
+            case Ref.modify r λp → ( p, ( [], [] ) ) of
+                ( x, _ ) →
+                    z = List.push x 8
+                    "${ints b} ${ints z}"
+
+
+dropped : ⊤ → String
+dropped ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    case Ref.get r of
+        ( _, b ) →
+            Ref.update r λp →
+                case p of
+                    ( _, y ) →
+                        ( y, [] )
+            edit r
+            "${ints b} ${pair r}"
+
+
+viaModify : ⊤ → String
+viaModify ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    case Ref.get r of
+        ( _, b ) →
+            _ = Ref.modify r λp → ( 0, swap p )
+            edit r
+            "${ints b} ${pair r}"
+
+
+swapIn : Ref (List Int × List Int) → ⊤
+swapIn r = Ref.update r swap
+
+
+viaHelper : ⊤ → String
+viaHelper ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    case Ref.get r of
+        ( _, b ) →
+            swapIn r
+            edit r
+            "${ints b} ${pair r}"
+
+
+record : ⊤ → String
+record ⊤ =
+    c = Ref.make { p = [ 1 ], q = [ 2 ] }
+    v = (Ref.get c).q
+    Ref.update c λw → { p = w.q, q = w.p }
+    Ref.update c λw → { p = List.push w.p 9, q = w.q }
+    "${ints v} ${ints (Ref.get c).p}"
+
+
+noLoan : ⊤ → String
+noLoan ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    Ref.update r swap
+    edit r
+    pair r
+
+
+upd : Ref a, (a → a) → ⊤
+upd c f = Ref.update c f
+
+
+throughLabel : ⊤ → String
+throughLabel ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    upd r swap
+    pair r
+
+
+partial : Ref (List Int × List Int), List Int, (List Int × List Int → List Int × List Int) → ⊤
+partial c put f =
+    Ref.update c λp →
+        case p of
+            ( _, y ) →
+                ( put, y )
+    Ref.update c f
+
+
+helperEscapesOneSlot : ⊤ → String
+helperEscapesOneSlot ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    put = [ 7 ]
+    partial r put swap
+    Ref.update r λp →
+        case p of
+            ( x, y ) →
+                ( x, List.push y 8 )
+    "${ints put} ${pair r}"
+
+
+main : Program
+main =
+    Node.printLines
+        [ swapped ⊤
+        , taken ⊤
+        , dropped ⊤
+        , viaModify ⊤
+        , viaHelper ⊤
+        , record ⊤
+        , noLoan ⊤
+        , throughLabel ⊤
+        , helperEscapesOneSlot ⊤
+        ]

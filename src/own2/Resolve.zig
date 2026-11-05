@@ -350,8 +350,8 @@ const Resolver = struct {
         }
         // A host object escaped, or JavaScript made it (§2.10, *host objects*).
         if (fx.unknown or fx.host or targets.len == 0) {
-            refuse(o, if (fx.unknown or targets.len == 0) .unknown else .escaped);
-            if (targets.len != 0) o.exactness = .approximate;
+            refuse(o, if (fx.loan != none) .loan else if (fx.unknown or targets.len == 0) .unknown else .escaped);
+            if (fx.loan != none) o.loan = Holders.calleeAndCell(fr, fx.loan) else if (targets.len != 0) o.exactness = .approximate;
             return line;
         }
         // The ground is what the targets come from (R-7.15): a parameter's
@@ -369,7 +369,7 @@ const Resolver = struct {
         relied.no = d.relies.no;
         if (debug) std.debug.print("judge point {d} kind {t} relies no={} sel={d}\n", .{ d.point, d.kind, d.relies.no, d.relies.sel.len });
         // Unescaped.
-        for (targets) |t| if (try r.escaped(t, d.point, d.call, &relied)) {
+        for (targets) |t| if (try r.escaped(t, d.point, d.call, &relied) and (d.beside == none or try r.escaped(t, d.point, d.beside, &relied))) {
             refuse(o, .escaped);
             return line;
         };
@@ -523,7 +523,7 @@ const Resolver = struct {
     /// are held after the call: each is judged on its own (§2.11.3).
     fn judgeSupplied(r: *Resolver, t: u32, point: u32, inst: u32, args: []const u32, k: usize, skip: usize, pending: u32) Error!Line {
         const l = try r.judgeSuppliedLeaf(t, point, inst, args, k, skip, pending);
-        if (l.outcome.verdict != .refused or l.outcome.cause != .unknown) return l;
+        if (l.outcome.verdict != .refused or !l.outcome.cause.unseen()) return l;
         const fr = r.f();
         var stack: std.ArrayList(u32) = .empty;
         defer stack.deinit(r.gpa());
@@ -546,7 +546,7 @@ const Resolver = struct {
                 else => {},
             }
             const lb = try r.judgeSuppliedLeaf(x, point, inst, args, k, skip, pending);
-            if (lb.outcome.verdict == .refused and lb.outcome.cause != .unknown) return lb;
+            if (lb.outcome.verdict == .refused and !lb.outcome.cause.unseen()) return lb;
         }
         return l;
     }
@@ -661,11 +661,11 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
             if (l.outcome.verdict == .accepted) try req.addBoth(arena, f.account, l.demand.relies, l.extra);
         },
         .cb => switch (l.outcome.verdict) {
-            .refused => if (l.outcome.cause != .unknown) try kept.append(arena, .{ j.i, j.k, j.t }),
+            .refused => if (!l.outcome.cause.unseen()) try kept.append(arena, .{ j.i, j.k, j.t }),
             .accepted => try conds[j.i * width + j.k].addBoth(arena, f.account, l.demand.relies, l.extra),
         },
         .pass => switch (l.outcome.verdict) {
-            .refused => if (l.outcome.cause != .unknown) try pkept.append(arena, .{ j.i, j.k, j.t, j.at }),
+            .refused => if (!l.outcome.cause.unseen()) try pkept.append(arena, .{ j.i, j.k, j.t, j.at }),
             .accepted => try pconds[j.i * width + j.k].addBoth(arena, f.account, l.demand.relies, l.extra),
         },
     };

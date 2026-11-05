@@ -86,6 +86,8 @@ pub const Demand = struct {
     /// The call whose callee writes (`none` for the walk's own demands),
     /// and the argument written.
     call: u32 = none,
+    /// A call whose escapes do not refuse this demand, beside `call` (`Contents.moved`).
+    beside: u32 = none,
     arg: u32 = none,
     /// A virtual call's write: the written slot of its argument `arg` (`Outward.finishDemands` reads the labels it is supplied through).
     wslot: u32 = none,

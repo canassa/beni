@@ -2191,3 +2191,88 @@ test "explicit standalone ownership enforcement checks list sharing" {
         .message = "`List.push` changes `values` in place, but `values` is read again afterwards.\n\n4|    changed = List.push values 1\n                ^^^^^^^^^^^^^^^^^^ the list is changed in place here\n5|    ( changed, values )\n                 ^^^^^^ and `values` is read here, after the change\n\nIf the list were changed in place, `values` would see the change when it is read\non line 5.\n\nTo change a copy and leave `values` as it was, copy it there:\n\n4|    changed = List.push (List.copy values) 1\n\nThis is sharing the checker can see: `values` is read on line 5, after the\nchange.",
     }}, enforced.diagnostics);
 }
+
+const p_sync_list = "tests/corpus/ownership/p-sync.txt";
+
+/// The top-level declaration of `.beni` file text `text` around `at`.
+fn declAround(text: []const u8, at: usize) ?[]const u8 {
+    var lines = std.mem.splitScalar(u8, text[0..at], '\n');
+    var name: ?[]const u8 = null;
+    while (lines.next()) |l| {
+        const s = if (std.mem.startsWith(u8, l, "pub ")) l[4..] else l;
+        const end = std.mem.indexOf(u8, s, " :") orelse continue;
+        if (end == 0 or !std.ascii.isLower(s[0])) continue;
+        for (s[0..end]) |c| {
+            if (!std.ascii.isAlphanumeric(c)) break;
+        } else name = s[0..end];
+    }
+    return name;
+}
+
+fn pSyncWalk(arena: std.mem.Allocator, dir: []const u8, list: []const u8, ok: *bool) !void {
+    var d = try std.Io.Dir.cwd().openDir(testing.io, dir, .{ .iterate = true });
+    defer d.close(testing.io);
+    var it = d.iterate();
+    while (try it.next(testing.io)) |entry| {
+        const path = try std.fmt.allocPrint(arena, "{s}/{s}", .{ dir, entry.name });
+        if (entry.kind == .directory and !std.mem.eql(u8, entry.name, "zig")) try pSyncWalk(arena, path, list, ok);
+        if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
+        const text = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, arena, .limited(1 << 24));
+        for ([_][]const u8{ "\"addEventListener\"", "\"addListener\"", "\"prependListener\"", "\"on\"", "\"once\"" }) |word| {
+            var at: usize = 0;
+            while (std.mem.indexOfPos(u8, text, at, word)) |hit| : (at = hit + word.len) {
+                const decl = declAround(text, hit) orelse continue;
+                var rows = std.mem.splitScalar(u8, list, '\n');
+                const listed = while (rows.next()) |row| {
+                    var fs = std.mem.tokenizeScalar(u8, row, ' ');
+                    _ = fs.next() orelse continue;
+                    const file = fs.next() orelse continue;
+                    const name = fs.next() orelse continue;
+                    if (std.mem.eql(u8, file, path) and std.mem.endsWith(u8, name, decl) and name[name.len - decl.len - 1] == '.') break true;
+                } else false;
+                if (!listed) {
+                    std.debug.print("{s}: `{s}` lets the host into beni and {s} does not list it\n", .{ path, decl, p_sync_list });
+                    ok.* = false;
+                }
+            }
+        }
+    }
+}
+
+test "P-sync: every platform's bodies are listed and pinned, and no listener is added outside them" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    const list = try std.Io.Dir.cwd().readFileAlloc(testing.io, p_sync_list, arena, .limited(1 << 20));
+    const pins = try Pins.parse(arena, try std.Io.Dir.cwd().readFileAlloc(testing.io, bodies_list, arena, .limited(1 << 20)));
+    var ok = true;
+    var rows = std.mem.splitScalar(u8, list, '\n');
+    while (rows.next()) |row| {
+        if (row.len == 0 or row[0] == '#') continue;
+        var fs = std.mem.tokenizeScalar(u8, row, ' ');
+        const platform = fs.next() orelse return error.PSyncRow;
+        const file = fs.next() orelse return error.PSyncRow;
+        const decl = fs.next() orelse return error.PSyncRow;
+        if (std.mem.eql(u8, file, "none")) continue;
+        if (!pins.has(try std.fmt.allocPrint(arena, "platforms/{s}", .{platform}), decl)) {
+            std.debug.print("{s}: {s} of {s} has no pinned body in {s}\n", .{ p_sync_list, decl, platform, bodies_list });
+            ok = false;
+        }
+    }
+    var d = try std.Io.Dir.cwd().openDir(testing.io, "platforms", .{ .iterate = true });
+    defer d.close(testing.io);
+    var it = d.iterate();
+    while (try it.next(testing.io)) |entry| {
+        if (entry.kind != .directory) continue;
+        var named = std.mem.splitScalar(u8, list, '\n');
+        const found = while (named.next()) |row| {
+            if (std.mem.startsWith(u8, row, entry.name) and row.len > entry.name.len and row[entry.name.len] == ' ') break true;
+        } else false;
+        if (!found) {
+            std.debug.print("platform {s} is not in {s}\n", .{ entry.name, p_sync_list });
+            ok = false;
+        }
+        try pSyncWalk(arena, try std.fmt.allocPrint(arena, "platforms/{s}", .{entry.name}), list, &ok);
+    }
+    try testing.expect(ok);
+}
