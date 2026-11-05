@@ -142,7 +142,7 @@ const layers = [_]Entry{
     // values, the distinct check reads a call's instantiation.
     // A cell's `◆` as an evaluation reads it, from `Eval` (#1729).
     .{ .file = "Cells.zig", .layer = 8, .max_lines = 150 },
-    .{ .file = "CellEdit.zig", .layer = 8, .max_lines = 45 },
+    .{ .file = "CellEdit.zig", .layer = 8, .max_lines = 35 },
     // A label's answer handed back to it, and its `fed` occurrence (#1713).
     .{ .file = "Fed.zig", .layer = 8, .max_lines = 140 },
 

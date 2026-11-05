@@ -3,7 +3,7 @@
 -- no slot state, so it reads what `Ref.make` was given, or an answer as the
 -- cell's own, and misses the sharing a store or an answer put there. A store,
 -- an answer, a parameter's cell and a field of the state each hold one list
--- twice. Each edit is refused; asked of the stale contents, the sanitised runs
+-- twice, and `List.update` edits one of them. Each edit is refused; asked of the stale contents, the sanitised runs
 -- trap on a stale read.
 import List
 import Node exposing (Program)
@@ -55,9 +55,14 @@ main =
             [] →
                 s
     Ref.update state λs → { s | rows = List.map s.rows push1 }
+    d = [ 1 ]
+    direct = Ref.make []
+    Ref.set direct [ d, d ]
+    Ref.update direct λr → List.update r 0 push1
     Node.printLines
         [ shows (Ref.get stored)
         , shows (Ref.get answered)
         , shows (Ref.get param)
         , shows (Ref.get state).rows
+        , shows (Ref.get direct)
         ]

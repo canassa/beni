@@ -2160,12 +2160,10 @@ a top-level value is never written, and `⊤` holds only what has escaped, and a
 
 **A cell's contents are not a list the condition can read.** v2 keeps no slot state (§2.13.7), so a condition over what
 a cell holds reads what `Ref.make` was given, or an answer as the cell's own, and misses what a store or an answer
-shared: after `Ref.set c [ a, a ]`, `Ref.update c λr → List.map r push1` pushed `a` twice. So a write that arrives through
-a `◆`, then a `[*]`, and that came through a traversal's element (a many label's parameter arrival at a `[*]`, at this
-level or inside the code, `Flags.many_write`) relies on `no` (`CellEdit.zig`, `run/SanitiserTakenElementCell`). An edit
-of the contents' own list or of a field stays accepted. The same trust without a traversal is an open defect on
-master, #1986: `List.update` through a cell. Refusing that too would refuse programs nothing shows unsound, so the fix is
-the slot state, S8-ref.
+shared: after `Ref.set c [ a, a ]`, `Ref.update c λr → List.map r push1` pushed `a` twice, and `List.update` the same through
+`List.update r 0 push1`. So a write that arrives through a `◆`, then a `[*]`, relies on `no` (`CellEdit.zig`,
+`run/SanitiserTakenElementCell`). An edit of the contents' own list or of a field stays accepted, and a field's sharing
+is the same defect, still open (#1986): a state's fields are read this way too often to refuse without the slot state, S8-ref.
 
 Sound in full because every object a taken write reaches is judged. Against the callee, by the holders that keep it
 and by Lemma 1's split clause for the container (O9's pinned obligation on every body that reads a `taken` result: the
@@ -2178,7 +2176,7 @@ Measured (2026-11-05, Debug, against master at `89acc9741`). Accepted: C.6's fir
 its `edit` row, and the same shapes through `indexedMap`, `filterMap`, `concatMap`, `foldl`, `foldr`, a helper, nested
 maps, a field and a tuple's part, all in place (`run/SanitiserTakenElementApart`, refused on master). Refused:
 `run/SanitiserTakenElement`, whose probed shapes trap when the supply's condition is not asked. The oracle's 2 042
-probes: 0 DIFF, and 3 TRAP, the three of #1986, which trap on master too and hold no traversal. The ledger of 2 280 roots:
+probes: 0 DIFF, and 1 TRAP, the field sharing of #1986, which traps on master too and holds no traversal. The ledger of 2 280 roots:
 11 positions refused → accepted, 2 accepted → refused, each a call into a callee whose own write both sides refuse:
 `Differential`'s `t42Repeated`, whose `[ tags, tags ]` master accepted only because it refused the write inside `t42`, and
 `BallMachine`'s `Ref.modify` of `step`, refused at `Physics` 299:14. Cost: growth unchanged everywhere, `Schema.shapeOf`

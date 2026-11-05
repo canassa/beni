@@ -1073,7 +1073,6 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
     for (flat.items) |x| if (!Eval.cellWrite(f.slots, x)) {
         d.flags.once = true;
     };
-    d.flags.many_write = e.many_write;
     // Each condition in its one spelling (§2.9.1, *One spelling of a subtree*).
     var nj: usize = 0;
     for (f.roots.items) |r| if (r.kind == .param) {
