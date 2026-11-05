@@ -191,7 +191,7 @@ const Builder = struct {
         const patch_ = try b.function("domRootPatch", &.{ instance, fresh }, patch_body);
         var layout: std.ArrayList(m.Expr) = .empty;
         inline for (@typeInfo(@TypeOf(root_layout)).@"struct".field_names) |role| {
-            try layout.append(b.cx.arena, try b.js().string(@field(root_layout, role)));
+            try layout.append(b.cx.arena, try b.js().array(&.{ try b.js().string(role), try b.js().string(@field(root_layout, role)) }));
         }
         return b.js().object(&.{
             .{ .key = "$rootLayout", .value = try b.js().array(layout.items) },
