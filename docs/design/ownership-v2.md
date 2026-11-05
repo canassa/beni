@@ -3195,7 +3195,7 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
      and on a listener (`addEventListener`, an emitter's `on` or `once`) added in a declaration not listed.
      | Platform | Bodies | Why no program code runs inside a host call |
      |---|---|---|
-     | `node` | `Http.Server.startListen`, `receive`, `takeUpgrade`, `WebSocket.fromUpgrade`, `Io.run` | an emitter's listener resumes a fiber (`Task.resume`), which queues it; `Io.run`'s `beforeExit` only reports |
+     | `node` | `Http.Server.startListen`, `receive`, `takeUpgrade`, `WebSocket.fromUpgrade`, `Io.run`, `ChildProcess.listen`, `collectFrom` | an emitter's listener resumes a fiber (`Task.resume`), which queues it; `Io.run`'s `beforeExit` only reports; a child's `data` listener keeps a chunk, or closes the pipes and signals the child, and Node emits nothing back inside those calls (`boundary.md` §9.14) |
      | `browser` | `Rt.turn`, `delegate`, `delegated`, `listen`, `watchEdits`, `crashScreen`, `Listen.on`, `on2`, `WebSocket.attach` | a message a handler sends is queued for the turn's flush; a `Listen` value is queued for a fiber. **One exception, #2006:** a DOM handler's own extractor runs at the dispatch, so under a `focus()` it runs inside that host call |
      | `browser-inline` | `Inline.on`, `onArm`, `listen`, `crashScreen`, `Listen.on`, `Browser.Navigation.listen`, `listenOne` | the same, and the same exception |
      | `browser-tea`, `html` | none | no host code of their own |

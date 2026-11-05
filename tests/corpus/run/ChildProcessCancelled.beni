@@ -1,0 +1,70 @@
+-- run: a fiber cancelled while its child runs stops the child, and the
+-- cancellation ends only when the child has exited (boundary.md §9.14
+-- (d)):
+--
+--   - `Task.cancel`: the child traps `SIGTERM`, writes `term.txt` and
+--     exits; the file is there when `cancel` returns, so the cleanup waited
+--     for the exit;
+--   - `Task.timeout`: the child sleeps 1 000 seconds and the timeout ends
+--     it. A child left running would keep Node alive, and the case would
+--     run into its hang guard.
+--
+-- The child writes `started.txt` once its trap is set; the program waits
+-- for that file before it cancels. A first child removes what an earlier
+-- run left.
+import ChildProcess exposing (Command)
+import Duration
+import Io
+import Node exposing (Program)
+import Task
+
+
+sh : String → Command
+sh script = ChildProcess.command "/bin/sh" [ "-c", script ]
+
+
+-- Wait for `path` to exist, for at most `tries` times 5 ms.
+waitFor : String, Int → Bool
+waitFor path tries =
+    case Io.readFile path of
+        Ok _ →
+            True
+
+        Err _ →
+            if tries == 0 then
+                False
+            else
+                Io.sleep 5
+                waitFor path (tries - 1)
+
+
+main : Program
+main = Io.run λ⊤ →
+    _ = ChildProcess.run (sh "rm -f started.txt term.txt")
+    child = Task.spawn λ⊤ →
+        ChildProcess.run
+            (sh
+                "trap 'echo got TERM > term.txt; exit 0' TERM; echo > started.txt; while :; do sleep 0.01; done"
+            )
+    started = waitFor "started.txt" 2000
+    Task.cancel child
+    term =
+        case Io.readFile "term.txt" of
+            Ok text →
+                "the child wrote: " ++ String.trim text
+
+            Err _ →
+                "no term.txt"
+    timedOut =
+        case Task.timeout (Duration.millis 50) λ⊤ → ChildProcess.run (sh "exec sleep 1000") of
+            Just _ →
+                "the sleeper answered"
+
+            Nothing →
+                "the sleeper timed out"
+    Node.printLines
+        [ if started then "started" else "never started"
+        , "cancel returned"
+        , term
+        , timedOut
+        ]

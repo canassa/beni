@@ -1,0 +1,13 @@
+ENOENT: not found
+EACCES: permission denied
+EAGAIN: too many processes
+EMFILE: too many open files
+ENFILE: too many open files
+EPERM: permission denied
+ENOTDIR: not a directory
+E2BIG: arguments too long
+ENAMETOOLONG: name too long
+ELOOP: symlink loop
+ETXTBSY: file busy
+ENOEXEC: bad executable
+ENOMEM: out of memory

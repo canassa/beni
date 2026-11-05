@@ -1,0 +1,84 @@
+-- run: the failures of `ChildProcess.run` that a program cannot arrange
+-- (no process or memory to spare, no descriptor for the pipes, a busy
+-- file, a file in no format the system runs, a sandbox that forbids it)
+-- each have their own constructor, by either route Node takes: the
+-- child's `error` event, or a throw from `spawn` (boundary.md §9.14 (e),
+-- CLAUDE.md rule 9). The test platform makes every start fail with the
+-- code named, by Node's route for it.
+import ChildProcess exposing (RunError)
+import Fault
+import Io
+import Node exposing (Program)
+
+
+describe : RunError → String
+describe error =
+    case error of
+        ChildProcess.NotFound →
+            "not found"
+
+        ChildProcess.PermissionDenied →
+            "permission denied"
+
+        ChildProcess.NotADirectory →
+            "not a directory"
+
+        ChildProcess.ArgumentsTooLong →
+            "arguments too long"
+
+        ChildProcess.NameTooLong →
+            "name too long"
+
+        ChildProcess.SymlinkLoop →
+            "symlink loop"
+
+        ChildProcess.FileBusy →
+            "file busy"
+
+        ChildProcess.BadExecutable →
+            "bad executable"
+
+        ChildProcess.TooManyOpenFiles →
+            "too many open files"
+
+        ChildProcess.TooManyProcesses →
+            "too many processes"
+
+        ChildProcess.OutOfMemory →
+            "out of memory"
+
+        ChildProcess.InvalidArgument →
+            "invalid argument"
+
+        ChildProcess.OutputTooLarge →
+            "output too large"
+
+
+attempt : String → String
+attempt code =
+    Fault.failSpawns code
+    case ChildProcess.run (ChildProcess.command "/bin/sh" [ "-c", "true" ]) of
+        Ok _ →
+            code ++ ": ran"
+
+        Err error →
+            code ++ ": " ++ describe error
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ attempt "ENOENT"
+        , attempt "EACCES"
+        , attempt "EAGAIN"
+        , attempt "EMFILE"
+        , attempt "ENFILE"
+        , attempt "EPERM"
+        , attempt "ENOTDIR"
+        , attempt "E2BIG"
+        , attempt "ENAMETOOLONG"
+        , attempt "ELOOP"
+        , attempt "ETXTBSY"
+        , attempt "ENOEXEC"
+        , attempt "ENOMEM"
+        ]
