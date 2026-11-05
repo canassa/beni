@@ -347,7 +347,9 @@ beni over `Js` in `Inline.beni`:
 - **An attribute** whose value changes is `prop`; a constant one, and one `init` bakes, is in the
   markup. An attribute that is not a DOM property and whose value changes, a URL, raw HTML, and a
   class or style list that changes are limits of the compiler. *Amended 2026-10-29 (§10.5):* a
-  constant URL is checked and written into the markup.
+  constant URL is checked and written into the markup. *Amended 2026-11-05 (§10.5, #1169):* a URL
+  that changes is a binding through the runtime's `safeUrl`, and so is a constant URL the build
+  cannot decide.
 - **An eager `when`** (the owner's D-b) is an `html` hole whose value is an `if` — a `case` of two
   arms — one arm of which is one element written in place and the other `<></>`, and whose markup
   arm reads no variable the branch binds (`Program.Arm.eager`): the arm's element is in the markup
@@ -2064,3 +2066,40 @@ call), not `foreign` ones, since a development build copies a sibling file whole
 `bench/size.mjs`'s `page` lines and the `emit/inline/` goldens did not move. *Amended 2026-10-29
 (`plans/runtime-in-beni.md` step 9):* `sandbox` and `element` are such declarations too, and
 `Tea.js` is gone, so the platform has no sibling and a development build copies none.
+
+*Amended 2026-11-05 (#1169): a URL that changes, and a constant the build cannot decide.* The
+runtime holds `safeUrl` and its pattern, `scriptUrl`, as code of `Inline.beni`: the code of
+`browser`'s `Rt.beni` (`backend.md` §15.11, *`safeUrl` is written in beni*), copied and not
+imported, since this platform depends on `html` alone (§1). It is one rule, not a second policy: a
+URL whose scheme is `javascript:`, or `data:text/html` with `,` or `;` after it — letters in any
+case, `\s` between any two characters, whitespace or a control character in front — is written as
+`""`, and every other URL as it is. `node`'s `Rt.beni` holds the same code, and the build-time
+check (`scriptUrl` in `inline.zig` and in `dom.zig`) is the same pattern in ASCII: a change to the
+rule changes all of them. (The `dom` lowering's table this section names is `backend.md` §15.3's,
+not §15.10's.)
+
+- **A URL attribute whose value changes** — its class `String`, its name without a namespace
+  prefix — is a binding (§8.2): the write of a scalar String attribute (§5, *amended 2026-10-30*)
+  whose desired value is `safeUrl(v)`. The element and `safeUrl(v)` are each evaluated once;
+  `setAttribute` writes the value when `getAttribute` gives another. The hole's read set is the
+  binding's, so a key's handler writes it as it writes any other binding.
+- **A URL that `init` bakes** (§8.2) is checked when the program is built, as a constant is, and
+  written into the markup, `""` for a script URL: the `dom` lowering's rule (`browser-direct.md`
+  §5.1). One whose answer turns on a character outside ASCII is a binding instead.
+- **A constant whose answer turns on a character outside ASCII** (`"\u{00A0}javascript:x"`,
+  `"über"`) is a binding of the constant: the same write, its value the string, and its read set
+  empty, so the first pass alone writes it (§8.4, *amended 2026-10-22*), through `safeUrl`, as the
+  `dom` lowering writes such a constant at the mount. The markup holds no value for it.
+- **The prerender tree** (`prerender.md` §4.1) writes the string form of each such binding as
+  `escapeAttribute(safeUrl(v))`: the prerendered page holds what the client's first pass writes, so
+  the takeover writes nothing.
+- **Still class 1:** a URL attribute that changes, or a constant the build cannot decide, whose name
+  has a namespace prefix (`xlink:href`) or whose class is not `String`. `html` declares every URL
+  attribute `String`.
+
+A page with no such binding ships no byte of `safeUrl` or `scriptUrl`: the runtime module is
+reached only from a URL binding (`boundary.md` §9.2, *A runtime module*). The `emit/inline/` and
+`emit/release/inline/` goldens did not move, and `browser/inline/LinkGuard`, whose URLs are
+constants, is the same JavaScript byte for byte. `browser/inline/SafeUrl`, `DynamicLink` and
+`SafeUrlConstant` pin what a page writes; `emit/release/inline/DynamicUrl` pins the binding's
+shape.

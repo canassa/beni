@@ -242,6 +242,8 @@ place:
   absent when false. A control's `value` is its `value` attribute (a `textarea`'s, its text); a
   `select`'s `value` marks the `option` whose `value` it equals as `selected`, where the option's
   value is a constant or a hole of the same unit, and otherwise the first pass writes it.
+  *Amended 2026-11-05 (`browser-inline.md` §10.5, #1169):* a URL binding's value is
+  `safeUrl` of it, `""` for a script URL, so the page holds what the client's first pass writes.
 - **An event** — nothing. A listener is the client's (research 36 §2.12 records the same for
   Solid's `ssr`).
 - **An eager `when`** (§8.2 there) — the arm `init`'s model shows is written; **an arm it hides is
