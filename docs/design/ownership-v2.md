@@ -2155,7 +2155,10 @@ positions included. So it is `no` for `wrap v f = f [ v, v ]`, a selection on th
 (`app v f = f v`: `below ⇐ sel π1{ε*}`), and `yes` only when shown. A capture-held family is the same check in the frame of
 the code that makes the call: `g = λf → f [ a, a ]` publishes `no`. At a call that passes the label on, the callee's
 `below` is instantiated on the arguments, and inside a known code each outer label's is added too, through the chain
-(`opt m f = Maybe.map m λz → f z`: `sel π1{#0.0*}`). **Only a write below the supply's root asks `below`.** A write of the
+(`opt m f = Maybe.map m λz → f z`: `sel π1{#0.0*}`). A pass inside a known code keeps the callee entry's open mark where no
+structure was described at the call: `go v f = app v λz → f z` is `ε… π1ε*`, as `app` is. Closed, a write at `[*]` of `go`'s
+supply landed on no entry, so inside another callback (`app [ s, s ] λr → go r λl → List.map l push1`) it never reached
+the outer call, and no condition was asked of it. **Only a write below the supply's root asks `below`.** A write of the
 root reaches one object, and an object holds no copy of itself, so `wrap v f = f [ v, v ]` with `λl → List.push l 1` and
 `chain xs identity λl → List.push l 3` stay accepted, where the value may hold duplicates the write cannot reach.
 
@@ -2209,9 +2212,9 @@ instantiated at the pass, and the helper's own read of the list keeps the slot.
 Measured (2026-11-05, Debug, against master at `89acc9741`). Accepted: C.6's first row over a parameter and a local,
 its `edit` row, and the same shapes through `indexedMap`, `filterMap`, `concatMap`, `foldl`, `foldr`, a helper, nested
 maps, a field and a tuple's part, all in place (`run/SanitiserTakenElementApart`, refused on master). Refused:
-`run/SanitiserTakenElement`, whose probed shapes trap when the supply's condition is not asked. The oracle's 2 578
-probes: 0 DIFF, and 2 TRAP, both of #1986, which trap on master too and hold no traversal. Two generated sweeps, 6 578
-programs: 0 TRAP, 0 DIFF, none master accepts refused, 1 129 master refuses accepted. The ledger of 2 298 roots:
+`run/SanitiserTakenElement`, whose probed shapes trap when the supply's condition is not asked. The oracle's 2 638
+probes: 0 DIFF, and 3 TRAP, of #1986 and #2013, which trap on master too and hold no traversal. Three generated sweeps,
+9 602 programs: 0 TRAP, 0 DIFF, none master accepts refused, 1 465 master refuses accepted. The ledger of 2 298 roots:
 11 positions refused → accepted, 2 accepted → refused, each a call into a callee whose own write both sides refuse:
 `Differential`'s `t42Repeated`, whose `[ tags, tags ]` master accepted only because it refused the write inside `t42`, and
 `BallMachine`'s `Ref.modify` of `step`, refused at `Physics` 299:14. Cost: growth unchanged everywhere, `Schema.shapeOf`

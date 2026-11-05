@@ -4,7 +4,8 @@
 -- what the callee supplies. A literal behind `app`, `Maybe.map`, `Result.map`,
 -- a user's holder, a tuple, two levels of `app`, a named function, `filterMap`,
 -- `foldl` and `List.update` each hold one list twice, and so do a list the
--- callee builds, a capture, and a lambda that passes the label on. Each edit is
+-- callee builds, a capture, and a lambda that passes the label on, also inside
+-- another callback, where the write must reach the outer call. Each edit is
 -- refused; asked nothing, the sanitised runs trap on a stale read.
 import List
 import Node exposing (Program)
@@ -96,6 +97,10 @@ main =
     viaGo = go [ q, q ] λl → List.map l push1
     s = [ 1 ]
     builtUpdate = wrap s λl → List.update l 0 push1
+    t = [ 1 ]
+    insideOuter = app [ t, t ] λr → go r λl → List.map l push1
+    u = [ 1 ]
+    insideMap = List.map [ [ u, u ] ] λr → go r λl → List.map l push1
     Node.printLines
         [ shows viaApp
         , shows viaMaybe
@@ -113,4 +118,6 @@ main =
         , shows viaOpt
         , shows viaGo
         , shows builtUpdate
+        , shows insideOuter
+        , String.join (List.map insideMap shows) "#"
         ]
