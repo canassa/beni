@@ -1,6 +1,7 @@
 // Builds the example programs into a static site for GitHub Pages.
-// `.github/workflows/pages.yml` runs it on every push to master and
-// deploys its output.
+// `.github/workflows/pages.yml` runs it in every run of ci.yml, and ci.yml
+// deploys its output from master after `zig build test-pages` loads the
+// site in Chrome.
 //
 // usage: node examples/build-pages.mjs <beni> <out> <base> [--playground=<dir>]
 //   <beni>  the compiler to run

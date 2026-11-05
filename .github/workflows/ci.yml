@@ -486,6 +486,9 @@ jobs:
     permissions:
       contents: read
     timeout-minutes: 60
+    # `deploy-pages` deploys only a site whose check passed.
+    outputs:
+      site: ${{ steps.site.outcome }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -560,6 +563,7 @@ jobs:
       # must stand in for each routed program's shell at a deep path. It
       # also runs when the corpus failed, so one run reports both.
       - name: load the site's pages and deep paths
+        id: site
         if: ${{ !cancelled() && steps.dev-shell.outcome == 'success' && needs.browser-plan.outputs.pages == 'true' }}
         run: nix develop .#browser --command zig build test-pages --summary all
       - name: save the Nix store
@@ -653,11 +657,74 @@ jobs:
           primary-key: nix-workers-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
           gc-max-store-size-linux: 4G
 
+  # The examples' site (pages.yml), on every run. ci.yml calls it, and it
+  # is not a workflow of its own, so that the deploy below can need the
+  # `browser` job: a job cannot need a job of another workflow.
+  pages:
+    name: pages
+    uses: ./.github/workflows/pages.yml
+    permissions:
+      contents: read
+
+  # The Pages deploy, on a push to master only: the site that `pages`
+  # built, after `browser` loaded it in Chrome with Pages' 404 rule. A
+  # site whose 404 stand-in fails is never deployed (the owner,
+  # 2026-11-05). Each push to master has a run of its own, and the Chrome
+  # jobs of two quick pushes can end in either order. Thus a run whose
+  # commit is no longer master's head deploys nothing, and the run of the
+  # head deploys: an older site never replaces a newer one. This job has
+  # no environment, so a run that does not deploy writes no deployment.
+  pages-head:
+    name: compare with master's head
+    needs: [pages, browser]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && needs.browser.outputs.site == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    outputs:
+      current: ${{ steps.head.outputs.current }}
+    steps:
+      - name: compare this commit with master's head
+        id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          head=$(gh api "repos/$REPO/git/ref/heads/master" --jq .object.sha)
+          if [ "$head" = "$GITHUB_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::master is at $head, not at $GITHUB_SHA: the run of $head deploys."
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Deploys run one at a time, and a newer one replaces a waiting one.
+  deploy-pages:
+    name: deploy to GitHub Pages
+    needs: pages-head
+    if: ${{ needs.pages-head.outputs.current == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages-deploy
+      cancel-in-progress: false
+    timeout-minutes: 10
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
   # The guard: the one check the rule on master requires, so the rule
   # stays correct when a job here is added, renamed or split. It passes
   # only when every job in `needs:` succeeded, except that Chrome may be
   # skipped by its path or missing-corpus filter. No other job in any
-  # workflow may be named `check`.
+  # workflow may be named `check`. `pages-head` and `deploy-pages` are not
+  # in `needs:`: they run only on a push to master, after the merge.
   #
   # `if: always()`: a skipped job counts as a passed required check, and
   # without it a failed or cancelled `tests` skips the guard. When a newer
@@ -673,7 +740,7 @@ jobs:
   check:
     name: check
     if: always()
-    needs: [tests, playground, lean, browser-plan, browser, workers]
+    needs: [tests, playground, lean, browser-plan, browser, workers, pages]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
