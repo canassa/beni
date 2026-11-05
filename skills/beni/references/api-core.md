@@ -308,6 +308,27 @@ module Log
   value trace : String → ⊤  -- impure
   value warn : String → ⊤  -- impure
   value withSink : (Entry → ⊤), (⊤ → a) → a  -- impure
+module Markdown
+  type Block
+    Paragraph
+    Heading
+    ThematicBreak
+    CodeBlock
+    BlockQuote
+    BulletList
+    OrderedList
+    HtmlBlock
+  type Inline
+    Text
+    CodeSpan
+    Emphasis
+    Strong
+    Link
+    Image
+    HardBreak
+    SoftBreak
+    HtmlInline
+  value parse : String → List Block
 module Maybe
   type Maybe a
     Just
