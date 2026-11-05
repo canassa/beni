@@ -2451,8 +2451,10 @@ slot gives: below the code's own type it is one object. Everything else in the c
 at a pass keeps its whole form: a hand-off through another label asks the whole answer.
 
 Sound. A run's write of `a` at slots `W` reaches the objects at `W` of what it was handed: the first value, or an earlier run's answer. The occurrence at `W`
-says an answer holds at `W` only the argument's objects there or fresh ones, so by induction every run writes either the first value's object at `W`
-or an object one run made. The plain occurrence keeps the first value's apart from everything else in the selection, the elements and what the
+says an answer holds at `W` only the argument's objects, at any slot of it, or fresh ones: a `Dict`'s rotation moves nodes between slots, so the slot is not
+compared. A move across slots is judged in the code that makes it, whose write's target reaches, through the group's fixpoint, what its other operands reach
+(`( b, List.push a x )` is refused there, and so is an object made twice). So by induction every run writes the first value's object at `W`, or an
+object one run made, once. The plain occurrence keeps the first value's apart from everything else in the selection, the elements and what the
 function holds. An element stored at `[*]` is only ever read: a code that writes `[*]` has `[*]` in `W`, its answer's `[*]` holds its other argument there, and the
 occurrence is `no`. So the fold element's condition stays `lost` (C.9 gap 3), and an element write of the result is refused, as `run/FoldOverFoldShared`
 and `run/FeedbackPrevTwice` require. Fixtures: `run/SanitiserFoldStored` (the first value read after, elements written, an element answered and pushed
