@@ -44,7 +44,7 @@ const std = @import("std");
 const m = @import("beni_markup");
 
 /// The values of `Rt` this lowering supplies (`Lowering.runtime_protocol`).
-pub const values = [_][]const u8{ "protocol", "text", "map" };
+pub const values = [_][]const u8{ "protocol", "text", "map", "rootConnection" };
 
 /// The names of `runtime`, which a supplied value reaches.
 pub const uses = blk: {
@@ -81,6 +81,7 @@ pub fn supply(cx: *m.Context, name: []const u8) m.Error!m.Expr {
     if (std.mem.eql(u8, name, "text")) return b.text();
     if (std.mem.eql(u8, name, "map")) return b.map();
     if (std.mem.eql(u8, name, "protocol")) return b.record();
+    if (std.mem.eql(u8, name, "rootConnection")) return b.rootConnection();
     unreachable;
 }
 
@@ -157,6 +158,36 @@ const Builder = struct {
         try b.js().@"return"(body, try b.read(replacement));
         return b.function("domPatch", &.{ instance, block, context }, body);
     }
+
+    // Private producer operations; chooseRoot proves the single-node and same-kind preconditions.
+    // ownership pin begin: rootConnection
+    // ownership pin begin: createRoot
+    // ownership pin begin: nodeRoot
+    // ownership pin begin: patchRoot
+    fn rootConnection(b: Builder) m.Error!m.Expr {
+        const block = try b.name("block");
+        const make_body = try b.js().block();
+        try b.js().@"return"(make_body, try b.js().call(try b.read(try b.unit()), &.{ try b.read(block), try b.js().literal(.null) }));
+        const make = try b.function("domRootCreate", &.{block}, make_body);
+        const node = try b.project("domRootNode", "s", false);
+        const instance = try b.name("instance");
+        const fresh = try b.name("block");
+        const patch_body = try b.js().block();
+        const kind = try b.member(fresh, "t");
+        try b.js().expression(patch_body, try b.js().call(try b.js().member(kind, "p"), &.{ try b.read(instance), try b.member(fresh, "v") }));
+        try b.js().assign(patch_body, try b.member(instance, "$b"), try b.read(fresh));
+        const patch_ = try b.function("domRootPatch", &.{ instance, fresh }, patch_body);
+        return b.js().object(&.{
+            .{ .key = "createRoot", .value = try b.read(make), .source = true },
+            .{ .key = "nodeRoot", .value = try b.read(node), .source = true },
+            .{ .key = "patchRoot", .value = try b.read(patch_), .source = true },
+        });
+    }
+
+    // ownership pin end: patchRoot
+    // ownership pin end: nodeRoot
+    // ownership pin end: createRoot
+    // ownership pin end: rootConnection
 
     fn live(b: Builder) m.Error!m.Name {
         return b.project("domLive", "$l", true);

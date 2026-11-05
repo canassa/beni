@@ -13021,6 +13021,80 @@ list for a full one, or `tail` reading a marker-less slot's marker, it fails; `t
 reached by no construct today (a slot with no marker holds a list only inside an element, never at
 an instance's end), and a mutant of it survives.
 
+**Normal returns of sibling functions** *(specified 2026-11-05, Part of
+#1861).* The sibling scanner may prove that an immutable direct ordinary arrow
+has no normal return when its block's first statement is an unconditional throw.
+Async/generator functions, aliases and unrecognized syntax do not receive this
+fact. Root-plan analysis and specialization of a proved-plan page may use that
+body-derived fact as an empty return set, instead of inventing an unknown value
+for a defect branch. The callee is never identified by its declaration's name.
+The call remains impure and its argument/throw-operand effects remain; no-return
+is neither inert nor allocation-only. This fact is computed from the actual
+sibling on the current build, not published in checker interfaces or caches.
+All-fallback and inline pages retain their existing optimization and bytes.
+
+**Compiler-proven DOM root plan** *(specified 2026-11-05, Part of #1861).* A
+release build may replace the general root slot with a private typed plan only
+when it proves that one mounted view returns the same immutable producer kind on
+every return path, including helper returns, and that the producer's normalized
+mount has exactly one concrete node. The proof covers every future model, not
+just the initial view. Each root has its own proof; distinct programs may have
+distinct kinds. Unknown or escaped views, unstable kinds, mapped or deferred
+roots, non-empty fragments and ranges keep the general renderer. An empty
+fragment normalized by the DOM producer to one comment node qualifies; a
+two-child fragment does not. Source spelling alone proves neither case.
+
+The private typed connection, chooseRoot selector and their ownership/effect contracts are specified in
+`boundary.md` §9, *Compiler-proven DOM root connection*. The producer alone opens
+the paired kind/payload representation. The selector chooses the root renderer factory inside the existing mount job,
+returning the aliased general renderer job unchanged on fallback. Constructing a
+Browser/TEA Program retains its existing pure effect; the private selector itself
+remains impure. Hosted mounts use the original user view as proof input, rather
+than the private cached-model projection.
+The first paint creates an Instance and
+appends its proven single Node. Later paints patch that Instance with the proved
+same kind and retain the latest Block metadata. No root Slot or range traversal
+is needed. Child slots inside that node retain their normal algorithms.
+Live-state handling and renderEnded retain their existing order. View evaluation,
+root installation, queued renders, shutdown, defects and multi-program mounting
+retain their existing transcripts.
+
+This is a proof-driven choice, never a runtime shape test or optimization by a
+declaration's spelling. An incomplete proof selects the exact existing general
+path. Unproved DOM pages and inline pages pay no extra runtime code or bytes.
+Html.Runtime interface 1.30 and its source stay frozen; the connection is private
+to the owning DOM producer and platform and adds no public Html or Browser API,
+erasure, unchecked user-data cast or ownership exception. The mount-job and
+lookup layer are outside this change. The proof runs on a separate candidate
+IR: each selected view is analysed with an arbitrary model, and the normalized
+producer mount must return a fresh Instance with identical concrete start/end
+node bindings on every return. Those immutable locals must be initialized by
+the producer's native node-making operations on its typed template/Node handles;
+a DocumentFragment is not a concrete single-node boundary. The producer's kind
+and Block provenance must remain closed and unwritten. No escaped or unknown
+Block is certified by reading its pre-escape literal fields.
+
+For this slice the entry Program must also expose one closed, unwritten literal
+mount list of exactly one element through its immutable constructor payload.
+Unknown or composed lists, including multi-program pages, keep every job on the
+exact general path: root selection is all-or-none for the page. This deliberately
+conservative restriction is the deferred precision work in #1989; no new
+call-context analysis is part of this slice.
+
+Candidates only move from planned to general. After any rejection, validate the
+remaining plans again with that general path present, until the finite candidate
+set stops shrinking. An incomplete solve declines the plan. The proof copy may
+model the compiler's existing List base/offset readers and typed native-array allocations precisely and retain
+analysis-only view witnesses. The witnesses never enter ordinary optimization or
+emitted code. If at least one plan is proved, ordinary specialization may use the
+same precise typed array/list models so that the unused general renderer can be
+eliminated. If every root is unproved, ordinary specialization uses its original
+facts; inline builds never use this model through root selection. Each closed mount captures one immutable
+view identity, so different possible view functions may select different fixed
+kinds, provided every return of each individual function has its one kind. Emit fixtures distinguish the normalized
+empty-fragment plan from the two-child-fragment general path and cover each
+excluded shape; browser fixtures retain the lifecycle behavior above.
+
 ### 15.11 The `browser` runtime: program, mount and render loop
 
 The owner's W28 answer is Solid 2's loop (`plans/browser-decisions.md`, W28; research 27 Â§3.1âÂ§3.6).

@@ -1,0 +1,11 @@
+-- #1861: this unproved root keeps the general renderer byte for byte.
+import Browser
+import Html exposing (Html)
+
+
+view : Bool → Html {}
+view on = if on then <p>A</p> else <section>B</section>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → True, update = λ_ model → not model, view = view }

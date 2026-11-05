@@ -51,6 +51,7 @@ pub const lowering: m.Lowering = .{
     .operand_evidence = .{ .identity = true },
     .runtime = &(protocol.runtime ++ [_]m.RuntimeExport{
         .{ .name = "start", .arity = 1 },
+        .{ .name = "singleRootRenderer", .arity = 1 },
         .{ .name = "delegate", .arity = 1 },
         // `(html)` for a template with no flag, `(html, flags)` for one
         // with any (`backend.md` §15.3, amended 2026-10-15).

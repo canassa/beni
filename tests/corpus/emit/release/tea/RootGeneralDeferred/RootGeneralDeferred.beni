@@ -1,0 +1,12 @@
+-- #1861: a deferred component root keeps the general renderer.
+import Browser
+import Card
+import Html exposing (Html)
+
+
+view : {} → Html {}
+view _ = <Card title="deferred">body</Card>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → {}, update = λ_ model → model, view = view }

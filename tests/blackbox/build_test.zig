@@ -14091,3 +14091,93 @@ test "a foreign platform Browser.Bridge keeps its own direct and first-class imp
         try w.expectProgram("out/_main.mjs", .{ .stdout = "30\n" });
     }
 }
+
+test "a root plan uses the normalized empty fragment and refuses a two-child fragment" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("empty/Main.beni",
+        \\import Browser
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\empty : {} → Html {}
+        \\empty _ = <></>
+        \\
+        \\
+        \\view : {} → Html {}
+        \\view model = empty model
+        \\
+        \\
+        \\main : Browser.Program
+        \\main = Browser.program { init = λ⊤ → {}, update = λ_ model → model, view = view }
+        \\
+    );
+    try w.write("fragment/Main.beni",
+        \\import Browser
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\view : {} → Html {}
+        \\view _ = <><span>A</span><span>B</span></>
+        \\
+        \\
+        \\main : Browser.Program
+        \\main = Browser.program { init = λ⊤ → {}, update = λ_ model → model, view = view }
+        \\
+    );
+    const empty = try w.runWith(&.{ "build", "--platform=browser", "--release", "--out=empty-out", "empty/Main.beni" }, .{ .raw_diagnostics = true });
+    const fragment = try w.runWith(&.{ "build", "--platform=browser", "--release", "--out=fragment-out", "fragment/Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(empty);
+    try expectBuilt(fragment);
+    const empty_js = try w.read("empty-out/_main.mjs");
+    const fragment_js = try w.read("fragment-out/_main.mjs");
+    // Range traversal is absent only for the producer's proven one-comment
+    // root. The fragment must keep the general range insertion/removal path.
+    try testing.expect(std.mem.indexOf(u8, empty_js, ".nextSibling") == null);
+    try testing.expect(std.mem.indexOf(u8, fragment_js, ".nextSibling") != null);
+}
+
+test "a proved root selector retains an unread factory's real effect" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Browser
+        \\import Browser.Bridge as Bridge
+        \\import Html exposing (Html)
+        \\
+        \\pub foreign impure note : String → ⊤
+        \\
+        \\view : {} → Html {}
+        \\view _ = <></>
+        \\
+        \\proofView ⊤ =
+        \\    note "view value"
+        \\    view
+        \\
+        \\factory ⊤ =
+        \\    note "factory value"
+        \\    λ_ → note "factory"
+        \\
+        \\init ⊤ =
+        \\    ignored = Bridge.chooseRoot (proofView ⊤) (factory ⊤) (note "general")
+        \\    {}
+        \\
+        \\main : Browser.Program
+        \\main = Browser.program { init = init, update = λ_ model → model, view = view }
+        \\
+    );
+    try w.write("Main.js", "export const note = (value) => { console.log(value); return null; };\n");
+    const built = try w.runWith(&.{ "build", "--core", "--platform=browser", "--release", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const dom = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/browser/happy-dom.mjs", w.arena.allocator(), .limited(1 << 24));
+    try w.write("dom.mjs", dom);
+    try w.write("run.mjs",
+        \\import { GlobalWindow } from "./dom.mjs";
+        \\const window = new GlobalWindow();
+        \\globalThis.document = window.document;
+        \\globalThis.Node = window.Node;
+        \\await import("./out/_main.mjs");
+        \\
+    );
+    try w.expectProgram("run.mjs", .{ .stdout = "view value\nfactory value\ngeneral\nfactory\n" });
+}

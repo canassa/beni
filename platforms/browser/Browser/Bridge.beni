@@ -12,3 +12,12 @@ pub foreign impure installRoot : borrowed Node.Node, escaped (msg → ⊤) → �
 
 
 pub foreign impure installFuzz : escaped (Node.Node, Runtime.Payload → ⊤) → ⊤
+
+
+-- Proof input is never invoked. The selected factory is called once, or
+-- the original general job is returned unchanged (boundary.md §9, #1861).
+pub foreign impure chooseRoot :
+      unused sync (model → Html msg)
+    , once aliased sync ((Node.Node → (Runtime.Block → ⊤)) → job)
+    , aliased job
+    → unknown job

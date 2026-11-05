@@ -79,6 +79,8 @@ pub const Export = struct {
     arity: Arity,
     /// A closed syntax proof that this export only forwards supplied values.
     forwards: bool = false,
+    /// Immutable ordinary arrow whose first statement throws unconditionally.
+    never_returns: bool = false,
     /// The whole result is this parameter, before considering declared types.
     forwarded_parameter: ?u32 = null,
     /// Byte offset of the name AS WRITTEN in the file. `boundary.md` §4's
@@ -349,6 +351,7 @@ fn collectExport(
                 .name = name,
                 .arity = arityOf(arities, name),
                 .forwards = proof.inert,
+                .never_returns = eql(items[i].text, "const") and i + 2 < items.len and eql(items[i + 2].text, "=") and neverReturns(items, i + 3),
                 .forwarded_parameter = proof.parameter,
                 .offset = items[i + 1].offset,
             });
@@ -356,6 +359,23 @@ fn collectExport(
         return collectDeclaration(arena, items, i, bound);
     }
     return i;
+}
+
+/// A closed syntax proof, not a name-based primitive: only an immutable
+/// ordinary arrow with a block starting in `throw`. No catch can intercept
+/// that throw in this function; its operand may have arbitrary effects.
+fn neverReturns(items: []const Token, start: usize) bool {
+    if (start >= items.len) return false;
+    const arrow = if (eql(items[start].text, "("))
+        (matching(items, start) orelse return false) + 1
+    else if (items[start].kind == .ident and !isKeyword(items[start].text))
+        start + 1
+    else
+        return false;
+    if (arrow + 2 >= items.len or !eql(items[arrow].text, "=>") or
+        !eql(items[arrow + 1].text, "{") or !eql(items[arrow + 2].text, "throw")) return false;
+    const end = matching(items, arrow + 1) orelse return false;
+    return end + 1 == items.len or eql(items[end + 1].text, ";");
 }
 
 /// Prove a direct arrow is an inert carrier. Everything outside this
@@ -1025,4 +1045,25 @@ test "fuzz: the scanner never panics on arbitrary bytes" {
             _ = try scan(a.allocator(), buf[0..len]);
         }
     }.testOne, .{});
+}
+
+test "no normal return proof excludes promises, generators, catches and mutable bindings" {
+    const a = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(a);
+    defer arena.deinit();
+    const source =
+        \\export const throwing = (message) => { throw new Error(message); };
+        \\export const conditional = (yes) => { if (yes) throw 1; return 2; };
+        \\export const caught = () => { try { throw 1; } catch (e) { return e; } };
+        \\export const value = () => new Error("a value");
+        \\export const asynchronous = async () => { throw 1; };
+        \\export const generator = function* () { throw 1; };
+        \\export let mutable = () => { throw 1; };
+        \\export const alias = throwing;
+    ;
+    const found = try scan(arena.allocator(), source);
+    try std.testing.expectEqual(@as(usize, 8), found.exports.len);
+    for (found.exports) |entry| {
+        try std.testing.expectEqual(std.mem.eql(u8, entry.name, "throwing"), entry.never_returns);
+    }
 }

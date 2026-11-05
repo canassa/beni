@@ -491,3 +491,8 @@ core Browser.Host.Element.querySelector ownership/core/InlineJobWords.beni - Ele
 core Browser.Host.Element.getAttribute ownership/core/InlineJobWords.beni - Element.getAttribute
 core Browser.Host.Element.host_querySelector ownership/core/InlineJobWords.beni - Element.querySelector
 core Browser.Host.Element.host_getAttribute ownership/core/InlineJobWords.beni - Element.getAttribute
+browser Browser.Bridge.chooseRoot ownership/core/ChooseRootWords.beni 1:unused>borrowed|2:once>-|2:aliased>-|3:aliased>unused Bridge.chooseRoot
+browser Rt.rootConnection ownership/core/RootPlanWords.beni - Rt.singleRootRenderer
+browser Rt.rootConnection.createRoot ownership/core/RootPlanWords.beni - Rt.singleRootRenderer
+browser Rt.rootConnection.nodeRoot ownership/core/RootPlanWords.beni - Rt.singleRootRenderer
+browser Rt.rootConnection.patchRoot ownership/core/RootPlanWords.beni - Rt.singleRootRenderer

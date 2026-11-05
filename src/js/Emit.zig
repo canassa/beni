@@ -1429,6 +1429,7 @@ const Emitter = struct {
     /// which is made with no shape run (`Reach.Input.schema_shapes`).
     edges_read: []const bool = &.{},
     forwarding_foreigns: [][]Reach.ForeignProof = &.{},
+    nonreturning_foreigns: [][]bool = &.{},
     /// `--release` of an application that does not reach `Debug`: what
     /// JavaScript sees, closed before lowering (§9, *Item 4, taken up*).
     /// Null renames no field and gives no type integer tags.
@@ -2404,6 +2405,8 @@ const Emitter = struct {
     fn checkSiblings(e: *Emitter) !void {
         e.forwarding_foreigns = try e.scratch.alloc([]Reach.ForeignProof, e.graph().count());
         @memset(e.forwarding_foreigns, &.{});
+        e.nonreturning_foreigns = try e.scratch.alloc([]bool, e.graph().count());
+        @memset(e.nonreturning_foreigns, &.{});
         for (0..e.graph().count()) |i| {
             const m: Graph.Index = @fromBackingInt(@intCast(i));
             const file = e.graph().moduleFile(m);
@@ -2453,6 +2456,21 @@ const Emitter = struct {
             };
 
             const found = try Sibling.scan(e.scratch, bytes);
+            for (found.exports) |export_| if (export_.never_returns) {
+                var occurrences: u32 = 0;
+                for (found.exports) |other| if (std.mem.eql(u8, other.name, export_.name)) {
+                    occurrences += 1;
+                };
+                if (occurrences != 1) continue;
+                for (b.decls, 0..) |decl, di| {
+                    if (decl.kind != .foreign_value or !std.mem.eql(u8, export_.name, e.session.interner.slice(b.symbol(decl.name)))) continue;
+                    if (e.nonreturning_foreigns[m.int()].len == 0) {
+                        e.nonreturning_foreigns[m.int()] = try e.scratch.alloc(bool, b.decls.len);
+                        @memset(e.nonreturning_foreigns[m.int()], false);
+                    }
+                    e.nonreturning_foreigns[m.int()][di] = true;
+                }
+            };
             for (found.exports) |export_| if (found.only_inert_exports and export_.forwards) {
                 var occurrences: u32 = 0;
                 for (found.exports) |other| if (std.mem.eql(u8, other.name, export_.name)) {
@@ -7979,6 +7997,13 @@ const Emitter = struct {
             }
         };
         std.mem.sortUnstable(Spec.FieldKey, field_keys.items, {}, Spec.FieldKey.lessThan);
+        var nonreturning: std.ArrayList(u32) = .empty;
+        for (e.nonreturning_foreigns, 0..) |decls, module| for (decls, 0..) |proved, di| {
+            if (!proved) continue;
+            const m: Graph.Index = @fromBackingInt(@intCast(module));
+            const name = e.session.interner.slice(e.bir(m).symbol(e.bir(m).decls[di].name));
+            if (ids.get(Rename.Globals.key(try e.moduleName(m, name)))) |g| try nonreturning.append(e.scratch, g);
+        };
         var spec_workers: SpecWorkers = .{ .e = e };
         const stats = try Spec.run(e.gpa, e.scratch, .{
             .fold_worker_metadata = e.worker_runtime != null,
@@ -7986,6 +8011,17 @@ const Emitter = struct {
             .modules = modules.items,
             .globals = ids.count(),
             .props = props.count(),
+            .nonreturning = nonreturning.items,
+            .root_props = .{
+                .kind = props.get("t") orelse Spec.none,
+                .mount = props.get("m") orelse Spec.none,
+                .patch = props.get("p") orelse Spec.none,
+                .start = props.get("s") orelse Spec.none,
+                .end = props.get("e") orelse Spec.none,
+                .range = props.get("q") orelse Spec.none,
+                .live = props.get("l") orelse Spec.none,
+                .fragment_maker = props.get("createDocumentFragment") orelse Spec.none,
+            },
             .prop_len = prop_len,
             .tag_prop = props.get("$") orelse Spec.none,
             .builtin_props = builtin.items,

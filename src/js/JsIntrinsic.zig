@@ -93,6 +93,7 @@ pub const Which = enum {
     browserBlock,
     browserInstallRoot,
     browserInstallFuzz,
+    browserChooseRoot,
     kernelPack,
     kernelRead,
     arrayAllocate,
@@ -329,7 +330,7 @@ pub fn localSsrText(graph: *const Graph, bir: *const Bir, module: Graph.Index, i
 
 pub fn compilerOnly(which: Which) bool {
     return switch (which) {
-        .any_unpack_opt, .ssrText, .inlineMarkRoot, .browserBlock, .browserInstallRoot, .browserInstallFuzz, .kernelPack, .kernelRead, .schemaIdentity, .arrayAllocate, .arraySet, .arrayDone, .arrayGet, .arrayLength, .arrayWrite, .arraySort, .optNone, .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
+        .any_unpack_opt, .ssrText, .inlineMarkRoot, .browserBlock, .browserInstallRoot, .browserInstallFuzz, .browserChooseRoot, .kernelPack, .kernelRead, .schemaIdentity, .arrayAllocate, .arraySet, .arrayDone, .arrayGet, .arrayLength, .arrayWrite, .arraySort, .optNone, .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
         else => false,
     };
 }
@@ -339,6 +340,7 @@ pub fn needsOptNone(which: Which) bool {
 }
 
 pub fn browserBridge(name: []const u8) ?Which {
+    if (same(name, "chooseRoot")) return .browserChooseRoot;
     if (same(name, "block")) return .browserBlock;
     if (same(name, "installRoot")) return .browserInstallRoot;
     if (same(name, "installFuzz")) return .browserInstallFuzz;

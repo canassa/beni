@@ -71,7 +71,15 @@ pub program :
             , view : sync (model → Html msg)
             }
     → Program
-program p = Program [ { id = Nothing, start = λboot node → mount p boot node λ_ _ → ⊤ } ]
+program p =
+    Program
+        [ { id = Nothing
+          , start =
+              λboot node →
+                  proofView = p.view
+                  mount p boot node (λ_ _ → ⊤) proofView
+          }
+        ]
 
 
 --| The same program, mounted at the element whose `id` is the string
@@ -142,6 +150,7 @@ hosted p =
         [ { id = Nothing
           , start =
               λboot node →
+                  proofView = p.view
                   boot.hosted ⊤
                   sender = Js.ref Nothing
                   request = Js.ref Nothing
@@ -153,9 +162,12 @@ hosted p =
                           boot.flush
                           boot.phase
                           boot.stop
-                  mount app boot node λsend render →
-                      Js.write sender (Just send)
-                      Js.write request (Just render)
+                  mount app boot node
+                      (λsend render →
+                          Js.write sender (Just send)
+                          Js.write request (Just render)
+                      )
+                      proofView
           }
         ]
 
@@ -426,9 +438,10 @@ mount :
     , Boot
     , Node.Node
     , (Send msg, (Control → ⊤) → ⊤)
+    , sync (sourceModel → Html msg)
     → ⊤
-mount p boot node connect =
-    paint = boot.render node
+mount p boot node connect proofView =
+    paint = (Bridge.chooseRoot proofView (λrenderer → renderer) λtarget → boot.render target) node
     model = Js.ref (p.init ⊤)
     waiting = Js.ref False
     render =
