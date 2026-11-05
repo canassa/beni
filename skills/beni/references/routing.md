@@ -79,7 +79,9 @@ main =
 - Write the `{ title, body }` record in the `view` itself.
 - A refusal message must not wait: give a constructor, as above.
 - There is no `eachUrlRequest` or `eachUrlChange`. They need a fiber.
-- A link's `href` must be a literal. A `javascript:` URL is written as an empty `href`.
+- A link's `href` can change: `href={"/blog/" ++ slug}`. A `javascript:` or `data:text/html` URL is
+  written as an empty `href`, as on `browser-tea`. The build checks a literal. The page checks a
+  value when it writes it.
 - `Browser.prerender` writes a page per route. A prerendered `application`'s `init` gets the route,
   not the address; the address comes to `onUrlChange` (`prerender.md`).
 

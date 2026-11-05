@@ -482,6 +482,28 @@ prop node value key =
         writeProp node name value
 
 
+--| `(url)`: the value a URL binding writes (`browser-inline.md` §10.5,
+--| amended 2026-11-05) — `browser`'s `safeUrl` and its pattern, the same
+--| code (`platforms/browser/Rt.beni`). Elm's rule: a URL whose scheme is
+--| `javascript:`, or `data:text/html`, with any whitespace or control
+--| character where a browser ignores one, runs script, so it is written as
+--| nothing. A test of one pattern, which throws nothing: nothing to catch.
+pub safeUrl : V → V
+safeUrl url =
+    if Js.to (Js.call scriptUrl "test" [ url ]) then
+        Js.from ""
+    else
+        url
+
+
+-- The pattern `safeUrl` refuses, made once.
+scriptUrl : V
+scriptUrl =
+    Js.regExp
+        "^[\\s\\x00-\\x20]*(j\\s*a\\s*v\\s*a\\s*s\\s*c\\s*r\\s*i\\s*p\\s*t\\s*:|d\\s*a\\s*t\\s*a\\s*:\\s*t\\s*e\\s*x\\s*t\\s*/\\s*h\\s*t\\s*m\\s*l\\s*[,;])"
+        "i"
+
+
 --| `(node, hidden)`: an eager `when` — the node in the page, or, while
 --| `hidden` is true, the empty text node it keeps in its place. The
 --| lowering hands it the number of the arm the branch takes, or its

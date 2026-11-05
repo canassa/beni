@@ -92,6 +92,7 @@ module Inline
   value roots : V, V, Int, V, Int → ⊤  -- impure
   value routeUrl : String, String → Url  -- impure
   value run : V → ⊤  -- impure
+  value safeUrl : V → V  -- impure
   value send : V, V, V → ⊤  -- impure
   value stop : ⊤ → ⊤  -- impure
   value stopped : ⊤ → Bool  -- impure

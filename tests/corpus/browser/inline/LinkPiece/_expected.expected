@@ -1,0 +1,48 @@
+-- load
+<body>
+  <main>
+    <nav>
+      <a id="page" href="/page/1">"page"</a>
+      <a id="home" href="/">"home"</a>
+      <a id="uber" href="über">"uber"</a>
+      <button id="forward">"forward"</button>
+      <button id="unsafe">"unsafe"</button>
+    </nav>
+  </main>
+</body>
+-- click #forward
+<body>
+  <main>
+    <nav>
+      <a id="page" href="/page/2">"page"</a>
+      <a id="home" href="/">"home"</a>
+      <a id="uber" href="über">"uber"</a>
+      <button id="forward">"forward"</button>
+      <button id="unsafe">"unsafe"</button>
+    </nav>
+  </main>
+</body>
+-- click #forward
+<body>
+  <main>
+    <nav>
+      <a id="page" href="/page/3">"page"</a>
+      <a id="home" href="/">"home"</a>
+      <a id="uber" href="über">"uber"</a>
+      <button id="forward">"forward"</button>
+      <button id="unsafe">"unsafe"</button>
+    </nav>
+  </main>
+</body>
+-- click #unsafe
+<body>
+  <main>
+    <nav>
+      <a id="page" href="/page/3">"page"</a>
+      <a id="home" href="">"home"</a>
+      <a id="uber" href="über">"uber"</a>
+      <button id="forward">"forward"</button>
+      <button id="unsafe">"unsafe"</button>
+    </nav>
+  </main>
+</body>

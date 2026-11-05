@@ -1,0 +1,36 @@
+--! A widget of links whose `href`s change: its markup is a piece of the
+--! program (browser-inline.md §8.4), its URL bindings written through the
+--! runtime's `safeUrl` (§10.5, amended 2026-11-05).
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    page : Int
+    home : String
+
+
+pub type Msg
+    = Forward
+    | Unsafe
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Forward →
+            { model | page = model.page + 1 }
+
+        Unsafe →
+            { model | home = "javascript:alert(1)" }
+
+
+pub view : Model → Html Msg
+view model =
+    <nav>
+        <a id="page" href={"/page/${String.fromInt model.page}"}>page</a>
+        <a id="home" href={model.home}>home</a>
+        <a id="uber" href="über">uber</a>
+        <button id="forward" onClick={Forward}>forward</button>
+        <button id="unsafe" onClick={Unsafe}>unsafe</button>
+    </nav>

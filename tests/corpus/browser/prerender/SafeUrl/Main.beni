@@ -1,0 +1,56 @@
+-- A prerendered page's URL bindings (browser-inline.md §10.5, amended
+-- 2026-11-05): the prerender tree writes each one's string form through
+-- the runtime's `safeUrl`, so the page the build writes holds `""` for a
+-- script URL `init` gives: what the client's first pass writes, and the
+-- page the transcript shows is the same with no prerendered view. A
+-- `&` and a `"` in a URL are escaped in the string form. A constant whose
+-- answer turns on a character outside ASCII is written by the same rule,
+-- when the tree runs: the no-break space is `\s`, so `nbsp`'s is refused,
+-- and `über` is kept. A click writes each changing URL again, through
+-- `safeUrl` on the client.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Flip
+
+
+type alias Model =
+    unsafe : Bool
+
+
+url : Bool, String, String → String
+url unsafe bad good =
+    if unsafe then
+        bad
+    else
+        good
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <a id="plain" href={url model.unsafe "javascript:alert(1)" "/a"}>plain</a>
+        <a id="query" href={url model.unsafe "/q?x=1&y=\"2\"" "/r"}>query</a>
+        <a id="html" href={url model.unsafe "data:text/html,<b>x</b>" "/b"}>html</a>
+        <a id="nbsp" href="\u{00A0}javascript:x">nbsp</a>
+        <a id="uber" href="über">uber</a>
+        <button id="flip" onClick={Flip}>flip</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt
+            (Tea.sandbox
+                { init = λ⊤ → { unsafe = True }
+                , update = λFlip m → { m | unsafe = not m.unsafe }
+                , view = view
+                }
+            )
+            "root"
+        )
+        [ "/" ]
