@@ -1456,12 +1456,13 @@ worded row (§2.13.6) or a schema member. Its parameters `π1…πn` are the cod
 | `writes` | `(j, s, deep)`: the parameter slots the body writes, shallow (a storage write, `F` fields for a record) or deep (`consumed`, §2.8) |
 | `req` | the condition the writes rely on |
 | `escapes` | `(j, s)`: the parameter slots whose objects escape (stored behind a cell's barrier, sent, handed to unknown code, §2.4): the caller marks them escaped at the call (deep, §2.4) |
+| `stores` | `(j, s) ⇐ c`, one per cell: a value is stored in the `◆` at the parameter slot, and what that cell holds escapes at a call where `c` does not hold (§2.13.7, *the contents relation*) |
 | `labels` | per callback label `L` (§2.11.3): the function slot `(j, s)` it calls, its **origin** (the instruction of the call, as `module·declaration·offset`), `calls` ∈ {0, ≤1, many}, and per argument `k` the **supply**: arrivals per object slot of the argument (as `res`), the slots the code **keeps** (a live holder after the call or another operand at it), and the condition under which the supplied objects of distinct invocations are distinct |
 | `once` | the code writes one of its captures (R-2.8): a caller may call it at most once |
 
 The fields are flat runs in the module's contract table (§3.5): a contract is a record of ranges.
 
-**Lattice.** Arrivals, `reads`, `writes`, `escapes`, `labels` and supplies are sets ordered by inclusion;
+**Lattice.** Arrivals, `reads`, `writes`, `escapes`, `labels` and supplies are sets ordered by inclusion (`stores` too, its conditions strengthening as `req`'s);
 `res_cond` and a supply's condition weaken (a larger selection, then `no`); `req` strengthens the same way;
 `returns` and `once` are bits. A **join** is pointwise, and it never drops a result slot: a slot one side
 does not have keeps the other side's arrivals (the experiment's first requirement: a loop over an empty list
@@ -2902,8 +2903,8 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
      escaped, **with two exceptions the rules below close for a take**. A store may put an object at a slot the
      first contents never named (`Ref.make Nothing`, then `Just ys`): the escape projects nothing there. So a
      slot behind a `◆` where the frame names nothing is unknown (`Holders`), never empty. And a stored value may
-     hold one object at two slots (`Ref.set r ( n, n )`), which the two names hide: #1984, open, and a take is
-     owned only for contents of one object. A loan taken before a replacement still names the old object: it
+     hold one object at two slots (`Ref.set r ( n, n )`), which the two names hide: #1984, closed by *the contents
+     relation* below, and a take is owned only for contents of one object. A loan taken before a replacement still names the old object: it
      refuses edits it need not.
    - **`Ref.modify`'s `.0`.** The row's result is the callback's answer at `.0` (a `cb` arrival). At a
      caller that knows the code (`Loans.answer`), `.0` is the answer as read, **owned**, when the stored `.1`
@@ -2950,6 +2951,41 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    capture, a passed-on callback, a fiber); `run/RefTakeUnseenHolder` (a holder the frame has no name for, from
    #1980's review); `run/SanitiserLoanPerCell` (SlotStateBranches' green,
    LoanModifyReturn's green, #1404's `direct` and `boxBuilt` twins with v1's verdicts).
+   *Amended 2026-11-05 (#1991, #1984, #1986), the contents relation, as v2 builds it:* a frame keeps **one name per
+   slot of a cell's `◆`**, for the whole frame. That is the relation `contents(handle-origin, ◆)` with one version:
+   a store is a weak update of those names, so a name stands for every object the slot has held. It stays sound
+   because of what a store leaves behind. **Every object a cell holds is, at each store, one of: named by the frame at
+   its own slot; held by no one else (a consumed payload, a callback's allocation); at a slot the frame names nothing,
+   which is unknown (`Holders`); or escaped.** Three of those four were built by #1729, #1955 and #1977. The one they
+   left is that **two slots of a cell are two objects**.
+   - **The rule.** A store that may put one object at two slots makes what the cell holds escape at the store, deep
+     (`Contents.zig`). So a later edit in place of any of it is refused `escaped`, at the caller too: the frame's
+     escape of `π1◆` is published as any other. `Ref.set r ( n, n )`, `Ref.update r λp → ( p.0, p.0 )`, `Ref.modify`'s
+     `.1`, `{ p = s.p, q = s.p }` (#1986), `[ n, n ]`, `l ++ l`: reading such a cell is accepted; editing its contents is
+     refused.
+   - **What is asked.** A contract's store (`Ref.set`'s payload, `Deferred.complete`'s, a helper's) asks the separation
+     of what is stored at the call. A cell callback's answer asks its code's `res_cond`, which must not be `no`. Its
+     selections need no asking: a selection of what it was supplied holds by this rule, inductively, and a selection
+     of a capture is at a slot `Stored` has escaped. `Ref.modify`'s `res_cond` covers `.0` too, so `( p, p )` over a cell
+     of several objects escapes it, which is coarser than the rule needs and sound. A cell that holds at most one
+     object at its type (`Loans.oneObject`) asks nothing.
+   - **A store that hangs on a parameter is its caller's to judge.** `put r x = Ref.set r x` cannot know what `x` will
+     be. When the store's condition asks only the frame's own parameters and the cell is one of them, the contract
+     publishes `stores π1◆ ⇐ sel π2{ε*}`, one column of a contract (`Contract.Store`): at each call the cell's contents
+     escape unless the condition holds there. So `put r [ 7 ]` over a `Ref (List Int)` and `put r ( [ 3 ], [ 4 ] )` stay
+     editable. Elsewhere (a cell the frame made, a captured cell, whose store a call cannot see) an unsettled condition
+     escapes at once. The worded rows state the column themselves: `cellstored` beside a cell write is
+     `stores π1◆ ⇐ sel π2{ε*}`. Blocks carry the column (block version 21).
+   - **What it replaces.** The rest of *Slot state and loans* below describes a relation with versions and strong
+     updates. A strong update would only let a loan of old contents stop refusing an edit of new ones: precision, no
+     soundness. The transforms' **order** is what the frame's points already give: an escape refuses the edits after
+     it, and a helper's published escape refuses what follows its call, so `step r = edit r; Ref.set r ( n, n )` called
+     twice refuses the second call. **Slot reads and writes** are the contract's `reads`, `writes π1◆`, `escapes` and
+     `stores`. A re-entry test keys on the handle, never the payload, because a loan names the cell (#1977).
+   - **Consumed.** A store's own `consumed` demand stays, and it is what keeps one object out of two cells: `Ref.set a
+     n; Ref.set b n` is refused `later-use` at the first.
+   Fixtures: `run/CellStoresTwice` (each store, each edit refused; each traps with the rule removed),
+   `run/CellStoresApart` (the greens, and a store of one object twice that is only read).
    **Slot state and loans.** A versioned frame relation `contents(handle-origin, ◆)` supplies current stored
    origins/κ. `cellnew`/`cellempty` initialise it; set/update/modify write-back changes it after the callback,
    and complete joins the already-complete/no-op and empty/store alternatives. Strong update is allowed only
@@ -4830,6 +4866,7 @@ L0  Ids  Counters  Scratch
 | `Captures.zig` | 8 | a closure's captures in what holds it: a parameter arrival at an argument closure takes them, deep (§2.10, #1772) | Ids, Place, Value, Relation |
 | `Across.zig` | 9 | what a callee holds across a run of a known code it is handed: a capture write's operands at every label outward (§2.11.3, #1955) | Ids, Value, LabelChain |
 | `Stored.zig` | 9 | what a cell callback's write-back makes escape: the contents and the answer's objects at a shared slot (§2.13.7, #1729, #1955) | Place, Contract, Relation, Cells, LabelChain |
+| `Contents.zig` | 11 | a cell's contents stay separated: a store that may hold one object twice escapes them; the `stores` a contract publishes (§2.13.7, #1984, #1986) | Ids, Place, Slots, Contract, Relation, Distinct, Loans, Stored, Eval |
 | `Loans.zig` | 9 | a cell callback's label by its supply below the `◆`, and what it answers as its caller reads it: a loan of the cell, or `Ref.modify`'s `.0` owned when the stored `.1` keeps none of it (§2.13.7, #1977) | Ids, Place, Slots, Value, Contract, Forest, Relation, LabelChain, Trees |
 | `FnRun.zig` | 9 | a function value the frame cannot follow: the one parameter function slot a value is, and the function objects that escape where it is not (§2.11.3, #1773, #1775, #1776) | Contract, LabelChain, RouteWalk, Relation, Value, WalkContext |
 | `Codes.zig` | 12 | a module's codes and one declaration's answer (§2.10, §2.12) | Ids, Walk, Kept |
@@ -4846,6 +4883,8 @@ L0  Ids  Counters  Scratch
 | `Closures.zig` | 9 | a closure that escapes (or a callee hands back) or may run again: its unknown callers' supplies are `⊤`, a `once` code's capture writes refused (§2.11.3–4) | Ids, Relation, Eval |
 | `Groups.zig` | 10 | the module: adapters, callees, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Worded, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver, Closures |
 | `Block.zig` | 11 | contracts ↔ words, format v-next, validation by re-encoding (§3.6) | Ids, Place, Slots, Contract, Groups |
+| `BlockNames.zig` | 13 | how a block names a field and a declaration (§3.6), split from `Block` | none |
+| `Within.zig` | 5 | `within`: a contract says no more than another (§2.10, §2.12), split from `Contract` | Ids, Slots, Forest, Contract |
 | `Message.zig` | 11 | diagnostic text | Ids, Facts, Place, Walk, Resolve, Groups, CallGraft |
 | `Report.zig` | 11 | dump lines and totals | Facts |
 | `Hoists.zig` | 11 | the lowering channel | Facts |

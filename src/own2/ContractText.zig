@@ -2,13 +2,11 @@
 //! `beni dump --stage=ownership`, each field in canonical order. Obligations kept here: none (text).
 
 const std = @import("std");
-const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
 
-const Range = Contract.Range;
 const Table = Contract.Table;
 const Id = Contract.Id;
 
@@ -30,10 +28,7 @@ fn wordsText(places: *const Place.Table, names: Names, w: *std.Io.Writer, words:
         switch (s.kind) {
             .field => try w.print(".{s}", .{names.field(names.ctx, s.payload)}),
             .index => try w.print(".{d}", .{s.payload}),
-            .ctor_arg => {
-                const ca = places.ctorArgOf(s);
-                try w.print("#{d}.{d}", .{ ca[0], ca[1] });
-            },
+            .ctor_arg => try w.print("#{d}.{d}", .{ places.ctorArgOf(s)[0], places.ctorArgOf(s)[1] }),
             .elem => try w.writeAll("[*]"),
             .contents => try w.writeAll("◆"),
             .env => try w.writeAll("◇"),
@@ -49,11 +44,11 @@ fn condText(t: *const Table, slots: *const Slots.Table, places: *const Place.Tab
     const run = t.occsOf(c);
     if (run.len == 0) return w.writeAll("yes");
     try w.writeAll("⇐ sel");
-    var last: u32 = Ids.none_int;
+    var last: u32 = std.math.maxInt(u32);
     for (run) |o| {
         const j = if (Contract.isFed(o)) Contract.fedParam(o) else Contract.occParam(o);
         if (j != last) {
-            if (last != Ids.none_int) try w.writeAll("}");
+            if (last != std.math.maxInt(u32)) try w.writeAll("}");
             try w.print(" π{d}{{", .{j + 1});
             last = j;
         } else try w.writeAll(",");
@@ -65,7 +60,7 @@ fn condText(t: *const Table, slots: *const Slots.Table, places: *const Place.Tab
     try w.writeAll("}");
 }
 
-fn effectsText(t: *const Table, slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, field: []const u8, r: Range) std.Io.Writer.Error!void {
+fn effectsText(t: *const Table, slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, field: []const u8, r: Contract.Range) std.Io.Writer.Error!void {
     if (r.len != 0) try w.writeAll(field);
     for (t.effectsOf(r)) |e| {
         try w.print(" π{d}", .{e.j + 1});
@@ -143,6 +138,11 @@ pub fn print(t: *const Table, gpa: std.mem.Allocator, c: Id, slots: *const Slots
     for (t.writesOf(h.writes)) |x| try arrivalsText(t, gpa, c, slots, places, names, w, x[1], x[0], false);
     if (h.writes.len != 0) try condText(t, slots, places, names, w, "; req ", h.req);
     try effectsText(t, slots, places, names, w, "; escapes", h.escapes);
+    for (t.storesOf(h.stores)) |s| {
+        try w.print("; stores π{d}", .{s.j + 1});
+        try relText(slots, places, names, w, s.slot);
+        try condText(t, slots, places, names, w, " ", s.cond);
+    }
     for (t.labelsOf(h.labels)) |l| {
         try w.print("; label π{d}", .{l.j + 1});
         try relText(slots, places, names, w, l.slot);

@@ -109,7 +109,7 @@ fn allFresh(arrivals: []const Contract.Arrival) bool {
 /// with no slot state, a stored value may hold one object at two of the
 /// contents' slots, and the frame reads two names (`Ref.set r ( n, n )`).
 /// A type variable's slot may hold any number.
-fn oneObject(f: *Value.Frame, cell: ?Ids.PlaceId) Error!bool {
+pub fn oneObject(f: *Value.Frame, cell: ?Ids.PlaceId) Error!bool {
     const c = (try f.places.extend(f.gpa, f.gc(), try f.places.rootPath(f.gpa, cell orelse return false), Step.contents)) orelse return false;
     var n: u32 = 0;
     for (f.slots.items(try Subtree.belowAll(f.slots, f.gpa, f.account, f.places, c))) |s| {

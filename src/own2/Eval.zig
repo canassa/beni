@@ -481,7 +481,7 @@ pub fn addEscape(e: *Evaluation, leaf: u32, point: u32) Error!void {
     return addEscapeAt(e, leaf, point, none);
 }
 
-fn addEscapeAt(e: *Evaluation, leaf: u32, point: u32, call: u32) Error!void {
+pub fn addEscapeAt(e: *Evaluation, leaf: u32, point: u32, call: u32) Error!void {
     try e.escapes.append(e.gpa(), .{ .leaf = leaf, .point = point, .call = call });
     if (e.facts_on) try e.hooks.escape(e, leaf);
 }

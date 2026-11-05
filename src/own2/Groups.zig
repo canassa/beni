@@ -54,6 +54,8 @@ const Resolve = @import("Resolve.zig");
 const Kept = @import("Kept.zig");
 const Deliver = @import("Deliver.zig");
 const Closures = @import("Closures.zig");
+const Contents = @import("Contents.zig");
+const Within = @import("Within.zig");
 const Outward = @import("Outward.zig");
 const EntryHeld = @import("EntryHeld.zig");
 const FnRun = @import("FnRun.zig");
@@ -1530,6 +1532,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             charging(mod, &r.account);
             mod.cur_locals = in.bir.decls[r.decl].locals_start;
             try ReadOff.factsOff(&evals[i], ra, &drafts[i]);
+            try Contents.check(&evals[i], ra, &drafts[i]);
             if (sv) |v| try v.pump();
         }
         if (!validating and solver.used) try kg.round(gpa, &rs[0].account, &mod.contracts, mod.codes.items, ids, drafts, evals);
@@ -1558,7 +1561,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             if (validating) {
                 // Not within its candidate: an inference defect, joined and
                 // validated again (§2.12 step 3), never silent.
-                if (try mod.contracts.within(ra, &mod.slots, c, code.contract)) {
+                if (try Within.within(&mod.contracts, ra, &mod.slots, c, code.contract)) {
                     // Within: the code's own contract is what it does under the candidates, so it is
                     // what callers read (no reliance a round of the inference made and a later one dropped).
                     code.contract = c;
