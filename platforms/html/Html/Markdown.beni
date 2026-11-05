@@ -56,25 +56,28 @@ block b tight =
             <blockquote>{blocksIn children False}</blockquote>
 
         BulletList isTight items →
-            <ul>
-                <For each={items} keyed={False}>{λitem → <li>{blocksIn item isTight}</li>}</For>
-            </ul>
+            <ul>{listItems items isTight}</ul>
 
         OrderedList start isTight items →
+            -- The vocabulary has no attribute that a value can leave out, so a
+            -- list that starts at 1 is the `<ol>` with no `start`.
             if start == 1 then
-                <ol>
-                    <For each={items} keyed={False}>{λitem → <li>{blocksIn item isTight}</li>}</For>
-                </ol>
+                <ol>{listItems items isTight}</ol>
             else
-                <ol start={start}>
-                    <For each={items} keyed={False}>{λitem → <li>{blocksIn item isTight}</li>}</For>
-                </ol>
+                <ol start={start}>{listItems items isTight}</ol>
 
         HtmlBlock html →
             -- §6.1: the text the author wrote, as text.
             <p>{html}</p>
 
 
+-- The items of a list, each an `<li>`.
+listItems : List (List Block), Bool → Html msg
+listItems items isTight =
+    <><For each={items} keyed={False}>{λitem → <li>{blocksIn item isTight}</li>}</For></>
+
+
+-- The parser makes levels 1 to 6 only (spec §4.2, §4.3), so `_` is level 6.
 heading : Int, List Inline → Html msg
 heading level content =
     case level of
