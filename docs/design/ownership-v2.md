@@ -2665,6 +2665,15 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
      callback the frame passes on), what the cell holds there may be held elsewhere: it escapes at the call
      (`Eval.cellAnswer`), so a later in-place edit of it is refused `escaped`. Without this, `Ref.update r λ_ → ys`
      followed by an edit in place would change `ys`, which v2 cannot see, as it keeps no slot state yet.
+     *Amended 2026-11-05 (#1955):* the answer's objects at such a slot escape at the call too, not only what the cell
+     held there. They are the cell's now, as `Ref.set`'s payload is (`Stored.zig`): `put = [ 7 ]; Ref.update r λ_ →
+     put`, then `List.push put 1`, edited in place the list the cell holds (copying `21`, in place `22`; `Ref.modify`'s
+     `.1` the same). The rule is applied at every label whose one supply is a cell's `◆` (`Cells.supply`), worded or
+     passed on, since a passed-on label keeps its supply: `upd r f = Ref.update r f` and `upd r f = Ref.update r λxs
+     → f xs` store what `f` answers, and their callers see it only through that supply. Only a worded `cellmodify`
+     label stores `.1` alone; elsewhere the whole answer is treated as stored, which is coarser and sound. Fixtures:
+     `run/SanitiserCellStoredCapture` (refused) and `run/SanitiserCellStoredFresh` (a fresh answer, then an edit
+     through the cell; a stored capture only read: accepted).
    Fixtures: `run/SanitiserCellLoan` (each loan refused; the sanitised run of an acceptance shows the stale read) and
    `run/SanitiserCellEdit` (the same edits with no loan live, accepted, the sanitised run prints the same).
    *Amended 2026-11-02 (#1734), loans across a suspension, as v2 builds it:* v2 does not build the rule above that
@@ -4610,6 +4619,7 @@ L0  Ids  Counters  Scratch
 | `Outward.zig` | 11 | what the outward labels add: a demand's instantiated `req` and outer conditions, a passed-on label's outer supplies (§2.11.2 item 4, §2.11.3) | Ids, Contract, RowEnv, LabelChain, Graft, Distinct, Eval |
 | `Captures.zig` | 8 | a closure's captures in what holds it: a parameter arrival at an argument closure takes them, deep (§2.10, #1772) | Ids, Place, Value, Relation |
 | `Across.zig` | 9 | what a callee holds across a run of a known code it is handed: a capture write's operands at every label outward (§2.11.3, #1955) | Ids, Value, LabelChain |
+| `Stored.zig` | 9 | what a cell callback's write-back makes escape: the contents and the answer's objects at a shared slot (§2.13.7, #1729, #1955) | Place, Contract, Relation, Cells, LabelChain |
 | `FnRun.zig` | 9 | a function value the frame cannot follow: the one parameter function slot a value is, and the function objects that escape where it is not (§2.11.3, #1773, #1775, #1776) | Contract, LabelChain, RouteWalk, Relation, Value, WalkContext |
 | `Codes.zig` | 12 | a module's codes and one declaration's answer (§2.10, §2.12) | Ids, Walk, Kept |
 | `Eval.zig` | 8 | an evaluation of a walk: labels, virtual calls, call demands, read-off (§2.10, §2.11, §2.12) | Ids, Place, Slots, Subtree, Contract, Value, Relation, Distinct, Walk, Cells |

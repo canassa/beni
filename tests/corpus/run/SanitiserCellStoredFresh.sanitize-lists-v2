@@ -1,0 +1,3 @@
+The controls of SanitiserCellStoredCapture (ownership-v2.md §2.13.7, #1955): a cell callback that answers a list it
+makes, then an edit through the cell; a stored capture only read afterwards. Built again under --ownership=v2 and the
+list stale-read sanitiser. v2 accepts each, and the sanitised run prints the golden.
