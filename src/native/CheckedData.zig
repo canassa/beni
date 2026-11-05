@@ -1,6 +1,18 @@
 //! One runtime graph check, shared by the core conversion and native data projections.
 //! Native message data has no beni type witness or compiler packet metadata.
 pub const body = bodyFor(false);
+pub const host_body = hostGraph();
+
+fn hostGraph() []const u8 {
+    @setEvalBranchQuota(100000);
+    return replace(replace(body, "{ $: \"Nothing\", a: null }", "globalThis.Symbol"), "{ $: \"Just\", a: value }", "value");
+}
+
+fn replace(comptime input: []const u8, comptime needle: []const u8, comptime replacement: []const u8) []const u8 {
+    if (@import("std").mem.find(u8, input, needle)) |at| return input[0..at] ++ replacement ++ replace(input[at + needle.len ..], needle, replacement);
+    return input;
+}
+
 pub const sibling = "// Generated checked graph conversion; native/CheckedData.zig owns the check.\nexport const checkedGraph = (typeWitness, listToken, value) => {\n" ++ bodyFor(true) ++ "};\n";
 
 fn bodyFor(comptime typed: bool) []const u8 {

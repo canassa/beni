@@ -65,10 +65,18 @@ pub foreign impure socketAttachment : Socket → Js.Value
 pub foreign impure socketAttach : Socket, Js.Value → ⊤
 
 
-pub foreign impure kv : ObjectState → Maybe KV
+pub kv : ObjectState → Maybe KV
+kv a0 = Js.optMatch (host_kv a0) (λ⊤ → Nothing) λpresent → Just present
 
 
-pub foreign impure kvGet : KV, String → Maybe String
+foreign impure host_kv : ObjectState → Js.Opt KV
+
+
+pub kvGet : KV, String → Maybe String
+kvGet a0 a1 = Js.optMatch (host_kvGet a0 a1) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_kvGet : KV, String → Js.Opt String
 
 
 pub foreign impure kvPut : KV, String, String → Bool
@@ -89,7 +97,7 @@ pub foreign impure program :
 pub foreign impure definition : String, sync (ObjectState, Env → Instance) → Definition
 
 
-pub foreign impure instance :
+pub instance :
       sync (Request.Request → Promise.Promise Response.Response)
     , sync (⊤ → Promise.Promise ⊤)
     , sync (Maybe String, String, Maybe String, String → Promise.Promise Js.Value)
@@ -97,15 +105,51 @@ pub foreign impure instance :
     , sync (Socket, Int, String, Bool → Promise.Promise ⊤)
     , sync (Socket, Rejection.Rejection → Promise.Promise ⊤)
     → Instance
+instance a0 a1 a2 a3 a4 a5 =
+    host_instance
+        a0
+        a1
+        (λchain kind id text →
+            a2
+                (Js.optMatch chain (λ⊤ → Nothing) λpresent → Just present)
+                kind
+                (Js.optMatch id (λ⊤ → Nothing) λpresent → Just present)
+                text
+        )
+        (λsocket text → a3 socket (Js.optMatch text (λ⊤ → Nothing) λpresent → Just present))
+        a4
+        a5
 
 
-pub foreign impure namespace : Env, String → Maybe Namespace
+foreign impure host_instance :
+      sync (Request.Request → Promise.Promise Response.Response)
+    , sync (⊤ → Promise.Promise ⊤)
+    , sync (Js.Opt String, String, Js.Opt String, String → Promise.Promise Js.Value)
+    , sync (Socket, Js.Opt String → Promise.Promise ⊤)
+    , sync (Socket, Int, String, Bool → Promise.Promise ⊤)
+    , sync (Socket, Rejection.Rejection → Promise.Promise ⊤)
+    → Instance
 
 
-pub foreign impure service : Env, String → Maybe Service
+pub namespace : Env, String → Maybe Namespace
+namespace a0 a1 = Js.optMatch (host_namespace a0 a1) (λ⊤ → Nothing) λpresent → Just present
 
 
-pub foreign impure variable : Env, String → Maybe String
+foreign impure host_namespace : Env, String → Js.Opt Namespace
+
+
+pub service : Env, String → Maybe Service
+service a0 a1 = Js.optMatch (host_service a0 a1) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_service : Env, String → Js.Opt Service
+
+
+pub variable : Env, String → Maybe String
+variable a0 a1 = Js.optMatch (host_variable a0 a1) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_variable : Env, String → Js.Opt String
 
 
 pub foreign impure byName : Namespace, String → Stub
@@ -114,7 +158,11 @@ pub foreign impure byName : Namespace, String → Stub
 pub foreign impure uniqueId : Namespace → Id
 
 
-pub foreign impure idFromString : Namespace, String → Maybe Id
+pub idFromString : Namespace, String → Maybe Id
+idFromString a0 a1 = Js.optMatch (host_idFromString a0 a1) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_idFromString : Namespace, String → Js.Opt Id
 
 
 pub foreign impure getStub : Namespace, Id → Stub
@@ -126,7 +174,11 @@ pub foreign impure stubId : Stub → Id
 pub foreign impure idText : Id → String
 
 
-pub foreign impure idName : Id → Maybe String
+pub idName : Id → Maybe String
+idName a0 = Js.optMatch (host_idName a0) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_idName : Id → Js.Opt String
 
 
 pub foreign impure requestMethod : Request.Request → String
@@ -147,13 +199,28 @@ pub foreign impure requestText : Request.Request → Promise.Promise String
 pub foreign impure requestCopy : Request.Request, Headers.Headers → Request.Request
 
 
-pub foreign impure requestSignal : Request.Request → Maybe AbortSignal.AbortSignal
+pub requestSignal : Request.Request → Maybe AbortSignal.AbortSignal
+requestSignal a0 = Js.optMatch (host_requestSignal a0) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_requestSignal : Request.Request → Js.Opt AbortSignal.AbortSignal
 
 
 pub foreign impure onAbort : AbortSignal.AbortSignal, sync (⊤ → ⊤) → ⊤
 
 
-pub foreign impure responseCreate : Int, Maybe String, List (String × String) → Response.Response
+pub responseCreate : Int, Maybe String, List (String × String) → Response.Response
+responseCreate a0 a1 a2 =
+    optional =
+        case a1 of
+            Nothing →
+                Js.none ⊤
+            Just present →
+                Js.some present
+    host_responseCreate a0 optional a2
+
+
+foreign impure host_responseCreate : Int, Js.Opt String, List (String × String) → Response.Response
 
 
 pub foreign impure responseCopy : Response.Response → Response.Response
@@ -165,7 +232,18 @@ pub foreign impure stubFetch : Stub, Request.Request → Promise.Promise Respons
 pub foreign impure serviceFetch : Service, Request.Request → Promise.Promise Response.Response
 
 
-pub foreign impure stubRpc : Stub, String, String, Maybe String, String → Promise.Promise Js.Value
+pub stubRpc : Stub, String, String, Maybe String, String → Promise.Promise Js.Value
+stubRpc a0 a1 a2 a3 a4 =
+    optional =
+        case a3 of
+            Nothing →
+                Js.none ⊤
+            Just present →
+                Js.some present
+    host_stubRpc a0 a1 a2 optional a4
+
+
+foreign impure host_stubRpc : Stub, String, String, Js.Opt String, String → Promise.Promise Js.Value
 
 
 pub foreign impure overloaded : Rejection.Rejection → Bool

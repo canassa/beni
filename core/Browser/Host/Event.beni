@@ -56,7 +56,11 @@ pub foreign impure cancelBubble : borrowed Event → Bool
 pub foreign impure stopPropagation : borrowed Event → ⊤
 
 
-pub foreign impure target : aliased Event → Maybe EventTarget.EventTarget
+pub target : aliased Event → Maybe EventTarget.EventTarget
+target a0 = Js.optMatch (host_target a0) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_target : aliased Event → Js.Opt EventTarget.EventTarget
 
 
 pub foreign impure rendererCurrentTarget : borrowed Event, Js.Ref (Js.Opt Node.Node) → ⊤
@@ -86,16 +90,28 @@ pub foreign impure rendererEarlyChecked : borrowed EarlyCapture, Int → Js.Opt 
 pub foreign impure rendererEarlySelectedIndex : borrowed EarlyCapture, Int → Js.Opt Int
 
 
-pub foreign impure errorMessage : borrowed Event → Maybe String
+pub errorMessage : borrowed Event → Maybe String
+errorMessage a0 = Js.optMatch (host_errorMessage a0) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_errorMessage : borrowed Event → Js.Opt String
 
 
 pub foreign impure message : borrowed Event → String
 
 
-pub foreign impure dataOnly : aliased Event → Maybe Js.Value
+pub dataOnly : aliased Event → Maybe Js.Value
+dataOnly a0 = Js.optMatch (host_dataOnly a0) (λ⊤ → Nothing) λpresent → Just present
 
 
-pub foreign impure error : aliased Event → Maybe Rejection.Rejection
+foreign impure host_dataOnly : aliased Event → Js.Opt Js.Value
+
+
+pub error : aliased Event → Maybe Rejection.Rejection
+error a0 = Js.optMatch (host_error a0) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_error : aliased Event → Js.Opt Rejection.Rejection
 
 
 pub foreign impure defaultPrevented : borrowed Event → Bool

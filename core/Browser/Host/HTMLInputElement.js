@@ -1,12 +1,12 @@
 export const value = (control) => { return control.value; };
-export const setValue = (control, value) => { try { control.value = value; return { $: "Ok", a: null }; } catch (error) { if (!(error instanceof globalThis.DOMException) || error.name !== "InvalidStateError") throw error; return { $: "Err", a: "InvalidStateError" }; } };
+export const host_setValue = (control, value) => { try { control.value = value; return null; } catch (error) { if (!(error instanceof globalThis.DOMException) || error.name !== "InvalidStateError") throw error; return error; } };
 export const checked = (control) => { return control.checked; };
 export const setChecked = (control, value) => { control.checked = value; return null; };
 export const disabled = (control) => { return control.disabled; };
 export const kind = (control) => { return control.type; };
 export const name = (control) => { return control.name; };
-export const selectionStart = (control) => { const value = control.selectionStart; return value === null ? { $: "Nothing", a: null } : { $: "Just", a: value }; };
-export const selectionEnd = (control) => { const value = control.selectionEnd; return value === null ? { $: "Nothing", a: null } : { $: "Just", a: value }; };
-export const selectionDirection = (control) => { const value = control.selectionDirection; return value === null ? { $: "Nothing", a: null } : { $: "Just", a: value }; };
-export const setSelectionRange = (control, start, end, direction) => { try { control.setSelectionRange(start, end, direction); return { $: "Ok", a: null }; } catch (error) { if (!(error instanceof globalThis.DOMException) || error.name !== "InvalidStateError") throw error; return { $: "Err", a: "InvalidStateError" }; } };
+export const host_selectionStart = (control) => { return control.selectionStart; };
+export const host_selectionEnd = (control) => { return control.selectionEnd; };
+export const host_selectionDirection = (control) => { return control.selectionDirection; };
+export const host_setSelectionRange = (control, start, end, direction) => { try { control.setSelectionRange(start, end, direction); return null; } catch (error) { if (!(error instanceof globalThis.DOMException) || error.name !== "InvalidStateError") throw error; return error; } };
 export const toNode = (control) => control;

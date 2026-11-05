@@ -1,10 +1,10 @@
-export const asNode = (target) => { return target instanceof globalThis.Node ? { $: "Just", a: target } : { $: "Nothing", a: null }; };
-export const asElement = (node) => { return node instanceof globalThis.Element ? { $: "Just", a: node } : { $: "Nothing", a: null }; };
-export const asInput = (element) => { return element instanceof globalThis.HTMLInputElement ? { $: "Just", a: element } : { $: "Nothing", a: null }; };
-export const asTextArea = (element) => { return element instanceof globalThis.HTMLTextAreaElement ? { $: "Just", a: element } : { $: "Nothing", a: null }; };
-export const asSelect = (element) => { return element instanceof globalThis.HTMLSelectElement ? { $: "Just", a: element } : { $: "Nothing", a: null }; };
-export const asOption = (element) => { return element instanceof globalThis.HTMLOptionElement ? { $: "Just", a: element } : { $: "Nothing", a: null }; };
-export const asForm = (element) => { return element instanceof globalThis.HTMLFormElement ? { $: "Just", a: element } : { $: "Nothing", a: null }; };
+export const host_asNode = (target) => { return target instanceof globalThis.Node ? target : undefined; };
+export const host_asElement = (node) => { return node instanceof globalThis.Element ? node : undefined; };
+export const host_asInput = (element) => { return element instanceof globalThis.HTMLInputElement ? element : undefined; };
+export const host_asTextArea = (element) => { return element instanceof globalThis.HTMLTextAreaElement ? element : undefined; };
+export const host_asSelect = (element) => { return element instanceof globalThis.HTMLSelectElement ? element : undefined; };
+export const host_asOption = (element) => { return element instanceof globalThis.HTMLOptionElement ? element : undefined; };
+export const host_asForm = (element) => { return element instanceof globalThis.HTMLFormElement ? element : undefined; };
 export const isPage = (ignored) => { return typeof globalThis.window !== "undefined"; };
 export const current = (ignored) => { return globalThis; };
-export const asAnchor = (target) => { return target instanceof globalThis.HTMLAnchorElement ? { $: "Just", a: target } : { $: "Nothing", a: null }; };
+export const host_asAnchor = (target) => { return target instanceof globalThis.HTMLAnchorElement ? target : undefined; };

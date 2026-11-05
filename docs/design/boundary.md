@@ -413,6 +413,96 @@ set the exit code. No Program or native process handle crosses `Js.Value`.
 
 #### What JavaScript may read of a beni value
 
+**Amended 2026-11-04 and 2026-11-05 (the owner’s decisions): generated host operations return typed host values.**
+The reviewed native catalogue separates the public typed beni wrapper from its
+private foreign operation. A native optional result uses the existing `Js.Opt`
+carrier (D2), never an erasure through `Js.Value`. The compiler's native recipe
+maps the operation's documented absent host value to `NONE` inline and escapes a
+present payload with the existing `some` operation. Native payloads pass through
+without allocation; nested empty slots use the existing shared escape chain.
+The generated beni wrapper builds `Maybe` or `Result`. Callback parameters stay
+typed, and optional host inputs use the same carrier in the opposite direction.
+Only genuinely plain host data, such as parsed JSON, has type `Js.Value`.
+
+The private foreign signature alone establishes the JavaScript representation
+boundary; the public wrapper alone pins no constructor tag. No intermediate
+result object is allocated. Map membership is tested with the typed `has`
+operation before the typed raw `get`, so stored null and undefined remain
+present. Each documented exception is recognized individually; unknown
+exceptions are rethrown. A single documented failure occupies an empty Opt;
+query selection uses nested Opt for error versus missing element, and worker
+construction uses three nested empty positions for SyntaxError, SecurityError
+and TypeError. The catalogue validates both the public signature and its typed
+host projection, preserving native identities, shared type variables, arities,
+realms and effects. HostFree applies to the wrappers without an exemption.
+
+*Review amendment 2026-11-05:* a private `host_*` projection may appear
+only as the direct callee of a saturated call. Taking it as a value, passing
+it as an argument or using a `_` placeholder is `invalid_native_binding`:
+only the compiler's call recipe maps host absence to `Js.Opt`. Public beni
+wrappers remain ordinary first-class functions.
+
+The operation-specific absence mappings and their specification sources are:
+
+| Recipe / public operation | Host value mapped to absence | Specification |
+| --- | --- | --- |
+| `event_target` / `Browser.Host.Event.target` | `null` | [Specification](https://dom.spec.whatwg.org/) |
+| `target_node` / `Browser.Host.EventTarget.asNode` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://dom.spec.whatwg.org/) |
+| `node_element` / `Browser.Host.EventTarget.asElement` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://dom.spec.whatwg.org/) |
+| `element_as_input` / `Browser.Host.EventTarget.asInput` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://html.spec.whatwg.org/multipage/) |
+| `input_value_set` / `Browser.Host.HTMLInputElement.setValue` | The individually caught documented exception; `null` is successful unit | [Specification](https://html.spec.whatwg.org/multipage/) |
+| `input_selectionStart` / `Browser.Host.HTMLInputElement.selectionStart` | `null` | [Specification](https://html.spec.whatwg.org/multipage/) |
+| `input_selectionEnd` / `Browser.Host.HTMLInputElement.selectionEnd` | `null` | [Specification](https://html.spec.whatwg.org/multipage/) |
+| `input_selectionDirection` / `Browser.Host.HTMLInputElement.selectionDirection` | `null` | [Specification](https://html.spec.whatwg.org/multipage/) |
+| `input_selection_set` / `Browser.Host.HTMLInputElement.setSelectionRange` | The individually caught documented exception; `null` is successful unit | [Specification](https://html.spec.whatwg.org/multipage/) |
+| `element_as_textarea` / `Browser.Host.EventTarget.asTextArea` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://html.spec.whatwg.org/multipage/) |
+| `element_as_select` / `Browser.Host.EventTarget.asSelect` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://html.spec.whatwg.org/multipage/) |
+| `element_as_option` / `Browser.Host.EventTarget.asOption` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://html.spec.whatwg.org/multipage/) |
+| `element_as_form` / `Browser.Host.EventTarget.asForm` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://html.spec.whatwg.org/multipage/) |
+| `document_active` / `Browser.Host.Document.activeElement` | `null` | [Specification](https://html.spec.whatwg.org/multipage/) |
+| `event_error_message` / `Browser.Host.Event.errorMessage` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://html.spec.whatwg.org/multipage/webappapis.html#the-errorevent-interface) |
+| `regexp_group` / `Browser.Host.RegExp.group` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://tc39.es/ecma262/) |
+| `map_get` / `Browser.Host.Map.get` | Typed membership guards the raw get; no payload is mapped to absence | [Specification](https://262.ecma-international.org/16.0/#sec-map-objects) |
+| `cf_instance` / `Browser.Host.Cloudflare.instance` | Nullish RPC chain/id and non-string socket messages map to `NONE` in typed callbacks | [Specification](https://registry.npmjs.org/@cloudflare/workers-types/-/workers-types-5.20261102.1.tgz) |
+| `cf_namespace` / `Browser.Host.Cloudflare.namespace` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://registry.npmjs.org/@cloudflare/workers-types/-/workers-types-5.20261102.1.tgz) |
+| `cf_service` / `Browser.Host.Cloudflare.service` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://registry.npmjs.org/@cloudflare/workers-types/-/workers-types-5.20261102.1.tgz) |
+| `cf_variable` / `Browser.Host.Cloudflare.variable` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://registry.npmjs.org/@cloudflare/workers-types/-/workers-types-5.20261102.1.tgz) |
+| `cf_idFromString` / `Browser.Host.Cloudflare.idFromString` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://registry.npmjs.org/@cloudflare/workers-types/-/workers-types-5.20261102.1.tgz) |
+| `cf_idName` / `Browser.Host.Cloudflare.idName` | `null` or `undefined` | [Specification](https://registry.npmjs.org/@cloudflare/workers-types/-/workers-types-5.20261102.1.tgz) |
+| `cf_requestSignal` / `Browser.Host.Cloudflare.requestSignal` | `null` or `undefined` | [Specification](https://registry.npmjs.org/@cloudflare/workers-types/-/workers-types-5.20261102.1.tgz) |
+| `cf_kv` / `Browser.Host.Cloudflare.kv` | `null` or `undefined` | [Specification](https://registry.npmjs.org/@cloudflare/workers-types/-/workers-types-5.20261102.1.tgz) |
+| `cf_kvGet` / `Browser.Host.Cloudflare.kvGet` | `null` or `undefined` | [Specification](https://registry.npmjs.org/@cloudflare/workers-types/-/workers-types-5.20261102.1.tgz) |
+| `worker_create` / `Browser.Host.Worker.tryCreate` | Caught `SyntaxError`, `SecurityError`, `TypeError`, in distinct nested empty slots | [Specification](https://html.spec.whatwg.org/multipage/workers.html) |
+| `worker_post` / `Browser.Host.Worker.post` | The individually caught documented exception; `null` is successful unit | [Specification](https://html.spec.whatwg.org/multipage/workers.html) |
+| `key_map_get` / `Browser.Host.KeyMap.get` | Typed membership guards the raw get; no payload is mapped to absence | [Specification](https://tc39.es/ecma262/#sec-map-objects) |
+| `document_body` / `Browser.Host.Document.body` | `null` | [Specification](https://dom.spec.whatwg.org/) |
+| `node_append` / `Browser.Host.Node.append` | The individually caught documented exception; `null` is successful unit | [Specification](https://dom.spec.whatwg.org/) |
+| `event_error` / `Browser.Host.Event.error` | `null` or `undefined` | [Specification](https://html.spec.whatwg.org/multipage/comms.html) |
+| `document_by_id` / `Browser.Host.Document.byId` | `null` | [Specification](https://dom.spec.whatwg.org/) |
+| `document_fullscreen_id` / `Browser.Host.Document.fullscreenElementId` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://fullscreen.spec.whatwg.org/) |
+| `rejection_type_error_message` / `Browser.Host.Rejection.typeErrorMessage` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://tc39.es/ecma262/#sec-native-error-types-used-in-this-standard-typeerror) |
+| `ws_create` / `Browser.Host.WebSocket.tryCreate` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://websockets.spec.whatwg.org/) |
+| `ws_message` / `Browser.Host.WebSocket.onText` | A non-string native message payload maps to `NONE` in the typed callback | [Specification](https://websockets.spec.whatwg.org/) |
+| `storage_local` / `Browser.Host.Storage.local` | `null` or `undefined` | [Specification](https://html.spec.whatwg.org/multipage/webstorage.html) |
+| `storage_session` / `Browser.Host.Storage.session` | `null` or `undefined` | [Specification](https://html.spec.whatwg.org/multipage/webstorage.html) |
+| `storage_get` / `Browser.Host.Storage.get` | `null` | [Specification](https://html.spec.whatwg.org/multipage/webstorage.html) |
+| `storage_set` / `Browser.Host.Storage.set` | The individually caught documented exception; `null` is successful unit | [Specification](https://html.spec.whatwg.org/multipage/webstorage.html) |
+| `storage_key` / `Browser.Host.Storage.key` | `null` | [Specification](https://html.spec.whatwg.org/multipage/webstorage.html) |
+| `url_try_create` / `Browser.Host.URL.tryCreate` | `null` or `undefined` | [Specification](https://url.spec.whatwg.org/#dom-url-parse) |
+| `headers_get` / `Browser.Host.Headers.get` | `null` | [Specification](https://fetch.spec.whatwg.org/#dom-headers-get) |
+| `response_reader` / `Browser.Host.Response.reader` | `null` | [Specification](https://fetch.spec.whatwg.org/#dom-body-body) |
+| `read_result_value` / `Browser.Host.ReadResult.value` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://streams.spec.whatwg.org/#readable-stream-read-result) |
+| `regexp_create` / `Browser.Host.RegExp.create` | The individually caught `SyntaxError`; a valid pattern and flags pass through the native RegExp handle | [Specification](https://tc39.es/ecma262/#sec-regexp-pattern-flags) |
+| `json_parse` / `Browser.Host.Json.parse` | The individually caught `SyntaxError`; all parsed data, including `null`, stays present | [Specification](https://tc39.es/ecma262/#sec-json.parse) |
+| `rejection_code` / `Browser.Host.Rejection.code` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://nodejs.org/docs/latest-v24.x/api/errors.html#errorcode) |
+| `as_anchor` / `Browser.Host.EventTarget.asAnchor` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://html.spec.whatwg.org/) |
+| `query_selector` / `Browser.Host.Document.querySelector` | Caught `SyntaxError` in the outer slot; `null` in the inner slot | [Specification](https://dom.spec.whatwg.org/#dom-parentnode-queryselector) |
+| `text_content` / `Browser.Host.Node.textContent` | `null` | [Specification](https://dom.spec.whatwg.org/#dom-node-textcontent) |
+| `cf_responseCreate` / `Browser.Host.Cloudflare.responseCreate` | Input `NONE` becomes `null` for an absent body | [Specification](https://registry.npmjs.org/@cloudflare/workers-types/-/workers-types-5.20261102.1.tgz) |
+| `cf_stubRpc` / `Browser.Host.Cloudflare.stubRpc` | Input `NONE` becomes `null` for an absent RPC id | [Specification](https://registry.npmjs.org/@cloudflare/workers-types/-/workers-types-5.20261102.1.tgz) |
+| `fetch_init` / `Browser.Host.Fetch.init` | Input `NONE` becomes `undefined` for an absent body | [Specification](https://fetch.spec.whatwg.org/#requestinit) |
+| `event_data_only` / `Browser.Host.Event.dataOnly` | The existing graph check rejects the payload; its rejected function sentinel maps to `NONE` | [Specification](https://html.spec.whatwg.org/multipage/comms.html) |
+
 **Amended 2026-10-22: field spellings may be reused.** One source field text
 has one spelling everywhere. Different texts that can coexist in one runtime
 record have different spellings; fields whose full set is unknown conflict

@@ -1,0 +1,51 @@
+-- Generated host operations construct Maybe and Result in beni (boundary.md §4).
+import Browser.Host.Headers as Headers
+import Browser.Host.Json as Json
+import Browser.Host.KeyMap as KeyMap
+import Browser.Host.Map as Map
+import Js
+import Node
+
+
+show : Maybe Js.Value → String
+show result =
+    case result of
+        Nothing →
+            "absent"
+        Just value →
+            if Js.isUndefined value then
+                "undefined"
+            else if Js.isNull value then
+                "null"
+            else
+                "present"
+
+
+main : Node.Program
+main =
+    headers = Headers.create ⊤
+    Headers.set headers "x" "yes"
+    map = KeyMap.make ⊤
+    KeyMap.set map "null" Js.null
+    KeyMap.set map "undefined" Js.undefined
+    strings = Map.make ⊤
+    Map.set strings "value" "mapped"
+    Node.printLines
+        [ Maybe.withDefault (Headers.get headers "x") "missing"
+        , Maybe.withDefault (Headers.get headers "none") "missing"
+        , Maybe.withDefault (Map.get strings "value") "missing"
+        , Maybe.withDefault (Map.get strings "missing") "map missing"
+        , show (KeyMap.get map "null")
+        , show (KeyMap.get map "undefined")
+        , show (KeyMap.get map "missing")
+        , case Json.parse "null" of
+            Ok value →
+                if Js.isNull value then "parsed null" else "wrong null"
+            Err _ →
+                "wrong error"
+        , case Json.parse "{" of
+            Ok _ →
+                "wrong success"
+            Err Json.SyntaxError →
+                "syntax error"
+        ]

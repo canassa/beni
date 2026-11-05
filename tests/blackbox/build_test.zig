@@ -13921,6 +13921,30 @@ test "platform lifecycle hooks bypass the Task scheduler" {
     try testing.expect(w.exists("fiber-out/_core/Task.mjs"));
 }
 
+test "generated host wrappers keep Maybe and Result tags private in release" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/corpus/run/core/NativeHostValues.beni", w.arena.allocator(), .limited(world.max_stream_bytes));
+    try w.write("Main.beni", source);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.buildAndRun(&.{ "--core", "--release", "Main.beni" }, .{ .stdout = "yes\nmissing\nmapped\nmap missing\nnull\nundefined\nabsent\nparsed null\nsyntax error\n" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY                                  │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    const emitted = try w.read("out/_main.mjs");
+    for ([_][]const u8{ "\"Just\"", "\"Nothing\"", "\"Ok\"", "\"Err\"" }) |tag| {
+        try testing.expect(std.mem.find(u8, emitted, tag) == null);
+    }
+}
+
 test "typed browser bridge is identity code and fuzz registration is absent on normal pages" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();

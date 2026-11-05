@@ -1,11 +1,25 @@
 -- Generated from ECMA-262, 16th edition (2025), §24.1; reviewed adapters in native/Map.zig.
+import Js
+
+
 pub foreign type Map key value
 
 
 pub foreign impure make : ⊤ → Map String a
 
 
-pub foreign impure get : Map String a, String → Maybe a
+pub get : Map String a, String → Maybe a
+get a0 a1 =
+    if has a0 a1 then
+        Just (host_get a0 a1)
+    else
+        Nothing
+
+
+foreign impure host_get : Map String a, String → a
+
+
+pub foreign impure has : borrowed Map String a, String → Bool
 
 
 pub foreign impure set : Map String a, String, a → ⊤

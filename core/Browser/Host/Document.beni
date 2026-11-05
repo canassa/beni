@@ -4,6 +4,7 @@ import Browser.Host.Element as Element
 import Browser.Host.Event as Event
 import Browser.Host.Node as Node
 import Browser.Host.Promise as Promise
+import Js
 
 
 pub type QueryError
@@ -22,7 +23,11 @@ pub foreign impure rendererControls : ⊤ → Array.View Node.Node
 pub foreign impure getElementsByName : String → List Node.Node
 
 
-pub foreign impure activeElement : ⊤ → Maybe Element.Element
+pub activeElement : ⊤ → Maybe Element.Element
+activeElement a0 = Js.optMatch (host_activeElement a0) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_activeElement : ⊤ → Js.Opt Element.Element
 
 
 pub foreign impure controls : ⊤ → List Node.Node
@@ -43,19 +48,32 @@ pub foreign impure rendererBody : ⊤ → Node.Node
 pub foreign impure rendererText : String → Node.Node
 
 
-pub foreign impure body : ⊤ → Maybe Element.Element
+pub body : ⊤ → Maybe Element.Element
+body a0 = Js.optMatch (host_body a0) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_body : ⊤ → Js.Opt Element.Element
 
 
 pub foreign impure div : ⊤ → Element.Element
 
 
-pub foreign impure byId : String → Maybe Element.Element
+pub byId : String → Maybe Element.Element
+byId a0 = Js.optMatch (host_byId a0) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_byId : String → Js.Opt Element.Element
 
 
 pub foreign impure fullscreenEnabled : ⊤ → Bool
 
 
-pub foreign impure fullscreenElementId : ⊤ → Maybe String
+pub fullscreenElementId : ⊤ → Maybe String
+fullscreenElementId a0 = Js.optMatch (host_fullscreenElementId a0) (λ⊤ → Nothing) λpresent →
+    Just present
+
+
+foreign impure host_fullscreenElementId : ⊤ → Js.Opt String
 
 
 pub foreign impure exitFullscreen : ⊤ → Promise.Promise ⊤
@@ -76,4 +94,9 @@ pub foreign impure setTitle : String → ⊤
 pub foreign impure listen : String, escaped sync (Event.Event → ⊤) → (⊤ → ⊤)
 
 
-pub foreign impure querySelector : Document, String → Result QueryError (Maybe Element.Element)
+pub querySelector : Document, String → Result QueryError (Maybe Element.Element)
+querySelector a0 a1 = Js.optMatch (host_querySelector a0 a1) (λ⊤ → Err SyntaxError) λselected →
+    Ok (Js.optMatch selected (λ⊤ → Nothing) λpresent → Just present)
+
+
+foreign impure host_querySelector : Document, String → Js.Opt (Js.Opt Element.Element)

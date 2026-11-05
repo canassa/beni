@@ -409,6 +409,54 @@ fn privateDomProtocolCarriers(nested: bool) !void {
     }
 }
 
+test "HostFree typed generated host wrappers preserve natives and payload callbacks" {
+    const TestProject = @import("../resolve/TestProject.zig");
+    const Session = @import("../Session.zig");
+    const testing = std.testing;
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var modules: std.ArrayList(TestProject.Module) = .empty;
+    defer modules.deinit(testing.allocator);
+    try modules.appendSlice(testing.allocator, &@import("checker_test.zig").test_core);
+    try modules.append(testing.allocator, .{
+        .path = "Js.beni",
+        .package = .core,
+        .source = "pub foreign type Value\npub foreign type Opt a\npub foreign impure optMatch : Opt a, sync (⊤ → b), sync (a → b) → b\n",
+    });
+    for ([_][]const u8{ "KeyMap", "Map", "Headers", "WebSocket" }) |name| {
+        const path = try std.fmt.allocPrintSentinel(a, "Browser/Host/{s}.beni", .{name}, 0);
+        const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, try std.fmt.allocPrint(a, "core/{s}", .{path}), a, .limited(64 * 1024));
+        try modules.append(testing.allocator, .{ .path = path, .package = .core, .source = try std.fmt.allocPrintSentinel(a, "{s}", .{source}, 0) });
+    }
+    try modules.append(testing.allocator, .{
+        .path = "Probe.beni",
+        .package = .platform,
+        .source =
+        \\import Browser.Host.KeyMap as KeyMap
+        \\import Browser.Host.Map as Map
+        \\import Browser.Host.Headers as Headers
+        \\import Browser.Host.WebSocket as WebSocket
+        \\pub probe socket =
+        \\    keys = KeyMap.make ⊤
+        \\    KeyMap.set keys "socket" socket
+        \\    names = Map.make ⊤
+        \\    Map.set names "socket" socket
+        \\    headers = Headers.create ⊤
+        \\    WebSocket.onText socket λtext →
+        \\        case text of
+        \\            Just line → Headers.set headers "latest" line
+        \\            Nothing → ⊤
+        \\    found = if Map.has names "socket" then Map.get names "socket" else Nothing
+        \\    ( KeyMap.get keys "socket", found, Headers.get headers "latest" )
+        ,
+    });
+    var project = try TestProject.initWith(testing.allocator, modules.items, .{ .phases = Session.check_phases, .host_free = true });
+    defer project.deinit();
+    if (project.session.diagnostics.items.len != 0) std.debug.print("{s}\n", .{project.stderr.written()});
+    try testing.expectEqual(@as(usize, 0), project.session.diagnostics.items.len);
+}
+
 test "HostFree program boundary reductions retain native and callable refusals" {
     const TestProject = @import("../resolve/TestProject.zig");
     const Session = @import("../Session.zig");

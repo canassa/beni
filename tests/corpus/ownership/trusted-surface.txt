@@ -444,6 +444,40 @@ core Js.Array.arrayWrite ownership/core/JsArrayRuntimeWords.beni 3:escaped>borro
 core Js.Kernel.slotPack ownership/TaskWords.beni - Task.timeout
 core Js.Kernel.slotRead ownership/core/KernelSlotWords.beni res:unknown>fresh Task.poll
 
+# Private typed projections are reached through the explicit public bounds above.
+# Their weaker private words cannot change a consumer verdict independently; public flips remain.
+core Browser.Host.Event.host_errorMessage ownership/core/NativeWords.beni - Browser.Host.Event.errorMessage
+core Browser.Host.RegExp.host_group ownership/core/NativeWords.beni - Browser.Host.RegExp.group
+core Browser.Host.Worker.host_post ownership/core/NativeWords.beni - Browser.Host.Worker.post
+core Browser.Host.Event.host_dataOnly ownership/core/NativeWords.beni - Browser.Host.Event.dataOnly
+core Browser.Host.Event.host_error ownership/core/NativeWords.beni - Browser.Host.Event.error
+core Browser.Host.Rejection.host_typeErrorMessage ownership/core/NativeWords.beni - Browser.Host.Rejection.typeErrorMessage
+core Browser.Host.WebSocket.host_onText ownership/core/NativeEscapes.beni - Browser.Host.WebSocket.onText
+core Browser.Host.Storage.host_get ownership/core/NativeWords.beni - Browser.Host.Storage.get
+core Browser.Host.Storage.host_set ownership/core/NativeWords.beni - Browser.Host.Storage.set
+core Browser.Host.Storage.host_key ownership/core/NativeWords.beni - Browser.Host.Storage.key
+core Browser.Host.Headers.host_get ownership/core/NativeWords.beni - Browser.Host.Headers.get
+core Browser.Host.Fetch.host_init ownership/core/NativeWords.beni - Browser.Host.Fetch.init
+core Browser.Host.Response.host_reader ownership/core/NativeWords.beni - Browser.Host.Response.reader
+core Browser.Host.ReadResult.host_value ownership/core/NativeWords.beni - Browser.Host.ReadResult.value
+core Browser.Host.Rejection.host_code ownership/core/NativeWords.beni - Browser.Host.Rejection.code
+core Browser.Host.EventTarget.host_asAnchor ownership/core/NativeWords.beni - Browser.Host.EventTarget.asAnchor
+core Browser.Host.KeyMap.host_get ownership/core/NativeContainerWords.beni - Map.get
+core Browser.Host.Node.host_append ownership/core/RendererSupportWords.beni - Node.append
+core Browser.Host.Event.host_target ownership/core/NativeEvents.beni - M3.target
+core Browser.Host.EventTarget.host_asNode ownership/core/NativeEvents.beni - M4.asNode
+core Browser.Host.EventTarget.host_asElement ownership/core/NativeEvents.beni - M4.asElement
+core Browser.Host.EventTarget.host_asInput ownership/core/NativeEvents.beni - M4.asInput
+core Browser.Host.HTMLInputElement.host_setValue ownership/core/NativeEvents.beni - M7.setValue
+core Browser.Host.HTMLInputElement.host_selectionStart ownership/core/NativeEvents.beni - M7.selectionStart
+core Browser.Host.HTMLInputElement.host_selectionEnd ownership/core/NativeEvents.beni - M7.selectionEnd
+core Browser.Host.HTMLInputElement.host_selectionDirection ownership/core/NativeEvents.beni - M7.selectionDirection
+core Browser.Host.HTMLInputElement.host_setSelectionRange ownership/core/NativeEvents.beni - M7.setSelectionRange
+core Browser.Host.EventTarget.host_asTextArea ownership/core/NativeEvents.beni - M4.asTextArea
+core Browser.Host.EventTarget.host_asSelect ownership/core/NativeEvents.beni - M4.asSelect
+core Browser.Host.EventTarget.host_asOption ownership/core/NativeEvents.beni - M4.asOption
+core Browser.Host.EventTarget.host_asForm ownership/core/NativeEvents.beni - M4.asForm
+core Browser.Host.Map.has ownership/core/NativeMapHasWords.beni - NativeMap.has
 browser Browser.Bridge.block ownership/core/BrowserBridgeWords.beni 1:returned>borrowed Bridge.block
 browser Browser.Bridge.installRoot ownership/core/BrowserBridgeWords.beni 2:escaped>borrowed Bridge.installRoot
 browser Browser.Bridge.installFuzz ownership/core/BrowserBridgeWords.beni 1:escaped>borrowed Bridge.installFuzz

@@ -1,5 +1,6 @@
 -- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
 import Browser.Host.Node as Node
+import Js
 
 
 pub type WriteError
@@ -12,7 +13,12 @@ pub foreign type HTMLInputElement
 pub foreign impure value : borrowed HTMLInputElement → String
 
 
-pub foreign impure setValue : borrowed HTMLInputElement, String → Result WriteError ⊤
+pub setValue : borrowed HTMLInputElement, String → Result WriteError ⊤
+setValue a0 a1 = Js.optMatch (host_setValue a0 a1) (λ⊤ → Err InvalidStateError) λpresent →
+    Ok present
+
+
+foreign impure host_setValue : borrowed HTMLInputElement, String → Js.Opt ⊤
 
 
 pub foreign impure checked : borrowed HTMLInputElement → Bool
@@ -30,21 +36,45 @@ pub foreign impure kind : borrowed HTMLInputElement → String
 pub foreign impure name : borrowed HTMLInputElement → String
 
 
-pub foreign impure selectionStart : borrowed HTMLInputElement → Maybe Int
+pub selectionStart : borrowed HTMLInputElement → Maybe Int
+selectionStart a0 = Js.optMatch (host_selectionStart a0) (λ⊤ → Nothing) λpresent → Just present
 
 
-pub foreign impure selectionEnd : borrowed HTMLInputElement → Maybe Int
+foreign impure host_selectionStart : borrowed HTMLInputElement → Js.Opt Int
 
 
-pub foreign impure selectionDirection : borrowed HTMLInputElement → Maybe String
+pub selectionEnd : borrowed HTMLInputElement → Maybe Int
+selectionEnd a0 = Js.optMatch (host_selectionEnd a0) (λ⊤ → Nothing) λpresent → Just present
 
 
-pub foreign impure setSelectionRange :
+foreign impure host_selectionEnd : borrowed HTMLInputElement → Js.Opt Int
+
+
+pub selectionDirection : borrowed HTMLInputElement → Maybe String
+selectionDirection a0 = Js.optMatch (host_selectionDirection a0) (λ⊤ → Nothing) λpresent →
+    Just present
+
+
+foreign impure host_selectionDirection : borrowed HTMLInputElement → Js.Opt String
+
+
+pub setSelectionRange :
       borrowed HTMLInputElement
     , Int
     , Int
     , String
     → Result WriteError ⊤
+setSelectionRange a0 a1 a2 a3 =
+    Js.optMatch (host_setSelectionRange a0 a1 a2 a3) (λ⊤ → Err InvalidStateError) λpresent →
+        Ok present
+
+
+foreign impure host_setSelectionRange :
+      borrowed HTMLInputElement
+    , Int
+    , Int
+    , String
+    → Js.Opt ⊤
 
 
 pub foreign impure toNode : HTMLInputElement → Node.Node

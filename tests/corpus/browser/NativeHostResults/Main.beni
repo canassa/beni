@@ -1,0 +1,62 @@
+import Browser.Host.Document as Document
+import Browser.Host.Storage as Storage
+import Browser.Host.Window as Window
+import Browser.Host.Worker as Worker
+import Page
+
+
+pub query : String → String
+query selector =
+    case Document.querySelector (Window.document ⊤) selector of
+        Err Document.SyntaxError →
+            "syntax"
+        Ok Nothing →
+            "missing"
+        Ok (Just _) →
+            "found"
+
+
+pub worker : String → String
+worker url =
+    case Worker.tryCreate url "n" "omit" of
+        Err Worker.SyntaxError →
+            "w-syntax"
+        Err Worker.SecurityError →
+            "w-security"
+        Err Worker.TypeError →
+            "w-type"
+        Ok _ →
+            "w-ok"
+
+
+pub store : String → String
+store key =
+    case Storage.local ⊤ of
+        Nothing →
+            "no storage"
+        Just area →
+            case Storage.set area key "v" of
+                Err Storage.QuotaExceeded →
+                    "quota"
+                Ok ⊤ →
+                    case Storage.get area key of
+                        Just v →
+                            "got " ++ v
+                        Nothing →
+                            "lost"
+
+
+main : Page.Program
+main = Page.program λ⊤ →
+    String.join
+        [ query "#found"
+        , query "#missing"
+        , query "["
+        , worker "syntax"
+        , worker "security"
+        , worker "type"
+        , worker "fine"
+        , store "ok"
+        , store "quota"
+        ]
+        " | "

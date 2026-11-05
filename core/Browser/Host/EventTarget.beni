@@ -7,30 +7,61 @@ import Browser.Host.HTMLOptionElement as HTMLOptionElement
 import Browser.Host.HTMLSelectElement as HTMLSelectElement
 import Browser.Host.HTMLTextAreaElement as HTMLTextAreaElement
 import Browser.Host.Node as Node
+import Js
 
 
 pub foreign type EventTarget
 
 
-pub foreign impure asNode : aliased EventTarget → Maybe Node.Node
+pub asNode : aliased EventTarget → Maybe Node.Node
+asNode a0 = Js.optMatch (host_asNode a0) (λ⊤ → Nothing) λpresent → Just present
 
 
-pub foreign impure asElement : aliased EventTarget → Maybe Element.Element
+foreign impure host_asNode : aliased EventTarget → Js.Opt Node.Node
 
 
-pub foreign impure asInput : aliased EventTarget → Maybe HTMLInputElement.HTMLInputElement
+pub asElement : aliased EventTarget → Maybe Element.Element
+asElement a0 = Js.optMatch (host_asElement a0) (λ⊤ → Nothing) λpresent → Just present
 
 
-pub foreign impure asTextArea : aliased EventTarget → Maybe HTMLTextAreaElement.HTMLTextAreaElement
+foreign impure host_asElement : aliased EventTarget → Js.Opt Element.Element
 
 
-pub foreign impure asSelect : aliased EventTarget → Maybe HTMLSelectElement.HTMLSelectElement
+pub asInput : aliased EventTarget → Maybe HTMLInputElement.HTMLInputElement
+asInput a0 = Js.optMatch (host_asInput a0) (λ⊤ → Nothing) λpresent → Just present
 
 
-pub foreign impure asOption : aliased EventTarget → Maybe HTMLOptionElement.HTMLOptionElement
+foreign impure host_asInput : aliased EventTarget → Js.Opt HTMLInputElement.HTMLInputElement
 
 
-pub foreign impure asForm : aliased EventTarget → Maybe HTMLFormElement.HTMLFormElement
+pub asTextArea : aliased EventTarget → Maybe HTMLTextAreaElement.HTMLTextAreaElement
+asTextArea a0 = Js.optMatch (host_asTextArea a0) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_asTextArea :
+      aliased EventTarget
+    → Js.Opt HTMLTextAreaElement.HTMLTextAreaElement
+
+
+pub asSelect : aliased EventTarget → Maybe HTMLSelectElement.HTMLSelectElement
+asSelect a0 = Js.optMatch (host_asSelect a0) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_asSelect : aliased EventTarget → Js.Opt HTMLSelectElement.HTMLSelectElement
+
+
+pub asOption : aliased EventTarget → Maybe HTMLOptionElement.HTMLOptionElement
+asOption a0 = Js.optMatch (host_asOption a0) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_asOption : aliased EventTarget → Js.Opt HTMLOptionElement.HTMLOptionElement
+
+
+pub asForm : aliased EventTarget → Maybe HTMLFormElement.HTMLFormElement
+asForm a0 = Js.optMatch (host_asForm a0) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_asForm : aliased EventTarget → Js.Opt HTMLFormElement.HTMLFormElement
 
 
 pub foreign pure rendererFromNode : Node.Node → EventTarget
@@ -45,4 +76,8 @@ pub foreign impure isPage : ⊤ → Bool
 pub foreign impure current : ⊤ → EventTarget
 
 
-pub foreign impure asAnchor : aliased EventTarget → Maybe HTMLAnchorElement.HTMLAnchorElement
+pub asAnchor : aliased EventTarget → Maybe HTMLAnchorElement.HTMLAnchorElement
+asAnchor a0 = Js.optMatch (host_asAnchor a0) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_asAnchor : aliased EventTarget → Js.Opt HTMLAnchorElement.HTMLAnchorElement

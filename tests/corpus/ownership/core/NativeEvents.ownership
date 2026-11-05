@@ -88,7 +88,7 @@ module NativeEvents
   summary selectoptions: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
   summary formelements: π1 RA; res ⊤{lost}r{lost}, ⋆ ~π1
   summary documentnamed: res ⊤{lost}r{lost}
-  summary documentactive: res ⊤{lost}r{lost}
+  summary documentactive: res #Just.0 ~⊤{lost}r{lost}
   summary documentcontrols: res ⊤{lost}r{lost}
   summary eventcapture: π1 RA, π3 RJ; res ⊤{lost}r{lost}, ⋆ ~π1; π3 calls many, unseen, supply 1 ⊤ borrowed
   summary renderercurrent: π1 R, π2 RE

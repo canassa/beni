@@ -1,6 +1,6 @@
 export const values = (map) => { return globalThis.Array.from(map.values()); };
 export const make = (unit) => { return new globalThis.Map(); };
-export const get = (map, key) => { return map.has(key) ? { $: "Just", a: map.get(key) } : { $: "Nothing", a: null }; };
+export const host_get = (map, key) => map.get(key);
 export const getOr = (map, key, fallback) => { const value = map.get(key); return value !== undefined || map.has(key) ? value : fallback; };
 export const set = (map, key, value) => { map.set(key, value); return null; };
 export const has = (map, key) => { return map.has(key); };
