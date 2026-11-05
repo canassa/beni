@@ -58,6 +58,7 @@ pub fn within(t: *const Table, arena: Allocator, slots: *const Slots.Table, got:
             const u = for (t.suppliesOf(m.supplies)) |u| {
                 if (u.k == s.k) break u;
             } else return false;
+            if (u.each and !s.each) return false;
             if (!try treeWithin(t, arena, slots, ids, s.res_root, u.res_root)) return false;
             if (!effectsWithin(t, slots, s.kept, u.kept)) return false;
             if (!u.below.no and !(try t.cond(arena, s.below)).weakerIn(slots, try t.cond(arena, u.below))) return false;

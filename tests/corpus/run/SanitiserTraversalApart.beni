@@ -1,0 +1,50 @@
+-- The twin of `SanitiserTraversal` (`ownership-v2.md` §2.11.3, *a traversal's
+-- supply*): rows that share a part the callback does not write, directly,
+-- through a helper and through a hand-written walker; an identity's answer
+-- written inside a callback of `List.map`, whose callee reads its list only to
+-- hand each element over. v2 accepts every edit; the sanitised run prints what
+-- the plain run prints.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+pairs : List (List Int × List Int) → String
+pairs ps = String.join (List.map ps λ( p, q ) → show p ++ "/" ++ show q) ";"
+
+
+myMap : List a, (a → b) → List b
+myMap xs f =
+    case xs of
+        [ x, …rest ] →
+            [ f x, …myMap rest f ]
+
+        _ →
+            []
+
+
+viaLambda : List a, (a → b) → List b
+viaLambda rs f = List.map rs λv → f v
+
+
+chain : List (List Int), (List Int → List Int), (List Int → List Int) → List (List Int)
+chain xs f g = List.map xs λv → g (f v)
+
+
+main : Program
+main =
+    k = [ 0 ]
+    direct = List.map [ ( k, [ 1 ] ), ( k, [ 2 ] ) ] λ( a, b ) → ( a, List.push b 3 )
+    helper = viaLambda [ ( k, [ 1 ] ), ( k, [ 2 ] ) ] λ( a, b ) → ( a, List.push b 4 )
+    walker = myMap [ ( k, [ 1 ] ), ( k, [ 2 ] ) ] λ( a, b ) → ( a, List.push b 5 )
+    written = chain [ [ 1 ], [ 2 ] ] (λw → w) λy → List.push y 6
+    Node.print
+        (String.join [ pairs direct, pairs helper, pairs walker, shows written, show k ] "\n")

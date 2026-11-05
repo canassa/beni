@@ -148,7 +148,7 @@ pub fn print(t: *const Table, gpa: std.mem.Allocator, c: Id, slots: *const Slots
         try relText(slots, places, names, w, l.slot);
         try w.print("@{d} {t}", .{ l.origin[2] & ~Contract.last_origin, l.calls });
         for (t.suppliesOf(l.supplies)) |s| {
-            try w.print(" [{d}:", .{s.k + 1});
+            try w.print(" [{d}{s}:", .{ s.k + 1, if (s.each) " each" else "" });
             try arrivalsText(t, gpa, c, slots, places, names, w, s.res_root, null, true);
             try effectsText(t, slots, places, names, w, " kept", s.kept);
             try condText(t, slots, places, names, w, " sep ", s.cond);

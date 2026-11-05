@@ -36,7 +36,7 @@ pub fn virtualOuter(c: Chain, q: u32) ?[2]u32 {
 }
 
 /// The label of `(call, label)` pair `o`.
-fn labelAt(c: Chain, o: [2]u32) Contract.Label {
+pub fn labelAt(c: Chain, o: [2]u32) Contract.Label {
     return c.contracts.labelsOf(c.contracts.head(c.f.calls.items[o[0]].contract).labels)[o[1]];
 }
 

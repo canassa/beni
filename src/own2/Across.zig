@@ -10,6 +10,7 @@ const std = @import("std");
 const Ids = @import("Ids.zig");
 const Value = @import("Value.zig");
 const LabelChain = @import("LabelChain.zig");
+const Each = @import("Each.zig");
 
 const Error = Value.Error;
 
@@ -24,8 +25,10 @@ pub fn capture(f: *const Value.Frame, q: u32, j: u32) bool {
 /// The operands of a capture write of virtual call `q`, appended to `out`:
 /// at each label outward, the call's arguments but the one that hands the
 /// code (the label's function slot is the root of it), and the answers of
-/// the call's other labels applied to known codes.
-pub fn operands(c: LabelChain.Chain, q: u32, out: *std.ArrayList(u32)) Error!void {
+/// the call's other labels applied to known codes. `answer`: the operands
+/// of an answer in the code, which leave out what a traversal takes
+/// (`Each.takes`, §2.11.3).
+pub fn operands(c: LabelChain.Chain, q: u32, answer: bool, out: *std.ArrayList(u32)) Error!void {
     const f = c.f;
     const gpa = f.gpa;
     var cur = q;
@@ -34,7 +37,11 @@ pub fn operands(c: LabelChain.Chain, q: u32, out: *std.ArrayList(u32)) Error!voi
         const oc = f.calls.items[o[0]];
         const lab = c.contracts.labelsOf(c.contracts.head(oc.contract).labels)[o[1]];
         const whole = f.slots.relWords(lab.slot).len == 0;
-        for (oc.args, 0..) |a, k| if (k != lab.j or !whole) try out.append(gpa, a);
+        for (oc.args, 0..) |a, k| {
+            if (k == lab.j and whole) continue;
+            if (answer and try Each.takes(c, c.contracts.head(oc.contract), lab, @intCast(k))) continue;
+            try out.append(gpa, a);
+        }
         const it = c.virt.keys.items;
         var i: usize = 0;
         while (i + 1 < it.len) : (i += 2) {

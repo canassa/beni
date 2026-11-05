@@ -21,7 +21,7 @@ const BlockNames = @import("BlockNames.zig");
 const BlockCalled = @import("BlockCalled.zig");
 
 pub const magic: u32 = 0x324e574f;
-pub const version: u32 = 23;
+pub const version: u32 = 24;
 pub const Error = Ids.ChargeError || error{BadBlock};
 const Step = Place.Step;
 
@@ -159,7 +159,7 @@ const Writer = struct {
             try w.word(@backingInt(l.calls));
             try w.word(l.supplies.len);
             for (w.t.suppliesOf(l.supplies)) |s| {
-                try w.word(s.k);
+                try w.word(s.k | (if (s.each) @as(u32, 1 << 31) else 0));
                 try w.word(nodeIndex(&index, s.res_root));
                 try w.effects(s.kept);
                 try w.cond(s.cond);
@@ -329,8 +329,7 @@ const Reader = struct {
             const li = try d.labelOf(r.arena, j, slot, .{ md[0], md[1], off });
             d.labels.items[li].calls = @fromBackingInt(@intCast(calls));
             for (0..try r.count()) |_| {
-                const k = try r.next();
-                const s = try d.labels.items[li].supplyOf(r.arena, k);
+                const s = try d.labels.items[li].supplyOfWord(r.arena, try r.next());
                 s.res.base = try node(nodes.items, try r.next());
                 try r.effects(&s.kept);
                 s.cond = try r.cond();

@@ -152,7 +152,7 @@ pub fn operandsOf(e: *Eval.Evaluation, q: u32, aj: u32) Error![]const u32 {
     if (aj != none) try out.appendSlice(e.ev.arena, call.args);
     var rest: std.ArrayList(u32) = .empty;
     defer rest.deinit(e.gpa());
-    try Across.operands(e.chain(), q, &rest);
+    try Across.operands(e.chain(), q, aj == none, &rest);
     try out.appendSlice(e.ev.arena, rest.items);
     return out.items;
 }

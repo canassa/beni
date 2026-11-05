@@ -19,6 +19,7 @@ const Graft = @import("Graft.zig");
 const Distinct = @import("Distinct.zig");
 const Eval = @import("Eval.zig");
 const CellEdit = @import("CellEdit.zig");
+const Each = @import("Each.zig");
 
 const Allocator = std.mem.Allocator;
 const Error = Eval.Error;
@@ -47,8 +48,8 @@ pub fn finishDemands(e: *Evaluation) Error!void {
         for (lvs.items) |lv| for (e.contracts.suppliesOf(lv.lab.supplies)) |su| if (su.k == lv.k) {
             const es = try Eval.entriesOf(e, su.res_root);
             if (lv.lab.calls == .many and CellEdit.ofElement(es, f.slots, lv.words) and try CellEdit.reachesParam(&e.ev, e.w.leavesOfRun(d.targets))) e.marks.taken_write = true;
-            if (lv.words.len != 0 or d.deep) d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try Distinct.instSel(&e.ev, try e.contracts.cond(e.ev.arena, su.below), lv.call));
-            d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try Distinct.instSel(&e.ev, try e.contracts.cond(e.ev.arena, su.cond), lv.call));
+            for (try Each.asked(e.chain(), e.ev.arena, su, lv.words, d.deep)) |x| d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try Distinct.instSel(&e.ev, x, lv.call));
+            if (su.each) continue;
             if (lv.lab.origin[2] & RowEnv.taken_origin != 0) if (try RowEnv.takenOccs(e.contracts, f.places, f.slots, f.account, e.gpa(), e.ev.arena, su, lv.words, d.deep)) |os| {
                 d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, try Distinct.instSel(&e.ev, try Cond.of(f.account, os), lv.call));
             };

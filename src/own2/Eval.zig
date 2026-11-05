@@ -493,7 +493,7 @@ fn callWriteFrom(e: *Evaluation, q: u32, x: Contract.Effect, pre: ?[]const Relat
             // A capture written while the callees hold what they were handed (#1955).
             if (Across.capture(f, q, x.j)) {
                 const o_start: u32 = @intCast(e.w.value_runs.items.len);
-                try Across.operands(e.chain(), q, &e.w.value_runs);
+                try Across.operands(e.chain(), q, false, &e.w.value_runs);
                 d.operands = .{ .start = o_start, .len = @intCast(e.w.value_runs.items.len - o_start) };
             }
         }
