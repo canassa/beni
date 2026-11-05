@@ -9124,6 +9124,10 @@ owner's decision `node-process-spawn-q3`, (i).)* A fiber cancelled while its chi
 not leave the child behind:
 
 1. The wait's canceller sends **`SIGTERM`** to the child, and arms a host timer of `killAfter`.
+   The bracket's release does the same when the canceller has not: an interrupt latched before
+   the wait — a fiber cancelled while masked, then restored around `run` — makes `Task.callback`
+   unwind without calling its function, so no canceller exists (`run/ChildProcessCancelledLatched`;
+   found by the review of #2044). Sending is done once, whichever comes first.
 2. The fiber's cleanup (a `Task.bracket` release) **waits until the child has exited**. When the
    timer fires first, it sends **`SIGKILL`**, which no process can ignore, and the wait goes on to
    the exit. So `Task.cancel` returns only after the child is gone, as Effect's scope release
@@ -9151,7 +9155,9 @@ two ways, and the platform handles both by the error's `code`: `EACCES`, `EAGAIN
 `ENFILE` and `ENOENT` arrive as the child's `error` event, and every other code is thrown from the
 `spawn` call itself (Node's `ChildProcess.prototype.spawn`; measured). The thrown ones are caught
 with `Js.catchIf`, which takes an `Error` whose `code` is in the table and throws everything else
-again. The names are the reader's, as `Io.FileError`'s are; where a name is `FileError`'s, it
+again. **One table serves both routes**: which route a code takes is Node's choice and can move
+between versions, and what the code means does not, so a named code is the same `RunError` by
+either. The names are the reader's, as `Io.FileError`'s are; where a name is `FileError`'s, it
 means the same.
 
 | Node's failure | Becomes |
@@ -9232,7 +9238,8 @@ none uses `/bin/echo`, which NixOS lacks.
   on the emitted JavaScript; then a `Task.timeout` ends a child that sleeps); `ChildProcessKillAfter` (a child that ignores `SIGTERM` is
   killed after a `killAfter` of 50 ms; without `SIGKILL` the case would run into its hang
   guard); `ChildProcessShutdown` (`Io.run` ends while a child sleeps 1 000 seconds; the program
-  exits at once).
+  exits at once); `ChildProcessCancelledLatched` (a cancellation latched while masked reaches
+  `run`'s wait, and the release alone signals the child; without that, a hang).
 - The rows with no fixture: `OutputTooLarge`'s clamp to `MAX_STRING_LENGTH` (a string of 512 MiB
   is no test); an `error` event after the start (no program can make Node's `kill` fail); an
   output pipe's `error` (left to Node).
