@@ -402,7 +402,7 @@ The case keeps all four flat-only clauses, `heapInts`, `types`, `abstractShapes`
 The probe `arith` checks the four primitives at build time.
 As built (2026-10-18, #165): `FlatANF0` admits every atom where it admitted an integer or a variable, except the push receiver, which stayed a variable until 2026-10-19; and it contains the record constructor. `FlatANF0` puts no condition on an atom: the theorem also needs `check`, and typing fixes each atom to an integer, a variable or a variable under a field path.
 `types` and `abstractShapes` are not replaced but widened: `FlatType`, `FlatAbstract` and `AllocatedFlatValue` get a record constructor, indexed field by field, so a binding holds an integer, an integer list, or a record of such values, nested. `heapInts` and `links = []` stay.
-`Fields.lean`, between `Reach` and `Frame`, holds the path lemmas: an atom's root variable and field path (`atomRoot`), the type at a path (`tyAt`), the evaluation of an atom from its root binding through `projectObs` and `projectVal` on both sides and `Abstract.atPath` in the checker, records in `Corresponds`, `obsTyped`, `ValueTyped` and `Describes` field by field, and the frame of a flat value by induction on its structure (`corresponds_flat_frame`, `describes_flat_frame`, `arrayAt_flat`).
+`Fields.lean`, between `Reach` and `Frame`, holds the path lemmas: an atom's root variable and field path (`atomRoot`), the type at a path (`tyAt`), the evaluation of an atom from its root binding through `projectObs` and `projectVal` (`projectHeap` since 2026-11-05) on both sides and `Abstract.atPath` in the checker, records in `Corresponds`, `obsTyped`, `ValueTyped` and `Describes` field by field, and the frame of a flat value by induction on its structure (`corresponds_flat_frame`, `describes_flat_frame`, `arrayAt_flat`).
 The invariant's `bindings` and `described` clauses at the live path `(x, p)` give an atom's correspondence and description directly; the let binder's live paths are typed field paths (`flat_uses_typed` replaces the empty-path lemma `FlatLive`); the heap frame's separation hypothesis speaks of every array at every path of a live projected value, which the literal case discharges by the heap bound and the push case by the Dead test through `inv.named` at the full path and the live cells (`live_path_apart`).
 A `shared` of a value deeper than `observationDepth` fails on both sides at the observer epilogue (`shared_deep_failure`); the first fragment never met this, because its values were shallow. No program `check` accepts at its default inference fuel reaches the case (each `let` costs one unit of 200 and a record adds at most one level, so a shared value is at most 199 deep, 197 records over a list, and a final value can reach 200; the reviews of PRs #375 and #422 measured it), but `flat_preserved` is generic in the fuel, so the lemma is needed.
 `Record.record_preserved` (`Primitives.lean`) and the record arm of `flat_static` (`Static.lean`) prove the constructor; the probe `recordOps` checks a record of two lists and an integer, field reads and a push onto a field bound to a variable at build time.
@@ -812,6 +812,31 @@ their paths. The flat fragment's representation lemmas gained the object case
 (`entryType`, `DictFree.object`); `FlatANF0`, `FlatType` and every theorem
 statement did not change. `RecordPrograms.lean` holds 30 probe programs,
 `RecordProbes.lean` their `#guard`s.
+
+As built (2026-11-05, #316, slice 2, #1871): the four forms are in `FlatANF0`
+and `flat_preserved` proves them (`FlatFragment/Objects.lean`:
+`object_preserved`, `get_preserved`, `recordCopy_preserved`,
+`assign_preserved`). The finding: `Invariant.bindings` read a live path with
+`projectVal`, which stops at an `.element` step, so no `Invariant` held while a
+field read of a bound object was still to come. Cesar decided on 2026-11-04
+(`own-record-flat-q1`, option A): fix the relation. `projectHeap` replaces
+`projectVal` and reads an `.element` step only through an array `[.record xs]`,
+a record object's one slot; `projectObs` reads only `.list [.record xs]`
+(`projectHeap_element_inv`, `projectObs_element_inv`). `Invariant.described`,
+`Protected` and the falsifier read the same way. `tyAt` takes one object step
+(`.element`, then a field path of the record). The flat relation gets
+`observationsTyped`, `objectsCertified` (the certificate of an object over the
+fields that a live use reads through its slot) and `liveTags`.
+`flatInvariant_heap_frame` takes `projected` (every live projection reads the
+same value in the next heap); `projected_of_route` gives it for the old cases,
+`assign_projected` for the update. The heap typing gives an object's array
+exactly one slot and no link (`ContentsKinded.object`,
+`StateKinded.object_unlinked`), so an update is a plain counted write
+(`heap_assign_success`). `linkNamed_after_writeLinked` (`LinkedWriteStep.lean`)
+takes the route premise. The statements of `accepted_flat_anf_traces_agree`
+and `accepted_traces_agree` did not change, and the pinned `sorryAx` set did
+not change. Probes (`Trace.lean`): `fieldRead` and ten accepted programs of
+`RecordPrograms.lean` with trace theorems, and seven refused controls.
 
 #704 (the pairwise-apart construction atom) is not in slice 1. This core has
 no summary atom vocabulary: it tests a construction's separation once, with
