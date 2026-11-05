@@ -1,0 +1,12 @@
+module JsCellSelectors
+  8:15 construction before: rejected unknown: the list came from JavaScript (approx)
+  24:15 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  summary readAliases: π1 RE
+  summary unrelatedField: unused
+  summary writeRetains: π1 REW
+  summary read: π1 RE; res ⊤{lost}r{lost}
+  summary throughAlias: π1 RE; res ⊤{lost}r{lost}
+  demands 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause unknown 1
+cause escaped 1

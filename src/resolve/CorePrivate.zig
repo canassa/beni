@@ -52,6 +52,7 @@ const entries = [_]Entry{
     .{ .module = "Browser", .name = "runMounts", .access = .same_platform },
     .{ .module = "Browser.Bridge", .name = null, .access = .same_platform },
     .{ .module = "Inline", .name = "guarded", .access = .platform },
+    .{ .module = "Inline", .name = "observe", .access = .platform },
     .{ .module = "Inline", .name = "unchanged", .access = .platform },
     .{ .module = "Rt.Slots", .name = null, .access = .platform },
     .{ .module = "Rt.Rows", .name = null, .access = .platform },

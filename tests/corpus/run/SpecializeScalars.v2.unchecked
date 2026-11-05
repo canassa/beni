@@ -1,3 +1,5 @@
 SpecializeScalars area: lines 15-18 (not built: local)
 SpecializeScalars turns: lines 21-27 (not built: lambda)
+SpecializeScalars useOne: lines 43-44 (not built: method_call)
+SpecializeScalars useEither: lines 47-48 (not built: method_call)
 SpecializeScalars main: lines 51-59 (not built: call)

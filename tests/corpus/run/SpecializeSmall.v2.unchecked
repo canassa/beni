@@ -1,1 +1,2 @@
+SpecializeSmall apply: lines 50-51 (not built: method_call)
 SpecializeSmall main: lines 54-73 (not built: top)

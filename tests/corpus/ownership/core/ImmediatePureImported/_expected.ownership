@@ -1,0 +1,13 @@
+module Main
+  8:7 List.push xs: rejected alias: held holds it and is read at 8:5
+  12:14 call Source.grow xs: accepted param (Source.grow writes π1)
+  summary kept: π1 RAW[storage], π1[*] A; res .0 condition(fresh2) π1, .0[*] ~condition(fresh3) ~π1[*], .1 ~condition(fresh4) π1, condition(fresh1){shared}
+  summary written: π1 RAW[storage], π1[*] RA; res [*] ~π1[*], π1
+  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+module Source
+  9:26 List.push xs: accepted once
+  summary identity: π1 RA; res π1
+  summary grow: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  demands 1: accepted 1 (fresh 0, call 0, param 0, callback-param 0, once 1, entry 0; assumed 0), pending 0, rejected 0
+total 3: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 1, entry 0; assumed 0), pending 0, rejected 1
+cause alias 1

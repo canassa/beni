@@ -1,0 +1,16 @@
+-- #1966: a function-valued record field is never derived comparison evidence.
+import Js
+
+
+pub normal : { build : List Int → List Int }, List Int → List Int
+normal holder xs = holder.build xs
+
+
+pub pureBody : { build : List Int → List Int }, List Int → List Int
+pureBody holder xs = Js.pure λ⊤ → holder.build xs
+
+
+pub usedAgain : { build : List Int → List Int }, List Int → List Int × List Int
+usedAgain holder xs =
+    result = normal holder xs
+    ( List.push xs 1, result )

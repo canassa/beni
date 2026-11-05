@@ -49,6 +49,7 @@ const Interface = @import("../resolve/Interface.zig");
 const Graph = @import("../resolve/Graph.zig");
 const InternPool = @import("../InternPool.zig");
 const stamped = @import("../stamped.zig");
+const CellSelectors = @import("CellSelectors.zig");
 const Ast = @import("../parse/Ast.zig");
 
 pub const PlaceId = Ids.PlaceId;
@@ -77,6 +78,8 @@ pub const Input = struct {
     /// Per module, whether it is in the core package; its comparisons are
     /// trusted to compose their evidence (§2.13.13).
     core: []const bool = &.{},
+    /// Resolved core module identity, not a read of Js's semantic type facts.
+    js_module: u32 = none,
     /// Symbol text, to name a type's `eq`/`compare`.
     interner: ?*const InternPool.Global = null,
     /// The imports' published classes (§2.11, §3.6; S3b slice 3), or none.
@@ -918,7 +921,6 @@ pub const Module = struct {
         const m = bir.extraData(@fromBackingInt(d.rhs), Bir.MethodCall);
         for (bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Bir.Inst.Index)) |x| try out.append(mod.gpa, x.int());
     }
-
     fn callee(ctx: *anyopaque, inst: u32) Error!Transfer.Callee {
         const mod = self(ctx);
         const bir = mod.in.bir;
@@ -942,6 +944,7 @@ pub const Module = struct {
                 // composes its components'.
                 // A parameter's or a codec's names no function here.
                 .param, .codec => {},
+                .field => return .unbuilt, // A real callable, not comparison evidence (#1966).
                 else => composed = true,
             }
         };
@@ -1147,15 +1150,20 @@ pub const Module = struct {
             result_words = s[1];
         };
         var cell_field: ?Step = null;
-        if (mod.in.types.js_opt != .none and mod.in.types.entry(mod.in.types.js_opt).module.int() == owner) {
-            const name = mod.in.interner.?.slice(mod.in.birs[owner].symbol(decl.name));
-            const selector: ?usize = if (std.mem.eql(u8, name, "cellRead")) 1 else if (std.mem.eql(u8, name, "cellWrite")) 2 else null;
-            if (selector) |k| if (args.len > k) {
-                if (mod.in.bir.fieldSelector(@fromBackingInt(args[k]))) |field|
-                    cell_field = try Step.field(mod.account, mod.adapter.rank(field));
-            };
-        }
+        const selected = if (owner == mod.in.js_module) CellSelectors.field(mod.in.bir, mod.in.birs[owner], decl, mod.in.interner.?, args) else null;
+        if (selected) |field| cell_field = try Step.field(mod.account, mod.adapter.rank(field));
         return Rows.fromWords(mod.env(), &mod.sums, .{ .params = params.items, .result = try placeOfInst(mod, inst), .result_words = result_words, .cell_field = cell_field });
+    }
+
+    /// Match only a canonical core Js call; unrelated calls read no Js facts.
+    fn cellSelector(ctx: *anyopaque, inst: u32) Error!?CellSelectors.Lambda {
+        const mod = self(ctx);
+        const target = mod.calledDecl(inst) orelse return null;
+        if (target[0] != mod.in.js_module) return null;
+        var args: std.ArrayList(u32) = .empty;
+        defer args.deinit(mod.gpa);
+        try mod.argsOf(inst, &args);
+        return CellSelectors.reader(mod.in.bir, mod.in.birs[target[0]], mod.in.birs[target[0]].decls[target[1]], mod.in.interner.?, args.items);
     }
 
     pub fn context(mod: *Module) Transfer.Context {
@@ -1169,6 +1177,7 @@ pub const Module = struct {
             .sharedIndex = sharedIndex,
             .isListAppend = isListAppend,
             .onCall = onCall,
+            .cellSelector = cellSelector,
         };
     }
 };

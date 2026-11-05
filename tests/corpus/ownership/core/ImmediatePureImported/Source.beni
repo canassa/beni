@@ -1,0 +1,9 @@
+import Js as Host
+
+
+pub identity : List Int → List Int
+identity xs = Host.pure λ⊤ → xs
+
+
+pub grow : List Int → List Int
+grow xs = Host.pure λ⊤ → List.push xs 1

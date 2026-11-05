@@ -1,0 +1,1 @@
+[{"code":"private_name","severity":"error","span":{"file":"Main.beni","start":{"line":17,"col":5},"end":{"line":17,"col":19}},"title":"PRIVATE NAME","message":"This name is private to core and platform runtimes."}]

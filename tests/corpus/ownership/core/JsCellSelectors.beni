@@ -1,0 +1,32 @@
+-- Cell selectors are structural row input; their parameters are not outer locals.
+import Js as Runtime
+
+
+readAliases : Runtime.Cell { items : List Int } → Int
+readAliases cell =
+    before = Runtime.cellRead cell .items
+    grown = [ …before, 2 ]
+    List.length grown + List.length (Runtime.cellRead cell .items)
+
+
+unrelatedField : ⊤ → Int
+unrelatedField ⊤ =
+    cell = Runtime.cell { items = [ 1 ], other = [ 2 ] }
+    before = Runtime.cellRead cell λrecord → record.items
+    Runtime.cellWrite cell [ 3 ] .other
+    List.length before
+
+
+writeRetains : List Int → Int
+writeRetains xs =
+    cell = Runtime.cell { items = [] }
+    Runtime.cellWrite cell xs .items
+    grown = [ …xs, 2 ]
+    List.length grown + List.length (Runtime.cellRead cell .items)
+
+
+read cell = Runtime.cellRead cell .items
+
+
+throughAlias : Runtime.Cell { items : List Int } → List Int
+throughAlias cell = read cell

@@ -222,6 +222,16 @@ pub fn Of(comptime Frame: type) type {
             }
         }
 
+        /// Js.pure's unit body executes now; preserve its value and every demand.
+        pub fn immediate(f: *Frame, i: u32) Error!?Val {
+            const find = f.ctx.cellSelector orelse return null;
+            const lambda = try find(f.ctx.ctx, i) orelse return null;
+            if (!lambda.immediate) return null;
+            const body = f.bir.instData(@fromBackingInt(lambda.operand)).rhs;
+            try f.consume(body, i, .whole, .none);
+            return .{ .value = f.val(body).value };
+        }
+
         /// A computed operand evaluated before its consumer: pending between.
         pub fn pending(f: *Frame, i: u32) Error!void {
             const v = f.val(i);

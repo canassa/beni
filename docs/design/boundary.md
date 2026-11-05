@@ -3441,6 +3441,14 @@ word must be caught by misuse fixtures; unknown callback effects remain refused.
 Html.Runtime's frozen 1.30 API and source SHA are unchanged by this bridge.
 *Amended 2026-11-05 (Part of #1807):* both bridge owners are identified by the compiled-in registered markup lowering (dom or inline) and its layer's runtime module, whether embedded or directory-loaded, and recognition and access retain samePlatformLayer; a matching module spelling or a different registered lowering grants no bridge ownership. The inline marker reads and marks the existing `$$root` property, so a host-premarked root is recognised before mounting.
 
+**Bridge owner priority (2026-11-05, Part of #1807).** When the chain includes
+an embedded platform with the registered lowering, its own runtime layer keeps
+bridge ownership ahead of a user layer declaring that lowering. A user layer's
+runtime declaration cannot take the embedded Browser.Bridge or Inline.Bridge
+implementation. Without an embedded owner, the registered lowering and its
+runtime module identify the directory-loaded owner as before. Recognition and
+access still require samePlatformLayer.
+
 Hosted control messages distinguish real input from a render-only nudge using
 shared constants. They allocate no object per message or render. A closed job
 keeps typed send closures rather than calling a sender through Js.Value. Dispatch
