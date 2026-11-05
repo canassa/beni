@@ -293,7 +293,7 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
 /// The function objects of value `v` at `words` that unknown code runs at
 /// `point`, as `mode` says, escape there (§2.11.3, *a function value goes
 /// where a value goes*).
-fn escapeFns(e: *Evaluation, v: u32, words: []const u32, mode: FnRun.Mode, point: u32, call: u32) Error!void {
+pub fn escapeFns(e: *Evaluation, v: u32, words: []const u32, mode: FnRun.Mode, point: u32, call: u32) Error!void {
     var ls: std.ArrayList(u32) = .empty;
     defer ls.deinit(e.gpa());
     try FnRun.escapes(&e.ev, e.ctx, e.w.closures.items, v, words, mode, point, call, &ls);

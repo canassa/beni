@@ -32,7 +32,7 @@ const Error = Value.Error;
 /// frame's closures it is); `answer`, a known code's answer to its label,
 /// handed back to the callee (every parameter function slot it holds; a
 /// closure it holds is `Closures`' hand-back).
-pub const Mode = enum { run, answer };
+pub const Mode = enum { run, run_deep, answer };
 
 /// The function objects of value `v` at `words` that `mode` gives, into
 /// `out`, under a subscription, so that what a growing draft adds later is
@@ -56,12 +56,17 @@ pub fn delivered(ev: *Relation.Eval, cx: WalkContext.Context, closures: anytype,
     try ofLeaves(ev, &.{y}, try wantOf(ev, cx, closures, @fromBackingInt(@intCast(sub.b))), out);
 }
 
+/// The function objects leaf `li` reaches: the frame's closures' site leaves, and parameters' slots.
+pub fn sitesOf(ev: *Relation.Eval, cx: WalkContext.Context, closures: anytype, li: u32, out: *std.ArrayList(u32)) Error!void {
+    try ofLeaves(ev, &.{li}, try wantOf(ev, cx, closures, .run), out);
+}
+
 fn wantOf(ev: *Relation.Eval, cx: WalkContext.Context, closures: anytype, mode: Mode) Error!Want {
     if (mode == .answer) return .{ .deep = true };
     var out: std.ArrayList(u32) = .empty;
     for (closures) |c| if (frameSite(ev.contracts, cx, closures, c.inst)) try out.append(ev.arena, c.inst);
     std.mem.sort(u32, out.items, {}, std.sort.asc(u32));
-    return .{ .sites = out.items };
+    return .{ .sites = out.items, .deep = mode == .run_deep };
 }
 
 /// Which function objects to give: every parameter function slot, and the

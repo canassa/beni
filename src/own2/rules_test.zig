@@ -207,6 +207,7 @@ const layers = [_]Entry{
     .{ .file = "Descent.zig", .layer = 11, .max_lines = 330 },
     .{ .file = "Deliver.zig", .layer = 11, .max_lines = 300 },
     // A callee's hand-back is an escape too (#1709).
+    .{ .file = "ClosureRuns.zig", .layer = 11, .max_lines = 85 },
     .{ .file = "Closures.zig", .layer = 11, .max_lines = 140 },
     // A store that may hold one object twice escapes the cell's contents (#1984).
     .{ .file = "Contents.zig", .layer = 11, .max_lines = 140 },
@@ -536,7 +537,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 104), layers.len);
+    try testing.expectEqual(@as(usize, 105), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 
