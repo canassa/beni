@@ -16,6 +16,9 @@ const Bir = @import("../bir/Bir.zig");
 const Error = Ids.ChargeError;
 const PlaceId = Ids.PlaceId;
 
+/// The high bit of a closure's `head`: a fixed contract, not a code.
+pub const fixed_bit: u32 = 1 << 31;
+
 /// What a call runs (`Context.callee`).
 pub const Callee = union(enum) {
     /// The result and every argument cross: nothing to track.
@@ -57,6 +60,8 @@ pub const Context = struct {
     capturesOf: *const fn (ctx: *anyopaque, code: u32) []const u32,
     /// A code's current contract, or null.
     contractOf: *const fn (ctx: *anyopaque, code: u32) ?Contract.Id,
+    /// The called code of body code `code`'s function slot `rel` (§2.11.3), or null.
+    calledOf: *const fn (ctx: *anyopaque, code: u32, rel: u32) ?u32,
     /// A code's places: its parameters' (own, then captures) and its result's.
     codeSig: *const fn (ctx: *anyopaque, code: u32) Error!Relation.Sig,
     /// The places of the function type instruction `inst` has at its site:

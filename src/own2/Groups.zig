@@ -54,6 +54,11 @@ const Resolve = @import("Resolve.zig");
 const Kept = @import("Kept.zig");
 const Deliver = @import("Deliver.zig");
 const Closures = @import("Closures.zig");
+const Once = @import("Once.zig");
+const Called = @import("Called.zig");
+const CodeCaps = @import("CodeCaps.zig");
+const TypeVarParam = @import("TypeVarParam.zig");
+const CondsOff = @import("CondsOff.zig");
 const Contents = @import("Contents.zig");
 const Within = @import("Within.zig");
 const Outward = @import("Outward.zig");
@@ -230,7 +235,7 @@ pub const Adapter = struct {
     /// interned by parsing and lowering, before `Enforce.inputs` ranks them
     /// all, and the checker interns none; a session id must never stand in
     /// for a rank (it would reach published bytes), so a miss is a defect.
-    fn rank(a: *const Adapter, s: InternPool.Symbol) u32 {
+    pub fn rank(a: *const Adapter, s: InternPool.Symbol) u32 {
         const i = @backingInt(s);
         if (i >= a.in.ranks.len) @panic("ownership v2: a symbol interned after the ranks were taken");
         return a.in.ranks[i];
@@ -634,6 +639,10 @@ pub const Module = struct {
     body_code: []u32 = &.{},
     /// Lambdas', local functions' and references' codes by instruction.
     code_of_inst: Ids.FixedDict(1) = .{},
+    /// `(body code, function slot)` → its called code (§2.11.3).
+    called_index: Ids.FixedDict(2) = .{},
+    /// The count of `called_index` a declaration stops at (§2.11.3, *Which slots*).
+    called_cap: u32 = 0,
     /// Imported declarations passed as evidence: their codes by `(module, declaration)`.
     evidence_code: Ids.FixedDict(2) = .{},
     /// Per imported module read: its contracts by declaration.
@@ -672,6 +681,7 @@ pub const Module = struct {
         mod.code_places.deinit(gpa);
         mod.code_caps.deinit(gpa);
         mod.code_of_inst.deinit(gpa);
+        mod.called_index.deinit(gpa);
         mod.evidence_code.deinit(gpa);
         for (mod.imported_owned.items) |cs| gpa.free(cs);
         mod.imported_owned.deinit(gpa);
@@ -899,7 +909,7 @@ pub const Module = struct {
             // An `entry` without the state protocol is no word: escaped (R-5.8.1).
             const names: Prepass.EntryNames = if (mod.in.interner) |i| .{ .update = i.find("update"), .settle = i.find("settle") } else .{ .update = null, .settle = null };
             if (w & Ast.OwnWord.entry.bit() != 0 and !Prepass.entryProtocol(mod.in.birs[owner], decl, k, names)) w = 0;
-            try ps.append(mod.gpa, .{ .place = at, .words = w, .type_variable = try paramIsTypeVariable(mod.in, owner, decl, k) });
+            try ps.append(mod.gpa, .{ .place = at, .words = w, .type_variable = try TypeVarParam.paramIsTypeVariable(mod.in, owner, decl, k) });
         }
         for (words) |s| if (s[0] == Bir.own_result) {
             result_words = s[1];
@@ -1118,6 +1128,10 @@ pub const Module = struct {
         return c.contract;
     }
 
+    fn calledOf(ctx: *anyopaque, code: u32, rel: u32) ?u32 {
+        return self(ctx).called_index.get(.{ code, rel });
+    }
+
     fn codeSig(ctx: *anyopaque, code: u32) Error!Relation.Sig {
         const mod = self(ctx);
         const c = mod.codes.items[code];
@@ -1137,7 +1151,7 @@ pub const Module = struct {
     fn originSig(ctx: *anyopaque, origin: [3]u32, params: *std.ArrayList(PlaceId)) Error!?PlaceId {
         const mod = self(ctx);
         const bir = mod.in.bir;
-        if (origin[0] != mod.in.module or origin[1] >= bir.decls.len or origin[2] >= 1 << 30) return null;
+        if (origin[0] != mod.in.module or origin[1] >= bir.decls.len or origin[2] >= Called.last_origin) return null;
         // A worded row's labels (cells, `taken`, an `aliased` callback) name
         // no instruction: only a walked declaration's origin is a call.
         if (origin[1] >= mod.body_code.len or mod.body_code[origin[1]] == none) return null;
@@ -1180,6 +1194,7 @@ pub const Module = struct {
             .codeOf = codeOf,
             .capturesOf = capturesOf,
             .contractOf = contractOf,
+            .calledOf = calledOf,
             .codeSig = codeSig,
             .siteSig = siteSig,
             .originSig = originSig,
@@ -1241,6 +1256,9 @@ pub fn checkModule(in: *const Input, mod: *Module) Allocator.Error!void {
                     r.contract = none;
                     const bc = mod.body_code[r.decl];
                     charging(mod, &mod.base_account);
+                    for (mod.codes.items) |*c| if (c.kind == .called and c.of == bc) {
+                        c.contract = none;
+                    };
                     mod.codes.items[bc].contract = mod.pessimisticOf(in.bir.decls[r.decl].params, false) catch |e2| switch (e2) {
                         error.OutOfMemory => return error.OutOfMemory,
                         else => none,
@@ -1298,6 +1316,7 @@ fn declCodes(mod: *Module, di: u32, out: *std.ArrayList(u32)) Error!void {
         c.own = @intCast(ps.items.len);
         c.result = result;
         c.inst = none;
+        try calledCodes(mod, di, ps.items, out);
     }
     // The nested codes, innermost first (a lambda's body before it).
     var nested: std.ArrayList(u32) = .empty;
@@ -1317,69 +1336,12 @@ fn declCodes(mod: *Module, di: u32, out: *std.ArrayList(u32)) Error!void {
         try out.append(gpa, id);
     }
     if (nested.items.len == 0) return;
-    // Captures: each read of a local inside a code, bound outside it.
     var caps: std.ArrayList(std.ArrayList(u32)) = .empty;
     defer {
         for (caps.items) |*c| c.deinit(gpa);
         caps.deinit(gpa);
     }
-    for (nested.items) |_| try caps.append(gpa, .empty);
-    const which = struct {
-        fn of(list: []const u32, inst: u32) ?usize {
-            return std.mem.indexOfScalar(u32, list, inst);
-        }
-    };
-    // Whether instruction `x` lies inside code `c` (its frame chain meets c).
-    const inside = struct {
-        fn f(frames: []const u32, x0: u32, c: u32) bool {
-            var x = x0;
-            var hops: u32 = 0;
-            while (x != none and hops < 100_000) : (hops += 1) {
-                if (x == c) return true;
-                x = frames[x];
-            }
-            return false;
-        }
-    };
-    i = start;
-    while (i < d.inst_end.int()) : (i += 1) {
-        if (bir.instTag(@fromBackingInt(i)) != .local) continue;
-        const l = bir.instData(@fromBackingInt(i)).lhs;
-        if (l >= d.locals_end - d.locals_start) continue;
-        const binding = bir.locals[d.locals_start + l].inst.int();
-        var f = fr[i];
-        while (f != none) : (f = fr[f]) {
-            const k = which.of(nested.items, f) orelse break;
-            // Bound inside the code (its parameter, a pattern of its body,
-            // its own name for a local function): no capture.
-            if (binding == f or inside.f(fr, binding, f)) continue;
-            if (std.mem.indexOfScalar(u32, caps.items[k].items, l) == null) try caps.items[k].append(gpa, l);
-        }
-    }
-    // A local function a code calls by name: its captures are the caller's too.
-    var changed = true;
-    while (changed) {
-        changed = false;
-        for (nested.items, 0..) |c, k| {
-            i = start;
-            while (i < d.inst_end.int()) : (i += 1) {
-                if (bir.instTag(@fromBackingInt(i)) != .local or !inside.f(fr, fr[i], c) and fr[i] != c) continue;
-                const l = bir.instData(@fromBackingInt(i)).lhs;
-                if (l >= d.locals_end - d.locals_start) continue;
-                const binding = bir.locals[d.locals_start + l].inst.int();
-                const g = which.of(nested.items, binding) orelse continue;
-                if (g == k) continue;
-                for (caps.items[g].items) |x| {
-                    const xb = bir.locals[d.locals_start + x].inst.int();
-                    if (xb == c or inside.f(fr, xb, c)) continue;
-                    if (std.mem.indexOfScalar(u32, caps.items[k].items, x) == null) {
-                        try caps.items[k].append(gpa, x);
-                        changed = true;
-                    }
-                }
-            }
-        }
-    }
+    try CodeCaps.of(gpa, bir, d, fr, nested.items, &caps);
     mod.cur_locals = d.locals_start;
     for (nested.items, 0..) |c, k| {
         std.mem.sort(u32, caps.items[k].items, {}, std.sort.asc(u32));
@@ -1411,12 +1373,86 @@ fn declCodes(mod: *Module, di: u32, out: *std.ArrayList(u32)) Error!void {
     _ = n;
 }
 
+/// The called codes of declaration \`di\`'s body, of parameters \`params\`: one per
+/// function slot of its result, at \`ε\` and through records and tuples
+/// (§2.11.3, *Which slots*).
+fn calledCodes(mod: *Module, di: u32, params: []const PlaceId, out: *std.ArrayList(u32)) Error!void {
+    const scheme: Var.Optional = if (di < mod.in.decl_scheme.len) mod.in.decl_scheme[di] else .none;
+    const v = scheme.unwrap() orelse return;
+    const f = switch (mod.in.store.resolvedContent(v)) {
+        .structure => |s| switch (s) {
+            .func => |f| f,
+            else => return,
+        },
+        else => return,
+    };
+    var words: std.ArrayList(u32) = .empty;
+    defer words.deinit(mod.gpa);
+    mod.called_cap = mod.called_index.count() + @as(u32, @intCast(Slots.below_min));
+    try funcSlots(mod, f.result, di, params, &words, out);
+}
+
+fn funcSlots(mod: *Module, t: Var, di: u32, params: []const PlaceId, words: *std.ArrayList(u32), out: *std.ArrayList(u32)) Error!void {
+    const gpa = mod.gpa;
+    const s = switch (mod.in.store.resolvedContent(t)) {
+        .structure => |x| x,
+        else => return,
+    };
+    // Each slot is a walk of the body, and a tuple of tuples doubles its slots.
+    if (!mod.places.holds(try mod.adapter.placeOfVar(t.toOptional())).closure or mod.called_index.count() >= mod.called_cap) return;
+    switch (s) {
+        .func => {
+            const pstart: u32 = @intCast(mod.code_places.items.len);
+            var own: std.ArrayList(PlaceId) = .empty;
+            defer own.deinit(gpa);
+            const result = (try mod.fnPlaces(t.toOptional(), &own)) orelse return;
+            try mod.code_places.appendSlice(gpa, own.items);
+            try mod.code_places.appendSlice(gpa, params);
+            try mod.code_places.append(gpa, try mod.adapter.placeOfVar(t.toOptional()));
+            const id: u32 = @intCast(mod.codes.items.len);
+            const rel = try mod.slots.relOfWords(gpa, mod.account, &mod.places, words.items);
+            try mod.codes.append(gpa, .{ .kind = .called, .decl = di, .of = mod.body_code[di], .slot = rel, .params = .{ .start = pstart, .len = @intCast(mod.code_places.items.len - pstart) }, .own = @intCast(own.items.len), .result = result });
+            try mod.called_index.put(gpa, .{ mod.body_code[di], rel }, id);
+            try out.append(gpa, id);
+        },
+        .tuple => |r| for (mod.in.store.vars(r), 0..) |e, k| {
+            try words.append(gpa, (try Place.Step.index(mod.account, @intCast(k))).word());
+            defer _ = words.pop();
+            try funcSlots(mod, e, di, params, words, out);
+        },
+        .record => |rec| {
+            var at = rec;
+            while (true) {
+                for (mod.in.store.fields(at.fields)) |fld| {
+                    try words.append(gpa, (try Place.Step.field(mod.account, mod.adapter.rank(fld.name))).word());
+                    defer _ = words.pop();
+                    try funcSlots(mod, fld.value, di, params, words, out);
+                }
+                switch (mod.in.store.resolvedContent(at.ext)) {
+                    .structure => |es| switch (es) {
+                        .record => |next| at = next,
+                        else => break,
+                    },
+                    else => break,
+                }
+            }
+        },
+        else => {},
+    }
+}
+
 /// The code's walk input.
-fn walkCode(mod: *Module, id: u32) Walk.Code {
+fn walkCode(mod: *Module, id: u32) Error!Walk.Code {
     const c = mod.codes.items[id];
     const bir = mod.in.bir;
     const d = bir.decls[c.decl];
     const places = mod.code_places.items[c.params.start..][0..c.params.len];
+    if (c.kind == .called) {
+        var w = try walkCode(mod, c.of);
+        w.called = .{ .own_places = places[0..c.own], .words = try mod.walk_arena.allocator().dupe(u32, mod.slots.relWords(c.slot)), .body_result = w.result_place };
+        w.result_place = c.result;
+        return w;
+    }
     if (c.kind == .body) return .{ .decl = d, .decl_index = c.decl, .inst = none, .params = bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Bir.Inst.Index), .param_places = places, .captures = &.{}, .body = d.body.unwrap().?.int(), .result_place = c.result };
     const dd = bir.instData(@fromBackingInt(c.inst));
     const params: []const Bir.Inst.Index, const body: u32 = if (c.kind == .lambda)
@@ -1472,9 +1508,9 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
         charging(mod, &r.account);
         mod.cur_locals = in.bir.decls[r.decl].locals_start;
         const w = try arena.create(Walk.Walk);
-        try Walk.walk(gpa, arena, &r.account, &mod.places, &mod.slots, &regions.items[owner.items[x]], &mod.prepass, in.bir, in.module, mod.context(), &mod.contracts, walkCode(mod, id), &atoms[owner.items[x]], w);
+        try Walk.walk(gpa, arena, &r.account, &mod.places, &mod.slots, &regions.items[owner.items[x]], &mod.prepass, in.bir, in.module, mod.context(), &mod.contracts, try walkCode(mod, id), &atoms[owner.items[x]], w);
         mod.codes.items[id].walk = w;
-        r.walks += 1;
+        if (mod.codes.items[id].kind != .called) r.walks += 1;
     }
     // Every code of the group starts at ⊥ (§2.12).
     var bot: Contract.Draft = .{ .arity = 0 };
@@ -1524,6 +1560,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             mod.cur_locals = in.bir.decls[r.decl].locals_start;
             try Eval.evaluate(mod.codes.items[ids[i]].walk.?, &mod.contracts, mod.context(), ra, if (sv) |v| &v.group else null, @intCast(i), &evals[i]);
             opened += 1;
+            try Once.demands(&evals[i]);
         }
         for (order.items, 0..) |x, i| {
             const r = &rs[owner.items[x]];
@@ -1541,9 +1578,10 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             charging(mod, &r.account);
             mod.cur_locals = in.bir.decls[r.decl].locals_start;
             const e = &evals[i];
-            try EntryHeld.demands(e);
+            const called = mod.codes.items[id].kind == .called;
+            if (!called) try EntryHeld.demands(e);
             try Outward.finishDemands(e);
-            try Closures.escapedWrites(e);
+            if (!called) try Closures.escapedWrites(e);
             const got = try Resolve.resolve(e, &regions.items[k], ra, if (validating or !solver.used) null else &kg.tables[i]);
             // R-5.13.1: in a comparison's walk, a write of what arrived is `comparison_changes_value`;
             // a write of a fresh value stays accepted, and the contract keeps its writes (§2.13.13 item 13).
@@ -1553,7 +1591,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
                     l.outcome.cause = .comparison;
                 }
             };
-            try ReadOff.condsOff(e, ra, got.verdicts);
+            try CondsOff.condsOff(e, ra, got.verdicts);
             const c = try mod.contracts.commit(gpa, &r.account, &mod.slots, &drafts[i]);
             const code = &mod.codes.items[id];
             if (validating) {
@@ -1577,7 +1615,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
                     moved = true;
                 }
             }
-            for (got.lines) |l| try lines.items[k].append(gpa, l);
+            if (!called) for (got.lines) |l| try lines.items[k].append(gpa, l);
         }
         // Settled when every read saw the version that stands now.
         var stale = false;
@@ -1594,6 +1632,10 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
         }
         if (round > 4096) return error.OwnershipLimit;
     }
+    for (codes.items) |id| if (mod.codes.items[id].kind == .called) {
+        const c = mod.codes.items[id];
+        try mod.contracts.putCalled(gpa, mod.codes.items[c.of].contract, c.slot, c.contract);
+    };
     for (rs, lines.items) |*r, *l| {
         r.rounds = round + 1;
         r.contract = mod.codes.items[mod.body_code[r.decl]].contract;
@@ -1763,85 +1805,6 @@ fn comparisonWalks(in: *const Input) Allocator.Error![]bool {
         if (t[0] == in.module) out[t[1]] = true;
     }
     return out;
-}
-
-/// Whether parameter `k` of declaration `d` of module `owner` is declared
-/// as a bare type variable (`borrowed a`), aliases expanded (`Id a` with
-/// `type alias Id a = a`): its value may hold any structure, and the callee
-/// may read any of it, so its words apply at every depth (§2.13.6, #1105).
-fn paramIsTypeVariable(in: *const Input, owner: u32, d: Bir.Decl, k: usize) Allocator.Error!bool {
-    const bir = in.birs[owner];
-    const ann = d.annotation.unwrap() orelse return false;
-    if (bir.instTag(ann) != .type_fn) return false;
-    const ps = bir.extraSlice(bir.subRange(@fromBackingInt(bir.instData(ann).lhs)), Bir.Inst.Index);
-    return k < ps.len and try expandsToVariable(in, owner, ps[k]);
-}
-
-/// A type written in module `module` whose type variables are bound by
-/// `env` (an alias's arguments; null in an annotation, where every variable
-/// is free).
-const AliasEnv = struct { module: u32, args: []const Bir.Inst.Index, outer: u32 };
-
-/// Whether the type `t` of `module` expands to a free type variable.
-/// Alias cycles are refused by the checker (`recursive_alias`), so the
-/// expansion ends.
-fn expandsToVariable(in: *const Input, start_module: u32, start: Bir.Inst.Index) Allocator.Error!bool {
-    // A loop, the environments a list (#1143: aliases chain as long as the
-    // source has them). `outer` indexes `envs`; `none` is no environment.
-    var envs: std.ArrayList(AliasEnv) = .empty;
-    defer envs.deinit(in.gpa);
-    var module = start_module;
-    var t = start;
-    var env: u32 = none;
-    while (true) {
-        const bir = in.birs[module];
-        switch (bir.instTag(t)) {
-            .type_var => {
-                if (env == none) return true;
-                const e = envs.items[env];
-                const p = Bir.TypeVarInfo.unpack(bir.instData(t).rhs).param;
-                if (p >= e.args.len) return false;
-                module = e.module;
-                t = e.args[p];
-                env = e.outer;
-            },
-            .type_app => {
-                const args = bir.extraSlice(bir.subRange(@fromBackingInt(bir.instData(t).rhs)), Bir.Inst.Index);
-                const alias = aliasOf(in, module, @fromBackingInt(bir.instData(t).lhs)) orelse return false;
-                try envs.append(in.gpa, .{ .module = module, .args = args, .outer = env });
-                env = @intCast(envs.items.len - 1);
-                module = alias[0];
-                t = alias[1];
-            },
-            .type_top, .ext_type => {
-                const alias = aliasOf(in, module, t) orelse return false;
-                try envs.append(in.gpa, .{ .module = module, .args = &.{}, .outer = env });
-                env = @intCast(envs.items.len - 1);
-                module = alias[0];
-                t = alias[1];
-            },
-            else => return false,
-        }
-    }
-}
-
-/// The aliased type of the alias a type reference names, with the module it is written in; null for anything else.
-fn aliasOf(in: *const Input, module: u32, ref: Bir.Inst.Index) ?struct { u32, Bir.Inst.Index } {
-    const bir = in.birs[module];
-    const data = bir.instData(ref);
-    const at: [2]u32 = switch (bir.instTag(ref)) {
-        .type_top => .{ module, data.lhs },
-        .ext_type => blk: {
-            if (data.lhs >= in.provenance.len) return null;
-            const d = in.provenance[data.lhs].typeDecl(data.rhs) orelse return null;
-            break :blk .{ data.lhs, d.int() };
-        },
-        else => return null,
-    };
-    if (at[0] >= in.birs.len) return null;
-    const decls = in.birs[at[0]].decls;
-    if (at[1] >= decls.len or decls[at[1]].kind != .type_alias) return null;
-    return .{ at[0], decls[at[1]].annotation.unwrap() orelse return null };
 }
 
 /// A v2 word on a place without the kind it reads (#1056 item 4): lowering

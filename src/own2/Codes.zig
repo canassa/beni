@@ -31,13 +31,16 @@ pub const DeclResult = struct {
     account: Ids.Account = .{},
 };
 
-pub const CodeKind = enum(u8) { body, lambda, local, ref };
+pub const CodeKind = enum(u8) { body, lambda, local, ref, called };
 
 /// A code (§2.10).
 pub const Code = struct {
     kind: CodeKind,
-    /// The declaration it is in (a body, a lambda, a local function).
+    /// The declaration it is in (a body, a lambda, a local function, a called code).
     decl: u32 = none,
+    /// A called code (§2.11.3): its body's code and the function slot.
+    of: u32 = none,
+    slot: u32 = 0,
     /// The lambda's or `let_def`'s instruction; a reference's instruction.
     inst: u32 = none,
     params: Ids.Range = .{},
