@@ -32,6 +32,7 @@ const Forest = @import("Forest.zig");
 const Eval = @import("Eval.zig");
 const Walk = @import("Walk.zig");
 const Liveness = @import("Liveness.zig");
+const Ancestry = @import("Ancestry.zig");
 const Regions = @import("Regions.zig");
 const Holders = @import("Holders.zig");
 const Sweep = @import("Sweep.zig");
@@ -79,7 +80,7 @@ const Resolver = struct {
     /// The holder index and its sweep (§2.8): locals by their values' base
     /// keys, live while the sweep's point is between their binding and last use.
     live: Sweep.Live = .{},
-    ancestry: Liveness.Ancestry = .{},
+    ancestry: Ancestry.Ancestry = .{},
     /// Each leaf's base keys and the escape index (§2.8).
     keys: Holders.Keys = .{},
     escapes: Holders.Escapes = .{},
