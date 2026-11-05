@@ -2187,6 +2187,67 @@ a top-level value is never written, and `⊤` holds only what has escaped, and a
 
 **A cell's contents are a list the condition can read, since the contents relation (#1991, §2.13.7).** A condition over what a cell holds reads what `Ref.make` was given, or an answer as the cell's own. That is sound because a store that may hold one object twice makes the contents escape: after `Ref.set c [ a, a ]`, `Ref.update c λr → List.map r push1` is refused `escaped`, at the caller too when a helper makes the edit (`run/SanitiserTakenElementCell`). `CellEdit.elementEdit`, which refused every write through a `◆` then a `[*]` while v2 could not tell, is gone, so an element of a list in a cell is edited in place when its stores keep the elements apart.
 
+*Amended 2026-11-05 (#2013, #2025): **An answer handed on.*** A label's answer in another label's supply (`y = f x; g y`)
+was never judged: `unknown` as a whole, the kept check skipped it, and nothing asked that two runs of a label get two objects. So
+`chain x f g = ( y = f x; ( g y, g y ) )` with `λw → w` and a writer pushed one list twice in place, and so did `( g y, y )`,
+`( g (f x), x )`, `[ y ]` and a closure over `y` held beside `g y`. Unknown code answers what it was handed or what its closure
+holds, or makes something, so there are three rules, and the third asks of the code the caller knows.
+
+1. **A holder of the answer keeps the supply.** The answer is judged as a supplied part with the relation read the other way
+   (`AnswerKeep.kept`): the same call's answer, in a local, an operand or a pending operand, is `may`; another label's answer that
+   was handed it is `may` under that function's `fresh`; anything else is what §2.9.2 step 7 says the answer may hold, and where
+   that is not `no`, `fresh` of the function that answered. The answer may also be whatever its call was supplied and whatever its
+   function holds, so those are judged too, each as a supplied part (`Supplied.mayBeHeld`): one held after the call, or apart from a
+   holder only under a selection, asks the same `fresh`. A selection of the holder is not asked instead: at a recursive call it reads
+   the accumulator that already holds earlier answers, and no such selection can hold. The same holds of an answer in a callee: a pass
+   whose callee supply arrives from another label's answer judges that answer against what the frame holds after the call, with no
+   operands, since the call's arguments are the callee's to judge (`( pipe x f g, x )`, `pipe x f g = g (f x)`). A label's own answer
+   at a pass is §2.11.3's feedback.
+2. **`fresh`** is the `fed` occurrence with no argument, printed `π2{ε!}`: the function at `π2ε` answers only objects it makes.
+   §2.11.3's rule for `fed` decides it at a known code, with no argument to allow, and it passes on as `fed` does. A fresh object is
+   apart from every object that existed before it, and each run makes its own. A `top-level`, a capture and an argument all fail it.
+3. **A function that runs more than once may answer one object each time.** Where a supply holds the answer of a label whose function
+   runs at least twice in the frame (direct calls, passes and outer labels add up as `calls` does), the supply's `sep` asks that the
+   answers be apart (`SupplyAnswers.repeated`): `ε!k` with that label's own `sep` and `below`, when it has one supply and keeps none of
+   it, since then each answer is a part of what that run was handed; `fresh` otherwise. A label's own answer handed back to it is
+   §2.11.3's feedback and asks `fed` as before. So `( g (f x), g (f x) )` with `λ_ → k`, and `List.map xs λ_ → g (f x)`, are refused,
+   and `twice f x = f (f x)` with a writer stays accepted.
+
+**A capture handed to a label in a code run many times.** `chain xs y g = List.map xs λ_ → g y` hands `y` to `g` once per element. The
+closure holds `y` for its next run, exactly as it does when the code writes the capture, which is `once`. So a capture supplied to a
+label passed on inside a code run more than once keeps the slot, at the pass (`Supplied.heldByClosure`). A code runs more than once when
+an outer label is many, when two labels of that call have one function slot (`two h = ( h ⊤, h ⊤ )`, which `LabelChain.outwardMany` now
+adds up). What the callee holds across the run is judged too: a capture supplied, or an answer in a known code, has as operands what
+§2.11.3 *a capture written across the callee's run* gives a capture write (`Across.operands`), so `pair (λ⊤ → g y) y` and `both (λ⊤ → g1 y)
+(λ⊤ → g2 y)` keep the slot. For an answer, an argument a label marked `taken` takes is left out, with no slot kept: such a row reads its container only through
+itself (§2.13.6), so the answer's relation to it is what that label's `sep` and `below` ask (rule 3). Every other callee stays an operand:
+`pair2 l p = ( p l, l )` keeps `l`, and `sel xs p = case xs of [ h, …t ] → ( p h, t )` hands one element and holds the rest, and a contract
+does not tell that from a traversal. So `List.map xs λv → g (f v)` is refused, sound or not, until a contract records a traversal (#2046).
+
+Refused that a perfect checker accepts: an answer of a capture beside a held argument the capture is not (`( g (f x), x )` with `λ_ → k`);
+two answers of an identity over apart arguments, `( g (f x), g (f y) )` with `λw → w`, since only `fresh` is asked of a holder;
+one fresh answer per run over a list with a duplicate, because `ε!k` also asks the supply's `below`; and a chain of two different
+functions over one label (`g (f (g x))`). Sound because the three sources are all an answer can be (§2.9.2 step 7): a holder of the
+answer itself is `may`; what its call was handed and what its function holds are judged or asked `fresh`; another run's answer is asked by
+rule 3. Fixtures `run/SanitiserAnswerHandedOn` (every case traps or differs under the sanitiser on master) and its twin
+`run/SanitiserAnswerHandedOnApart`, where the function makes its own object, runs once, or answers an apart element.
+
+*Amended 2026-11-05 (#2017): **A pass closes what it describes.*** At a pass at the call's function type, read-off describes a callee
+supply's `.param` arrivals by structure and drops the entry's open mark (`ReadOff`, `at_site`). An arrival of another kind stays at the
+entry's slot, so a write below that slot lands on none of it. That is not a hole, by this invariant, which `SupplyAnswers.closesAtSite`
+checks under runtime safety on every closed entry:
+
+- an entry is open only at a type variable's place or a family (§2.10 *Read-off*). Anywhere else `describe` wrote its structure out, and
+  there is nothing to close;
+- a callee's value at such a slot that is no `.param` is `fresh`, or a label's answer, `⊤`, a loan, a host object or a top-level value.
+  `fresh` is the callee's own object, which no caller holds. Every other one gives the distinct check `no` (§2.9.3: a family's answer,
+  `⊤`, `shared`), so at the direct call the supply publishes `below no`, unless the arrival is the label's own answer under `fed`, which
+  holds only what `.param` arrivals describe, or fresh objects;
+- `below` instantiated at a pass stays `no`, and a write below a supply's root asks it (`Outward.finishDemands`).
+
+So a write the close loses is refused `disjoint`, or `unknown` when it has no target at all, even over fresh data, which is where the
+precision goes. Fixture: `run/SanitiserAnswerHandedOn`'s last line. The check held over the ledger's 2 300 roots and the oracle.
+
 **As built: an `entry` function's list stays held, until S7 (#1020).** v2 makes no demand at an `entry` argument, so no
 caller judges a write of a parameter of `update`, `view` or `init`, and the kept supply was all that stopped a traversal
 editing the model: `init = λ⊤ → [ a, a ]` with `update msg m = List.map m λl → List.push l 1` trapped on the first click,

@@ -1,0 +1,25 @@
+# v2 refuses each edit of a label's answer another holder or another run reaches (§2.11.3, An answer handed on).
+177:18 list_still_used SanitiserAnswerHandedOn.listed
+178:18 list_still_used SanitiserAnswerHandedOn.closed
+184:18 list_may_be_shared SanitiserAnswerHandedOn.restHeld
+188:17 list_still_used SanitiserAnswerHandedOn.twice
+188:17 list_may_be_shared SanitiserAnswerHandedOn.twice
+189:17 list_still_used SanitiserAnswerHandedOn.held
+190:17 list_may_be_shared SanitiserAnswerHandedOn.heldArg
+191:17 list_may_be_shared SanitiserAnswerHandedOn.passed
+192:17 list_still_used SanitiserAnswerHandedOn.byCallee
+195:17 list_may_be_shared SanitiserAnswerHandedOn.fresh2
+195:17 list_may_be_shared SanitiserAnswerHandedOn.fresh2
+196:18 list_may_be_shared SanitiserAnswerHandedOn.mapped
+197:18 list_may_be_shared SanitiserAnswerHandedOn.looped
+198:18 list_still_used SanitiserAnswerHandedOn.captured
+199:18 list_still_used SanitiserAnswerHandedOn.capturedAnswer
+200:17 list_may_be_shared SanitiserAnswerHandedOn.other
+201:17 list_may_be_shared SanitiserAnswerHandedOn.held2
+202:17 list_may_be_shared SanitiserAnswerHandedOn.closedPass
+203:17 list_may_be_shared SanitiserAnswerHandedOn.throughCallee
+204:17 list_still_used SanitiserAnswerHandedOn.capturedTwice
+205:17 list_still_used SanitiserAnswerHandedOn.beside
+206:17 list_still_used SanitiserAnswerHandedOn.twoFunctions
+206:17 list_still_used SanitiserAnswerHandedOn.twoFunctions
+207:17 list_may_be_shared SanitiserAnswerHandedOn.keptArgument

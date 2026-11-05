@@ -133,6 +133,8 @@ pub const Eval = struct {
     /// Per call: 0 unset, 1 in progress, 2 done (`cond_of`); bit 4: `Distinct.instCondMixed` asks it.
     cond_state: std.ArrayList(u8) = .empty,
     cond_of: std.ArrayList(Cond) = .empty,
+    /// A holder is judged against a label's answer (§2.11.3, *An answer handed on*).
+    keeping: bool = false,
     /// `(leaf, leaf, target)` → `ovs` index; `none` while in progress.
     ov_memo: Ids.FixedDict(3) = .{},
     ovs: std.ArrayList(Ov) = .empty,

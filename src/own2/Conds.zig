@@ -155,6 +155,9 @@ pub const fed_bit: u64 = 1 << 61;
 pub fn occFed(j: u32, r: Rel, k: u32) u64 {
     return occ(j | (k << 16), r) | fed_bit;
 }
+/// `k` of a `fed` occurrence that asks the function to answer only objects
+/// it makes (§2.11.3, *An answer handed on*).
+pub const fresh_arg: u32 = 0x1fff;
 pub fn isFed(o: u64) bool {
     return o & fed_bit != 0;
 }

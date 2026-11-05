@@ -55,7 +55,7 @@ fn condText(t: *const Table, slots: *const Slots.Table, places: *const Place.Tab
         try relText(slots, places, names, w, Contract.occRel(o));
         if (Contract.isDeep(o)) try w.writeAll("*");
         if (Contract.isApart(o)) try w.writeAll("~");
-        if (Contract.isFed(o)) try w.print("!{d}", .{Contract.fedArg(o) + 1});
+        if (Contract.isFed(o)) if (Contract.fedArg(o) == Contract.fresh_arg) try w.writeAll("!") else try w.print("!{d}", .{Contract.fedArg(o) + 1});
     }
     try w.writeAll("}");
 }
