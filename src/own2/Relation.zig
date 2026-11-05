@@ -268,27 +268,6 @@ pub const Eval = struct {
     }
 
     /// The value at relative steps `words` of value `v`, by the walk's projection.
-    /// The closure built at `words` below value `v0`, followed through built
-    /// values only (nothing is made): a reference's captures are its caller's.
-    fn builtClosureAt(e: *Eval, v0: u32, words: []const u32) ?Value.Val {
-        var x = e.f.val(v0);
-        for (words) |wd| {
-            if (x.kind != .built) return null;
-            const st = Step.fromWord(wd);
-            const ks = e.f.kidsOf(x);
-            const next: ?u32 = switch (x.form) {
-                .tuple => if (st.kind == .index and st.payload < ks.len) ks[st.payload] else null,
-                .ctor => if (st.kind == .ctor_arg and e.f.places.ctorArgOf(st)[0] == x.head and e.f.places.ctorArgOf(st)[1] < ks.len) ks[e.f.places.ctorArgOf(st)[1]] else null,
-                .record => for (e.f.wordsOf(x.extra), 0..) |r, n| {
-                    if (st.kind == .field and r == st.payload) break ks[n];
-                } else null,
-                else => null,
-            };
-            x = e.f.val(next orelse return null);
-        }
-        return if (x.kind == .built and x.form == .closure) x else null;
-    }
-
     pub fn valueAt(e: *Eval, v0: u32, words: []const u32) Error!u32 {
         const f = e.f;
         var v = v0;
@@ -1184,12 +1163,6 @@ pub const Eval = struct {
                 if (a.j >= cl.args.len) return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
                 const arg = cl.args[a.j];
                 try e.routed(e, arg, words.items, a.deep, if (suffix.len == 0) a.path else none, out);
-                // A closure is what it captures: no place below it names a
-                // capture, so its arrival takes them too, deep (#1772).
-                if (!a.deep) if (e.builtClosureAt(arg, words.items)) |x| {
-                    const caps = try e.arena.dupe(u32, e.f.kidsOf(x));
-                    for (caps) |c| try e.routed(e, c, &.{}, true, none, out);
-                };
             },
             .cb => {
                 if (e.known.get(.{ call, a.j })) |vc| {
