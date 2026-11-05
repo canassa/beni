@@ -2389,6 +2389,14 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
    browser-inline's generated root closures are no holders by the lowering interface's slot kinds (R-5.8.12).
    A platform's `entryKinds` row is a second source of an entry protocol, without the `entry` word: the worker
    `handlers` and `machine` rows of §2.13.17, which reuse this item's model fixpoint for `machine` (2026-11-02).
+   *As built before S7 (2026-11-05, #1949).* The shape test is v1's, read from the worded declaration's own
+   annotation (`Prepass.entryProtocol`): parameter k's type is a record written out with an `update` of two
+   parameters, or of three beside a `settle` of two, where `update` answers its third parameter's type. A
+   parameter worded `entry` that fails it carries no word (§2.13.6: escaped), so its callbacks are unknown code's
+   and a write they make on what the runtime hands them is refused at the call, R-5.8.1's pending. Before this a
+   v2 row read `entry` as a borrowed record: `settle = λstate → List.push state 0` was accepted `param` with no
+   caller to check, and a runtime that read the old state after `settle` printed the written one
+   (`run/SanitiserEntryUnsupported`; its twin `run/SanitiserEntrySupported` keeps the protocol and its write).
 5. **Sends** (R-2.9, R-5.9): `Send msg` becomes a **nominal type** of the `browser` base platform, `pub foreign type
    Send msg`, with one operation `pub foreign pure to : Send msg, consumed msg → ⊤` (called `send.to m` by dot-call,
    or `Send.to send m`); the runtime hands a `Send` value whose sibling export is the dispatch. A send is then a

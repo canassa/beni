@@ -1,0 +1,14 @@
+-- The twin of `SanitiserEntryUnsupported`: an `entry` record with the state
+-- protocol (`ownership-v2.md` §2.13.4 item 4). The runtime is trusted to
+-- hand `update` a state it no longer keeps (P1), so `update`'s push stays
+-- accepted under v2 and is written in place.
+import Start
+
+
+main : Start.Program
+main =
+    Start.launch
+        { init = λ⊤ → [ 1 ]
+        , update = λk state → List.push state k
+        , view = List.length
+        }

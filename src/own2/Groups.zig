@@ -893,6 +893,9 @@ pub const Module = struct {
             for (words) |s| if (s[0] == k) {
                 w = s[1];
             };
+            // An `entry` without the state protocol is no word: escaped (R-5.8.1).
+            const names: Prepass.EntryNames = if (mod.in.interner) |i| .{ .update = i.find("update"), .settle = i.find("settle") } else .{ .update = null, .settle = null };
+            if (w & Ast.OwnWord.entry.bit() != 0 and !Prepass.entryProtocol(mod.in.birs[owner], decl, k, names)) w = 0;
             try ps.append(mod.gpa, .{ .place = at, .words = w, .type_variable = try paramIsTypeVariable(mod.in, owner, decl, k) });
         }
         for (words) |s| if (s[0] == Bir.own_result) {

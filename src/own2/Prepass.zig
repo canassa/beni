@@ -340,6 +340,40 @@ pub fn aliasStep(birs: []const *const Bir, provenance: []const Interface.Provena
     };
 }
 
+/// The field names of the state protocol, resolved by the caller (L13).
+pub const EntryNames = struct { update: ?InternPool.Symbol, settle: ?InternPool.Symbol };
+
+/// Whether parameter `k` of worded declaration `d`, written `entry`, has the
+/// update/settle state protocol (ownership-v2.md §2.13.4 item 4, R-5.8.1):
+/// a record type written out with an `update` of two parameters, or of
+/// three beside a `settle` of two whose `update` answers its third
+/// parameter's type. Anything else is an unsupported shape.
+pub fn entryProtocol(bir: *const Bir, d: Bir.Decl, k: usize, names: EntryNames) bool {
+    const ann = d.annotation.unwrap() orelse return false;
+    if (bir.instTag(ann) != .type_fn) return false;
+    const ps = bir.extraSlice(bir.subRange(@fromBackingInt(bir.instData(ann).lhs)), Bir.Inst.Index);
+    if (k >= ps.len or bir.instTag(ps[k]) != .type_record) return false;
+    var update: ?Bir.Inst.Index = null;
+    var settle: ?Bir.Inst.Index = null;
+    for (bir.extraSlice(Bir.inlineRange(bir.instData(ps[k])), Bir.Field)) |f| {
+        const s = bir.symbol(f.name);
+        if (s == names.update) update = f.value;
+        if (s == names.settle) settle = f.value;
+    }
+    const up = fnParams(bir, update orelse return false) orelse return false;
+    const st = settle orelse return up.len == 2;
+    if (up.len != 3 or (fnParams(bir, st) orelse return false).len != 2) return false;
+    // `whole`: the update answers its state parameter's type, a variable.
+    const result = @as(Bir.Inst.Index, @fromBackingInt(bir.instData(update.?).rhs));
+    if (bir.instTag(result) != .type_var or bir.instTag(up[2]) != .type_var) return false;
+    return bir.symbol(@fromBackingInt(bir.instData(result).lhs)) == bir.symbol(@fromBackingInt(bir.instData(up[2]).lhs));
+}
+
+fn fnParams(bir: *const Bir, t: Bir.Inst.Index) ?[]const Bir.Inst.Index {
+    if (bir.instTag(t) != .type_fn) return null;
+    return bir.extraSlice(bir.subRange(@fromBackingInt(bir.instData(t).lhs)), Bir.Inst.Index);
+}
+
 // ---------------------------------------------------------------------------
 // Tests: source lowered in-process, no checker (`dispatch` null).
 // ---------------------------------------------------------------------------

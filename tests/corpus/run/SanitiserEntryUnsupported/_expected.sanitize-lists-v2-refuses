@@ -1,0 +1,2 @@
+# v2 refuses the record of an entry whose callbacks lack the state protocol (R-5.8.1).
+12:5 list_may_be_shared Start.launch
