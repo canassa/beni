@@ -16,11 +16,11 @@
 # a callback passed on through a helper: its answer is a loan.
 125:9 list_may_be_shared List.push
 # a loan stored into another cell, and the take that the other cell then shares.
-133:5 list_may_be_shared Ref.set
+133:5 list_still_used Ref.set
 134:9 list_still_used List.push
 # a shallow copy kept as .1 shares the inner lists: .0 is a loan.
-142:9 list_may_be_shared List.update
-142:9 list_may_be_shared List.update
+142:9 list_still_used List.update
+142:9 list_still_used List.update
 # one cell handed for two.
 159:18 list_may_be_shared RefTakeWhileHeld.edit
 # a fiber's take while the other branch holds a loan across a sleep.

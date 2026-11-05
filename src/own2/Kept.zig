@@ -63,6 +63,8 @@ pub const Outcome = struct {
     other_paths: bool = false,
     /// `top_level`: the value's `(module, declaration)`.
     shared: [2]u32 = .{ none, none },
+    /// `loan`: the callee that lent it and the cell, as instructions.
+    loan: [2]u32 = .{ none, none },
 };
 
 /// One verdict line: the demand, its outcome, the holder and the use.

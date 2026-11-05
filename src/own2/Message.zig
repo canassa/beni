@@ -14,6 +14,7 @@ const Facts = @import("Facts.zig");
 const Place = @import("Place.zig");
 const Walk = @import("Walk.zig");
 const Resolve = @import("Resolve.zig");
+const LoanNote = @import("LoanNote.zig");
 const Groups = @import("Groups.zig");
 const CallGraft = @import("CallGraft.zig");
 const Bir = @import("../bir/Bir.zig");
@@ -258,10 +259,8 @@ pub fn line(f: Frame, a: Allocator, l: Resolve.Line, op_name: []const u8) Alloca
             .escaped => w.writeAll("it was given to JavaScript, or kept by a callee"),
             .unknown => w.writeAll("it came from a call of a function the checker cannot identify, which may return a list something else holds"),
             .comparison => w.writeAll("a type's `eq` and `compare` may only read the values they are handed"),
-            .top_level => blk: {
-                const md: ?[2]u32 = if (o.shared[0] == none) null else o.shared;
-                break :blk if (md) |x| w.print("{s}.{s} is a top-level value", .{ f.names.module_names[x[0]], f.names.declName(x[0], x[1]) }) else w.writeAll("it is a top-level value");
-            },
+            .loan => LoanNote.write(w, try opName(f, a, o.loan[0]), if (o.loan[1] != none) try baseText(f, a, o.loan[1]) else "", LoanNote.depth(f.places, d.write_path)),
+            .top_level => if (o.shared[0] != none) w.print("{s}.{s} is a top-level value", .{ f.names.module_names[o.shared[0]], f.names.declName(o.shared[0], o.shared[1]) }) else w.writeAll("it is a top-level value"),
             else => {},
         }) catch return error.OutOfMemory;
         detail = buf.written();
