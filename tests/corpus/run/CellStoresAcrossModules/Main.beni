@@ -1,0 +1,31 @@
+-- The contents rule across a module's block (`ownership-v2.md` §2.13.7,
+-- *The contents relation*, §3.6): `Store`'s helpers reach this module as
+-- their contract, with its `stores` column. A store the helper cannot
+-- judge is judged here, at the call. `viaTwice` stores one list twice,
+-- so its edit is refused; were the block to lose what it says, the edit
+-- would be accepted and the second slot would read it.
+import List
+import Node
+import Ref exposing (Ref)
+import Store
+
+
+apart : ⊤ → String
+apart ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    Store.put r ( [ 3 ], [ 4 ] )
+    Store.swapAnswer r
+    Store.edit r
+    Store.pair r
+
+
+viaTwice : ⊤ → String
+viaTwice ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    Store.putTwice r [ 7 ]
+    Store.edit r
+    Store.pair r
+
+
+main : Node.Program
+main = Node.printLines [ apart ⊤, viaTwice ⊤ ]
