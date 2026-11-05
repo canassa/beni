@@ -1386,6 +1386,7 @@ fn calledCodes(mod: *Module, di: u32, params: []const PlaceId, out: *std.ArrayLi
         },
         else => return,
     };
+    if (mod.in.store.vars(f.params).len != params.len) return;
     var words: std.ArrayList(u32) = .empty;
     defer words.deinit(mod.gpa);
     mod.called_cap = mod.called_index.count() + @as(u32, @intCast(Slots.below_min));
@@ -1421,13 +1422,12 @@ fn funcSlots(mod: *Module, t: Var, di: u32, params: []const PlaceId, words: *std
             try funcSlots(mod, e, di, params, words, out);
         },
         .record => |rec| {
+            // The fields along the extension chain, by rank: the cap stops at the same ones in any build.
+            var kids: std.ArrayList([2]u32) = .empty;
+            defer kids.deinit(gpa);
             var at = rec;
             while (true) {
-                for (mod.in.store.fields(at.fields)) |fld| {
-                    try words.append(gpa, (try Place.Step.field(mod.account, mod.adapter.rank(fld.name))).word());
-                    defer _ = words.pop();
-                    try funcSlots(mod, fld.value, di, params, words, out);
-                }
+                for (mod.in.store.fields(at.fields)) |fld| try kids.append(gpa, .{ (try Place.Step.field(mod.account, mod.adapter.rank(fld.name))).word(), @backingInt(fld.value) });
                 switch (mod.in.store.resolvedContent(at.ext)) {
                     .structure => |es| switch (es) {
                         .record => |next| at = next,
@@ -1435,6 +1435,16 @@ fn funcSlots(mod: *Module, t: Var, di: u32, params: []const PlaceId, words: *std
                     },
                     else => break,
                 }
+            }
+            std.mem.sort([2]u32, kids.items, {}, struct {
+                fn lt(_: void, x: [2]u32, y: [2]u32) bool {
+                    return x[0] < y[0];
+                }
+            }.lt);
+            for (kids.items) |kid| {
+                try words.append(gpa, kid[0]);
+                defer _ = words.pop();
+                try funcSlots(mod, @fromBackingInt(kid[1]), di, params, words, out);
             }
         },
         else => {},
