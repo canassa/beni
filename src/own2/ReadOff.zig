@@ -24,6 +24,7 @@ const Eval = @import("Eval.zig");
 const FnRun = @import("FnRun.zig");
 const Outward = @import("Outward.zig");
 const SupplyCond = @import("SupplyCond.zig");
+const SupplyAnswers = @import("SupplyAnswers.zig");
 const Held = @import("Held.zig");
 const Routed = @import("Routed.zig");
 const CallGraft = @import("CallGraft.zig");
@@ -861,9 +862,8 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
     d.flags.returns = rv.kind != .bot;
     d.flags.cross = !Slots.holdsAny(f.places, rpath);
     if (d.flags.returns and !d.flags.cross) try describe(s, w.result, rpath, .{});
-    // Reads: every use of a local whose value is a parameter's, at its path.
-    // One pass (§2.3.4 *Reading*): a leaf set node read deep before adds no
-    // read, so a tower of uses costs its distinct nodes.
+    // Reads: every use of a local whose value is a parameter's, at its path, in
+    // one pass (§2.3.4 *Reading*): a leaf set read deep before adds no read.
     const pass = f.sets.newPass();
     for (w.uses.items) |u| {
         const b = w.bindings[u.local];
@@ -920,10 +920,9 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
         const call = f.calls.items[p[1]];
         const lab = e.contracts.labelsOf(e.contracts.head(call.contract).labels)[p[2]];
         const dl = &d.labels.items[at];
-        // Calls add up: a label the frame calls and also hands on
-        // (`[ f x, …myMap rest f ]`), or hands to two calls, may run more
-        // than once per activation, whatever each source says alone.
-        // Inside a known code an outer label runs, it runs as often (#1721).
+        // Calls add up: a label the frame calls and also hands on, or hands to
+        // two calls, may run more than once per activation, whatever each
+        // source says alone. Inside a known code an outer label runs, it runs as often (#1721).
         const lc: Contract.Calls = if (lab.calls != .none and Outward.outwardMany(e, p[1])) .many else lab.calls;
         dl.calls = if (lc == .none) dl.calls else if (dl.calls == .none) lc else .many;
         // The supplies at this call's function type: a callee's supply slot
@@ -951,7 +950,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
             _ = try d.labels.items[at].supplyOf(arena, su.k);
             for (es.items.items) |x| {
                 const rel = f.slots.rels.find(es.wordsOf(x)) orelse try f.slots.relOfWords(gpa, f.account, f.places, es.wordsOf(x));
-                if (x.open and !at_site) try Contract.Draft.markOpen(&(try d.labels.items[at].supplyOf(arena, su.k)).res, arena, rel);
+                if (at_site) try SupplyAnswers.closesAtSite(e, su, x, call.args.len) else if (x.open) try Contract.Draft.markOpen(&(try d.labels.items[at].supplyOf(arena, su.k)).res, arena, rel);
                 for (x.arrivals) |a| {
                     var ls: std.ArrayList(u32) = .empty;
                     defer ls.deinit(gpa);
@@ -1067,6 +1066,7 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
         }
     }
     try SupplyCond.publish(e, s, arena, Put.labelIndex);
+    try SupplyAnswers.repeated(e, s.d, arena);
     var flat: std.ArrayList(Contract.Effect) = .empty;
     defer flat.deinit(e.gpa());
     for (d.writes.items) |x| if (x.j >= code.params.len) try e.contracts.effectFlat(e.gpa(), e.gpa(), f.account, f.slots, f.places, x, &flat);

@@ -1,0 +1,210 @@
+-- A runtime catch for a label's answer handed to a label (`ownership-v2.md`
+-- §2.11.3, *An answer handed on*): the answer is unknown code's, so the kept
+-- check skipped it, and two runs of a label could be handed one object. The
+-- function that answers may answer what it was handed or what it holds. Each
+-- edit is refused; asked nothing, the sanitised runs trap on a stale read. The
+-- last line is a pass at the call's function type, which closes the callee's
+-- open entry: `below` refuses it (*A pass closes what it describes*).
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+app : a, (a → b) → b
+app v f = f v
+
+
+twice : a, (a → b), (b → c) → c × c
+twice x f g =
+    y = f x
+    ( g y, g y )
+
+
+held : a, (a → b), (b → c) → c × b
+held x f g =
+    y = f x
+    ( g y, y )
+
+
+heldArg : a, (a → b), (b → c) → c × a
+heldArg x f g = ( g (f x), x )
+
+
+passed : a, (a → b), (b → c) → c × c
+passed x f g =
+    y = f x
+    ( app y g, app y g )
+
+
+byCallee : a, (a → b), (b → c) → c × b
+byCallee x f g =
+    y = app x f
+    ( g y, y )
+
+
+listed : a, (a → b), (b → c) → List b × c
+listed x f g =
+    y = f x
+    ( [ y ], g y )
+
+
+closed : a, (a → b), (b → c) → (⊤ → b) × c
+closed x f g =
+    y = f x
+    h = λ⊤ → y
+    ( h, g y )
+
+
+fresh2 : a, (a → b), (b → c) → c × c
+fresh2 x f g = ( g (f x), g (f x) )
+
+
+mapped : List Int, a, (a → b), (b → c) → List c
+mapped xs x f g = List.map xs λ_ → g (f x)
+
+
+looped : Int, a, (a → b), (b → c), List c → List c
+looped n x f g acc =
+    if n == 0 then
+        acc
+    else
+        looped (n - 1) x f g (List.push acc (g (f x)))
+
+
+captured : List Int, a, (a → c) → List c
+captured xs y g = List.map xs λ_ → g y
+
+
+capturedAnswer : List Int, a, (a → b), (b → c) → List c
+capturedAnswer xs x f g =
+    y = f x
+    List.map xs λ_ → g y
+
+
+other : a, a, (a → b), (b → c) → c × a
+other x h f g = ( g (f x), h )
+
+
+held2 : a, (⊤ → a), (a → b) → b × a
+held2 h f g = ( g (f ⊤), h )
+
+
+type alias R =
+    f0 : List Int
+    f1 : List Int
+
+
+fromG : (⊤ → a), (a → b) → b
+fromG g f = f (g ⊤)
+
+
+closedPass : (⊤ → R), (R → b) → b
+closedPass g f = fromG g f
+
+
+pipe : a, (a → b), (b → c) → c
+pipe x f g = g (f x)
+
+
+throughCallee : a, (a → b), (b → c) → c × a
+throughCallee x f g = ( pipe x f g, x )
+
+
+runTwice : (⊤ → a) → a × a
+runTwice h = ( h ⊤, h ⊤ )
+
+
+capturedTwice : a, (a → b) → b × b
+capturedTwice y g = runTwice λ⊤ → g y
+
+
+holds : (⊤ → a), List Int → a × List Int
+holds p l = ( p ⊤, l )
+
+
+beside : List Int, (List Int → List Int) → List Int × List Int
+beside y g = holds (λ⊤ → g y) y
+
+
+both : (⊤ → a), (⊤ → a) → a × a
+both p q = ( p ⊤, q ⊤ )
+
+
+twoFunctions : a, (a → b), (a → b) → b × b
+twoFunctions y g1 g2 = both (λ⊤ → g1 y) λ⊤ → g2 y
+
+
+keeps : List Int, (List Int → List Int) → List Int × List Int
+keeps l p = ( p l, l )
+
+
+keptArgument : List Int, (List Int → b), (b → List Int) → List Int × List Int
+keptArgument y f g = keeps y λv → g (f v)
+
+
+headRest : List (List Int), (List Int → List Int) → List Int × List (List Int)
+headRest xs p =
+    case xs of
+        [ h, …t ] →
+            ( p h, t )
+
+        [] →
+            ( [], [] )
+
+
+restHeld : List (List Int), List Int, (List Int → b), (b → List Int) → List Int × List (List Int)
+restHeld xs s f g = headRest xs λ_ → g (f s)
+
+
+pair : List Int × List Int → String
+pair ( a, b ) = show a ++ "|" ++ show b
+
+
+push3 : List Int → List Int
+push3 l = List.push l 3
+
+
+main : Program
+main =
+    ( l1, r1 ) = listed [ 1 ] (λw → w) push3
+    ( h2, r2 ) = closed [ 1 ] (λw → w) push3
+    k = [ 1 ]
+    k2 = [ 1 ]
+    k3 = [ 1 ]
+    k4 = [ 1 ]
+    s7 = [ 1 ]
+    ( h7, r7 ) = restHeld [ [ 0 ], s7 ] s7 (λw → w) push3
+    k5 = [ 1 ]
+    r6 = { f0 = [ 1 ], f1 = [ 2 ] }
+    lines =
+        [ pair (twice [ 1 ] (λw → w) push3)
+        , pair (held [ 1 ] (λw → w) push3)
+        , pair (heldArg [ 1 ] (λw → w) push3)
+        , pair (passed [ 1 ] (λw → w) push3)
+        , pair (byCallee [ 1 ] (λw → w) push3)
+        , shows l1 ++ "|" ++ show r1
+        , show (h2 ⊤) ++ "|" ++ show r2
+        , pair (fresh2 [ 1 ] (λ_ → k) push3)
+        , shows (mapped [ 1, 2 ] [ 1 ] (λ_ → k2) push3)
+        , shows (looped 2 [ 1 ] (λ_ → k3) push3 [])
+        , shows (captured [ 1, 2 ] [ 1 ] push3)
+        , shows (capturedAnswer [ 1, 2 ] [ 1 ] (λw → w) push3)
+        , pair (other k4 k4 (λw → w) push3)
+        , pair (held2 k5 (λ⊤ → k5) push3)
+        , show (closedPass (λ⊤ → r6) λz → List.push z.f0 3) ++ show r6.f0
+        , pair (throughCallee [ 1 ] (λw → w) push3)
+        , pair (capturedTwice [ 1 ] push3)
+        , pair (beside [ 1 ] push3)
+        , pair (twoFunctions [ 1 ] push3 push3)
+        , pair (keptArgument [ 1 ] (λw → w) push3)
+        , show h7 ++ "|" ++ shows r7
+        ]
+    Node.print (String.join lines "\n")

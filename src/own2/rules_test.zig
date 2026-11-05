@@ -110,6 +110,7 @@ const layers = [_]Entry{
     .{ .file = "Ancestry.zig", .layer = 6, .max_lines = 130 },
     .{ .file = "Relation.zig", .layer = 7, .max_lines = 1300 },
     .{ .file = "Taken.zig", .layer = 7, .max_lines = 75 },
+    .{ .file = "AnswerKeep.zig", .layer = 7, .max_lines = 90 },
     // The distinct check's entries and rounds' state, split from `Distinct` (#1714).
     .{ .file = "Entries.zig", .layer = 7, .max_lines = 400 },
     // The atoms a result holds open already, for the read-off (#1716).
@@ -210,6 +211,10 @@ const layers = [_]Entry{
     .{ .file = "Outward.zig", .layer = 11, .max_lines = 90 },
     .{ .file = "EntryHeld.zig", .layer = 11, .max_lines = 70 },
     .{ .file = "SupplyCond.zig", .layer = 11, .max_lines = 90 },
+    // A supplied part judged, split from `Resolve` (§2.11.3, #2013).
+    .{ .file = "Supplied.zig", .layer = 11, .max_lines = 185 },
+    // A label's answer in another label's supply (§2.11.3, #2013).
+    .{ .file = "SupplyAnswers.zig", .layer = 11, .max_lines = 70 },
     .{ .file = "ReadOff.zig", .layer = 12, .max_lines = 1160 },
     .{ .file = "Resolve.zig", .layer = 12, .max_lines = 680 },
     // A module's codes and one declaration's answer, split from `Groups` (#1758).
@@ -513,7 +518,8 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 92), layers.len);
+    try testing.expectEqual(@as(usize, 95), layers.len);
+    try testing.expectEqual(@as(usize, 21), causes.len);
 }
 
 test "the import verdict refuses back doors and accepts the base layer" {

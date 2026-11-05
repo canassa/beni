@@ -74,7 +74,7 @@ pub fn at(e: *Eval, call: u32, o: u64) Error!Got {
                 .cb => {
                     if (es.wordsOf(rs).len != 0) return .no;
                     const fc = e.label_map.get(.{ vi, a.j }) orelse return .no;
-                    const k2 = (try supplyOf(e, vi, a.j, k)) orelse return .no;
+                    const k2 = if (k == Contract.fresh_arg) k else (try supplyOf(e, vi, a.j, k)) orelse return .no;
                     const cb = e.f.cbs.items[fc];
                     const occ = Contract.occFed(cb.j, cb.slot, k2);
                     if (through) |t| if (t != occ) return .no;
