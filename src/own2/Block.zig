@@ -19,7 +19,7 @@ const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
 
 pub const magic: u32 = 0x324e574f;
-pub const version: u32 = 20;
+pub const version: u32 = 21;
 pub const Error = Ids.ChargeError || error{BadBlock};
 const Step = Place.Step;
 
@@ -92,10 +92,8 @@ const Writer = struct {
         }
     }
 
-    /// The node table of a contract's trees (§3.6, version 18): every node
-    /// its result, reads, writes and supplies' results reach, once, in
-    /// post-order with each node's kids in the canonical order; `index`
-    /// maps a node to its place in the table (from 1; 0 is the empty node).
+    /// A contract's node table (§3.6): each node once, post-order, its kids
+    /// in canonical order; `index` maps a node to its place (from 1).
     fn table(w: *Writer, roots: []const Contract.Node, index: *Index) Allocator.Error!void {
         var order: std.ArrayList(Contract.Node) = .empty;
         defer order.deinit(w.gpa);
@@ -171,6 +169,7 @@ const Writer = struct {
                 try w.word(nodeIndex(&index, s.res_root));
                 try w.effects(s.kept);
                 try w.cond(s.cond);
+                try w.cond(s.below);
             }
         }
     }
@@ -335,6 +334,7 @@ const Reader = struct {
                 s.res.base = try node(nodes.items, try r.next());
                 try r.effects(&s.kept);
                 s.cond = try r.cond();
+                s.below = try r.cond();
             }
         }
         return t.commit(r.gpa, r.account, r.slots, &d);

@@ -1,2 +1,2 @@
-The same callbacks over lists of apart lists (ownership-v2.md §2.9.3, a family behind a supply): built again under
+The same callbacks over lists of apart lists (ownership-v2.md §2.11.3, a taken supply): built again under
 --ownership=v2 and the list stale-read sanitiser. v2 accepts every edit in place, and the run prints what the plain run prints.

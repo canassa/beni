@@ -1,12 +1,17 @@
-# v2 refuses each edit of a list holding one object twice behind a callback's supply (§2.9.3, a family behind a supply).
-49:14 list_may_be_shared SanitiserOnceCallbackShared.app
-51:35 list_may_be_shared Maybe.map
-53:37 list_may_be_shared Result.map
-55:14 list_may_be_shared SanitiserOnceCallbackShared.unbox
-57:16 list_may_be_shared SanitiserOnceCallbackShared.second
-59:17 list_may_be_shared SanitiserOnceCallbackShared.app
-61:13 list_may_be_shared SanitiserOnceCallbackShared.app
-63:16 list_may_be_shared SanitiserOnceCallbackShared.app
-65:14 list_may_be_shared SanitiserOnceCallbackShared.app
-67:15 list_may_be_shared SanitiserOnceCallbackShared.app
-67:15 list_may_be_shared SanitiserOnceCallbackShared.app
+# v2 refuses each edit of a list holding one object twice, handed to a callback (§2.11.3, a taken supply).
+67:14 list_may_be_shared SanitiserOnceCallbackShared.app
+69:35 list_may_be_shared Maybe.map
+71:37 list_may_be_shared Result.map
+73:14 list_may_be_shared SanitiserOnceCallbackShared.unbox
+75:16 list_may_be_shared SanitiserOnceCallbackShared.second
+77:17 list_may_be_shared SanitiserOnceCallbackShared.app
+79:13 list_may_be_shared SanitiserOnceCallbackShared.app
+81:16 list_may_be_shared SanitiserOnceCallbackShared.app
+83:14 list_may_be_shared SanitiserOnceCallbackShared.app
+85:15 list_may_be_shared SanitiserOnceCallbackShared.app
+87:13 list_may_be_shared SanitiserOnceCallbackShared.wrap
+89:13 list_may_be_shared SanitiserOnceCallbackShared.wrapLocal
+92:16 list_may_be_shared capture
+94:33 list_may_be_shared SanitiserOnceCallbackShared.opt
+96:13 list_may_be_shared SanitiserOnceCallbackShared.go
+98:19 list_may_be_shared SanitiserOnceCallbackShared.wrap

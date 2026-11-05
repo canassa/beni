@@ -372,6 +372,7 @@ pub const Group = struct {
                     try p.appendSlice(g, &.{ s.k, s.res_root });
                     try putEffects(p, g, contracts.effectsOf(s.kept));
                     try putCond(p, g, contracts.occsOf(s.cond), s.cond.no);
+                    try putCond(p, g, contracts.occsOf(s.below), s.below.no);
                 }
             }
             try p.append(g, @as(u8, @bitCast(d.flags)));

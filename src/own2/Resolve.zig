@@ -24,6 +24,7 @@ const Subtree = @import("Subtree.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
+const SupplyCond = @import("SupplyCond.zig");
 const Routed = @import("Routed.zig");
 const Cells = @import("Cells.zig");
 const Fed = @import("Fed.zig");
@@ -648,8 +649,7 @@ pub fn resolve(e: *Eval.Evaluation, regions: *const Regions.Tree, arena: Allocat
     try r.ops.finish(&e.ev, &r.keys, &req, arena);
     try r.stack.finish(&e.ev, e.w, regions, &req, arena);
     var kept: std.ArrayList([3]u32) = .empty;
-    var width: usize = 1;
-    for (jobs.items) |j| width = @max(width, j.k + 1);
+    const width = SupplyCond.width(f, jobs.items);
     const conds = try arena.alloc(Holders.Gather, f.cbs.items.len * width);
     @memset(conds, .{});
     var pkept: std.ArrayList([4]u32) = .empty;

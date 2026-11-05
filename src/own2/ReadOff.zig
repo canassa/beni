@@ -23,6 +23,7 @@ const Distinct = @import("Distinct.zig");
 const Eval = @import("Eval.zig");
 const FnRun = @import("FnRun.zig");
 const Outward = @import("Outward.zig");
+const SupplyCond = @import("SupplyCond.zig");
 const Held = @import("Held.zig");
 const Routed = @import("Routed.zig");
 const CallGraft = @import("CallGraft.zig");
@@ -1031,7 +1032,6 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
     const d = s.d;
     const code = w.code;
     if (d.flags.returns and !d.flags.cross) d.res_cond = try Distinct.sepOf(&e.ev, w.result);
-    // An arrival is read where the result is consumed.
     var arrs: std.ArrayList(Contract.Arrival) = .empty;
     for (d.res.items.items) |rs| {
         arrs.clearRetainingCapacity();
@@ -1066,7 +1066,7 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
             for (v.pass_kept) |kp| if (kp[0] == pi and kp[1] == su.k) try keptAt(s, kp[2], kp[3], &sup.kept);
         }
     }
-    // A code writing a capture is `once` (R-2.8); a cell operation is no such write (§2.11.4).
+    try SupplyCond.publish(e, s, arena, Put.labelIndex);
     var flat: std.ArrayList(Contract.Effect) = .empty;
     defer flat.deinit(e.gpa());
     for (d.writes.items) |x| if (x.j >= code.params.len) try e.contracts.effectFlat(e.gpa(), e.gpa(), f.account, f.slots, f.places, x, &flat);
