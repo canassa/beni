@@ -1,0 +1,1 @@
+List.update's callback passed on by a helper over a list of tuples (#1959): built again under the list stale-read sanitiser. v1 refuses each callback's edit of a list another row also holds; were it to accept one, the sanitised run would trap on the stale read.

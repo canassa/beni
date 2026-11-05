@@ -34,7 +34,6 @@ tests/corpus/ownership/InitializationTransfer.beni [browser-inline] Initializati
 tests/corpus/ownership/InitializationTransfer.beni [browser-inline] InitializationTransfer 185:44 #0 :: List.set InitializationTransfer.issueSeed :: accepted :: rejected  initialization transfer is S7
 tests/corpus/ownership/InitializationWide.beni [browser-inline] InitializationWide 77:8 #0 :: List.push InitializationWide.seed.f00 :: accepted :: rejected  initialization transfer is S7
 tests/corpus/ownership/DotFieldCall.beni [browser-inline] DotFieldCall 15:10 #0 :: List.push r.items :: accepted :: rejected  a record field's path is S5's (`r` read again whole)
-tests/corpus/ownership/StoredBack.beni [node] StoredBack 14:23 #0 :: List.push a :: accepted :: rejected  #1080: v1 accepts a write to a taken element stored back; v2 refuses it
 #
 # A demand only one side reports.
 tests/corpus/run/RefReadsKeptInRelease.beni RefReadsKeptInRelease 12:5 #0 :: Ref.set cell◆ :: absent :: accepted  v2 words `Ref.set` as a writer (#1079); v1 has no row
@@ -186,10 +185,6 @@ tests/corpus/ownership/CombinePositions.beni [node] CombinePositions 82:23 #0 ::
 tests/corpus/ownership/CombinePositionsImported [node] Combine 29:23 #0 :: List.push a :: accepted :: rejected  as in CombinePositions: v1 accepts it unsoundly
 #
 # v2 refuses where v1 accepted: a list that holds one of its split's positions twice (ownership-v2.md §2.9 *Two positions of one image*, #1478).
-tests/corpus/ownership/PushedPositions.beni [node] PushedPositions 73:31 #0 :: List.push f :: accepted :: rejected  the list holds `el` twice after the push, so the answer holds one list twice: v1 accepts it unsoundly (#1478)
-tests/corpus/ownership/PushedPositions.beni [node] PushedPositions 118:15 #0 :: List.push f :: accepted :: rejected  the list holds `el` twice after the push, so the answer holds one list twice: v1 accepts it unsoundly (#1478)
-tests/corpus/ownership/PushedPositionsImported [node] Pushed 67:31 #0 :: List.push f :: accepted :: rejected  the list holds `el` twice after the push, so the answer holds one list twice: v1 accepts it unsoundly (#1478)
-tests/corpus/ownership/PushedPositionsImported [node] Main 12:15 #0 :: List.push f :: accepted :: rejected  the list holds `el` twice after the push, so the answer holds one list twice: v1 accepts it unsoundly (#1478)
 #
 # v2 refuses where v1 accepted: a literal head beside its rest may be the rest's first element again (ownership-v2.md §2.13.3).
 tests/corpus/ownership/PatternPositionsStored.beni [node] PatternPositionsStored 140:21 #0 :: PatternPositionsStored.go c#Box.0 :: accepted :: rejected  `[ a, …rest ]`'s first position is `a`, written and answered: v1 accepts it unsoundly
@@ -1467,8 +1462,6 @@ tests/corpus/ownership/ViewCycleHolderImported [node] Main 33:21 #0 :: Trees.pus
 tests/corpus/ownership/ViewCycleHolderImported [node] Main 48:23 #0 :: Trees.labelInner t#Rose.1[*]#Rose.0 :: absent :: accepted  canonical path text (§2.2): the same writes and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it
 tests/corpus/ownership/ViewCycleHolderImported [node] Main 48:23 #0 :: Trees.labelInner t⟨Rose⟩⁺#Rose.0 :: accepted :: absent  canonical path text (§2.2): the same writes and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it
 tests/corpus/ownership/ViewCycleHolderImported [node] Main 75:23 #0 :: Trees.pushInnerA a#A.1[*]#B.0 :: accepted :: rejected  v1 is unsound (#1491): `rest`, a view of the list the call writes, is read after it
-tests/corpus/ownership/ViewSplitStoredBack.beni [node] ViewSplitStoredBack 42:29 #0 :: ViewSplitStoredBack.incEach <call>[*] :: accepted :: rejected  v1 is unsound: `pushBack` stores its head again, so `incEach` would write one list twice (as #1478)
-tests/corpus/ownership/ViewSplitStoredBackImported [node] Main 12:29 #0 :: Lists.incEach <call>[*] :: accepted :: rejected  v1 is unsound: `pushBack` stores its head again, so `incEach` would write one list twice (as #1478)
 tests/corpus/ownership/ViewOfCallAnswer.beni [node] ViewOfCallAnswer 131:31 #0 :: List.push gs2 :: accepted :: rejected  v1 is unsound (#1491): a second match two levels down writes `gs2`, the list `rest` views, while `rest` lives; v2 refuses it
 tests/corpus/ownership/ViewOfCallAnswerImported [node] Main 93:31 #0 :: List.push gs2 :: accepted :: rejected  v1 is unsound (#1491): a second match two levels down writes `gs2`, the list `rest` views, while `rest` lives; v2 refuses it
 # §2.9 rule 3 (slice 4c, #1195): two positions of one image through `⟲` at a call. The same writes and
@@ -1610,10 +1603,6 @@ tests/corpus/ownership/PushedTwiceLevels.beni [node] PushedTwiceLevels 23:26 #0 
 tests/corpus/ownership/PushedTwiceLevels.beni [node] PushedTwiceLevels 23:26 #0 :: PushedTwiceLevels.incList rest[*]⟨B⟩#B.0 :: accepted :: absent  canonical path text (§2.2): the same write and verdict as v1's
 tests/corpus/ownership/PushedTwiceLevels.beni [node] PushedTwiceLevels 30:8 #0 :: PushedTwiceLevels.incAll <B …>#B.0[*]#B.0 :: absent :: accepted  canonical path text (§2.2): the same write and verdict as v1's
 tests/corpus/ownership/PushedTwiceLevels.beni [node] PushedTwiceLevels 30:8 #0 :: PushedTwiceLevels.incAll <B …>#B.1[*]⟨B⟩#B.0 :: accepted :: absent  canonical path text (§2.2): the same write and verdict as v1's
-tests/corpus/ownership/PushedTwiceLevels.beni [node] PushedTwiceLevels 37:13 #0 :: PushedTwiceLevels.g <call> :: accepted :: rejected  #1478: `List.push bs x` with `x` from `bs` holds `x` twice, so `g` writes its lists twice; v1 accepts, v2 refuses (§2.9 *The repeating split*)
-tests/corpus/ownership/PushedTwiceLevels.beni [node] PushedTwiceLevels 37:13 #0 :: PushedTwiceLevels.g <call>[*]⟨B⟩#B.0 :: accepted :: absent  canonical path text (§2.2): the same write and verdict as v1's
-tests/corpus/ownership/PushedTwiceLevels.beni [node] PushedTwiceLevels 49:21 #0 :: PushedTwiceLevels.g rest :: accepted :: rejected  #1478: `List.push bs x` with `x` from `bs` holds `x` twice, so `g` writes its lists twice; v1 accepts, v2 refuses (§2.9 *The repeating split*)
-tests/corpus/ownership/PushedTwiceLevels.beni [node] PushedTwiceLevels 49:21 #0 :: PushedTwiceLevels.g rest[*]⟨B⟩#B.0 :: accepted :: absent  canonical path text (§2.2): the same write and verdict as v1's
 tests/corpus/ownership/ChildBesideOwnCall.beni [node] ChildBesideOwnCall 22:32 #0 :: ChildBesideOwnCall.dup l#N.1#N.0 :: absent :: rejected  canonical path text (§2.2): the same write and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it (#1546)
 tests/corpus/ownership/ChildBesideOwnCall.beni [node] ChildBesideOwnCall 29:11 #0 :: ChildBesideOwnCall.dup <N …>#N.1#N.0 :: absent :: accepted  canonical path text (§2.2): the same write and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it (#1546)
 tests/corpus/ownership/ChildBesideOwnCall.beni [node] ChildBesideOwnCall 34:10 #0 :: ChildBesideOwnCall.dup <N …>#N.1#N.0 :: absent :: accepted  canonical path text (§2.2): the same write and verdict as v1's; v2 names the first return to a recursive place apart from the levels below it (#1546)
@@ -4734,10 +4723,35 @@ tests/corpus/run/SanitiserCellStoredFresh.beni SanitiserCellStoredFresh 24:5 #0 
 #
 # A pattern's element stored back into its list: a `[*]` position meets a front one (#1956).
 tests/corpus/run/SanitiserPatternStoredBack.beni SanitiserPatternStoredBack 48:10 #0 :: List.update <call>[*] :: accepted :: rejected  `[ …l, p ]` holds the head twice: v1 accepts the edit unsoundly (#1956)
-tests/corpus/run/SanitiserPatternStoredBack.beni SanitiserPatternStoredBack 55:15 #0 :: List.push f :: accepted :: rejected  `[ …xs, el ]` holds `el` twice: v1 accepts the edit unsoundly (#1956)
-tests/corpus/ownership/PushedPositions.beni [node] PushedPositions 128:15 #0 :: List.push f :: accepted :: rejected  the list holds `el` twice after the spread, so the answer holds one list twice: v1 accepts it unsoundly (#1478, #1956)
-tests/corpus/ownership/PushedPositionsImported [node] Main 22:15 #0 :: List.push f :: accepted :: rejected  the list holds `el` twice after the spread, so the answer holds one list twice: v1 accepts it unsoundly (#1478, #1956)
 #
+# v1's refusals of #1751, #1956 and #1959, which v1 makes at a different demand from v2, or, for a safe slice, where v2 accepts.
+tests/corpus/run/SanitiserClosureSlotHolder.beni SanitiserClosureSlotHolder 18:15 #0 :: List.push ys :: rejected :: accepted  v1 refuses the closure's write that a function in the tuple reads afterwards; v2 refuses the call (§2.9.1, #1956)
+tests/corpus/run/SanitiserForwardedLabel.beni SanitiserForwardedLabel 42:31 #0 :: List.push v :: rejected :: accepted  v1 refuses the callback's write of a list another row holds; v2 refuses the call that hands it (§2.13.6, taken; #1959)
+tests/corpus/run/SanitiserForwardedLabel.beni SanitiserForwardedLabel 44:31 #0 :: List.push v :: rejected :: accepted  v1 refuses the callback's write of a list another row holds; v2 refuses the call that hands it (§2.13.6, taken; #1959)
+tests/corpus/run/SanitiserListUpdateForward.beni SanitiserListUpdateForward 25:27 #0 :: List.push v :: rejected :: accepted  v1 refuses the callback's write of a list another row holds; v2 refuses the call that hands it (§2.13.6, taken; #1959)
+tests/corpus/run/SanitiserOnceLaterRead.beni SanitiserOnceLaterRead 15:9 #0 :: once xs :: absent :: accepted  v1 decides the closure's write at the write; v2 asks `once` and judges the call (§2.9.1, #1956)
+tests/corpus/run/SanitiserOnceLaterRead.beni SanitiserOnceLaterRead 16:15 #0 :: List.push xs :: rejected :: accepted  v1 refuses the closure's write that a later read in its body meets; v2 refuses the call instead (§2.9.1, #1956)
+tests/corpus/run/SanitiserOnceLaterRead.beni SanitiserOnceLaterRead 17:5 #0 :: f <call> :: absent :: rejected  v1 refuses the write itself; v2 refuses or accepts the call that makes it (§2.9.1, #1956)
+tests/corpus/run/SanitiserOnceLaterRead.beni SanitiserOnceLaterRead 24:9 #0 :: once xs :: absent :: accepted  v1 decides the closure's write at the write; v2 asks `once` and judges the call (§2.9.1, #1956)
+tests/corpus/run/SanitiserOnceLaterRead.beni SanitiserOnceLaterRead 25:15 #0 :: List.push xs :: rejected :: accepted  v1 refuses the closure's write that a later read in its body meets; v2 refuses the call instead (§2.9.1, #1956)
+tests/corpus/run/SanitiserOnceLaterRead.beni SanitiserOnceLaterRead 26:5 #0 :: f <call> :: absent :: rejected  v1 refuses the write itself; v2 refuses or accepts the call that makes it (§2.9.1, #1956)
+tests/corpus/run/SanitiserOnceLaterRead.beni SanitiserOnceLaterRead 32:9 #0 :: once xs :: absent :: accepted  v1 decides the closure's write at the write; v2 asks `once` and judges the call (§2.9.1, #1956)
+tests/corpus/run/SanitiserOnceLaterRead.beni SanitiserOnceLaterRead 34:5 #0 :: f <call> :: absent :: accepted  v1 refuses the write itself; v2 refuses or accepts the call that makes it (§2.9.1, #1956)
+tests/corpus/run/SanitiserOnceLaterRead.beni SanitiserOnceLaterRead 41:9 #0 :: once xs :: absent :: accepted  v1 decides the closure's write at the write; v2 asks `once` and judges the call (§2.9.1, #1956)
+tests/corpus/run/SanitiserOnceLaterRead.beni SanitiserOnceLaterRead 42:15 #0 :: List.push xs :: rejected :: accepted  v1 refuses the closure's write that a later read in its body meets; v2 refuses the call instead (§2.9.1, #1956)
+tests/corpus/run/SanitiserOnceLaterRead.beni SanitiserOnceLaterRead 43:5 #0 :: f <call> :: absent :: rejected  v1 refuses the write itself; v2 refuses or accepts the call that makes it (§2.9.1, #1956)
+tests/corpus/run/SanitiserPassedTupleRow.beni SanitiserPassedTupleRow 65:67 #0 :: List.push vs :: rejected :: accepted  v1 refuses the callback's write of a list another row holds; v2 refuses the call that hands it (§2.13.6, taken; #1959)
+tests/corpus/run/SanitiserPatternStoredBack.beni SanitiserPatternStoredBack 48:46 #0 :: List.push v :: rejected :: accepted  v1 refuses the callback's write of `[ …l, p ]`; v2 refuses the call that hands it (#1956)
+tests/corpus/run/SanitiserPatternStoredBackApart.beni SanitiserPatternStoredBackApart 54:15 #0 :: List.push f :: rejected :: accepted  safe at run time: `[ el, …xs ]` then its tail holds each element once, which v1, with no positions, cannot see; v1's conservative price for #1956
+tests/corpus/run/SanitiserSeenFunctionNeed.beni SanitiserSeenFunctionNeed 21:18 #0 :: List.push <call> :: accepted :: rejected  v2 refuses the writer's write of what its function parameter returns; v1 refuses the function handed down, at the caller (#1751)
+tests/corpus/run/SanitiserSeenFunctionNeed.beni SanitiserSeenFunctionNeed 21:29 #0 :: List.append <call> :: accepted :: rejected  v2 refuses the writer's write of what its function parameter returns; v1 refuses the function handed down, at the caller (#1751)
+tests/corpus/run/SanitiserSeenFunctionNeed.beni SanitiserSeenFunctionNeed 25:17 #0 :: List.push <call> :: accepted :: rejected  v2 refuses the writer's write of what its function parameter returns; v1 refuses the function handed down, at the caller (#1751)
+tests/corpus/run/SanitiserSeenFunctionNeed.beni SanitiserSeenFunctionNeed 44:9 #0 :: value <lambda> :: rejected :: absent  v1 refuses the function whose result the writer edits, at the caller (#1751); v2 refuses the write in the writer
+tests/corpus/run/SanitiserSeenFunctionNeed.beni SanitiserSeenFunctionNeed 45:9 #0 :: value <lambda> :: rejected :: absent  v1 refuses the function whose result the writer edits, at the caller (#1751); v2 refuses the write in the writer
+tests/corpus/ownership/PushedPositions.beni [node] PushedPositions 148:15 #0 :: List.push f :: rejected :: accepted  safe at run time: `[ el, …xs ]` then its tail holds each element once, which v1, with no positions, cannot see; v1's conservative price for #1956
+tests/corpus/ownership/PushedPositionsImported [node] Main 42:15 #0 :: List.push f :: rejected :: accepted  safe at run time: `[ el, …xs ]` then its tail holds each element once, which v1, with no positions, cannot see; v1's conservative price for #1956
+tests/corpus/ownership/PushedTwiceLevels.beni [node] PushedTwiceLevels 37:13 #0 :: PushedTwiceLevels.g <call>[*]⟨B⟩#B.0 :: rejected :: absent  v1 refuses the list holding one element twice at both demands; v2 makes one (#1956)
+tests/corpus/ownership/PushedTwiceLevels.beni [node] PushedTwiceLevels 49:21 #0 :: PushedTwiceLevels.g rest[*]⟨B⟩#B.0 :: rejected :: absent  v1 refuses the list holding one element twice at both demands; v2 makes one (#1956)
 # A function's slot holds what its code reads: its selection is deep (#1956).
 tests/corpus/run/SanitiserClosureSlotHolder.beni SanitiserClosureSlotHolder 29:13 #0 :: SanitiserClosureSlotHolder.g <tuple>.1 :: rejected :: absent  v1 names the call's argument by its text; v2 names the same demand by its expression (§2.9.1, #1956)
 tests/corpus/run/SanitiserClosureSlotHolder.beni SanitiserClosureSlotHolder 16:9 #0 :: once t.1 :: absent :: accepted  v1 checks the closure's write as `once`; v2 judges it at the call (§2.9.1, #1956)

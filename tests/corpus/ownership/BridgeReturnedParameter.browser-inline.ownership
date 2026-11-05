@@ -37,7 +37,7 @@ module BridgeReturnedParameter
   summary chain3: π1 R, π2 R, π3 R, π4 R; res cb4{excl cb4}r{excl cb4}; π2 calls ≤1, supply 1 π1 owned{excl π1}r{excl π1}; π3 calls ≤1, supply 1 cb2 owned{excl cb2}r{excl cb2}; π4 calls ≤1, supply 1 cb3 owned{excl cb3}r{excl cb3}
   summary deeperChain: res .grown condition(fresh3) fresh1, .old condition(fresh4) fresh1, condition(fresh2){shared}r{shared} fresh501◦
   summary deeperChainDead: res fresh1
-  summary wrap: π1 R, π2 R; res [*] ~cb2[*]{excl cb2[*]}r{excl cb2[*]}, cb2{excl cb2}r{excl cb2}; π2 calls ≤1, need owned, supply 1 π1 owned{excl π1}r{excl π1}
+  summary wrap: π1 R, π2 R; res [*] ~cb2[*]{excl cb2[*]}r{excl cb2[*]}, cb2{excl cb2}r{excl cb2}; π2 calls many, need owned, supply 1 π1 owned{excl π1}r{excl π1}
   summary passedOn: res .grown condition(fresh3) fresh1, .old condition(fresh4) fresh1, condition(fresh2){shared}r{shared} fresh501◦
   summary pushBoxed: π1 R, π2 R; res [*] ~cb2#Box.0[*]{excl cb2#Box.0[*]}r{excl cb2#Box.0[*]}, cb2#Box.0{excl cb2#Box.0}; π2 calls ≤1, need owned, supply 1 π1 owned{excl π1}r{excl π1}
   summary tagger: res .grown condition(fresh3) fresh1, .old condition(fresh4) fresh1, condition(fresh2){shared}r{shared} fresh501◦

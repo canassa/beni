@@ -8018,6 +8018,12 @@ const EnvCall = struct {
     more: []const []const u32 = &.{},
     owned: []const bool = &.{},
     taken: []const bool = &.{},
+    /// #1959: per argument, the conditions of the destructive supplies it
+    /// rests on, which no condition of the element itself carries: that
+    /// the container hands out positions holding no list twice (no record
+    /// twice, `rconds`, §31.4 item 6).
+    conds: []const u32 = &.{},
+    rconds: []const u32 = &.{},
     many: bool = false,
 };
 
@@ -8249,6 +8255,12 @@ const Walker = struct {
     /// the split's taken cells.
     split_list: []u32 = &.{},
     split_scrut: []?AV = &.{},
+    /// #1956: the taken cells the split made, and per list-pattern element
+    /// whether a read other than its own pattern's bindings reached the
+    /// element cell it stands for: that read may hold its position too, so
+    /// it is no longer apart from the container's other positions.
+    split_taken: std.ArrayList(u32) = .empty,
+    split_exposed: []bool = &.{},
     /// §18.9: calls of the declaration's function parameters inside lambdas.
     env_calls: std.ArrayList(EnvCall) = .empty,
     /// §30.9: the declaration's function parameters and slots a lambda
@@ -8356,6 +8368,9 @@ const Walker = struct {
         @memset(w.split_list, none);
         w.split_scrut = try w.a.alloc(?AV, insts);
         @memset(w.split_scrut, null);
+        w.split_exposed = try w.a.alloc(bool, insts);
+        @memset(w.split_exposed, false);
+        w.split_taken = .empty;
         @memset(w.pat_closure, .{ none, none });
         w.send_params = try w.a.alloc(bool, insts);
         @memset(w.send_params, false);
@@ -10017,7 +10032,7 @@ const Walker = struct {
             const base = try w.takenBase(t);
             // The container itself holds the taken element still.
             if (other != base and (try w.covers(other, base)) != null) return cond_lost;
-            if (other == base or (try w.covers(base, other)) != null) return w.cellCond(t);
+            if (other == base or (try w.covers(base, other)) != null) return if (w.splitExposed(t)) cond_lost else w.cellCond(t);
         }
         if (cx.kind == .shared or cy.kind == .shared) return cond_yes;
         if (madeHere(cx.kind) or madeHere(cy.kind)) {
@@ -10817,7 +10832,7 @@ const Walker = struct {
             const other = if (cx.kind == .taken) y else x;
             const base = try w.takenBase(t);
             if (other != base and (try w.covers(other, base)) != null) return cond_lost;
-            if (other == base or (try w.covers(base, other)) != null) return w.rcellCond(t);
+            if (other == base or (try w.covers(base, other)) != null) return if (w.splitExposed(t)) cond_lost else w.rcellCond(t);
         }
         if (cx.kind == .shared or cy.kind == .shared) return cond_yes;
         if (madeHere(cx.kind) or madeHere(cy.kind)) {
@@ -11703,7 +11718,9 @@ const Walker = struct {
             const c = w.cells.items[e.cell];
             if (c.kind != .closure) continue;
             for (w.closures.items[c.a].captures) |cap| {
-                if (cap.local >= w.local_frame.len or w.local_frame[cap.local] != w.frame) continue;
+                // In a lambda, a capture of an enclosing frame too: read here, it
+                // reads what this frame may have written through its own capture.
+                if (cap.local >= w.local_frame.len or !w.inFrameOf(w.local_frame[cap.local])) continue;
                 try w.uses.append(w.a, .{ .local = cap.local, .path = cap.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = tok, .via = c.a });
             }
         }
@@ -11974,6 +11991,7 @@ const Walker = struct {
                                 },
                                 .site, .shared, .top, .closure, .func, .taken, .payload => {},
                             }
+                            if (w.cells.items[x.cell].kind == .taken and std.mem.indexOfScalar(u32, w.split_taken.items, x.cell) == null) try w.split_taken.append(w.a, x.cell);
                         }
                         w.split_list[item.int() - w.decl.inst_start.int()] = pat.int();
                         w.split_scrut[item.int() - w.decl.inst_start.int()] = av;
@@ -13254,6 +13272,7 @@ const Walker = struct {
         if (ty) |v| if (!try w.trackedVar(v)) return &.{};
         const bound = w.local_av[l] != null;
         if (w.early[l] == 1) w.early[l] = 2;
+        if (bound and w.split_taken.items.len != 0) try w.exposeSplits(l, try w.projPath(w.local_av[l].?, path, null));
         if (bound and w.local_frame[l] == w.frame) return w.typeFilter(try w.projPath(w.local_av[l].?, path, ty), ty);
         // Not bound yet in the declaration's own frame: nothing is known.
         if (w.frame == 0) return &.{};
@@ -15803,17 +15822,21 @@ const Walker = struct {
             const more = try w.a.alloc([]const u32, ec.args.len);
             const owneds = try w.a.alloc(bool, ec.args.len);
             const takens = try w.a.alloc(bool, ec.args.len);
+            const conds = try w.a.alloc(u32, ec.args.len);
+            const rconds = try w.a.alloc(u32, ec.args.len);
             for (ec.args, ec.probes, 0..) |av, probe, k| {
                 args[k] = &.{};
                 probes[k] = none;
                 more[k] = if (k < ec.more.len) ec.more[k] else &.{};
                 owneds[k] = k >= ec.owned.len or ec.owned[k];
                 takens[k] = k < ec.taken.len and ec.taken[k];
+                conds[k] = if (k < ec.conds.len) ec.conds[k] else cond_yes;
+                rconds[k] = if (k < ec.rconds.len) ec.rconds[k] else cond_yes;
                 if (av.len == 0) continue;
                 var owned = owneds[k];
                 var taken = takens[k];
                 var from: std.ArrayList(u32) = .empty;
-                const cells = try w.fromLambda(av, ci, s, jj, ctx, &owned, &taken, &from);
+                const cells = try w.fromLambda(av, ci, s, jj, ctx, &owned, &taken, &from, &conds[k], &rconds[k]);
                 // Disjoint against every argument but the lambda and the
                 // ones the supplied cells come from.
                 var others: std.ArrayList(AV) = .empty;
@@ -15834,10 +15857,10 @@ const Walker = struct {
                     continue;
                 }
                 const rprobe2 = if (owned and cells.len > 0) try w.recordProbe(ctx.inst, cells, others.items) else none;
-                try w.supplies.append(w.a, .{ .fun = ec.j, .k = @intCast(k), .path = eps, .av = cells, .probe = probe, .probe2 = probe2, .more = more[k], .owned = owned, .cond = try w.deepCond(cells), .rcond = try w.rdeepCond(cells), .taken = taken, .rprobe = rprobe2 });
+                try w.supplies.append(w.a, .{ .fun = ec.j, .k = @intCast(k), .path = eps, .av = cells, .probe = probe, .probe2 = probe2, .more = more[k], .owned = owned, .cond = try w.condAnd(try w.deepCond(cells), conds[k]), .rcond = try w.rcondAnd(try w.rdeepCond(cells), rconds[k]), .taken = taken, .rprobe = rprobe2 });
             }
             if (outer) |oc| {
-                try w.env_calls.append(w.a, .{ .closure = oc, .j = ec.j, .inst = ec.inst, .args = args, .probes = probes, .more = more, .owned = owneds, .taken = takens, .many = many });
+                try w.env_calls.append(w.a, .{ .closure = oc, .j = ec.j, .inst = ec.inst, .args = args, .probes = probes, .more = more, .owned = owneds, .taken = takens, .conds = conds, .rconds = rconds, .many = many });
                 continue;
             }
             st.calls = if (w.recursive or st.calls != .zero or many) .many else .once;
@@ -15870,7 +15893,7 @@ const Walker = struct {
     /// parameters as the callee supplies them (or as the call passes them),
     /// its captures as the body holds them. `owned` falls when a supply it
     /// rests on is borrowed; `taken` rises when one is destructive.
-    fn fromLambda(w: *Walker, av: AV, ci: u32, s: ?*const Summary, jj: u32, ctx: InstCtx, owned: *bool, taken: *bool, from: *std.ArrayList(u32)) Allocator.Error!AV {
+    fn fromLambda(w: *Walker, av: AV, ci: u32, s: ?*const Summary, jj: u32, ctx: InstCtx, owned: *bool, taken: *bool, from: *std.ArrayList(u32), cond: *u32, rcond: *u32) Allocator.Error!AV {
         var out: std.ArrayList(Entry) = .empty;
         for (av) |e| {
             const c = w.cells.items[e.cell];
@@ -15880,7 +15903,14 @@ const Walker = struct {
                     for (cs.supply) |sp| {
                         if (sp.fun != jj or sp.k != lp[1]) continue;
                         if (!sp.owned) owned.* = false;
-                        if (sp.prov.taken) taken.* = true;
+                        // #1959: a destructive supply is exclusive only as its
+                        // container is, which the element's own condition
+                        // does not say: the supply's conditions come along.
+                        if (sp.prov.taken) {
+                            taken.* = true;
+                            cond.* = try w.condAnd(cond.*, try w.instXSum(sp.xc, ctx));
+                            rcond.* = try w.rcondAnd(rcond.*, try w.rinstXSum(sp.rxc, ctx));
+                        }
                         if (sp.prov.kind == .param) try from.append(w.a, sp.prov.a);
                         const at = try w.composeSupply(sp, try w.instProv(sp.prov, ctx), ctx);
                         try parts.append(w.a, try w.projPath(at, c.path, null));
@@ -17867,8 +17897,11 @@ const Walker = struct {
         // declaration (§18.9, §30.9).
         if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| {
             // A lambda's own function parameter is called many times and
-            // its calls are not otherwise seen by the declaration.
-            if (ctx.effects) if (ctx.s.funOf(j)) |facts| if (facts.calls == .many and !facts.seen) {
+            // its calls are not otherwise seen by the declaration. What the
+            // callback does with what it returns (`need`, its record twin,
+            // a send) the declaration does not see either, however often
+            // it is called: the callee that handed it on lost sight (#1751).
+            if (ctx.effects) if (ctx.s.funOf(j)) |facts| if ((facts.calls == .many and !facts.seen) or facts.need or facts.rneed or facts.need_if.len != 0 or facts.send != none) {
                 try w.passOn(ctx.inst, ctx.s, ctx.avs, ctx.closure, j, facts, jj);
             };
             return w.single(.{ .kind = .cbres, .a = jj, .b = ctx.inst.int() });
@@ -21290,9 +21323,54 @@ const Walker = struct {
             const x = w.cells.items[try w.takenBase(e.cell)];
             if (x.kind != .env or x.a >= w.local_frame.len or w.local_frame[x.a] == w.frame) continue;
             try holders.append(w.a, .{ .local = x.a, .path = x.path, .approx = e.approx });
+            try w.captureHolders(&holders, x.a, x.path, e.approx);
         }
         rec.holders = try holders.toOwnedSlice(w.a);
         try w.demands.append(w.a, rec);
+    }
+
+    /// `av` with each capture replaced by what its own frame holds, through
+    /// every frame the capture crosses. An unbound capture stays.
+    fn outerView(w: *Walker, av: AV) Allocator.Error!AV {
+        var cur = av;
+        var hops: u32 = 0;
+        while (hops < w.frames.items.len) : (hops += 1) {
+            var changed = false;
+            var out: std.ArrayList(Entry) = .empty;
+            for (cur) |e| {
+                const c = w.cells.items[e.cell];
+                if (c.kind == .env and c.a < w.local_av.len and w.local_frame[c.a] != w.frame) if (w.local_av[c.a]) |held| {
+                    changed = true;
+                    for (try w.projPath(held, c.path, null)) |h| {
+                        try out.append(w.a, .{ .path = try w.o.concat(e.path, h.path), .cell = h.cell, .approx = if (e.approx != 0) e.approx else h.approx, .grown = gJoin(e.grown, h.grown) });
+                    }
+                    continue;
+                };
+                try out.append(w.a, e);
+            }
+            if (!changed) return cur;
+            cur = try w.norm(out.items);
+        }
+        return cur;
+    }
+
+    /// #1956: a lambda's write of a capture `local.path`. Inside the lambda
+    /// that list is a capture cell, which no other local's cells name: a
+    /// function value, or any other value, that holds the same list outside
+    /// and is read later in this frame is a holder all the same (§18.8).
+    fn captureHolders(w: *Walker, holders: *std.ArrayList(Holder), local: u32, path: u32, approx: u32) Allocator.Error!void {
+        const held = w.local_av[local] orelse return;
+        const targets = try w.expand(try w.outerView(try w.projPath(held, path, null)));
+        for (w.local_av, 0..) |bound, l| {
+            const av = bound orelse continue;
+            if (!w.inFrameOf(w.local_frame[l])) continue;
+            for (try w.expand(try w.outerView(av))) |e| for (targets) |t| {
+                const tc = w.cells.items[t.cell];
+                if (tc.kind == .closure or tc.kind == .func) continue;
+                const cv = (try w.coversAt(e.cell, t.cell)) orelse continue;
+                try holders.append(w.a, .{ .local = @intCast(l), .path = try w.o.concat(e.path, cv.rest), .approx = if (approx != 0) approx else if (e.approx != 0) e.approx else if (cv.approx) approx_place else 0 });
+            };
+        }
     }
 
     /// The locals a demand here may find a holder among: bound, in this
@@ -21347,6 +21425,38 @@ const Walker = struct {
         if (list == none) return null;
         if (l != none and l < w.pat_site.len) if (w.pat_site[l]) |s| if (s.list.int() == list) return null;
         return try w.takenBase(c);
+    }
+
+    /// #1956: a read of local `l` (`av`, what the read reaches) after a list
+    /// pattern split an element off. Unless `l` is one of that pattern's own
+    /// bindings — its rest is the container's other positions — what it
+    /// reaches of the element cell may be the split position itself: the
+    /// list it came from read whole, `[ …l, p ]`. The element is then no
+    /// longer apart from the container's other positions (`sepCells`).
+    fn exposeSplits(w: *Walker, l: u32, av: AV) Allocator.Error!void {
+        if (av.len == 0) return;
+        const own: u32 = if (l < w.pat_site.len) if (w.pat_site[l]) |s| s.list.int() else none else none;
+        var cells: ?AV = null;
+        for (w.split_taken.items) |t| {
+            const item = w.cells.items[t].b -% w.decl.inst_start.int();
+            if (item >= w.split_exposed.len or w.split_exposed[item]) continue;
+            if (own != none and own == w.split_list[item]) continue;
+            const base = try w.takenBase(t);
+            if (cells == null) cells = try w.expand(av);
+            for (cells.?) |e| {
+                if (e.cell == base or (try w.covers(e.cell, base)) != null or (try w.covers(base, e.cell)) != null) {
+                    w.split_exposed[item] = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Whether the taken cell `t`'s element was reached by a read other than
+    /// its pattern's own bindings (`exposeSplits`).
+    fn splitExposed(w: *const Walker, t: u32) bool {
+        const item = w.cells.items[t].b -% w.decl.inst_start.int();
+        return item < w.split_exposed.len and w.split_exposed[item];
     }
 
     /// The callee of the call at `inst`, as written.

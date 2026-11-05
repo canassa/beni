@@ -10,7 +10,7 @@ module CallTyvarJoins
   140:9 List.push xs: rejected alias: g.x.c holds it and is read at 141:5
   157:9 List.push xs: rejected alias: g.x.c holds it and is read at 158:5
   summary ans: π1.b RA; res π1.b
-  summary wfirst: π1 R, π1#Node.0.kids R, π1⟨Tree⟩⁺#Node.0.c RAW[storage], π1⟨Tree⟩⁺#Node.0.c[*] A; res [*] ~π1⟨Tree⟩⁺#Node.0.c[*]{excl π1#Node.0.kids}r{excl π1#Node.0.kids}, fresh1 π1⟨Tree⟩⁺#Node.0.c{excl π1#Node.0.kids}; xreq excl π1#Node.0.kids
+  summary wfirst: π1 R, π1#Node.0.kids R, π1⟨Tree⟩⁺#Node.0.c RAW[storage], π1⟨Tree⟩⁺#Node.0.c[*] A; res [*] ~π1⟨Tree⟩⁺#Node.0.c[*]{excl π1#Node.0.kids}r{excl π1#Node.0.kids}, fresh1 π1⟨Tree⟩⁺#Node.0.c{excl π1#Node.0.kids}r{excl π1#Node.0.kids}; xreq excl π1#Node.0.kids
   summary t3: π1 RW[storage], π1[*] R; xreq excl π1
   summary t3Two: π1 RW[storage], π1[*] R
   summary t3Bound: π1 RW[storage], π1[*] R; xreq excl π1

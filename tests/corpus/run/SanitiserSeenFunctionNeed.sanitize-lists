@@ -1,0 +1,1 @@
+A runtime catch for #1751 (ownership-checker.md 16.4 item 4): built again under the list stale-read sanitiser. v1 refuses each call; were it to accept one, the sanitised run would show the stale read.

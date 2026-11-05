@@ -1,0 +1,46 @@
+-- A runtime catch for a function parameter a callee hands on to a function
+-- that edits what it returns (`ownership-checker.md` §16.4 item 4, #1751).
+-- `callee` runs `writer` with `k`, and `writer` edits what `k` returns. That
+-- `need` reaches the caller however often `writer` calls `k`, and however
+-- well `writer` sees those calls. Accepted, the sanitised run shows the
+-- stale read of `ys`.
+import List
+import Node exposing (Program)
+import String
+
+
+callee : (List Int → List Int), ((List Int → List Int) → List Int) → List Int
+callee k m = k (m k)
+
+
+hide : (List Int → List Int), (List Int → List Int) → List Int
+hide k m = k [ 0 ]
+
+
+writerHidden : (List Int → List Int) → List Int
+writerHidden h = List.push (List.append (hide h h) (h [ 2 ])) 7
+
+
+writerTwice : (List Int → List Int) → List Int
+writerTwice h = List.push (h (h [ 2 ])) 7
+
+
+throughHidden : (List Int → List Int) → List Int
+throughHidden g = callee g writerHidden
+
+
+throughTwice : (List Int → List Int) → List Int
+throughTwice g = callee g writerTwice
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main =
+    ys = [ 1 ]
+    zs = [ 2 ]
+    a = throughHidden λl → ys
+    b = throughTwice λl → zs
+    Node.printLines [ show a, show ys, show b, show zs ]
