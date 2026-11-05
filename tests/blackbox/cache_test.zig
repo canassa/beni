@@ -6103,3 +6103,72 @@ test "a v2 ownership dump reads platform summaries from the checked pack" {
     try testing.expect(r.counters.embedded_modules > 0);
     try testing.expectEqual(r.counters.modules, r.counters.checked + r.counters.embedded_modules);
 }
+
+test "parked remainder helpers survive module cache reuse and parallel jobs" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    for ([_]bool{ false, true }) |release| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try w.write("Worker.beni",
+            \\import Task
+            \\
+            \\pub work : Int → Int
+            \\work n =
+            \\    Task.yieldNow ⊤
+            \\    next = n + 1
+            \\    Task.yieldNow ⊤
+            \\    next + 1
+            \\
+        );
+        const main_source =
+            \\import Io
+            \\import Node
+            \\import Worker
+            \\
+            \\main : Node.Program
+            \\main = Io.run λ⊤ → Node.print (String.fromInt (Worker.work 5))
+            \\
+        ;
+        try w.write("Main.beni", main_source);
+        var args: std.ArrayList([]const u8) = .empty;
+        try args.appendSlice(arena, &.{ "build", "--platform=node", "--no-source-maps" });
+        if (release) try args.append(arena, "--release");
+        const common = try args.toOwnedSlice(arena);
+        for ([_]struct { jobs: []const u8, out: []const u8 }{
+            .{ .jobs = "--jobs=1", .out = "--out=cold" },
+            .{ .jobs = "--jobs=8", .out = "--out=warm" },
+        }) |step| {
+            var build: std.ArrayList([]const u8) = .empty;
+            try build.appendSlice(arena, common);
+            try build.appendSlice(arena, &.{ step.jobs, step.out, "--cache-dir=cache", "Main.beni", "Worker.beni" });
+            const result = try w.runWith(build.items, .{ .raw_diagnostics = true });
+            if (result.exit_code != 0) std.debug.print("remainder cache build failed:\n{s}\n", .{result.stderr});
+            try testing.expectEqual(@as(u8, 0), result.exit_code);
+            try testing.expectEqualStrings("", result.stderr);
+        }
+        try w.expectProgram("warm/_main.mjs", .{ .stdout = "7\n" });
+        try w.write("Main.beni", try std.mem.replaceOwned(u8, arena, main_source, "work 5", "work 7"));
+        for ([_]struct { cache: []const u8, out: []const u8, jobs: []const u8 }{
+            .{ .cache = "--cache-dir=cache", .out = "--out=edited", .jobs = "--jobs=8" },
+            .{ .cache = "--no-cache", .out = "--out=oracle", .jobs = "--jobs=1" },
+        }) |step| {
+            var build: std.ArrayList([]const u8) = .empty;
+            try build.appendSlice(arena, common);
+            try build.appendSlice(arena, &.{ step.cache, step.out, step.jobs, "Main.beni", "Worker.beni" });
+            const result = try w.runWith(build.items, .{ .raw_diagnostics = true });
+            if (result.exit_code != 0) std.debug.print("remainder cache build failed:\n{s}\n", .{result.stderr});
+            try testing.expectEqual(@as(u8, 0), result.exit_code);
+            try testing.expectEqualStrings("", result.stderr);
+        }
+        try w.expectProgram("edited/_main.mjs", .{ .stdout = "9\n" });
+        try w.expectProgram("oracle/_main.mjs", .{ .stdout = "9\n" });
+        const entry = try arena.dupe(u8, try w.read("edited/_main.mjs"));
+        try testing.expectEqualStrings(entry, try w.read("oracle/_main.mjs"));
+        if (!release) {
+            const worker = try arena.dupe(u8, try w.read("edited/Worker.mjs"));
+            try testing.expectEqualStrings(worker, try w.read("oracle/Worker.mjs"));
+        }
+    }
+}

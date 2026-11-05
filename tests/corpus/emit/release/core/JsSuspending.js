@@ -1,1 +1,1 @@
-import{a}from"./_core/Task.mjs";import{b}from"./_core/Js.mjs";const c=a=>a,d=(b,c)=>a((()=>b)(),f=>f+1,c),e=(b,c)=>a((()=>b)(),()=>4,c),f=()=>b;export{c,d,e,f};
+import{a,b}from"./_core/Task.mjs";import{c}from"./_core/Js.mjs";const d=a=>a;function e(a){return a+1}const f=c=>{if(b(c))return a(e.bind(null));return e(c)};function g(){return 4}const h=c=>{if(b(c))return a(g.bind(null));return g(c)},i=()=>c;export{d,f,h,i};

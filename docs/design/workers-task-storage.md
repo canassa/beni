@@ -726,3 +726,18 @@ An explicit list-kind bit identifies an intrusive wait independently of host
 activity or delivery. If a host registration halts its own fiber, its returned
 canceller runs immediately and the step leaves through forced cancellation;
 no canceller can be decoded as an intrusive list, and no resumed body runs.
+
+
+**Owner layout decision, 2026-11-04 (#1917).** Raw-stepped user finalizer
+and deferred-cleanup functions stay fully typed in separate kernel work-store
+records. Normally called hooks remain in the existing control/scheduler records;
+no record in their linked Control/Scope graph contains raw user work. Finalizer
+nodes and deferred lists carry private integer keys into the typed stores.
+A store reuses cleared entries from a free-index stack; a removed finalizer is
+marked inactive before its key is released, and the typed work is detached
+before invocation, so reentrant cleanup cannot reuse a live token. Stores grow
+only with peak simultaneous registrations, not total historical registrations.
+These are existing native arrays, with no callback erasure, ownership/effect
+exemption or user work in the D3 Slot. The field-effect precision redesign is
+tracked by #1917. Measure this split separately in retained bytes per fiber and
+S1–S5 brotli; #1907 retains the original 3967 B S3 target and page-size recovery for the follow-up shared-body lowering work. The owner decision of 2026-11-05 permits this protocol change to land first with only S3 capped at its exact measured size; the follow-up is specified and prototyped before production compiler changes.

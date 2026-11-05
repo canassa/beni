@@ -4063,7 +4063,7 @@ test "an element with no commands keeps its user functions direct" {
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // User functions that cannot suspend keep their direct convention.
-    // The waiting body provides the positive hidden-completion check.
+    // A waiting tail call keeps its operation without a hidden completion.
     // Typed runtime capability pruning is separate optimization work.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -4081,8 +4081,10 @@ test "an element with no commands keeps its user functions direct" {
     // └─────────────────────────────────────────┘
     try expectBuilt(none);
     try expectBuilt(waits);
-    try testing.expect(std.mem.indexOf(u8, try w.read("none-out/Main.mjs"), "$resume") == null);
-    try testing.expect(std.mem.indexOf(u8, try w.read("waits-out/Main.mjs"), "$resume") != null);
+    try testing.expect(std.mem.indexOf(u8, try w.read("none-out/Main.mjs"), "$resume$") == null);
+    const waiting = try w.read("waits-out/Main.mjs");
+    try testing.expect(std.mem.indexOf(u8, waiting, "$resume$") == null);
+    try testing.expect(std.mem.indexOf(u8, waiting, "Time$sleep(") != null);
 }
 
 test "an element whose commands never wait keeps its user functions direct" {

@@ -21,7 +21,7 @@ core/Debug.beni Debug.log 0027a590612d84d0bdfb13861c3da3ab82a9540fe90baa88c54e2c
 core/Debug.beni Debug.toString 613ca54abbe8d10944bf759e0d7f2f89f955126744e02ec1e82d30efddd339a3
 core/Task.beni                   Task.timeout             f50be3112f2996bdbba6304178953f5503b61e2d2b0624885b086beaa9f020bc
 core/Task.beni                   Task.raceOk              039a240424cf3295941a88afed1dcbb5406a9957a5e7bde955297b01ba5c3185
-core/Task.beni Task.startIn 46274fd3d8d44bda1eb16b3c9d9ce2d07206e9d04baba3bf02e9dec1f34dfb41
+core/Task.beni Task.startIn c07ac5898e26c4a66029f51ce68b91d416a309b4ddec1b46bceb518ecf4908c5
 core/Task.beni Task.firstOf be9c50472be7f5c9a40dd00d50c8510c1ed342b37d649fcb3e98e9c966e68b48
 core/Task.beni                   Task.haltOthers          cb415ff10e57f6fbed74f437047f820ddc809935768197e69178b520bde44629
 core/Task.beni                   Task.haltAs              e90e451c285f9a3a01b439d061f6ee36b7297c965c04afca78abf0a9abb3d894
@@ -112,9 +112,9 @@ src/js/Lower.zig Lower.listConsTail 7c488b8a7cc81baeba74afa8d08b7e21304eb77f4b10
 src/js/Lower.zig Lower.listIsCons b627b7ce8a482e9629ccca3be970825edd07c92c2ca0e7d10fe30b021ea3279c
 src/js/Lower.zig Lower.listConsStep 584c9d920d77481b7bb184d6a433e5272f45bf2d175ce927676f35b44125de2e
 src/js/Lower.zig Lower.listConsScalar b83eed7b4a45546226966250fcd19936a10e23b1d8a75a6ddbeb50c5e4142a9f
-core/Js.js Js.invoke deed135f854650a35e005310f5e1c414898bd0615855db4baa04366b14f9ca1e
+core/Js.js Js.invoke 43068b52ae6b50f1f0dbb8c77079c463f766c981595f67a645e76a57a08ea51a
 core/Task.beni                   Task.scope               ab1de28cccca6f8b513c03a46bd6a0fb069ad118825b4096990ad0c1a94e467e
-core/Task.beni Task.makeFiber 2abba7ee85cf99dfac2f17b10df597b23cfdceb10fd9661a0204a7ad8bc92645
+core/Task.beni Task.makeFiber a963d0ef8fbe510ad7d1bee1e308c18a194291f5f55441eaf1b40d0066b470b6
 core/Task.beni Task.poll 9f897a2d2c7fb8fe8315ef311f046eb2351abf68fed87409c2a922aa85aba3fe
 core/Task.beni Task.wait 5c312e89eec3f148a9328e66381edc6196a9e583e5fe613338545e4660d74976
 core/Task.beni Task.join 61c41afa649600c1f8a6c6914992ac94da226fdba97baa18932bdc96843fd9fa
@@ -122,13 +122,13 @@ core/Task.beni Task.entry b9c80b88dd93de378434884e581d3819cea426162c8a6145c66ab0
 core/Task.beni Task.requeue 1afd037bc8b6e28d482171d70cc8d55be370bc8f4cc128838efc7cef55e6b176
 core/Js/Runtime.js               Js.Runtime.parked        cd78ee9414dfa1aa0eb7a27df6392c884bd73f958da80bce43ef92115ef5e432
 core/Js/Runtime.js               Js.Runtime.defect        08aa1744d1ee477e6899bad6084889d9cf0ee880bd04f9dbffd4ec5768b7a5ce
-src/js/Lower.zig Js.cell 361b43d9a724029cf6a58fe0de8da14868a1aa1a15068cb7a2cb469d6abf2dd9 intrinsic:core
-src/js/Lower.zig Js.cellRead d99a84ecb423d7f8dc8fa21fdfde152a9df292e6d721d2a9fd1d31ff5c74a0be intrinsic:core
-src/js/Lower.zig Js.cellWrite d2898ac5a81071b5299f0f625e518a63afaa621e42217f3667670d890fcad4e5 intrinsic:core
-src/js/Lower.zig Js.none 05881cea99f8d8d5727d8d70f26465a16bb08aca0fedc5e1d4b3e983efa32fce intrinsic:core
-src/js/Lower.zig Js.some 7fbab2d9b34baddc3fa262ab7ef05a513153460d943ae83cbf52f34bab7a540e intrinsic:core
-src/js/Lower.zig Js.optMatch b0189753fa6bd1859cb9587c3cebf9e3a9bd6a7edbbe89150507bc31926cfa23 intrinsic:core
-src/js/Lower.zig Js.optWithDefault f6df3e5dcd18459b1bd9c04037ffa73717a388ae17fbfc01d7bc3db2b2985564 intrinsic:core
+src/js/Lower.zig Js.cell c0095f855e7211c69fb9ae597533c50790be92980100bad3a6f2cabf05a9b0ca intrinsic:core
+src/js/Lower.zig Js.cellRead a1eb4ca7de6588a89fadecccd0e9b4c8c6375ef4b76ad88c7c8053b22686801b intrinsic:core
+src/js/Lower.zig Js.cellWrite e22a1ccc24fc6a291558dc1e2d9039bdf948a31537d219dd9e2fdf81afda3451 intrinsic:core
+src/js/Lower.zig Js.none dd511029088f171b4e0e903c4e4b022c0e355b7b1f67325961da1f3dbd68d223 intrinsic:core
+src/js/Lower.zig Js.some 9eb8cf4fb64336ac51c65c40d8f3a1614746f27d3d30229273ed9c8d7a67d1c0 intrinsic:core
+src/js/Lower.zig Js.optMatch e41679860fe40c89a807ae1bf30bc0ff3333d0be36b82106d84275fe222df443 intrinsic:core
+src/js/Lower.zig Js.optWithDefault 645391f49c5ac02a2b953753497272dfcada877b300f4c3c4190c0663b3f6473 intrinsic:core
 src/bir/Bir.zig Js.cellRead ff2e6c1c664e26923e024f3b4cef61134f0aa488706c506f055f50549a635c0b intrinsic:core
 src/bir/Bir.zig Js.cellWrite a2aa0b9d55af613668718a7c12398432183eefc1af95aeee0070c41050193306 intrinsic:core
 

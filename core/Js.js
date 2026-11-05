@@ -41,10 +41,8 @@ export const set = (o, name, v) => {
 };
 export const call = (o, name, xs) => o[name](...args(xs));
 export const apply = (f, xs) => f(...args(xs));
-export const invoke = (work, value, done) => work(value, done);
-export const completion = (unit) => {
-  throw new Error("a completion callback must be supplied by the compiler");
-};
+export const invoke = (work, value) => work(value);
+
 
 export const construct = (c, xs) => new c(...args(xs));
 export const array = (xs) => args(xs);

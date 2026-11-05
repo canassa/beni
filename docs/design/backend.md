@@ -2632,10 +2632,11 @@ own comparison deciding. With any other argument it is a call of it, which `Js.j
 the argument's value. Fixture: `emit/core/JsSuspending` and its release twin (a park in tail, value
 and discarded position).
 
-**`Reach` keeps `Task.andThen` and `Task.isWaiting` whatever kind of declaration they are.** A body
+**`Reach` keeps private `Task.chain` and `Task.isWaiting` whatever kind of declaration they are.** A body
 that may suspend adds an edge to the two (Â§9, `Reach.effectEdges`), whether `Task` declares them
 `foreign` or writes them in beni: a program whose own code suspends but that reaches no kernel
-function calling `andThen` still needs it.
+function calling `chain` still needs it. Public `andThen` is ordinary source
+application and is retained only when source references reach it (#1719).
 
 **Owner decision, 2026-11-01 (#1295, #1612): typed completion callbacks.**
 The suspending path may use an internal CPS calling convention: a hidden typed
@@ -2663,6 +2664,81 @@ or output for functions that cannot suspend. Migration is ordered: the kernel
 and intrusive wait lists first share this slot while accepting compiler-supplied
 typed completion frames; the following lowering change removes hidden CPS
 completion arguments and constructs frames only on the parked path.
+
+
+**Protocol lowering amendment, 2026-11-04 (#1719, #1907).** Suspendable
+functions use their ordinary arguments and return either their typed result or
+the unique parked sentinel; there is no hidden completion argument or completion
+accessor. At each non-tail suspension point the call runs first. Only its
+sentinel branch creates and stores a once-only frame for the remaining code;
+the synchronous branch continues in place without allocating a continuation,
+sink, join closure or wrapper. A tail call returns its result directly. Branch
+joins retain this same rule, and a parked loop frame re-enters the loop with
+its captured state. Functions which cannot suspend retain their prior output.
+
+The initial kernel-written bridge invokes the original typed work; user work
+is never packed directly as a frame. The existing kernel stack stores only
+kernel/compiler-written frames directly in the D3 Slot. During
+native-stack unwinding frames arrive innermost first in one reusable typed
+pending buffer. A scalar count records its live prefix; the driver transfers
+that prefix backwards onto the fiber's existing stack and clears each buffer
+slot before invoking any code. No user code runs between appending a frame and
+consuming that pending segment. No pending record, per-park array or extra
+Control field is introduced. The pending count and optional deeper stack are
+the only guards needed to consume frames; no separate framed-facility flag
+controls them. On resume the driver invokes the innermost frame, writes its
+ordinary result into the value slot and iterates; another sentinel consumes a
+new pending segment. An empty stack drives normal completion or the existing
+cancellation/finalizer state machine. Forced cancellation discards frames and
+bypasses masks as before. A sentinel without a matching pending operation is a
+kernel defect. Intrusive waits and host callbacks no longer store completion
+frames of their own. Direct never/yield parking needs no host wake closure.
+
+`Js.invoke work value` performs exactly one ordinary typed invocation and
+returns its raw value or sentinel to the driver. Resume/result payloads are
+never called as data. Frame and canceller invocations remain at their established
+typed endpoints; all stored callables retain their writer's realm obligation.
+Host identity epochs, synchronous callback delivery, post-registration self-halt,
+delivered-host-wait cancellation handoff, finalizer ordering and public Task
+transcripts are unchanged. This amendment supersedes the temporary typed
+completion convention described above, with no public API or syntax change.
+
+
+**Shared cold remainders.** A remainder containing more suspension points is
+lifted to a private static helper, with explicit live captures, and referenced
+by parked-path frames. Terminal remainders remain directly in their frame.
+This shares code instead of recursively duplicating both copies of every
+suffix. A non-loop synchronous path can tail-call a terminal or shared remainder helper when
+its captures pass directly, including already formed accessors; otherwise it
+continues inline. Loop fast paths always stay in place. No synchronous path
+allocates a frame or capture bridge. A scalar mutable binding is passed to a cold helper through a compiler-
+written read/write accessor, made only after parking; subsequent frames forward
+that accessor, preserving the original shared binding without wrapper chains.
+Capture parameters follow structural first-use order, independent of builder
+name indexes, so embedded and freshly checked core emit identical helpers.
+Private helpers belong to the enclosing declaration's emission/cache unit and
+retain its writer obligations. No hidden completion argument returns.
+**2026-11-05 — parked-frame capture placement (Part of #1719).** A frame
+binds the private static remainder helper to its explicit captured values with
+native `Function.prototype.bind`, only after the sentinel comparison. The
+resulting compiler-written callable does not capture a hot loop's lexical
+bindings. Compiler-owned loop re-entry parameters are copied by value; mutable
+source bindings retain shared accessors where required.
+
+
+**Owner layout decision, 2026-11-04 (#1917).** Raw-stepped user finalizer
+and deferred-cleanup functions stay fully typed in separate kernel work-store
+records. Normally called hooks remain in the existing control/scheduler records;
+no record in their linked Control/Scope graph contains raw user work. Finalizer
+nodes and deferred lists carry private integer keys into the typed stores.
+A store reuses cleared entries from a free-index stack; a removed finalizer is
+marked inactive before its key is released, and the typed work is detached
+before invocation, so reentrant cleanup cannot reuse a live token. Stores grow
+only with peak simultaneous registrations, not total historical registrations.
+These are existing native arrays, with no callback erasure, ownership/effect
+exemption or user work in the D3 Slot. The field-effect precision redesign is
+tracked by #1917. Measure this split separately in retained bytes per fiber and
+S1–S5 brotli; #1907 retains the original 3967 B S3 target and page-size recovery for the follow-up shared-body lowering work. The owner decision of 2026-11-05 permits this protocol change to land first with only S3 capped at its exact measured size; the follow-up is specified and prototyped before production compiler changes.
 
 ### `Js.regExp` is a literal
 

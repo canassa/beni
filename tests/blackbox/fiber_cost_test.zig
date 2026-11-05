@@ -54,6 +54,7 @@ test "fiber retained bytes and allocation deltas stay within ratchets" {
         \\const invalid=structuredClone(rows);
         \\invalid['fast-path'].large=NaN;
         \\const assert=await import('node:assert/strict');
+        \\assert.equal(rows['fast-path'].large-rows['fast-path'].small,0,'non-parking suspension points allocate no continuation');
         \\assert.throws(()=>checkCosts(invalid,budgets),{name:'Error',message:'Fiber budget failures:\nfast-path: invalid numeric sample\n'+cost.budgetAdvice});
         \\console.log('fiber cost ratchets checked');
         \\

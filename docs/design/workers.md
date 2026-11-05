@@ -313,7 +313,7 @@ and the kernel-private unchecked existential resume/result slot obey the same
 writer rule: typed endpoints fix the data type, resume and result data are never
 called through the slot, while the driver calls frames and wait cancellers at
 their established typed endpoints, and each stored frame is charged to its
-enclosing declaration (#1719, owner decision D3). A foreign callback dependency belongs to
+enclosing declaration (#1719, owner decision D3). Compiler-created parked-path frames carry that same writer obligation; removing hidden completion arguments changes neither realm inference nor the typed resume/result endpoints (#1719). A foreign callback dependency belongs to
 its nearest enclosing positive arrow; a returned callback receiver keeps the dependency when stored as a
 top-level value. These are realm-only edges and do not change purity or
 suspension inference.

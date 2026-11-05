@@ -968,8 +968,10 @@ conversion or an exemption from realm checking. Unlike ordinary invocation,
 it does not suspend the driver before the driver consumes the sentinel.
 This intrinsic is core-only like `Js.suspending`, adds no user surface or
 source syntax, and is specified further in `workers-task-storage.md`.
-The matching `Js.completion` accessor is restricted to core Task; the
-core-private `Js.Runtime.parked` accessor returns the same plain sentinel.
+The protocol-lowering amendment (#1719) invokes `Js.invoke work value` with
+exactly two arguments and removes the temporary `Js.completion` accessor;
+frames are constructed only after the call parks. The core-private
+`Js.Runtime.parked` accessor returns the same plain sentinel.
 Task's scheduling, time and random operations use generated typed native bindings
 in `Browser.Host`, reviewed through the catalogue and `native/Operations.zig`.
 The macrotask queue and timer canceller are beni. Runtime's sibling retains

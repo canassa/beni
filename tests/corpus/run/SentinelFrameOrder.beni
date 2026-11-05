@@ -1,0 +1,26 @@
+-- #1719: native unwinding appends inner frames first; after resuming,
+-- a second park must run its new segment above the older outer frames.
+import Io
+import Node
+import Task
+
+
+inner : ⊤ → String
+inner ⊤ =
+    Task.yieldNow ⊤
+    "i"
+
+
+middle : ⊤ → String
+middle ⊤ =
+    value = inner ⊤ ++ "m"
+    Task.yieldNow ⊤
+    value ++ "M"
+
+
+outer : ⊤ → String
+outer ⊤ = middle ⊤ ++ "o"
+
+
+main : Node.Program
+main = Io.run λ⊤ → Node.print (outer ⊤)
