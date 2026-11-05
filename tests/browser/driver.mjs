@@ -153,6 +153,13 @@
 //                               key does
 //   timers                      log `(timers: <n>)`, the timers the virtual
 //                               clock holds that have not fired or been cleared
+//   posted                      wait in real time, 5 s at most, until every
+//                               `iframe` with a `srcdoc` has loaded, and
+//                               100 ms more; then log
+//                               `(#<id> posted <json>)` for each message a
+//                               frame posted to the page since the last
+//                               `posted`, by frame in document order, or
+//                               `(no frame posted)`
 //   listeners <window|document> [<name>]
 //                               log `(listeners: <n>)`, the listeners the page
 //                               added to that target (for that event) and has
@@ -1021,6 +1028,22 @@ function prelude() {
   }
   globalThis.addEventListener("error", (event) => record.errors.push(describe(event.error ?? event.message)));
   globalThis.addEventListener("unhandledrejection", (event) => record.errors.push(describe(event.reason)));
+  // What the page's frames post to it, in the order it came, and the frames
+  // that have loaded, for the `posted` step. A post of the page itself or
+  // of a worker is not a frame's. `load` does not bubble, so the document
+  // hears a frame's in its capture phase.
+  record.posted = [];
+  record.framesLoaded = new WeakSet();
+  globalThis.addEventListener("message", (event) => {
+    if (event.source !== null && event.source !== globalThis) record.posted.push({ source: event.source, data: event.data });
+  });
+  document.addEventListener(
+    "load",
+    (event) => {
+      if (event.target?.localName === "iframe") record.framesLoaded.add(event.target);
+    },
+    true,
+  );
   // Every listener the page adds to the window or the document from here
   // on, and has not removed, by target: a registration is its type, its
   // listener and its capture flag, as the DOM's own, so adding one twice
@@ -1408,6 +1431,35 @@ function step(s) {
   if (s.command === "timers") {
     globalThis.__beniHarness.log.push(`(timers: ${globalThis.__beniHarness.clock.timers.length})`);
     return null;
+  }
+  if (s.command === "posted") {
+    // Wait in real time, 5 s at most, until every frame of the page that
+    // has a `srcdoc` has loaded — happy-dom loads no other frame, and fires
+    // no `load` at one — then 100 ms more for what a frame posted as it
+    // loaded. Then
+    // log each post since the last `posted`, by frame in document order,
+    // and in the order it came within one frame.
+    const harness = globalThis.__beniHarness;
+    return new Promise((done) => {
+      let turns = 0;
+      const report = () => {
+        const frames = [...document.querySelectorAll("iframe")];
+        const named = (i) => (i < 0 ? "a frame no longer in the page" : frames[i].id !== "" ? `#${frames[i].id}` : `iframe ${i + 1}`);
+        const posts = harness.posted.map((p, k) => ({ ...p, k, at: frames.findIndex((f) => f.contentWindow === p.source) }));
+        posts.sort((a, b) => (a.at < 0) - (b.at < 0) || a.at - b.at || a.k - b.k);
+        harness.posted = [];
+        if (posts.length === 0) harness.log.push("(no frame posted)");
+        for (const p of posts) harness.log.push(`(${named(p.at)} posted ${JSON.stringify(p.data)})`);
+        done(null);
+      };
+      const wait = () => {
+        const waiting = [...document.querySelectorAll("iframe[srcdoc]")].filter((f) => !harness.framesLoaded.has(f));
+        if (waiting.length === 0) return void harness.clock.real(report, 100);
+        if (++turns > 1000) return void done(`${waiting.length} of the page's frames with a \`srcdoc\` did not load within 5 s`);
+        harness.clock.real(wait, 5);
+      };
+      wait();
+    });
   }
   if (s.command === "listeners") {
     let n = 0;
@@ -2101,6 +2153,7 @@ function parseStep(written, where) {
     if (line === "timers") return void steps.push({ line: written, where, command: "timers", throws });
     if (line === "frames") return void steps.push({ line: written, where, command: "frames", throws });
     if (line === "sockets") return void steps.push({ line: written, where, command: "sockets", throws });
+    if (line === "posted") return void steps.push({ line: written, where, command: "posted", throws });
     if (line === "file" && !throws && steps.length !== 0) usage(`${where}: \`file\` must be the script's first step`);
     if (line === "load" && (!throws || steps.some((s) => !s.early && !setupCommands.includes(s.command)))) {
       usage(`${where}: \`load\` is written \`throws load\`, after the steps that set the page up`);
@@ -2175,6 +2228,8 @@ function parseStep(written, where) {
       if ((selector !== "local" && selector !== "session") || argument !== undefined) usage(`${where}: \`storage\` takes \`local\` or \`session\``);
     } else if (command === "timers") {
       usage(`${where}: \`timers\` takes nothing`);
+    } else if (command === "posted") {
+      usage(`${where}: \`posted\` takes nothing`);
     } else if (command === "listeners") {
       if ((selector !== "window" && selector !== "document") || (argument !== undefined && !/^[a-z]+$/.test(argument))) {
         usage(`${where}: \`listeners\` takes \`window\` or \`document\` and at most an event name`);

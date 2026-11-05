@@ -1,0 +1,57 @@
+-- The `srcdoc` attribute of `iframe` (#2016): a frame's document as text,
+-- written as a constant and from a hole. Each document holds a script that
+-- posts to the page, and the `posted` step logs each post. `sandbox=""`
+-- keeps every restriction, so that script does not run. `allow-scripts`
+-- lifts one, so that script runs, in an opaque origin, and posts the
+-- `title` it reads in its own document: quotes, `&` and `<` arrive as the
+-- program wrote them. The hole's frame takes its `sandbox` from the
+-- template before its document loads. A render that keeps the documents
+-- loads no frame again, so nothing posts after the click. happy-dom runs
+-- no script of a frame, so only Chrome shows a post
+-- (`IframeSrcdoc.chrome-expected`, tests/corpus/README.md).
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Count
+
+
+update : Msg, Int → Int
+update Count n = n + 1
+
+
+-- A document whose script posts the `title` of its paragraph.
+document : String → String
+document word =
+    "<p title='say \"${word}\" & <bye>'>${word}</p><script>parent.postMessage(document.querySelector(\"p\").title, \"*\")</script>"
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <button id="count" onClick={Count}>{String.fromInt n}</button>
+        <iframe
+            id="inert"
+            sandbox=""
+            srcdoc="<p>inert</p><script>parent.postMessage(\"inert\", \"*\")</script>"
+            title="inert"
+        />
+        <iframe
+            id="scripted"
+            sandbox="allow-scripts"
+            srcdoc="<p title='a \"b\" &amp; <c>'>scripted</p><script>parent.postMessage(document.querySelector(\"p\").title, \"*\")</script>"
+            title="scripted"
+        />
+        <iframe id="held" sandbox="" srcdoc={document "held"} title="held" />
+        <iframe
+            id="heldScripted"
+            sandbox="allow-scripts"
+            srcdoc={document "held-scripted"}
+            title="held scripted"
+        />
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → 0, update = update, view = view }

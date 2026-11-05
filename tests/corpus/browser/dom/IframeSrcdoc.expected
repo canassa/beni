@@ -1,0 +1,26 @@
+-- load
+<body>
+  <main>
+    <button id="count">"0"</button>
+    <iframe id="inert" sandbox="" srcdoc="<p>inert</p><script>parent.postMessage(\"inert\", \"*\")</script>" title="inert"></iframe>
+    <iframe id="scripted" sandbox="allow-scripts" srcdoc="<p title='a \"b\" & <c>'>scripted</p><script>parent.postMessage(document.querySelector(\"p\").title, \"*\")</script>" title="scripted"></iframe>
+    <iframe id="held" sandbox="" title="held" srcdoc="<p title='say \"held\" & <bye>'>held</p><script>parent.postMessage(document.querySelector(\"p\").title, \"*\")</script>"></iframe>
+    <iframe id="heldScripted" sandbox="allow-scripts" title="held scripted" srcdoc="<p title='say \"held-scripted\" & <bye>'>held-scripted</p><script>parent.postMessage(document.querySelector(\"p\").title, \"*\")</script>"></iframe>
+  </main>
+</body>
+-- posted
+(no frame posted)
+(the DOM did not change)
+-- click #count
+<body>
+  <main>
+    <button id="count">"1"</button>
+    <iframe id="inert" sandbox="" srcdoc="<p>inert</p><script>parent.postMessage(\"inert\", \"*\")</script>" title="inert"></iframe>
+    <iframe id="scripted" sandbox="allow-scripts" srcdoc="<p title='a \"b\" & <c>'>scripted</p><script>parent.postMessage(document.querySelector(\"p\").title, \"*\")</script>" title="scripted"></iframe>
+    <iframe id="held" sandbox="" title="held" srcdoc="<p title='say \"held\" & <bye>'>held</p><script>parent.postMessage(document.querySelector(\"p\").title, \"*\")</script>"></iframe>
+    <iframe id="heldScripted" sandbox="allow-scripts" title="held scripted" srcdoc="<p title='say \"held-scripted\" & <bye>'>held-scripted</p><script>parent.postMessage(document.querySelector(\"p\").title, \"*\")</script>"></iframe>
+  </main>
+</body>
+-- posted
+(no frame posted)
+(the DOM did not change)

@@ -933,6 +933,16 @@ pub attribute "selected" property stateful on "option" : Bool
 pub attribute "src" url on "audio" "embed" "iframe" "img" "input" "source" "track" "video" : String
 
 
+--| The document of an `iframe`, as HTML text, in place of a `src`. The
+--| frame parses it as a page of its own and runs it, its scripts included,
+--| as far as the frame's `sandbox` lets it. The text is an attribute
+--| value, so it never becomes markup of this page. Without a `sandbox`, or
+--| with `allow-same-origin` in it, the frame has this page's origin, and
+--| its scripts can read and change this page. Write a constant `sandbox`
+--| without `allow-same-origin`: the frame's origin is then opaque.
+pub attribute "srcdoc" on "iframe" : String
+
+
 -- The number an ordered list starts at (HTML's `start`): CommonMark's
 -- `3. three` is `<ol start="3">` (`docs/design/markdown.md` §5).
 pub attribute "start" on "ol" : Int

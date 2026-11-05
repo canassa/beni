@@ -1,0 +1,19 @@
+-- What `srcdoc` writes under `dom` (#2016, backend.md §15.3): a frame's
+-- document is an attribute value. A constant is baked into the template
+-- with `&`, `<` and `"` escaped, so the template's parser reads it back as
+-- the program wrote it, and a hole is one `setAttribute`. Neither becomes
+-- markup of the page. A constant `sandbox` is in the template, so the
+-- frame has it before its document loads.
+import Html exposing (Html)
+
+
+pub constant : Html msg
+constant =
+    <iframe
+        sandbox=""
+        srcdoc="<p title=\"a &amp; b\">x</p><script>alert(1)</script></iframe>"
+    />
+
+
+pub held : String → Html msg
+held page = <iframe sandbox="" srcdoc={page} />
