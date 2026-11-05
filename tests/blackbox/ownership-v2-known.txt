@@ -2924,4 +2924,7 @@ tests/corpus/run/WebSocketOwnerEnds.beni WebSocketOwnerEnds 16:9 #0 :: Deferred.
 core List limit removeLeaf  owner-accepted interim trie: List classes remain unpublished until ownership-checker.md §30 O0–O6 (#1854); no budget or publication-rule change
 
 # linksList and its three #1664 rows were removed by eb39897284.
-core Task 3472:18 #0 :: Js.Array.arraySet into :: accepted :: rejected  #1927: locally allocated destination is not published until copySweep finishes, so existing Controls cannot reach it; v2 opaque-Control payload reach is conservative; wd-fiber re-checks after P6
+core Task 3543:18 #0 :: Js.Array.arraySet into :: accepted :: rejected  #1927: locally allocated destination is not published until copySweep finishes, so existing Controls cannot reach it; v2 opaque-Control payload reach is conservative; wd-fiber re-checks after P6
+tests/corpus/run/SuspendJoinEffect.beni SuspendJoinEffect 11:23 #0 :: Ref.set cell◆ :: absent :: accepted  #1941: v2 reports the accepted stable-cell write; v1 crosses its primitive Int contents; existing checker behaviour, new effect-preservation fixture
+tests/corpus/run/SuspendJoinEffect.beni SuspendJoinEffect 18:24 #0 :: Ref.set cell◆ :: absent :: accepted  #1941: same accepted stable-cell Int write in the loop arm; no checker verdict changes
+tests/corpus/run/SuspendJoinEffect.beni SuspendJoinEffect 19:9 #0 :: SuspendJoinEffect.loop cell◆ :: absent :: accepted  #1941: v2 propagates that accepted stable-cell write through recursion; v1 crosses Int contents

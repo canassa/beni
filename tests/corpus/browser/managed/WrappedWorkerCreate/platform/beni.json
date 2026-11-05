@@ -1,0 +1,1 @@
+{ "platform": true, "name": "wrapped-worker-probe", "platforms": ["browser"], "reexports": ["Browser", "Html"] }

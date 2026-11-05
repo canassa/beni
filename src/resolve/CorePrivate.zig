@@ -147,7 +147,6 @@ const entries = [_]Entry{
     .{ .module = "List", .name = "viewOf" },
 
     .{ .module = "Js", .name = "invoke", .value_only = true },
-    .{ .module = "Js", .name = "completion", .access = .task, .value_only = true },
     .{ .module = "Js.Runtime", .name = "parked", .access = .task },
     .{ .module = "Js.Runtime", .name = null },
     .{ .module = "Task", .name = "WaitList" },

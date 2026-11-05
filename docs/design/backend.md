@@ -2489,10 +2489,14 @@ That is the whole analysis, because beni is lexically scoped: every reference to
 function that binds it or in a closure made inside that function. **A closure is not an escape.** A
 JavaScript closure captures the `let` binding itself and not its value, so a write through it is
 seen by every reader, exactly as a write through a shared cell is â `template`'s cloner reads and
-assigns its enclosing `let node`. A suspension needs no rule either (Â§16.3): its continuation is a
-closure, and a tail-call loop re-entered after one starts a new iteration, which evaluates its own
-`Js.ref` again as a fresh `let` in a fresh block, as a new cell would be. A binding inside a loop body
-is a `let` in the loop's block, one per iteration, for the same reason.
+assigns its enclosing `let node`. A statically lifted suspension frame captures values rather than lexical bindings.
+A ref owned by or captured through a surviving suspendable body therefore keeps its existing
+physical cell before initializers and inlining are lowered; frame helpers and source closures
+share that cell by identity. Polymorphic bodies whose suspendable twin is unreachable retain
+ordinary scalarisation. The normative protocol is
+[proposal §16.1](transparent-effects-proposal.md#161-the-protocol-one-sentinel-one-pending-suspension).
+A binding inside a loop body is a `let` in the loop's block, one per iteration.
+
 
 **A read of a `let` cell is not an atom.** `Lower.isAtom` answers no for its name, so wherever an
 operand is pinned before a later one hoists a statement (`orderedExprs`, `bindSubject`, a markup
@@ -2632,10 +2636,11 @@ own comparison deciding. With any other argument it is a call of it, which `Js.j
 the argument's value. Fixture: `emit/core/JsSuspending` and its release twin (a park in tail, value
 and discarded position).
 
-**`Reach` keeps `Task.andThen` and `Task.isWaiting` whatever kind of declaration they are.** A body
+**`Reach` keeps private `Task.chain` and `Task.isWaiting` whatever kind of declaration they are.** A body
 that may suspend adds an edge to the two (Â§9, `Reach.effectEdges`), whether `Task` declares them
 `foreign` or writes them in beni: a program whose own code suspends but that reaches no kernel
-function calling `andThen` still needs it.
+function calling `chain` still needs it. Public `andThen` is ordinary source
+application and is retained only when source references reach it (#1719).
 
 **Owner decision, 2026-11-01 (#1295, #1612): typed completion callbacks.**
 The suspending path may use an internal CPS calling convention: a hidden typed
@@ -2663,6 +2668,29 @@ or output for functions that cannot suspend. Migration is ordered: the kernel
 and intrusive wait lists first share this slot while accepting compiler-supplied
 typed completion frames; the following lowering change removes hidden CPS
 completion arguments and constructs frames only on the parked path.
+
+
+**Raw-return protocol, 2026-11-05 (Part of #1719).** The normative contract is
+[transparent-effects-proposal.md §16.1](transparent-effects-proposal.md#161-the-protocol-one-sentinel-one-pending-suspension):
+the *Protocol lowering amendment*, *Review correction* and *Shared cold
+remainders* paragraphs there own sentinel returns, frame capture and branch
+join sharing. They supersede the temporary completion convention above.
+`Lower.zig`/`Suspend.zig` implement that contract; it is not duplicated here.
+
+
+**Owner layout decision, 2026-11-04 (#1917).** Raw-stepped user finalizer
+and deferred-cleanup functions stay fully typed in separate kernel work-store
+records. Normally called hooks remain in the existing control/scheduler records;
+no record in their linked Control/Scope graph contains raw user work. Finalizer
+nodes and deferred lists carry private integer keys into the typed stores.
+A store reuses cleared entries from a free-index stack; a removed finalizer is
+marked inactive before its key is released, and the typed work is detached
+before invocation, so reentrant cleanup cannot reuse a live token. Removed/executed registrations free their keys for reuse; global stores
+retain callbacks if an owner is lost without detaching them (#1946).
+These are existing native arrays, with no callback erasure, ownership/effect
+exemption or user work in the D3 Slot. The field-effect precision redesign is
+tracked by #1917. Measure this split separately in retained bytes per fiber and
+S1–S5 brotli; #1907 retains the original 3967 B S3 target and page-size recovery before workers → master. The owner decision of 2026-11-05 permits this protocol change to land first with only S3 capped at its exact measured size. The shared-body loop prototype was rejected after measurement; future size work remains tracked by #1907.
 
 ### `Js.regExp` is a literal
 

@@ -436,6 +436,14 @@ and TypeError. The catalogue validates both the public signature and its typed
 host projection, preserving native identities, shared type variables, arities,
 realms and effects. HostFree applies to the wrappers without an exemption.
 
+*Worker constructor correction, 2026-11-05 (#1941, fixes after #1937):*
+construction failure is identified by the documented caught types: DOMException
+with name SyntaxError or SecurityError, or TypeError independent of its name.
+A successful result is passed through as the native Worker identity. A wrapped
+or proxied constructor may return a real Worker that is not an instance of the
+current global constructor; success must not be tested with `instanceof Worker`.
+The existing sibling rethrows all other exceptions; no broader catch is added.
+
 *Review amendment 2026-11-05:* a private `host_*` projection may appear
 only as the direct callee of a saturated call. Taking it as a value, passing
 it as an argument or using a `_` placeholder is `invalid_native_binding`:
@@ -1058,8 +1066,10 @@ conversion or an exemption from realm checking. Unlike ordinary invocation,
 it does not suspend the driver before the driver consumes the sentinel.
 This intrinsic is core-only like `Js.suspending`, adds no user surface or
 source syntax, and is specified further in `workers-task-storage.md`.
-The matching `Js.completion` accessor is restricted to core Task; the
-core-private `Js.Runtime.parked` accessor returns the same plain sentinel.
+The protocol-lowering amendment (#1719) invokes `Js.invoke work value` with
+exactly two arguments and removes the temporary `Js.completion` accessor;
+frames are constructed only after the call parks. The core-private
+`Js.Runtime.parked` accessor returns the same plain sentinel.
 Task's scheduling, time and random operations use generated typed native bindings
 in `Browser.Host`, reviewed through the catalogue and `native/Operations.zig`.
 The macrotask queue and timer canceller are beni. Runtime's sibling retains

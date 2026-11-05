@@ -1509,11 +1509,11 @@ pub const Lowerer = struct {
     /// The function being lowered is in the suspendable form (§16.3): a
     /// call that may suspend is a marker for `Suspend` to split at.
     suspendable: bool = false,
-    completion: JsIr.NameIndex = .none,
-    completion_next: u32 = 1,
-    protocol_forward: Inst.OptionalIndex = .none,
     /// How many markers the function being lowered has written.
     markers: u32 = 0,
+    protocol_out: ?*StmtList = null,
+    protocol_owner: JsIr.NameIndex = .none,
+    protocol_serial: u32 = 0,
     /// The join a non-tail `case` of a suspendable function sends its leaves
     /// to (§16.3), or `.none`: `tailReturn` writes `return $j(value)`.
     join: JsIr.NameIndex = .none,
@@ -1723,7 +1723,6 @@ pub const Lowerer = struct {
     /// declaration prints does not depend on which others survived.
     pub fn restartNames(l: *Lowerer) void {
         l.next_tag = 1;
-        l.completion_next = 1;
         // A hoisted read's temporary is named in this numbering, and so
         // belongs to the lowering it was bound in (§31.14).
         l.hoist_gen +%= 1;
@@ -3692,6 +3691,17 @@ pub const Lowerer = struct {
             }),
             .twin => try l.twinName(l.module_name, l.bir.symbol(d.name)),
         };
+        const protocol_out = l.protocol_out;
+        const protocol_owner = l.protocol_owner;
+        const protocol_serial = l.protocol_serial;
+        l.protocol_out = out;
+        l.protocol_owner = n;
+        l.protocol_serial = 0;
+        defer {
+            l.protocol_out = protocol_out;
+            l.protocol_owner = protocol_owner;
+            l.protocol_serial = protocol_serial;
+        }
         const packet_constants = l.packet_constants;
         const packet_owner = l.packet_owner;
         const packet_ids = l.packet_ids;
@@ -4066,7 +4076,7 @@ pub const Lowerer = struct {
         if (l.typedIntrinsicDecl(d) == .optNone) return true;
         if (l.in.graph.lookup(.core, InternPool.WellKnown.Task.symbol()) == l.in.module) {
             const spelling = l.text(l.bir.symbol(d.name));
-            return std.mem.eql(u8, spelling, "chain") or std.mem.eql(u8, spelling, "continueWith");
+            return std.mem.eql(u8, spelling, "chain");
         }
         if (l.in.graph.lookup(.core, InternPool.WellKnown.List.symbol()) != l.in.module) return false;
 
@@ -4263,10 +4273,6 @@ pub const Lowerer = struct {
         // assigning a `let $t$n` and returning that. The position of the
         // `return` is the body's own, which `tailStmts` reads from the
         // instruction — so this no longer takes one.
-        if (suspendable) {
-            l.completion = try l.completionName();
-            try names.append(l.scratch, l.completion);
-        }
         try l.tailStmts(&stmts, body, null);
         const split = try l.splitSuspensions(stmts.items, null, .closure);
         return l.funcRecord(names.items, split);
@@ -4322,16 +4328,14 @@ pub const Lowerer = struct {
 
     // ---- The suspendable form (transparent-effects-proposal.md §16) -----
 
-    const FunctionState = struct { suspendable: bool, markers: u32, join: JsIr.NameIndex, completion: JsIr.NameIndex, protocol_forward: Inst.OptionalIndex };
+    const FunctionState = struct { suspendable: bool, markers: u32, join: JsIr.NameIndex };
 
     fn enterFunction(l: *Lowerer, suspendable: bool) FunctionState {
-        const outer: FunctionState = .{ .suspendable = l.suspendable, .markers = l.markers, .join = l.join, .completion = l.completion, .protocol_forward = l.protocol_forward };
+        const outer: FunctionState = .{ .suspendable = l.suspendable, .markers = l.markers, .join = l.join };
         // A stack address can be reused by sibling functions. Evidence
         // names belong to the function that declares them.
         l.bound_out = null;
         l.suspendable = suspendable;
-        l.completion = .none;
-        l.protocol_forward = .none;
         l.markers = 0;
         l.function_depth += 1;
         l.join = .none;
@@ -4341,19 +4345,9 @@ pub const Lowerer = struct {
     fn leaveFunction(l: *Lowerer, outer: FunctionState) void {
         l.bound_out = null;
         l.suspendable = outer.suspendable;
-        l.completion = outer.completion;
-        l.protocol_forward = outer.protocol_forward;
         l.markers = outer.markers;
         l.join = outer.join;
         l.function_depth -= 1;
-    }
-
-    /// Keep protocol binders out of the ordinary temporary counter, so
-    /// non-suspending nested functions retain their existing names.
-    fn completionName(l: *Lowerer) !JsIr.NameIndex {
-        const tag = l.completion_next;
-        l.completion_next += 1;
-        return l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "$resume"), .tag = tag });
     }
 
     /// Whether an answer of §16.2 is yes in the body being lowered.
@@ -4376,14 +4370,7 @@ pub const Lowerer = struct {
         const p = l.pos(inst);
         const temp = try l.fresh(l.well.temp);
         const marker = try l.ident(try l.fixedName("$$suspend"), p);
-        // An in-place primitive may return a value rather than a host
-        // call. Keep its boundary as an invocation so every marker has
-        // a callee to receive the completion argument.
-        const invoked = if (l.b.tagOf(value) != .call and l.suspendingBody(inst) != null)
-            try l.call(try l.arrowOf(&.{}, &.{try l.add(.return_stmt, p, value.int(), Node.Data.unused)}, p), &.{}, p)
-        else
-            value;
-        const node = try l.call(marker, &.{ invoked, try l.ident(temp, p) }, p);
+        const node = try l.call(marker, &.{ value, try l.ident(temp, p) }, p);
         try out.append(l.scratch, try l.add(.expr_stmt, p, node.int(), Node.Data.unused));
         l.markers += 1;
         return l.ident(temp, p);
@@ -4392,10 +4379,68 @@ pub const Lowerer = struct {
     /// The function body `stmts` with its markers split (`Suspend`), or
     /// `stmts` itself when it has none — every function that does not
     /// suspend.
+    /// Compiler frames make source ref identities escape their lexical body.
+    /// Plan that escape before any initializer or inlined factory is lowered.
+    fn boxFrameRefs(l: *Lowerer) !void {
+        const Pending = struct { inst: Inst.Index, suspends: bool };
+        var todo: std.ArrayList(Pending) = .empty;
+        var operands: std.ArrayList(Inst.Index) = .empty;
+        for (l.bir.decls, 0..) |decl, di| {
+            if (decl.kind != .value) continue;
+            const body = decl.body.unwrap() orelse continue;
+            const twin = if (l.in.live) |live| live.twin(l.in.module, @intCast(di)) else false;
+            const own = l.in.dispatch.effectDecl(@intCast(di)).own;
+            // A poly answer is synchronous in the direct body. A declaration
+            // with no surviving twin must keep its ordinary ref scalarisation.
+            try todo.append(l.scratch, .{ .inst = body, .suspends = own == .yes or (own == .poly and twin) });
+            while (todo.pop()) |pending| {
+                const inst = pending.inst;
+                const tag = l.bir.instTag(inst);
+                const data = l.bir.instData(inst);
+                var suspends = pending.suspends;
+                if (tag == .lambda) {
+                    const effect = l.in.dispatch.effectAt(inst).own;
+                    suspends = suspends or effect == .yes or (effect == .poly and twin);
+                }
+                if (tag == .let_def) {
+                    const def = l.bir.extraData(@fromBackingInt(data.lhs), Bir.LetDef);
+                    if (def.params_start != def.params_end) {
+                        const effect = l.in.dispatch.effectAt(inst).own;
+                        suspends = suspends or effect == .yes or (effect == .poly and twin);
+                    } else if (suspends and l.isRefCall(@fromBackingInt(data.rhs))) {
+                        const local = decl.locals_start + def.local;
+                        if (local < l.unboxed_locals.len) l.unboxed_locals[local] = false;
+                    }
+                }
+                if (tag == .local and suspends) {
+                    const local = decl.locals_start + data.lhs;
+                    if (local < l.unboxed_locals.len) l.unboxed_locals[local] = false;
+                }
+                if (tag == .call) if (l.jsIntrinsicOf(@fromBackingInt(data.lhs))) |which| {
+                    if (which == .pure or which == .suspending) suspends = false;
+                };
+                operands.clearRetainingCapacity();
+                try l.bir.operands(l.scratch, inst, &operands);
+                for (operands.items) |operand| try todo.append(l.scratch, .{ .inst = operand, .suspends = suspends });
+            }
+        }
+    }
+
+    fn protocolLocal(ctx: *anyopaque, candidate: JsIr.NameIndex) bool {
+        const l: *Lowerer = @ptrCast(@alignCast(ctx));
+        return std.mem.startsWith(u8, l.text(l.b.names.items[candidate.int()].base), "$");
+    }
+
     fn splitSuspensions(l: *Lowerer, stmts: []const Node.Index, loop: ?Suspend.Loop, mode: Suspend.Mode) ![]const Node.Index {
         if (l.markers == 0) return stmts;
-        const names = try l.fiberNames(mode == .loop);
-        var pass: Suspend.Pass = .{ .b = l.b, .scratch = l.scratch, .names = names, .loop = loop, .keep = &l.effect_keep, .completion = l.completion, .sink_arg = try l.completionName() };
+        const names = try l.fiberNames();
+        l.protocol_serial += 1;
+        const owner = l.b.names.items[l.protocol_owner.int()];
+        const base = try std.fmt.allocPrint(l.scratch, "{s}$resume{d}", .{ l.text(owner.base), l.protocol_serial });
+        const helper_base = try l.name(.{ .module = owner.module, .base = try l.interner.getOrPut(l.gpa, base), .tag = 0 });
+        const bind = try l.fixedName("bind");
+        var pass: Suspend.Pass = .{ .b = l.b, .scratch = l.scratch, .names = names, .loop = loop, .keep = &l.effect_keep, .helpers = l.protocol_out.?, .helper_base = helper_base, .compiler_ctx = l, .compilerLocal = protocolLocal, .bind = bind };
+        try pass.prepare(stmts);
         return pass.rewrite(stmts, mode) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             error.FallsThrough => {
@@ -4408,10 +4453,6 @@ pub const Lowerer = struct {
                 ,
                     .{},
                 );
-                return stmts;
-            },
-            error.InvalidSuspendCall => {
-                try l.report(.internal, l.region, "A marked suspension is not a call and cannot receive its completion callback.", .{});
                 return stmts;
             },
             error.InsideTry => {
@@ -4619,22 +4660,18 @@ pub const Lowerer = struct {
     /// for first (`needName`, `backend.md` §9, *The funnel*) — a row taken
     /// from a unit that did not ask would leave the rebuilt head without its
     /// import, and the module would not load.
-    fn fiberNames(l: *Lowerer, waiting: bool) !Suspend.Names {
+    fn fiberNames(l: *Lowerer) !Suspend.Names {
         const and_then = try l.taskProtocol("chain", Node.no_pos);
-        _ = try l.taskProtocol("continueWith", Node.no_pos);
         var names = l.fiber_names orelse Suspend.Names{
             .marker = try l.fixedName("$$suspend"),
             .join = try l.fixedName("$$join"),
             .joined = try l.fixedName("$$joined"),
             .and_then = @fromBackingInt(@intCast(l.b.dataOf(and_then).lhs)),
             .is_waiting = .none,
-            .continue_with = @fromBackingInt(@intCast(l.b.dataOf(try l.taskProtocol("continueWith", Node.no_pos)).lhs)),
         };
-        if (waiting) {
-            const is_waiting = try l.coreValue(.Task, .isWaiting, Node.no_pos);
-            if (names.is_waiting == .none)
-                names.is_waiting = @fromBackingInt(@intCast(l.b.dataOf(is_waiting).lhs));
-        }
+        const is_waiting = try l.coreValue(.Task, .isWaiting, Node.no_pos);
+        if (names.is_waiting == .none)
+            names.is_waiting = @fromBackingInt(@intCast(l.b.dataOf(is_waiting).lhs));
         l.fiber_names = names;
         return names;
     }
@@ -4854,13 +4891,8 @@ pub const Lowerer = struct {
         defer l.case_depth = depth;
         const outer = l.enterFunction(suspendable);
         defer l.leaveFunction(outer);
-        if (suspendable) l.completion = try l.completionName();
         const built = try l.loopOf(&loop, body, p);
-        if (!suspendable) return l.funcRecord(built.names, built.stmts);
-        const names = try l.scratch.alloc(JsIr.NameIndex, built.names.len + 1);
-        @memcpy(names[0..built.names.len], built.names);
-        names[built.names.len] = l.completion;
-        return l.funcRecord(names, built.stmts);
+        return l.funcRecord(built.names, built.stmts);
     }
 
     /// A loop's parameter names and its statements (§8): `functionOrLoop`'s
@@ -5744,12 +5776,7 @@ pub const Lowerer = struct {
                 // `Js.suspending`'s: its value goes back as it is, whatever
                 // it is, the caller's comparison deciding.
                 if (l.pureBody(inst)) |body| return l.tailStmts(out, body, loop);
-                if (l.suspendingBody(inst)) |body| {
-                    const before = l.protocol_forward;
-                    l.protocol_forward = body.toOptional();
-                    defer l.protocol_forward = before;
-                    return l.tailStmts(out, body, loop);
-                }
+                if (l.suspendingBody(inst)) |body| return l.tailStmts(out, body, loop);
             },
             else => {},
         }
@@ -7917,13 +7944,6 @@ pub const Lowerer = struct {
             .testHooks => {
                 l.askSelf(.test_hooks, l.in.test_hooks, 0, 0);
                 return l.add(if (l.in.test_hooks) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
-            },
-            .completion => {
-                if (l.completion == .none) {
-                    try l.report(.internal, inst, "a completion callback was read outside the suspendable runtime protocol", .{});
-                    return l.nullNode(p);
-                }
-                return l.arrowOf(&.{}, &.{try l.add(.return_stmt, p, (try l.ident(l.completion, p)).int(), Node.Data.unused)}, p);
             },
             // A function passed as a value is the sibling's (`core/Js.js`).
             else => {},
@@ -12431,32 +12451,6 @@ pub const Lowerer = struct {
         return l.nullNode(p);
     }
 
-    /// Only the host call producing a `Js.suspending` body's result gets
-    /// its completion; bindings, operands and nested lambdas do not.
-    fn protocolResultAt(l: *Lowerer, result: Inst.OptionalIndex, p: u32) bool {
-        const inst = result.unwrap() orelse return false;
-        const d = l.bir.instData(inst);
-        switch (l.bir.instTag(inst)) {
-            .let => return l.protocolResultAt(@fromBackingInt(@intCast(d.rhs)), p),
-            .case => {
-                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |branch| {
-                    if (l.bir.instTag(branch) == .branch and
-                        l.protocolResultAt(@fromBackingInt(@intCast(l.bir.instData(branch).rhs)), p)) return true;
-                }
-            },
-            .call => {
-                const which = l.jsIntrinsicOf(@fromBackingInt(@intCast(d.lhs))) orelse return false;
-                if (which == .apply) return l.pos(inst) == p;
-                if (which == .to or which == .from) {
-                    const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
-                    if (args.len == 1) return l.protocolResultAt(args[0].toOptional(), p);
-                }
-            },
-            else => {},
-        }
-        return false;
-    }
-
     // ownership pin begin: cell
     // ownership pin begin: cellRead
     // ownership pin begin: cellWrite
@@ -12810,9 +12804,6 @@ pub const Lowerer = struct {
         if (which == .object and args.len == 1) return l.objectLiteral(out, args[0], p);
         if (which == .method and args.len == 1) return l.methodFunc(out, args[0], p);
         if ((which == .pure or which == .suspending) and args.len == 1) if (l.thunkBody(args[0])) |body| {
-            const before = l.protocol_forward;
-            if (which == .suspending) l.protocol_forward = body.toOptional();
-            defer l.protocol_forward = before;
             return l.expr(out, body);
         };
 
@@ -12873,14 +12864,7 @@ pub const Lowerer = struct {
             // ownership pin end: slotPack
             W.browserBlock, W.browserInstallRoot, W.browserInstallFuzz => l.browserBridgeOperation(out, which, v, p),
             W.from, W.to => v[0],
-            W.invoke => l.hostCall(v[0], &.{ v[1], v[2] }, p),
-            W.completion => if (l.completion != .none)
-                l.ident(l.completion, p)
-            else blk: {
-                try l.report(.internal, l.region, "a completion callback was read outside the suspendable runtime protocol", .{});
-                break :blk l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-            },
-
+            W.invoke => l.hostCall(v[0], &.{v[1]}, p),
             W.same => l.binary(.strict_eq, v[0], v[1], p),
             W.isNull => l.binary(.strict_eq, v[0], try l.nullNode(p), p),
             W.isUndefined => l.binary(.strict_eq, v[0], try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p),
@@ -12909,13 +12893,7 @@ pub const Lowerer = struct {
                 break :blk l.nullNode(p);
             },
             W.call => l.call(try Prop.of(l, v[0], literal_name, if (named) v[0] else v[1], p), rest, p),
-            W.apply => blk: {
-                if (l.completion == .none or !l.protocolResultAt(l.protocol_forward, p)) break :blk l.hostCall(v[0], rest, p);
-                const forwarded = try l.scratch.alloc(Node.Index, rest.len + 1);
-                @memcpy(forwarded[0..rest.len], rest);
-                forwarded[rest.len] = try l.ident(l.completion, p);
-                break :blk l.hostCall(v[0], forwarded, p);
-            },
+            W.apply => l.hostCall(v[0], rest, p),
 
             // A saturated `each` is `eachLoop`, a saturated `finally`
             // `finallyTry`, a `catchIf` `catchTry`, a `regExp`
@@ -13790,9 +13768,9 @@ pub const Lowerer = struct {
     /// stored, returned or compared, is an escape. A reference inside a
     /// closure is not one: the closure captures the `let` itself. A
     /// top-level candidate must also be one no other module can name (not
-    /// `pub`, not the entry, no dispatch answer's). A suspension needs no
-    /// rule: its continuation is a closure too (§16.3), and a re-entered
-    /// loop is a new iteration, which evaluates its `Js.ref` again.
+    /// `pub`, not the entry, no dispatch answer's). These are base candidates;
+    /// suspension lowering retains the cell when a suspendable body reads or
+    /// writes its slot, including a nested capture (§16.1).
     fn findRefs(l: *Lowerer) !void {
         const tags = l.bir.insts.items(.tag);
         const data = l.bir.insts.items(.data);
@@ -13864,6 +13842,7 @@ pub const Lowerer = struct {
                 }
             }
         }
+        try l.boxFrameRefs();
     }
 
     /// Which declarations are written where their one call is, under

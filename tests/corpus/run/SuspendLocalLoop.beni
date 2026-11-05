@@ -1,0 +1,20 @@
+import Io
+import Node
+import Task
+
+
+total : List Int → Int
+total xs =
+    go ys acc =
+        case ys of
+            [] →
+                acc
+
+            [ y, …more ] →
+                Task.yieldNow ⊤
+                go more (acc + y)
+    go xs 0
+
+
+main : Node.Program
+main = Io.run λ⊤ → Node.print "total ${total [ 1, 2, 3 ]}"

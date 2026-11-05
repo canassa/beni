@@ -1,0 +1,9 @@
+# Shared suspension joins preserve effects and local recursion
+
+Part of #1719; review fixes for #1941. Local tail loops captured their parameters but omitted their local callee, producing a development ReferenceError and release name aliasing. Capture the callee too. An unread generated join binding also lost its effect-retention marker: release dropped the Workers cycle response. Both have black-box regressions in development and release.
+
+Non-loop joins now share one static rest helper. Fast paths call it directly; parked paths bind a frame. Refs crossing a surviving suspendable body retain their existing cells before initializer lowering/inlining, so source closures and static helpers share identity. Unreachable polymorphic twins do not inhibit synchronous renderer scalarisation. Reusable sparse sets use composite names, preserving structural capture order without module-sized per-point bitsets. Proposal §16.1 is the canonical protocol.
+
+The 12/16/20-join probes emit 6156/7880/9604 B and compile in 60/62/63 ms. S1–S5 are 2648/3230/4154/3270/4630 B; only S3 cap rises six bytes for correctness. Effects/http/every are 10820/8092/7787 B. #1907 retains the original S3/page recovery before workers→master. Existing loop-mode exponential growth is #1942; private lost-owner typed-store retention measured about 8.34 MB extra per 1000 payload callbacks is #1946. No normal public-API retention claim is made.
+
+Final full gates have exactly the saved a02 base's five failing tests and 135 corpus failures, with no additions. Full Workers and real Chrome browser suites pass. All seven fiber-cost tests pass. Evidence: ~/worktree-evidence/wd-fiber/p6/review-fixes/REPORT.md and gate-final-comparison.json. No follow-up re-pins, checker exemptions, user-work erasure or off-limits platform edits. The #1927 audit stays paused.

@@ -4,6 +4,6 @@ import Js
 -- Raw protocol calls and first-class access are private even in a platform.
 pub run : ⊤ → ⊤
 run ⊤ =
-    Js.invoke (λ⊤ → ⊤) ⊤ λ⊤ → ⊤
-    _ = Js.completion
+    Js.invoke (λ⊤ → ⊤) ⊤
+    _ = Js.invoke
     ⊤

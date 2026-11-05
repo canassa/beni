@@ -1,0 +1,21 @@
+-- #1719: lifted parked remainders must retain the same scalar Ref binding
+-- as a sibling fiber and a previously formed synchronous reader closure.
+import Io
+import Js
+import Node
+import Task
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    state = Js.ref 0
+    read ⊤ = Js.read state
+    worker = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        Js.write state 7
+    Task.yieldNow ⊤
+    first = read ⊤
+    Task.join worker
+    Task.yieldNow ⊤
+    last = read ⊤
+    Node.print "shared: ${first},${last}"

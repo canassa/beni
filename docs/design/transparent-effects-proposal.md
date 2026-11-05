@@ -1818,6 +1818,96 @@ type a. It is charged to its writer under workers.md §4 like frames. Delivery
 overwrites the token with the typed payload before any resumption; cancellation
 clears the token before the host canceller runs.
 
+
+**Protocol lowering amendment, 2026-11-04 (#1719, #1907).** Suspendable
+functions use their ordinary arguments and return either their typed result or
+the unique parked sentinel; there is no hidden completion argument or completion
+accessor. At each non-tail suspension point the call runs first. Only its
+sentinel branch creates and stores a once-only frame for the remaining code;
+the synchronous branch continues in place without allocating a continuation,
+sink, join closure or wrapper. A tail call returns its result directly. Branch
+joins retain this same rule, and a parked loop frame re-enters the loop with
+its captured state. Functions which cannot suspend retain their prior output.
+
+The initial kernel-written bridge invokes the original typed work; user work
+is never packed directly as a frame. The existing kernel stack stores only
+kernel/compiler-written frames directly in the D3 Slot. During
+native-stack unwinding frames arrive innermost first in one reusable typed
+pending buffer. A scalar count records its live prefix; the driver transfers
+that prefix backwards onto the fiber's existing stack and clears each buffer
+slot before invoking any code. No user code runs between appending a frame and
+consuming that pending segment. No pending record, per-park array or extra
+Control field is introduced. The pending count and optional deeper stack are
+the only guards needed to consume frames; no separate framed-facility flag
+controls them. On resume the driver invokes the innermost frame, writes its
+ordinary result into the value slot and iterates; another sentinel consumes a
+new pending segment. An empty stack drives normal completion or the existing
+cancellation/finalizer state machine. Forced cancellation discards frames and
+bypasses masks as before. A sentinel without a matching pending operation is a
+kernel defect. Intrusive waits and host callbacks no longer store completion
+frames of their own. Direct never/yield parking needs no host wake closure.
+
+`Js.invoke work value` performs exactly one ordinary typed invocation and
+returns its raw value or sentinel to the driver. Resume/result payloads are
+never called as data. Frame and canceller invocations remain at their established
+typed endpoints; all stored callables retain their writer's realm obligation.
+Host identity epochs, synchronous callback delivery, post-registration self-halt,
+delivered-host-wait cancellation handoff, finalizer ordering and public Task
+transcripts are unchanged. This amendment supersedes the temporary typed
+completion convention described above, with no public API or syntax change.
+
+
+**Review correction, 2026-11-05 (Part of #1719).** This §16.1 amendment is
+normative for the raw-return/frame protocol; backend.md and
+workers-task-storage.md reference it. A local tail-recursive function is an
+explicit live capture of every parked frame that re-enters its loop, alongside
+its state parameters and building destination. A non-loop branch join's rest
+is emitted once in a static helper: leaves call it directly with live captures
+on the fast path, and a parked leaf binds it as a frame. A non-loop join must not copy
+its rest into every leaf. Source values pass by value and mutable source cells
+pass by identity; the synchronous path never allocates a capture bridge. Capture
+analysis uses reusable source-sized sets rather than a fresh module-name-sized
+bitset for each suspension point. Before any source initializer is lowered, ref escape analysis retains the
+existing boxed `Js.ref` representation for cells owned by or captured through
+a suspending body, including nested closures and code later inlined into a
+caller. Explicit raw `Js.suspending`/`Js.pure` callback boundaries remain
+synchronous. Scalarising a cell that crosses a frame would require a capture
+bridge on a synchronous join. Immutable compiler join slots pass by value.
+This introduces no new representation or continuation allocation; refs confined
+to synchronous bodies remain eligible for scalarisation.
+
+**Shared cold remainders.** A remainder containing more suspension points is
+lifted to a private static helper, with explicit live captures, and referenced
+by parked-path frames. Terminal remainders also use the static helper, bound
+only after parking.
+This shares code instead of recursively duplicating both copies of every
+suffix. A non-loop synchronous path tail-calls that same static helper with
+its live values and source cell identities. Loop fast paths stay in place
+(the older loop-join expansion is tracked by #1942). No synchronous path
+allocates a frame or capture bridge; keeping source cells intact preserves
+shared mutation across user closures and resumed compiler helpers.
+Capture parameters follow structural first-use order, independent of builder
+name indexes, so embedded and freshly checked core emit identical helpers.
+Frames bind these static helpers with native `Function.prototype.bind` only
+after the sentinel comparison, so no hot lexical closure context is required.
+Compiler-owned loop state is copied by value; shared source cells keep
+their existing identities. Private helpers belong to the enclosing declaration's emission/cache
+unit and retain its writer obligations. No hidden completion argument returns.
+
+**Owner layout decision, 2026-11-04 (#1917).** Raw-stepped user finalizer
+and deferred-cleanup functions stay fully typed in separate kernel work-store
+records. Normally called hooks remain in the existing control/scheduler records;
+no record in their linked Control/Scope graph contains raw user work. Finalizer
+nodes and deferred lists carry private integer keys into the typed stores.
+A store reuses cleared entries from a free-index stack; a removed finalizer is
+marked inactive before its key is released, and the typed work is detached
+before invocation, so reentrant cleanup cannot reuse a live token. Removed/executed registrations free their keys for reuse; global stores
+retain callbacks if an owner is lost without detaching them (#1946).
+These are existing native arrays, with no callback erasure, ownership/effect
+exemption or user work in the D3 Slot. The field-effect precision redesign is
+tracked by #1917. Measure this split separately in retained bytes per fiber and
+S1–S5 brotli; #1907 retains the original 3967 B S3 target and page-size recovery before workers → master. The owner decision of 2026-11-05 permits this protocol change to land first with only S3 capped at its exact measured size. The shared-body loop prototype was rejected after measurement; future size work remains tracked by #1907.
+
 ### 16.2 What the checker hands the backend
 
 The checker already knows, per class, the rung it reaches and which classes of its declaration's

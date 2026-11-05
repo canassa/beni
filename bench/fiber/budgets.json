@@ -51,7 +51,7 @@
     "S0Plain": 101,
     "S1Start": 3579,
     "S2SpawnJoin": 3809,
-    "S3ScopeFinalizer": 3983,
+    "S3ScopeFinalizer": 4154,
     "S4Cancel": 3828,
     "S5Queue": 4633
   },
@@ -61,6 +61,6 @@
   "brotliNotes": {
     "S1Start": "#1873 review: required empty-FIFO guard plus late-shutdown phase fix; 3565 → 3579 (+14), measured minimum. Guard alone adds 13 B against the fixed-shutdown scratch build.",
     "S5Queue": "#1873 review: required empty-FIFO guard plus late-shutdown phase fix; 4615 → 4633 (+18), measured minimum. Guard alone adds 14 B against the fixed-shutdown scratch build.",
-    "S3ScopeFinalizer": "#1909 review: required synchronous registration self-halt cancellation and explicit wait-list kind bit; 3967 → 3983 (+16). Temporary debt #1907: P6 must restore S3 below 3967."
+    "S3ScopeFinalizer": "Owner-approved exact measured temporary cap for raw-return sentinel frames and typed finalizer storage; #1941 correctness review adds shared join helpers and preserves discarded-value effects: 4148 → 4154 (+6 B). https://github.com/canassa/beni/issues/1907 requires S3 under 3967 B and page-size recovery before workers → master; no other cap changes."
   }
 }

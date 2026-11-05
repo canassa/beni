@@ -1,0 +1,30 @@
+-- #1719/#1917: removed finalizers can reuse their work key before the
+-- detached release returns. Deferred callbacks use their own typed store.
+import Io
+import Node
+import Ref
+import Task
+
+
+repeat : Ref.Ref Int, Int → ⊤
+repeat counter count =
+    if count > 0 then
+        Task.scope λscope →
+            Task.defer scope λ_ →
+                Ref.set counter (Ref.get counter + 100)
+                Task.yieldNow ⊤
+            Task.bracket (λ⊤ → ⊤)
+                (λ_ _ →
+                    Ref.set counter (Ref.get counter + 1)
+                    Task.bracket (λ⊤ → ⊤) (λ_ _ → Ref.set counter (Ref.get counter + 10)) λ_ →
+                        Task.yieldNow ⊤
+                )
+                λ_ → Task.yieldNow ⊤
+        repeat counter (count - 1)
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    counter = Ref.make 0
+    repeat counter 200
+    Node.print "released: ${Ref.get counter}"

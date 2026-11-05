@@ -1906,8 +1906,7 @@ pub const Builder = struct {
         for (task_bir.decls, 0..) |td, i| {
             const name = task_bir.symbol(td.name);
             const spelling = if (b.in.interner) |pool| pool.slice(name) else "";
-            if (name != InternPool.WellKnown.andThen.symbol() and name != InternPool.WellKnown.isWaiting.symbol() and
-                !std.mem.eql(u8, spelling, "chain") and !std.mem.eql(u8, spelling, "continueWith")) continue;
+            if (name != InternPool.WellKnown.isWaiting.symbol() and !std.mem.eql(u8, spelling, "chain")) continue;
 
             const target: Target = .{ .node = .{ .module = task, .kind = .decl, .index = @intCast(i) } };
             if (protocol == .yes) try direct.append(b.scratch, target) else try twin.append(b.scratch, .{ .decl = decl, .target = target });

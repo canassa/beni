@@ -4266,6 +4266,24 @@ lambda a result carries prints `λ` at its path (§24.9).
 
 ### 24.8 The annotated surface
 
+*Native-host correction re-read, 2026-11-05 (#1941, fixes after #1937):*
+the shared `NativeHost.zig` span identifies worker-construction failures by
+DOMException with the documented name or TypeError, and passes successful native
+identities through. All worded `host_*` operations sharing this pinned span retain
+their existing argument/result aliases, field writes and callback counts; their
+branches are unchanged. No constructor wrapper can create a false failure merely
+by returning a Worker outside its own prototype chain. The complete shared span
+was re-read before updating its pins; no ownership or publication rule changes.
+
+*Integration re-read, 2026-11-05 (#1941 with #1937):* the shared Lower span for
+`Js.cell`, `cellRead`, `cellWrite`, `none`, `some`, `optMatch` and `optWithDefault`
+now exposes `optNone`/`optCoreValue` to the native-host adapter. This changes Zig
+visibility only: the sentinel remains private core data, Cell reads/writes select
+the same typed fields, and Opt retains its alias/loan and at-most-once callback
+rules. The combined raw-return protocol and native host callers introduce no
+freshness promise or extra callback invocation. All seven bodies were re-read
+and re-pinned; the words and publication rules are unchanged.
+
 Every annotated declaration, and the reading of the code that justifies each word. `tests/corpus/ownership/trusted-surface.txt`
 names the fixture that pins each (§24.6).
 
@@ -4280,7 +4298,7 @@ names the fixture that pins each (§24.6).
 | `Js.each` | `escaped Value, many (Value → ⊤) → ⊤` | `for (const x of xs) f(x)`: the iteration protocol is the host's, so the iterable is taken to escape; `f` is called during the call, any number of times, and not kept |
 | `Js.throw` | `escaped Value → fresh a` | `throw v`: JavaScript keeps what is thrown; the call never returns, so what it returns is the call's own |
 | `Js.ref`, `Js.read`, `Js.write` | `escaped a → fresh Ref a`; `borrowed Ref a → unknown a`; `borrowed Ref a, escaped a → ⊤` | `{ v }`, `r.v`, `r.v = v`: what a cell holds can be read by anyone holding it, at any time later, so what goes in escapes and what comes out is unknown |
-| `Js.invoke` (owner, 2026-11-01) | `once returned` callback, `aliased` argument, escaping completion | `work(value, done)`: one typed protocol step; the synchronous completion may be retained for a parked callback; the callback may retain the argument or return an alias, and its result is the callback's result, including the plain parked sentinel, and is not assumed fresh |
+| `Js.invoke` (owner, 2026-11-01) | `once returned` callback, `aliased` argument | `work(value)`: one typed protocol step with ordinary arguments and no completion callback (#1719); the callback may retain the argument or return an alias, and its result is the callback's result, including the plain parked sentinel, and is not assumed fresh |
 | `Js.pure`, `Js.suspending` | `once returned sync (⊤ → a) → a` | `body()`, compiled to the lambda's body |
 | `Js.finally` | `once returned sync (⊤ → a), once sync (⊤ → ⊤) → a` | `try { return body() } finally { cleanup() }` |
 | `Js.catchIf` | `once returned` body, `once` test, `once returned` handler | `try { return body() } catch (e) { if (!test(e)) throw e; return handler(e) }`: each called at most once, the answer the body's or the handler's |
