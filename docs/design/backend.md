@@ -13534,8 +13534,12 @@ class.
   interface, so a caller in another module passes it without seeing the body. An exported generic
   function of a `--library` build exposes that ABI, documented with the module, because a future
   caller cannot be predicted from the build's reachability. The mode is part of the interface and
-  cache identity (§16.1). Numbering of any helper or variant is input-derived; output is byte-identical
-  across `--jobs`, declaration order and cache hits.
+  cache identity (§16.1). The order of evidence and the numbering of any helper or variant are
+  input-derived. For the **same source tree**, output is byte-identical across scheduling, `--jobs`
+  and cache state. *Corrected 2026-11-05, after the second review of #1999:* this said "and
+  declaration order", which no build can keep: reordering declarations changes the input, the
+  emitted order and every source map's `sourcesContent` (§11.1). Declaration order is a guarantee
+  about acceptance and behaviour (`language.md` §6, `ordering_test.zig`), not about bytes.
 - **`--release`** passes no evidence, and its emission is unchanged.
 
 **Later, and only on proof.** A specialiser may clone a body for a constant evidence value and drop
@@ -13594,7 +13598,22 @@ key.*
 ### 16.6 `--release-safe` and the optimiser
 
 `language.md` §13.8 is the rule. **A checked operation is a possibly-throwing operation**, and the
-compiler represents it as one before any check is emitted (§16.8, step 3). These passes treat
+compiler represents it as one before any check is emitted (§16.8, step 3).
+
+**A checked failure survives `Js.pure`.** *Added 2026-11-05, after the second review of #1999.*
+`boundary.md` §4.2's `Js.pure` and §4's `foreign pure` promise that a computation is total and
+throws nothing, and `round`, `floor`, `ceiling`, `truncate` and `sqrt` (`core/Basics.beni`) and
+`Float.log` (`core/Float.beni`) are written under `Js.pure`, yet each must crash in a checked build.
+So the failure fact is computed **apart from the rung** and is never erased by it: a check inside a
+`Js.pure` body, inside a function that only wraps or renames one (a callable alias), or in another
+module, makes every caller "may fail", through interfaces, in the `sync` and the `$s` form alike. The
+rung does not change, and no new effect rung or user restriction follows. A conservative fact is
+enough at first: a call whose callee's failure is unknown may fail. Today's code trusts the rung:
+`src/check/Totality.zig` treats a `foreign pure` callee, `Js.pure` included, as total (`:4`, `:52`)
+and does not look inside an argument lambda (`:91`), and the lowering spends that totality when it
+decides that markup work may run eagerly (`src/js/Lower.zig`, `instSafeMode`, `valueSafe`,
+`valuePureTotal`). Changing `Operator.pureTotal` alone does not reach a check inside `Js.pure`'s
+callback. **An unread call that may fail is not dropped** in a checked build, however pure its rung. These passes treat
 arithmetic as droppable and movable today, and each must learn that a checked operation is neither:
 `src/Operator.zig` `pureTotal`, with its consumers in `Lower.zig` and `src/check/Totality.zig`;
 `Spec.zig`'s "none of these throws"; `Opt.zig`; §9's *What stays droppable*; `Spec.binary` and the
@@ -13620,7 +13639,10 @@ only: range analysis and evidence specialisation are step 6.
     a bounded time, killed by the harness, with what it printed before (`.release-hangs`). The bound
     is the harness's, well under the 120-second hang guard;
   - *mode observation*: a documented difference of `language.md` §13.1, pinned per pass.
-- **Cases owed**, each in both checked builds: unused arithmetic that overflows; an intermediate
+- **Cases owed**, each in both checked builds: an unread `round 1e300` and an unread `Float.log`
+  with a non-finite argument, each through a wrapper function, through a callable alias and across a
+  module boundary, in the `sync` and the `$s` form (§16.6, *A checked failure survives `Js.pure`*);
+  unused arithmetic that overflows; an intermediate
   overflow whose final result fits (`(M + 2) - 5`); constant evaluation of an overflowing literal
   expression; two failing expressions, where the first written must crash; a tail call whose argument
   assignments both fail; every operator passed as a value; `≠` with `NaN`; a derived comparison, a
@@ -13650,7 +13672,10 @@ guarantee is not. #1985 is a dependency of step 4.
    refusal can land here, as a deliberate source-compatibility change. None of these is called a
    safe mode.
 3. **The compiler's foundation, internal:** mode plumbing and cache identity; numeric evidence
-   (§16.3); a possibly-throwing operation representation; totality, dead-binding removal, constant
+   (§16.3); a possibly-throwing operation representation, and a failure fact that survives
+   `Js.pure`, `foreign pure`, wrappers, callable aliases and module boundaries (§16.6), with
+   `Totality.zig` and the lowering's eager-markup tests (`instSafeMode`, `valueSafe`,
+   `valuePureTotal`) reading it; totality, dead-binding removal, constant
    and pure-call evaluation, specialisation, inlining and tail-call ordering taught to keep it
    (§16.6) **before** any check is emitted; crash helpers, their reach, their source-map positions
    and their deterministic names. No public flag.

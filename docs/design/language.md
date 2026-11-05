@@ -3765,7 +3765,10 @@ the development build shows:
   that both fail, the one written first is the one that crashes;
 - it is not folded when its operands would fire the check: `9007199254740991 + 1` stays a crash, at
   compile-time evaluation and in the pure-call evaluator as at run time;
-- a tail call's argument assignments keep the order of their checks.
+- a tail call's argument assignments keep the order of their checks;
+- a call that may fail stays one through `Js.pure`, a `foreign pure` rung, a wrapper, a callable
+  alias and a module boundary: `round 1e300` written in a helper of another module and never read
+  still crashes (`backend.md` §16.6, *A checked failure survives `Js.pure`*).
 
 A check may be removed only on proof that it cannot fire (range analysis, a known evidence value).
 A checked operation keeps the inferred rung it has today: **"may fail" is tracked apart from "may

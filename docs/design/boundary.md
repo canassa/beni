@@ -152,7 +152,10 @@ same name — already specified in `language.md` §5.4 and load-bearing for §7 
 *Amended 2026-09-30.* A `foreign` value also **declares its rung** — `pure`, `impure` or
 `suspends` — between `foreign` and its name, and the checker infers every beni function's bits
 from those declarations ([`transparent-effects-proposal.md`](transparent-effects-proposal.md)
-§14.1). `pure` means total and non-throwing. The rung is a promise the platform author makes about
+§14.1). `pure` means total and non-throwing. *Amended 2026-11-05 (#1988; specified, not built):*
+of the sibling's own JavaScript; a check a checked build inserts around or after the call, such as a
+scalar `Js.to` test, may still crash, and that failure is not erased by the rung (§4.2's `pure`,
+`backend.md` §16.6). The rung is a promise the platform author makes about
 the sibling, like the arity check 4 counts, and none of the checks below reads the JavaScript to
 test it. The rung describes the declaration's own arrow and its `where` evidence; a beni function
 passed to the sibling is independent of the call until the `sync` step makes such a parameter
@@ -627,7 +630,13 @@ kept by the release optimiser where it is unused (`language.md` §6, *What an op
 assume*). The argument is a function handed to the intrinsic, so it joins nothing
 (`transparent-effects-proposal.md` §14.3, rule 6); unchecked, like every `Js` declaration — the
 caller answers for the promise. Written with a lambda, it is the lambda's body (`backend.md` §4,
-*`Js.pure` is its body*).
+*`Js.pure` is its body*). *Amended 2026-11-05 (#1988, after the second review of #1999; specified,
+not built):* "throws nothing" no longer holds in a checked build. A check the compiler inserts in
+the body (`round`, `sqrt` and `Float.log` are written under `Js.pure`, `language.md` §13.4), or a
+checked `Js.to` (§4.3 (h)), may crash, and that failure **survives `Js.pure`**: it reaches every
+caller, through wrappers, callable aliases and other modules, and an unread call is not dropped.
+`Js.pure` still says "changes nothing an observer can see", so the rung stays `pure`; the failure is
+a separate fact (`backend.md` §16.6, *A checked failure survives `Js.pure`*).
 
 **`suspending : sync (() -> a) -> a`** (suspends, 2026-10-02, `plans/core-in-beni.md` step 2;
 **decided** by the owner the same day) is the body's value, and the opposite promise to `pure`'s:
