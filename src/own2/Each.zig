@@ -51,13 +51,14 @@ pub fn answersWhole(c: anytype, id: Contract.Id) Error!?u32 {
 }
 
 /// Whether a callee reads parameter `j` only through label `lab`'s runs: a
-/// `walk` supply hands it, and it reaches no result, store or escape.
+/// `walk` supply hands its whole family, and it reaches no result, store or
+/// escape. A family at a part (`pr.0[*]`) leaves the other parts read.
 pub fn takes(c: anytype, h: Contract.Head, lab: Contract.Label, j: u32) Error!bool {
     var hit = false;
     for (c.contracts.suppliesOf(lab.supplies)) |su| {
         if (!su.walk or su.res_root == 0) continue;
         const fam = (try familyOf(c, su)) orelse continue;
-        if (fam.j == j) hit = true;
+        if (fam.j == j and fam.words.len == 1) hit = true;
     }
     if (!hit) return false;
     for (c.contracts.effectsOf(h.escapes)) |x| if (x.j == j) return false;
