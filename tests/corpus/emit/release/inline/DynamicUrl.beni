@@ -1,0 +1,33 @@
+-- A link whose `href` changes, in a release build (browser-inline.md
+-- §10.5, amended 2026-11-05): the binding writes `safeUrl` of the value,
+-- compared with `getAttribute` and written with `setAttribute` when they
+-- differ, in the one binding function of the slug's read set, which the
+-- handler of `Next` runs. `safeUrl` and its pattern ship because this
+-- binding reaches them; a page with no such binding ships neither.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Next
+
+
+type alias Model =
+    slug : String
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <a href={"/blog/" ++ model.slug}>post</a>
+        <button onClick={Next}>next</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { slug = "first" }
+        , update = λNext model → { model | slug = "${model.slug}-more" }
+        , view = view
+        }

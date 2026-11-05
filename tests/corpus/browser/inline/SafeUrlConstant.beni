@@ -1,0 +1,34 @@
+-- A constant URL on `browser-inline` (browser-inline.md §10.5): checked
+-- when the program is built, by the rule of the runtime's `safeUrl`, and
+-- written into the markup — `""` for a script URL — as on `browser`
+-- (`browser/dom/SafeUrlConstant`, the same URLs). A constant whose answer
+-- turns on a character outside ASCII, which `\s` may match, is left to the
+-- runtime (amended 2026-11-05): the first pass writes it through
+-- `safeUrl`. A no-break space is `\s`, so the `nbsp` and `inner` links
+-- are refused there; `über` is a path, kept. `/café` is decided when the
+-- program is built: its `/` is no letter of either scheme.
+import Html exposing (Html)
+import Tea
+
+
+view : ⊤ → Html ⊤
+view _ =
+    <main>
+        <a id="plain" href="javascript:alert(1)">plain</a>
+        <a id="cased" href="JaVaScRiPt:alert(1)">cased</a>
+        <a id="spaced" href=" \u{0001}\tjava\nscript :x">spaced</a>
+        <a id="html" href="data:text/html,<b>x</b>">html</a>
+        <a id="html64" href="DATA: text / html ;base64,eA==">html64</a>
+        <a id="image" href="data:image/png,x">image</a>
+        <a id="path" href="javascript.html">path</a>
+        <a id="fragment" href="#/active">fragment</a>
+        <a id="nbsp" href="\u{00A0}javascript:x">nbsp</a>
+        <a id="inner" href="java\u{00A0}script:x">inner</a>
+        <a id="uber" href="über">uber</a>
+        <a id="cafe" href="/café">cafe</a>
+        <form id="form" action="\tjavascript:x" />
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → ⊤, update = λ_ m → m, view = view }

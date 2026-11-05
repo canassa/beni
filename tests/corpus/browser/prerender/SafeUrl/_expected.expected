@@ -1,0 +1,45 @@
+-- load
+<body>
+  "\n    "
+  <div id="root">
+    <main>
+      <a id="plain" href="">"plain"</a>
+      <a id="query" href="/q?x=1&y=\"2\"">"query"</a>
+      <a id="html" href="">"html"</a>
+      <a id="nbsp" href="">"nbsp"</a>
+      <a id="uber" href="über">"uber"</a>
+      <button id="flip">"flip"</button>
+    </main>
+  </div>
+  "\n  "
+</body>
+-- click #flip
+<body>
+  "\n    "
+  <div id="root">
+    <main>
+      <a id="plain" href="/a">"plain"</a>
+      <a id="query" href="/r">"query"</a>
+      <a id="html" href="/b">"html"</a>
+      <a id="nbsp" href="">"nbsp"</a>
+      <a id="uber" href="über">"uber"</a>
+      <button id="flip">"flip"</button>
+    </main>
+  </div>
+  "\n  "
+</body>
+-- click #flip
+<body>
+  "\n    "
+  <div id="root">
+    <main>
+      <a id="plain" href="">"plain"</a>
+      <a id="query" href="/q?x=1&y=\"2\"">"query"</a>
+      <a id="html" href="">"html"</a>
+      <a id="nbsp" href="">"nbsp"</a>
+      <a id="uber" href="über">"uber"</a>
+      <button id="flip">"flip"</button>
+    </main>
+  </div>
+  "\n  "
+</body>

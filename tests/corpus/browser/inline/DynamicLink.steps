@@ -1,0 +1,11 @@
+click #post
+# The handler of `Next` writes both links again.
+click #advance
+click #post
+click #next
+# The edit link hides, and comes back with the slug it has now.
+click #toggle
+click #advance
+click #toggle
+click #edit
+click #archive

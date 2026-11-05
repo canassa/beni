@@ -1,0 +1,125 @@
+-- load
+<body>
+  <main>
+    <a id="post" href="/blog/first">"post"</a>
+    <a id="next" href="/blog/second">"next"</a>
+    <a id="archive" href="/archive/2026">"archive"</a>
+    <a id="edit" href="/blog/first/edit">"edit"</a>
+    <button id="advance">"next post"</button>
+    <button id="toggle">"edit"</button>
+    <p></p>
+  </main>
+</body>
+-- click #post
+(click's default prevented)
+<body>
+  <main>
+    <a id="post" href="/blog/first">"post"</a>
+    <a id="next" href="/blog/second">"next"</a>
+    <a id="archive" href="/archive/2026">"archive"</a>
+    <a id="edit" href="/blog/first/edit">"edit"</a>
+    <button id="advance">"next post"</button>
+    <button id="toggle">"edit"</button>
+    <p>"Internal /blog/first"</p>
+  </main>
+</body>
+-- click #advance
+<body>
+  <main>
+    <a id="post" href="/blog/second">"post"</a>
+    <a id="next" href="/blog/second-more">"next"</a>
+    <a id="archive" href="/archive/2026">"archive"</a>
+    <a id="edit" href="/blog/second/edit">"edit"</a>
+    <button id="advance">"next post"</button>
+    <button id="toggle">"edit"</button>
+    <p>"Internal /blog/first"</p>
+  </main>
+</body>
+-- click #post
+(click's default prevented)
+<body>
+  <main>
+    <a id="post" href="/blog/second">"post"</a>
+    <a id="next" href="/blog/second-more">"next"</a>
+    <a id="archive" href="/archive/2026">"archive"</a>
+    <a id="edit" href="/blog/second/edit">"edit"</a>
+    <button id="advance">"next post"</button>
+    <button id="toggle">"edit"</button>
+    <p>"Internal /blog/second"</p>
+  </main>
+</body>
+-- click #next
+(click's default prevented)
+<body>
+  <main>
+    <a id="post" href="/blog/second">"post"</a>
+    <a id="next" href="/blog/second-more">"next"</a>
+    <a id="archive" href="/archive/2026">"archive"</a>
+    <a id="edit" href="/blog/second/edit">"edit"</a>
+    <button id="advance">"next post"</button>
+    <button id="toggle">"edit"</button>
+    <p>"Internal /blog/second-more"</p>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <a id="post" href="/blog/second">"post"</a>
+    <a id="next" href="/blog/second-more">"next"</a>
+    <a id="archive" href="/archive/2026">"archive"</a>
+    ""
+    <button id="advance">"next post"</button>
+    <button id="toggle">"edit"</button>
+    <p>"Internal /blog/second-more"</p>
+  </main>
+</body>
+-- click #advance
+<body>
+  <main>
+    <a id="post" href="/blog/second-more">"post"</a>
+    <a id="next" href="/blog/second-more-more">"next"</a>
+    <a id="archive" href="/archive/2026">"archive"</a>
+    ""
+    <button id="advance">"next post"</button>
+    <button id="toggle">"edit"</button>
+    <p>"Internal /blog/second-more"</p>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <a id="post" href="/blog/second-more">"post"</a>
+    <a id="next" href="/blog/second-more-more">"next"</a>
+    <a id="archive" href="/archive/2026">"archive"</a>
+    <a id="edit" href="/blog/second-more/edit">"edit"</a>
+    <button id="advance">"next post"</button>
+    <button id="toggle">"edit"</button>
+    <p>"Internal /blog/second-more"</p>
+  </main>
+</body>
+-- click #edit
+(click's default prevented)
+<body>
+  <main>
+    <a id="post" href="/blog/second-more">"post"</a>
+    <a id="next" href="/blog/second-more-more">"next"</a>
+    <a id="archive" href="/archive/2026">"archive"</a>
+    <a id="edit" href="/blog/second-more/edit">"edit"</a>
+    <button id="advance">"next post"</button>
+    <button id="toggle">"edit"</button>
+    <p>"Internal /blog/second-more/edit"</p>
+  </main>
+</body>
+-- click #archive
+(click's default prevented)
+<body>
+  <main>
+    <a id="post" href="/blog/second-more">"post"</a>
+    <a id="next" href="/blog/second-more-more">"next"</a>
+    <a id="archive" href="/archive/2026">"archive"</a>
+    <a id="edit" href="/blog/second-more/edit">"edit"</a>
+    <button id="advance">"next post"</button>
+    <button id="toggle">"edit"</button>
+    <p>"Internal /archive/2026"</p>
+  </main>
+</body>
