@@ -2362,8 +2362,24 @@ of the paths of the walk, and the second walk reads the same body, with the same
 
 Refused that a perfect checker accepts: a `self` arrival is everything the value holds, so two captures of one
 closure are one object to a holder (the second `ClosureTower` arm's list is not the first's, and the write is still
-refused: `run/ClosureTower`), and a returned writer stays refused at the return. Fixture:
-`ownership/ReturnedClosureAnswer`, `ownership/CopyOfClosureAnswer`.
+refused: `run/ClosureTower`), and a returned writer stays refused at the return. Fixtures:
+`ownership/ReturnedClosureAnswer`, `ownership/CopyOfClosureAnswer`, `ownership/RecordFieldLambda`,
+`run/SanitiserReturnedClosure` (twelve shapes, each refused), `run/SanitiserReturnedClosureApart` (eleven, each
+accepted in place), `run/SanitiserReturnedClosureImported`.
+
+*As built (2026-11-05).* `Called.zig`, `Made.zig`; a walk's `Called.Last` marks where each list's last call begins, zero
+for any other code, so that every reader takes `items[last..]` and no other code changes. `Groups.calledCodes` numbers
+the called codes after the body, so a group's order walks them after the nested codes. A contract keeps its called
+contracts in `Contract.Table.called`, a run a contract, and a block writes them after the contract, in the canonical order
+of their slots (§3.6, version 23). A called code's label carries `Called.last_origin`, since no instruction has its type.
+`summary f@.get` is its dump line; it has no `account` line, and its records are charged to `f`'s. Measured (Debug, one
+job, against master at `db3480e28`): 1 018 oracle probes: 0 DIFF, 1 TRAP, on master too, of a label's answer (#2036), two
+more accepted; a generated sweep of 1 820 programs (26 ways to make a closure × 10 ways to call it × 7 things to do with
+the answer): 0 TRAP, 0 DIFF, 710 master refused accepted, none master accepts refused. The ledger of 2 354 roots: 17
+positions refused → accepted, 0 accepted → refused, and 7 refusals give a precise cause in place of `unknown`. Cost: core's
+3.3 s unchanged, every root's records +0.6 %, growth unchanged everywhere, the highest declaration ×2.9
+(`Tea.startAfter`, one body walked twice), and `ClosureTower` flat at 939 records a level at depths 1, 8, 16 and 24 (503
+before), growth 0.
 
 #### 2.11.4 Closures
 
@@ -4209,6 +4225,9 @@ v2 publishes no block for (a limit) has no row and is not a reason to refuse the
 checker a build runs; a v2 word error in core or a platform is not carried either. An importer that reads an
 import as unknown (no block, or one that does not decode) says so in its report: `unknown block <Module>: its
 declarations read the pessimistic contract`.
+
+*As built (#2028): version 23.* After a contract's labels, a count, then per function slot of its result the slot's
+steps and its called contract, written as a contract is, in the canonical order of the slots (§2.11.3).
 
 *As built (#1991): version 22, the cell facts' envelope.* After `escapes` a contract writes `stores`: a count, then
 each store's parameter, its `◆` slot and its condition. With `writes π◆`, `escapes`, a cell label's supply and the

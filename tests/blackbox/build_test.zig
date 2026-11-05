@@ -14452,12 +14452,11 @@ test "the checker v2 walks ClosureTower at depths 8, 16 and 24 in a flat number 
     // └─────────────────────────────────────────┘
     // Appendix B's ClosureTower: `w0 ⊤ = (xs = [0]; λ_ → xs)`, each `wk`
     // builds two `w(k-1)` closures and a closure over both. The type stays
-    // `⊤ → (Bool → List Int)`, with no callback label. A declaration's
-    // returned closure is summarised `res ε fresh` (#2028), so the tower has
-    // no ordinary creation contexts to enumerate and its walk is flat: 503
-    // records per level, growth 0. When #2028 lands the tower may stop at
-    // the loud limit instead, which this test allows; it may never spend
-    // past the allowance or run on silently.
+    // `⊤ → (Bool → List Int)`, with no callback label. Each level has one
+    // called contract of constant size (§2.11.3, *a function value in a
+    // result*), so nothing is enumerated and the walk is flat: 939 records
+    // per level, growth 0. A loud limit would pass too; the tower may never
+    // spend past the allowance or run on silently.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = testing.allocator;

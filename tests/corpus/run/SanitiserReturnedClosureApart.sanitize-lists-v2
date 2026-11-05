@@ -1,0 +1,1 @@
+The safe twins of a returned closure (ownership-v2.md §2.11.3, *a function value in a result*): built again under --ownership=v2 and the list stale-read sanitiser. v2 accepts each edit in place; the sanitised run prints the same.

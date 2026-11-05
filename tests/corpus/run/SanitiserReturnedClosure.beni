@@ -1,0 +1,206 @@
+-- A closure a declaration returns, called by its caller
+-- (`ownership-v2.md` §2.11.3, *a function value in a result*): its called
+-- contract says what the call answers, so the answer is the capture it is.
+-- v2 refuses each edit of a list something else still reads; were it to
+-- accept one, the sanitised run would show the stale read. The closure's
+-- own holdings: a list the closure made is one list for every call, and a
+-- `case` of two codes answers either's list. A field a record update
+-- replaced answers the new code's list, and an untouched one the old.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+mk : List Int → (⊤ → List Int)
+mk xs = λ⊤ → xs
+
+
+made : ⊤ → (⊤ → List Int)
+made ⊤ =
+    xs = [ 0 ]
+    λ⊤ → xs
+
+
+pair : ⊤ → List Int × (⊤ → List Int)
+pair ⊤ =
+    xs = [ 0 ]
+    ( xs, λ⊤ → xs )
+
+
+viaLabel : (⊤ → List Int) → List Int × (⊤ → List Int)
+viaLabel f =
+    v = f ⊤
+    ( v, λ⊤ → v )
+
+
+pick : Bool, List Int → (⊤ → List Int)
+pick c xs =
+    case c of
+        True →
+            λ⊤ → xs
+
+        False →
+            λ⊤ → [ 1 ]
+
+
+grow : Int, List Int → (⊤ → List Int)
+grow n xs =
+    if n == 0 then
+        λ⊤ → xs
+    else
+        previous = grow (n - 1) xs
+        λ⊤ → previous ⊤
+
+
+ping : Int, List Int → (⊤ → List Int)
+ping n xs =
+    if n == 0 then
+        λ⊤ → xs
+    else
+        k = pong (n - 1) xs
+        λ⊤ → k ⊤
+
+
+pong : Int, List Int → (⊤ → List Int)
+pong n xs =
+    k = ping n xs
+    λ⊤ → k ⊤
+
+
+type alias Box =
+    get : ⊤ → List Int
+    n : Int
+
+
+replace : Box, List Int → Box
+replace b xs = { b | get = λ⊤ → xs }
+
+
+bump : Box → Box
+bump b = { b | n = 1 }
+
+
+twice : (⊤ → List Int) → List (List Int)
+twice g = [ g ⊤, g ⊤ ]
+
+
+captureReadAfter : ⊤ → String
+captureReadAfter ⊤ =
+    xs = [ 0 ]
+    g = mk xs
+    y = List.push (g ⊤) 1
+    "${show y} ${show xs}"
+
+
+answerThenCall : ⊤ → String
+answerThenCall ⊤ =
+    g = mk [ 0 ]
+    y = List.push (g ⊤) 1
+    "${show y} ${show (g ⊤)}"
+
+
+writeThenCall : ⊤ → String
+writeThenCall ⊤ =
+    xs = [ 0 ]
+    g = mk xs
+    y = List.push xs 1
+    "${show y} ${show (g ⊤)}"
+
+
+madeOnce : ⊤ → String
+madeOnce ⊤ =
+    g = made ⊤
+    a = g ⊤
+    y = List.push a 1
+    "${show y} ${show (g ⊤)}"
+
+
+madeAndHeld : ⊤ → String
+madeAndHeld ⊤ =
+    r = pair ⊤
+    a = r.1 ⊤
+    y = List.push r.0 1
+    "${show a} ${show y}"
+
+
+labelAnswerHeld : ⊤ → String
+labelAnswerHeld ⊤ =
+    r = viaLabel λ⊤ → [ 0 ]
+    a = r.1 ⊤
+    y = List.push r.0 1
+    "${show a} ${show y}"
+
+
+joined : ⊤ → String
+joined ⊤ =
+    xs = [ 0 ]
+    y = List.push ((pick True xs) ⊤) 1
+    "${show y} ${show xs}"
+
+
+recursive : ⊤ → String
+recursive ⊤ =
+    g = grow 2 [ 0 ]
+    a = g ⊤
+    b = g ⊤
+    y = List.push a 1
+    "${show y} ${show b}"
+
+
+mutual : ⊤ → String
+mutual ⊤ =
+    xs = [ 0 ]
+    y = List.push ((pong 2 xs) ⊤) 1
+    "${show y} ${show xs}"
+
+
+fieldReplaced : ⊤ → String
+fieldReplaced ⊤ =
+    xs = [ 0 ]
+    b = replace { get = λ⊤ → [ 1 ], n = 0 } xs
+    y = List.push (b.get ⊤) 1
+    "${show y} ${show xs}"
+
+
+fieldUntouched : ⊤ → String
+fieldUntouched ⊤ =
+    xs = [ 0 ]
+    b = bump { get = λ⊤ → xs, n = 0 }
+    y = List.push (b.get ⊤) 1
+    "${show y} ${show xs}"
+
+
+handedOn : ⊤ → String
+handedOn ⊤ =
+    case twice (mk [ 0 ]) of
+        [ a, b ] →
+            y = List.push a 1
+            "${show y} ${show b}"
+
+        _ →
+            ""
+
+
+main : Program
+main =
+    Node.print
+        (String.join
+            [ captureReadAfter ⊤
+            , answerThenCall ⊤
+            , writeThenCall ⊤
+            , madeOnce ⊤
+            , madeAndHeld ⊤
+            , labelAnswerHeld ⊤
+            , joined ⊤
+            , recursive ⊤
+            , mutual ⊤
+            , fieldReplaced ⊤
+            , fieldUntouched ⊤
+            , handedOn ⊤
+            ]
+            "\n"
+        )

@@ -1,0 +1,13 @@
+# v2 refuses each edit of a list a returned closure still reaches (§2.11.3).
+95:9 list_still_used List.push
+102:9 list_still_used List.push
+110:9 list_still_used List.push
+118:9 list_still_used List.push
+126:9 list_still_used List.push
+134:9 list_still_used List.push
+141:9 list_still_used List.push
+150:9 list_still_used List.push
+157:9 list_still_used List.push
+165:9 list_still_used List.push
+173:9 list_still_used List.push
+181:17 list_still_used List.push
