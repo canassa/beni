@@ -218,8 +218,38 @@ pub const Reporter = struct {
             try r.emit(.type_mismatch, region, &out);
             return;
         }
+        // `^` gives a `Float` (language.md §6.5, amended 2026-11-05): where
+        // its result has to be an `Int`, the integer power is `^^`.
+        if (r.primitiveOf(expected) == r.env.types.well_known.int and
+            r.primitiveOf(actual) == r.env.types.well_known.float and r.isCorePowCall(region))
+        {
+            w.writeAll(
+                \\
+                \\Hint: `^` always gives a `Float`. For an `Int` power, use `^^`: `2 ^^ 3` is
+                \\the `Int` 8.
+                \\
+            ) catch return error.OutOfMemory;
+            try r.emit(.type_mismatch, region, &out);
+            return;
+        }
         try r.typeHint(w, &namer, category, expected, actual);
         try r.emit(.type_mismatch, region, &out);
+    }
+
+    /// Whether `inst` is a call of core's `Basics.pow`: what `^` lowers to.
+    fn isCorePowCall(r: *const Reporter, inst: Bir.Inst.Index) bool {
+        const bir = r.env.bir;
+        if (inst.int() >= bir.insts.len or bir.instTag(inst) != .call) return false;
+        const callee: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(inst).lhs));
+        if (bir.instTag(callee) != .ext_value) return false;
+        const data = bir.instData(callee);
+        if (data.lhs >= r.env.interfaces.len) return false;
+        const module: Graph.Index = @fromBackingInt(@intCast(data.lhs));
+        if (r.env.graph.modulePackage(module) != .core) return false;
+        if (!std.mem.eql(u8, r.env.interner.slice(r.env.graph.moduleName(module)), "Basics")) return false;
+        const iface = r.env.iface(module);
+        if (data.rhs >= iface.values.len) return false;
+        return std.mem.eql(u8, r.env.interner.slice(iface.valueName(@fromBackingInt(@intCast(data.rhs)))), "pow");
     }
 
     /// Which side of a failed unification was the annotation's promise.
@@ -531,7 +561,7 @@ pub const Reporter = struct {
         const call = category.owner.unwrap() orelse return false;
         const callee = r.calleeOf(call);
         if (callee.kind != .operator) return false;
-        for ([_][]const u8{ "+", "-", "*", "/", "//", "^" }) |op| {
+        for ([_][]const u8{ "+", "-", "*", "/", "//", "^", "^^" }) |op| {
             if (std.mem.eql(u8, callee.name, op)) return true;
         }
         return false;

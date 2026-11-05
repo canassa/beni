@@ -437,7 +437,7 @@ reverse str = fromList (List.reverse (toList str))
 --| below 1 is `""`.
 --|
 --|     repeat "ha" 3 == "hahaha"
---|     repeat "ha" (1 + 2 ^ (0 - 1)) == "ha"
+--|     repeat "ha" 0 == ""
 pub repeat : String, Int → String
 repeat chunk n = concat (List.repeat chunk n)
 

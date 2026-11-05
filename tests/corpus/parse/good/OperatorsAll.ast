@@ -20,6 +20,9 @@
         (ident b))
       (pow
         (ident a)
+        (ident b))
+      (int_pow
+        (ident a)
         (ident b))))
   (definition comparisons
     (pat_var a)
@@ -82,7 +85,8 @@
       (op_fn *)
       (op_fn /)
       (op_fn //)
-      (op_fn ^)))
+      (op_fn ^)
+      (op_fn ^^)))
   (definition asPredicates
     (list
       (op_fn ==)

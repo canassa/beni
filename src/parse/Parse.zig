@@ -2390,6 +2390,7 @@ fn opInfo(tag: Tag) ?OpInfo {
         .op_slash => .{ .prec = 7, .assoc = .left, .tag = .div },
         .op_slash_slash => .{ .prec = 7, .assoc = .left, .tag = .int_div },
         .op_caret => .{ .prec = 8, .assoc = .right, .tag = .pow },
+        .op_caret_caret => .{ .prec = 8, .assoc = .right, .tag = .int_pow },
         else => null,
     };
 }

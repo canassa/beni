@@ -43,6 +43,7 @@ module Basics
   value gt : number, number → Bool
   value identity : a → a
   value idiv : Int, Int → Int
+  value ipow : Int, Int → Int
   value isInfinite : Float → Bool
   value isNaN : Float → Bool
   value le : number, number → Bool
@@ -56,7 +57,7 @@ module Basics
   value not : Bool → Bool
   value or : Bool, Bool → Bool
   value pi : Float
-  value pow : number, number → number
+  value pow : number, number2 → Float
   value radians : Float → Float
   value round : Float → Int
   value sin : Float → Float

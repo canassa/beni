@@ -193,6 +193,7 @@ pub const WellKnown = enum(u32) {
     fdiv,
     idiv,
     pow,
+    ipow,
     append,
     cons,
     eq,
