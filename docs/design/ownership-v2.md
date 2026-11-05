@@ -2913,7 +2913,7 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
      (or what a capture reaches through a `◆`: a callback may re-enter its own cell, `( steal r, old )`),
      nor both objects the callback allocated (a contract does not tell two allocations apart). A label's answer at
      `.0` may be anything `.1` holds, so with anything at `.1` it is a loan. An answer that is no tuple of the
-     callback's (a top-level pair) gives a loan. **The contents must be at most one object** at the cell's type (a
+     callback's (a top-level pair) gives a loan. *(Until the contents relation below, 2026-11-05: withdrawn, and any contents may be taken; contents that hold one object twice have escaped, and an edit of the take is refused `escaped`.)* **The contents must be at most one object** at the cell's type (a
      type variable's slot may be any number), since with no slot state a value of several objects may hold one
      twice (#1984): `Ref (Maybe (List Int))` and `Ref (List Int)` are taken, `Ref (List (List Int))` and a pair
      are lent. A slot that holds no object is skipped. A capture or a top-level value at `.1` is the cell's after the call and
@@ -2990,6 +2990,9 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
      crossing place (`Groups.Adapter.close`, `Kind.scalar`), so `( List.push (List.copy xs) 5, xs )` answers a list
      owned, Appendix B's `ModifyResultPaths` (`run/RefModifyIndependent`). The same fact took eight `disjoint` refusals
      of fold accumulators over numeric literals off the corpus; each had a real `escaped` refusal or none needed.
+   - **A take of several objects.** With two slots of a cell two objects or escaped, `.0` no longer needs contents of
+     one object: `( o, ( [], [] ) )` over a pair takes it (`run/RefTakeOwned`'s `pairTake`). After a store of one object
+     twice the same take is refused `escaped`.
    - **P-sync, pinned per platform.** `tests/corpus/ownership/p-sync.txt` lists the bodies each platform's host enters
      beni through, and each is pinned in `word-bodies.txt` (R-5.10.7). A gate test fails on a platform not listed
      and on a listener (`addEventListener`, an emitter's `on` or `once`) added in a declaration not listed.
