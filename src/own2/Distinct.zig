@@ -398,7 +398,7 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
                 if (f.roots.items[l.root].kind == .cb and !e.expandable(l)) return Cond.unprovable;
                 if (try Chains.gather(e, &occs, try sepLeaf(e, en.leaf))) return Cond.unprovable;
             },
-            .top, .shared => return Cond.unprovable,
+            .top, .shared, .loan => return Cond.unprovable,
             else => {},
         }
         // A callback answer may be what the label was supplied (unknown code
@@ -531,7 +531,7 @@ pub fn distinct(e: *Eval, ps: []const Proj, routed: bool) Error!Cond {
             if (taken.items.len == 1 and list.items.len == 1 and rs.items[0] == 0) list.items[0] = try Ends.endOf(e, list.items[0]);
             for (list.items, 0..) |x, nth| {
                 const xl = f.leafAt(x);
-                if (xl.kind == .top or xl.kind == .shared) return Cond.unprovable;
+                if (xl.kind == .top or xl.kind == .shared or xl.kind == .loan) return Cond.unprovable;
                 try e.charge(.edge, 1);
                 e.route_count += 1;
                 if (blk != none and (try seen.getOrPut(g, .{ x, rs.items[nth] })).found_existing) continue;
@@ -600,6 +600,8 @@ pub fn overlap(e: *Eval, x: u32, t: u32, target: bool) Error!Ov {
 fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
     const x = e.f.leafAt(xi);
     const t = e.f.leafAt(ti);
+    // A loan holds what it lends (§2.13.7); written, it is unknown.
+    if (x.kind == .loan and t.kind != .loan) return overlap(e, x.atom, ti, target);
     if (x.routes == 0 and t.routes == 0) {
         if (!try e.f.sets.tags.meet(e.f.account, x.tags, t.tags)) return .no;
     } else if (!try Coexist.setsMeet(&e.f.sets.tags, e.gpa(), e.account(), x.tags, x.routes, t.tags, t.routes)) return .no;
@@ -609,7 +611,7 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
         const tp = e.f.pos.items[t.pos];
         if (tp.kind == .plain and Step.fromWord(tp.a).kind == .contents) return .no;
     }
-    if (x.kind == .top or t.kind == .top) return .may;
+    if (x.kind == .top or t.kind == .top or x.kind == .loan or t.kind == .loan) return .may;
     // A host object is no target that is still writable (§2.10, *host
     // objects*): it may be another host object only.
     if (x.kind == .host or t.kind == .host) return if (x.kind == t.kind) .may else .no;

@@ -1,0 +1,11 @@
+# v2 refuses each edit of Ref.modify's result where the stored .1 may hold it: the result is a loan of the cell (§2.13.7, #1977).
+42:17 list_may_be_shared List.push
+54:17 list_may_be_shared List.push
+# the loan stored into another cell, and that cell's contents then edited in place.
+66:13 list_may_be_shared Ref.set
+69:5 list_still_used Ref.update
+79:9 list_may_be_shared List.push
+91:9 list_may_be_shared List.push
+102:9 list_may_be_shared List.push
+# a callback that re-enters its own cell: .0 reaches the cell's contents through a capture.
+118:9 list_may_be_shared List.push

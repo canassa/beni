@@ -1,0 +1,5 @@
+A runtime catch for an owned take that something else still holds (ownership-v2.md §2.13.7, #1977): a loan of the
+cell taken before, through an alias, a branch, a record, a closure, a helper or another cell; a capture or a loan
+stored as .1; a callback passed on; a shallow copy kept; one cell handed for two; a fiber. Built again under
+--ownership=v2 and the list stale-read sanitiser. v2 refuses each edit; were one accepted, the sanitised run would
+trap where the holder reads the edited list.

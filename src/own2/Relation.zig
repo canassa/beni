@@ -141,6 +141,10 @@ pub const Eval = struct {
     label_map: Ids.FixedDict(2) = .{},
     /// Per `(call, callee label)`: the virtual call that applies a known code.
     known: Ids.FixedDict(2) = .{},
+    /// Per `(call, label)`: a cell callback's answer the cell may keep is a loan of it (§2.13.7,
+    /// `Loans.lends`): an index of `lent_cells`, the cell's argument and the slot of its `◆`.
+    lent: Ids.FixedDict(2) = .{},
+    lent_cells: std.ArrayList([2]u32) = .empty,
     /// `instAt`'s keys in progress, by depth; a key met again adds nothing
     /// (its own value), and a result computed under a cut deeper than its
     /// own key is not kept.
@@ -197,6 +201,8 @@ pub const Eval = struct {
         e.ovs.deinit(g);
         e.label_map.deinit(g);
         e.known.deinit(g);
+        e.lent.deinit(g);
+        e.lent_cells.deinit(g);
         e.inst_stack.deinit(g);
         e.routes.deinit(g);
         e.expanding.deinit(g);
@@ -267,40 +273,8 @@ pub const Eval = struct {
         }
     }
 
-    /// The value at relative steps `words` of value `v`, by the walk's projection.
     pub fn valueAt(e: *Eval, v0: u32, words: []const u32) Error!u32 {
-        const f = e.f;
-        var v = v0;
-        for (words) |wd| {
-            const x = f.val(v);
-            const st = Step.fromWord(wd);
-            v = switch (x.kind) {
-                .ref => blk: {
-                    if (x.family != Slots.empty) break :blk try f.top();
-                    const p = (try f.child(x.pos, if (st.kind == .elem) .plain else .plain, wd, 0)) orelse break :blk try f.top();
-                    break :blk try f.mk(.{ .kind = .ref, .root = x.root, .pos = p });
-                },
-                .built => blk: {
-                    const ks = f.kidsOf(x);
-                    switch (x.form) {
-                        .tuple => if (st.kind == .index and st.payload < ks.len) break :blk ks[st.payload],
-                        .ctor => if (st.kind == .ctor_arg) {
-                            const ca = f.places.ctorArgOf(st);
-                            if (ca[0] == x.head and ca[1] < ks.len) break :blk ks[ca[1]];
-                        },
-                        .record => if (st.kind == .field) for (f.wordsOf(x.extra), 0..) |r, n| {
-                            if (r == st.payload) break :blk ks[n];
-                        },
-                        .list => if (st.kind == .elem and ks.len == 1) break :blk ks[0],
-                        else => {},
-                    }
-                    break :blk try f.top();
-                },
-                .scalar, .bot => return v,
-                else => try f.top(),
-            };
-        }
-        return v;
+        return e.f.valueAt(v0, words);
     }
 
     /// A value's leaves (`deep`) or its own storage, projected at `route`.
@@ -1010,7 +984,7 @@ pub const Eval = struct {
                 .top, .host => try out.append(e.gpa(), try e.f.leaf(.{ .kind = if (a.kind == .host) .host else .top, .tags = l.tags })),
                 .shared => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .shared, .atom = a.j, .extra = a.slot, .tags = l.tags })),
                 .fresh => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .fresh, .atom = r.a, .tags = l.tags })),
-                .param, .cb => return false,
+                .param, .cb, .lent => return false,
             };
             any = true;
         }
@@ -1153,48 +1127,64 @@ pub const Eval = struct {
         const cl = e.f.calls.items[call];
         var words: std.ArrayList(u32) = .empty;
         defer words.deinit(e.gpa());
-        if (a.kind == .param or a.kind == .cb) try words.appendSlice(e.gpa(), e.f.slots.relWords(a.slot));
+        if (a.kind == .param or a.kind == .cb or a.kind == .lent) try words.appendSlice(e.gpa(), e.f.slots.relWords(a.slot));
         try words.appendSlice(e.gpa(), suffix);
+        const start = out.items.len;
         switch (a.kind) {
             .fresh => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .fresh, .atom = call })),
             .top, .host => try out.append(e.gpa(), try e.f.leaf(.{ .kind = if (a.kind == .host) .host else .top })),
             .shared => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .shared, .atom = a.j, .extra = a.slot })),
-            .param => {
+            .param, .lent => {
                 if (a.j >= cl.args.len) return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
-                const arg = cl.args[a.j];
-                try e.routed(e, arg, words.items, a.deep, if (suffix.len == 0) a.path else none, out);
+                try e.routed(e, cl.args[a.j], words.items, a.deep, if (suffix.len == 0 and a.kind == .param) a.path else none, out);
+                if (a.kind == .lent) try e.lend(out, start, null);
             },
             .cb => {
-                if (e.known.get(.{ call, a.j })) |vc| {
-                    // The known code's answer at that slot: its virtual call's.
-                    const r = e.f.roots.items[e.f.calls.items[vc].root];
-                    var all: std.ArrayList(u32) = .empty;
-                    defer all.deinit(e.gpa());
-                    try Slots.replay(e.gpa(), e.account(), e.places(), r.path, words.items, &all);
-                    if (all.items.len == 0) {
-                        // A slot the answer's place cannot name (a type
-                        // variable's, `a → a` answering at `.values`): the
-                        // code's contract read at those words, an open
-                        // entry above them projected down. Never the whole
-                        // answer, which is another object than its part.
-                        const start = out.items.len;
-                        if (e.contractOf(vc)) |vcc| {
-                            var hits: std.ArrayList(Contract.Hit) = .empty;
-                            defer hits.deinit(e.gpa());
-                            try e.hitsAt(e.contracts.head(vcc).res_root, words.items, &hits);
-                            for (hits.items) |hit| for (hit.arrivals) |va| try e.arrivalLeaves(vc, vcc, va, words.items[hit.depth..], out);
-                        }
-                        if (out.items.len == start) try out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
-                        return;
-                    }
-                    // The known code's call, read where its leaves are wanted (deep: its subtree).
-                    for (all.items) |s| try out.append(e.gpa(), try e.f.leaf(.{ .kind = .ref, .root = e.f.calls.items[vc].root, .pos = r.pos, .slots = if (a.deep) try Subtree.below(e.f.slots, e.gpa(), e.account(), e.places(), .from(s)) else try e.f.slots.internSorted(e.gpa(), e.account(), &.{s}) }));
-                    return;
+                if (e.known.get(.{ call, a.j })) |vc| try e.knownAnswer(vc, a.deep, words.items, out) else {
+                    const fl = e.label_map.get(.{ call, a.j }) orelse return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
+                    try out.append(e.gpa(), try e.f.leaf(.{ .kind = .answer, .atom = fl, .extra = try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), words.items) }));
                 }
-                const fl = e.label_map.get(.{ call, a.j }) orelse return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
-                try out.append(e.gpa(), try e.f.leaf(.{ .kind = .answer, .atom = fl, .extra = try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), words.items) }));
+                if (e.lent.get(.{ call, a.j })) |i| if (e.lent_cells.items[i][0] < cl.args.len) try e.lend(out, start, .{ cl.args[e.lent_cells.items[i][0]], e.lent_cells.items[i][1] });
             },
         }
+    }
+
+    /// The leaves `out[start..]` as loans of what a cell holds and, with
+    /// `cell` (a value and the `◆` it holds at), a loan of all of it; `⊤` where
+    /// there is nothing to lend (§2.13.7: a `Deferred` not yet completed).
+    fn lend(e: *Eval, out: *std.ArrayList(u32), start: usize, cell: ?[2]u32) Error!void {
+        if (cell) |c| try e.routed(e, c[0], e.f.slots.relWords(c[1]), true, none, out);
+        if (out.items.len == start) return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
+        for (out.items[start..]) |*x| switch (e.f.leafAt(x.*).kind) {
+            .top, .host, .loan => {},
+            else => x.* = try e.f.leaf(.{ .kind = .loan, .atom = x.*, .tags = e.f.leafAt(x.*).tags }),
+        };
+    }
+
+    /// Known code `vc`'s answer at `words`: its virtual call's.
+    fn knownAnswer(e: *Eval, vc: u32, deep: bool, words: []const u32, out: *std.ArrayList(u32)) Error!void {
+        const r = e.f.roots.items[e.f.calls.items[vc].root];
+        var all: std.ArrayList(u32) = .empty;
+        defer all.deinit(e.gpa());
+        try Slots.replay(e.gpa(), e.account(), e.places(), r.path, words, &all);
+        if (all.items.len == 0) {
+            // A slot the answer's place cannot name (a type
+            // variable's, `a → a` answering at `.values`): the
+            // code's contract read at those words, an open
+            // entry above them projected down. Never the whole
+            // answer, which is another object than its part.
+            const start = out.items.len;
+            if (e.contractOf(vc)) |vcc| {
+                var hits: std.ArrayList(Contract.Hit) = .empty;
+                defer hits.deinit(e.gpa());
+                try e.hitsAt(e.contracts.head(vcc).res_root, words, &hits);
+                for (hits.items) |hit| for (hit.arrivals) |va| try e.arrivalLeaves(vc, vcc, va, words[hit.depth..], out);
+            }
+            if (out.items.len == start) try out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
+            return;
+        }
+        // The known code's call, read where its leaves are wanted (deep: its subtree).
+        for (all.items) |s| try out.append(e.gpa(), try e.f.leaf(.{ .kind = .ref, .root = e.f.calls.items[vc].root, .pos = r.pos, .slots = if (deep) try Subtree.below(e.f.slots, e.gpa(), e.account(), e.places(), .from(s)) else try e.f.slots.internSorted(e.gpa(), e.account(), &.{s}) }));
     }
 
     /// Whether a leaf's root is expanded into the leaves it comes from.

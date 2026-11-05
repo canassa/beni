@@ -1,0 +1,123 @@
+-- The loan twin of `RefTakeOwned` (`ownership-v2.md` §2.13.7, #1977): when
+-- the `.1` that `Ref.modify` stores back may hold what `.0` answers, the
+-- result is a loan of the cell, and an edit in place of it is refused.
+-- `( old, old )` through a helper, inline and moved into another cell; one
+-- list allocated by the callback and answered as both; a named callback;
+-- the half of a pair kept as the other half; a callback that re-enters its
+-- own cell through a helper. Each line prints the edited result, then what
+-- the cell holds: were an edit accepted, the cell would read the edited
+-- list.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    joined = String.join (List.map xs String.fromInt) sep
+    "[${joined}]"
+
+
+slotText : Ref (Maybe (List Int)) → String
+slotText slot =
+    case Ref.get slot of
+        Just ys →
+            ints ys
+        Nothing →
+            "empty"
+
+
+keep : Ref (Maybe (List Int)) → Maybe (List Int)
+keep slot = Ref.modify slot λold → ( old, old )
+
+
+helper : ⊤ → String
+helper ⊤ =
+    slot = Ref.make (Just [ 1, 2 ])
+    got =
+        case keep slot of
+            Just xs →
+                List.push xs 3
+            Nothing →
+                []
+    "helper ${ints got} ${slotText slot}"
+
+
+inline : ⊤ → String
+inline ⊤ =
+    slot = Ref.make (Just [ 1, 2 ])
+    got =
+        case Ref.modify slot λold → ( old, old ) of
+            Just xs →
+                List.push xs 3
+            Nothing →
+                []
+    "inline ${ints got} ${slotText slot}"
+
+
+moved : ⊤ → String
+moved ⊤ =
+    slot = Ref.make (Just [ 1, 2 ])
+    other = Ref.make []
+    case keep slot of
+        Just xs →
+            Ref.set other xs
+        Nothing →
+            ⊤
+    Ref.update other λys → List.push ys 3
+    "moved ${ints (Ref.get other)} ${slotText slot}"
+
+
+twice : ⊤ → String
+twice ⊤ =
+    r = Ref.make [ 0 ]
+    a = Ref.modify r λ_ →
+        n = [ 7 ]
+        ( n, n )
+    b = List.push a 1
+    "twice ${ints b} ${ints (Ref.get r)}"
+
+
+keepBoth : List Int → List Int × List Int
+keepBoth old = ( old, old )
+
+
+named : ⊤ → String
+named ⊤ =
+    r = Ref.make [ 1 ]
+    t = Ref.modify r keepBoth
+    u = List.push t 2
+    "named ${ints u} ${ints (Ref.get r)}"
+
+
+half : ⊤ → String
+half ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    t = Ref.modify r λold →
+        case old of
+            ( x, _ ) →
+                ( x, ( [], x ) )
+    u = List.push t 3
+    after =
+        case Ref.get r of
+            ( p, q ) →
+                "${ints p}/${ints q}"
+    "half ${ints u} ${after}"
+
+
+steal : Ref (List Int) → List Int
+steal r = Ref.modify r λo → ( o, [ 9 ] )
+
+
+reentered : ⊤ → String
+reentered ⊤ =
+    r = Ref.make [ 1 ]
+    t = Ref.modify r λold → ( steal r, old )
+    u = List.push t 2
+    "reentered ${ints u} ${ints (Ref.get r)}"
+
+
+main : Program
+main = Node.printLines [ helper ⊤, inline ⊤, moved ⊤, twice ⊤, named ⊤, half ⊤, reentered ⊤ ]

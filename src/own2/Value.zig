@@ -156,6 +156,9 @@ pub const LeafKind = enum(u8) {
     /// The answer of a label the frame cannot apply (§2.11.3): `atom` its `cbs` index, `extra` the answer's slot (a `Slots.Rel`).
     answer,
     top,
+    /// A loan of what a cell holds (§2.13.7): `atom` the leaf it lends.
+    /// A holder of it holds what that leaf names; written, it is unknown.
+    loan,
     /// A prepend's deferred storage, `atom` its value (§2.3.4; a leaf set's).
     recons,
     /// Objects JavaScript made, or beni objects that escaped (§2.10, *host objects*).
@@ -311,6 +314,37 @@ pub const Frame = struct {
     pub fn mkWords(f: *Frame, ws: []const u32) Error![]const u32 {
         return f.arena.dupe(u32, ws);
     }
+    /// The value at relative steps `words` of value `v`, by the walk's projection.
+    pub fn valueAt(f: *Frame, v0: u32, words: []const u32) Error!u32 {
+        var v = v0;
+        for (words) |wd| {
+            const x = f.val(v);
+            const st = Step.fromWord(wd);
+            v = switch (x.kind) {
+                .ref => if (x.family != Slots.empty) try f.top() else if (try f.child(x.pos, .plain, wd, 0)) |p| try f.mk(.{ .kind = .ref, .root = x.root, .pos = p }) else try f.top(),
+                .built => blk: {
+                    const ks = f.kidsOf(x);
+                    switch (x.form) {
+                        .tuple => if (st.kind == .index and st.payload < ks.len) break :blk ks[st.payload],
+                        .ctor => if (st.kind == .ctor_arg) {
+                            const ca = f.places.ctorArgOf(st);
+                            if (ca[0] == x.head and ca[1] < ks.len) break :blk ks[ca[1]];
+                        },
+                        .record => if (st.kind == .field) for (f.wordsOf(x.extra), 0..) |r, n| {
+                            if (r == st.payload) break :blk ks[n];
+                        },
+                        .list => if (st.kind == .elem and ks.len == 1) break :blk ks[0],
+                        else => {},
+                    }
+                    break :blk try f.top();
+                },
+                .scalar, .bot => return v,
+                else => try f.top(),
+            };
+        }
+        return v;
+    }
+
     pub fn scalar(f: *Frame) Error!u32 {
         return f.mk(.{ .kind = .scalar });
     }

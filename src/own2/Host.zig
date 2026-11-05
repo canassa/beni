@@ -21,7 +21,7 @@ pub fn own(f: *const Value.Frame, li: u32) bool {
     return switch (l.kind) {
         .site, .fresh, .answer => true,
         .ref => f.roots.items[l.root].kind != .param,
-        .shared, .top, .host, .recons => false,
+        .shared, .top, .host, .recons, .loan => false,
     };
 }
 

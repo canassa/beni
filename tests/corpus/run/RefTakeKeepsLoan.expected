@@ -1,0 +1,7 @@
+helper [1,2,3] [1,2]
+inline [1,2,3] [1,2]
+moved [1,2,3] [1,2]
+twice [7,1] [7]
+named [1,2] [1]
+half [1,3] []/[1]
+reentered [1,2] [1]

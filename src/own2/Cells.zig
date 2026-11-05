@@ -1,7 +1,7 @@
 //! L8: a cell's `◆` (`docs/design/ownership-v2.md` §2.13.7) as an evaluation
 //! reads it: whether a write is a cell operation, a cell operation's
-//! targets behind the barrier, a cell callback's label and supply, and the
-//! slots of the contents that what the callback answers may share.
+//! targets behind the barrier, and the slots of the contents that what a
+//! cell callback answers may share.
 //!
 //! Obligations kept here: none of §2.14's directly (the barrier's half of
 //! O1 is `Eval`'s and `Resolve`'s, which call these).
@@ -93,18 +93,6 @@ pub fn targets(ev: *Relation.Eval, arg: u32, words: []const u32, out: *std.Array
 fn atPos(f: *Value.Frame, l: Value.Leaf, cp: u32) Error!u32 {
     const set = try f.slots.internSorted(f.gpa, f.account, &.{f.pos.items[cp].slot.int()});
     return f.leaf(.{ .kind = .ref, .root = l.root, .pos = cp, .slots = set, .tags = l.tags, .at_pos = true });
-}
-
-/// A cell callback's label (`Rows.fromWords`): the arrival at its supply's
-/// root, the cell's `◆`; null for another label.
-pub fn supply(contracts: *const Contract.Table, slots: *const Slots.Table, l: Contract.Label) ?Contract.Arrival {
-    const sus = contracts.suppliesOf(l.supplies);
-    if (sus.len != 1 or sus[0].k != 0) return null;
-    const t = &contracts.trees;
-    for ([_][]const Contract.Arrival{ t.here(sus[0].res_root), t.open(sus[0].res_root) }) |run| {
-        for (run) |a| if (a.kind == .param and endsInContents(slots, a.slot)) return a;
-    }
-    return null;
 }
 
 /// A slot of the contents, below the cell's `◆`: the result slot `rel`
