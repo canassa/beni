@@ -38,6 +38,7 @@ you wrote, and `beni fmt <path>` before you show it.
     Failures are `Result` values. A defect stops the program.
 11. **`Int.mod n 2`, `Int.rem n 3`, `Float.log x 10`.** `modBy`, `remainderBy` and `logBase` are
     gone. `Debug.log "label" value` keeps Elm's order, and a `--release` build refuses `Debug`.
+    `^` gives a `Float`, `^^` an `Int`.
 12. **A write edits a list in place where the compiler can prove it safe.** On the `browser-inline`
     platform a write to a list that is read again later is the error `list_still_used`, and
     `List.copy` is the fix. On the other platforms such a write copies. A record update

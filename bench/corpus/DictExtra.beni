@@ -149,7 +149,7 @@ symmetricDifference a b = Set.union (Set.diff a b) (Set.diff b a)
 
 
 pub powerSetSize : Set String → Int
-powerSetSize set = 2 ^ Set.size set
+powerSetSize set = 2 ^^ Set.size set
 
 
 pub renameKey : Dict String v, String, String → Dict String v

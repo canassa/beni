@@ -1160,9 +1160,9 @@ pub fn whereClauseMismatch(r: *Reporter, region: Bir.Inst.Index, clause: Reporte
 pub fn operatorSpelling(symbol: Symbol) ?[]const u8 {
     const wk = InternPool.WellKnown;
     const pairs = .{
-        .{ wk.add, "+" },     .{ wk.sub, "-" },    .{ wk.mul, "*" },
-        .{ wk.fdiv, "/" },    .{ wk.idiv, "//" },  .{ wk.pow, "^" },
-        .{ wk.append, "++" }, .{ wk.eq, "==" },
+        .{ wk.add, "+" },     .{ wk.sub, "-" },     .{ wk.mul, "*" },
+        .{ wk.fdiv, "/" },    .{ wk.idiv, "//" },   .{ wk.pow, "^" },
+        .{ wk.ipow, "^^" },   .{ wk.append, "++" }, .{ wk.eq, "==" },
         .{ wk.neq, "≠" },
         .{ wk.lt, "<" },      .{ wk.gt, ">" },
         .{ wk.le, "≤" },

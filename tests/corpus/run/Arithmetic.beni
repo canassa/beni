@@ -11,7 +11,7 @@ main =
         , String.fromInt ((1 + 2) * 3)
         , String.fromInt (10 - 3 - 2)
         , String.fromInt (10 - (3 - 2))
-        , String.fromInt (2 ^ 3 ^ 2)
+        , String.fromFloat (2 ^ 3 ^ 2)
         , String.fromInt (negate 7 + 1)
         , String.fromInt (abs (0 - 9))
         , String.fromFloat (7 / 2)
