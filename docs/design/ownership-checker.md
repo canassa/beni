@@ -4293,6 +4293,7 @@ names the fixture that pins each (§24.6).
 | `Node.print`, `Node.exitWith` | `→ fresh Program` | `Node.beni` (2026-10-23, #877): `Js.object [ ( "$c", code ), ( "$o", out ) ]`, a new object of a number and a string |
 | `Node.printLines` | `borrowed List String → fresh Program` | `Node.beni`: `Js.get` of the list's `length`, then `String.join` on it, which keeps nothing |
 | `Ssr.render` | `borrowed Html msg → String` | `Ssr.beni`: `Js.get (Js.from html) "t"`, the markup's text |
+| `List.builder` (re-read 2026-11-05, #990) | `unused Int → fresh exclusive Builder a` | `List.beni`: `new Array(n)`, an array made for the call with no elements. `n` is a number, read as a length and not kept. The body was `new Array(n > 0 ? n : 0)` until #990: every caller now gives a whole number from 0 up, so the test went and the words stay |
 
 *Amended 2026-11-03 (#1736):* `Task.spawn`, `spawnIn`, `spawnDetached` (`escaped` work and scope, `cellempty Fiber
 a`) and `Task.join` (`cellread Fiber a → lent a`) have v2 words. `ownership-v2.md` §2.13.7, *the fiber rows*, has their

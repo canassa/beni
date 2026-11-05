@@ -1342,6 +1342,29 @@ depth of log₂ n. The costs are written into each function's doc comment in `co
 by §6.8's *A list is a plain array*: no thresholds, O(1) reads, and writes that are O(1) in place
 or O(n) copies.
 
+**An index or a count that is not a whole number.** *Added 2026-11-05 (#988, #990).* An `Int` is a
+double (§2.5), so it can hold `2 ^ (0 - 1)`, which is `0.5`, and NaN. `core/List` and `core/String`
+give each such argument a defined answer, and the answer depends on what the argument is (a
+fraction is written below as a literal, for short; a literal `2.5` is a `Float`):
+
+| The argument is | Functions | A fraction | NaN |
+|---|---|---|---|
+| a **position** | `get`, `set`, `update`, `insertAt`, `removeAt`, `swap` | out of range, as a negative index is: `get` is `Nothing`, and a writer returns the list itself | out of range |
+| a **bound of a slice** | `slice`, `take`, `drop`; `String.slice`, `left`, `right`, `dropLeft`, `dropRight` | cut toward zero first, as JavaScript's `slice` does; then a negative one counts from the end and the result is clamped | 0 |
+| a **count** | `repeat`, `range`, `initialize`; `String.repeat`, `pad`, `padLeft`, `padRight` | cut toward zero: `repeat x 2.5 == repeat x 2` | 0 |
+
+A count below 1 is 0, so the result is `[]` or `""`. The count of `range lo hi` is `hi - lo + 1`, so
+its elements are `lo`, `lo + 1`, … and each one is at most `hi`: `range 0 1.5 == [ 0, 1 ]`, and
+`range 0.5 2 == [ 0.5, 1.5 ]`. The length that `pad`, `padLeft` and `padRight` pad to is a count:
+`padLeft "1" 3.5 '.' == "..1"`, and `pad "1" 5.5 '.' == pad "1" 5 '.'`. A function whose argument
+is a count reads it once, before its loop, so the loop costs what it cost before.
+
+**A count too large for memory** (Jayson's decision, 2026-11-05, #990). A count that no list can
+hold — 2³² or more, or an infinity — stops the program, as any program that runs out of memory
+stops. It is a defect, not a value (`boundary.md` §4, *An unknown error is a defect*): no function
+answers `[]` or a shorter list for it. On Node, `new Array(n)` throws `RangeError` and nothing
+catches it; a smaller count that the memory cannot hold ends as the host's out-of-memory failure.
+
 **What an operation returns unchanged.** A function whose result would equal its input returns the
 input itself wherever `backend.md` §4, *Identity*, says so — `set` of the value already there, `swap
 xs i i`, anything out of range, a `slice` or `take` of everything, `drop xs 0`, `filter` that keeps
