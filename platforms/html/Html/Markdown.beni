@@ -172,6 +172,8 @@ plainOne x =
         Image _ _ description →
             plain description
 
+        -- In `alt` text a break of either kind is a line end, as the spec's HTML
+        -- writes it.
         HardBreak →
             "\n"
 
