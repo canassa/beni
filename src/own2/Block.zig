@@ -159,7 +159,7 @@ const Writer = struct {
             try w.word(@backingInt(l.calls));
             try w.word(l.supplies.len);
             for (w.t.suppliesOf(l.supplies)) |s| {
-                try w.word(s.k | (if (s.each) @as(u32, 1 << 31) else 0));
+                try w.word(s.k | @as(u32, @intFromBool(s.each)) << 31 | @as(u32, @intFromBool(s.walk)) << 30);
                 try w.word(nodeIndex(&index, s.res_root));
                 try w.effects(s.kept);
                 try w.cond(s.cond);

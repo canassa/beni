@@ -33,13 +33,29 @@ pub fn familyOf(c: anytype, su: Contract.Supply) Error!?struct { j: u32, words: 
     return .{ .j = g.j, .words = g.words[0 .. i + 1] };
 }
 
-/// Whether a traversal's callee reads parameter `j` only through label
-/// `lab`'s runs: the label's supply walks it, and it reaches no result,
-/// store or escape (`sel xs p = case xs of [ h, …t ] → ( p h, t )` keeps it).
+/// The parameter contract `id`'s result is, slot for slot, unwritten; `base`
+/// is one. Null for anything else.
+pub fn answersWhole(c: anytype, id: Contract.Id) Error!?u32 {
+    const h = c.contracts.head(id);
+    if (h.res_root == 0 or h.flags.cross or h.flags.pessimistic) return null;
+    var got: ?u32 = null;
+    const es = try entriesOf(c, h.res_root);
+    for (es.items.items) |rs| for (rs.arrivals) |a| {
+        if (a.kind != .param or (got != null and got.? != a.j)) return null;
+        if (!std.mem.eql(u32, c.f.slots.relWords(a.slot), es.wordsOf(rs))) return null;
+        got = a.j;
+    };
+    const j = got orelse return null;
+    for (c.contracts.writesOf(h.writes)) |x| if (x[0] == j) return null;
+    return j;
+}
+
+/// Whether a callee reads parameter `j` only through label `lab`'s runs: a
+/// `walk` supply hands it, and it reaches no result, store or escape.
 pub fn takes(c: anytype, h: Contract.Head, lab: Contract.Label, j: u32) Error!bool {
     var hit = false;
     for (c.contracts.suppliesOf(lab.supplies)) |su| {
-        if (!su.each or su.res_root == 0) continue;
+        if (!su.walk or su.res_root == 0) continue;
         const fam = (try familyOf(c, su)) orelse continue;
         if (fam.j == j) hit = true;
     }
@@ -78,9 +94,10 @@ pub fn asked(c: anytype, arena: Allocator, su: Contract.Supply, words: []const u
     if (!su.each) return arena.dupe(Contract.Cond, if (written) &.{ below, sep } else &.{sep});
     var sel = try relaxed(c, arena, su, sep);
     if (written) sel = try Contract.Cond.conj(arena, f.account, sel, try relaxed(c, arena, su, below));
-    if (try RowEnv.takenOccs(c.contracts, f.places, f.slots, f.account, f.gpa, arena, su, words, deep)) |os| {
-        sel = try Contract.Cond.conj(arena, f.account, sel, try Contract.Cond.of(f.account, os));
-    }
+    // A write above every entry of a structural supply names no slot of it:
+    // nothing is relaxed.
+    const os = (try RowEnv.takenOccs(c.contracts, f.places, f.slots, f.account, f.gpa, arena, su, words, deep)) orelse return arena.dupe(Contract.Cond, &.{ below, sep });
+    sel = try Contract.Cond.conj(arena, f.account, sel, try Contract.Cond.of(f.account, os));
     return arena.dupe(Contract.Cond, &.{sel});
 }
 

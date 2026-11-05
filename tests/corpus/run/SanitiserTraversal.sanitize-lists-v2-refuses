@@ -1,5 +1,7 @@
-# v2 refuses a write of a key rows share, a walker that hands one element again, a callee that returns the rest, two maps of one list (§2.11.3).
-59:14 list_may_be_shared List.map
-60:13 list_still_used SanitiserTraversal.again
-62:23 list_may_be_shared SanitiserTraversal.onHead
-64:23 list_may_be_shared SanitiserTraversal.twoMaps
+# v2 refuses a write of a key rows share, a walker that hands one element again, a callee that returns or reads the rest, a deep write through a structural supply, two maps of one list (§2.11.3).
+80:14 list_may_be_shared List.map
+81:13 list_still_used SanitiserTraversal.again
+83:23 list_may_be_shared SanitiserTraversal.onHead
+85:25 list_may_be_shared SanitiserTraversal.onRead
+87:13 list_may_be_shared SanitiserTraversal.rowsOf
+92:23 list_may_be_shared SanitiserTraversal.twoMaps

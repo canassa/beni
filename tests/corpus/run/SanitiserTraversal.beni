@@ -2,10 +2,12 @@
 -- (`ownership-v2.md` §2.11.3, *a traversal's supply*). A callback edits the
 -- key two rows share; a hand-written walker hands one element twice; a callee
 -- hands one element and returns the rest, and the callback's answer is one of
--- the rest; two maps hand one list. Each is refused; with the rule unasked,
--- the sanitised runs trap or print the edit.
+-- the rest; a callee reads the rest after the run; two maps hand one list; a
+-- deep write through a structural supply. Each is refused; with the rule
+-- unasked, the sanitised runs trap or print the edit.
 import List
 import Node exposing (Program)
+import Ref
 import String
 
 
@@ -49,6 +51,25 @@ onHead :
 onHead xs f g = headRest xs λv → g (f v)
 
 
+readsRest : List (List Int), (List Int → b) → Maybe b × String
+readsRest xs p =
+    case xs of
+        [ h, …t ] →
+            y = p h
+            ( Just y, shows t )
+
+        _ →
+            ( Nothing, "" )
+
+
+onRead : List (List Int), (List Int → List Int), (List Int → List Int) → Maybe (List Int) × String
+onRead xs f g = readsRest xs λv → g (f v)
+
+
+rowsOf : List (List Int × List Int), (List Int × List Int → b) → List b
+rowsOf xs f = List.map xs λv → f v
+
+
 twoMaps : List a, List a, (a → b) → List b × List b
 twoMaps xs ys f = ( List.map xs f, List.map ys f )
 
@@ -60,6 +81,13 @@ main =
     twice = again 2 [ [ 1 ] ] λl → List.push l 4
     m = [ 2 ]
     ( first, rest ) = onHead [ [ 1 ], m ] (λ_ → m) λw → List.push w 5
+    n = [ 2 ]
+    ( second, later ) = onRead [ [ 1 ], n ] (λ_ → n) λw → List.push w 5
+    j = [ 0 ]
+    cells = rowsOf [ ( j, [ 1 ] ), ( j, [ 2 ] ) ] λv →
+        c = Ref.make v
+        Ref.update c λ( p, q ) → ( List.push p 5, q )
+        Ref.get c
     one = [ [ 1 ], [ 2 ] ]
     ( left, right ) = twoMaps one one λl → List.push l 6
     Node.print
@@ -68,6 +96,9 @@ main =
             , shows twice
             , shows rest
             , Maybe.withDefault (Maybe.map first show) ""
+            , Maybe.withDefault (Maybe.map second show) ""
+            , later
+            , pairs cells
             , shows left
             , shows right
             ]

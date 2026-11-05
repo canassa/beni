@@ -5557,11 +5557,18 @@ tests/corpus/run/SanitiserFoldedType.beni SanitiserFoldedType 163:27 #0 :: Sanit
 tests/corpus/run/SanitiserFoldedType.beni SanitiserFoldedType 165:27 #0 :: SanitiserFoldedType.both <Wrap …>⟨T⟩⁺#Leaf.0[*] :: rejected :: absent  #2038: a value past a non-regular type fold is unknown; v2 refuses it, v1 reads it
 tests/corpus/run/SanitiserFoldedType.beni SanitiserFoldedType 166:27 #0 :: SanitiserFoldedType.useCps <literal> :: accepted :: absent  #2038: a value past a non-regular type fold is unknown; v2 refuses it, v1 reads it
 tests/corpus/run/SanitiserFoldedType.beni SanitiserFoldedType 166:27 #0 :: SanitiserFoldedType.useCps <literal>[*] :: accepted :: absent  #2038: a value past a non-regular type fold is unknown; v2 refuses it, v1 reads it
-tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 59:14 #0 :: List.map <literal>[*].0 :: accepted :: rejected  the key two rows share, written: traps; v2 refuses it, v1 accepted.
-tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 59:68 #0 :: List.push p :: rejected :: accepted  v2 judges this write at the caller's supply (§2.11.3, a traversal's supply).
-tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 60:36 #0 :: List.push l :: rejected :: accepted  v2 judges this write at the caller's supply (§2.11.3, a traversal's supply).
-tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 62:57 #0 :: List.push w :: rejected :: accepted  v2 judges this write at the caller's supply (§2.11.3, a traversal's supply).
-tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 60:13 #0 :: SanitiserTraversal.again <literal>[*] :: absent :: rejected  v2 refuses it at the call, v1 at the callback's write.
-tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 62:23 #0 :: SanitiserTraversal.onHead <call> :: absent :: rejected  v2 refuses it at the call, v1 at the callback's write.
 tests/corpus/run/SanitiserTraversalApart.beni SanitiserTraversalApart 48:15 #0 :: SanitiserTraversalApart.chain <literal>[*] :: accepted :: absent  an identity's answer: v2 names the write by the call's result.
 tests/corpus/run/SanitiserTraversalApart.beni SanitiserTraversalApart 48:15 #0 :: SanitiserTraversalApart.chain <call> :: absent :: accepted  an identity's answer: v2 names the write by the call's result.
+tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 80:14 #0 :: List.map <literal>[*].0 :: accepted :: rejected  the key two rows share, written: v2 refuses it at the call, v1 at the write.
+tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 80:68 #0 :: List.push p :: rejected :: accepted  v2 judges this write at the caller's supply (§2.11.3, a traversal's supply).
+tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 81:36 #0 :: List.push l :: rejected :: accepted  v2 judges this write at the caller's supply (§2.11.3, a traversal's supply).
+tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 83:57 #0 :: List.push w :: rejected :: accepted  v2 judges this write at the caller's supply (§2.11.3, a traversal's supply).
+tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 85:59 #0 :: List.push w :: rejected :: accepted  v2 judges this write at the caller's supply (§2.11.3, a traversal's supply).
+tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 89:36 #0 :: List.push p :: rejected :: accepted  v2 judges this write at the caller's supply (§2.11.3, a traversal's supply).
+tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 81:13 #0 :: SanitiserTraversal.again <literal>[*] :: absent :: rejected  v2 refuses it at the call, v1 at the callback's write.
+tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 83:23 #0 :: SanitiserTraversal.onHead <call> :: absent :: rejected  v2 refuses it at the call, v1 at the callback's write.
+tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 85:25 #0 :: SanitiserTraversal.onRead <call> :: absent :: rejected  v2 refuses it at the call, v1 at the callback's write.
+tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 87:13 #0 :: SanitiserTraversal.rowsOf <call> :: absent :: rejected  v2 refuses it at the call, v1 at the callback's write.
+tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 88:13 #0 :: Ref.make v :: absent :: accepted  v2 judges a store at the cell; v1 refuses the row at its later write.
+tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 89:9 #0 :: Ref.update c◆ :: absent :: accepted  v2 judges a store at the cell; v1 refuses the row at its later write.
+tests/corpus/run/SanitiserTraversal.beni SanitiserTraversal 89:9 #0 :: Ref.update c◆.0 :: absent :: accepted  v2 judges a store at the cell; v1 refuses the row at its later write.
