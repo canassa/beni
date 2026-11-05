@@ -1,0 +1,39 @@
+-- A runtime catch for a function value that holds a list it reads, taken
+-- from the same captured or passed tuple as the list a closure edits in
+-- place (`ownership-v2.md` §2.9.1, *a function's slot is deep*; #1956).
+-- The function's code reads its captures, so its slot holds them: the
+-- selection asks it deep. Each prints the edited list's length and what
+-- the function read afterwards: the list before the edit.
+import List
+import Node exposing (Program)
+import String
+
+
+tuple : List Int → List Int × Int
+tuple xs =
+    t = ( λ⊤ → List.length xs, xs )
+    f =
+        λ⊤ →
+            ( h, ys ) = t
+            ( List.push ys 1, h ⊤ )
+    f ⊤
+
+
+g : (⊤ → Int) × List Int → List Int × Int
+g t =
+    ( h, ys ) = t
+    ( List.push ys 1, h ⊤ )
+
+
+passed : List Int → List Int × Int
+passed xs = g ( λ⊤ → List.length xs, xs )
+
+
+show : List Int × Int → String
+show p =
+    ( a, n ) = p
+    "${String.fromInt (List.length a)} ${String.fromInt n}"
+
+
+main : Program
+main = Node.print "${show (tuple [ 5 ])} ${show (passed [ 5 ])}"

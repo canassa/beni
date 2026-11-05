@@ -4737,3 +4737,13 @@ tests/corpus/run/SanitiserPatternStoredBack.beni SanitiserPatternStoredBack 48:1
 tests/corpus/run/SanitiserPatternStoredBack.beni SanitiserPatternStoredBack 55:15 #0 :: List.push f :: accepted :: rejected  `[ …xs, el ]` holds `el` twice: v1 accepts the edit unsoundly (#1956)
 tests/corpus/ownership/PushedPositions.beni [node] PushedPositions 128:15 #0 :: List.push f :: accepted :: rejected  the list holds `el` twice after the spread, so the answer holds one list twice: v1 accepts it unsoundly (#1478, #1956)
 tests/corpus/ownership/PushedPositionsImported [node] Main 22:15 #0 :: List.push f :: accepted :: rejected  the list holds `el` twice after the spread, so the answer holds one list twice: v1 accepts it unsoundly (#1478, #1956)
+#
+# A function's slot holds what its code reads: its selection is deep (#1956).
+tests/corpus/run/SanitiserClosureSlotHolder.beni SanitiserClosureSlotHolder 29:13 #0 :: SanitiserClosureSlotHolder.g <tuple>.1 :: rejected :: absent  v1 names the call's argument by its text; v2 names the same demand by its expression (§2.9.1, #1956)
+tests/corpus/run/SanitiserClosureSlotHolder.beni SanitiserClosureSlotHolder 16:9 #0 :: once t.1 :: absent :: accepted  v1 checks the closure's write as `once`; v2 judges it at the call (§2.9.1, #1956)
+tests/corpus/run/SanitiserClosureSlotHolder.beni SanitiserClosureSlotHolder 19:5 #0 :: f <call> :: absent :: rejected  v1 accepts the closure's write as `once`; v2 refuses the call, whose edit meets what the tuple's function reads (§2.9.1, #1956)
+tests/corpus/run/SanitiserClosureSlotHolder.beni SanitiserClosureSlotHolder 29:13 #0 :: SanitiserClosureSlotHolder.g <expression>.1 :: absent :: rejected  v1 accepts the closure's write as `once`; v2 refuses the call, whose edit meets what the tuple's function reads (§2.9.1, #1956)
+tests/corpus/run/SanitiserClosureSlotHolderApart.beni SanitiserClosureSlotHolderApart 27:19 #0 :: SanitiserClosureSlotHolderApart.g <tuple>.1 :: accepted :: absent  v1 names the call's argument by its text; v2 names the same demand by its expression (§2.9.1, #1956)
+tests/corpus/run/SanitiserClosureSlotHolderApart.beni SanitiserClosureSlotHolderApart 14:9 #0 :: once t.1 :: absent :: accepted  v1 checks the closure's write as `once`; v2 judges it at the call (§2.9.1, #1956)
+tests/corpus/run/SanitiserClosureSlotHolderApart.beni SanitiserClosureSlotHolderApart 17:5 #0 :: f <call> :: absent :: accepted  v1 checks the closure's write as `once`; v2 judges it at the call (§2.9.1, #1956)
+tests/corpus/run/SanitiserClosureSlotHolderApart.beni SanitiserClosureSlotHolderApart 27:19 #0 :: SanitiserClosureSlotHolderApart.g <expression>.1 :: absent :: accepted  v1 checks the closure's write as `once`; v2 judges it at the call (§2.9.1, #1956)

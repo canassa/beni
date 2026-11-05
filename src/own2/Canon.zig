@@ -75,8 +75,8 @@ pub fn canonical(x: Ctx, c: Cond) Error!Cond {
     return Cond.of(x.account, run.items);
 }
 
-/// A slot no step below can name: a type variable's or an opaque place.
+/// A slot no step below can name: a type variable's, an opaque place or a function's (its captures, #1956).
 fn wild(x: Ctx, p: PathId) bool {
     const k = x.places.kind(x.places.pathPlace(p));
-    return k == .@"var" or k == .@"opaque";
+    return k == .@"var" or k == .@"opaque" or k == .closure;
 }

@@ -1158,6 +1158,13 @@ the value it is instantiated on (§2.11.2 item 3 projects it deep). Such a slot 
 passes, so the plain occurrence asked only the outer object to be once: `idd x = x` handed `( xs, xs )`, and a
 cast (`Js.to (Js.from [ xs, xs ])`, an identity at an opaque slot, §2.13.9), answered two parts the caller took
 for apart. The mark is bit 62 of the occurrence and bit 30 of its parameter word in a block (§3.6).
+*Amended 2026-11-05 (#1956):* a function's slot is such a slot too. A function value holds its captures, which no
+step below its slot names, and its code reads them. So an occurrence there is deep, written out deep (`Canon`), and
+instantiated on a closure it takes the closure's captures (§2.10, #1772). Before this, `( h, ys ) = t` then
+`( List.push ys 1, h ⊤ )` relied on `sel π1{.0~,.1}`, which a tuple `( λ⊤ → List.length xs, xs )` met (the closure
+and the list are two objects), and `h` read the edited list (OnceOtherHolder's `tuple`: copying `2 1`, in place
+`2 2`). Fixtures: `run/SanitiserClosureSlotHolder` (a captured tuple and a passed one, refused) and
+`run/SanitiserClosureSlotHolderApart` (the function reads another list: accepted).
 
 **One spelling of a subtree** [#1714, 2026-11-03]. `(j, p)*` asks every slot of `below(p)`, and so do the
 occurrences at those slots written out (deep where no step below can be named): one set, two words. A round
