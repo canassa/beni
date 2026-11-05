@@ -351,14 +351,14 @@
       "programs": 56,
       "translated": 27,
       "skipped": 29,
-      "leads": 3,
       "agreements": 23,
+      "leads": 3,
       "precision": 1
     }
   },
   "precisionPatterns": {
-    "List.push: once": 22,
     "List.update: exclusive": 12,
+    "List.push: once": 22,
     "value: need": 1,
     "List.push: call": 1,
     "value: supply": 1,
@@ -366,12 +366,12 @@
     "List.push: it is stored in a record": 4,
     "value: it is returned": 1,
     "value: it is stored in a record": 4,
-    "update: later-use": 11,
-    "update: alias": 1
+    "update: alias": 1,
+    "update: later-use": 11
   },
   "precisionPrograms": {
-    "List.push: once": 22,
     "List.update: exclusive": 6,
+    "List.push: once": 22,
     "value: need": 1,
     "List.push: call": 1,
     "value: supply": 1,
@@ -379,23 +379,23 @@
     "List.push: it is stored in a record": 4,
     "value: it is returned": 1,
     "value: it is stored in a record": 3,
-    "update: later-use": 11,
-    "update: alias": 1
+    "update: alias": 1,
+    "update: later-use": 11
   },
   "precisionExamples": {
-    "List.push: once": [
-      "fixture-1",
-      "targeted-204",
-      "targeted-207",
-      "targeted-210",
-      "targeted-213"
-    ],
     "List.update: exclusive": [
       "fixture-57",
       "fixture-69",
       "fixture-72",
       "fixture-74",
       "seed-17-84"
+    ],
+    "List.push: once": [
+      "fixture-1",
+      "targeted-204",
+      "targeted-207",
+      "targeted-210",
+      "targeted-213"
     ],
     "value: need": [
       "fixture-81"
@@ -427,15 +427,15 @@
       "seed-17-37",
       "v7-17-66"
     ],
-    "update: later-use": [
-      "targeted-772",
-      "targeted-775",
-      "record-20",
-      "targeted-744",
-      "targeted-747"
-    ],
     "update: alias": [
       "record-17"
+    ],
+    "update: later-use": [
+      "record-20",
+      "targeted-772",
+      "targeted-775",
+      "targeted-744",
+      "targeted-747"
     ]
   },
   "cases": 60,
@@ -444,7 +444,7 @@
   "environment": {
     "node": "v24.19.0",
     "platform": "browser-inline",
-    "compilerSha256": "1b55fdc4aa8ede6cd54f1c59e3aa556592ea9bd4ecf5187e1bc771aebb465c26",
+    "compilerSha256": "1fc01a846f826cf4224d89c2e1fca58cb69708e2b71fae7f425b91eb8d8a0446",
     "oracleSha256": "61a0166b15f61547d4cec9b90ef860590e3ccffc5822979d212a0ce168c1f56e"
   },
   "streams": [
@@ -456,8 +456,8 @@
       "valueChecked": 828,
       "agreements": 782,
       "precision": 23,
-      "leads": 23,
-      "sha256": "05df4d43a85423b78276582301fc338b442882d60d56589b56cc18139c5ef30e"
+      "sha256": "05df4d43a85423b78276582301fc338b442882d60d56589b56cc18139c5ef30e",
+      "leads": 23
     },
     {
       "name": "enumerate-0.jsonl",
@@ -499,8 +499,8 @@
       "valueChecked": 64,
       "sha256": "118bd07a9c1b2a40f9afc9f2456f4d2a348789da5895963c0fa555c05ff42347",
       "agreements": 58,
-      "leads": 3,
-      "precision": 3
+      "precision": 3,
+      "leads": 3
     }
   ]
 }

@@ -13,9 +13,11 @@ Evidence: `evidence/bridge-records/report.json` (the summary) and
 
 ## The CI campaign
 
-`node scripts/bridge.mjs --ci --no-build --jobs=4`, on `adf7c01300` plus the bridge's
-evidence fields, with a Debug beni of the same tree (`compilerSha256` `1b55fdc4…`) and the
-oracle of the same tree (`oracleSha256` `61a0166b…`). 31 s.
+`node scripts/bridge.mjs --ci --no-build --jobs=4`, on `69edbf7ba4` (this branch on
+`master` at `c375937083`), with a Debug beni of that tree (`compilerSha256` `1fc01a84…`)
+and the oracle of the same tree (`oracleSha256` `61a0166b…`). 29 s. The same run on the
+branch's first base, `master` at `1468390492` (beni `1b55fdc4…`), gave the same counts,
+stream by stream and site by site.
 
 | Stream | Programs | Translated | Agreements | Precision | Leads |
 |---|---:|---:|---:|---:|---:|
