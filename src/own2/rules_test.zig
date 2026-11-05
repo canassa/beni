@@ -94,8 +94,6 @@ const layers = [_]Entry{
     .{ .file = "RowEnv.zig", .layer = 5, .max_lines = 150 },
     .{ .file = "Regions.zig", .layer = 5, .max_lines = 450 },
     .{ .file = "ContractText.zig", .layer = 5, .max_lines = 160 },
-    // A code's summary lines, its called contracts' after it (#2028).
-    .{ .file = "SummaryText.zig", .layer = 5, .max_lines = 35 },
     // `within`, split from `Contract` (#1991).
     .{ .file = "Within.zig", .layer = 5, .max_lines = 140 },
     // A value's leaf set (#1714): made with the value, read by `Relation`.
@@ -104,6 +102,8 @@ const layers = [_]Entry{
     .{ .file = "Worded.zig", .layer = 5, .max_lines = 60 },
     .{ .file = "Rows.zig", .layer = 6, .max_lines = 320 },
     .{ .file = "Value.zig", .layer = 6, .max_lines = 480 },
+    // A code's summary lines, its called contracts' after it (#2028).
+    .{ .file = "SummaryText.zig", .layer = 6, .max_lines = 35 },
     // §5 says 750 since #1214: a path's uses grouped for a filter, and a
     // child's range found by its one step.
     // #1685: a holder's deepest use; the pair ancestry split to `Ancestry`.

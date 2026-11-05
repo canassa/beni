@@ -4,7 +4,7 @@
 //! function's own, `D`'s, and `self`, the value. A value that is a walked
 //! call's result at such a slot is a closure of that code (`value`), so a
 //! call of it is a code call and a label applied to it a virtual call. The
-//! read-off of a called code keeps only what its last call does (`inLast`).
+//! read-off of a called code keeps only what its last call does.
 //!
 //! Obligations kept here: O1 (a value this cannot name stays unknown code).
 
@@ -13,8 +13,6 @@ const Ids = @import("Ids.zig");
 const Slots = @import("Slots.zig");
 const Value = @import("Value.zig");
 const Contract = @import("Contract.zig");
-const LabelChain = @import("LabelChain.zig");
-const WalkContext = @import("WalkContext.zig");
 
 const Error = Value.Error;
 const none: u32 = Ids.none_int;
@@ -38,7 +36,7 @@ pub const Input = struct {
 
 /// The closure value `fv` is when it is a walked call's result at a
 /// function slot with a called contract, else null.
-pub fn value(f: *Value.Frame, ctx: WalkContext.Context, contracts: *const Contract.Table, fv: u32) Error!?u32 {
+pub fn value(f: *Value.Frame, ctx: anytype, contracts: *const Contract.Table, fv: u32) Error!?u32 {
     const x = f.val(fv);
     if (x.kind != .ref or x.family != Slots.empty) return null;
     const r = f.roots.items[x.root];
@@ -48,20 +46,11 @@ pub fn value(f: *Value.Frame, ctx: WalkContext.Context, contracts: *const Contra
     const head = if (c.code != none)
         ctx.calledOf(ctx.ctx, c.code, rel) orelse return null
     else if (c.contract != none)
-        (contracts.calledOf(c.contract, rel) orelse return null) | WalkContext.fixed_bit
+        (contracts.calledOf(c.contract, rel) orelse return null) | Contract.fixed_bit
     else
         return null;
     const ks = try f.arena.alloc(u32, c.args.len + 1);
     @memcpy(ks[0..c.args.len], c.args);
     ks[c.args.len] = fv;
     return try f.mk(.{ .kind = .built, .form = .closure, .head = head, .place = x.place, .kids = ks });
-}
-
-/// Whether call `q` belongs to the walk's last call: it is that call, or a
-/// virtual call under it. Every call does for any other code (`first` 0).
-pub fn inLast(c: LabelChain.Chain, first: u32, walk_calls: u32, q: u32) bool {
-    if (first == 0) return true;
-    var x = q;
-    while (x >= walk_calls) x = (LabelChain.virtualOuter(c, x) orelse return false)[0];
-    return x >= first;
 }

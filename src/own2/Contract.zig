@@ -81,6 +81,25 @@ pub const Label = struct {
 
 pub const Calls = enum(u8) { none, once, many };
 
+/// The high bit of a closure's `head`: a fixed contract, not a code.
+pub const fixed_bit: u32 = 1 << 31;
+
+/// What a call runs (`Context.callee`).
+pub const Callee = union(enum) {
+    /// The result and every argument cross: nothing to track.
+    harmless,
+    /// A constructor applied: `(ordinal, arity)`.
+    ctor: [2]u32,
+    /// A code of the module (`Groups`' numbering): its current contract.
+    code: u32,
+    /// A fixed contract: words, an import, a derived method, pessimistic.
+    contract: Id,
+    /// A function value: the head is evaluated.
+    value,
+    /// A record field of function type, `r.f x`: the receiver's field's value.
+    field,
+};
+
 /// Marks a label origin's offset: a called code's last call (`Called`).
 pub const last_origin: u32 = 1 << 29;
 
