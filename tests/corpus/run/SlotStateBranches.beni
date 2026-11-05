@@ -1,0 +1,45 @@
+-- Appendix B's `SlotStateBranches` (`ownership-v2.md` §2.13.7): a list set
+-- into a cell is the cell's. Read after the store, in one arm of a branch
+-- or through another name of the handle, the store is refused.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+straight : ⊤ → String
+straight ⊤ =
+    r = Ref.make [ 0 ]
+    held = [ 1 ]
+    Ref.set r held
+    Ref.update r λxs → List.push xs 2
+    ints held
+
+
+oneArm : Bool → String
+oneArm c =
+    r = Ref.make [ 0 ]
+    held = [ 1 ]
+    if c then Ref.set r held
+    Ref.update r λxs → List.push xs 2
+    ints held
+
+
+viaAlias : ⊤ → String
+viaAlias ⊤ =
+    r = Ref.make [ 0 ]
+    other = r
+    held = [ 1 ]
+    Ref.set other held
+    Ref.update r λxs → List.push xs 2
+    ints held
+
+
+main : Program
+main = Node.printLines [ straight ⊤, oneArm True, viaAlias ⊤ ]

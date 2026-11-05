@@ -1,0 +1,2 @@
+R-5.10.12's Ref and Deferred rows under --ownership=v2 and the list stale-read sanitiser: every edit is accepted in place, and
+the sanitised run prints what the plain run prints.

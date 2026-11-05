@@ -1,0 +1,76 @@
+-- R-5.10.12's `Ref` and `Deferred` rows (`ownership-v2.md` §2.13.7): a call
+-- that only reads a cell makes nothing escape. After each read below, the
+-- contents, or a list the read was handed nothing of, are edited in place.
+import Deferred
+import Io
+import List
+import Maybe
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+viaGet : ⊤ → String
+viaGet ⊤ =
+    r = Ref.make [ 1 ]
+    n = List.length (Ref.get r)
+    Ref.update r λxs → List.push xs n
+    ints (Ref.get r)
+
+
+viaUpdate : ⊤ → String
+viaUpdate ⊤ =
+    r = Ref.make [ 1 ]
+    Ref.update r λxs → xs
+    Ref.update r λxs → List.push xs 2
+    ints (Ref.get r)
+
+
+viaModify : ⊤ → String
+viaModify ⊤ =
+    r = Ref.make [ 1 ]
+    n = Ref.modify r λxs → ( List.length xs, xs )
+    Ref.update r λxs → List.push xs n
+    ints (Ref.get r)
+
+
+viaWait : ⊤ → String
+viaWait ⊤ =
+    d = Deferred.make ⊤
+    _ = Deferred.complete d [ 1 ]
+    n = List.length (Deferred.wait d)
+    ints (List.push [ 2 ] n)
+
+
+viaPoll : ⊤ → String
+viaPoll ⊤ =
+    d = Deferred.make ⊤
+    _ = Deferred.complete d [ 1 ]
+    n = List.length (Maybe.withDefault (Deferred.poll d) [])
+    ints (List.push [ 3 ] n)
+
+
+viaIsDone : ⊤ → String
+viaIsDone ⊤ =
+    d = Deferred.make ⊤
+    held = [ 1 ]
+    done = Deferred.isDone d
+    _ = Deferred.complete d [ 2 ]
+    ints (List.push held (if done then 1 else 0))
+
+
+viaLocalCopy : ⊤ → String
+viaLocalCopy ⊤ =
+    d = Deferred.make ⊤
+    _ = Deferred.complete d [ 1 ]
+    ints (List.push (List.copy (Deferred.wait d)) 2)
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ viaGet ⊤, viaUpdate ⊤, viaModify ⊤, viaWait ⊤, viaPoll ⊤, viaIsDone ⊤, viaLocalCopy ⊤ ]
