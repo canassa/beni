@@ -1,0 +1,5 @@
+-- throws load
+(threw: Error: unknown listener target: Window)
+<body>
+  <p>"0"</p>
+</body>

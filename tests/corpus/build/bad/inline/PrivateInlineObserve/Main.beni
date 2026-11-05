@@ -1,0 +1,22 @@
+import Browser
+import Html exposing (Html)
+import Inline
+import Tea
+
+
+type Msg
+    = Inc
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → 0, update = update, view = view }
+
+
+update : Msg, Int → Int
+update _ n =
+    Inline.observe (λ_ → ⊤) n λv → v + 1
+    n + 1
+
+
+view : Int → Html Msg
+view n = <button onClick={Inc}>{n}</button>

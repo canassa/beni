@@ -2159,14 +2159,17 @@ fn resolveModules(session: *Session) RunError!void {
 /// Bridge ownership follows the registered lowering's own runtime layer,
 /// regardless of whether that layer was read from the binary or a directory.
 fn markupBridgeOwner(chain: *const platform_chain.Chain, lowering_name: []const u8) ?Graph.Platforms.RuntimeOwner {
+    var directory_owner: ?Graph.Platforms.RuntimeOwner = null;
     for (chain.layers, 0..) |layer, i| {
         const name = layer.manifest.markup.lowering orelse continue;
         if (!std.mem.eql(u8, name, lowering_name)) continue;
         if (@import("js/Emit.zig").findLowering(name) == null) return null;
-        const module = layer.manifest.markup.module orelse return null;
-        return .{ .layer = @intCast(i), .module = module };
+        const module = layer.manifest.markup.module orelse continue;
+        const owner: Graph.Platforms.RuntimeOwner = .{ .layer = @intCast(i), .module = module };
+        if (layer.embedded != null) return owner;
+        if (directory_owner == null) directory_owner = owner;
     }
-    return null;
+    return directory_owner;
 }
 
 /// What the graph needs of the platform chain (`Graph.Platforms`), in

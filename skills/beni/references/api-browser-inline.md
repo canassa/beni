@@ -67,7 +67,6 @@ module Inline
   value first : ⊤ → ⊤  -- impure
   value listen : Node, String, (Event → ⊤) → ⊤  -- impure
   value navigationKey : ⊤ → NavigationKey
-  value observe : (a → ⊤), b, (b → a) → ⊤  -- impure
   value on : EventTarget, (a → ⊤), String, (Event → a) → ⊤  -- impure
   value onArm : EventTarget, (a → ⊤), String, V, (Event → a) → ⊤  -- impure
   value own : (⊤ → ⊤) → ⊤  -- impure

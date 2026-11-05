@@ -1,0 +1,1 @@
+[{"code":"private_name","severity":"error","span":{"file":"platform/Probe.beni","start":{"line":10,"col":9},"end":{"line":10,"col":21}},"title":"PRIVATE NAME","message":"This primitive is private to its owning platform layer."}]
