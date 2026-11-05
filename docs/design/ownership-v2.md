@@ -158,6 +158,19 @@ the `Enforce`/`Groups` boundary (§8, S3a) and is the one piece of `own2/` that 
 | `var` | none | any | a type variable may hold anything (R-5.5.11) |
 | `cross` | none | none | primitives, `⊤`, `⊥`, a nominal type reaching no tracked place, a crossing foreign type |
 
+**A step past a fold** (#1957). A `var` place a non-regular type folded to has no steps, yet its value has structure: `Wrap
+(Leaf [ ys ])` of `T (List Int)`, where `T a = Leaf a | Wrap (T (List a))`, steps past the `var` at `Leaf`'s payload. No other `var` place
+is ever stepped, because code cannot take a type variable's value apart. So a value projected by a step such a place cannot name is `⊤`: no slot says
+what is below the fold, so a write of it is refused `unknown`, and a `⊤` that leaves as a result arrives at its slot and open below it,
+since a step of it is no more fresh than it is. A value *at* the `var` slot, not stepped past it, is a parameter's as ever: a write of it is
+deep, since the slot's own object may be a list of lists. A result
+that leaves by a concrete type over the fold (`pick t = case t of Wrap (Leaf ys) → ys`, `List (List Int)` over `var`) arrives at its slot
+and open below it, deep, and a caller's suffix past its own argument's fold reads what arrived whole (`Relation.arrivalLeaves`). Only a
+slot below a root counts: a lambda's own parameter is a `var` place too, with no fold in it. A call's or an answer's value mapped so is `⊤`
+below that slot, since its contract names none. Before this,
+the step read as a scalar: no demand was made, no write reached the contract, and the build emitted a copying push, a silent fallback
+`PolyRecCps`'s `useCps` shows (Appendix B, the `cps` site). Refused that a perfect checker accepts: any write past the fold, over fresh data too (#2038). Fixtures `run/SanitiserFoldedType`, `run/SanitiserFoldedTypeApart`.
+
 **Identity.** Initial construction uses a dense `by_var` memo for structural source nodes and the adapter's
 `(head, argument places)` memo for nominal applications. Each source graph node and outgoing edge is visited
 once; no global structural interning is required to construct its cycles. SCC/reverse-edge work computes
@@ -2240,7 +2253,7 @@ checks under runtime safety on every closed entry:
   there is nothing to close;
 - a callee's value at such a slot that is no `.param` is `fresh`, or a label's answer, `⊤`, a loan, a host object or a top-level value.
   `fresh` is the callee's own object, which no caller holds. Every other one gives the distinct check `no` (§2.9.3: a family's answer,
-  `⊤`, `shared`), so at the direct call the supply publishes `below no`, unless the arrival is the label's own answer under `fed`, which
+  `shared`; an entry holding `⊤` stays open at the pass, since `⊤` is unknown below its slot), so at the direct call the supply publishes `below no`, unless the arrival is the label's own answer under `fed`, which
   holds only what `.param` arrivals describe, or fresh objects;
 - `below` instantiated at a pass stays `no`, and a write below a supply's root asks it (`Outward.finishDemands`).
 

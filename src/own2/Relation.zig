@@ -1142,6 +1142,11 @@ pub const Eval = struct {
             .param, .lent => {
                 if (a.j >= cl.args.len) return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
                 try e.routed(e, cl.args[a.j], words.items, a.deep, if (suffix.len == 0 and a.kind == .param) a.path else none, out);
+                // Past the argument's own fold (§2.1) no step names the suffix: read it whole.
+                if (out.items.len == start and suffix.len != 0) {
+                    const v = try e.valueAt(cl.args[a.j], e.f.slots.relWords(a.slot));
+                    if (e.f.val(v).kind == .ref and e.f.pos.items[e.f.val(v).pos].parent != none and e.places().kind(e.places().pathPlace(e.f.pos.items[e.f.val(v).pos].slot)) == .@"var") try e.routed(e, v, &.{}, true, none, out);
+                }
                 if (a.kind == .lent) try e.lend(out, start, null, call);
             },
             .cb => {

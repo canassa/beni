@@ -1,0 +1,10 @@
+# v2 refuses each write below a non-regular type's fold another holder reads (§2.1, A step past a fold).
+25:26 list_may_be_shared List.push
+35:26 list_may_be_shared List.push
+45:28 list_may_be_shared List.push
+55:26 list_may_be_shared List.push
+117:26 list_may_be_shared List.push
+135:17 list_may_be_shared List.push
+142:17 list_may_be_shared List.push
+150:17 list_still_used List.push
+157:17 list_still_used List.push

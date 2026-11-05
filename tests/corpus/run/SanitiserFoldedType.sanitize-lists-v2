@@ -1,0 +1,2 @@
+Writes below a non-regular type's fold (ownership-v2.md §2.1, A step past a fold): built again under --ownership=v2 and
+the list stale-read sanitiser. v2 refuses each; with the step read as a scalar, the build copies in silence.

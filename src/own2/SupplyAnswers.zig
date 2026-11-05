@@ -18,6 +18,13 @@ const Allocator = std.mem.Allocator;
 const Cond = Contract.Cond;
 const Error = Eval.Error;
 
+/// Whether a pass keeps entry `x` open: a `⊤` is unknown at every slot below
+/// it, and a pass describes no structure of it (§2.1, a fold).
+pub fn staysOpen(x: anytype) bool {
+    for (x.arrivals) |a| if (a.kind == .top) return true;
+    return false;
+}
+
 /// A pass at the call's function type closes `x`, an entry of callee supply
 /// `su`: open with an arrival it did not describe, `su.below` must say `no`,
 /// or a `fed` occurrence keep what the arrival holds described.
