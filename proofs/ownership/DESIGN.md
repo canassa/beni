@@ -585,12 +585,47 @@ callee that writes its parameter, the write extent and its twin, and a closure
 that writes its captured record once or twice. Every accepted program's runs
 agree, and every refused program's runs differ, except `calleeKept`, which is
 refused by the missing `W{F}`. The frozen per-call checker refuses the record
-forms as a limit. No form is in `FlatANF0`, so no theorem names one.
+forms as a limit. Since 2026-11-05 (#1871) the four forms are in `FlatANF0`,
+and the accepted programs without calls have trace theorems (*Proved in the
+flat fragment*, below).
+
+Proved in the flat fragment (2026-11-05, #1871, slice 2 of #316):
+
+- A live path reads through a record object's one slot. `Invariant.bindings`
+  read live paths with `projectVal`, which stops at an `.element` step. So no
+  `Invariant` held at a state where a field read of a bound object was still to
+  come (`keptRead` after its `let`). `projectHeap` replaces `projectVal`: at an
+  `.element` step it reads a reference only when the array is `[.record xs]`,
+  and `projectObs` reads only `.list [.record xs]`. No other array and no list
+  element is read (Cesar, 2026-11-04, `own-record-flat-q1`, option A).
+  `Invariant.described`, `Protected` and the falsifier read the same way.
+- `FlatType.object`, `FlatAbstract.object` (a list abstract whose element is a
+  record), `AllocatedFlatValue.object` and the heap typing's
+  `ContentsKinded.object` take exactly one slot. So no link names an object's
+  array (`StateKinded.object_unlinked`), and an update is a plain counted
+  write.
+- The flat relation gets three clauses. `observationsTyped`: every binding's
+  observation has its type (an update that writes every field does not use its
+  base, and the value interpreter still reads the base's shape).
+  `objectsCertified`: the certificate of an object at a field path holds over
+  the fields that a live use reads through its slot. A certificate over the
+  whole old object is false after an update, and the abstracts alone do not
+  give it. `liveTags`: the result and chain tags at every live path.
+- The heap frame of an update: a live path that goes through the written array
+  goes into a field that the update keeps (`assign_route`, from the Dead test
+  per field), `assignFields` keeps that field's value, and the Dead test keeps
+  the field's arrays apart from the written array (`assign_live_apart`). So
+  every live projection reads the same value after the write
+  (`assign_projected`, the frame's `projected` premise).
+- The result's certificate: for the kept fields, `objectsCertified`
+  (`objectCert_single`, `objectCert_pair`); for the new values, the checker's
+  `storeExclusive` and `storeSpines` tests, one value at a time; between the
+  two, the tests' disjointness from the kept fields' cells.
 
 Not modelled yet: `W{F}` and per-field reads through summaries, the hoist, a
 record field written through a constructor's payload (§31.5), messages and
 sends (§31.6), and the entry's checks (§31.8). The generator, the targeted
 enumerator and the mutation controls draw no record object, and the bridge
-skips one (`record-object`). The proof in the flat fragment is #1871; field
-sets, the bridge and the controls are #1872.
+skips one (`record-object`). Field sets, the bridge and the controls are
+#1872.
 
