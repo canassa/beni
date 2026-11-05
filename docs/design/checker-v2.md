@@ -5220,7 +5220,8 @@ printed before the platform's own `unbound_variable`. With no row to fall to, it
   children as ever, and nothing is reported: the row's own diagnostic is the one message. That
   is the rule a failed markup primitive's `<error>` follows (§25.8's *As built*), and a failed
   value's, whose importers are silent (§14.1, §15.3's *No cascades*); Elm does not check a module
-  whose import failed at all.
+  whose import failed at all. The owner chose silence over one diagnostic per use that names the
+  refused row (Cesar, 2026-11-05, vocab-refused-row-q1).
 - **"Did you mean" never suggests a refused row**, and neither does `untyped_event_attribute`'s
   list of typed events: the name is declared, but nothing a program writes with it can check.
 
