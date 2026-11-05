@@ -1612,6 +1612,18 @@ addition breaks no lowering (§9.4.6, the owner's answer).
 
 ### 9.1 Layers, and a platform that depends on a platform
 
+*Amended 2026-11-05 (Part of #1807; PR #1924 follow-up):* browser `Program`
+is an opaque beni list of closed typed mount jobs, each with an optional root id
+and a `Boot, Node → ⊤` start function. The runtime supplies typed boot services;
+only `Browser.runMounts` inspects that list. Missing body or named root is a named
+defect before root inspection or mounting. A stopped page accepts no render-only
+request, just as it accepts no message. `Browser.Bridge` recognition requires the
+browser platform’s own loaded layer (`samePlatformLayer`); a same-named module in
+another platform gets neither compiler-owned foreign coverage nor intrinsic lowering.
+The bridge is separate from frozen Html.Runtime 1.30. Browser-inline still uses
+compiled constructors with an impure unreachable-defect fallback; honest pure
+construction awaits its typed Program (#1934), without a checker rung override.
+
 | Layer | Is | Knows |
 |---|---|---|
 | **the language** | the compiler: syntax, types, guarantees, the markup tree, JSX's character references | no architecture, no HTML vocabulary, no host |

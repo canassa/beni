@@ -2382,7 +2382,7 @@ const Emitter = struct {
 
     fn compilerOwnedJs(e: *Emitter, m: Graph.Index, d: Bir.Decl) bool {
         if (e.loweringSupplied(m, d)) return true;
-        if (e.graph().modulePackage(m) == .platform and std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Browser.Bridge")) return @import("JsIntrinsic.zig").browserBridge(e.session.interner.slice(e.bir(m).symbol(d.name))) != null;
+        if (e.graph().isBrowser(m) and std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Browser.Bridge")) return @import("JsIntrinsic.zig").browserBridge(e.session.interner.slice(e.bir(m).symbol(d.name))) != null;
         if (e.graph().modulePackage(m) == .core) {
             if (@import("../native/Operations.zig").lookup(e.session.interner.slice(e.graph().moduleName(m)), e.session.interner.slice(e.bir(m).symbol(d.name)))) |row| {
                 if (@import("../native/Operations.zig").renderer(row.recipe)) return true;

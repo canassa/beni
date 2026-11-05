@@ -401,7 +401,11 @@ runMounts (Program mounts) boot = List.foldl mounts ⊤ λm _ →
     root =
         case m.id of
             Nothing →
-                Document.rendererBody ⊤
+                case Document.body ⊤ of
+                    Just element →
+                        Element.toNode element
+                    Nothing →
+                        Protocol.defect "the page has no body to mount a program at"
             Just id →
                 case Document.byId id of
                     Just element →
@@ -433,7 +437,7 @@ mount p boot node connect =
             paint (Bridge.block (p.view (Js.read model)))
     request =
         λRenderOnly →
-            if not (Js.read waiting) then
+            if not (boot.dead ⊤) && not (Js.read waiting) then
                 Js.write waiting True
                 boot.schedule render
     send =

@@ -618,6 +618,8 @@ test "a platform whose runtime module is its whole runtime writes no runtime fil
         "_core/Js/Runtime.mjs.map",
         "_core/Js/TaskHooks.mjs",
         "_core/Js/TaskHooks.mjs.map",
+        "_core/List.mjs",
+        "_core/List.mjs.map",
         "_core/Maybe.mjs",
         "_core/Maybe.mjs.map",
         "_core/String.mjs",

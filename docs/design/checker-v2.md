@@ -5644,6 +5644,12 @@ order, handler binding lifetime, ownership, or the frozen S1 size bars.
 
 ## 27. Amendment of 2026-09-30: the `sync` check
 
+*Amended 2026-11-05 (#1933):* when an aggregate held-function demand and
+a specific callback demand at the same call fail through the same callback path,
+report the specific callback once. A shared suspending terminal alone does not
+identify a mistake: independent callback paths retain their own diagnostics.
+This changes diagnostic selection only, never the solved effects or acceptance.
+
 The contract is [`transparent-effects-proposal.md`](transparent-effects-proposal.md) §15; this
 section says only where it sits in this checker.
 
