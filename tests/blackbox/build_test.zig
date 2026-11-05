@@ -14181,3 +14181,131 @@ test "a proved root selector retains an unread factory's real effect" {
     );
     try w.expectProgram("run.mjs", .{ .stdout = "view value\nfactory value\ngeneral\nfactory\n" });
 }
+
+test "planned roots repaint the same node and stop after a view defect" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const dom = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/browser/happy-dom.mjs", w.arena.allocator(), .limited(1 << 24));
+    try w.write("dom.mjs", dom);
+    const source =
+        \\import Browser
+        \\import Html exposing (Html)
+        \\
+        \\pub foreign impure note : String → ⊤
+        \\pub foreign impure crash : ⊤ → ⊤
+        \\
+        \\view : Int → Html Bool
+        \\view count =
+        \\    note "paint ${String.fromInt count}"
+        \\    VIEW_FAILURE
+        \\    <input id="root" />
+        \\
+        \\update : Bool, Int → Int
+        \\update _ count =
+        \\    note "update"
+        \\    UPDATE_FAILURE
+        \\    count + 1
+        \\
+        \\main : Browser.Program
+        \\main = Browser.program { init = λ⊤ → 0, update = update, view = view }
+        \\
+    ;
+    const cases = [_]struct { name: []const u8, view: []const u8, update: []const u8, expected: []const u8 }{
+        .{ .name = "repeat", .view = "⊤", .update = "⊤", .expected = "paint 0\nupdate\npaint 1\nupdate\npaint 2\nidentity: true\ngetters: true\n" },
+        .{ .name = "view-defect", .view = "if count == 2 then crash ⊤", .update = "⊤", .expected = "paint 0\nupdate\npaint 1\nupdate\npaint 2\ncaught: planned defect\nidentity: true\ngetters: true\n" },
+    };
+    for (cases) |case| {
+        const with_view = try std.mem.replaceOwned(u8, w.arena.allocator(), source, "VIEW_FAILURE", case.view);
+        const main = try std.mem.replaceOwned(u8, w.arena.allocator(), with_view, "UPDATE_FAILURE", case.update);
+        const project = try std.fmt.allocPrint(w.arena.allocator(), "{s}/Main.beni", .{case.name});
+        try w.write(project, main);
+        try w.write(try std.fmt.allocPrint(w.arena.allocator(), "{s}/Main.js", .{case.name}), "export const note = value => { console.log(value); return null; };\nexport const crash = unit => { throw new Error(\"planned defect\"); };\n");
+        const out = try std.fmt.allocPrint(w.arena.allocator(), "{s}/out", .{case.name});
+        const out_arg = try std.fmt.allocPrint(w.arena.allocator(), "--out={s}", .{out});
+        try expectBuilt(try w.runWith(&.{ "build", "--core", "--platform=browser", "--release", out_arg, project }, .{ .raw_diagnostics = true }));
+        const js = try w.read(try std.fmt.allocPrint(w.arena.allocator(), "{s}/_main.mjs", .{out}));
+        // This is coverage of the selected renderer, not merely the general
+        // path's equivalent behavior. The saved source has no child ranges.
+        try testing.expect(std.mem.indexOf(u8, js, ".nextSibling") == null);
+        const runner = try std.fmt.allocPrint(w.arena.allocator(), "{s}/run.mjs", .{case.name});
+        try w.write(runner,
+            \\import { GlobalWindow } from "../dom.mjs";
+            \\const window = new GlobalWindow();
+            \\globalThis.document = window.document;
+            \\globalThis.Node = window.Node;
+            \\let getters = 0;
+            \\Object.defineProperty(window.Node.prototype, "$opt", { configurable: true, get() { getters++; return undefined; } });
+            \\const module = await import("./out/_main.mjs");
+            \\const original = document.body.firstChild;
+            \\document.body.$$root(true);
+            \\module.flush();
+            \\let stopped = false;
+            \\try { document.body.$$root(true); module.flush(); }
+            \\catch (e) { if (e.message !== "planned defect") throw e; stopped = true; console.log("caught: " + e.message); }
+            \\if (stopped) { document.body.$$root(true); module.flush(); }
+            \\if (document.body.firstChild !== original || document.body.childNodes.length !== 1) throw new Error("root identity changed");
+            \\if (document.body.$$root && document.body.firstChild === original) console.log("identity: true");
+            \\console.log("getters: " + (getters > 0));
+            \\
+        );
+        try w.expectProgram(runner, .{ .stdout = case.expected });
+    }
+}
+
+test "a root kind change replaces its node rather than using the single-kind plan" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Browser
+        \\import Html exposing (Html)
+        \\
+        \\view : Bool → Html Bool
+        \\view on = if on then <p>A</p> else <section>B</section>
+        \\
+        \\main : Browser.Program
+        \\main = Browser.program { init = λ⊤ → True, update = λ_ model → not model, view = view }
+        \\
+    );
+    try expectBuilt(try w.runWith(&.{ "build", "--platform=browser", "--release", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true }));
+    const js = try w.read("out/_main.mjs");
+    try testing.expect(std.mem.indexOf(u8, js, ".nextSibling") != null);
+    const dom = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/browser/happy-dom.mjs", w.arena.allocator(), .limited(1 << 24));
+    try w.write("dom.mjs", dom);
+    try w.write("run.mjs",
+        \\import { GlobalWindow } from "./dom.mjs";
+        \\const window = new GlobalWindow();
+        \\globalThis.document = window.document;
+        \\globalThis.Node = window.Node;
+        \\const module = await import("./out/_main.mjs");
+        \\const first = document.body.firstElementChild;
+        \\console.log(first.tagName + ":" + first.textContent);
+        \\document.body.$$root(true);
+        \\module.flush();
+        \\const second = document.body.firstElementChild;
+        \\console.log(second.tagName + ":" + second.textContent);
+        \\console.log("replaced: " + (first !== second));
+        \\
+    );
+    try w.expectProgram("run.mjs", .{ .stdout = "P:A\nSECTION:B\nreplaced: true\n" });
+}
+
+test "planned lifecycle fixtures use the single-node renderer" {
+    var all_planned = true;
+    for ([_][]const u8{ "Repeated", "ViewDefect", "Stopped" }) |name| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const arena = w.arena.allocator();
+        for ([_][]const u8{ "Main.beni", "platform/beni.json", "platform/Controller.beni", "platform/Controller.js" }) |file| {
+            const path = try std.fmt.allocPrint(arena, "tests/corpus/browser/dom/RootPlan{s}/{s}", .{ name, file });
+            const source = try std.Io.Dir.cwd().readFileAlloc(testing.io, path, arena, .limited(1 << 20));
+            try w.write(file, source);
+        }
+        try expectBuilt(try w.runWith(&.{ "build", "--release", "--allow-debug", "--no-cache", "--platform=./platform", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true }));
+        const js = try w.read("out/_main.mjs");
+        if (std.mem.indexOf(u8, js, ".nextSibling") != null) {
+            std.debug.print("{s}: expected the planned renderer\n", .{name});
+            all_planned = false;
+        }
+    }
+    try testing.expect(all_planned);
+}

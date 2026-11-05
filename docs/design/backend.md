@@ -13099,6 +13099,61 @@ kinds, provided every return of each individual function has its one kind. Emit 
 empty-fragment plan from the two-child-fragment general path and cover each
 excluded shape; browser fixtures retain the lifecycle behavior above.
 
+*Amended 2026-11-05 (Part of #1861, review):* Rejected roots must not run
+an optimizing candidate copy merely to discover their static return shape. A
+conservative preflight uses the existing declaration facts to decline mixed
+static/dynamic producer sites before making a copy; unrelated static markup
+must not make a rejected dynamic page pay for a candidate solve. The first
+solve then declines incomplete or non-static view returns before the full proof. The proof still checks every
+return with an arbitrary value, including falsy values; an object alone is not
+an arbitrary model. A selector not materialized by the proof chooses the general
+job for its typed function input. Only explicit proof selection activates the
+planned arm.
+
+The proof's layout roles come from the owning producer's private typed
+connection facts, not from field spellings built into the emitter. Those facts
+must describe the same fields the producer emits. A native clone/import is
+concrete only when its source is proved concrete: a cloned/imported template
+content DocumentFragment is a fragment and must be refused by the proof itself.
+Unknown native-node provenance declines the plan. A possible primitive, null or
+undefined normal return also declines it, even if another helper return is a
+known node.
+The existing points-to fixpoint carries a finite native-node product for this
+proof: concrete node, known template element, fragment, or unknown; unions retain every possible class.
+DOM creation and child/sibling reads supply classes, clone preserves its receiver's
+class and import preserves its argument's class. Aliases, calls and private cache
+writes use the existing flow edges. A native node cannot forge the existing compiler-owned private `optNone`
+intrinsic identity: that identity is never cast out of Opt. The emitter supplies
+its actual core-intrinsic global identity, not a producer-name or storage-shape
+guess. Only that intrinsic identity licenses the marker refinement; a
+shape-matching cell, closed or escaped, is insufficient. That comparison
+may be refined only in the analysis copy. Ordinary output retains all marker
+reads and their evaluation. Arbitrary host values retain unknown provenance. These
+are analysis facts, with no runtime test, new representation or call-context graph.
+
+
+For hosted mounts, transferring the user's every-model root proof to the cached
+projection rests on a **pinned platform invariant**, not a compiler-proven
+provenance result. `Browser.host` allocates `shown` as `Nothing`. Its only two
+subsequent writes store `Just (p.view (stored model))`: after initial settle and
+after dirty settle, using that same immutable captured `p.view`. Restate/skip
+only reads the previous result. If init, settle or view defects, argument
+evaluation prevents a new write; no error or placeholder Block is installed.
+The finalizer only clears `busy`.
+
+The cell is local to `host`; its returned private view closure captures it
+directly. The user-facing Host exposes send/request operations. Their opaque
+closure environments can lead back into the private adapter when invoked, but
+no operation projects, returns or passes the cell to user code. User callbacks
+receive models and that Host, never the cell or the private adapter. `stored` is the only helper receiving the cell; it reads
+and unwraps it or defects, without retaining, returning or exposing the cell.
+Both `Browser.host` and `Browser.stored` bodies are pinned. A placeholder or
+fallback write must fail the pin check. This closed platform invariant licenses
+using the captured view's every-model root proof for successful cached reads.
+The planned path must have fixtures for repeated paint with node identity,
+defect and shutdown, and a conditional-kind witness that detects removal of
+the same-kind requirement.
+
 ### 15.11 The `browser` runtime: program, mount and render loop
 
 The owner's W28 answer is Solid 2's loop (`plans/browser-decisions.md`, W28; research 27 Â§3.1âÂ§3.6).

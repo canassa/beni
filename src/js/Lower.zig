@@ -12667,7 +12667,8 @@ pub const Lowerer = struct {
                 if (if (l.in.markup) |mk| !mk.build.release or mk.build.library else true) return general;
                 const renderer = try l.suppliedName("singleRootRenderer") orelse return general;
                 const planned = try l.call(factory, &.{try l.ident(renderer, p)}, p);
-                const marker = try l.condOf(view, planned, general, p);
+                // A typed view is a function: an unresolved choice stays general.
+                const marker = try l.condOf(view, general, planned, p);
                 l.b.nodes.items(.flags)[marker.int()].root_choice = true;
                 return marker;
             },

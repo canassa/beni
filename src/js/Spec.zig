@@ -278,9 +278,14 @@ pub const Tables = struct {
 };
 
 pub const Input = struct {
+    /// Existing compiler-owned private absence identity; no source value can
+    /// cast it out of Opt. Other cells cannot license the marker refinement.
+    opt_none_global: u32 = none,
     root_proof: bool = false,
+    root_candidate: bool = false,
     nonreturning: []const u32 = &.{},
     root_props: ?RootProps = null,
+    root_native: ?RootNative = null,
     // Refine only the compiler-emitted worker_definition_type guard.
     // Source typeof expressions never consult allocation-site types here.
     fold_worker_metadata: bool = false,
@@ -366,6 +371,20 @@ pub const Parallel = struct {
         task: *const anyopaque,
         call: *const fn (task: *const anyopaque, scratch: Allocator, item: u32) Allocator.Error!void,
     ) Allocator.Error!void,
+};
+
+pub const RootNative = struct {
+    clone: u32,
+    import: u32,
+    fragment: u32,
+    content: u32,
+    first: u32,
+    last: u32,
+    next: u32,
+    previous: u32,
+    opt_marker: u32,
+    element: u32 = none,
+    opt_next: u32 = none,
 };
 
 pub const RootProps = struct {
@@ -556,7 +575,7 @@ fn rootSites(v: Pts.Val) bool {
 }
 
 /// A concrete prefix node must be one immutable local whose initializer is
-/// a trusted native node-making operation in the producer's actual body.
+/// a call whose normal result is proved concrete in the producer's actual body.
 fn rootConcreteNode(s: *Spec, mi: u32, function: Index, name: NameIndex) Allocator.Error!bool {
     const ir = s.mods[mi].ir;
     var rhs: ?Index = null;
@@ -576,18 +595,10 @@ fn rootConcreteNode(s: *Spec, mi: u32, function: Index, name: NameIndex) Allocat
         }
     }
     const value = rhs orelse return false;
-    if (ir.tag(value) != .call) return false;
-    const callee: Index = @fromBackingInt(@intCast(ir.data(value).lhs));
-    if (ir.tag(callee) != .member) return false;
-    const id = s.pts.propId(mi, @fromBackingInt(@intCast(ir.data(callee).rhs)));
-    if (id == none or std.mem.indexOfScalar(u32, s.in.node_makers, id) == null) return false;
-    if (if (s.in.root_props) |p_| id == p_.fragment_maker else true) return false;
-    // This is a DOM-producer Instance, not a source record. Its node-maker
-    // calls are emitted on the producer's native template/Node handles;
-    // the typed runtime helpers return a native Node or defect. The prefix
-    // check above concerns the producer's normalized start/end, so a cloned
-    // range (whose concrete ends are distinct walks) does not qualify.
-    return true;
+    if (ir.tag(value) != .call or value.int() >= s.pts.vals[mi].len) return false;
+    const actual = s.pts.vals[mi][value.int()];
+    const class = actual.native();
+    return class != 0 and class != 7 and class & 2 == 0 and !actual.prim and !actual.nullish() and actual.sites.len == 0;
 }
 
 fn rootSingleInstance(s: *Spec, site: u32, props: RootProps) Allocator.Error!bool {
@@ -736,6 +747,7 @@ fn selectRoots(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!bool
     if (count == 0) return false;
     const enabled = try arena.alloc(bool, count);
     @memset(enabled, in.root_props != null and in.fresh != .none);
+    if (std.mem.indexOfScalar(bool, enabled, true) != null and !try rootHasStaticCandidate(gpa, arena, in)) @memset(enabled, false);
     while (std.mem.indexOfScalar(bool, enabled, true) != null) {
         const checked = try rootCandidateProof(gpa, arena, in, enabled);
         var changed = false;
@@ -754,7 +766,7 @@ fn selectRoots(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!bool
             const marker: Index = @fromBackingInt(@intCast(ni));
             const d = ir.data(marker);
             const branches = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond);
-            const chosen = if (enabled[at]) branches.consequent else branches.alternate;
+            const chosen = if (enabled[at]) branches.alternate else branches.consequent;
             at += 1;
             ir.nodes.items(.tag)[ni] = ir.tag(chosen);
             ir.nodes.items(.data)[ni] = ir.data(chosen);
@@ -766,6 +778,117 @@ fn selectRoots(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!bool
         }
     }
     return std.mem.indexOfScalar(bool, enabled, true) != null;
+}
+
+const RootExpr = struct { module: u32, node: Index };
+
+/// Resolve immutable top-level aliases only. Unknown/local/mutable provenance
+/// declines; a finite visited set rejects alias cycles without truncation.
+fn rootStaticExpr(s: *Spec, initial: RootExpr) Allocator.Error!?RootExpr {
+    var at = initial;
+    var seen: std.ArrayList(u32) = .empty;
+    defer seen.deinit(s.arena);
+    while (true) {
+        const m = &s.mods[at.module];
+        const ir = m.ir;
+        if (ir.tag(at.node) != .ident) return at;
+        const global = m.globalOf(@fromBackingInt(@intCast(ir.data(at.node).lhs))) orelse return null;
+        if (std.mem.indexOfScalar(u32, seen.items, global) != null or s.assigned[global]) return null;
+        try seen.append(s.arena, global);
+        const decl = s.decl[global] orelse return null;
+        const source = s.mods[decl.module].ir;
+        if (source.tag(decl.stmt) == .func_decl) return .{ .module = decl.module, .node = decl.stmt };
+        if (source.tag(decl.stmt) != .const_decl) return null;
+        at = .{ .module = decl.module, .node = @fromBackingInt(@intCast(source.data(decl.stmt).rhs)) };
+    }
+}
+
+fn rootStaticField(s: *Spec, object: RootExpr, id: u32) Allocator.Error!?RootExpr {
+    const ref = try rootStaticExpr(s, object) orelse return null;
+    const m = &s.mods[ref.module];
+    const ir = m.ir;
+    if (ir.tag(ref.node) != .object) return null;
+    var value: ?RootExpr = null;
+    for (ir.extraSlice(JsIr.inlineRange(ir.data(ref.node)), Index)) |field| {
+        if (ir.tag(field) != .property) return null;
+        if (s.pts.propId(ref.module, @fromBackingInt(@intCast(ir.data(field).lhs))) != id) continue;
+        if (value != null) return null;
+        value = .{ .module = ref.module, .node = @fromBackingInt(@intCast(ir.data(field).rhs)) };
+    }
+    return value;
+}
+
+/// Eligibility from the first solve, before optimizing a candidate copy:
+/// a static root's mount/patch do not actively inspect their parameters.
+/// This says nothing about kind uniqueness, provenance or normalized nodes.
+fn rootStaticBlock(s: *Spec, object: RootExpr) Allocator.Error!bool {
+    const props = s.in.root_props orelse return false;
+    const kind = try rootStaticField(s, object, props.kind) orelse return false;
+    for ([_]u32{ props.mount, props.patch }) |role| {
+        const method = try rootStaticField(s, kind, role) orelse return false;
+        const f = try rootStaticExpr(s, method) orelse return false;
+        const m = &s.mods[f.module];
+        const ir = m.ir;
+        const record: ExtraIndex = switch (ir.tag(f.node)) {
+            .arrow => @fromBackingInt(@intCast(ir.data(f.node).lhs)),
+            .func_decl => @fromBackingInt(@intCast(ir.data(f.node).rhs)),
+            else => return false,
+        };
+        const fun = ir.extraData(record, JsIr.Func);
+        const params = ir.extraSlice(fun.params(), NameIndex);
+        if (params.len == 0) continue;
+        var stack: std.ArrayList(Index) = .empty;
+        defer stack.deinit(s.arena);
+        try JsIr.pushOperand(s.arena, &stack, f.node);
+        while (JsIr.popOperand(&stack)) |node| {
+            // Saving values in an instance is not a dynamic use;
+            // the full proof drops unread keys before certifying it.
+            if (ir.tag(node) == .property) {
+                const value: Index = @fromBackingInt(@intCast(ir.data(node).rhs));
+                if (ir.tag(value) == .ident and std.mem.indexOfScalar(NameIndex, params, @fromBackingInt(@intCast(ir.data(value).lhs))) != null) continue;
+            }
+            if (ir.tag(node) == .ident and std.mem.indexOfScalar(NameIndex, params, @fromBackingInt(@intCast(ir.data(node).lhs))) != null) return false;
+            try pushChildren(s.arena, ir, node, &stack);
+        }
+    }
+    return true;
+}
+
+/// Conservatively decline mixed static/dynamic producer sites before copying
+/// a candidate. The existing declaration table suffices; unrelated static markup
+/// must not make a dynamic page pay for a points-to extraction or witness.
+fn rootHasStaticCandidate(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!bool {
+    if (in.root_props == null) return false;
+    var scan: Spec = try .init(gpa, arena, in);
+    scan.pts = .init(&scan);
+    defer scan.pts.deinit();
+    try scan.declTable();
+    var found = false;
+    for (scan.mods, 0..) |*m, mi| {
+        for (m.ir.nodes.items(.flags), 0..) |flags, ni| {
+            if (flags.root_range) return false;
+            if (!flags.root_block) continue;
+            if (!try rootStaticBlock(&scan, .{ .module = @intCast(mi), .node = @fromBackingInt(@intCast(ni)) })) return false;
+            found = true;
+        }
+    }
+    return found;
+}
+
+fn rootStaticView(s: *Spec, views: Pts.Val) Allocator.Error!bool {
+    if (!rootSites(views)) return false;
+    for (views.sites) |site| {
+        const view = s.pts.sites.items[site];
+        if (view.kind != .func) return false;
+        const returns = try s.pts.view(view.ret);
+        if (!rootSites(returns)) return false;
+        for (returns.sites) |block| {
+            const b = s.pts.sites.items[block];
+            if (b.kind != .object or !b.root_block or b.root_range) return false;
+            if (!try rootStaticBlock(s, .{ .module = b.module, .node = b.node })) return false;
+        }
+    }
+    return true;
 }
 
 fn rootCandidateProof(gpa: Allocator, out: Allocator, in: Input, enabled: []const bool) Allocator.Error![]bool {
@@ -804,6 +927,7 @@ fn rootCandidateProof(gpa: Allocator, out: Allocator, in: Input, enabled: []cons
     };
     var proof_input = in;
     proof_input.globals += choice_count;
+    proof_input.props += 1;
     proof_input.root_proof = true;
     proof_input.parallel = null;
     proof_input.check_call_graph = false;
@@ -846,12 +970,21 @@ fn rootCandidateProof(gpa: Allocator, out: Allocator, in: Input, enabled: []cons
             const ref = try m.addNode(pa, .ident, Node.no_pos, registry.int(), 0);
             const target = try m.addNode(pa, .index_get, Node.no_pos, ref.int(), zero.int());
             const store = try m.addNode(pa, .assign_stmt, Node.no_pos, target.int(), d.lhs);
-            const unknown = try m.addNode(pa, .global_this, Node.no_pos, 0, 0);
+            const global = try m.addNode(pa, .global_this, Node.no_pos, 0, 0);
+            // A host property is arbitrary, including falsy/nullish values.
+            // globalThis itself is an object, and is not an arbitrary model.
+            const host_key = try m.addName(pa, .{ .module = .none, .base = in.fresh.unwrap().?, .tag = JsIr.Name.no_tag });
+            const mapped = try pa.alloc(u32, m.names.items.len);
+            @memset(mapped, none);
+            @memcpy(mapped[0..m.prop.len], m.prop);
+            mapped[host_key.int()] = in.props;
+            m.prop = mapped;
+            const unknown = try m.addNode(pa, .member, Node.no_pos, global.int(), host_key.int());
             const args = try m.append(pa, &.{unknown.int()});
             const range = try m.append(pa, &.{ args, args + 1 });
             const call = try m.addNode(pa, .call, Node.no_pos, d.lhs, range);
             const probe = try m.addNode(pa, .expr_stmt, Node.no_pos, call.int(), 0);
-            const returned = try m.addNode(pa, .return_stmt, Node.no_pos, (if (enabled[choice_index - 1]) branches.consequent else branches.alternate).int(), 0);
+            const returned = try m.addNode(pa, .return_stmt, Node.no_pos, (if (enabled[choice_index - 1]) branches.alternate else branches.consequent).int(), 0);
             const start = try m.append(pa, &.{ store.int(), probe.int(), returned.int() });
             const function_record = try m.append(pa, &.{ start, start, start, start + 3 });
             const function = try m.addNode(pa, .arrow, Node.no_pos, function_record, 0);
@@ -868,7 +1001,19 @@ fn rootCandidateProof(gpa: Allocator, out: Allocator, in: Input, enabled: []cons
         }
     }
     try proof.grow();
-    if (!try proof.analyse() or !proof.pts.ok or proof.pts.init_capped) return result;
+    const initial_solved = try proof.analyse();
+    if (!initial_solved or !proof.pts.ok or proof.pts.init_capped) return result;
+    // Rejected static shapes pay for no candidate optimizer or repeated solve.
+    for (registry_ids, 0..) |global, i| {
+        if (!enabled[i]) continue;
+        const registries = try proof.pts.view(proof.pts.globals[global]);
+        const static = try rootStaticView(&proof, try proof.pts.readAll(registries));
+        if (!static) return result;
+    }
+    proof.in.root_candidate = true;
+    // The native product belongs to the full proof, not its cheap preflight.
+    // Do not reuse a fixpoint computed without that optional model.
+    for (proof.mods) |*m| m.fact3 = false;
     // Seed provenance on allocation sites before ordinary copies/inlining.
     for (proof.pts.sites.items) |st| {
         if (st.root_block) proof.mods[st.module].ir.nodes.items(.flags)[st.node.int()].root_block = true;
@@ -3764,6 +3909,39 @@ const Spec = struct {
         return true;
     }
 
+    /// The Opt sentinel is compiler-private and never cast out of Opt.
+    /// The compiler-owned absence identity is private by its intrinsic contract.
+    /// Other cells, closed or escaped, establish nothing. This refinement is
+    /// only for the analysis copy: ordinary output retains the property read.
+    fn nativeOptIdentity(s: *Spec, m: *Mod, marker: Index, token: Index) Allocator.Error!?bool {
+        if (!s.in.root_candidate or !s.pts.ok) return null;
+        const names = s.in.root_native orelse return null;
+        if (names.opt_marker == none or names.opt_next == none) return null;
+        const ir = m.ir;
+        if (ir.tag(marker) != .member) return null;
+        const d = ir.data(marker);
+        if (s.pts.propId(m.index, @fromBackingInt(@intCast(d.rhs))) != names.opt_marker) return null;
+        const source = s.pts.vals[m.index][d.lhs];
+        if (source.native() == 7 or (source.native() == 0 and source.sites.len == 0)) return null;
+        const value = s.pts.vals[m.index][token.int()];
+        if (!rootSites(value) or value.sites.len != 1) return null;
+        for (source.sites) |site| if (site != value.sites[0]) return null;
+        const global = s.in.opt_none_global;
+        if (global == none or global >= s.pts.globals.len) return null;
+        const canonical = try s.pts.view(s.pts.globals[global]);
+        if (!rootSites(canonical) or canonical.sites.len != 1 or canonical.sites[0] != value.sites[0]) return null;
+        const st = s.pts.sites.items[value.sites[0]];
+        const ti = s.mods[st.module].ir;
+        if (st.kind != .object or !st.once or ti.tag(st.node) != .object or !ti.cell(st.node)) return null;
+        const fields = ti.extraSlice(JsIr.inlineRange(ti.data(st.node)), Index);
+        if (fields.len != 1 or ti.tag(fields[0]) != .property) return null;
+        const field = ti.data(fields[0]);
+        if (s.pts.propId(st.module, @fromBackingInt(@intCast(field.lhs))) != names.opt_next or
+            ti.tag(@fromBackingInt(@intCast(field.rhs))) != .null_lit) return null;
+        try s.readsSite(value.sites[0]);
+        return false;
+    }
+
     /// Facts 5 and 6: whether `left === right`, from what each side may be,
     /// or null. Each side must be a chain whose evaluation cannot throw nor
     /// run a getter (`Pts.safeChain`), so dropping it loses nothing.
@@ -3775,6 +3953,8 @@ const Spec = struct {
     /// - Two sides that may each be only the one object an allocation site
     ///   made once: the same.
     fn identity(s: *Spec, m: *Mod, left: Index, right: Index, l: Lat, r: Lat) Allocator.Error!?bool {
+        if (try s.nativeOptIdentity(m, left, right)) |answer| return answer;
+        if (try s.nativeOptIdentity(m, right, left)) |answer| return answer;
         if (!s.pts.ok) return null;
         if (l.state == .lit and r.state == .lit) return null;
         const lv = try s.pts.safeChain(m.index, s.cur_top, left);
@@ -14046,6 +14226,7 @@ const Pts = struct {
     /// on what a var holds starts from the id and never looks it up.
     const VSet = struct {
         top: bool = false,
+        native_nodes: u3 = 0,
         prim: bool = false,
         nul: bool = false,
         undef: bool = false,
@@ -14058,6 +14239,7 @@ const Pts = struct {
         /// `pending`.
         queued: bool = false,
         q_top: bool = false,
+        q_native: u3 = 0,
         q_prim: bool = false,
         q_nul: bool = false,
         q_undef: bool = false,
@@ -14162,6 +14344,7 @@ const Pts = struct {
     /// What a var's batch holds when `drain` takes it (`VSet.q_top` …).
     const Delta = struct {
         top: bool = false,
+        native_nodes: u3 = 0,
         prim: bool = false,
         nul: bool = false,
         undef: bool = false,
@@ -14295,6 +14478,7 @@ const Pts = struct {
 
     const Val = struct {
         top: bool = false,
+        native_nodes: u3 = 0,
         prim: bool = false,
         nul: bool = false,
         undef: bool = false,
@@ -14310,7 +14494,13 @@ const Pts = struct {
         /// `top` gives at least what the same read gave before it did — a
         /// read, and every other transfer function, is monotone, and the
         /// fixpoint is the same whatever order the units are walked in.
-        const top_val: Val = .{ .top = true, .prim = true, .nul = true, .undef = true };
+        const top_val: Val = .{ .native_nodes = 7, .top = true, .prim = true, .nul = true, .undef = true };
+        /// Host top without a class is unknown. Bits: concrete node, fragment,
+        /// known template element. Bottom/primitives/program sites add none.
+        fn native(v: Val) u3 {
+            return if (v.top and v.native_nodes == 0) 7 else v.native_nodes;
+        }
+
         const prim_val: Val = .{ .prim = true };
         const nul_val: Val = .{ .nul = true };
         const undef_val: Val = .{ .undef = true };
@@ -14486,7 +14676,7 @@ const Pts = struct {
             set.seen = p.walk;
             set.deps = try p.addDep(set.deps);
         }
-        return .{ .top = set.top, .prim = set.prim, .nul = set.nul, .undef = set.undef, .sites = set.sites, .set = set.set };
+        return .{ .top = set.top, .native_nodes = set.native_nodes, .prim = set.prim, .nul = set.nul, .undef = set.undef, .sites = set.sites, .set = set.set };
     }
 
     /// The constraint being evaluated depends on whether site `site` escaped and
@@ -14582,6 +14772,7 @@ const Pts = struct {
         const set = &p.vars.items[v];
         const became = !set.top;
         if (became) set.top = true;
+        set.native_nodes = 7;
         // `top` implies the other three (`Val.top_val`). The uncapped
         // join sets `top` first and may not have set them yet.
         if (!set.prim) set.prim = true;
@@ -14631,9 +14822,10 @@ const Pts = struct {
                 if (held) sites = 0;
             }
         }
-        const new_flags = (flags.top and !x.top) or (flags.prim and !x.prim) or (flags.nul and !x.nul) or (flags.undef and !x.undef);
+        const new_flags = (flags.native() & ~x.native_nodes != 0) or (flags.top and !x.top) or (flags.prim and !x.prim) or (flags.nul and !x.nul) or (flags.undef and !x.undef);
         if (!new_flags and sites == 0) return;
         if (flags.top) x.q_top = true;
+        x.q_native |= flags.native();
         if (flags.prim) x.q_prim = true;
         if (flags.nul) x.q_nul = true;
         if (flags.undef) x.q_undef = true;
@@ -14661,9 +14853,10 @@ const Pts = struct {
             const v = p.pending.items[p.pending_head];
             p.pending_head += 1;
             const x = &p.vars.items[v];
-            const d: Delta = .{ .top = x.q_top, .prim = x.q_prim, .nul = x.q_nul, .undef = x.q_undef, .set = x.q_set, .fold = x.q_fold };
+            const d: Delta = .{ .top = x.q_top, .native_nodes = x.q_native, .prim = x.q_prim, .nul = x.q_nul, .undef = x.q_undef, .set = x.q_set, .fold = x.q_fold };
             x.queued = false;
             x.q_top = false;
+            x.q_native = 0;
             x.q_prim = false;
             x.q_nul = false;
             x.q_undef = false;
@@ -14699,6 +14892,8 @@ const Pts = struct {
         }
         {
             const set = &p.vars.items[v];
+            flags.native_nodes = d.native_nodes & ~set.native_nodes;
+            set.native_nodes |= d.native_nodes;
             if (d.prim and !set.prim) {
                 set.prim = true;
                 flags.prim = true;
@@ -14712,7 +14907,7 @@ const Pts = struct {
                 flags.undef = true;
             }
         }
-        const new_flags = flags.top or flags.prim or flags.nul or flags.undef;
+        const new_flags = flags.top or flags.prim or flags.nul or flags.undef or flags.native_nodes != 0;
         if (new_flags) p.varChanged(v);
         // Only the sites `v`'s declared type allows join it (*Declared-type
         // filtering of fact 3*); the flags pass whatever the filter.
@@ -15096,7 +15291,7 @@ const Pts = struct {
             try p.split(to);
         } else if (links and p.vars.items[to].summary != none) try p.linkFrom(from, p.vars.items[to].summary);
         const set = p.vars.items[from];
-        try p.enqueue(to, .{ .top = set.top, .prim = set.prim, .nul = set.nul, .undef = set.undef }, set.set, links);
+        try p.enqueue(to, .{ .top = set.top, .native_nodes = set.native_nodes, .prim = set.prim, .nul = set.nul, .undef = set.undef }, set.set, links);
         try p.drain();
         // A chain of copies a shared field ran through is one no longer.
         if (p.cold.items[to].preds == 2 and p.cold.items[to].sharers != none) try p.unshare(to);
@@ -15947,18 +16142,18 @@ const Pts = struct {
     }
 
     fn unionOf(p: *Pts, a: Val, b: Val) Allocator.Error!Val {
-        const flags: Val = .{ .top = a.top or b.top, .prim = a.prim or b.prim, .nul = a.nul or b.nul, .undef = a.undef or b.undef };
-        if (a.sites.len == 0) return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = b.sites, .set = b.set };
-        if (b.sites.len == 0) return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = a.sites, .set = a.set };
+        const flags: Val = .{ .top = a.top or b.top, .native_nodes = a.native() | b.native(), .prim = a.prim or b.prim, .nul = a.nul or b.nul, .undef = a.undef or b.undef };
+        if (a.sites.len == 0) return .{ .top = flags.top, .native_nodes = flags.native_nodes, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = b.sites, .set = b.set };
+        if (b.sites.len == 0) return .{ .top = flags.top, .native_nodes = flags.native_nodes, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = a.sites, .set = a.set };
         // Site slices are immutable snapshots. A settled union can share
         // the containing operand instead of retaining another identical
         // snapshot on every fixpoint reevaluation (#464).
         const large = if (a.sites.len >= b.sites.len) a else b;
         const small = if (a.sites.len >= b.sites.len) b else a;
         if ((large.set != no_set and large.set == small.set) or containsSites(large.sites, small.sites))
-            return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = large.sites, .set = large.set };
+            return .{ .top = flags.top, .native_nodes = flags.native_nodes, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = large.sites, .set = large.set };
         const id = try p.unionSets(try p.setOf(a), try p.setOf(b));
-        return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = p.setSites(id), .set = id };
+        return .{ .top = flags.top, .native_nodes = flags.native_nodes, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = p.setSites(id), .set = id };
     }
 
     /// Both operands are sorted sets. Adjacent matches walk once; gaps
@@ -16801,7 +16996,7 @@ const Pts = struct {
         /// no fact (*an escaped site is ⊤*). That the extra sites are
         /// indeed escaped is what the comparison then checks.
         fn sameVal(c: @This(), a: Val, b: Val) bool {
-            if (a.top != b.top or a.prim != b.prim or a.nul != b.nul or a.undef != b.undef) return false;
+            if (a.native() != b.native() or a.top != b.top or a.prim != b.prim or a.nul != b.nul or a.undef != b.undef) return false;
             if (!a.top) return c.sameSites(a.sites, b.sites);
             // The node-based map need not preserve numeric site order.
             // Count live sites and compare membership, as `sameSites`
@@ -16821,7 +17016,7 @@ const Pts = struct {
         fn sameVar(c: @This(), a: VarId, b: VarId) bool {
             const va = c.x.vars.items[a];
             const vb = c.y.vars.items[b];
-            if (va.top != vb.top or va.prim != vb.prim or va.nul != vb.nul or va.undef != vb.undef) return false;
+            if (va.native_nodes != vb.native_nodes or va.top != vb.top or va.prim != vb.prim or va.nul != vb.nul or va.undef != vb.undef) return false;
             // A `top` var may be uncapped (a load cell, or a local bound
             // to a member read) and then keeps the sites it linked
             // through an object that later escaped. Those sites are ⊤.
@@ -17297,7 +17492,7 @@ const Pts = struct {
         if (p.s.mods[k.module].ir.tag(k.node).isStatement()) return p.effect(k.module, k.node, if (k.func == none) null else k.func);
         const v = try p.combine(k.module, k.node);
         const old = &p.cons.items[c].val;
-        if (old.top == v.top and old.prim == v.prim and old.nul == v.nul and old.undef == v.undef and
+        if (old.native() == v.native() and old.top == v.top and old.prim == v.prim and old.nul == v.nul and old.undef == v.undef and
             sameSites(old.*, v)) return;
         old.* = v;
         var l = p.cons.items[c].readers;
@@ -17578,10 +17773,65 @@ const Pts = struct {
         return v;
     }
 
+    /// Optional native-node component, on the same finite graph as sites.
+    fn nativeNode(p: *Pts, mi: u32, node: Index) Allocator.Error!?Val {
+        const names = p.s.in.root_native orelse return null;
+        const ir = p.s.mods[mi].ir;
+        const d = ir.data(node);
+        const vals = p.vals[mi];
+        if (ir.tag(node) == .member) {
+            const id = p.propId(mi, @fromBackingInt(@intCast(d.rhs)));
+            if (id == none) return null;
+            const receiver = vals[d.lhs];
+            const class = receiver.native();
+            if (receiver.top and class != 7 and class != 0 and !receiver.prim) {
+                if (receiver.sites.len == 0) {
+                    if (id == names.content and class == 4) return .{ .top = true, .native_nodes = 2 };
+                    if (id == names.first or id == names.last or id == names.next or id == names.previous)
+                        return .{ .top = true, .native_nodes = 1, .nul = true };
+                }
+            }
+            return null;
+        }
+        if (ir.tag(node) != .call) return null;
+        const callee: Index = @fromBackingInt(@intCast(d.lhs));
+        if (ir.tag(callee) != .member) return null;
+        const cd = ir.data(callee);
+        const receiver = vals[cd.lhs];
+        if (!receiver.top and !receiver.prim and !receiver.nullish() and receiver.sites.len == 0) return .{};
+        // A program method is analyzed through its real body, never by spelling.
+        if (receiver.sites.len != 0) return null;
+        const id = p.propId(mi, @fromBackingInt(@intCast(cd.rhs)));
+        if (id == none) return null;
+        if (id == names.clone) return .{ .top = true, .native_nodes = receiver.native() };
+        if (id == names.import) {
+            const args = ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index);
+            if (args.len == 0) return null;
+            const source = vals[args[0].int()];
+            if (!source.top and !source.prim and !source.nullish() and source.sites.len == 0) return .{};
+            return .{ .top = true, .native_nodes = source.native() };
+        }
+        if (std.mem.indexOfScalar(u32, p.s.in.node_makers, id) != null) {
+            var class: u3 = if (id == names.fragment) 2 else 1;
+            if (id == names.element) {
+                const args = ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index);
+                if (args.len != 0 and ir.tag(args[0]) == .string and std.mem.eql(u8, ir.bytes(args[0]), "template")) class = 4;
+            }
+            return .{ .top = true, .native_nodes = class };
+        }
+        return null;
+    }
+
     fn combineNow(p: *Pts, mi: u32, node: Index) Allocator.Error!Val {
         const ir = p.s.mods[mi].ir;
         const vals = p.vals[mi];
         const d = ir.data(node);
+        if (p.s.in.root_candidate) if (try p.nativeNode(mi, node)) |value| {
+            // A value refinement never removes the native call's argument
+            // escapes or effects from the ordinary transfer.
+            if (ir.tag(node) == .call) _ = try p.call(mi, node);
+            return value;
+        };
         if (p.s.in.root_proof and ir.nodes.items(.flags)[node.int()].array_model == .allocate) {
             std.debug.assert(ir.tag(node) == .new_call);
             const site = try p.siteOf(mi, node, .array);
@@ -21336,4 +21586,328 @@ test "fact-3 comparison maps sets and compares effective sparse properties" {
     try holdSites(p, v, &.{});
     p.vars.items[v].prim = true;
     try testing.expect(!c.sameProp(escaped, null, true, false));
+}
+
+test "root node proof refuses cloned and imported template content through aliases" {
+    const gpa = testing.allocator;
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    var names: [24]NameIndex = undefined;
+    for (&names, 0..) |*n, i| n.* = try b.intern(.local(@fromBackingInt(@intCast(i))));
+    const Build = struct {
+        fn dot(builder: *JsIr.Builder, object: Index, field: NameIndex) !Index {
+            return builder.addParts(.member, Node.no_pos, object.int(), field.int());
+        }
+        fn call(builder: *JsIr.Builder, callee: Index, args: []const Index) !Index {
+            return builder.addParts(.call, Node.no_pos, callee.int(), @backingInt(try builder.addRecord(try builder.addRange(args))));
+        }
+        fn ref(builder: *JsIr.Builder, name: NameIndex) !Index {
+            return builder.addParts(.ident, Node.no_pos, name.int(), 0);
+        }
+    };
+    const host = try b.addParts(.global_this, Node.no_pos, 0, 0);
+    const document = try Build.dot(&b, host, names[10]);
+    const text = try b.addString("template");
+    const literal = try b.addParts(.string, Node.no_pos, text[0], text[1]);
+    const template = try Build.call(&b, try Build.dot(&b, document, names[0]), &.{literal});
+    const content = try Build.dot(&b, try Build.ref(&b, names[12]), names[2]);
+    const child = try Build.dot(&b, try Build.ref(&b, names[13]), names[3]);
+    const alias = try Build.ref(&b, names[14]);
+    const fragment_clone = try Build.call(&b, try Build.dot(&b, try Build.ref(&b, names[13]), names[4]), &.{});
+    const node_clone = try Build.call(&b, try Build.dot(&b, try Build.ref(&b, names[15]), names[4]), &.{});
+    const fragment_import = try Build.call(&b, try Build.dot(&b, document, names[5]), &.{try Build.ref(&b, names[13])});
+    const node_import = try Build.call(&b, try Build.dot(&b, document, names[5]), &.{try Build.ref(&b, names[15])});
+    const values = [_]Index{ template, content, child, alias, fragment_clone, node_clone, fragment_import, node_import };
+    var statements: [9]Index = undefined;
+    for (values, 0..) |value, i| statements[i] = try b.addParts(.const_decl, Node.no_pos, names[12 + i].int(), value.int());
+    statements[8] = try b.addParts(.return_stmt, Node.no_pos, (try Build.ref(&b, names[17])).int(), 0);
+    const body = try b.addRange(&statements);
+    const params = try b.addNames(&.{});
+    const fun = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = body.start, .body_end = body.end });
+    const function = try b.addParts(.arrow, Node.no_pos, @backingInt(fun), Node.arrow_plain);
+    const declaration = try b.addParts(.const_decl, Node.no_pos, names[11].int(), function.int());
+    var ir = try b.toOwned(try b.addRange(&.{declaration}));
+    defer ir.deinit(gpa);
+    var global: [24]u32 = @splat(none);
+    global[11] = 0;
+    var props: [24]u32 = @splat(none);
+    for (0..11) |i| props[i] = @intCast(i);
+    const modules = [_]Module{.{ .ir = &ir, .global = &global, .prop = &props }};
+    var s: Spec = try .init(gpa, arena_state.allocator(), .{
+        .modules = &modules,
+        .globals = 1,
+        .props = 11,
+        .escaping = &.{0},
+        .root_proof = true,
+        .root_candidate = true,
+        .root_props = .{ .kind = none, .mount = none, .patch = none, .start = none, .end = none, .range = none, .live = none, .fragment_maker = 1 },
+        .node_makers = &.{ 0, 1, 4, 5 },
+        .root_native = .{ .clone = 4, .import = 5, .fragment = 1, .content = 2, .first = 3, .last = 6, .next = 7, .previous = 8, .opt_marker = 9, .element = 0 },
+    });
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    defer s.finish() catch @panic("out of memory");
+    try testing.expect(try s.analyse());
+    try testing.expect(!try rootConcreteNode(&s, 0, function, names[16]));
+    try testing.expect(try rootConcreteNode(&s, 0, function, names[17]));
+    try testing.expect(!try rootConcreteNode(&s, 0, function, names[18]));
+    try testing.expect(try rootConcreteNode(&s, 0, function, names[19]));
+}
+
+test "root view proof requires the same kind even when each kind is a single node" {
+    const gpa = testing.allocator;
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    var names: [32]NameIndex = undefined;
+    for (&names, 0..) |*n, i| n.* = try b.intern(.local(@fromBackingInt(@intCast(i))));
+    const Build = struct {
+        fn ref(builder: *JsIr.Builder, name: NameIndex) !Index {
+            return builder.addParts(.ident, Node.no_pos, name.int(), 0);
+        }
+        fn call(builder: *JsIr.Builder, callee: Index, args: []const Index) !Index {
+            return builder.addParts(.call, Node.no_pos, callee.int(), @backingInt(try builder.addRecord(try builder.addRange(args))));
+        }
+        fn object(builder: *JsIr.Builder, keys: []const NameIndex, values: []const Index) !Index {
+            var fields: std.ArrayList(Index) = .empty;
+            defer fields.deinit(testing.allocator);
+            for (keys, values) |key, value| try fields.append(testing.allocator, try builder.addParts(.property, Node.no_pos, key.int(), value.int()));
+            const range = try builder.addRange(fields.items);
+            return builder.addParts(.object, Node.no_pos, @backingInt(range.start), @backingInt(range.end));
+        }
+        fn function(builder: *JsIr.Builder, params: []const NameIndex, statements: []const Index) !Index {
+            const ps = try builder.addNames(params);
+            const body = try builder.addRange(statements);
+            const fun = try builder.addRecord(JsIr.Func{ .params_start = ps.start, .params_end = ps.end, .body_start = body.start, .body_end = body.end });
+            return builder.addParts(.arrow, Node.no_pos, @backingInt(fun), Node.arrow_plain);
+        }
+    };
+    const host = try b.addParts(.global_this, Node.no_pos, 0, 0);
+    const document = try b.addParts(.member, Node.no_pos, host.int(), names[8].int());
+    const maker = try b.addParts(.member, Node.no_pos, document.int(), names[7].int());
+    var declarations: std.ArrayList(Index) = .empty;
+    defer declarations.deinit(gpa);
+    for (0..2) |i| {
+        const node_name = names[16 + i];
+        const node = try Build.call(&b, maker, &.{});
+        const local = try b.addParts(.const_decl, Node.no_pos, node_name.int(), node.int());
+        const instance = try Build.object(&b, &.{ names[3], names[4] }, &.{ try Build.ref(&b, node_name), try Build.ref(&b, node_name) });
+        const ret = try b.addParts(.return_stmt, Node.no_pos, instance.int(), 0);
+        const mount = try Build.function(&b, &.{}, &.{ local, ret });
+        try declarations.append(gpa, try b.addParts(.const_decl, Node.no_pos, names[9 + i].int(), mount.int()));
+        const invoke = try Build.call(&b, try Build.ref(&b, names[9 + i]), &.{});
+        try declarations.append(gpa, try b.addParts(.const_decl, Node.no_pos, names[20 + i].int(), invoke.int()));
+    }
+    const patch = try Build.function(&b, &.{}, &.{});
+    try declarations.append(gpa, try b.addParts(.const_decl, Node.no_pos, names[11].int(), patch.int()));
+    var blocks: [2]Index = undefined;
+    for (0..2) |i| {
+        const kind = try Build.object(&b, &.{ names[1], names[2] }, &.{ try Build.ref(&b, names[9 + i]), try Build.ref(&b, names[11]) });
+        try declarations.append(gpa, try b.addParts(.const_decl, Node.no_pos, names[12 + i].int(), kind.int()));
+        blocks[i] = try Build.object(&b, &.{names[0]}, &.{try Build.ref(&b, names[12 + i])});
+    }
+    const branches = try b.addRecord(JsIr.Cond{ .consequent = blocks[0], .alternate = blocks[1] });
+    const condition = try Build.ref(&b, names[15]);
+    const selected = try b.addParts(.cond, Node.no_pos, condition.int(), @backingInt(branches));
+    const ret = try b.addParts(.return_stmt, Node.no_pos, selected.int(), 0);
+    const view = try Build.function(&b, &.{names[15]}, &.{ret});
+    try declarations.append(gpa, try b.addParts(.const_decl, Node.no_pos, names[14].int(), view.int()));
+    const arbitrary = try b.addParts(.member, Node.no_pos, host.int(), names[22].int());
+    const invoke = try Build.call(&b, try Build.ref(&b, names[14]), &.{arbitrary});
+    try declarations.append(gpa, try b.addParts(.const_decl, Node.no_pos, names[18].int(), invoke.int()));
+    var ir = try b.toOwned(try b.addRange(declarations.items));
+    defer ir.deinit(gpa);
+    for (blocks) |block| ir.nodes.items(.flags)[block.int()].root_block = true;
+    var globals: [32]u32 = @splat(none);
+    for ([_]usize{ 9, 10, 11, 12, 13, 14, 18, 20, 21 }, 0..) |n, i| globals[n] = @intCast(i);
+    var props: [32]u32 = @splat(none);
+    for (0..9) |i| props[i] = @intCast(i);
+    props[22] = 9;
+    const modules = [_]Module{.{ .ir = &ir, .global = &globals, .prop = &props }};
+    const root_props: RootProps = .{ .kind = 0, .mount = 1, .patch = 2, .start = 3, .end = 4, .range = 5, .live = 6, .fragment_maker = none };
+    var s: Spec = try .init(gpa, arena_state.allocator(), .{
+        .modules = &modules,
+        .globals = 9,
+        .escaping = &.{},
+        .props = 10,
+        .root_proof = true,
+        .root_candidate = true,
+        .root_props = root_props,
+        .node_makers = &.{7},
+        .root_native = .{ .clone = none, .import = none, .fragment = none, .content = none, .first = none, .last = none, .next = none, .previous = none, .opt_marker = none },
+    });
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    defer s.finish() catch @panic("out of memory");
+    try testing.expect(try s.analyse());
+    // Each kind independently satisfies every node/provenance obligation.
+    // The only remaining rejection is their differing identity.
+    for ([_]u32{ 3, 4 }) |global| {
+        const kinds = try s.pts.view(s.pts.globals[global]);
+        try testing.expectEqual(@as(usize, 1), kinds.sites.len);
+        try testing.expect(try rootKind(&s, kinds.sites[0], root_props));
+    }
+    const views = try s.pts.view(s.pts.globals[5]);
+    try testing.expect(!try rootViewValue(&s, views));
+}
+
+test "root marker proof refuses an escaped cell shaped like the Opt token" {
+    const gpa = testing.allocator;
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    var names: [25]NameIndex = undefined;
+    for (&names, 0..) |*n, i| n.* = try b.intern(.local(@fromBackingInt(@intCast(i))));
+    const Build = struct {
+        fn dot(builder: *JsIr.Builder, object: Index, field: NameIndex) !Index {
+            return builder.addParts(.member, Node.no_pos, object.int(), field.int());
+        }
+        fn call(builder: *JsIr.Builder, callee: Index, args: []const Index) !Index {
+            return builder.addParts(.call, Node.no_pos, callee.int(), @backingInt(try builder.addRecord(try builder.addRange(args))));
+        }
+        fn ref(builder: *JsIr.Builder, name: NameIndex) !Index {
+            return builder.addParts(.ident, Node.no_pos, name.int(), 0);
+        }
+    };
+    const host = try b.addParts(.global_this, Node.no_pos, 0, 0);
+    const document = try Build.dot(&b, host, names[10]);
+    const text = try b.addString("template");
+    const literal = try b.addParts(.string, Node.no_pos, text[0], text[1]);
+    const template = try Build.call(&b, try Build.dot(&b, document, names[0]), &.{literal});
+    const content = try Build.dot(&b, try Build.ref(&b, names[12]), names[2]);
+    const child = try Build.dot(&b, try Build.ref(&b, names[13]), names[3]);
+    const alias = try Build.ref(&b, names[14]);
+    const fragment_clone = try Build.call(&b, try Build.dot(&b, try Build.ref(&b, names[13]), names[4]), &.{});
+    const node_clone = try Build.call(&b, try Build.dot(&b, try Build.ref(&b, names[15]), names[4]), &.{});
+    const fragment_import = try Build.call(&b, try Build.dot(&b, document, names[5]), &.{try Build.ref(&b, names[13])});
+    const node_import = try Build.call(&b, try Build.dot(&b, document, names[5]), &.{try Build.ref(&b, names[15])});
+    const values = [_]Index{ template, content, child, alias, fragment_clone, node_clone, fragment_import, node_import };
+    const nil = try b.addParts(.null_lit, Node.no_pos, 0, 0);
+    const token_field = try b.addParts(.property, Node.no_pos, names[10].int(), nil.int());
+    const token_fields = try b.addRange(&.{token_field});
+    const token = try b.addParts(.object, Node.no_pos, @backingInt(token_fields.start), @backingInt(token_fields.end));
+    const token_decl = try b.addParts(.const_decl, Node.no_pos, names[20].int(), token.int());
+    const canonical_field = try b.addParts(.property, Node.no_pos, names[10].int(), nil.int());
+    const canonical_fields = try b.addRange(&.{canonical_field});
+    const canonical_token = try b.addParts(.object, Node.no_pos, @backingInt(canonical_fields.start), @backingInt(canonical_fields.end));
+    const canonical_decl = try b.addParts(.const_decl, Node.no_pos, names[24].int(), canonical_token.int());
+    const expose = try Build.call(&b, try Build.dot(&b, host, names[21]), &.{try Build.ref(&b, names[20])});
+    const exposed = try b.addParts(.expr_stmt, Node.no_pos, expose.int(), 0);
+    const marker = try Build.dot(&b, try Build.ref(&b, names[17]), names[9]);
+    const token_ref = try Build.ref(&b, names[20]);
+    var statements: [11]Index = undefined;
+    for (values, 0..) |value, i| statements[i] = try b.addParts(.const_decl, Node.no_pos, names[12 + i].int(), value.int());
+    statements[8] = try b.addParts(.const_decl, Node.no_pos, names[22].int(), marker.int());
+    statements[9] = try b.addParts(.const_decl, Node.no_pos, names[23].int(), token_ref.int());
+    statements[10] = try b.addParts(.return_stmt, Node.no_pos, (try Build.ref(&b, names[17])).int(), 0);
+    const body = try b.addRange(&statements);
+    const params = try b.addNames(&.{});
+    const fun = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = body.start, .body_end = body.end });
+    const function = try b.addParts(.arrow, Node.no_pos, @backingInt(fun), Node.arrow_plain);
+    const declaration = try b.addParts(.const_decl, Node.no_pos, names[11].int(), function.int());
+    var ir = try b.toOwned(try b.addRange(&.{ canonical_decl, token_decl, exposed, declaration }));
+    ir.nodes.items(.flags)[token.int()].cell = true;
+    ir.nodes.items(.flags)[canonical_token.int()].cell = true;
+    defer ir.deinit(gpa);
+    var global: [25]u32 = @splat(none);
+    global[11] = 0;
+    global[20] = 1;
+    global[24] = 2;
+    var props: [25]u32 = @splat(none);
+    for (0..11) |i| props[i] = @intCast(i);
+    const modules = [_]Module{.{ .ir = &ir, .global = &global, .prop = &props }};
+    var s: Spec = try .init(gpa, arena_state.allocator(), .{
+        .modules = &modules,
+        .globals = 3,
+        .opt_none_global = 2,
+        .props = 11,
+        .escaping = &.{0},
+        .root_proof = true,
+        .root_candidate = true,
+        .root_props = .{ .kind = none, .mount = none, .patch = none, .start = none, .end = none, .range = none, .live = none, .fragment_maker = 1 },
+        .node_makers = &.{ 0, 1, 4, 5 },
+        .root_native = .{ .clone = 4, .import = 5, .fragment = 1, .content = 2, .first = 3, .last = 6, .next = 7, .previous = 8, .opt_marker = 9, .opt_next = 10, .element = 0 },
+    });
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    defer s.finish() catch @panic("out of memory");
+    try testing.expect(try s.analyse());
+    const tokens = s.pts.vals[0][token_ref.int()];
+    try testing.expectEqual(@as(usize, 1), tokens.sites.len);
+    try testing.expect(s.pts.sites.items[tokens.sites[0]].escaped);
+    try testing.expectEqual(@as(?bool, null), try s.nativeOptIdentity(&s.mods[0], marker, token_ref));
+}
+
+test "root node proof refuses a helper mixing nodes with primitive or nullish returns" {
+    for (0..3) |other_kind| {
+        const gpa = testing.allocator;
+        var arena_state: std.heap.ArenaAllocator = .init(gpa);
+        defer arena_state.deinit();
+        var b: JsIr.Builder = .init(gpa);
+        defer b.deinit();
+        var names: [7]NameIndex = undefined;
+        for (&names, 0..) |*n, i| n.* = try b.intern(.local(@fromBackingInt(@intCast(i))));
+        const Build = struct {
+            fn ref(builder: *JsIr.Builder, name: NameIndex) !Index {
+                return builder.addParts(.ident, Node.no_pos, name.int(), 0);
+            }
+            fn call(builder: *JsIr.Builder, callee: Index, args: []const Index) !Index {
+                return builder.addParts(.call, Node.no_pos, callee.int(), @backingInt(try builder.addRecord(try builder.addRange(args))));
+            }
+            fn function(builder: *JsIr.Builder, params: []const NameIndex, statements: []const Index) !Index {
+                const ps = try builder.addNames(params);
+                const body = try builder.addRange(statements);
+                const fun = try builder.addRecord(JsIr.Func{ .params_start = ps.start, .params_end = ps.end, .body_start = body.start, .body_end = body.end });
+                return builder.addParts(.arrow, Node.no_pos, @backingInt(fun), Node.arrow_plain);
+            }
+        };
+        const host = try b.addParts(.global_this, Node.no_pos, 0, 0);
+        const document = try b.addParts(.member, Node.no_pos, host.int(), names[1].int());
+        const maker = try b.addParts(.member, Node.no_pos, document.int(), names[0].int());
+        const node = try Build.call(&b, maker, &.{});
+        const other = switch (other_kind) {
+            0 => try b.addParts(.null_lit, Node.no_pos, 0, 0),
+            1 => try b.addParts(.undefined_lit, Node.no_pos, 0, 0),
+            else => try b.addParts(.true_lit, Node.no_pos, 0, 0),
+        };
+        const branches = try b.addRecord(JsIr.Cond{ .consequent = node, .alternate = other });
+        const choice = try b.addParts(.cond, Node.no_pos, (try Build.ref(&b, names[5])).int(), @backingInt(branches));
+        const selected = try b.addParts(.return_stmt, Node.no_pos, choice.int(), 0);
+        const choose = try Build.function(&b, &.{names[5]}, &.{selected});
+        const choose_decl = try b.addParts(.const_decl, Node.no_pos, names[3].int(), choose.int());
+        const arbitrary = try b.addParts(.member, Node.no_pos, host.int(), names[2].int());
+        const invoke = try Build.call(&b, try Build.ref(&b, names[3]), &.{arbitrary});
+        const local = try b.addParts(.const_decl, Node.no_pos, names[6].int(), invoke.int());
+        const returned = try b.addParts(.return_stmt, Node.no_pos, (try Build.ref(&b, names[6])).int(), 0);
+        const outer = try Build.function(&b, &.{}, &.{ local, returned });
+        const outer_decl = try b.addParts(.const_decl, Node.no_pos, names[4].int(), outer.int());
+        var ir = try b.toOwned(try b.addRange(&.{ choose_decl, outer_decl }));
+        defer ir.deinit(gpa);
+        var globals: [7]u32 = @splat(none);
+        globals[3] = 0;
+        globals[4] = 1;
+        var props: [7]u32 = @splat(none);
+        for (0..3) |i| props[i] = @intCast(i);
+        const modules = [_]Module{.{ .ir = &ir, .global = &globals, .prop = &props }};
+        var s: Spec = try .init(gpa, arena_state.allocator(), .{
+            .modules = &modules,
+            .globals = 2,
+            .props = 3,
+            .escaping = &.{1},
+            .root_proof = true,
+            .root_candidate = true,
+            .node_makers = &.{0},
+            .root_native = .{ .clone = none, .import = none, .fragment = none, .content = none, .first = none, .last = none, .next = none, .previous = none, .opt_marker = none },
+        });
+        s.pts = .init(&s);
+        defer s.pts.deinit();
+        defer s.finish() catch @panic("out of memory");
+        try testing.expect(try s.analyse());
+        try testing.expectEqual(@as(u3, 1), s.pts.vals[0][invoke.int()].native());
+        try testing.expect(!try rootConcreteNode(&s, 0, outer, names[6]));
+    }
 }

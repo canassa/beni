@@ -3454,6 +3454,15 @@ throughout. The operations and their compiler bodies receive the same ownership
 word checks and body pins as other private producer operations. No permission
 to bypass a uniqueness check is introduced.
 
+*Amended 2026-11-05 (Part of #1861, review):* the supplied connection also
+carries reserved native compiler metadata `$rootLayout`: a literal string array
+ordered by kind, mount, patch, start, end, range and live. These are the exact
+layout constants used by the producer bodies. The emitter reads the facts rather
+than guessing producer field names; absent or computed facts decline the plan.
+This metadata adds no Beni record field or operation and contains no user value.
+Its reserved native key cannot pin a Beni source field's spelling. It is unread
+at runtime and eliminated from emitted application code. Html.Runtime is unchanged.
+
 The connection is usable only by core and the owning DOM platform layer, with
 samePlatformLayer ownership as the bridge above; applications and other platform
 layers cannot obtain it through imports, aliases or dispatch. It adds no field,

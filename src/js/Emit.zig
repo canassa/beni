@@ -8006,22 +8006,44 @@ const Emitter = struct {
             if (ids.get(Rename.Globals.key(try e.moduleName(m, name)))) |g| try nonreturning.append(e.scratch, g);
         };
         var spec_workers: SpecWorkers = .{ .e = e };
+        // The existing optNone intrinsic owns this private identity. A source
+        // declaration or shape-matching cell cannot impersonate it.
+        const opt_none_global = blk: {
+            const name = e.session.interner.find("Js") orelse break :blk Spec.none;
+            const module = e.graph().lookup(.core, name) orelse break :blk Spec.none;
+            for (e.bir(module).decls) |decl| {
+                if (decl.kind != .foreign_value or decl.is_pub or decl.rung != .pure or decl.params != 0) continue;
+                const spelling = e.session.interner.slice(e.bir(module).symbol(decl.name));
+                if (!std.mem.eql(u8, spelling, @tagName(@import("JsIntrinsic.zig").Which.optNone))) continue;
+                if (!e.compilerOwnedJs(module, decl)) break :blk Spec.none;
+                break :blk ids.get(Rename.Globals.key(try e.moduleName(module, spelling))) orelse Spec.none;
+            }
+            break :blk Spec.none;
+        };
         const stats = try Spec.run(e.gpa, e.scratch, .{
+            .opt_none_global = opt_none_global,
             .fold_worker_metadata = e.worker_runtime != null,
             .parallel = .{ .context = &spec_workers, .run = SpecWorkers.run },
             .modules = modules.items,
             .globals = ids.count(),
             .props = props.count(),
             .nonreturning = nonreturning.items,
-            .root_props = .{
-                .kind = props.get("t") orelse Spec.none,
-                .mount = props.get("m") orelse Spec.none,
-                .patch = props.get("p") orelse Spec.none,
-                .start = props.get("s") orelse Spec.none,
-                .end = props.get("e") orelse Spec.none,
-                .range = props.get("q") orelse Spec.none,
-                .live = props.get("l") orelse Spec.none,
-                .fragment_maker = props.get("createDocumentFragment") orelse Spec.none,
+            .root_props = if (try e.markupModule()) |runtime| if (ids.get(Rename.Globals.key(try e.moduleName(runtime, "rootConnection")))) |connection|
+                rootConnectionLayout(modules.items, connection, &props)
+            else
+                null else null,
+            .root_native = .{
+                .clone = props.get("cloneNode") orelse Spec.none,
+                .import = props.get("importNode") orelse Spec.none,
+                .fragment = props.get("createDocumentFragment") orelse Spec.none,
+                .content = props.get("content") orelse Spec.none,
+                .first = props.get("firstChild") orelse Spec.none,
+                .last = props.get("lastChild") orelse Spec.none,
+                .next = props.get("nextSibling") orelse Spec.none,
+                .previous = props.get("previousSibling") orelse Spec.none,
+                .opt_marker = props.get("$opt") orelse Spec.none,
+                .opt_next = props.get("$next") orelse Spec.none,
+                .element = props.get("createElement") orelse Spec.none,
             },
             .prop_len = prop_len,
             .tag_prop = props.get("$") orelse Spec.none,
@@ -8323,6 +8345,51 @@ const Emitter = struct {
             }
         }
     }
+    /// Read the owning producer's private connection facts. The semantic
+    /// ordered roles are this connection's contract; the layout strings are not.
+    fn rootConnectionLayout(modules: []const Spec.Module, global: u32, props: *const std.StringHashMapUnmanaged(u32)) ?Spec.RootProps {
+        const layout_id = props.get("$rootLayout") orelse return null;
+        for (modules) |module| {
+            const ir = module.ir;
+            for (ir.extraSlice(ir.body, JsIr.Node.Index)) |stmt| {
+                if (ir.tag(stmt) != .const_decl) continue;
+                const d = ir.data(stmt);
+                if (d.lhs >= module.global.len or module.global[d.lhs] != global) continue;
+                const connection: JsIr.Node.Index = @fromBackingInt(@intCast(d.rhs));
+                const layout = literalProperty(module, connection, layout_id) orelse return null;
+                if (ir.tag(layout) != .array) return null;
+                const fields = ir.extraSlice(JsIr.inlineRange(ir.data(layout)), JsIr.Node.Index);
+                if (fields.len != @typeInfo(Spec.RootProps).@"struct".field_names.len - 1) return null;
+                var result: Spec.RootProps = undefined;
+                inline for (@typeInfo(Spec.RootProps).@"struct".field_names, 0..) |role, index| {
+                    if (comptime std.mem.eql(u8, role, "fragment_maker")) {
+                        result.fragment_maker = props.get("createDocumentFragment") orelse Spec.none;
+                    } else {
+                        const value = fields[index];
+                        if (ir.tag(value) != .string) return null;
+                        @field(result, role) = props.get(ir.bytes(value)) orelse Spec.none;
+                    }
+                }
+                return result;
+            }
+        }
+        return null;
+    }
+
+    fn literalProperty(module: Spec.Module, object: JsIr.Node.Index, id: u32) ?JsIr.Node.Index {
+        const ir = module.ir;
+        if (ir.tag(object) != .object) return null;
+        var result: ?JsIr.Node.Index = null;
+        for (ir.extraSlice(JsIr.inlineRange(ir.data(object)), JsIr.Node.Index)) |field| {
+            if (ir.tag(field) != .property) return null;
+            const d = ir.data(field);
+            if (d.lhs >= module.prop.len or module.prop[d.lhs] != id) continue;
+            if (result != null) return null;
+            result = @fromBackingInt(@intCast(d.rhs));
+        }
+        return result;
+    }
+
     /// Every whole-program name `ir` declares at its top level, or imports:
     /// set in `out`, by the ids `global` gives its names.
     fn topDeclared(ir: *const JsIr, global: []const u32, out: []bool) void {

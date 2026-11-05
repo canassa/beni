@@ -4596,6 +4596,24 @@ Inline.Bridge. The tests pin both its owner fence and its native mutation.
 | Rt.rootConnection.nodeRoot | aliased Instance returns an alias of its proven concrete native start node; pure field projection, no allocation or write. | Single-node proof is required; ranges, mapped/deferred and non-empty-fragment roots retain the general renderer. |
 | Rt.rootConnection.patchRoot | aliased Instance, aliased escaped Block; pinned write invokes the paired patch and replaces latest Block metadata, returning unit. | Same-kind proof covers every future paint; conditional/unstable/escaped roots retain the general renderer. |
 
+The supplied connection's reserved `$rootLayout` metadata is a fresh literal
+array of producer layout strings, not an erased user value. Its construction
+adds allocation only to the existing impure supplied value; no operation gains
+weaker words. The actual producer emission and facts share the same constants,
+covered by the protocol body pin. No public field or writer exemption is added.
+
+Browser.host and Browser.stored are additionally pinned for a platform storage
+invariant, not a compiler-proven provenance result (backend.md §15.10).
+`shown` starts at Nothing; the two later writes store Just (p.view model) from
+the same immutable captured p. Restate only reads; failed init/settle/view
+argument evaluation cannot install a fallback. The cell is not passed to user
+callbacks or stored in user state. Its only helper, stored, unwraps or defects
+without retaining or exposing the cell. The private view closure captures
+it directly. Host operations may invoke that closure indirectly, but their
+opaque environments expose no projection of the cell. Successful reads therefore
+return results covered by that view's every-model
+same-kind proof. These body guards add no ownership word or exemption.
+
 The root connection is one private supplied value of the owning DOM runtime;
 Html.Runtime 1.30 is unchanged. Its Source renderer is fenced to core and the
 same platform layer. The new spans and the existing shared spans are pinned to
