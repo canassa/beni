@@ -1858,6 +1858,11 @@ const Main$fetchSum = (a$1, b$2) =>
   parameter list. The continuation reads the iteration's `const`s, never a slot (§8's rule), since
   a slot is only read by the prologue. A join inside a loop is written into each leaf, not
   closed over, so the fast path never calls back into the function.
+  *Effect-retention correction, 2026-11-05 (#1951):* substituting a join leaf
+  must preserve evaluation of its value, including an impure unit-valued call
+  whose result the rest ignores. The generated binding carries the release
+  optimiser's keep mark when the value may do work; cloned bindings retain
+  that mark. Literal values and function creation need no effect mark.
 - **Tail recursion modulo cons** (`backend.md` §8) is **not applied** in a suspendable body: its
   destination is two locals a resumption would have to carry into a second entry of the loop, which
   the spike does not build. A `::` step there is an ordinary call, and its recursion is a real
