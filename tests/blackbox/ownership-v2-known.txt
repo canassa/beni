@@ -5336,7 +5336,6 @@ tests/corpus/run/CellMovesSlots.beni CellMovesSlots 142:5 #0 :: Ref.update r◆ 
 tests/corpus/run/CellMovesSlots.beni CellMovesSlots 142:5 #0 :: Ref.update r◆.1 :: absent :: rejected  v1 checks no cell operation; v2 refuses the edit of a cell's contents, §2.13.7's rules
 
 tests/corpus/ownership/LoanNames.beni [node] LoanNames 32:41 #0 :: List.map m[*] :: rejected :: accepted  v2 reads a list element of a cell as separated by its stores (§2.13.7, *The contents relation*)
-||||||| parent of ef7e34d12d (wip fixtures)
 tests/corpus/run/BuilderCallbackSharing.beni BuilderCallbackSharing 26:32 #0 :: List.push l :: rejected :: accepted  both refuse this write: v2 at the call (the shared top-level list); v1 at the callback's write
 tests/corpus/run/CallbackPairFresh.beni CallbackPairFresh 30:10 #0 :: List.push a :: rejected :: accepted  v1 cannot tell the wrapper's two answers apart; v2 accepts the write of a fresh actual's answer (R-5.2.9)
 tests/corpus/run/CallbackResultForwarded.beni CallbackResultForwarded 34:23 #0 :: List.update r[*] :: accepted :: rejected  both refuse this write: v2 at the call that supplies the element (§2.11.3, a taken supply); v1 at the callback's own write
@@ -5538,3 +5537,4 @@ tests/corpus/run/SanitiserFoldedType.beni SanitiserFoldedType 235:27 #0 :: Sanit
 tests/corpus/run/SanitiserFoldedType.beni SanitiserFoldedType 200:13 #0 :: SanitiserFoldedType.throughWide <call>#Wrap.0#Leaf.0 :: absent :: rejected  #2038: a value past a non-regular type fold is unknown; v2 refuses it, v1 reads it
 tests/corpus/run/SanitiserLaterFunctionApart.beni SanitiserLaterFunctionApart 46:18 #1 :: SanitiserLaterFunctionApart.run <literal> :: absent :: accepted  #2050: v2 refuses the edit at the call, by the later function; v1 names it at the lambda
 tests/corpus/run/SanitiserLaterFunctionApart.beni SanitiserLaterFunctionApart 47:18 #1 :: SanitiserLaterFunctionApart.run2 <literal> :: absent :: accepted  #2050: v2 refuses the edit at the call, by the later function; v1 names it at the lambda
+tests/corpus/run/SanitiserAnswerFoldCycle.beni SanitiserAnswerFoldCycle 18:7 #0 :: List.foldl <literal> :: accepted :: rejected  #2070: v2 refuses the call after the walk terminates

@@ -114,6 +114,7 @@ const layers = [_]Entry{
     .{ .file = "Relation.zig", .layer = 7, .max_lines = 1300 },
     .{ .file = "Taken.zig", .layer = 7, .max_lines = 75 },
     .{ .file = "AnswerKeep.zig", .layer = 7, .max_lines = 90 },
+    .{ .file = "HeldBy.zig", .layer = 7, .max_lines = 50 },
     // The distinct check's entries and rounds' state, split from `Distinct` (#1714).
     .{ .file = "Entries.zig", .layer = 7, .max_lines = 400 },
     // The atoms a result holds open already, for the read-off (#1716).
@@ -539,7 +540,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 107), layers.len);
+    try testing.expectEqual(@as(usize, 108), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

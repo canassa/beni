@@ -21,6 +21,7 @@ const Relation = @import("Relation.zig");
 pub const Fed = @import("Fed.zig");
 const Taken = @import("Taken.zig");
 const AnswerKeep = @import("AnswerKeep.zig");
+const HeldBy = @import("HeldBy.zig");
 const FedCall = @import("FedCall.zig");
 const Entries = @import("Entries.zig");
 const RouteWalk = @import("RouteWalk.zig");
@@ -674,32 +675,7 @@ fn answerHolds(e: *Eval, x: Leaf, ti: u32, target: bool) Error!Ov {
         acc = try Ov.join(e.arena, e.account(), acc, try overlap(e, l, ti, target));
         if (acc.kind == .may) return acc;
     }
-    return Ov.join(e.arena, e.account(), acc, try heldBy(e, cb.j, cb.slot, ti));
-}
-
-/// What parameter `j`'s function at `slot` may hold of `t`: an object
-/// made in this activation, nothing; another parameter's, what the two
-/// selections keep apart.
-fn heldBy(e: *Eval, j: u32, slot: Slots.Rel, ti: u32) Error!Ov {
-    const t = e.f.leafAt(ti);
-    if (t.kind == .site or t.kind == .fresh) return .no;
-    if (t.kind != .ref) return .may;
-    const r = e.f.roots.items[t.root];
-    if (r.kind == .param and r.a != j) {
-        var occ = [_]u64{Contract.occApart(j, slot)};
-        const c = try Cond.conj(e.arena, e.account(), try Cond.of(e.account(), &occ), try sel(e, r.a, t.slots));
-        return if (c.no) .may else .{ .kind = .under, .cond = c };
-    }
-    if (!e.expandable(t)) return .may;
-    var list: std.ArrayList(u32) = .empty;
-    defer list.deinit(e.gpa());
-    try e.expand(ti, &list);
-    var acc: Ov = .no;
-    for (list.items) |l| {
-        acc = try Ov.join(e.arena, e.account(), acc, try heldBy(e, j, slot, l));
-        if (acc.kind == .may) return acc;
-    }
-    return acc;
+    return Ov.join(e.arena, e.account(), acc, try HeldBy.of(Ov, e, cb.j, cb.slot, ti, sel));
 }
 
 fn positional(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
