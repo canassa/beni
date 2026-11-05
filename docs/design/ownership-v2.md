@@ -2984,6 +2984,12 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
      `stores`. A re-entry test keys on the handle, never the payload, because a loan names the cell (#1977).
    - **Consumed.** A store's own `consumed` demand stays, and it is what keeps one object out of two cells: `Ref.set a
      n; Ref.set b n` is refused `later-use` at the first.
+   - **`.0` and `.1` read at the call.** `Loans.lends` asks whether a slot of the answer may hold an object. The code's
+     own place may be generic, so `.0` is read at the call's result and `.1` at the cell's `◆` (`Loans.answer`). And a
+     type variable that only scalars can instantiate holds no object: `[ 0 ]` is a `List number`, whose `[*]` is a
+     crossing place (`Groups.Adapter.close`, `Kind.scalar`), so `( List.push (List.copy xs) 5, xs )` answers a list
+     owned, Appendix B's `ModifyResultPaths` (`run/RefModifyIndependent`). The same fact took eight `disjoint` refusals
+     of fold accumulators over numeric literals off the corpus; each had a real `escaped` refusal or none needed.
    Fixtures: `run/CellStoresTwice` (each store, each edit refused; each traps with the rule removed),
    `run/CellStoresApart` (the greens, and a store of one object twice that is only read).
    **Slot state and loans.** A versioned frame relation `contents(handle-origin, ◆)` supplies current stored

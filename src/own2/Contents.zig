@@ -18,6 +18,7 @@ const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
 const Distinct = @import("Distinct.zig");
 const Loans = @import("Loans.zig");
+const Cells = @import("Cells.zig");
 const Stored = @import("Stored.zig");
 const Eval = @import("Eval.zig");
 
@@ -66,7 +67,7 @@ fn handle(e: *Evaluation, q: u32, j: u32, cs: Contract.Rel) Error!u32 {
 fn several(e: *Evaluation, q: u32, j: u32, cs: Contract.Rel) Error!bool {
     const f = e.fr();
     const p = f.val(try handle(e, q, j, cs)).place;
-    return p == .none or !try Loans.oneObject(f, p);
+    return p == .none or !try Cells.oneObject(f, p);
 }
 
 /// The frame's own parameter slot that names the cell of store `s` of call

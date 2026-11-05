@@ -1,0 +1,32 @@
+-- A result of `Ref.modify` that the stored `.1` cannot share is the
+-- caller's own (Appendix B's `ModifyResultPaths`, `LoanModifyReturn`'s
+-- green, `ownership-v2.md` §2.13.7). `[ 0 ]` is a `List number`, and a
+-- number is no object, so the copy pushed to below `.0` shares nothing
+-- with the `xs` stored back. Nothing here fixes the number to `Int`.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+size : List a → String
+size xs = String.fromInt (List.length xs)
+
+
+independent : ⊤ → String
+independent ⊤ =
+    r = Ref.make [ 0 ]
+    a = Ref.modify r λxs → ( List.push (List.copy xs) 5, xs )
+    "${size (List.push a 6)} ${size (Ref.get r)}"
+
+
+fresh : ⊤ → String
+fresh ⊤ =
+    r = Ref.make [ 0 ]
+    a = Ref.modify r λxs → ( [ 9 ], xs )
+    Ref.update r λxs → List.push xs 1
+    "${size (List.push a 6)} ${size (Ref.get r)}"
+
+
+main : Program
+main = Node.printLines [ independent ⊤, fresh ⊤ ]
