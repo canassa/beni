@@ -1,9 +1,10 @@
 -- check/good: a record that doubles at each level (#1238). With an
 -- annotation, each value's type prints as its alias's name, and the type is
--- a DAG of one alias per level. With none, `1` is a `number`, `v0` is
--- generalised, and each use of a let-bound value takes fresh variables: the
--- principal type of `v3` has 2^3 distinct ones, as in Elm, so its size
--- doubles with each level.
+-- a DAG of one alias per level. With none, `1` is a `number`, each `v` is
+-- generalised, and each use of one takes fresh variables: the principal type
+-- of `v3` has 2^3 distinct ones, as in Elm, so its size doubles with each
+-- level. If the language stops generalising a `number` variable in a value
+-- with no parameters, the `v` lines of this golden change.
 pub type alias W0 =
     items : List Int
 
