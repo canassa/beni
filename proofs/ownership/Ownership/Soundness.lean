@@ -656,9 +656,16 @@ def projectObs : Observation → Path → Option Observation
 /-- The value at a live use's path: record fields, and the one slot of a
     record object, read in the current heap (#316). A record object is a
     one-slot array whose slot is a record; the element step reads no other
-    array, so a list element is never a live path's value (the owner,
-    2026-11-04, `own-record-flat-q1`). A path of record fields reads no
-    heap. -/
+    array (the owner, 2026-11-04, `own-record-flat-q1`). A path of record
+    fields reads no heap.
+
+    The heap cannot tell a list of one record from a record object. The
+    typing keeps a list element out of a live path: `uses` gives an
+    `.element` step only through `fieldUses` (`get` and an update's base),
+    always with a `.field` step after it, and typing gives those a record
+    object only (`FlatFragment.Fields.tyAt` takes `.element` only at
+    `Ty.object`). A new producer of `.element` steps in `uses` must keep both
+    conditions, or this projection reads the head of a list. -/
 def projectHeap (heap : Heap) : Value → Path → Option Value
   | w, [] => some w
   | .record xs, .field i :: rest => match xs[i]? with

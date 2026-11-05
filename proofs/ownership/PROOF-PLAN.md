@@ -815,8 +815,8 @@ statement did not change. `RecordPrograms.lean` holds 30 probe programs,
 
 As built (2026-11-05, #316, slice 2, #1871): the four forms are in `FlatANF0`
 and `flat_preserved` proves them (`FlatFragment/Objects.lean`:
-`object_preserved`, `get_preserved`, `recordCopy_preserved`,
-`assign_preserved`). The finding: `Invariant.bindings` read a live path with
+`object_preserved`, `get_preserved`, `recordCopy_preserved`;
+`FlatFragment/ObjectUpdate.lean`: `assign_preserved`). The finding: `Invariant.bindings` read a live path with
 `projectVal`, which stops at an `.element` step, so no `Invariant` held while a
 field read of a bound object was still to come. Cesar decided on 2026-11-04
 (`own-record-flat-q1`, option A): fix the relation. `projectHeap` replaces
