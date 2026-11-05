@@ -1,4 +1,4 @@
-import Ownership.FlatFragment.Objects
+import Ownership.FlatFragment.ObjectUpdate
 import Ownership.RecordPrograms
 
 /-! The first flat fragment: the structural induction and the public trace corollary. -/
