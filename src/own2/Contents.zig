@@ -16,6 +16,8 @@ const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
+const Forest = @import("Forest.zig");
+const LabelChain = @import("LabelChain.zig");
 const Distinct = @import("Distinct.zig");
 const Loans = @import("Loans.zig");
 const Cells = @import("Cells.zig");
@@ -51,7 +53,30 @@ pub fn check(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void {
             if (cs.j >= call.args.len or !try several(e, q, cs.j, cs.slot)) continue;
             // Its selections are of what it was supplied, separated by this
             // rule, or of captures, at slots `Stored` escaped.
-            if (e.contracts.head(f.calls.items[vi].contract).res_cond.no) try taint(e, q, cs, vi);
+            const vh = e.contracts.head(f.calls.items[vi].contract);
+            if (vh.res_cond.no) try taint(e, q, cs, vi);
+            if (!vh.flags.pessimistic) try moved(e, vi, try LabelChain.entriesOf(e.chain(), vh.res_root), h.flags.words and l.origin[2] == 1);
+        }
+    }
+}
+
+/// Virtual call `vi` stores what it was supplied at a slot not its own: the
+/// frame's names no longer say which object a slot holds, so whoever holds
+/// a moved object from before must be dead, as for an edit of it. `modify`:
+/// only `.1` is stored.
+fn moved(e: *Evaluation, vi: u32, es: *const Forest.Entries, modify: bool) Error!void {
+    const f = e.fr();
+    for (es.items.items) |rs| {
+        var ws = es.wordsOf(rs);
+        if (modify and ws.len == 0 and !rs.open) continue;
+        if (modify and ws.len != 0) {
+            const st = Place.Step.fromWord(ws[0]);
+            if (st.kind != .index or st.payload != 1) continue;
+            ws = ws[1..];
+        }
+        for (rs.arrivals) |a| {
+            if (a.kind != .param or a.j != 0 or std.mem.eql(u32, f.slots.relWords(a.slot), ws)) continue;
+            try Eval.callWrite(e, vi, .{ .j = 0, .slot = a.slot, .deep = true });
         }
     }
 }

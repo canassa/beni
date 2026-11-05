@@ -1,0 +1,7 @@
+# v2 refuses a move between a cell's slots while a loan from before it is live: it is judged as an edit (§2.13.7).
+46:13 list_still_used Ref.update
+56:13 list_still_used Ref.update
+68:13 list_still_used Ref.update
+81:17 list_still_used Ref.modify
+95:13 list_still_used CellMovesSlots.swapIn
+104:5 list_still_used Ref.update

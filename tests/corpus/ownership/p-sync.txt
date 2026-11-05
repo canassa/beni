@@ -1,6 +1,7 @@
-# P-sync (docs/design/ownership-v2.md §2.13.7): the bodies each platform's
-# host enters beni through. A host may call one of these inside a host call
-# beni made only where the spec's table says so; each hands what it is told
+# P-sync (docs/design/ownership-v2.md §2.13.7): the listeners each platform
+# registers, which a host may call inside a host call beni made. (A promise
+# reaction or a timer starts on an empty stack, so it needs no row.) One runs
+# there only where the spec's table says so; each hands what it is told
 # to a queue, or resumes a fiber, and runs no program code but a DOM
 # handler's. Every declaration below is pinned in word-bodies.txt, and
 # `check_test.zig` fails on a listener added in a declaration not listed
