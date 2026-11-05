@@ -4731,3 +4731,9 @@ tests/corpus/run/SanitiserCellStoredFresh.beni SanitiserCellStoredFresh 16:5 #0 
 tests/corpus/run/SanitiserCellStoredFresh.beni SanitiserCellStoredFresh 16:5 #1 :: Ref.update r◆ :: absent :: accepted  v1 checks no cell operation; v2 accepts the cell operation and judges the callback's edit at the call (§2.13.7, §2.11.3, #1955)
 tests/corpus/run/SanitiserCellStoredFresh.beni SanitiserCellStoredFresh 23:9 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 accepts the cell operation and judges the callback's edit at the call (§2.13.7, §2.11.3, #1955)
 tests/corpus/run/SanitiserCellStoredFresh.beni SanitiserCellStoredFresh 24:5 #0 :: Ref.update r◆ :: absent :: accepted  v1 checks no cell operation; v2 accepts the cell operation and judges the callback's edit at the call (§2.13.7, §2.11.3, #1955)
+#
+# A pattern's element stored back into its list: a `[*]` position meets a front one (#1956).
+tests/corpus/run/SanitiserPatternStoredBack.beni SanitiserPatternStoredBack 48:10 #0 :: List.update <call>[*] :: accepted :: rejected  `[ …l, p ]` holds the head twice: v1 accepts the edit unsoundly (#1956)
+tests/corpus/run/SanitiserPatternStoredBack.beni SanitiserPatternStoredBack 55:15 #0 :: List.push f :: accepted :: rejected  `[ …xs, el ]` holds `el` twice: v1 accepts the edit unsoundly (#1956)
+tests/corpus/ownership/PushedPositions.beni [node] PushedPositions 128:15 #0 :: List.push f :: accepted :: rejected  the list holds `el` twice after the spread, so the answer holds one list twice: v1 accepts it unsoundly (#1478, #1956)
+tests/corpus/ownership/PushedPositionsImported [node] Main 22:15 #0 :: List.push f :: accepted :: rejected  the list holds `el` twice after the spread, so the answer holds one list twice: v1 accepts it unsoundly (#1478, #1956)

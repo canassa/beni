@@ -1,0 +1,62 @@
+-- A runtime catch for an element a list pattern binds, stored back into
+-- the list it came from (`ownership-v2.md` §2.3.2, *a `[*]` position and a
+-- front one*; #1956). `[ …l, p ]` with `p` the head of `l` puts one list at
+-- two positions, and so does `[ …xs, el ]` with `el` an element of `xs`;
+-- an in-place edit of one position then changes the other. Each prints the
+-- edited list and the other position.
+import List
+import Node exposing (Program)
+import String
+
+
+dupL : List (List Int) → List (List Int)
+dupL l =
+    case l of
+        [ p, …_ ] →
+            [ …l, p ]
+
+        _ →
+            l
+
+
+twice : List (List Int) → List (List Int)
+twice xs =
+    case xs of
+        [ _, el, …_ ] →
+            case [ …xs, el ] of
+                [ _, …rest ] →
+                    rest
+
+                [] →
+                    []
+
+        _ →
+            []
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    String.join (List.map xs String.fromInt) sep
+
+
+show : List (List Int) → String
+show ls = String.join (List.map ls ints) ";"
+
+
+viaL : ⊤ → List (List Int)
+viaL ⊤ = List.update (dupL [ [ 1 ] ]) 0 λv → List.push v 9
+
+
+viaSpread : ⊤ → List (List Int)
+viaSpread ⊤ =
+    case twice [ [ 1 ], [ 2 ] ] of
+        [ f, …r ] →
+            [ List.push f 9, …r ]
+
+        [] →
+            []
+
+
+main : Program
+main = Node.print "${show (viaL ⊤)} ${show (viaSpread ⊤)}"
