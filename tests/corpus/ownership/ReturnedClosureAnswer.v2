@@ -1,0 +1,1 @@
+A closure a declaration returns has a called contract in v2 (§2.11.3): its answer is known, so the write is accepted; v1 calls it unknown.

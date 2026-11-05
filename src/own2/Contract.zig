@@ -81,6 +81,9 @@ pub const Label = struct {
 
 pub const Calls = enum(u8) { none, once, many };
 
+/// Marks a label origin's offset: a called code's last call (`Called`).
+pub const last_origin: u32 = 1 << 29;
+
 pub const Supply = struct {
     k: u32,
     /// `res` as a result tree (§2.10, *a contract is a tree of shared

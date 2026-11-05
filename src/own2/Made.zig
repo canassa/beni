@@ -21,7 +21,7 @@ const Sink = Eval.Sink;
 /// a called code, for one the creation made, what the value holds (§2.11.3).
 pub fn made(s: *Sink, l: Value.Leaf) Error!Contract.Arrival {
     const e = s.e;
-    if (e.w.last.calls == 0 or (l.kind == .fresh and e.inLast(l.atom))) return .{ .kind = .fresh };
+    if (e.w.code.called == null or (l.kind == .fresh and e.inLast(l.atom))) return .{ .kind = .fresh };
     return selfArrival(s);
 }
 
@@ -33,7 +33,7 @@ fn selfArrival(s: *Sink) Contract.Arrival {
 /// code, a label its creation called was answered once: what the value holds.
 pub fn answer(s: *Sink, cb: u32, rel: u32) Error!Contract.Arrival {
     const e = s.e;
-    const last = e.w.last.calls == 0 or cb >= e.w.last.cbs and for (e.passes.items) |p| {
+    const last = e.w.code.called == null or cb >= e.w.last.cbs and for (e.passes.items) |p| {
         if (p[0] == cb) break true;
     } else e.fr().cbs.items[cb].inst != Ids.none_int;
     return if (last) .{ .kind = .cb, .j = try s.labelIndex(cb), .slot = rel } else selfArrival(s);
@@ -43,7 +43,7 @@ pub fn answer(s: *Sink, cb: u32, rel: u32) Error!Contract.Arrival {
 /// `self` (§2.11.3). Whether `l` is such an object.
 pub fn selfEscape(s: *Sink, l: Value.Leaf) Error!bool {
     const e = s.e;
-    if (e.w.last.calls == 0 or (l.kind != .site and l.kind != .fresh) or (l.kind == .fresh and e.inLast(l.atom))) return false;
+    if (e.w.code.called == null or (l.kind != .site and l.kind != .fresh) or (l.kind == .fresh and e.inLast(l.atom))) return false;
     const eff: Contract.Effect = .{ .j = selfArrival(s).j, .slot = Slots.root, .deep = true };
     if (try Contract.Draft.addEffect(&s.d.escapes, s.arena, eff)) if (e.solver) |sv| try sv.effFact(sv.ctx, e.x, false, eff);
     return true;
