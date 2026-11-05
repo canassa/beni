@@ -254,6 +254,11 @@ theorem after_named : LinkNamed hsAfter env after naming := by
       rw [after_eq] at hy
       simp at hy
       rcases hy with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> exact ⟨rfl, rfl⟩)
+    (by
+      intro y p q rest hy route
+      rw [after_eq] at hy
+      simp at hy
+      rcases hy with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> simp at route)
     write_run
 
 /-- The conclusion is not vacuous: after the write, the live `ys` protects

@@ -1,4 +1,5 @@
-import Ownership.FlatFragment.View
+import Ownership.FlatFragment.Objects
+import Ownership.RecordPrograms
 
 /-! The first flat fragment: the structural induction and the public trace corollary. -/
 
@@ -548,6 +549,63 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
         described, observed, valueTyped, shaped, tags, chains, deep⟩
     · exact failure
+  | @object args =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have covered : ∀ a ∈ args, ∀ use ∈ atomUses a, use ∈ live := by
+      intro a member use useMember
+      apply usesLive use
+      change use ∈ atomsUses args
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨a, member, useMember⟩
+    obtain ⟨_, _, _, success, failure⟩ :=
+      Ownership.FlatFragment.Objects.object_preserved (depth := depth) inv typed covered defaultConfig accepted
+    constructor
+    · intro value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        shaped, tags, chains, deep⟩ := success value vs' run
+      exact ⟨actual, hs', gamma', heapRun,
+        Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
+    · exact failure
+  | @get receiver index =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have covered : ∀ use ∈ fieldUses receiver [index], use ∈ live := fun use member => usesLive use member
+    obtain ⟨_, _, _, success, failure⟩ :=
+      Ownership.FlatFragment.Objects.get_preserved (depth := depth) inv typed covered defaultConfig accepted
+    constructor
+    · intro value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        shaped, tags, chains, deep⟩ := success value vs' run
+      exact ⟨actual, hs', gamma', heapRun,
+        Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
+    · exact failure
+  | @recordCopy receiver =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have covered : ∀ use ∈ atomUses receiver, use ∈ live := by
+      intro use useMember
+      apply usesLive use
+      change use ∈ atomsUses [receiver]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨receiver, by simp, useMember⟩
+    obtain ⟨_, _, _, success, failure⟩ :=
+      Ownership.FlatFragment.Objects.recordCopy_preserved (depth := depth) inv typed covered defaultConfig accepted
+    constructor
+    · intro value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        shaped, tags, chains, deep⟩ := success value vs' run
+      exact ⟨actual, hs', gamma', heapRun,
+        Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
+        described, observed, valueTyped, shaped, tags, chains, deep⟩
+    · exact failure
+  | @assign width fields base values =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    exact Ownership.FlatFragment.Objects.assign_preserved (depth := depth) inv typed usesLive afterSub
+      defaultConfig accepted
 
 /-- The public trace corollary for the fragment, with the exact conclusion
 of `accepted_traces_agree` and the one extra scope hypothesis. -/
@@ -1704,5 +1762,184 @@ theorem viewEmpty_traces_agree (a : Accepted) (ok : check viewEmpty = .ok a)
 #guard match ValueSemantics.run viewSourceWriteLive 100, InPlaceSemantics.run viewSourceWriteLive 100 with
   | .ok a, .ok b => a.finalValue == .int 1 && b.finalValue == .int 2
   | _, _ => false
+
+/-! ### Record objects (#316, slice 2)
+
+The record programs of slice 1 (`RecordPrograms.lean`) that the checker
+accepts are in the fragment, and the flat theorem gives each one equal
+traces. `keptRead` reads through the old holder a field that the update
+keeps, after the write: the value at the kept field is the old one.
+`hoistedRead` is `writtenRead` as the lowering writes it, the read of the
+written field before the write. `allFields` writes every field.
+`aliasKept` reads a kept field through a second local. `payloadKept` and
+`twoForms` are the accepted controls of #316's message payload and two-path
+shapes, `nested` is the nested update, `copied` updates a `Record.copy`,
+`sameFieldTwice` writes one field twice through the old holder, and
+`heldField` replaces a list field whose old list a local still holds and
+then pushes onto it. Each refused control (`writtenRead`, `wholeUse`,
+`payloadRead`, `twoPaths`, `twoUpdates`, `heldFieldKept` and `topLevel`) is
+refused, and where the in-place run completes, its two runs differ. -/
+
+open Ownership.RecordPrograms
+
+/-- `r = { a = 1, b = 2 }` and then `r.b`: a field read right after the
+literal, the live use `(0, [.element, .field 1])`. -/
+def fieldRead : Program := { main :=
+  (.letE 0 (.prim .object [.int 1, .int 2]) (.prim (.get 1) [.var 0])) }
+
+theorem fieldRead_flat : FlatANF0 fieldRead.main :=
+  .letE .object (.get 1)
+
+theorem fieldRead_traces_agree (a : Accepted) (ok : check fieldRead = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run fieldRead fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run fieldRead fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree fieldRead a ok fieldRead_flat fuel t run
+
+/-! The element step of a live path reads a record object's one slot and no
+other array (the owner, 2026-11-04, `own-record-flat-q1`): not a one-slot list
+of integers, not a list of two records. -/
+#guard (projectHeap #[[Value.record [.int 1, .int 2]]] (.ref 0) [.element, .field 1]).isSome
+#guard (projectHeap #[[Value.int 5]] (.ref 0) [.element]).isNone
+#guard (projectHeap #[[Value.record [.int 1], .record [.int 2]]] (.ref 0) [.element, .field 0]).isNone
+#guard (projectObs (.list [.int 5]) [.element]).isNone
+#guard (projectObs (.list [.record [.int 1], .record [.int 2]]) [.element, .field 0]).isNone
+
+theorem keptRead_flat : FlatANF0 keptRead.main :=
+  .letE .object (.letE .assign (.letE (.get 1) (.letE (.get 0) (.scalar .add))))
+
+theorem hoistedRead_flat : FlatANF0 hoistedRead.main :=
+  .letE .object (.letE (.get 0) (.letE .assign (.letE (.get 0) (.scalar .add))))
+
+theorem allFields_flat : FlatANF0 allFields.main :=
+  .letE .object (.letE .assign (.get 1))
+
+theorem aliasKept_flat : FlatANF0 aliasKept.main :=
+  .letE .object (.letE .atom (.letE .assign (.letE (.get 1) (.letE (.get 0) (.scalar .add)))))
+
+theorem payloadKept_flat : FlatANF0 payloadKept.main :=
+  .letE .object (.letE .object (.letE .record (.letE (.get 0) (.letE .assign (.letE .assign
+    (.letE (.get 1) .record))))))
+
+theorem twoForms_flat : FlatANF0 twoForms.main := by
+  unfold twoForms
+  repeat (first | apply FlatANF0.letE | apply FlatANF0.object | apply FlatANF0.get | apply FlatANF0.assign |
+    apply FlatANF0.record | apply FlatANF0.atom)
+
+theorem copied_flat : FlatANF0 copied.main :=
+  .letE .object (.letE .recordCopy (.letE .assign .record))
+
+theorem nested_flat : FlatANF0 nested.main :=
+  .letE .object (.letE .object (.letE (.get 0) (.letE .assign (.letE .assign (.letE (.get 0) (.get 0))))))
+
+theorem sameFieldTwice_flat : FlatANF0 sameFieldTwice.main :=
+  .letE .object (.letE .assign (.letE .assign .atom))
+
+theorem heldField_flat : FlatANF0 heldField.main :=
+  .letE (.literal .int .int) (.letE .object (.letE (.get 0) (.letE (.literal .int .int) (.letE .assign
+    (.letE .push .record)))))
+
+/-- The flat theorem gives each accepted record program equal traces. -/
+theorem keptRead_traces_agree (a : Accepted) (ok : check keptRead = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run keptRead fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run keptRead fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree keptRead a ok keptRead_flat fuel t run
+
+theorem hoistedRead_traces_agree (a : Accepted) (ok : check hoistedRead = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run hoistedRead fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run hoistedRead fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree hoistedRead a ok hoistedRead_flat fuel t run
+
+theorem allFields_traces_agree (a : Accepted) (ok : check allFields = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run allFields fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run allFields fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree allFields a ok allFields_flat fuel t run
+
+theorem aliasKept_traces_agree (a : Accepted) (ok : check aliasKept = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run aliasKept fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run aliasKept fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree aliasKept a ok aliasKept_flat fuel t run
+
+theorem payloadKept_traces_agree (a : Accepted) (ok : check payloadKept = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run payloadKept fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run payloadKept fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree payloadKept a ok payloadKept_flat fuel t run
+
+theorem twoForms_traces_agree (a : Accepted) (ok : check twoForms = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run twoForms fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run twoForms fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree twoForms a ok twoForms_flat fuel t run
+
+theorem copied_traces_agree (a : Accepted) (ok : check copied = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run copied fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run copied fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree copied a ok copied_flat fuel t run
+
+theorem nested_traces_agree (a : Accepted) (ok : check nested = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run nested fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run nested fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree nested a ok nested_flat fuel t run
+
+theorem sameFieldTwice_traces_agree (a : Accepted) (ok : check sameFieldTwice = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run sameFieldTwice fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run sameFieldTwice fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree sameFieldTwice a ok sameFieldTwice_flat fuel t run
+
+theorem heldField_traces_agree (a : Accepted) (ok : check heldField = .ok a)
+    (fuel : Nat) (t : Trace) (run : ValueSemantics.run heldField fuel = .ok t) :
+    ∃ t', InPlaceSemantics.run heldField fuel = .ok t' ∧ t.reads = t'.reads ∧
+      t.externalReads = t'.externalReads ∧ t.finalValue = t'.finalValue :=
+  accepted_flat_anf_traces_agree heldField a ok heldField_flat fuel t run
+
+/-- An accepted record probe: both runs complete with the same trace and the
+expected final value, and the in-place run writes in place. -/
+private def recordProbe (p : Program) (expected : Observation) (writes : Nat) : Bool :=
+  (check p).isOk &&
+  match ValueSemantics.run p 100, InPlaceSemantics.run p 100 with
+  | .ok a, .ok b => a.reads == b.reads && a.externalReads == b.externalReads &&
+      a.finalValue == b.finalValue && a.finalValue == expected &&
+      InPlaceSemantics.writeCount p 100 == writes
+  | _, _ => false
+
+/-- A refused record control: the checker names the Dead test, and the two
+runs give different final values. -/
+private def refusedRecord (p : Program) : Bool :=
+  (match check p with
+   | .error message => message == "Dead: an old holder is live after the demand"
+   | .ok _ => false) &&
+  match ValueSemantics.run p 100, InPlaceSemantics.run p 100 with
+  | .ok a, .ok b => a.finalValue != b.finalValue
+  | _, _ => false
+
+#guard recordProbe fieldRead (.int 2) 0
+#guard recordProbe keptRead (.int 7) 1
+#guard recordProbe hoistedRead (.int 6) 1
+#guard recordProbe allFields (.int 6) 1
+#guard recordProbe aliasKept (.int 7) 1
+#guard recordProbe twoForms (.int 1) 1
+#guard recordProbe nested (.int 7) 1
+#guard recordProbe copied (.record [.list [.record [.int 1, .int 2]], .list [.record [.int 5, .int 2]]]) 1
+#guard recordProbe sameFieldTwice (.list [.record [.int 2, .int 0]]) 2
+#guard recordProbe heldField (.record [.list [.record [.list [], .int 0]], .list [.int 1, .int 2]]) 2
+#guard (check payloadKept).isOk
+#guard match ValueSemantics.run payloadKept 100, InPlaceSemantics.run payloadKept 100 with
+  | .ok a, .ok b => a.reads == b.reads && a.externalReads == b.externalReads && a.finalValue == b.finalValue
+  | _, _ => false
+#guard refusedRecord writtenRead
+#guard refusedRecord wholeUse
+#guard refusedRecord payloadRead
+#guard refusedRecord twoPaths
+#guard refusedRecord twoUpdates
+#guard refusedRecord heldFieldKept
+#guard !(check topLevel).isOk
 
 end Ownership.FlatFragment.Preservation

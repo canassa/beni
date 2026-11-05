@@ -27,9 +27,9 @@ local instance originLawfulBEq : LawfulBEq Origin := LawfulBEq.mk (by deriving_L
 
 /-! ### Projections of typed values -/
 
-theorem projectVal_of_tyAt {heap : Heap} {w : Value} {tk t : Ty} {p : Path}
+theorem projectHeap_of_tyAt {heap : Heap} {w : Value} {tk t : Ty} {p : Path}
     (shape : AllocatedFlatValue heap w tk) (at_p : tyAt tk p = some t) :
-    ∃ w', projectVal w p = some w' ∧ AllocatedFlatValue heap w' t := by
+    ∃ w', projectHeap heap w p = some w' ∧ AllocatedFlatValue heap w' t := by
   induction p generalizing w tk with
   | nil =>
     simp [tyAt] at at_p
@@ -37,16 +37,21 @@ theorem projectVal_of_tyAt {heap : Heap} {w : Value} {tk t : Ty} {p : Path}
     exact ⟨w, rfl, shape⟩
   | cons step rest ih =>
     cases step <;> cases tk <;> simp [tyAt] at at_p
-    rename_i i' ts
-    cases h : ts[i']? with
-    | none => simp [h] at at_p
-    | some t' =>
-      simp [h] at at_p
-      cases shape with
-      | record ws _ len fields =>
-        obtain ⟨x, ws_i⟩ := index_of_same_length len.symm h
-        obtain ⟨w', projected, shape'⟩ := ih (fields i' x t' ws_i h) at_p
-        exact ⟨w', by simp [projectVal, ws_i, projected], shape'⟩
+    · rename_i i' ts
+      cases h : ts[i']? with
+      | none => simp [h] at at_p
+      | some t' =>
+        simp [h] at at_p
+        cases shape with
+        | record ws _ len fields =>
+          obtain ⟨x, ws_i⟩ := index_of_same_length len.symm h
+          obtain ⟨w', projected, shape'⟩ := ih (fields i' x t' ws_i h) at_p
+          exact ⟨w', by simp [projectHeap, ws_i, projected], shape'⟩
+    · cases shape with
+      | object root x _ lookup shapeX =>
+        obtain ⟨w', projected, shape'⟩ := ih shapeX (tyAt_of_fieldTyAt at_p)
+        cases shapeX with
+        | record ws _ _ _ => exact ⟨w', by simp [projectHeap, lookup, projected], shape'⟩
 
 /-! ### Representations from snapshots -/
 
@@ -54,8 +59,8 @@ theorem projectVal_of_tyAt {heap : Heap} {w : Value} {tk t : Ty} {p : Path}
 A result's slots have no typed path, so a projection never enters one. -/
 theorem allocated_project {heap : Heap} {w w' : Value} {tk t : Ty} {p : Path}
     (shape : AllocatedFlatValue heap w tk) (at_p : tyAt tk p = some t)
-    (projected : projectVal w p = some w') : AllocatedFlatValue heap w' t := by
-  obtain ⟨w'', projected', shape'⟩ := projectVal_of_tyAt shape at_p
+    (projected : projectHeap heap w p = some w') : AllocatedFlatValue heap w' t := by
+  obtain ⟨w'', projected', shape'⟩ := projectHeap_of_tyAt shape at_p
   rw [projected] at projected'
   cases Option.some.inj projected'
   exact shape'
@@ -169,30 +174,6 @@ theorem corresponds_record_of_fields {heap : Heap} {os : List Observation} {ws :
       represents_of_snapshot m w o
         (fields i o w os_i ws_i m (children o (List.mem_of_getElem? os_i))))
     exact snapshot_of_represents (.record many)
-
-theorem corresponds_project {heap : Heap} {o o' : Observation} {w w' : Value} {p : Path}
-    (paired : Corresponds heap o w) (valuePath : projectVal w p = some w')
-    (obsPath : projectObs o p = some o') : Corresponds heap o' w' := by
-  induction p generalizing o w with
-  | nil =>
-    simp [projectVal] at valuePath
-    simp [projectObs] at obsPath
-    subst valuePath; subst obsPath
-    exact paired
-  | cons step rest ih =>
-    cases step <;> cases w <;> simp [projectVal] at valuePath
-    rename_i i' ws
-    cases h : ws[i']? with
-    | none => simp [h] at valuePath
-    | some x =>
-      simp [h] at valuePath
-      obtain ⟨os, rfl, len, fields⟩ := corresponds_record_fields paired
-      simp [projectObs] at obsPath
-      cases h' : os[i']? with
-      | none => simp [h'] at obsPath
-      | some y =>
-        simp [h'] at obsPath
-        exact ih (fields i' y x h' h) valuePath obsPath
 
 /-! ### Records in typing -/
 
@@ -311,6 +292,33 @@ theorem obsTyped_list_elements {ds : List Decl} {os : List Observation} {t : Ty}
   intro o member
   exact List.all_eq_true.mp typed ⟨o, member⟩ (List.mem_attach _ _)
 
+/-- An observation of one record typed `{ts}` is typed as the record object (#316). -/
+theorem obsTyped_object_of_slot {ds : List Decl} {o : Observation} {ts : List Ty}
+    (slot : obsTyped ds o (.record ts) = true) : obsTyped ds (.list [o]) (.object ts) = true := by
+  unfold obsTyped
+  change ([o].length == 1 && [o].attach.all (fun item => obsTyped ds item.val (.record ts))) = true
+  simp only [List.length_singleton, beq_self_eq_true, Bool.true_and]
+  exact List.all_eq_true.mpr (fun item _ => by
+    have := item.property
+    simp only [List.mem_singleton] at this
+    rw [this]; exact slot)
+
+/-- An observation typed as a record object is one record of the object's fields. -/
+theorem obsTyped_object_slot {ds : List Decl} {o : Observation} {ts : List Ty}
+    (typed : obsTyped ds o (.object ts) = true) :
+    ∃ o', o = .list [o'] ∧ obsTyped ds o' (.record ts) = true := by
+  cases o with
+  | list os =>
+    unfold obsTyped at typed
+    change (os.length == 1 && os.attach.all (fun item => obsTyped ds item.val (.record ts))) = true at typed
+    obtain ⟨len, all⟩ := Bool.and_eq_true_iff.mp typed
+    match os, len with
+    | [o'], _ =>
+      exact ⟨o', rfl, List.all_eq_true.mp all ⟨o', by simp⟩ (List.mem_attach _ _)⟩
+  | int _ => simp [obsTyped] at typed
+  | record _ => simp [obsTyped] at typed
+  | closure _ _ => simp [obsTyped] at typed
+
 /-- An allocated array of values typed `t` is typed `List t`. -/
 theorem valueTyped_list_of_elements {ds : List Decl} {heap : Heap} {root : Nat} {ws : List Value} {t : Ty}
     (lookup : heap[root]? = some ws) (elements : ∀ w ∈ ws, ValueTyped ds heap w t) :
@@ -391,6 +399,10 @@ theorem valueTyped_of_allocated {ds : List Decl} {heap : Heap} {w : Value} {ty :
             ([] ++ (fp ++ ([] ++ []))) := .cons .int (.cons rep (.cons .int .nil))
         simpa using Represents.record many
       · simpa [obsTyped] using typed
+  | object root w ts lookup _ ih =>
+    obtain ⟨n, o, fp, rep, typed⟩ := ih
+    exact ⟨n + 1, .list [o], root :: (fp ++ []), .ref lookup (.cons rep .nil),
+      obsTyped_object_of_slot typed⟩
 
 theorem projectObs_of_tyAt {ds : List Decl} {o : Observation} {tk t : Ty} {p : Path}
     (typed : obsTyped ds o tk = true) (at_p : tyAt tk p = some t) :
@@ -402,20 +414,25 @@ theorem projectObs_of_tyAt {ds : List Decl} {o : Observation} {tk t : Ty} {p : P
     exact ⟨o, rfl, typed⟩
   | cons step rest ih =>
     cases step <;> cases tk <;> simp [tyAt] at at_p
-    rename_i i' ts
-    cases h : ts[i']? with
-    | none => simp [h] at at_p
-    | some t' =>
-      simp [h] at at_p
-      cases o with
-      | int _ => simp [obsTyped] at typed
-      | list _ => simp [obsTyped] at typed
-      | closure _ _ => simp [obsTyped] at typed
-      | record os =>
-        obtain ⟨len, fields⟩ := obsTyped_record_fields typed
-        obtain ⟨o1, os_i⟩ := index_of_same_length len.symm h
-        obtain ⟨o', projected, typed'⟩ := ih (fields i' o1 t' os_i h) at_p
-        exact ⟨o', by simp [projectObs, os_i, projected], typed'⟩
+    · rename_i i' ts
+      cases h : ts[i']? with
+      | none => simp [h] at at_p
+      | some t' =>
+        simp [h] at at_p
+        cases o with
+        | int _ => simp [obsTyped] at typed
+        | list _ => simp [obsTyped] at typed
+        | closure _ _ => simp [obsTyped] at typed
+        | record os =>
+          obtain ⟨len, fields⟩ := obsTyped_record_fields typed
+          obtain ⟨o1, os_i⟩ := index_of_same_length len.symm h
+          obtain ⟨o', projected, typed'⟩ := ih (fields i' o1 t' os_i h) at_p
+          exact ⟨o', by simp [projectObs, os_i, projected], typed'⟩
+    · obtain ⟨o1, rfl, typed1⟩ := obsTyped_object_slot typed
+      obtain ⟨o', projected, typed'⟩ := ih typed1 (tyAt_of_fieldTyAt at_p)
+      cases o1 with
+      | record os => exact ⟨o', by simp [projectObs, projected], typed'⟩
+      | _ => simp [obsTyped] at typed1
 
 theorem projectObs_typed {ds : List Decl} {o o' : Observation} {tk t : Ty} {p : Path}
     (typed : obsTyped ds o tk = true) (at_p : tyAt tk p = some t)
@@ -482,65 +499,97 @@ theorem describes_bottom_field {gamma : Naming} {heap : Heap} {ws : List Value} 
   · cases described.2 with
     | record fields => simpa [atPath_bottom] using fields i w1 ws_i
 
+/-- A described list describes each of its elements by its element abstract,
+when its roots hold no unknown origin. -/
+theorem describes_element {gamma : Naming} {heap : Heap} {roots : List Origin} {e : Abstract}
+    {ex : Certificate} {root : Nat} {ys : List Value} {y : Value}
+    (noUnk : Origin.unknown ∉ roots) (lookup : heap[root]? = some ys) (member : y ∈ ys)
+    (described : Describes gamma heap (.list roots e ex) (.ref root)) : Describes gamma heap e y := by
+  refine ⟨⟨fun q c located => ?_, fun q cs e' ex' w' shape located n o fp rep => ?_⟩, ?_⟩
+  · have := described.1.1 (.element :: q) c (.element lookup member located)
+    simpa [namesAt, noUnk] using this
+  · exact described.1.2 (.element :: q) cs e' ex' w' (by simpa [Abstract.atPath] using shape)
+      (.element lookup member located) n o fp rep
+  · cases described.2 with
+    | array lookup' elements =>
+      rw [lookup] at lookup'
+      cases lookup'
+      simpa [Abstract.atPath] using elements y member
+    | unknown _ _ _ top => exact absurd (List.contains_iff_mem.mp top) noUnk
+
 theorem describes_bottom_project {gamma : Naming} {heap : Heap} {w w' : Value} {p : Path}
-    (described : Describes gamma heap .bottom w) (projected : projectVal w p = some w') :
+    (described : Describes gamma heap .bottom w) (projected : projectHeap heap w p = some w') :
     Describes gamma heap .bottom w' := by
   induction p generalizing w with
   | nil =>
-    simp [projectVal] at projected
+    simp [projectHeap] at projected
     subst projected
     exact described
   | cons step rest ih =>
-    cases step <;> cases w <;> simp [projectVal] at projected
-    rename_i i' ws
-    cases h' : ws[i']? with
-    | none => simp [h'] at projected
-    | some w1 =>
-      simp [h'] at projected
-      exact ih (describes_bottom_field described h') projected
+    cases step <;> cases w <;> simp [projectHeap] at projected
+    · rename_i i' ws
+      cases h' : ws[i']? with
+      | none => simp [h'] at projected
+      | some w1 =>
+        simp [h'] at projected
+        exact ih (describes_bottom_field described h') projected
+    · rename_i c
+      have names := described.1.1 [] c (.here _)
+      rw [namesAt_bottom] at names
+      exact (named_nil names).elim
 
 theorem describes_project {gamma : Naming} {heap : Heap} {tk t : Ty} {a : Abstract} {w w' : Value}
     {p : Path}
     (shape : FlatAbstract tk a) (at_p : tyAt tk p = some t) (described : Describes gamma heap a w)
-    (projected : projectVal w p = some w') : Describes gamma heap (a.atPath p) w' := by
+    (projected : projectHeap heap w p = some w') : Describes gamma heap (a.atPath p) w' := by
   induction p generalizing tk a w with
   | nil =>
-    simp [projectVal] at projected
+    simp [projectHeap] at projected
     subst projected
     simpa [Abstract.atPath] using described
   | cons step rest ih =>
     cases step <;> cases tk <;> simp [tyAt] at at_p
-    rename_i i' ts
-    cases h : ts[i']? with
-    | none => simp [h] at at_p
-    | some t' =>
-      simp [h] at at_p
-      rcases flatAbstract_record shape with rfl | ⟨as, rfl, len, fields⟩
+    · rename_i i' ts
+      cases h : ts[i']? with
+      | none => simp [h] at at_p
+      | some t' =>
+        simp [h] at at_p
+        rcases flatAbstract_record shape with rfl | ⟨as, rfl, len, fields⟩
+        · rw [atPath_bottom]
+          exact describes_bottom_project described projected
+        · obtain ⟨a', as_i, shape'⟩ := flatAbstract_record_field len fields h
+          cases w <;> simp [projectHeap] at projected
+          rename_i ws
+          cases h' : ws[i']? with
+          | none => simp [h'] at projected
+          | some w1 =>
+            simp [h'] at projected
+            simp only [Abstract.atPath, as_i, Option.getD_some]
+            exact ih shape' at_p (describes_field described as_i h') projected
+    · rcases flatAbstract_object shape with rfl | ⟨roots, element, certificate, rfl, noUnk, shape'⟩
       · rw [atPath_bottom]
         exact describes_bottom_project described projected
-      · obtain ⟨a', as_i, shape'⟩ := flatAbstract_record_field len fields h
-        cases w <;> simp [projectVal] at projected
-        rename_i ws
-        cases h' : ws[i']? with
-        | none => simp [h'] at projected
-        | some w1 =>
-          simp [h'] at projected
-          simp only [Abstract.atPath, as_i, Option.getD_some]
-          exact ih shape' at_p (describes_field described as_i h') projected
+      · cases w with
+        | ref c =>
+          obtain ⟨xs, found, inner⟩ := projectHeap_element_inv projected
+          simp only [Abstract.atPath]
+          exact ih shape' (tyAt_of_fieldTyAt at_p)
+            (describes_element noUnk found (by simp) described) inner
+        | _ => simp [projectHeap] at projected
 
 /-- The tags of a projection along a typed path. -/
-theorem resultTags_project {tk t : Ty} {a : Abstract} {w w' : Value} {p : Path}
-    (tags : ResultTags tk a w) (shape : FlatAbstract tk a) (at_p : tyAt tk p = some t)
-    (projected : projectVal w p = some w') : ResultTags t (a.atPath p) w' := by
+theorem resultTags_project {heap : Heap} {tk t : Ty} {a : Abstract} {w w' : Value} {p : Path}
+    (tags : ResultTags tk a w) (shape : FlatAbstract tk a) (at_p : fieldTyAt tk p = some t)
+    (projected : projectHeap heap w p = some w') : ResultTags t (a.atPath p) w' := by
   induction p generalizing tk a w with
   | nil =>
-    simp [tyAt] at at_p
+    simp [fieldTyAt] at at_p
     subst at_p
-    simp [projectVal] at projected
+    simp [projectHeap] at projected
     subst projected
     simpa [Abstract.atPath] using tags
   | cons step rest ih =>
-    cases step <;> cases tk <;> simp [tyAt] at at_p
+    cases step <;> cases tk <;> simp [fieldTyAt] at at_p
     rename_i i' ts
     cases h : ts[i']? with
     | none => simp [h] at at_p
@@ -551,7 +600,7 @@ theorem resultTags_project {tk t : Ty} {a : Abstract} {w w' : Value} {p : Path}
         cases shape with
         | record _ _ len fields =>
           obtain ⟨a', as_i, shape'⟩ := flatAbstract_record_field len fields h
-          simp [projectVal] at projected
+          simp [projectHeap] at projected
           cases h' : ws[i']? with
           | none => simp [h'] at projected
           | some w1 =>
@@ -561,42 +610,51 @@ theorem resultTags_project {tk t : Ty} {a : Abstract} {w w' : Value} {p : Path}
 
 theorem tagsDeep_project {heap : Heap} {tk t : Ty} {a : Abstract} {w w' : Value} {p : Path}
     (tags : TagsDeep heap tk a w) (shape : FlatAbstract tk a) (at_p : tyAt tk p = some t)
-    (projected : projectVal w p = some w') : TagsDeep heap t (a.atPath p) w' := by
+    (projected : projectHeap heap w p = some w') : TagsDeep heap t (a.atPath p) w' := by
   induction p generalizing tk a w with
   | nil =>
     simp [tyAt] at at_p
     subst at_p
-    simp [projectVal] at projected
+    simp [projectHeap] at projected
     subst projected
     simpa [Abstract.atPath] using tags
   | cons step rest ih =>
     cases step <;> cases tk <;> simp [tyAt] at at_p
-    rename_i i' ts
-    cases h : ts[i']? with
-    | none => simp [h] at at_p
-    | some t' =>
-      simp [h] at at_p
-      cases tags with
-      | record _ as ws _ tagFields =>
+    · rename_i i' ts
+      cases h : ts[i']? with
+      | none => simp [h] at at_p
+      | some t' =>
+        simp [h] at at_p
+        cases tags with
+        | record _ as ws _ tagFields =>
+          cases shape with
+          | record _ _ len fields =>
+            obtain ⟨a', as_i, shape'⟩ := flatAbstract_record_field len fields h
+            simp [projectHeap] at projected
+            cases h' : ws[i']? with
+            | none => simp [h'] at projected
+            | some w1 =>
+              simp [h'] at projected
+              simp only [Abstract.atPath, as_i, Option.getD_some]
+              exact ih (tagFields i' t' a' w1 h as_i h') shape' at_p projected
+    · cases tags with
+      | object root ws ts roots e ex lookup _ _ deep =>
         cases shape with
-        | record _ _ len fields =>
-          obtain ⟨a', as_i, shape'⟩ := flatAbstract_record_field len fields h
-          simp [projectVal] at projected
-          cases h' : ws[i']? with
-          | none => simp [h'] at projected
-          | some w1 =>
-            simp [h'] at projected
-            simp only [Abstract.atPath, as_i, Option.getD_some]
-            exact ih (tagFields i' t' a' w1 h as_i h') shape' at_p projected
+        | object _ _ _ _ _ shape' =>
+          obtain ⟨xs, found, inner⟩ := projectHeap_element_inv projected
+          rw [lookup] at found
+          cases found
+          simp only [Abstract.atPath]
+          exact ih (deep (.record xs) (by simp)) shape' (tyAt_of_fieldTyAt at_p) inner
 
 /-- The checker's reading of an atom from its root binding: every record on
 the path is one, because the binding holds a value there (its tags). -/
-theorem abstractAtom_of_root {ds : List Decl} {aenv : Env Abstract} {a : Atom} {k : Var} {p : Path}
-    {a0 : Abstract} {tk ty : Ty} {w w' : Value}
+theorem abstractAtom_of_root {ds : List Decl} {heap : Heap} {aenv : Env Abstract} {a : Atom} {k : Var}
+    {p : Path} {a0 : Abstract} {tk ty : Ty} {w w' : Value}
     (root : atomRoot a = some (k, p)) (found : aenv.lookup k = some a0)
     (shape : FlatAbstract tk a0) (tags : ResultTags (entryType tk) (entryAbstract ds tk a0) w)
-    (projected : projectVal w p = some w')
-    (at_p : tyAt tk p = some ty) :
+    (projected : projectHeap heap w p = some w')
+    (at_p : fieldTyAt tk p = some ty) :
     abstractAtom aenv a = .ok (a0.atPath p) := by
   induction a generalizing k p ty w' with
   | int n => simp [atomRoot] at root
@@ -606,13 +664,13 @@ theorem abstractAtom_of_root {ds : List Decl} {aenv : Env Abstract} {a : Atom} {
     simp [abstractAtom, lookup, found, Abstract.atPath]
   | field a i ih =>
     obtain ⟨p0, inner, rfl⟩ := atomRoot_field root
-    obtain ⟨fs, at_p0, at_i⟩ := tyAt_snoc_inv at_p
-    obtain ⟨ws0, projected0, _⟩ := projectVal_snoc_inv projected
+    obtain ⟨fs, at_p0, at_i⟩ := fieldTyAt_snoc_inv at_p
+    obtain ⟨ws0, projected0, _⟩ := projectHeap_snoc_inv projected
     have run := ih inner found projected0 at_p0
-    have shape0 := flatAbstract_atPath shape at_p0
-    have tags0 := resultTags_project tags (flatAbstract_entry shape) (tyAt_entryType at_p0) projected0
-    rw [entryAbstract_atPath shape at_p0] at tags0
-    rw [atPath_snoc_of_tyAt shape at_p]
+    have shape0 := flatAbstract_atPath shape (tyAt_of_fieldTyAt at_p0)
+    have tags0 := resultTags_project tags (flatAbstract_entry shape) (fieldTyAt_entryType at_p0) projected0
+    rw [entryAbstract_atPath shape (tyAt_of_fieldTyAt at_p0)] at tags0
+    rw [atPath_snoc_of_tyAt shape (tyAt_of_fieldTyAt at_p)]
     generalize eq : a0.atPath p0 = v at run shape0 tags0 ⊢
     rcases flatAbstract_record shape0 with rfl | ⟨as, rfl, len, fields⟩
     · rw [entryAbstract_bottom] at tags0
@@ -815,6 +873,37 @@ theorem corresponds_list_elements {heap : Heap} {root : Nat} {ws : List Value} {
       intro i o' w' os_i ws_i
       obtain ⟨cells, witness⟩ := representsMany_index _ children ws_i os_i
       exact corresponds_of_represents witness
+
+theorem corresponds_project {heap : Heap} {o o' : Observation} {w w' : Value} {p : Path}
+    (paired : Corresponds heap o w) (valuePath : projectHeap heap w p = some w')
+    (obsPath : projectObs o p = some o') : Corresponds heap o' w' := by
+  induction p generalizing o w with
+  | nil =>
+    simp [projectHeap] at valuePath
+    simp [projectObs] at obsPath
+    subst valuePath; subst obsPath
+    exact paired
+  | cons step rest ih =>
+    cases step <;> cases w <;> simp [projectHeap] at valuePath
+    · rename_i i' ws
+      cases h : ws[i']? with
+      | none => simp [h] at valuePath
+      | some x =>
+        simp [h] at valuePath
+        obtain ⟨os, rfl, len, fields⟩ := corresponds_record_fields paired
+        simp [projectObs] at obsPath
+        cases h' : os[i']? with
+        | none => simp [h'] at obsPath
+        | some y =>
+          simp [h'] at obsPath
+          exact ih (fields i' y x h' h) valuePath obsPath
+    · rename_i c
+      split at valuePath
+      · rename_i xs found
+        obtain ⟨os, rfl, len, fields⟩ := corresponds_list_elements found paired
+        obtain ⟨ys, rfl, obsInner⟩ := projectObs_element_inv obsPath
+        exact ih (fields 0 (.record ys) (.record xs) rfl rfl) valuePath obsInner
+      · cases valuePath
 
 /-! ### Arrays of values: no array reaches itself, and a write at a root
 leaves its elements' paths alone (slice 2b of #522) -/
@@ -1241,6 +1330,12 @@ theorem tagsDeep_of_agree {heap next : Heap} {t : Ty} {a : Abstract} {w : Value}
     exact .ok e s tag ae aa w (ih (fun c reach => agree c (.field (by simp) reach)))
   | err e s tag ae aa w deep ih =>
     exact .err e s tag ae aa w (ih (fun c reach => agree c (.field (by simp) reach)))
+  | object root ws ts roots e ex lookup results chains _ ih =>
+    have child : ∀ w ∈ ws, ∀ c, Reaches heap w (.ref c) → next[c]? = heap[c]? :=
+      fun w member c reach => agree c (.element lookup member reach)
+    exact .object root ws ts roots e ex ((agree root (.refl _)).trans lookup) results
+      (fun w member o paired => chains w member o (corresponds_of_agree_rev (child w member) paired))
+      (fun w member => ih w member (child w member))
 
 /-- The tag facts needed when a value becomes an array element. -/
 def ElementTags (heap : Heap) (t : Ty) (a : Abstract) (w : Value) : Prop :=
@@ -1320,6 +1415,12 @@ theorem closureAgreement_of_allocated {gamma : Naming} {heap : Heap} {w : Value}
     · exact .int _ 0
     · exact ih _
     · exact .int _ 0
+  | object root w ts lookup _ ih =>
+    intro a
+    refine .array lookup (fun w' member => ?_)
+    simp only [List.mem_singleton] at member
+    subst member
+    exact ih _
 
 /-- A description of a shaped value survives a naming that keeps the names of
 every allocated array. -/
@@ -1800,6 +1901,12 @@ theorem named_cellsAt_of_covers {heap : Heap} {gamma : Naming} {w : Value} {ty :
       have := covers _ _ (.here _)
       simpa [namesAt] using this
     | element _ _ _ => simp [immutablePath] at immutable
+  | object root w' ts lookupRoot _ _ =>
+    cases located with
+    | here =>
+      have := covers _ _ (.here _)
+      simpa [namesAt] using this
+    | element _ _ _ => simp [immutablePath] at immutable
   | record ws ts len _ ih =>
     cases located with
     | @field _ i w' q' _ ws_i inner =>
@@ -1850,36 +1957,26 @@ theorem named_cellsAt_of_covers {heap : Heap} {gamma : Naming} {w : Value} {ty :
         · cases inner
 
 theorem arrayAt_of_project {heap : Heap} {w w' : Value} {p q : Path} {c : Nat}
-    (projected : projectVal w p = some w') (located : ArrayAt heap w' q c) :
+    (projected : projectHeap heap w p = some w') (located : ArrayAt heap w' q c) :
     ArrayAt heap w (p ++ q) c := by
   induction p generalizing w with
   | nil =>
-    simp [projectVal] at projected
+    simp [projectHeap] at projected
     subst projected
     simpa using located
   | cons step rest ih =>
-    cases step <;> cases w <;> simp [projectVal] at projected
-    rename_i i' ws
-    cases h : ws[i']? with
-    | none => simp [h] at projected
-    | some x =>
-      simp [h] at projected
-      exact .field h (ih projected)
-
-theorem projectVal_fieldPath {w w' : Value} {p : Path} (projected : projectVal w p = some w') :
-    immutablePath p = true := by
-  induction p generalizing w with
-  | nil => rfl
-  | cons step rest ih =>
-    cases step <;> cases w <;> simp [projectVal] at projected
-    rename_i i' ws
-    cases h : ws[i']? with
-    | none => simp [h] at projected
-    | some x =>
-      simp [h] at projected
-      have := ih projected
-      simp [immutablePath] at this ⊢
-      exact this
+    cases step <;> cases w <;> simp [projectHeap] at projected
+    · rename_i i' ws
+      cases h : ws[i']? with
+      | none => simp [h] at projected
+      | some x =>
+        simp [h] at projected
+        exact .field h (ih projected)
+    · rename_i d
+      split at projected
+      · rename_i xs found
+        exact .element found (by simp) (ih projected)
+      · cases projected
 
 theorem immutablePath_append (p q : Path) :
     immutablePath (p ++ q) = (immutablePath p && immutablePath q) := by
@@ -1903,6 +2000,22 @@ theorem cells_in_liveCells (env : Env Abstract) (l : Live) (x : Var) (p p' : Pat
   intro acc'
   unfold pathStep
   simp only [below, Bool.true_or, if_true]
+  exact mem_union acc' cs o (Or.inr member)
+
+theorem cells_above_in_liveCells (env : Env Abstract) (l : Live) (x : Var) (p p' : Path) (a : Abstract)
+    (cs : List Origin) (use : (x, p) ∈ l) (found : env.lookup x = some a)
+    (path : (p', cs) ∈ a.paths) (above : isPrefix p' p = true) :
+    ∀ o ∈ cs, o ∈ liveCells env l := by
+  intro o member
+  rw [liveCells_eq_fold]
+  apply foldl_member (useStep env) (useStep_mono env) l [] (x, p) use o
+  intro acc
+  unfold useStep
+  simp only [found]
+  apply foldl_member (pathStep p) (pathStep_mono p) a.paths acc (p', cs) path o
+  intro acc'
+  unfold pathStep
+  simp only [above, Bool.or_true, if_true]
   exact mem_union acc' cs o (Or.inr member)
 
 /-! ### Cells -/
@@ -1979,6 +2092,21 @@ theorem namesAt_subset_cells {t : Ty} {a : Abstract} (abs : FlatAbstract t a) :
       | capture _ => simp [namesAt] at member; exact absurd member.1 noUnk
       | env => simp [namesAt] at member; exact absurd member.1 noUnk
   | dict t roots elem cert noUnk _ ih =>
+    intro q o member
+    cases q with
+    | nil => exact cellsAt_subset_cells member
+    | cons s r =>
+      cases s with
+      | element =>
+        simp only [namesAt] at member
+        split at member
+        · exact absurd (List.contains_iff_mem.mp (by assumption)) noUnk
+        · obtain ⟨p, cs, path, inCs⟩ := mem_paths_of_mem_cells (ih r o member)
+          exact mem_cells_of_path (list_element_path_mem roots elem cert path) inCs
+      | field _ => simp [namesAt] at member; exact absurd member.1 noUnk
+      | capture _ => simp [namesAt] at member; exact absurd member.1 noUnk
+      | env => simp [namesAt] at member; exact absurd member.1 noUnk
+  | object ts roots elem cert noUnk _ ih =>
     intro q o member
     cases q with
     | nil => exact cellsAt_subset_cells member
@@ -2219,6 +2347,14 @@ theorem entryAbstract_mapOrigins (f : Path → List Origin → List Origin)
       entryAbstract ds success (aa.mapOrigins f (p ++ [Step.field 2]))] = _
     rw [ihError (p ++ [Step.field 1]) (q ++ [Step.field 1]), ihSuccess (p ++ [Step.field 2]) (q ++ [Step.field 2]),
       entryAbstract_scalar, mapOrigins_scalar]
+  | object ts roots element certificate _ _ ih =>
+    intro p q
+    show entryAbstract ds (.object ts) ((Abstract.list roots element certificate).mapOrigins f p) =
+      (Abstract.list roots (entryAbstract ds (.record ts) element) certificate).mapOrigins f q
+    rw [mapOrigins_list, mapOrigins_list]
+    show Abstract.list (f p roots)
+      (entryAbstract ds (.record ts) (element.mapOrigins f (p ++ [Step.element]))) certificate = _
+    rw [blind p q roots, ih (p ++ [Step.element]) (q ++ [Step.element])]
 
 theorem flatAbstract_mapOrigins (f : Path → List Origin → List Origin)
     (keeps : ∀ path cs, Origin.unknown ∉ cs → Origin.unknown ∉ f path cs) {ty : Ty} {a : Abstract}
@@ -2252,6 +2388,9 @@ theorem flatAbstract_mapOrigins (f : Path → List Origin → List Origin)
   | result e s ae aa _ _ ihE ihS =>
     rw [mapOrigins_three, mapOrigins_scalar]
     exact .result e s _ _ (ihE _) (ihS _)
+  | object ts roots element certificate noUnk _ ih =>
+    simp only [Abstract.mapOrigins]
+    exact .object _ _ _ _ (keeps path roots noUnk) (ih _)
 
 /-- The tags survive an origin substitution: it keeps every constructor. -/
 theorem resultTags_mapOrigins (f : Path → List Origin → List Origin) {t : Ty} {a : Abstract} {w : Value}
@@ -2281,6 +2420,9 @@ theorem resultTags_mapOrigins (f : Path → List Origin → List Origin) {t : Ty
   | err e s tag ae aa w' ne _ ih =>
     rw [mapOrigins_three]
     exact .err e s _ _ _ w' (mapOrigins_ne_bottom f _ ne) (ih _)
+  | object ts roots element certificate w =>
+    simp only [Abstract.mapOrigins]
+    exact .object _ _ _ _ _
 
 /-- The chain tags of a bottom abstract: only an integer or a list carries one. -/
 theorem chainTags_of_bottom {t : Ty} {o : Observation} (tags : ChainTags t .bottom o) (b : Abstract) :
@@ -2288,6 +2430,7 @@ theorem chainTags_of_bottom {t : Ty} {o : Observation} (tags : ChainTags t .bott
   cases tags with
   | int _ _ => exact .int _ _
   | list _ _ _ => exact .list _ _ _
+  | object _ _ _ => exact .object _ _ _
 
 /-- The chain tags survive an origin substitution: it keeps every constructor. -/
 theorem chainTags_mapOrigins (f : Path → List Origin → List Origin) {t : Ty} {a : Abstract} {o : Observation}
@@ -2295,6 +2438,7 @@ theorem chainTags_mapOrigins (f : Path → List Origin → List Origin) {t : Ty}
   induction tags generalizing path with
   | int a o => exact .int _ _
   | list t a o => exact .list _ _ _
+  | object ts a o => exact .object _ _ _
   | chainScalar roots certificate o =>
     simp only [Abstract.mapOrigins]
     exact .chainScalar _ _ _
@@ -2349,20 +2493,26 @@ theorem tagsDeep_mapOrigins (f : Path → List Origin → List Origin) {heap : H
   | err e s tag ae aa w deep ih =>
     rw [mapOrigins_three]
     exact .err e s _ _ _ w (ih _)
+  | object root ws ts roots e ex lookup results chains deep ih =>
+    simp only [Abstract.mapOrigins]
+    exact .object root ws ts _ _ _ lookup
+      (fun w member => resultTags_mapOrigins f (results w member) _)
+      (fun w member o paired => chainTags_mapOrigins f (chains w member o paired) _)
+      (fun w member => ih w member _)
 
 /-- The chain tags of a projection along a typed path. -/
 theorem chainTags_project {tk t : Ty} {a : Abstract} {o o' : Observation} {p : Path}
-    (tags : ChainTags tk a o) (shape : FlatAbstract tk a) (at_p : tyAt tk p = some t)
+    (tags : ChainTags tk a o) (shape : FlatAbstract tk a) (at_p : fieldTyAt tk p = some t)
     (projected : projectObs o p = some o') : ChainTags t (a.atPath p) o' := by
   induction p generalizing tk a o with
   | nil =>
-    simp [tyAt] at at_p
+    simp [fieldTyAt] at at_p
     subst at_p
     simp [projectObs] at projected
     subst projected
     simpa [Abstract.atPath] using tags
   | cons step rest ih =>
-    cases step <;> cases tk <;> simp [tyAt] at at_p
+    cases step <;> cases tk <;> simp [fieldTyAt] at at_p
     rename_i i' ts
     cases h : ts[i']? with
     | none => simp [h] at at_p
@@ -2416,24 +2566,6 @@ theorem sharedMark_no_unknown {cs : List Origin} (path : Path) (noUnk : Origin.u
   · rcases mem_union_cases cs [.shared] _ member with inCs | inShared
     · exact noUnk inCs
     · simp at inShared
-
-/-- A described list describes each of its elements by its element abstract,
-when its roots hold no unknown origin. -/
-theorem describes_element {gamma : Naming} {heap : Heap} {roots : List Origin} {e : Abstract}
-    {ex : Certificate} {root : Nat} {ys : List Value} {y : Value}
-    (noUnk : Origin.unknown ∉ roots) (lookup : heap[root]? = some ys) (member : y ∈ ys)
-    (described : Describes gamma heap (.list roots e ex) (.ref root)) : Describes gamma heap e y := by
-  refine ⟨⟨fun q c located => ?_, fun q cs e' ex' w' shape located n o fp rep => ?_⟩, ?_⟩
-  · have := described.1.1 (.element :: q) c (.element lookup member located)
-    simpa [namesAt, noUnk] using this
-  · exact described.1.2 (.element :: q) cs e' ex' w' (by simpa [Abstract.atPath] using shape)
-      (.element lookup member located) n o fp rep
-  · cases described.2 with
-    | array lookup' elements =>
-      rw [lookup] at lookup'
-      cases lookup'
-      simpa [Abstract.atPath] using elements y member
-    | unknown _ _ _ top => exact absurd (List.contains_iff_mem.mp top) noUnk
 
 /-- A value that reaches no array has the empty footprint. -/
 theorem footprint_nil_of_unreached {heap : Heap} {n : Nat} {w : Value} {o : Observation} {fp : List Nat}
@@ -2633,6 +2765,15 @@ theorem nodup_of_deepExclusive {gamma : Naming} {heap : Heap} {w : Value} {t : T
     | list _ roots x ex noUnk _ =>
       simp [Abstract.deepExclusive] at deep
       exact (described.1.2 [] roots x ex (.ref root) rfl (.here _) n o fp rep).1 deep.1
+  | object root w' ts lookup _ _ =>
+    intro n o fp rep
+    cases shape with
+    | bottom _ =>
+      rw [footprint_nil_of_unreached rep (no_arrays_of_covers_bottom described.1.1)]
+      exact List.nodup_nil
+    | object _ roots x ex noUnk _ =>
+      simp [Abstract.deepExclusive] at deep
+      exact (described.1.2 [] roots x ex (.ref root) rfl (.here _) n o fp rep).1 deep.1
   | chain root integers lookup =>
     intro n o fp rep
     cases shape with
@@ -2763,6 +2904,30 @@ theorem mem_namesAt_of_arrayAt {heap : Heap} {t : Ty} {a : Abstract} {w : Value}
           | true => exact absurd (List.contains_iff_mem.mp h) noUnk
         simp only [namesAt, noUnkB, Bool.false_eq_true, if_false] at member
         obtain ⟨cs, path, inCs⟩ := ih _ yMember shapeX _ c o inner member
+        exact ⟨cs, list_element_path_mem roots x ex path, inCs⟩
+  | object root y ts lookup elements ih =>
+    intro q c o located member
+    cases shape with
+    | bottom _ => cases q <;> simp [namesAt, Abstract.cellsAt, Abstract.paths] at member
+    | object _ roots x ex noUnk shapeX =>
+      cases located with
+      | here =>
+        rw [list_root_names] at member
+        refine ⟨roots, by simp [Abstract.paths], ?_⟩
+        rcases mem_union_cases _ _ _ member with none | inRoots
+        · simp at none
+        · exact inRoots
+      | element lookup' yMember inner =>
+        rw [lookup] at lookup'
+        cases lookup'
+        simp only [List.mem_singleton] at yMember
+        subst yMember
+        have noUnkB : roots.contains .unknown = false := by
+          cases h : roots.contains .unknown with
+          | false => rfl
+          | true => exact absurd (List.contains_iff_mem.mp h) noUnk
+        simp only [namesAt, noUnkB, Bool.false_eq_true, if_false] at member
+        obtain ⟨cs, path, inCs⟩ := ih shapeX _ c o inner member
         exact ⟨cs, list_element_path_mem roots x ex path, inCs⟩
   | chain root integers lookup =>
     intro q c o located member
@@ -3299,6 +3464,36 @@ theorem describes_mapOrigins_shared {gamma : Naming} {heap : Heap} {w : Value} {
         rw [lookup] at lookup'
         cases lookup'
         exact (elementsDescribed _ member).1.2 _ cs e ex w' (by simpa [Abstract.atPath] using shape') inner n o fp rep
+  | object root y ts lookup element ih =>
+    cases abs with
+    | bottom _ =>
+      rw [mapOrigins_bottom]
+      exact described
+    | object _ roots element certificate noUnk elemShape =>
+      have rootsNamed : named gamma roots root := by
+        have names := described.1.1 [] root (.here _)
+        rw [list_root_names] at names
+        exact named_union_nil names
+      have elementsDescribed : ∀ y' ∈ [y],
+          Describes gamma heap (element.mapOrigins sharedMark (path ++ [.element])) y' := by
+        intro y' member
+        simp only [List.mem_singleton] at member
+        subst member
+        exact ih elemShape (describes_element noUnk lookup (by simp) described) _
+      simp only [Abstract.mapOrigins]
+      refine ⟨⟨list_covers_of_elements (named_sharedMark path rootsNamed) (sharedMark_no_unknown path noUnk)
+        lookup (fun y member => (elementsDescribed y member).1.1), ?_⟩,
+        list_closures_of_elements lookup (fun y member => (elementsDescribed y member).2)⟩
+      intro q cs e ex w' shape' located n o fp rep
+      cases located with
+      | here =>
+        simp [Abstract.atPath] at shape'
+        obtain ⟨rfl, rfl, rfl⟩ := shape'
+        exact described.1.2 [] roots element certificate (.ref root) rfl (.here _) n o fp rep
+      | element lookup' member inner =>
+        rw [lookup] at lookup'
+        cases lookup'
+        exact (elementsDescribed _ member).1.2 _ cs e ex w' (by simpa [Abstract.atPath] using shape') inner n o fp rep
   | chain root integers lookupRoot =>
     cases abs with
     | bottom _ =>
@@ -3437,7 +3632,8 @@ theorem flat_atom_entry {declarations : List Decl} {vs : ValueSemantics.State} {
       by simp [obsTyped], ⟨1, .int n, [], .int, by simp [obsTyped]⟩, .int, .int, .int n, .int _, .int _ _, .int _ _⟩
   | some kp =>
     rcases kp with ⟨k, p⟩
-    obtain ⟨tk, declared, at_p⟩ := atom_type_of_root typed root
+    obtain ⟨tk, declared, at_pf⟩ := atom_fieldType_of_root typed root
+    have at_p := tyAt_of_fieldTyAt at_pf
     obtain ⟨pair, binding⟩ := lookup_exists_of_same_keys env tenv inv.typeKeys declared
     rcases pair with ⟨o0, w0⟩
     obtain ⟨a0, abstractBinding⟩ := lookup_exists_of_same_keys aenv env inv.abstractKeys.symm binding
@@ -3458,16 +3654,16 @@ theorem flat_atom_entry {declarations : List Decl} {vs : ValueSemantics.State} {
     have chains0 := inv.chains k tk a0 o0 w0 declared abstractBinding binding
     exact ⟨o, w, a0.atPath p, value_atom_of_root root (valueEnv_lookup binding) obsPath,
       heap_atom_of_root root (heapEnv_lookup binding) valuePath,
-      abstractAtom_of_root root abstractBinding shape0 tags0 valuePath at_p, paired, described,
+      abstractAtom_of_root root abstractBinding shape0 tags0 valuePath at_pf, paired, described,
       observed, valueTyped_of_corresponds paired observed,
       flatType_tyAt flatTk at_p, flatAbstract_atPath shape0 at_p, allocated,
       by
         have projectedTags :=
-          resultTags_project tags0 (flatAbstract_entry shape0) (tyAt_entryType at_p) valuePath
+          resultTags_project tags0 (flatAbstract_entry shape0) (fieldTyAt_entryType at_pf) valuePath
         rwa [entryAbstract_atPath shape0 at_p] at projectedTags,
       by
         have projectedChains :=
-          chainTags_project chains0 (flatAbstract_entry shape0) (tyAt_entryType at_p) obsPath
+          chainTags_project chains0 (flatAbstract_entry shape0) (fieldTyAt_entryType at_pf) obsPath
         rwa [entryAbstract_atPath shape0 at_p] at projectedChains,
       inv.deepTags k p use o0 w0 tk a0 ty w binding declared abstractBinding at_p valuePath⟩
 
@@ -3495,7 +3691,7 @@ theorem kinded_atom {declarations : List Decl} {vs : ValueSemantics.State} {hs :
     have heapRun' := heap_atom_of_root root (heapEnv_lookup binding) valuePath
     rw [heapRun] at heapRun'
     cases heapRun'
-    exact kinded_project (state.env k tk o0 w0 declared binding) at_p valuePath
+    exact kinded_project state (state.env k tk o0 w0 declared binding) at_p valuePath
 
 /-- `flat_atom_entry` at a type with no dictionary, which is its own
 representation. -/
@@ -3594,7 +3790,7 @@ certificate holds is described. -/
 theorem list_described_of_elements {gamma : Naming} {heap : Heap} {cs : List Origin} {e : Abstract}
     {ex : Certificate} {root : Nat} {ys : List Value} {t : Ty}
     (rootNamed : named gamma cs root) (noUnk : Origin.unknown ∉ cs) (lookup : heap[root]? = some ys)
-    (shape : AllocatedFlatValue heap (.ref root) (.list t))
+    (shape : AllocatedFlatValue heap (.ref root) t)
     (elements : ∀ y ∈ ys, Describes gamma heap e y)
     (deep : ex.deep = true → ∀ n o fp, Represents heap n (.ref root) o fp → fp.Nodup)
     (spine : ex.spine = true → ∀ n o fp, Represents heap n (.ref root) o fp →
@@ -3757,16 +3953,20 @@ theorem atPath_paths_prefix {tk t : Ty} {a : Abstract} {p : Path}
   | nil => simpa [Abstract.atPath] using path
   | cons step rest ih =>
     cases step <;> cases tk <;> simp [tyAt] at at_p
-    rename_i i ts
-    cases h : ts[i]? with
-    | none => simp [h] at at_p
-    | some t' =>
-      simp [h] at at_p
-      rcases flatAbstract_record shape with rfl | ⟨as, rfl, lenTA, fieldsA⟩
+    · rename_i i ts
+      cases h : ts[i]? with
+      | none => simp [h] at at_p
+      | some t' =>
+        simp [h] at at_p
+        rcases flatAbstract_record shape with rfl | ⟨as, rfl, lenTA, fieldsA⟩
+        · simp [Abstract.atPath, Abstract.paths] at path
+        · obtain ⟨a', as_i, abs'⟩ := flatAbstract_record_field lenTA fieldsA h
+          simp only [Abstract.atPath, as_i, Option.getD_some] at path
+          exact record_path_mem as i a' (rest ++ q') cs as_i (ih abs' at_p path)
+    · rcases flatAbstract_object shape with rfl | ⟨roots, element, certificate, rfl, _, shape'⟩
       · simp [Abstract.atPath, Abstract.paths] at path
-      · obtain ⟨a', as_i, abs'⟩ := flatAbstract_record_field lenTA fieldsA h
-        simp only [Abstract.atPath, as_i, Option.getD_some] at path
-        exact record_path_mem as i a' (rest ++ q') cs as_i (ih abs' at_p path)
+      · simp only [Abstract.atPath] at path
+        exact list_element_path_mem roots element certificate (ih shape' (tyAt_of_fieldTyAt at_p) path)
 
 /-- A capture path of an alternative's capture abstract is a path of the function abstract. -/
 theorem function_path_mem (cs : List Origin) (alts : List (Nat × List Abstract))
@@ -3961,6 +4161,8 @@ theorem mem_paths_entryAbstract_immutable {ds : List Decl} {t : Ty} {a : Abstrac
         simp [entryAbstract, Abstract.paths] at member
       | dict _ roots value certificate _ _ =>
         simp [entryAbstract, Abstract.paths] at member
+      | object _ roots element certificate _ _ =>
+        simp [entryAbstract, Abstract.paths] at member
       | chainBottom roots certificate => simp [entryAbstract, Abstract.paths] at member
       | chainScalar roots certificate => simp [entryAbstract, Abstract.paths] at member
       | record ts as _ _ =>
@@ -3977,6 +4179,8 @@ theorem mem_paths_entryAbstract_immutable {ds : List Decl} {t : Ty} {a : Abstrac
       | list _ roots element certificate _ _ =>
         simp [entryAbstract, Abstract.paths] at member
       | dict _ roots value certificate _ _ =>
+        simp [entryAbstract, Abstract.paths] at member
+      | object _ roots element certificate _ _ =>
         simp [entryAbstract, Abstract.paths] at member
       | chainBottom roots certificate => simp [entryAbstract, Abstract.paths] at member
       | chainScalar roots certificate => simp [entryAbstract, Abstract.paths] at member
@@ -4038,7 +4242,7 @@ theorem live_path_apart {declarations : List Decl} {vs : ValueSemantics.State} {
     (afterSub : ∀ use ∈ after, use ∈ live)
     (receiverNamed : named gamma roots root)
     (separate : ∀ r, named gamma roots r → ¬ named gamma (union (liveCells aenv after) pinned) r) :
-    ∀ x p, (x, p) ∈ after → ∀ o w w', env.lookup x = some (o, w) → projectVal w p = some w' →
+    ∀ x p, (x, p) ∈ after → ∀ o w w', env.lookup x = some (o, w) → projectHeap hs.heap w p = some w' →
       ∀ q c, ArrayAt hs.heap w' q c → c ≠ root := by
   intro x p use o w w' binding projected q c located same
   subst same
@@ -4056,10 +4260,301 @@ theorem live_path_apart {declarations : List Decl} {vs : ValueSemantics.State} {
     (atPath_paths_prefix shape0 at_p path) (isPrefix_append p q') origin inCs
   exact separate c receiverNamed ⟨origin, mem_union _ _ origin (Or.inl inLive), address⟩
 
+/-- A field path never takes an element step. -/
+theorem fieldTyAt_route {ty : Ty} {q rest : Path} : fieldTyAt ty (q ++ .element :: rest) = none := by
+  induction q generalizing ty with
+  | nil => cases ty <;> simp [fieldTyAt]
+  | cons step q' ih =>
+    cases step <;> cases ty <;> simp [fieldTyAt]
+    rename_i i ts
+    cases ts[i]? with
+    | none => rfl
+    | some t => exact ih
+
+/-- The route of a typed use path to its object's slot goes through record
+fields only (#316). -/
+theorem tyAt_route_immutable {ty t : Ty} {q rest : Path} (at_p : tyAt ty (q ++ .element :: rest) = some t) :
+    immutablePath q = true := by
+  induction q generalizing ty with
+  | nil => rfl
+  | cons step q' ih =>
+    cases step <;> cases ty <;> simp [tyAt] at at_p
+    · rename_i i ts
+      cases found : ts[i]? with
+      | none => simp [found] at at_p
+      | some t' =>
+        simp only [found] at at_p
+        have := ih at_p
+        simpa [immutablePath] using this
+    · rw [fieldTyAt_route] at at_p
+      cases at_p
+
+/-- The record objects on a live path's route are apart from a written root
+that the Dead test excludes: the route is a field path (`tyAt_route_immutable`),
+so the invariant names its object by the binding's cells there, and a prefix of
+a live path is a live cell (#316). -/
+theorem live_path_route_apart {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {after : Live} {escapes : List Origin} {roots : List Origin} {root : Nat} {pinned : List Origin}
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
+    (scope : liveScope aenv after = .ok ())
+    (afterSub : ∀ use ∈ after, use ∈ live)
+    (receiverNamed : named gamma roots root)
+    (separate : ∀ r, named gamma roots r → ¬ named gamma (union (liveCells aenv after) pinned) r) :
+    ∀ x p, (x, p) ∈ after → ∀ o w q c rest, env.lookup x = some (o, w) →
+      p = q ++ .element :: rest → ArrayAt hs.heap w q c → c ≠ root := by
+  intro x p use o w q c rest binding route located same
+  subst same
+  obtain ⟨a, abstractBinding⟩ := liveScope_lookup_exists scope use
+  obtain ⟨ty, declared⟩ := lookup_exists_of_same_keys tenv env inv.typeKeys.symm binding
+  obtain ⟨t, at_p⟩ := inv.liveTyped x p ty (afterSub _ use) declared
+  rw [route] at at_p
+  obtain ⟨origin, member, address⟩ :=
+    inv.named x o w a binding abstractBinding q c (tyAt_route_immutable at_p) located
+  obtain ⟨cs, path, inCs⟩ := mem_cellsAt a q origin member
+  have inLive := cells_above_in_liveCells aenv after x p q a cs use abstractBinding path
+    (by rw [route]; exact isPrefix_append q _) origin inCs
+  exact separate c receiverNamed ⟨origin, mem_union _ _ origin (Or.inl inLive), address⟩
+
+/-- The record objects on a live path's route sit below the heap bound. -/
+theorem live_path_route_below {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {escapes : List Origin}
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma) :
+    ∀ x o w q c, env.lookup x = some (o, w) → ArrayAt hs.heap w q c → c < hs.heap.size :=
+  fun x o w _ c binding located => inv.bindingsBounded x o w binding c (reaches_of_atPath located)
+
+/-- The route of a typed use path ends at a record object. -/
+theorem tyAt_route_object {ty t : Ty} {q rest : Path} (at_p : tyAt ty (q ++ .element :: rest) = some t) :
+    ∃ ts, tyAt ty q = some (.object ts) := by
+  induction q generalizing ty with
+  | nil =>
+    cases ty <;> simp [tyAt] at at_p
+    rename_i ts
+    exact ⟨ts, rfl⟩
+  | cons step q' ih =>
+    cases step <;> cases ty <;> simp [tyAt] at at_p
+    · rename_i i ts
+      cases found : ts[i]? with
+      | none => simp [found] at at_p
+      | some t' =>
+        simp only [found] at at_p
+        obtain ⟨us, typed⟩ := ih at_p
+        exact ⟨us, by simp [tyAt, found, typed]⟩
+    · rw [fieldTyAt_route] at at_p
+      cases at_p
+
+/-- A sublist's representation and the whole list's one make a
+representation of the whole list whose footprint holds the sublist's
+footprint as a sublist. -/
+theorem representsMany_sublist_merge {heap : Heap} :
+    ∀ {zs ys : List Value}, zs.Sublist ys → ∀ {n m : Nat} {os os0 : List Observation} {cs cs0 : List Nat},
+      RepresentsMany heap n zs os cs → RepresentsMany heap m ys os0 cs0 →
+      ∃ os' cs', RepresentsMany heap (max n m) ys os' cs' ∧ cs.Sublist cs' := by
+  intro zs ys sub
+  induction sub with
+  | slnil =>
+    intro n m os os0 cs cs0 kept _
+    cases kept
+    exact ⟨[], [], .nil, List.Sublist.refl _⟩
+  | cons y _ ih =>
+    intro n m os os0 cs cs0 kept all
+    cases all with
+    | @cons _ _ oy0 fy0 _ _ cs0' firstAll restAll =>
+      obtain ⟨os', cs', merged, sub⟩ := ih kept restAll
+      refine ⟨oy0 :: os', fy0 ++ cs', .cons (Ownership.FlatFragment.RepresentsDepth.represents_of_depth firstAll ?_) merged,
+        List.Sublist.trans sub (List.sublist_append_right fy0 cs')⟩
+      exact Nat.le_trans (Ownership.FlatFragment.Observe.represents_depth_bound firstAll) (Nat.le_max_right n m)
+  | cons₂ y _ ih =>
+    intro n m os os0 cs cs0 kept all
+    cases kept with
+    | @cons _ _ oy fy _ _ csRest first rest =>
+      cases all with
+      | @cons _ _ oy0 fy0 _ _ cs0' firstAll restAll =>
+        obtain ⟨os', cs', merged, sub⟩ := ih rest restAll
+        refine ⟨oy :: os', fy ++ cs', .cons (Ownership.FlatFragment.RepresentsDepth.represents_of_depth first ?_) merged,
+          List.Sublist.append (List.Sublist.refl fy) sub⟩
+        exact Nat.le_trans (Ownership.FlatFragment.Observe.represents_depth_bound first) (Nat.le_max_left n m)
+
+/-- A described value certifies each record object at a field path over any
+of its fields: the selected fields' footprint is a sublist of the whole
+object's (#316). -/
+theorem objectCertified_of_described {ds : List Decl} {gamma : Naming} {heap : Heap} {w : Value} {ty : Ty}
+    {a : Abstract} {q : Path} {ts : List Ty} {c : Nat} {roots : List Origin} {e : Abstract} {ex : Certificate}
+    {ws : List Value}
+    (shape : AllocatedFlatValue heap w (entryType ty)) (abs : FlatAbstract ty a)
+    (described : Describes gamma heap (entryAbstract ds ty a) w)
+    (at_q : tyAt ty q = some (.object ts)) (projected : projectHeap heap w q = some (.ref c))
+    (at_a : a.atPath q = .list roots e ex) (slot : heap[c]? = some [.record ws])
+    (keep : List Bool) {n : Nat} {os : List Observation} {fps : List Nat}
+    (represented : RepresentsMany heap n (selectFields keep ws) os fps) :
+    (ex.deep = true → (c :: fps).Nodup) ∧
+    (ex.spine = true → ∀ v ∈ selectFields keep ws, ∀ p d, containerPath p = true →
+      ArrayAt heap v p d → (c :: fps).count d = 1) := by
+  -- the object's representation abstract carries the certificate
+  have atEntry := entryAbstract_atPath (ds := ds) abs at_q
+  rw [at_a] at atEntry
+  obtain ⟨y, listEntry⟩ := entryAbstract_list ds (.object ts) roots e ex
+  rw [listEntry] at atEntry
+  have located : AtPath heap w q (.ref c) := by
+    simpa using arrayAt_of_project projected (AtPath.here (.ref c))
+  -- a full representation of the slot's fields
+  have slotShape := allocated_project shape (tyAt_entryType at_q) projected
+  obtain ⟨m, oFull, fpFull, repFull, _⟩ : ValueTyped ds heap (.record ws) (entryType (.record ts)) := by
+    cases slotShape with
+    | object root w0 _ lookup shapeW =>
+      rw [slot] at lookup
+      cases lookup
+      exact valueTyped_of_allocated shapeW
+  cases repFull with
+  | @record m' _ _ _ children =>
+    obtain ⟨os', cs', merged, subFp⟩ :=
+      representsMany_sublist_merge (selectFields_sublist keep ws) represented children
+    have whole : Represents heap (max n m' + 2) (.ref c) (.list [.record os']) (c :: (cs' ++ [])) :=
+      .ref slot (.cons (.record merged) .nil)
+    obtain ⟨nodupWhole, onceWhole⟩ := described.1.2 q roots y ex (.ref c) atEntry located _ _ _ whole
+    simp only [List.append_nil] at nodupWhole onceWhole
+    refine ⟨fun deep => (nodupWhole deep).sublist (subFp.cons₂ c), ?_⟩
+    intro spine v member p d container locatedV
+    obtain ⟨g, _, at_g⟩ := mem_selectFields member
+    have deepPath : ArrayAt heap (.ref c) (.element :: .field g :: p) d :=
+      .element slot (by simp) (.field at_g locatedV)
+    have once := onceWhole spine (.field g :: p) d (by simpa [containerPath] using container) deepPath
+    have le := (subFp.cons₂ c).count_le d
+    have inFps : d ∈ fps :=
+      Ownership.FlatFragment.FiniteReach.representsMany_reach_member represented member
+        (reaches_of_atPath locatedV)
+    have pos : 0 < (c :: fps).count d := List.count_pos_iff.mpr (List.mem_cons_of_mem _ inFps)
+    omega
+
+theorem projectObs_append : ∀ {o : Observation} {p r : Path},
+    projectObs o (p ++ r) = (projectObs o p).bind (projectObs · r) := by
+  intro o p r
+  induction p generalizing o with
+  | nil => simp [projectObs]
+  | cons step rest ih =>
+    cases step <;> cases o <;> simp [projectObs]
+    · rename_i i os
+      cases os[i]? with
+      | none => rfl
+      | some x => exact ih
+    · rename_i items
+      match items with
+      | [.record xs] => exact ih
+      | [] => rfl
+      | [.int _] => rfl
+      | [.list _] => rfl
+      | [.closure _ _] => rfl
+      | a :: _ :: _ => cases a <;> rfl
+
+theorem atPath_append_fields : ∀ {a : Abstract} {q r : Path}, (∀ s ∈ q, ∃ i, s = Step.field i) →
+    a.atPath (q ++ r) = (a.atPath q).atPath r := by
+  intro a q r fields
+  induction q generalizing a with
+  | nil => simp [Abstract.atPath]
+  | cons step rest ih =>
+    obtain ⟨i, rfl⟩ := fields step (by simp)
+    have fieldsRest := fun s m => fields s (List.mem_cons_of_mem _ m)
+    cases a with
+    | record xs =>
+      simp only [List.cons_append, Abstract.atPath]
+      exact ih fieldsRest
+    | _ =>
+      simp only [List.cons_append, Abstract.atPath]
+      rw [Ownership.FlatFragment.Fields.atPath_bottom]
+
+theorem fieldTyAt_fields : ∀ {ty t : Ty} {q : Path}, fieldTyAt ty q = some t → ∀ s ∈ q, ∃ i, s = Step.field i := by
+  intro ty t q typed
+  induction q generalizing ty with
+  | nil => intro s m; simp at m
+  | cons step rest ih =>
+    cases step <;> cases ty <;> simp [fieldTyAt] at typed
+    rename_i i ts
+    cases h : ts[i]? with
+    | none => simp [h] at typed
+    | some t' =>
+      simp [h] at typed
+      intro s m
+      rcases List.mem_cons.mp m with rfl | later
+      · exact ⟨i, rfl⟩
+      · exact ih typed s later
+
+/-- A typed use path is a field path, or a field path to a record object, its
+slot, and a field path of the record. -/
+theorem tyAt_cases : ∀ {ty t : Ty} {p : Path}, tyAt ty p = some t →
+    fieldTyAt ty p = some t ∨ ∃ q rest ts, p = q ++ .element :: rest ∧ fieldTyAt ty q = some (.object ts) ∧
+      fieldTyAt (.record ts) rest = some t := by
+  intro ty t p typed
+  induction p generalizing ty with
+  | nil => exact Or.inl (by simpa [tyAt, fieldTyAt] using typed)
+  | cons step rest ih =>
+    cases step <;> cases ty <;> simp [tyAt] at typed
+    · rename_i i ts
+      cases h : ts[i]? with
+      | none => simp [h] at typed
+      | some t' =>
+        simp only [h] at typed
+        rcases ih typed with fields | ⟨q, r, us, rfl, at_q, at_r⟩
+        · exact Or.inl (by simp [fieldTyAt, h, fields])
+        · exact Or.inr ⟨.field i :: q, r, us, rfl, by simp [fieldTyAt, h, at_q], at_r⟩
+    · rename_i ts
+      exact Or.inr ⟨[], rest, ts, rfl, rfl, typed⟩
+
+/-- The tags of a value at a typed use path: through record fields by
+projection, and through a record object's slot from the slot's deep tags (#316). -/
+theorem liveTags_of_value {ds : List Decl} {heap : Heap} {ty t : Ty} {a : Abstract} {o o' : Observation}
+    {w w' : Value} {p : Path}
+    (abs : FlatAbstract ty a)
+    (tags : ResultTags (entryType ty) (entryAbstract ds ty a) w)
+    (chains : ChainTags (entryType ty) (entryAbstract ds ty a) o)
+    (deep : TagsDeep heap (entryType ty) (entryAbstract ds ty a) w)
+    (paired : Corresponds heap o w)
+    (at_p : tyAt ty p = some t) (obsPath : projectObs o p = some o') (valuePath : projectHeap heap w p = some w') :
+    ResultTags (entryType t) (entryAbstract ds t (a.atPath p)) w' ∧
+      ChainTags (entryType t) (entryAbstract ds t (a.atPath p)) o' := by
+  rcases tyAt_cases at_p with fields | ⟨q, rest, ts, rfl, at_q, at_rest⟩
+  · have r := resultTags_project tags (flatAbstract_entry abs) (fieldTyAt_entryType fields) valuePath
+    have c := chainTags_project chains (flatAbstract_entry abs) (fieldTyAt_entryType fields) obsPath
+    rw [entryAbstract_atPath abs at_p] at r c
+    exact ⟨r, c⟩
+  · have qFields := fieldTyAt_fields at_q
+    rw [projectHeap_append] at valuePath
+    rw [projectObs_append] at obsPath
+    cases projQ : projectHeap heap w q with
+    | none => rw [projQ] at valuePath; cases valuePath
+    | some wq =>
+      rw [projQ] at valuePath
+      simp only [Option.bind_some] at valuePath
+      cases obsQ : projectObs o q with
+      | none => rw [obsQ] at obsPath; cases obsPath
+      | some oq =>
+        rw [obsQ] at obsPath
+        simp only [Option.bind_some] at obsPath
+        have at_q' := tyAt_of_fieldTyAt at_q
+        have deepQ := tagsDeep_project deep (flatAbstract_entry abs) (tyAt_entryType at_q') projQ
+        rw [entryAbstract_atPath abs at_q'] at deepQ
+        have pairedQ := corresponds_project paired projQ obsQ
+        rw [atPath_append_fields qFields]
+        rcases flatAbstract_object (flatAbstract_atPath abs at_q') with same | ⟨roots, e, ex, same, _, shapeE⟩
+        · rw [same, entryAbstract_bottom] at deepQ
+          cases deepQ
+        · rw [same] at deepQ ⊢
+          cases deepQ with
+          | object root ws _ _ _ _ lookup results chainsSlot deepSlot =>
+            obtain ⟨xs, found, valueInner⟩ := projectHeap_element_inv valuePath
+            rw [lookup] at found
+            cases found
+            obtain ⟨os, rfl, _, pointwise⟩ := corresponds_list_elements lookup pairedQ
+            obtain ⟨ys, rfl, obsInner⟩ := projectObs_element_inv obsPath
+            have pairedSlot := pointwise 0 (.record ys) (.record xs) rfl rfl
+            have r := resultTags_project (results (.record xs) (by simp)) (flatAbstract_entry shapeE)
+              (fieldTyAt_entryType at_rest) valueInner
+            have c := chainTags_project (chainsSlot (.record xs) (by simp) (.record ys) pairedSlot)
+              (flatAbstract_entry shapeE) (fieldTyAt_entryType at_rest) obsInner
+            rw [entryAbstract_atPath shapeE (tyAt_of_fieldTyAt at_rest)] at r c
+            simp only [Abstract.atPath]
+            exact ⟨r, c⟩
+
 /-- Every array of a flat value sits below the heap bound. -/
 theorem live_path_below {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {escapes : List Origin}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma) :
-    ∀ x p o w w', env.lookup x = some (o, w) → projectVal w p = some w' →
+    ∀ x p o w w', env.lookup x = some (o, w) → projectHeap hs.heap w p = some w' →
       ∀ q c, ArrayAt hs.heap w' q c → c < hs.heap.size := by
   intro x p o w w' binding projected q c located
   exact inv.bindingsBounded x o w binding c (reaches_of_atPath (arrayAt_of_project projected located))
@@ -4129,6 +4624,32 @@ theorem ty_equal_flat {t b : Ty} (flat : FlatType t) (equal : Ty.equal t b = tru
             exact ⟨by simp [List.getElem?_attach, ts_i], ys_i⟩
           rw [ih x (List.mem_of_getElem? ts_i) (all _ mem)]
     | _ => simp [Ty.equal] at equal
+  | object ts _ ih =>
+    cases b with
+    | object ys =>
+      rw [Ty.equal] at equal
+      simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at equal
+      obtain ⟨len, all⟩ := equal
+      congr 1
+      apply List.ext_getElem?
+      intro i
+      cases ts_i : ts[i]? with
+      | none =>
+        rw [List.getElem?_eq_none_iff] at ts_i
+        exact (List.getElem?_eq_none_iff.mpr (by omega)).symm
+      | some x =>
+        cases ys_i : ys[i]? with
+        | none =>
+          rw [List.getElem?_eq_none_iff] at ys_i
+          have lt := (List.getElem?_eq_some_iff.mp ts_i).1
+          omega
+        | some y =>
+          have mem : (⟨x, List.mem_of_getElem? ts_i⟩, y) ∈ ts.attach.zip ys := by
+            apply List.mem_of_getElem? (i := i)
+            rw [List.getElem?_zip_eq_some]
+            exact ⟨by simp [List.getElem?_attach, ts_i], ys_i⟩
+          rw [ih x (List.mem_of_getElem? ts_i) (all _ mem)]
+    | _ => simp [Ty.equal] at equal
   | result e s _ _ ihE ihS =>
     cases b with
     | result f b' =>
@@ -4160,6 +4681,33 @@ theorem ty_equal_flat_right {t b : Ty} (flat : FlatType b) (equal : Ty.equal t b
   | record ts _ ih =>
     cases t with
     | record ys =>
+      rw [Ty.equal] at equal
+      simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at equal
+      obtain ⟨len, all⟩ := equal
+      congr 1
+      apply List.ext_getElem?
+      intro i
+      cases ys_i : ys[i]? with
+      | none =>
+        rw [List.getElem?_eq_none_iff] at ys_i
+        exact (List.getElem?_eq_none_iff.mpr (by omega)).symm
+      | some y =>
+        cases ts_i : ts[i]? with
+        | none =>
+          rw [List.getElem?_eq_none_iff] at ts_i
+          have lt := (List.getElem?_eq_some_iff.mp ys_i).1
+          omega
+        | some x =>
+          have mem : (⟨y, List.mem_of_getElem? ys_i⟩, x) ∈ ys.attach.zip ts := by
+            apply List.mem_of_getElem? (i := i)
+            rw [List.getElem?_zip_eq_some]
+            exact ⟨by simp [List.getElem?_attach, ys_i], ts_i⟩
+          have equalYX : y = x := ih x (List.mem_of_getElem? ts_i) (all _ mem)
+          rw [equalYX]
+    | _ => simp [Ty.equal] at equal
+  | object ts _ ih =>
+    cases t with
+    | object ys =>
       rw [Ty.equal] at equal
       simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at equal
       obtain ⟨len, all⟩ := equal
@@ -4291,6 +4839,12 @@ theorem flatAbstract_join {t : Ty} {a b : Abstract} (shapeA : FlatAbstract t a) 
     | result _ _ be ba hE' hS' =>
       rw [join_three, join_scalar]
       exact .result e s _ _ (ihE hE') (ihS hS')
+  | object ts roots element certificate noUnk _ ih =>
+    cases shapeB with
+    | bottom _ => rw [join_bottom_right]; exact .object _ _ _ _ noUnk (by assumption)
+    | object _ roots' element' certificate' noUnk' shapeE' =>
+      rw [join_list]
+      exact .object _ _ _ _ (union_no_unknown noUnk noUnk') (ih shapeE')
 
 theorem join_two (a0 a1 b0 b1 : Abstract) :
     (Abstract.record [a0, a1]).join (.record [b0, b1]) = .record [a0.join b0, a1.join b1] := by
@@ -4399,6 +4953,16 @@ theorem entryAbstract_join {ds : List Decl} {t : Ty} {a b : Abstract} (shapeA : 
           (.record [.scalar, entryAbstract ds e be, entryAbstract ds s ba])
       rw [join_three, join_scalar, ihE hE', ihS hS']
       rfl
+  | object ts roots element certificate _ _ ih =>
+    cases shapeB with
+    | bottom _ => rw [join_bottom_right, entryAbstract_bottom, join_bottom_right]
+    | object _ roots' element' certificate' _ shapeE' =>
+      rw [join_list]
+      show Abstract.list (union roots roots') (entryAbstract ds (.record ts) (element.join element'))
+          (certificate.meet certificate') =
+        (Abstract.list roots (entryAbstract ds (.record ts) element) certificate).join
+          (.list roots' (entryAbstract ds (.record ts) element') certificate')
+      rw [join_list, ih shapeE']
 
 /-- A join is bottom only when both sides are. -/
 theorem join_ne_bottom_left {a b : Abstract} (ne : a ≠ .bottom) : a.join b ≠ .bottom := by
@@ -4420,6 +4984,10 @@ theorem resultTags_join {t : Ty} {a b : Abstract} {w : Value}
     cases shapeB with
     | bottom _ => rw [join_bottom_right]; exact .list _ _ _ _ _
     | list _ _ _ _ _ _ => rw [join_list]; exact .list _ _ _ _ _
+  | object ts roots element certificate w =>
+    cases shapeB with
+    | bottom _ => rw [join_bottom_right]; exact .object _ _ _ _ _
+    | object _ _ _ _ _ _ => rw [join_list]; exact .object _ _ _ _ _
   | chainInt roots element certificate w =>
     cases shapeB with
     | bottom _ => rw [join_bottom_right]; exact .chainInt _ _ _ _
@@ -4466,6 +5034,10 @@ theorem resultTags_join_right {t : Ty} {a b : Abstract} {w : Value}
     cases shapeA with
     | bottom _ => rw [join_bottom_left]; exact .list _ _ _ _ _
     | list _ _ _ _ _ _ => rw [join_list]; exact .list _ _ _ _ _
+  | object ts roots element certificate w =>
+    cases shapeA with
+    | bottom _ => rw [join_bottom_left]; exact .object _ _ _ _ _
+    | object _ _ _ _ _ _ => rw [join_list]; exact .object _ _ _ _ _
   | chainInt roots element certificate w =>
     cases shapeA with
     | bottom _ => rw [join_bottom_left]; exact .chainInt _ _ _ _
@@ -4506,6 +5078,7 @@ theorem chainTags_join {t : Ty} {a b : Abstract} {o : Observation}
   induction tags generalizing b with
   | int a o => exact .int _ _
   | list t a o => exact .list _ _ _
+  | object ts a o => exact .object _ _ _
   | chainScalar roots certificate o =>
     cases shapeB with
     | bottom _ => rw [join_bottom_right]; exact .chainScalar _ _ _
@@ -4551,6 +5124,7 @@ theorem chainTags_join_right {t : Ty} {a b : Abstract} {o : Observation}
   induction tags generalizing a with
   | int a o => exact .int _ _
   | list t a o => exact .list _ _ _
+  | object ts a o => exact .object _ _ _
   | chainScalar roots certificate o =>
     cases shapeA with
     | bottom _ => rw [join_bottom_left]; exact .chainScalar _ _ _
@@ -4606,6 +5180,17 @@ theorem tagsDeep_join {heap : Heap} {t : Ty} {a b : Abstract} {w : Value}
           (fun w member => resultTags_join (results w member) elemA elemB)
           (fun w member o paired => chainTags_join (chains w member o paired) elemA elemB)
           (fun w member => ih w member elemA elemB)
+  | object root ws ts roots e ex lookup results chains deep ih =>
+    cases shapeA with
+    | object _ _ _ _ _ elemA =>
+      cases shapeB with
+      | bottom _ => rw [join_bottom_right]; exact .object _ _ _ _ _ _ lookup results chains deep
+      | object _ _ _ _ _ elemB =>
+        rw [join_list]
+        exact .object _ _ _ _ _ _ lookup
+          (fun w member => resultTags_join (results w member) elemA elemB)
+          (fun w member o paired => chainTags_join (chains w member o paired) elemA elemB)
+          (fun w member => ih w member elemA elemB)
   | record ts as ws len tagFields ih =>
     cases shapeA with
     | record _ _ lenA fieldsA =>
@@ -4649,6 +5234,17 @@ theorem tagsDeep_join_right {heap : Heap} {t : Ty} {a b : Abstract} {w : Value}
       | list _ _ _ _ _ elemA =>
         rw [join_list]
         exact .list _ _ _ _ _ _ lookup
+          (fun w member => resultTags_join_right (results w member) elemA elemB)
+          (fun w member o paired => chainTags_join_right (chains w member o paired) elemA elemB)
+          (fun w member => ih w member elemA elemB)
+  | object root ws ts roots e ex lookup results chains deep ih =>
+    cases shapeB with
+    | object _ _ _ _ _ elemB =>
+      cases shapeA with
+      | bottom _ => rw [join_bottom_left]; exact .object _ _ _ _ _ _ lookup results chains deep
+      | object _ _ _ _ _ elemA =>
+        rw [join_list]
+        exact .object _ _ _ _ _ _ lookup
           (fun w member => resultTags_join_right (results w member) elemA elemB)
           (fun w member o paired => chainTags_join_right (chains w member o paired) elemA elemB)
           (fun w member => ih w member elemA elemB)
@@ -4729,6 +5325,61 @@ theorem describes_join {gamma : Naming} {heap : Heap} {t : Ty} {w : Value} {a b 
         have elementsDescribed : ∀ y ∈ ys, Describes gamma heap (e.join e') y := by
           intro y member
           refine ih y member shapeE shapeE' ?_
+          rcases side with d | d
+          · exact Or.inl (describes_element noUnk lookup member d)
+          · exact Or.inr (describes_element noUnk' lookup member d)
+        have named : named gamma (union cs ds) root := by
+          rcases side with d | d
+          · obtain ⟨o, m, ad⟩ := rootNamed d
+            exact ⟨o, mem_union _ _ o (Or.inl m), ad⟩
+          · obtain ⟨o, m, ad⟩ := rootNamed d
+            exact ⟨o, mem_union _ _ o (Or.inr m), ad⟩
+        refine ⟨⟨list_covers_of_elements named (union_no_unknown noUnk noUnk') lookup
+          (fun y member => (elementsDescribed y member).1.1), ?_⟩,
+          list_closures_of_elements lookup (fun y member => (elementsDescribed y member).2)⟩
+        intro q cs' e'' ex'' w' shape' located n o fp rep
+        cases located with
+        | here =>
+          simp [Abstract.atPath] at shape'
+          obtain ⟨rfl, rfl, rfl⟩ := shape'
+          rcases side with d | d
+          · obtain ⟨nodup, once⟩ := d.1.2 [] cs e ex (.ref root) rfl (.here _) n o fp rep
+            exact ⟨fun h => nodup (by have h' := h; simp [Certificate.meet] at h'; exact h'.1),
+              fun h => once (by have h' := h; simp [Certificate.meet] at h'; exact h'.1)⟩
+          · obtain ⟨nodup, once⟩ := d.1.2 [] ds e' ey (.ref root) rfl (.here _) n o fp rep
+            exact ⟨fun h => nodup (by have h' := h; simp [Certificate.meet] at h'; exact h'.2),
+              fun h => once (by have h' := h; simp [Certificate.meet] at h'; exact h'.2)⟩
+        | element lookup' member inner =>
+          rw [lookup] at lookup'
+          cases lookup'
+          exact (elementsDescribed _ member).1.2 _ cs' e'' ex'' w' (by simpa [Abstract.atPath] using shape') inner n o fp rep
+  | object root y ts lookup element ih =>
+    have rootNamed : ∀ {cs : List Origin} {e : Abstract} {ex : Certificate},
+        Describes gamma heap (.list cs e ex) (.ref root) → named gamma cs root := by
+      intro cs e ex d
+      have names := d.1.1 [] root (.here _)
+      rw [list_root_names] at names
+      exact named_union_nil names
+    cases shapeA with
+    | bottom _ =>
+      rw [join_bottom_left]
+      rcases side with d | d
+      · exact describes_of_no_arrays (.object root y ts lookup element) (no_arrays_of_covers_bottom d.1.1) b
+      · exact d
+    | object _ cs e ex noUnk shapeE =>
+      cases shapeB with
+      | bottom _ =>
+        rw [join_bottom_right]
+        rcases side with d | d
+        · exact d
+        · exact describes_of_no_arrays (.object root y ts lookup element) (no_arrays_of_covers_bottom d.1.1) _
+      | object _ ds e' ey noUnk' shapeE' =>
+        rw [join_list]
+        have elementsDescribed : ∀ y' ∈ [y], Describes gamma heap (e.join e') y' := by
+          intro y' member
+          have same : y' = y := by simpa using member
+          subst same
+          refine ih shapeE shapeE' ?_
           rcases side with d | d
           · exact Or.inl (describes_element noUnk lookup member d)
           · exact Or.inr (describes_element noUnk' lookup member d)
@@ -5100,6 +5751,7 @@ theorem primType_link_success {ta tb type : Ty} (flatB : FlatType tb)
   | record _ _ => simp [primType] at run
   | result _ _ _ _ => simp [primType] at run
   | dict _ _ => simp [primType] at run
+  | object _ _ => simp [primType] at run
   | chainInt =>
     simp only [primType] at run
     by_cases same : (ta == Ty.int) = true
@@ -5303,6 +5955,152 @@ theorem exprType_copy_success {declarations : List Decl} {self : Decl} {tenv : E
   subst hR
   exact ⟨t, receiverTyped, typeList⟩
 
+/-! ### Record objects (#316): typing -/
+
+theorem primType_get_success {i : Nat} {tR type : Ty}
+    (run : primType (.get i) [tR] = .ok type) : ∃ ts, tR = .object ts ∧ ts[i]? = some type := by
+  cases tR with
+  | object ts =>
+    simp only [primType] at run
+    cases found : ts[i]? with
+    | none => simp [found, Option.toExcept] at run
+    | some t =>
+      simp only [found, Option.toExcept, Except.ok.injEq] at run
+      exact ⟨ts, rfl, run ▸ found⟩
+  | _ => simp [primType] at run
+
+theorem primType_recordCopy_success {tR type : Ty}
+    (run : primType .recordCopy [tR] = .ok type) : ∃ ts, tR = .object ts ∧ type = .object ts := by
+  cases tR with
+  | object ts =>
+    simp [primType] at run
+    have typeEq : type = .object ts := by cases run; rfl
+    exact ⟨ts, rfl, typeEq⟩
+  | _ => simp [primType] at run
+
+theorem exprType_object_success {declarations : List Decl} {self : Decl} {tenv : Env Ty}
+    {args : List Atom} {type : Ty}
+    (typed : exprType declarations self tenv (.prim .object args) = .ok type) :
+    ∃ ts, args.mapM (atomType tenv) = .ok ts ∧ type = .object ts := by
+  obtain ⟨ts, atomsTyped, primTyped⟩ := exprType_prim_success typed
+  have objectType : primType .object ts = .ok (.object ts) := rfl
+  rw [objectType] at primTyped
+  exact ⟨ts, atomsTyped, (Except.ok.inj primTyped).symm⟩
+
+theorem exprType_get_success {declarations : List Decl} {self : Decl} {tenv : Env Ty} {i : Nat}
+    {receiver : Atom} {type : Ty}
+    (typed : exprType declarations self tenv (.prim (.get i) [receiver]) = .ok type) :
+    ∃ ts, atomType tenv receiver = .ok (.object ts) ∧ ts[i]? = some type := by
+  obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
+  obtain ⟨tR, rest, receiverTyped, restTyped, rfl⟩ := except_mapM_cons_success atomsTyped
+  have restNil := except_mapM_nil_success restTyped
+  subst restNil
+  obtain ⟨ts, hR, found⟩ := primType_get_success primTyped
+  subst hR
+  exact ⟨ts, receiverTyped, found⟩
+
+theorem exprType_recordCopy_success {declarations : List Decl} {self : Decl} {tenv : Env Ty}
+    {receiver : Atom} {type : Ty}
+    (typed : exprType declarations self tenv (.prim .recordCopy [receiver]) = .ok type) :
+    ∃ ts, atomType tenv receiver = .ok (.object ts) ∧ type = .object ts := by
+  obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
+  obtain ⟨tR, rest, receiverTyped, restTyped, rfl⟩ := except_mapM_cons_success atomsTyped
+  have restNil := except_mapM_nil_success restTyped
+  subst restNil
+  obtain ⟨ts, hR, typeEq⟩ := primType_recordCopy_success primTyped
+  subst hR
+  exact ⟨ts, receiverTyped, typeEq⟩
+
+theorem forIn_yields {α : Type} {xs : List α} {g : α → Except String (ForInStep PUnit)} {u : PUnit}
+    (never : ∀ x, g x ≠ .ok (.done PUnit.unit))
+    (run : forIn xs PUnit.unit (fun x _ => g x) = (.ok u : Except String PUnit)) :
+    ∀ x ∈ xs, g x = .ok (.yield PUnit.unit) := by
+  induction xs with
+  | nil => simp
+  | cons y ys ih =>
+    intro x member
+    rw [List.forIn_cons] at run
+    cases hy : g y with
+    | error e => simp [hy, bind, Except.bind] at run
+    | ok step =>
+      cases step with
+      | done u => exact absurd hy (never y)
+      | yield u =>
+        simp only [hy, bind, Except.bind] at run
+        rcases List.mem_cons.mp member with rfl | later
+        · exact hy
+        · exact ih run x later
+
+theorem exprType_assign_success {declarations : List Decl} {self : Decl} {tenv : Env Ty}
+    {width : Nat} {fields : List Nat} {base : Atom} {values : List Atom} {type : Ty}
+    (typed : exprType declarations self tenv (.assign width fields base values) = .ok type) :
+    ∃ ts, atomType tenv base = .ok (.object ts) ∧ type = .object ts ∧ ts.length = width ∧
+      fields.length = values.length ∧
+      ∀ f v, (f, v) ∈ fields.zip values → ∃ t u, ts[f]? = some t ∧ atomType tenv v = .ok u ∧
+        Ty.equal u t = true := by
+  unfold exprType at typed
+  cases baseTyped : atomType tenv base with
+  | error e => simp [baseTyped, bind, Except.bind] at typed
+  | ok bt =>
+    simp only [baseTyped, bind, Except.bind] at typed
+    cases bt with
+    | object ts =>
+      simp only at typed
+      by_cases w : (ts.length != width) = true
+      · simp [w, throw, throwThe, MonadExceptOf.throw, Except.bind] at typed
+      · simp only [w, if_false] at typed
+        by_cases shape : (fields.isEmpty || fields.length != values.length || fields.eraseDups.length != fields.length) = true
+        · simp [shape, throw, throwThe, MonadExceptOf.throw, Except.bind, pure, Except.pure] at typed
+        · simp [shape, pure, Except.pure, Except.bind] at typed
+          split at typed
+          · cases typed
+          · rename_i u loop
+            cases typed
+            simp only [bne_iff_ne, ne_eq, Bool.or_eq_true, decide_eq_true_eq, not_or, Decidable.not_not] at w shape
+            refine ⟨ts, rfl, rfl, w, shape.1.2, ?_⟩
+            intro f v member
+            have each := forIn_yields (by
+              intro x
+              cases ts[x.fst]? <;> simp [Option.toExcept]
+              cases atomType tenv x.snd <;> simp
+              split <;> simp) loop (f, v) member
+            cases found : ts[f]? with
+            | none => simp [found, Option.toExcept] at each
+            | some t =>
+              simp only [found, Option.toExcept] at each
+              cases vt : atomType tenv v with
+              | error e => simp [vt] at each
+              | ok l =>
+                simp only [vt] at each
+                by_cases different : (l != t) = true
+                · simp [different] at each
+                · refine ⟨t, l, rfl, rfl, ?_⟩
+                  have same : (l == t) = true := by
+                    cases h : (l == t) with
+                    | true => rfl
+                    | false => simp [bne, h] at different
+                  exact same
+    | _ => simp [throw, throwThe, MonadExceptOf.throw] at typed
+
+/-- A field read of a record object at an atom's field path is a typed use path. -/
+theorem tyAt_object_field {tk t : Ty} {p : Path} {ts : List Ty} {i : Nat}
+    (at_p : fieldTyAt tk p = some (.object ts)) (field : ts[i]? = some t) :
+    tyAt tk (p ++ [.element, .field i]) = some t := by
+  induction p generalizing tk with
+  | nil =>
+    simp [fieldTyAt] at at_p
+    subst at_p
+    simp [tyAt, fieldTyAt, field]
+  | cons step rest ih =>
+    cases step <;> cases tk <;> simp [fieldTyAt] at at_p
+    rename_i i' ts'
+    cases h : ts'[i']? with
+    | none => simp [h] at at_p
+    | some t' =>
+      simp [h] at at_p
+      simp [tyAt, h]
+      exact ih at_p
+
 theorem exprType_view_success {declarations : List Decl} {self : Decl} {tenv : Env Ty} {front : Bool}
     {receiver : Atom} {type : Ty}
     (flatTypes : ∀ (atom : Atom) (t : Ty), atomType tenv atom = .ok t → FlatType t)
@@ -5356,6 +6154,28 @@ theorem atoms_use_typed {tenv : Env Ty} {args : List Atom} {types : List Ty} {x 
   obtain ⟨len, fields⟩ := mapM_ok_fields typed
   obtain ⟨t, types_i⟩ := index_of_same_length len at_i
   exact atom_use_typed (fields i a t at_i types_i) atomUse
+
+/-- The uses of a field read of an object are typed paths: the object's
+field path, its slot and the field (#316). -/
+theorem fieldUses_typed {tenv : Env Ty} {a : Atom} {ts : List Ty} {fs : List Nat} {x : Var} {p : Path}
+    (typed : atomType tenv a = .ok (.object ts)) (fields : ∀ g ∈ fs, ∃ t, ts[g]? = some t)
+    (use : (x, p) ∈ fieldUses a fs) : ∃ tk t, tenv.lookup x = some tk ∧ tyAt tk p = some t := by
+  unfold fieldUses at use
+  obtain ⟨⟨v, q⟩, member, inner⟩ := List.mem_flatMap.mp use
+  obtain ⟨g, gMember, same⟩ := List.mem_map.mp inner
+  cases same
+  cases root : atomRoot a with
+  | none =>
+    obtain ⟨n, rfl, bad⟩ := atom_int_of_root_none typed root
+    cases bad
+  | some kp =>
+    rcases kp with ⟨k, q'⟩
+    rw [atomUses_of_root root] at member
+    simp only [List.mem_singleton, Prod.mk.injEq] at member
+    obtain ⟨rfl, rfl⟩ := member
+    obtain ⟨tk, declared, at_q⟩ := atom_fieldType_of_root typed root
+    obtain ⟨t, found⟩ := fields g gMember
+    exact ⟨tk, t, declared, tyAt_object_field at_q found⟩
 
 theorem flat_uses_typed {declarations : List Decl} {self : Decl} {e : Expr} (flat : FlatANF0 e) :
     ∀ (tenv : Env Ty) (ty : Ty), exprType declarations self tenv e = .ok ty →
@@ -5510,6 +6330,42 @@ theorem flat_uses_typed {declarations : List Decl} {self : Decl} {e : Expr} (fla
     intro tenv ty typed x p use
     obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
     exact atoms_use_typed atomsTyped use
+  | @object args =>
+    intro tenv ty typed x p use
+    obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
+    exact atoms_use_typed atomsTyped use
+  | @recordCopy receiver =>
+    intro tenv ty typed x p use
+    obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
+    exact atoms_use_typed atomsTyped use
+  | @get receiver index =>
+    intro tenv ty typed x p use
+    obtain ⟨ts, receiverTyped, found⟩ := exprType_get_success typed
+    exact fieldUses_typed receiverTyped (fun g member => by
+      simp only [List.mem_singleton] at member
+      subst member
+      exact ⟨ty, found⟩) use
+  | @assign width fields base values =>
+    intro tenv ty typed x p use
+    obtain ⟨ts, baseTyped, _, widthEq, lengths, valuesTyped⟩ := exprType_assign_success typed
+    change (x, p) ∈ union (fieldUses base ((List.range width).filter (!fields.contains ·)))
+      (atomsUses values) at use
+    rcases mem_union_cases _ _ (x, p) use with kept | value
+    · refine fieldUses_typed baseTyped (fun g member => ?_) kept
+      have lt : g < width := List.mem_range.mp (List.mem_filter.mp member).1
+      rw [← widthEq] at lt
+      exact ⟨ts[g], List.getElem?_eq_getElem lt⟩
+    · obtain ⟨a, member, atomUse⟩ := List.mem_flatMap.mp value
+      obtain ⟨j, at_j⟩ := List.mem_iff_getElem?.mp member
+      have lt : j < fields.length := by
+        rw [lengths]; exact (List.getElem?_eq_some_iff.mp at_j).1
+      have pair : (fields[j], a) ∈ fields.zip values := by
+        apply List.mem_of_getElem? (i := j)
+        rw [List.getElem?_zip_eq_some]
+        exact ⟨List.getElem?_eq_getElem lt, at_j⟩
+      obtain ⟨t, u, _, atomTyped, _⟩ := valuesTyped _ _ pair
+      exact atom_use_typed atomTyped atomUse
+
 
 /-! ### The checker's store tests through the representation (#1840)
 
@@ -5602,6 +6458,9 @@ theorem pathKinds_entryAbstract {ds : List Decl} {t : Ty} {a : Abstract} (shape 
       entryAbstract ds success aa]) = _
     rw [pathKinds_record, pathKinds_record]
     simp only [List.flatMap_cons, List.flatMap_nil, entryAbstract_scalar, ihError, ihSuccess]
+  | object ts roots element certificate _ _ ih =>
+    show pathKinds (.list roots (entryAbstract ds (.record ts) element) certificate) = _
+    rw [pathKinds_list, pathKinds_list, ih]
 
 /-- The cell lists of an abstract's paths are its kinds' cell lists. -/
 theorem paths_snd_eq (a : Abstract) : a.paths.map Prod.snd = (pathKinds a).map Prod.snd := by
@@ -5700,6 +6559,9 @@ theorem deepExclusive_entryAbstract {ds : List Decl} {t : Ty} {a : Abstract} (sh
       entryAbstract ds success aa]).deepExclusive = _
     rw [deepExclusive_record, deepExclusive_record]
     simp only [List.all_cons, List.all_nil, entryAbstract_scalar, ihError, ihSuccess]
+  | object ts roots element certificate _ _ ih =>
+    show (Abstract.list roots (entryAbstract ds (.record ts) element) certificate).deepExclusive = _
+    rw [deepExclusive_list, deepExclusive_list, ih]
 
 theorem all_congr_mem {α : Type} {l : List α} {p q : α → Bool} (h : ∀ a ∈ l, p a = q a) :
     l.all p = l.all q := by

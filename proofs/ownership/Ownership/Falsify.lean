@@ -187,8 +187,10 @@ def typedB (ds : List Decl) (heap : Heap) (env : Bindings) (types : Env Ty) (e :
     | some u => obsTyped ds o u && (snapshot heap depthFuel w).toOption.any (fun actual => obsTyped ds actual u)
     | none => true
 
-def projections (o : Observation) (w : Value) (p : Path) : Option (Observation × Value) := do
-  pure (← projectObs o p, ← projectVal w p)
+/-- A live use's two projections; a field read of a record object projects
+    through the object's slot in the current heap (#316). -/
+def projections (heap : Heap) (o : Observation) (w : Value) (p : Path) : Option (Observation × Value) := do
+  pure (← projectObs o p, ← projectHeap heap w p)
 
 /-- `LinksValid` as a test: `none` when every stored link is valid. -/
 def linksValidB (hs : InPlaceSemantics.State) : Option String := Id.run do
@@ -217,7 +219,7 @@ def linkComponent (links : List (Nat × Nat × Bool)) (c : Nat) : List Nat := Id
 /-- The arrays a live path or a permanent observer reaches. -/
 def protectedArrays (hs : InPlaceSemantics.State) (env : Bindings) (live : Live) : List Nat :=
   live.flatMap (fun (x, p) => match env.lookup x with
-    | some (_, w) => match projectVal w p with
+    | some (_, w) => match projectHeap hs.heap w p with
       | some w' => reachArrays hs.heap depthFuel w'
       | none => []
     | none => []) ++ hs.kept.toList.flatMap (reachArrays hs.heap depthFuel)
@@ -255,7 +257,7 @@ def invariantB (vs : ValueSemantics.State) (hs : InPlaceSemantics.State) (env : 
     match env.lookup x with
     | none => pure ()
     | some (o, w) =>
-      match projections o w p with
+      match projections hs.heap o w p with
       | none => return some s!"live use {x}.{repr p} does not project"
       | some (o', w') =>
         if !correspondsB hs.heap o' w' then return some s!"live use {x}.{repr p} does not correspond"
@@ -672,7 +674,7 @@ def sample : Generator.Gen Sampled := do
   -- generator must not share the check's definition, or a wrong one passes.
   let live := union (uses e) after2
   let liveCells := cfg.env.flatMap fun (x, _, w) =>
-    (live.filter (·.1 == x)).flatMap fun (_, p) => match projectVal w p with
+    (live.filter (·.1 == x)).flatMap fun (_, p) => match projectHeap cfg.heap w p with
       | some w' => reachArrays cfg.heap depthFuel w'
       | none => []
   let observedCells := cfg.kept.flatMap (reachArrays cfg.heap depthFuel)
@@ -808,7 +810,7 @@ def tryOne (seed : Nat) (t : Tally) (checker : Ownership.Config := {}) : Tally �
         return ({ t with naming := t.naming + 1 }, some "the result describes a closure as not once that the checker would create once")
       -- Naming part: construct γ'.
       let liveReqs := after.flatMap fun (x, p) => match cfg.env.lookup x, cfg.aenv.lookup x with
-        | some (_, w0), some a => match projectVal w0 p with
+        | some (_, w0), some a => match projectHeap hs'.heap w0 p with
           | some w' => requirements hs'.heap (a.atPath p) w' false
           | none => []
         | _, _ => []

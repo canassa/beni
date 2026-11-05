@@ -196,6 +196,9 @@ theorem flatInvariant_state_frame
     heapKinds := by
       obtain ⟨kinds, state⟩ := inv.heapKinds
       exact ⟨kinds, state.of_heap (fun _ _ _ => by rw [heapSame]) linksSame⟩
+    observationsTyped := inv.observationsTyped
+    objectsCertified := by simpa only [heapSame] using inv.objectsCertified
+    liveTags := by simpa only [heapSame] using inv.liveTags
   }
 
 /-- The computed atom post-states change only fuel and external observer
@@ -251,6 +254,11 @@ theorem flatInvariant_restrict_live
     namingBound := inv.namingBound
     observers := inv.observers
     heapKinds := inv.heapKinds
+    observationsTyped := inv.observationsTyped
+    objectsCertified := fun x o w a q c roots e ex ws binding found fields projected at_q slot keep
+      live' => inv.objectsCertified x o w a q c roots e ex ws binding found fields projected at_q slot keep
+        (fun g member => included _ (live' g member))
+    liveTags := fun x p member => inv.liveTags x p (included _ member)
   }
 
 end Ownership.FlatFragment.StateFrame
@@ -641,6 +649,15 @@ theorem allocated_reach_bound {heap : Heap} {w : Value} {ty : Ty} {c : Nat}
       · cases inner
       · exact ih inner
       · cases inner
+  | object root w ts lookup _ ih =>
+    cases reach with
+    | refl => exact (Array.getElem?_eq_some_iff.mp lookup).1
+    | element lookup' member inner =>
+      rw [lookup] at lookup'
+      cases lookup'
+      simp only [List.mem_singleton] at member
+      subst member
+      exact ih inner
 
 /-- A shape survives a heap change that touches no array the value reaches. -/
 theorem allocated_of_agree {heap next : Heap} {w : Value} {ty : Ty}
@@ -657,5 +674,8 @@ theorem allocated_of_agree {heap next : Heap} {w : Value} {ty : Ty}
       (fun c r => agree c (.field (List.mem_of_getElem? ws_i) r)))
   | ok e s w _ ih => exact .ok e s w (ih (fun c r => agree c (.field (by simp) r)))
   | err e s w _ ih => exact .err e s w (ih (fun c r => agree c (.field (by simp) r)))
+  | object root w ts lookup _ ih =>
+    exact .object root w ts (by rw [agree root (.refl _)]; exact lookup)
+      (ih (fun c r => agree c (.element lookup (by simp) r)))
 
 end Ownership.FlatFragment.HeapPreservation
