@@ -419,9 +419,9 @@ fn argumentDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {
 // linear either: each of the `depth` annotations expands its own chain of
 // aliases, so the cost grows about ×3 when the depth doubles (#2074).
 // Ownership v1, the default checker, walks the value's 2^depth paths and
-// grows ×4 a level (pending_test.zig's "the default checker checks a
-// doubling record linearly in its depth"), so this claim is the type
-// checker's and v2's, under `--ownership=v2`. Calibration
+// grows ×4 a level (pending_test.zig's "the default checker's check of a
+// doubling record is not exponential in its depth"), so this claim is the
+// type checker's and v2's, under `--ownership=v2`. Calibration
 // (ReleaseFast, master 2350de11b1, instructions above an empty module's
 // 16.1 M): 4.8 / 14.1 / 47 / 171 / 502 / 1 533 M at depth 16 / 32 / 64 /
 // 128 / 256 / 512, so 16 / 32 is a ratio of 1.45 with the floor; under v1,
@@ -458,7 +458,8 @@ test "checking an unannotated doubling record is linear in the size of its type"
 /// `w0 = { items = … }` and `w{i} = { a = w{i-1}, b = w{i-1} }` up to
 /// `depth`, read once at the end of the left spine: `.annotated` as top-level
 /// values, each with its `type alias W{i}`; `.local` as the bindings of one
-/// function, from `xs = [ 1 ]`, with no annotation.
+/// function, from `xs = [ 1 ]`, with no annotation. `pending_test.zig`
+/// keeps a copy of the `.annotated` form: change both together.
 fn doublingRecord(arena: std.mem.Allocator, depth: usize, form: enum { annotated, local }) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     switch (form) {

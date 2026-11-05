@@ -382,17 +382,19 @@ test "scenario/CK-316: v1 checks a write-free tuple DAG under --ownership-everyw
 // │ CK-323: v1 on a doubling record (#1238)                                 │
 // └─────────────────────────────────────────────────────────────────────────┘
 
-// `perf_test.zig`'s "checking a doubling record under annotations is linear
-// in its depth", under the default checker: `w{i} = { a = w{i-1}, b =
-// w{i-1} }`, each value annotated with its `type alias W{i}`. Its type and
-// value are DAGs of `depth` nodes, and the type checker and v2 check it at
-// the floor up to depth 64. v1 summarises the record's 2^depth paths and
-// grows ×4 a level, until its summary limit stops it at depth 14; `check`
-// does not enforce v1 off an in-place chain, so the limit prints nothing.
-// Calibration (ReleaseFast, master 2350de11b1, CPU): depth 8 / 13 / 16
-// check in 36 ms / 2.9 s / 9.9 s; under `--ownership=v2` depth 8 / 16 in 12
-// / 12 ms. Goes with v1.
-test "scenario/CK-323: the default checker checks a doubling record linearly in its depth" {
+// `perf_test.zig`'s "checking a doubling record under annotations is not
+// exponential in its depth", under the default checker: `w{i} = { a =
+// w{i-1}, b = w{i-1} }`, each value annotated with its `type alias W{i}`.
+// Its type and value are DAGs of `depth` nodes. The type checker and v2 are
+// far from exponential on it: about ×3 when the depth doubles, because each
+// annotation expands its own chain of aliases (#2074). v1 summarises the
+// record's 2^depth paths and grows ×4 a level, until its summary limit stops
+// it at depth 14; `check` does not enforce v1 off an in-place chain, so the
+// limit prints nothing. Calibration (ReleaseFast, master 2350de11b1, CPU): a
+// whole run at depth 8 / 13 / 16 takes 36 ms / 2.9 s / 9.9 s; here each run
+// at 16 is killed at twice the bound (at least 1 s), so red costs about 3 s.
+// Under `--ownership=v2`, depth 8 / 16 check in 12 / 12 ms. Goes with v1.
+test "scenario/CK-323: the default checker's check of a doubling record is not exponential in its depth" {
     var s = try Scenario.init("CK-323");
     defer s.deinit();
     try s.w.write("R8.beni", try doublingRecord(s.arena(), 8, .annotated));
@@ -401,12 +403,13 @@ test "scenario/CK-323: the default checker checks a doubling record linearly in 
     try s.finish(try s.ratioOf(&(check ++ [_][]const u8{"R8.beni"}), &(check ++ [_][]const u8{"R16.beni"}), 8));
 }
 
-/// `perf_test.zig`'s generator, verbatim: `w0 = { items = … }` and `w{i} = {
-/// a = w{i-1}, b = w{i-1} }` up to `depth`, read once at the end of the left
-/// spine: `.annotated` as top-level values, each with its `type alias W{i}`;
-/// `.local` as the bindings of one function, from `xs = [ 1 ]`, with no
-/// annotation.
-fn doublingRecord(arena: std.mem.Allocator, depth: usize, form: enum { annotated, local }) ![]const u8 {
+/// `perf_test.zig`'s `doublingRecord`, its `.annotated` form only:
+/// `type alias W0 = { items : List Int }`, `type alias W{i} = { a : W{i-1},
+/// b : W{i-1} }`, and top-level `w{i} : W{i}`, `w{i} = { a = w{i-1}, b =
+/// w{i-1} }` up to `depth`, read once at the end of the left spine. Keep it
+/// byte for byte the same as that form: the scenario moves into
+/// `perf_test.zig` when it is green, and calls that copy then.
+fn doublingRecord(arena: std.mem.Allocator, depth: usize, form: enum { annotated }) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     switch (form) {
         .annotated => {
@@ -415,11 +418,6 @@ fn doublingRecord(arena: std.mem.Allocator, depth: usize, form: enum { annotated
             try out.appendSlice(arena, "w0 : W0\nw0 =\n    { items = [ 1 ] }\n\n\n");
             for (1..depth + 1) |i| try out.print(arena, "w{d} : W{d}\nw{d} =\n    {{ a = w{d}, b = w{d} }}\n\n\n", .{ i, i, i, i - 1, i - 1 });
             try out.print(arena, "pub doubled : ⊤ → Int\ndoubled ⊤ =\n    List.length w{d}.", .{depth});
-        },
-        .local => {
-            try out.appendSlice(arena, "pub doubled : ⊤ → Int\ndoubled ⊤ =\n    xs = [ 1 ]\n    w0 = { items = xs }\n");
-            for (1..depth + 1) |i| try out.print(arena, "    w{d} = {{ a = w{d}, b = w{d} }}\n", .{ i, i - 1, i - 1 });
-            try out.print(arena, "    List.length w{d}.", .{depth});
         },
     }
     for (0..depth) |_| try out.appendSlice(arena, "a.");
