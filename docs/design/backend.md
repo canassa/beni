@@ -8043,8 +8043,12 @@ fact 3 finds at the call:
   That model prices the body against the call alone. But when the call is the program's only use
   of the function, the function goes after it: nothing reads the key that holds it, so fact 3
   drops the key, and nothing reads its binding, so item 1 drops a local binding and the pass
-  drops a top-level one. Each of these drops needs an `inert` value. So slice 8 does not ask the
-  size model at a call through a property when, by fact 3's values over the whole program, these
+  drops a top-level one. `dropKeys` drops an unread key when its value is `inert`, and the pass
+  drops an unread top-level binding only when its value is `inert` (`Spec.candidate`). Item 1
+  does not need one: it drops an unread local binding unless `Lower` kept its initialiser
+  (`keep`). The rule still asks an `inert` value of a local binding, because slice 9 can move its
+  initialiser into a key (below). So slice 8 does not ask the size model at a call through a
+  property when, by fact 3's values over the whole program, these
   three hold: the callee of exactly one call may be that function, the function does not escape,
   and every other node that may be it only holds it (the function itself, an `inert` key's value
   in an object literal whose site neither escapes nor has every key read, or a binding's `inert`
