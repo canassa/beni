@@ -1,0 +1,17 @@
+-- An `entry` record whose callbacks lack the update/settle state protocol
+-- (`ownership-v2.md` §2.13.4 item 4, R-5.8.1): the platform's runtime calls
+-- them as it likes, here `view` on the state after `settle` wrote it. v2
+-- read `entry` as a borrowed record, so `settle`'s push was accepted with no
+-- caller to check, written in place, and the old state's view printed 2.
+-- v2 refuses the record now: an unsupported shape is no word, escaped.
+import Start
+
+
+main : Start.Program
+main =
+    Start.launch
+        { init = λ⊤ → [ 1 ]
+        , update = λ⊤ _ state → state
+        , settle = λstate → List.push state 0
+        , view = List.length
+        }
