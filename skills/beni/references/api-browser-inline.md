@@ -61,7 +61,7 @@ module Inline
   value commands : (Cmd msg), (msg → ⊤) → ⊤  -- impure
   value decoded : (Schema e d), V → V  -- impure
   value deliver : Node → ⊤  -- impure
-  value entry : (⊤ → ⊤), List (Bucket) → (Entry)  -- impure
+  value entry : (⊤ → ⊤), List Bucket → Entry  -- impure
   value escape : V → V  -- impure
   value escapeAttribute : V → V  -- impure
   value escapePre : V → V  -- impure

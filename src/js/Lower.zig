@@ -3531,7 +3531,7 @@ pub const Lowerer = struct {
     }
 
     fn typedIntrinsicDecl(l: *Lowerer, decl: Bir.Decl) ?JsIntrinsic.Which {
-        if (l.in.graph.modulePackage(l.in.module) == .platform and std.mem.eql(u8, l.text(l.module_name), "Browser.Bridge")) return JsIntrinsic.browserBridge(l.text(l.bir.symbol(decl.name)));
+        if (l.in.graph.isBrowser(l.in.module) and std.mem.eql(u8, l.text(l.module_name), "Browser.Bridge")) return JsIntrinsic.browserBridge(l.text(l.bir.symbol(decl.name)));
         if (l.in.graph.modulePackage(l.in.module) == .core and std.mem.eql(u8, l.text(l.module_name), "Schema") and std.mem.eql(u8, l.text(l.bir.symbol(decl.name)), "endpointIdentity")) return .schemaIdentity;
         if (l.in.graph.modulePackage(l.in.module) == .core and std.mem.eql(u8, l.text(l.module_name), "Js.Kernel")) {
             const kernel_name = l.text(l.bir.symbol(decl.name));
