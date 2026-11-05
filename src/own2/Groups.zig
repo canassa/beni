@@ -921,7 +921,6 @@ pub const Module = struct {
         const m = bir.extraData(@fromBackingInt(d.rhs), Bir.MethodCall);
         for (bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Bir.Inst.Index)) |x| try out.append(mod.gpa, x.int());
     }
-
     fn callee(ctx: *anyopaque, inst: u32) Error!Transfer.Callee {
         const mod = self(ctx);
         const bir = mod.in.bir;
@@ -945,6 +944,7 @@ pub const Module = struct {
                 // composes its components'.
                 // A parameter's or a codec's names no function here.
                 .param, .codec => {},
+                .field => return .unbuilt, // A real callable, not comparison evidence (#1966).
                 else => composed = true,
             }
         };
@@ -1156,7 +1156,7 @@ pub const Module = struct {
     }
 
     /// Match only a canonical core Js call; unrelated calls read no Js facts.
-    fn cellSelector(ctx: *anyopaque, inst: u32) Error!?u32 {
+    fn cellSelector(ctx: *anyopaque, inst: u32) Error!?CellSelectors.Lambda {
         const mod = self(ctx);
         const target = mod.calledDecl(inst) orelse return null;
         if (target[0] != mod.in.js_module) return null;

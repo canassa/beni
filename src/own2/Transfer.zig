@@ -1,8 +1,7 @@
 //! L11: the transfer rules (`docs/design/ownership-v2.md` §2.6), one case per
 //! BIR tag, over one declaration's instructions in evaluation order. A
 //! value is a shape root with its own κ snapshot (§2.9); the frame records,
-//! for `Walk` and `Demands`, the uses (at the consumer, R-4.1.1), the
-//! demands, the holders (bindings and pending computed operands), the
+//! for `Walk` and `Demands`, the uses, demands, holders,
 //! escapes and what the calls rely on.
 //!
 //! **What S3a builds**: locals, field and tuple projections, literals,
@@ -39,8 +38,7 @@
 //! with their kind), O6's pattern half (a list pattern's element and rest
 //! are the two sides of one split), O7 (a construction's result is its
 //! base's object written), O13 (a literal's and a construction's κ by
-//! §2.9's rules); the code of O6's pattern half is `TransferPattern`'s,
-//! of O7 and O13 `TransferConstruct`'s.
+//! §2.9); O6 lives in `TransferPattern`, O7/O13 in `TransferConstruct`.
 
 const std = @import("std");
 const CellSelectors = @import("CellSelectors.zig");
@@ -120,8 +118,8 @@ pub const Context = struct {
     sharedIndex: *const fn (ctx: *anyopaque, ref: u32) ?u32,
     /// A `++` the checker resolved to `List.append` (`Dispatch`).
     isListAppend: *const fn (ctx: *anyopaque, inst: u32) bool,
-    /// A literal selector consumed structurally by a field-specific Cell read row.
-    cellSelector: ?*const fn (ctx: *anyopaque, inst: u32) Error!?u32 = null,
+    /// A structural Cell selector or a literal immediate Js.pure body.
+    cellSelector: ?CellSelectors.Reader = null,
     /// Told of every call a class answered, with its arguments: a
     /// recursive group records its edges (§8 S3b slice 4b).
     onCall: ?*const fn (ctx: *anyopaque, inst: u32, args: []const Value) Error!void = null,
@@ -241,6 +239,7 @@ pub const Frame = struct {
     pub const paramReads = frame_part.paramReads;
     pub const pending = frame_part.pending;
     pub const bindLocal = frame_part.bindLocal;
+    pub const immediate = frame_part.immediate;
     pub const reentries = frame_part.reentries;
     // TransferBeside.zig
     pub const extendPath = beside_part.extendPath;
@@ -365,7 +364,7 @@ pub const Frame = struct {
                 if (o.int() < f.decl.inst_start.int() or o.int() >= f.decl.inst_end.int()) continue;
                 f.consumer[f.rel(o.int())] = i;
             }
-            try CellSelectors.consume(f.bir, f.decl.inst_start.int(), f.absorbed, f.ctx.ctx, f.ctx.cellSelector, i);
+            try CellSelectors.consume(f.bir, f.decl.inst_start.int(), f.absorbed, f.consumer, f.ctx.ctx, f.ctx.cellSelector, i);
             switch (f.tag(i)) {
                 .branch => {
                     // The arm's pattern matches the case's scrutinee: the
@@ -531,6 +530,7 @@ pub const Frame = struct {
                 return .{ .value = try f.container(i, parts.items, steps.items, true) };
             },
             .call => {
+                if (try f.immediate(i)) |v| return v;
                 if (f.ctx.isListAppend(f.ctx.ctx, i) and f.args(i).len == 2) return .{ .value = try f.appendChain(i) };
                 return .{ .value = try f.call(i, d.lhs, f.args(i)) };
             },

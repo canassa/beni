@@ -33,7 +33,6 @@ tests/corpus/ownership/InitializationTransfer.beni [browser-inline] Initializati
 tests/corpus/ownership/InitializationTransfer.beni [browser-inline] InitializationTransfer 123:12 #0 :: List.push InitializationTransfer.chainMiddle :: accepted :: rejected  initialization transfer is S7
 tests/corpus/ownership/InitializationTransfer.beni [browser-inline] InitializationTransfer 185:44 #0 :: List.set InitializationTransfer.issueSeed :: accepted :: rejected  initialization transfer is S7
 tests/corpus/ownership/InitializationWide.beni [browser-inline] InitializationWide 77:8 #0 :: List.push InitializationWide.seed.f00 :: accepted :: rejected  initialization transfer is S7
-tests/corpus/ownership/DotFieldCall.beni [browser-inline] DotFieldCall 15:10 #0 :: List.push r.items :: accepted :: rejected  a record field's path is S5's (`r` read again whole)
 tests/corpus/ownership/PolyRecTuples.beni [node] PolyRecTuples 23:26 #0 :: List.push a :: accepted :: rejected  polymorphic recursion folds `a` and `b` to one place (PolyRec*, S4)
 tests/corpus/ownership/StoredBack.beni [node] StoredBack 14:23 #0 :: List.push a :: accepted :: rejected  #1080: v1 accepts a write to a taken element stored back; v2 refuses it
 #

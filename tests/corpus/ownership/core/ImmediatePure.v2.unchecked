@@ -1,0 +1,5 @@
+ImmediatePure stored: lines 28-31 (not built: lambda)
+ImmediatePure returnedWork: lines 34-35 (not built: lambda)
+ImmediatePure namedUnit: lines 38-42 (not built: local)
+ImmediatePure pure: lines 55-56 (not built: call)
+ImmediatePure lookalike: lines 59-60 (not built: lambda)

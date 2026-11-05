@@ -1,5 +1,6 @@
 UnknownCallee handlers: lines 23-24 (not built: lambda)
 UnknownCallee badDict: lines 27-30 (not built: call)
+UnknownCallee load: lines 37-38 (not built: method_call)
 UnknownCallee badField: lines 41-42 (not built: lambda)
 UnknownCallee goodField: lines 45-46 (not built: lambda)
 UnknownCallee badList: lines 49-56 (not built: call)

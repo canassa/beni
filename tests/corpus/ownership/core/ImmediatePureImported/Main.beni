@@ -1,0 +1,12 @@
+-- Immediate body classes preserve aliases when imported, not just locally.
+import Source
+
+
+pub kept : List Int → List Int × List Int
+kept xs =
+    held = Source.identity xs
+    ( List.push xs 1, held )
+
+
+pub written : List Int → List Int
+written xs = Source.grow xs

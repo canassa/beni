@@ -1,0 +1,28 @@
+module ImmediatePure
+  7:29 List.push xs: accepted once
+  17:7 List.push xs: rejected alias: held holds it and is read at 17:5
+  21:43 List.push xs: accepted once
+  25:30 List.push xs: rejected later-use: xs is read again at 25:28
+  30:17 List.push xs: accepted once
+  35:39 List.push xs: pending: it is returned by a function value
+  42:13 List.push xs: accepted once
+  48:7 List.push xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  52:30 List.push xs: accepted once
+  60:26 List.push xs: accepted once
+  summary written: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary returned: π1 RA; res π1
+  summary kept: π1 RAW[storage], π1[*] A; res .0 condition(fresh2) π1, .0[*] ~condition(fresh3) ~π1[*], .1 ~condition(fresh4) π1, condition(fresh1){shared}
+  summary nested: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary beside: π1 RAW[storage], π1[*] A; res .0 condition(fresh2) π1, .0[*] ~condition(fresh3) ~π1[*], .1 ~condition(fresh4) π1, condition(fresh1){shared}
+  summary stored: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary returnedWork: π1 RW[storage]; res λ?r{lost}, ◇ ⊤{lost}r{lost}
+  summary namedUnit: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary storedAlias: π1 RAEW[storage], π1[*] A; res .0 condition(fresh2) π1, .0[*] ~condition(fresh3) ~π1[*], .1 ~condition(fresh4) ⊤{lost}r{lost}, condition(fresh1){lost}r{lost}
+  summary wildcard: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary pure: π1 R; res cb1{excl cb1}; π1 calls ≤1
+  summary lookalike: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  demands 10: accepted 6 (fresh 0, call 0, param 0, callback-param 0, once 6, entry 0; assumed 0), pending 1, rejected 3
+total 10: accepted 6 (fresh 0, call 0, param 0, callback-param 0, once 6, entry 0; assumed 0), pending 1, rejected 3
+cause escaped 1
+cause later-use 1
+cause alias 1
