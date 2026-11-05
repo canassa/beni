@@ -1,0 +1,115 @@
+-- A route whose function is a `case` (`docs/design/browser-inline.md` §8.4,
+-- amended 2026-10-23, #896): `W2.replace` gives a record made from the
+-- decoded state alone, or the model as it was, so its result holds nothing
+-- of the old object and the generic loader copies it in, as it does
+-- `W1.replace`'s `Result.withDefault`. The program keeps every route, so the
+-- roots hold their slices directly — no model cell — and each widget's
+-- handlers are written in its root. A push, a snapshot and a bad snapshot
+-- member behave as the source says, and a local edit after each writes the
+-- object the root holds.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Push
+import Schema exposing (Value)
+import Sub exposing (Sub)
+import Tea
+import W1
+import W2
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.element { init = init, update = update, view = view, subscriptions = subscriptions })
+        "root"
+
+
+type alias Model =
+    w1 : W1.Model
+    w2 : W2.Model
+
+
+init : ⊤ → Model × Cmd Msg
+init ⊤ = ( { w1 = W1.init ⊤, w2 = W2.init ⊤ }, Cmd.none )
+
+
+type Msg
+    = W1Msg W1.Msg
+    | W2Msg W2.Msg
+    | Pushed Value
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model = ( step msg model, Cmd.none )
+
+
+step : Msg, Model → Model
+step msg model =
+    case msg of
+        W1Msg sub →
+            { model | w1 = W1.update sub model.w1 }
+
+        W2Msg sub →
+            { model | w2 = W2.update sub model.w2 }
+
+        Pushed value →
+            pushed value model
+
+
+subscriptions : Model → Sub Msg
+subscriptions _ = Push.onPush Pushed
+
+
+schema Event tagged "type" of
+    ServerSet as "serverSet"
+        widget : String
+        state : Value
+    Snapshot as "snapshot"
+        state : Snapshot
+
+
+schema Snapshot =
+    widgets : Widgets
+
+
+schema Widgets =
+    w1 : Value as "w1"
+    w2 : Value as "w2"
+
+
+pushed : Value, Model → Model
+pushed value model =
+    case Schema.read (Event.schema ⊤) value of
+        Ok (Event.ServerSet event) →
+            replaced event.widget event.state model
+
+        Ok (Event.Snapshot event) →
+            widgets = event.state.widgets
+            { w1 = W1.replace widgets.w1 model.w1
+            , w2 = W2.replace widgets.w2 model.w2
+            }
+
+        Err _ →
+            model
+
+
+replaced : String, Value, Model → Model
+replaced widget state model =
+    case widget of
+        "w1" →
+            { model | w1 = W1.replace state model.w1 }
+
+        "w2" →
+            { model | w2 = W2.replace state model.w2 }
+
+        _ →
+            model
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {Html.map (W1.view model.w1) W1Msg}
+        {Html.map (W2.view model.w2 model.w1) W2Msg}
+    </div>

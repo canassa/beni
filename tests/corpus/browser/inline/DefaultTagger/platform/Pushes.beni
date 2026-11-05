@@ -2,6 +2,7 @@
 --! layer reads it, with its start and its reader exported: a `rr-push`
 --! `CustomEvent` on `window`, its `detail` the value.
 
+import Browser.Host.Event as HostEvent
 import Js
 import Listen
 import Schema exposing (Value)
@@ -14,5 +15,4 @@ pushes send = Listen.on "window" "rr-push" detail send
 
 
 --| A push's value.
-pub detail : Js.Value → Value
-detail event = Js.to (Js.get event "detail")
+pub foreign impure detail : borrowed HostEvent.Event → Value

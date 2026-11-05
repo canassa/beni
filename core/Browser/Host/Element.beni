@@ -2,6 +2,11 @@
 import Browser.Host.DOMRect as DOMRect
 import Browser.Host.Node as Node
 import Browser.Host.Promise as Promise
+import Js
+
+
+pub type QueryError
+    = SyntaxError
 
 
 pub foreign type Element
@@ -32,6 +37,21 @@ pub foreign impure fullscreenSupported : borrowed Element → Bool
 
 
 pub foreign impure requestFullscreen : escaped Element → Promise.Promise ⊤
+
+
+pub querySelector : borrowed Element, String → Result QueryError (Maybe Element)
+querySelector a0 a1 = Js.optMatch (host_querySelector a0 a1) (λ⊤ → Err SyntaxError) λselected →
+    Ok (Js.optMatch selected (λ⊤ → Nothing) λpresent → Just present)
+
+
+foreign impure host_querySelector : borrowed Element, String → Js.Opt (Js.Opt Element)
+
+
+pub getAttribute : borrowed Element, String → Maybe String
+getAttribute a0 a1 = Js.optMatch (host_getAttribute a0 a1) (λ⊤ → Nothing) λpresent → Just present
+
+
+foreign impure host_getAttribute : borrowed Element, String → Js.Opt String
 
 
 pub foreign pure toNode : Element → Node.Node

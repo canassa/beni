@@ -98,7 +98,7 @@ pub fn source(arena: Allocator, module: []const u8, type_name: ?[]const u8) ![]c
     if (std.mem.eql(u8, module, "Browser.Host.Fetch")) try w.writeAll("pub foreign type Body\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.RegExp")) try w.writeAll("pub type CreateError\n    = SyntaxError\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Storage")) try w.writeAll("pub type SetError\n    = QuotaExceeded\n\n\n");
-    if (std.mem.eql(u8, module, "Browser.Host.Element")) try w.writeAll("import Browser.Host.DOMRect as DOMRect\nimport Browser.Host.Promise as Promise\n\n\n");
+    if (std.mem.eql(u8, module, "Browser.Host.Element")) try w.writeAll("import Browser.Host.DOMRect as DOMRect\nimport Browser.Host.Promise as Promise\n\n\npub type QueryError\n    = SyntaxError\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Worker")) try w.writeAll("import Js\nimport Browser.Host.EventTarget as EventTarget\n\n\npub foreign type Endpoint\n\n\npub type CreateError\n    = SyntaxError\n    | SecurityError\n    | TypeError\n\n\npub type PostError\n    = DataCloneError\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Event")) try w.writeAll("import Js\nimport Browser.Host.Rejection as Rejection\n\n\n");
     if (std.mem.eql(u8, module, "Browser.Host.Console") or std.mem.eql(u8, module, "Browser.Host.Rejection")) try w.writeAll("import Js\n\n\n");
@@ -475,7 +475,8 @@ pub fn sibling(arena: Allocator, module: []const u8) ![]const u8 {
             .math_random => "(_) => { return globalThis.Math.random(); }",
 
             .document => "(_) => { return globalThis.document; }",
-            .query_selector => "(node, selector) => {\n  try {\n    const element = node.querySelector(selector);\n    return element;\n  } catch (error) {\n    if (!(error instanceof globalThis.DOMException) || error.name !== \"SyntaxError\") throw error;\n    return error;\n  }\n}",
+            .query_selector, .element_query => "(node, selector) => {\n  try {\n    const element = node.querySelector(selector);\n    return element;\n  } catch (error) {\n    if (!(error instanceof globalThis.DOMException) || error.name !== \"SyntaxError\") throw error;\n    return error;\n  }\n}",
+            .element_get_attribute => "(element, name) => { return element.getAttribute(name); }",
             .text_content => "(node) => { return node.textContent; }",
             .set_text_content => "(node, text) => { node.textContent = text; return null; }",
             .identity => "(element) => { return element; }",

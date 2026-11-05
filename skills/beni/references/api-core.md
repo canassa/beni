@@ -139,6 +139,8 @@ module Browser.Host.Document
   value visibilityState : ⊤ → String  -- impure
 module Browser.Host.Element
   type Element
+  type QueryError
+    SyntaxError
   value blur : Element → ⊤  -- impure
   value box : Element → DOMRect  -- impure
   value focus : Element → ⊤  -- impure

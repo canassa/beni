@@ -11,6 +11,8 @@
 // ownership pin begin: host_dataOnly
 // ownership pin begin: host_error
 // ownership pin begin: host_errorMessage
+// ownership pin begin: host_querySelector
+// ownership pin begin: host_getAttribute
 // ownership pin begin: host_get
 // ownership pin begin: host_group
 // ownership pin begin: host_init
@@ -86,6 +88,8 @@ pub fn get(recipe: anytype) ?Adapter {
         .rejection_code => .{ .signature = "borrowed Rejection → Js.Opt String", .wrapper = "NAME a0 = Js.optMatch (host_NAME a0) (λ⊤ → Nothing) λpresent → Just present", .mode = .undefined_value },
         .as_anchor => .{ .signature = "aliased EventTarget → Js.Opt HTMLAnchorElement.HTMLAnchorElement", .wrapper = "NAME a0 = Js.optMatch (host_NAME a0) (λ⊤ → Nothing) λpresent → Just present", .mode = .undefined_value },
         .query_selector => .{ .signature = "Document, String → Js.Opt (Js.Opt Element.Element)", .wrapper = "NAME a0 a1 = Js.optMatch (host_NAME a0 a1) (λ⊤ → Err SyntaxError) λselected →\n    Ok (Js.optMatch selected (λ⊤ → Nothing) λpresent → Just present)", .mode = .query_result },
+        .element_query => .{ .signature = "borrowed Element, String → Js.Opt (Js.Opt Element)", .wrapper = "NAME a0 a1 = Js.optMatch (host_NAME a0 a1) (λ⊤ → Err SyntaxError) λselected →\n    Ok (Js.optMatch selected (λ⊤ → Nothing) λpresent → Just present)", .mode = .query_result },
+        .element_get_attribute => .{ .signature = "borrowed Element, String → Js.Opt String", .wrapper = "NAME a0 a1 = Js.optMatch (host_NAME a0 a1) (λ⊤ → Nothing) λpresent → Just present", .mode = .null_value },
         .text_content => .{ .signature = "Node → Js.Opt String", .wrapper = "NAME a0 = Js.optMatch (host_NAME a0) (λ⊤ → Nothing) λpresent → Just present", .mode = .null_value },
         .cf_responseCreate => .{ .signature = "Int, Js.Opt String, List (String × String) → Response.Response", .wrapper = "NAME a0 a1 a2 =\n    optional =\n        case a1 of\n            Nothing →\n                Js.none ⊤\n            Just present →\n                Js.some present\n    host_NAME a0 optional a2", .mode = .passthrough },
         .cf_stubRpc => .{ .signature = "Stub, String, String, Js.Opt String, String → Promise.Promise Js.Value", .wrapper = "NAME a0 a1 a2 a3 a4 =\n    optional =\n        case a3 of\n            Nothing →\n                Js.none ⊤\n            Just present →\n                Js.some present\n    host_NAME a0 a1 a2 optional a4", .mode = .passthrough },
@@ -109,6 +113,8 @@ pub fn get(recipe: anytype) ?Adapter {
 // ownership pin end: host_error
 // ownership pin end: host_errorMessage
 // ownership pin end: host_get
+// ownership pin end: host_getAttribute
+// ownership pin end: host_querySelector
 // ownership pin end: host_group
 // ownership pin end: host_init
 // ownership pin end: host_key

@@ -1,0 +1,3 @@
+element "root"
+detail window rr-push {"type":"serverSet","widget":"w1","state":{"cups":3,"kept":{"items":[1,2]}}}
+click [data-role=four]

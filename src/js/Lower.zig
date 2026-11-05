@@ -3530,6 +3530,7 @@ pub const Lowerer = struct {
     }
 
     fn typedIntrinsicDecl(l: *Lowerer, decl: Bir.Decl) ?JsIntrinsic.Which {
+        if (l.in.graph.isInline(l.in.module) and std.mem.eql(u8, l.text(l.module_name), "Inline.Bridge") and std.mem.eql(u8, l.text(l.bir.symbol(decl.name)), "markRoot")) return .inlineMarkRoot;
         if (l.in.graph.isBrowser(l.in.module) and std.mem.eql(u8, l.text(l.module_name), "Browser.Bridge")) return JsIntrinsic.browserBridge(l.text(l.bir.symbol(decl.name)));
         if (l.in.graph.modulePackage(l.in.module) == .core and std.mem.eql(u8, l.text(l.module_name), "Schema") and std.mem.eql(u8, l.text(l.bir.symbol(decl.name)), "endpointIdentity")) return .schemaIdentity;
         if (l.in.graph.modulePackage(l.in.module) == .core and std.mem.eql(u8, l.text(l.module_name), "Js.Kernel")) {
@@ -11465,6 +11466,8 @@ pub const Lowerer = struct {
     // ownership pin begin: host_dataOnly
     // ownership pin begin: host_error
     // ownership pin begin: host_errorMessage
+    // ownership pin begin: host_querySelector
+    // ownership pin begin: host_getAttribute
     // ownership pin begin: host_get
     // ownership pin begin: host_group
     // ownership pin begin: host_init
@@ -11604,7 +11607,7 @@ pub const Lowerer = struct {
                 .array_each => {},
                 .event_type, .event_isTrusted, .event_bubbles, .event_cancelBubble, .event_stop, .event_target, .target_node, .node_element, .node_contains, .element_local, .element_as_input, .input_value, .input_value_set, .input_checked, .input_checked_set, .input_disabled, .input_type, .input_name, .input_selectionStart, .input_selectionEnd, .input_selectionDirection, .input_selection_set, .input_node, .element_as_textarea, .textarea_value, .textarea_value_set, .textarea_disabled, .textarea_selectionStart, .textarea_selectionEnd, .textarea_selectionDirection, .textarea_selection_set, .textarea_node, .element_as_select, .select_value, .select_value_set, .select_selectedIndex, .select_selectedIndex_set, .select_disabled, .select_node, .element_as_option, .option_selected, .option_selected_set, .option_node, .element_as_form, .form_node, .select_options, .form_elements, .document_named, .document_active, .document_controls, .event_capture => {},
                 .array_make, .array_get_or, .array_set, .array_push, .array_size, .list_array_view, .array_view_get_or, .array_view_length, .array_view_slice, .key_map_values, .key_map_make, .key_map_get_or, .key_map_get, .key_map_set, .key_map_has, .key_map_remove, .key_map_clear, .key_map_size, .key_map_each, .document_body, .document_create_element, .node_append, .element_attribute, .event_message, .rejection_display => {},
-                .map_has, .map_get, .map_set, .map_delete, .map_entries, .query_selector, .text_content, .timeout, .queue_microtask, .timer_start, .timer_clear, .message_channel, .message_port1, .message_port2, .post_unit, .on_message, .try_immediate, .date_now, .math_random, .listen_window, .listen_document, .event_prevent, .event_key, .event_code, .event_ctrlKey, .event_shiftKey, .event_altKey, .event_metaKey, .event_pointerId, .event_pointerType, .event_isPrimary, .event_clientX, .event_clientY, .event_box, .rect_left, .rect_top, .event_target_value, .event_target_checked, .event_prevented, .event_button, .event_path, .as_anchor, .anchor_has, .anchor_href, .anchor_protocol, .anchor_host, .anchor_target, .frame_request, .frame_cancel, .inner_width, .inner_height, .visibility_state, .document_title, .document_title_read, .event_listen, .process_stdout, .process_stderr, .process_exit_code, .process_before_exit, .promise_observe, .rejection_is_error, .rejection_name, .rejection_code, .rejection_raise, .abort_create, .abort_signal, .abort_call, .abort_aborted, .node_read_utf8, .node_read_dir, .dirent_name, .dirent_file, .dirent_directory, .dirent_link, .data_is_array, .data_is_finite, .data_is_integer, .data_is_safe_integer, .data_keys, .data_empty_object, .data_has_own, .json_parse, .json_stringify, .url_try_create, .url_href, .url_username, .url_password, .document_base_uri, .headers_create, .headers_append, .headers_has, .headers_set, .headers_get, .headers_entries, .form_create, .form_append, .fetch_text_body, .fetch_form_body, .fetch_init, .fetch_call, .response_url, .response_status, .response_status_text, .response_ok, .response_headers, .response_text, .response_reader, .reader_bytes, .read_result_done, .read_result_value, .decoder_create, .decoder_more, .decoder_finish, .dom_exception_create, .abort_with_reason, .abort_reason_is, .rejection_is_type_error, .regexp_create, .regexp_test, .regexp_replace, .storage_local, .storage_session, .storage_get, .storage_set, .storage_remove, .storage_length, .storage_key, .url_protocol, .url_set_protocol, .ws_create, .ws_binary, .ws_state, .ws_buffered, .ws_protocol, .ws_send, .ws_close, .ws_close_empty, .ws_open, .ws_error, .ws_message, .ws_closed, .console_warn, .document_by_id, .element_focus, .element_blur, .element_box, .element_scroll, .element_into_view, .rect_x, .rect_y, .rect_width, .rect_height, .window_scroll_x, .window_scroll_y, .element_fullscreen_supported, .element_fullscreen, .document_fullscreen_enabled, .document_fullscreen_id, .document_fullscreen_exit, .navigator_activated, .rejection_type_error_message, .data_same, .worker_supported, .worker_create, .worker_endpoint, .worker_self_endpoint, .worker_post, .worker_terminate, .worker_event_target, .global_event_target, .event_data_only, .event_error, .console_error_data, .rejection_abandoned, .global_is_page, .event_error_message, .rejection_create, .rejection_assign, .regexp_group, .worker_close_self, .cf_socketInitialize, .cf_unitResolvers, .cf_stringResolvers, .cf_dataResolvers, .cf_responseResolvers, .cf_program, .cf_definition, .cf_instance, .cf_namespace, .cf_service, .cf_variable, .cf_byName, .cf_idFromString, .cf_getStub, .cf_idName, .cf_requestPath, .cf_requestCopy, .cf_requestSignal, .cf_onAbort, .cf_responseCreate, .cf_responseCopy, .cf_stubFetch, .cf_serviceFetch, .cf_stubRpc, .cf_overloaded, .cf_reset, .cf_retryable, .cf_errorText, .cf_randomUUID, .cf_waitUntil, .cf_objectWaitUntil, .cf_objectAbort, .cf_alarmSet, .cf_alarmDelete, .cf_socketsTagged, .cf_acceptSocket, .cf_autoResponse, .cf_socketPair, .cf_socketClient, .cf_socketServer, .cf_socketResponse, .cf_socketCloseEmpty, .cf_consoleError, .cf_consoleLog, .cf_consoleReason, .promise_resolve, .promise_reject, .promise_after, .cf_socketEq, .cf_socketSend, .cf_socketClose, .cf_socketAttach, .cf_kv, .cf_kvGet, .cf_kvPut, .cf_kvDelete, .cf_kvKeys => {}, // Precise generated adapters.
+                .map_has, .map_get, .map_set, .map_delete, .map_entries, .query_selector, .element_query, .element_get_attribute, .text_content, .timeout, .queue_microtask, .timer_start, .timer_clear, .message_channel, .message_port1, .message_port2, .post_unit, .on_message, .try_immediate, .date_now, .math_random, .listen_window, .listen_document, .event_prevent, .event_key, .event_code, .event_ctrlKey, .event_shiftKey, .event_altKey, .event_metaKey, .event_pointerId, .event_pointerType, .event_isPrimary, .event_clientX, .event_clientY, .event_box, .rect_left, .rect_top, .event_target_value, .event_target_checked, .event_prevented, .event_button, .event_path, .as_anchor, .anchor_has, .anchor_href, .anchor_protocol, .anchor_host, .anchor_target, .frame_request, .frame_cancel, .inner_width, .inner_height, .visibility_state, .document_title, .document_title_read, .event_listen, .process_stdout, .process_stderr, .process_exit_code, .process_before_exit, .promise_observe, .rejection_is_error, .rejection_name, .rejection_code, .rejection_raise, .abort_create, .abort_signal, .abort_call, .abort_aborted, .node_read_utf8, .node_read_dir, .dirent_name, .dirent_file, .dirent_directory, .dirent_link, .data_is_array, .data_is_finite, .data_is_integer, .data_is_safe_integer, .data_keys, .data_empty_object, .data_has_own, .json_parse, .json_stringify, .url_try_create, .url_href, .url_username, .url_password, .document_base_uri, .headers_create, .headers_append, .headers_has, .headers_set, .headers_get, .headers_entries, .form_create, .form_append, .fetch_text_body, .fetch_form_body, .fetch_init, .fetch_call, .response_url, .response_status, .response_status_text, .response_ok, .response_headers, .response_text, .response_reader, .reader_bytes, .read_result_done, .read_result_value, .decoder_create, .decoder_more, .decoder_finish, .dom_exception_create, .abort_with_reason, .abort_reason_is, .rejection_is_type_error, .regexp_create, .regexp_test, .regexp_replace, .storage_local, .storage_session, .storage_get, .storage_set, .storage_remove, .storage_length, .storage_key, .url_protocol, .url_set_protocol, .ws_create, .ws_binary, .ws_state, .ws_buffered, .ws_protocol, .ws_send, .ws_close, .ws_close_empty, .ws_open, .ws_error, .ws_message, .ws_closed, .console_warn, .document_by_id, .element_focus, .element_blur, .element_box, .element_scroll, .element_into_view, .rect_x, .rect_y, .rect_width, .rect_height, .window_scroll_x, .window_scroll_y, .element_fullscreen_supported, .element_fullscreen, .document_fullscreen_enabled, .document_fullscreen_id, .document_fullscreen_exit, .navigator_activated, .rejection_type_error_message, .data_same, .worker_supported, .worker_create, .worker_endpoint, .worker_self_endpoint, .worker_post, .worker_terminate, .worker_event_target, .global_event_target, .event_data_only, .event_error, .console_error_data, .rejection_abandoned, .global_is_page, .event_error_message, .rejection_create, .rejection_assign, .regexp_group, .worker_close_self, .cf_socketInitialize, .cf_unitResolvers, .cf_stringResolvers, .cf_dataResolvers, .cf_responseResolvers, .cf_program, .cf_definition, .cf_instance, .cf_namespace, .cf_service, .cf_variable, .cf_byName, .cf_idFromString, .cf_getStub, .cf_idName, .cf_requestPath, .cf_requestCopy, .cf_requestSignal, .cf_onAbort, .cf_responseCreate, .cf_responseCopy, .cf_stubFetch, .cf_serviceFetch, .cf_stubRpc, .cf_overloaded, .cf_reset, .cf_retryable, .cf_errorText, .cf_randomUUID, .cf_waitUntil, .cf_objectWaitUntil, .cf_objectAbort, .cf_alarmSet, .cf_alarmDelete, .cf_socketsTagged, .cf_acceptSocket, .cf_autoResponse, .cf_socketPair, .cf_socketClient, .cf_socketServer, .cf_socketResponse, .cf_socketCloseEmpty, .cf_consoleError, .cf_consoleLog, .cf_consoleReason, .promise_resolve, .promise_reject, .promise_after, .cf_socketEq, .cf_socketSend, .cf_socketClose, .cf_socketAttach, .cf_kv, .cf_kvGet, .cf_kvPut, .cf_kvDelete, .cf_kvKeys => {}, // Precise generated adapters.
                 else => {
                     const ignores_unit = native.recipe == .document or native.recipe == .worker_self or native.recipe == .text_encoder or native.recipe == .map_make;
                     const values = if (ignores_unit) blk: {
@@ -11653,6 +11656,8 @@ pub const Lowerer = struct {
     // ownership pin end: host_error
     // ownership pin end: host_errorMessage
     // ownership pin end: host_get
+    // ownership pin end: host_getAttribute
+    // ownership pin end: host_querySelector
     // ownership pin end: host_group
     // ownership pin end: host_init
     // ownership pin end: host_key
@@ -12646,6 +12651,17 @@ pub const Lowerer = struct {
     // ownership pin end: installRoot
     // ownership pin end: block
 
+    // ownership pin begin: markRoot
+    fn inlineMarkRoot(l: *Lowerer, out: *StmtList, root: Node.Index, p: u32) Allocator.Error!Node.Index {
+        const slot = try l.member(root, try l.interner.getOrPut(l.gpa, "$$root"), p);
+        const existed = try l.fresh(l.well.temp);
+        try l.constDecl(out, existed, try l.binary(.strict_ne, slot, try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p), p);
+        const value = try l.ident(existed, p);
+        try l.ifStatement(out, try l.unary(.not, value, p), &.{try l.add(.assign_stmt, p, slot.int(), (try l.add(.true_lit, p, Node.Data.unused, Node.Data.unused)).int())}, p);
+        return value;
+    }
+    // ownership pin end: markRoot
+
     /// A first-class typed intrinsic, with no sibling export or import.
     fn jsTypedValue(l: *Lowerer, which: JsIntrinsic.Which, p: u32) !Node.Index {
         const arity: usize = switch (which) {
@@ -12658,6 +12674,12 @@ pub const Lowerer = struct {
         for (0..arity) |i| {
             names[i] = try l.fresh(l.well.temp);
             values[i] = try l.ident(names[i], p);
+        }
+        if (which == .inlineMarkRoot) {
+            var body: StmtList = .empty;
+            const result_ = try l.inlineMarkRoot(&body, values[0], p);
+            try body.append(l.scratch, try l.returnStmt(result_, p));
+            return l.arrowOf(names[0..arity], body.items, p);
         }
         if (which == .browserBlock or which == .browserInstallRoot or which == .browserInstallFuzz) {
             var body: StmtList = .empty;
@@ -12862,6 +12884,7 @@ pub const Lowerer = struct {
             W.kernelPack, W.kernelRead => v[0],
             // ownership pin end: slotRead
             // ownership pin end: slotPack
+            W.inlineMarkRoot => l.inlineMarkRoot(out, v[0], p),
             W.browserBlock, W.browserInstallRoot, W.browserInstallFuzz => l.browserBridgeOperation(out, which, v, p),
             W.from, W.to => v[0],
             W.invoke => l.hostCall(v[0], &.{v[1]}, p),
@@ -18193,10 +18216,8 @@ pub const Lowerer = struct {
         return out;
     }
 
-    /// A route site (§8.4, amended 2026-10-22 and 2026-10-24, *Program-owned
-    /// keys and pushed state*): the loader's copy of what each route's
-    /// function gives into the model's object at its field, which keeps its
-    /// identity, then the model itself; null for any other instruction.
+    /// A typed route job is hoisted once. The invocation supplies the model;
+    /// no helper-local model binding is captured across invocations.
     fn routeSiteValue(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!?Node.Index {
         const d = l.in.direct orelse return null;
         if (l.mk == null) return null;
@@ -18206,55 +18227,120 @@ pub const Lowerer = struct {
         } else return null;
         const prog = &d.programs[pi];
         const p = l.pos(inst);
-        const model = try l.localName(site.model);
-        const planned = routesPlanned(prog);
-        const shaped = for (prog.routes.rows) |r| {
-            if (r.shape != null) break true;
-        } else false;
-        const consts = for (prog.routes.rows) |r| {
-            if (r.consts.len != 0) break true;
-        } else false;
-        switch (site.kind) {
-            .keyed => {
-                const scrutinee: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(inst).lhs));
-                const key = try l.expr(out, scrutinee);
-                const raw = try l.expr(out, @fromBackingInt(site.raws[0]));
-                const table = try l.routeTable(prog, @intCast(pi), site, planned);
-                const load = try l.ident(try l.routeRuntime(loaderName(true, planned, shaped, consts)), p);
-                var args: [5]Node.Index = .{ try l.ident(model, p), try l.ident(table, p), key, raw, undefined };
-                if (shaped) args[4] = try l.coreSchemaValue("validShape", p);
-                try out.append(l.scratch, try l.add(.expr_stmt, p, (try l.call(load, args[0..if (shaped) 5 else 4], p)).int(), Node.Data.unused));
-            },
-            .update, .record => {
-                // The rows: a keyed site's table when it holds exactly this
-                // site's rows, in this order; written here otherwise.
-                const rows = rows: {
-                    for (prog.routes.sites) |other| {
-                        if (other.kind != .keyed or other.module != site.module or !sameRouteRows(prog, other.rows, site.rows)) continue;
-                        break :rows try l.ident(try l.routeTable(prog, @intCast(pi), other, planned), p);
-                    }
-                    const items = try l.scratch.alloc(Node.Index, site.rows.len);
-                    for (items, site.rows) |*x, row| x.* = try l.routeRowNode(prog, row, null, planned, p);
-                    const range = try l.b.addRange(items);
-                    break :rows try l.add(.array, p, @backingInt(range.start), @backingInt(range.end));
-                };
-                // The raw values by field: the object every raw value is
-                // read from at its row's field, when there is one; a record
-                // of them otherwise, evaluated in row order.
-                const raws = raws: {
-                    if (l.routeRawsHolder(prog, site)) |holder| break :raws try l.expr(out, holder);
-                    const props = try l.scratch.alloc(Node.Index, site.rows.len);
-                    for (props, site.rows, site.raws) |*x, row, raw|
-                        x.* = try l.fieldProperty(prog.routes.rows[row].field, try l.expr(out, @fromBackingInt(raw)), p);
-                    break :raws try l.object(props, p);
-                };
-                const all = try l.ident(try l.routeRuntime(loaderName(false, planned, shaped, consts)), p);
-                var args: [4]Node.Index = .{ try l.ident(model, p), rows, raws, undefined };
-                if (shaped) args[3] = try l.coreSchemaValue("validShape", p);
-                try out.append(l.scratch, try l.add(.expr_stmt, p, (try l.call(all, args[0..if (shaped) 4 else 3], p)).int(), Node.Data.unused));
-            },
+        const model = try l.ident(try l.localName(site.model), p);
+        const job = try l.routeLoadJob(prog, @intCast(pi), site, p);
+        if (site.kind == .keyed) {
+            const key = try l.expr(out, @fromBackingInt(@intCast(l.bir.instData(inst).lhs)));
+            const raw = try l.expr(out, @fromBackingInt(site.raws[0]));
+            return try l.call(try l.ident(try l.routeRuntime("runKeyed"), p), &.{ try l.ident(job, p), key, raw, model }, p);
         }
-        return try l.ident(model, p);
+        const raws = if (l.routeRawsHolder(prog, site)) |holder|
+            try l.expr(out, holder)
+        else raws: {
+            const props = try l.scratch.alloc(Node.Index, site.rows.len);
+            for (props, site.rows, site.raws) |*x, row, raw|
+                x.* = try l.fieldProperty(prog.routes.rows[row].field, try l.expr(out, @fromBackingInt(raw)), p);
+            break :raws try l.object(props, p);
+        };
+        return try l.call(try l.ident(try l.routeRuntime("runLoad"), p), &.{ try l.ident(job, p), raws, model }, p);
+    }
+
+    fn routeLoadJob(l: *Lowerer, prog: *const Direct.Program, pi: u32, site: Direct.RouteSite, p: u32) Allocator.Error!JsIr.NameIndex {
+        const key = (@as(u64, pi) << 32) | (@as(u64, 1) << 30) | site.inst;
+        if (l.route_consts.get(key)) |known| return known;
+        const value = if (site.kind == .keyed) value: {
+            const entries = try l.scratch.alloc(Node.Index, site.rows.len);
+            for (entries, site.rows, site.keys) |*entry, row, key_text| {
+                const job = try l.routeBatch(prog, &.{row}, true, p);
+                entry.* = try l.object(&.{
+                    try l.add(.property, p, @backingInt(try l.name(.{ .module = .none, .base = try l.slotName(0), .tag = JsIr.Name.no_tag })), (try l.stringNode(key_text, p)).int()),
+                    try l.add(.property, p, @backingInt(try l.name(.{ .module = .none, .base = try l.slotName(1), .tag = JsIr.Name.no_tag })), job.int()),
+                }, p);
+            }
+            const range = try l.b.addRange(entries);
+            const array = try l.add(.array, p, @backingInt(range.start), @backingInt(range.end));
+            break :value try l.call(try l.ident(try l.routeRuntime("keyedLoads"), p), &.{array}, p);
+        } else try l.routeBatch(prog, site.rows, false, p);
+        const n = try l.routeName("loadJob");
+        try l.mk.?.hoisted.append(l.scratch, try l.add(.const_decl, p, @backingInt(n), value.int()));
+        try l.route_consts.put(l.scratch, key, n);
+        return n;
+    }
+
+    fn routeBatch(l: *Lowerer, prog: *const Direct.Program, rows: []const u32, keyed: bool, p: u32) Allocator.Error!Node.Index {
+        const raw_name = try l.fresh(l.well.temp);
+        const model_name = try l.fresh(l.well.temp);
+        const raw = try l.ident(raw_name, p);
+        const model = try l.ident(model_name, p);
+        var body: StmtList = .empty;
+        const olds = try l.scratch.alloc(Node.Index, rows.len);
+        const nexts = try l.scratch.alloc(Node.Index, rows.len);
+        // Every decoder sees the old model, before any field is copied.
+        for (rows, olds, nexts) |row, *old, *next| {
+            const r = prog.routes.rows[row];
+            const input_name = try l.fresh(l.well.temp);
+            try l.constDecl(&body, input_name, if (keyed) raw else try l.fieldMember(raw, r.field, p), p);
+            const input = try l.ident(input_name, p);
+            const old_name = try l.fresh(l.well.temp);
+            try l.constDecl(&body, old_name, try l.fieldMember(model, r.field, p), p);
+            old.* = try l.ident(old_name, p);
+            const fm: Graph.Index = @fromBackingInt(@intCast(r.fn_module));
+            const decoded = if (r.shape) |shape| decoded: {
+                const shape_value = try SchemaLower.shapeName(l, l.in.schemas.?.codecTarget(fm, shape), p);
+                const result = try l.call(try l.coreSchemaValue("validShape", p), &.{ shape_value, input }, p);
+                const default = try l.ident(try l.routeRuntime("loadDecoded"), p);
+                break :decoded try l.call(default, &.{ result, old.* }, p);
+            } else decoded: {
+                const fb = l.in.birs[r.fn_module];
+                const base = fb.symbol(fb.decls[r.fn_decl].name);
+                try l.needName(.{ .module = fm, .base = base.toOptional() });
+                const callee = try l.ident(try l.name(.{ .module = l.in.graph.moduleName(fm).toOptional(), .base = base, .tag = JsIr.Name.no_tag }), p);
+                break :decoded try l.call(callee, &.{ input, old.* }, p);
+            };
+            const next_name = try l.fresh(l.well.temp);
+            try l.constDecl(&body, next_name, decoded, p);
+            next.* = try l.ident(next_name, p);
+        }
+        for (rows, olds, nexts) |row, old, next| {
+            const r = prog.routes.rows[row];
+            var copy: StmtList = .empty;
+            const constants: ?Node.Index = if (r.consts.len != 0) constants: {
+                const value = try l.rowConsts(r, p);
+                const n = try l.routeName("loadConstants");
+                try l.mk.?.hoisted.append(l.scratch, try l.add(.const_decl, p, @backingInt(n), value.int()));
+                break :constants try l.ident(n, p);
+            } else null;
+            const planned = routesPlanned(prog);
+            if (planned) try l.routeCopy(&copy, old, next, r.plan, p);
+            if (!planned or constants != null) {
+                const global = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
+                const object_ = try l.member(global, try l.interner.getOrPut(l.gpa, "Object"), p);
+                const assign = try l.member(object_, try l.interner.getOrPut(l.gpa, "assign"), p);
+                var args: [3]Node.Index = .{ old, next, undefined };
+                var count: usize = 2;
+                if (constants) |c| {
+                    if (planned) args[1] = c else {
+                        args[2] = c;
+                        count = 3;
+                    }
+                }
+                try copy.append(l.scratch, try l.add(.expr_stmt, p, (try l.call(assign, args[0..count], p)).int(), Node.Data.unused));
+            }
+            try l.ifStatement(&body, try l.binary(.strict_ne, next, old, p), copy.items, p);
+        }
+        try body.append(l.scratch, try l.returnStmt(model, p));
+        const callback = try l.arrowOf(&.{ raw_name, model_name }, body.items, p);
+        return l.call(try l.ident(try l.routeRuntime("loadJob"), p), &.{callback}, p);
+    }
+
+    fn routeCopy(l: *Lowerer, out: *StmtList, old: Node.Index, next: Node.Index, plan: []const Direct.PlanItem, p: u32) Allocator.Error!void {
+        for (plan) |item| {
+            const target = try l.fieldMember(old, item.field, p);
+            const value = try l.fieldMember(next, item.field, p);
+            if (item.sub) |sub| {
+                try l.routeCopy(out, target, value, sub, p);
+            } else try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), value.int()));
+        }
     }
 
     /// Whether any route of `prog` has a record field whose object the copy
@@ -18263,36 +18349,6 @@ pub const Lowerer = struct {
     pub fn routesPlanned(prog: *const Direct.Program) bool {
         for (prog.routes.rows) |r| for (r.plan) |item| if (item.sub != null) return true;
         return false;
-    }
-
-    /// The loader a route site calls: keyed or not, with plans or not, and
-    /// with rows that may hold a shape or not, and constants with it
-    /// (which only a shape's row holds).
-    fn loaderName(keyed: bool, planned: bool, shaped: bool, consts: bool) []const u8 {
-        const names = [2][2][2][]const u8{
-            .{ .{ "loadAll", "loadAllShaped" }, .{ "loadAllPlanned", "loadAllShapedPlanned" } },
-            .{ .{ "load", "loadShaped" }, .{ "loadPlanned", "loadShapedPlanned" } },
-        };
-        if (consts) {
-            const with = [2][2][]const u8{
-                .{ "loadAllShapedConst", "loadAllShapedPlannedConst" },
-                .{ "loadShapedConst", "loadShapedPlannedConst" },
-            };
-            return with[@intFromBool(keyed)][@intFromBool(planned)];
-        }
-        return names[@intFromBool(keyed)][@intFromBool(planned)][@intFromBool(shaped)];
-    }
-
-    /// Whether two lists of route rows name the same fields and functions,
-    /// in the same order.
-    fn sameRouteRows(prog: *const Direct.Program, a: []const u32, b: []const u32) bool {
-        if (a.len != b.len) return false;
-        for (a, b) |x, y| {
-            const rx = prog.routes.rows[x];
-            const ry = prog.routes.rows[y];
-            if (rx.field != ry.field or rx.fn_module != ry.fn_module or rx.fn_decl != ry.fn_decl) return false;
-        }
-        return true;
     }
 
     /// The local every raw value of `site` is read from, each at its row's

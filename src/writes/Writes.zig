@@ -97,6 +97,9 @@ pub const Input = struct {
     /// compiles them away; null for every other build, whose results do
     /// not move.
     effects: ?Effects = null,
+    /// Per-module calls whose resolved decoder copies all retained structure.
+    /// Null is used by analysis-only clients that do not emit load jobs.
+    copying_decodes: ?[]const []const u32 = null,
     /// `write-sets.md`, *The caps* (the owner, 2026-10-17): the leaf cap
     /// `L`, the alternative cap `A` and the size cap `S` do not apply, for
     /// a platform whose lowering refuses a capped key; `k` and `I` stay.
@@ -718,6 +721,8 @@ pub const RouteRow = struct {
     /// (`case_form`): the `decodeValue` call, an instruction of
     /// `fn_module`; `none` otherwise (§8.4, amended 2026-10-24).
     decode: u32 = none,
+    /// Decoder used only to prove input isolation; shape substitution is stricter.
+    copy_decode: u32 = none,
     /// The `case` form's record (§8.4, amended 2026-10-24, #946): the
     /// fields it gives a constant, each with the constant's instruction of
     /// `fn_module`, and the fields it copies from `new` under their own
@@ -6335,6 +6340,39 @@ fn findRoutes(a: *Writes, m: u32, d: u32, kind: ProgramKind) Error!Routes {
     walk.calls[d] = 1;
     try a.routeWalk(&walk, m, b.instData(params[1]).lhs, body, 0);
     if (!walk.ok or walk.sites.items.len == 0) return .{};
+    // The emitter supplies this gate before identity-sensitive write analysis.
+    // A rejected site must use ordinary execution, including its ordinary
+    // replacement identities; it must never receive routeValue's copy facts.
+    if (a.in.copying_decodes) |copying| {
+        var kept: std.ArrayList(RouteSite) = .empty;
+        const used = try a.arena().alloc(bool, walk.rows.items.len);
+        @memset(used, false);
+        for (walk.sites.items) |site| {
+            const safe = for (site.rows) |ri| {
+                const row = walk.rows.items[ri];
+                if (row.copy_decode == none or row.fn_module >= copying.len or
+                    std.mem.indexOfScalar(u32, copying[row.fn_module], row.copy_decode) == null) break false;
+            } else true;
+            if (!safe) continue;
+            try kept.append(a.arena(), site);
+            for (site.rows) |ri| used[ri] = true;
+        }
+        if (kept.items.len == 0) return .{};
+        const remap = try a.arena().alloc(u32, used.len);
+        var rows: std.ArrayList(RouteRow) = .empty;
+        for (walk.rows.items, used, 0..) |row, live, ri| {
+            if (!live) continue;
+            remap[ri] = @intCast(rows.items.len);
+            try rows.append(a.arena(), row);
+        }
+        for (kept.items) |*site| {
+            const mapped = try a.arena().alloc(u32, site.rows.len);
+            for (mapped, site.rows) |*out, ri| out.* = remap[ri];
+            site.rows = mapped;
+        }
+        walk.rows = rows;
+        walk.sites = kept;
+    }
     // Every declaration the walk entered is called only where it did: its
     // references in its own module, and those of every other module, which
     // name it by its interface row.
@@ -6562,11 +6600,15 @@ fn routeRow(a: *Writes, w: *RouteWalk, m: u32, model: u32, field: u32, given: In
     const at = try a.mkPath(rho_path, .field, field, 0);
     const plan = (try a.copyPlan(at, 0)) orelse return null;
     var row: RouteRow = .{ .field = field, .fn_module = t.m, .fn_decl = t.d, .plan = plan, .module = m, .call = given.int(), .decode = a.decodeOrKeep(t.m, t.d) };
-    if (row.decode == none) if (try a.decodeOrKeepCase(m, t.m, t.d)) |form| {
+    if (row.decode == none) if (try a.decodeOrKeepCase(m, t.m, t.d, false)) |form| {
         row.decode = form.decode;
         row.case_form = true;
         row.consts = form.consts;
         row.copied = form.copied;
+    };
+    row.copy_decode = row.decode;
+    if (row.copy_decode == none) if (try a.decodeOrKeepCase(m, t.m, t.d, true)) |form| {
+        row.copy_decode = form.decode;
     };
     try w.rows.append(a.arena(), row);
     return .{ .row = @intCast(w.rows.items.len - 1), .raw = args[0].int() };
@@ -6617,7 +6659,7 @@ fn decodeOrKeep(a: *const Writes, m: u32, d: u32) u32 {
 /// string literal, or a constructor of another module than `program`'s
 /// and `m` (one of `m`'s own is a `.ctor`, and refused), which the emitter
 /// asks further (`Emit.shapeRoutes`).
-fn decodeOrKeepCase(a: *Writes, program: u32, m: u32, d: u32) Error!?struct { decode: u32, consts: []const RowConst, copied: []const u32 } {
+fn decodeOrKeepCase(a: *Writes, program: u32, m: u32, d: u32, copy_only: bool) Error!?struct { decode: u32, consts: []const RowConst, copied: []const u32 } {
     const b = a.bir(m);
     const decl = b.decls[d];
     const params = b.extraSlice(.{ .start = decl.params_start, .end = decl.params_end }, Inst.Index);
@@ -6666,11 +6708,20 @@ fn decodeOrKeepCase(a: *Writes, program: u32, m: u32, d: u32) Error!?struct { de
                 const fa = b.instData(v);
                 const base: Inst.Index = @fromBackingInt(fa.lhs);
                 if (b.instTag(base) != .local or b.instData(base).lhs != new_local) return null;
-                if (@backingInt(b.symbol(@fromBackingInt(fa.rhs))) != name) return null;
+                if (!copy_only and @backingInt(b.symbol(@fromBackingInt(fa.rhs))) != name) return null;
                 try copied.append(a.arena(), name);
             },
             .int, .float, .string => try consts.append(a.arena(), .{ .field = name, .value = v.int() }),
+            .ctor => {
+                if (!copy_only) return null;
+                const c = a.ctorTarget(m, v) orelse return null;
+                if (a.ctorArity(c) != 0) return null;
+            },
             .ext_ctor => {
+                if (copy_only) {
+                    const c = a.ctorTarget(m, v) orelse return null;
+                    if (a.ctorArity(c) != 0) return null;
+                }
                 const owner = b.instData(v).lhs;
                 if (owner == program) return null;
                 try consts.append(a.arena(), .{ .field = name, .value = v.int() });

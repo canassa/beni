@@ -104,4 +104,4 @@ application app = unreachable app
 -- `plans/runtime-in-beni.md` step 9), so the platform has no sibling and
 -- a development build copies none (`browser-inline.md` §10.5).
 unreachable : a → Program
-unreachable _ = Protocol.defect "an inline program constructor was not lowered"
+unreachable _ = Browser.client λ_ → Protocol.defect "an inline program constructor was not lowered"

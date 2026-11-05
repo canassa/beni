@@ -1,0 +1,10 @@
+import Browser
+import Browser.Host.Element as Element
+import Tea
+
+
+main : Browser.Program
+main =
+    _ = Element.querySelector
+    _ = Element.getAttribute
+    Tea.sandbox { init = λ⊤ → {}, update = λ_ model → model, view = λ_ → <></> }

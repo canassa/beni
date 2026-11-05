@@ -1,0 +1,7 @@
+import Probe
+import Tea
+
+
+main : Tea.Program
+main =
+    Tea.sandbox { init = Probe.prepare, update = λ_ model → model, view = λmodel → <p>{model}</p> }

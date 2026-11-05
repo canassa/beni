@@ -1,0 +1,9 @@
+import Browser
+import Js.Dispatch as Dispatch
+import Tea
+
+
+main : Browser.Program
+main =
+    _ = Dispatch.observe
+    Tea.sandbox { init = λ⊤ → {}, update = λ_ model → model, view = λ_ → <></> }

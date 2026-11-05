@@ -11,6 +11,8 @@
 // ownership pin begin: host_dataOnly
 // ownership pin begin: host_error
 // ownership pin begin: host_errorMessage
+// ownership pin begin: host_querySelector
+// ownership pin begin: host_getAttribute
 // ownership pin begin: host_get
 // ownership pin begin: host_group
 // ownership pin begin: host_init
@@ -131,7 +133,7 @@ fn socketListener(l: anytype, callback: N, source: Inst.Index, none: N, p: u32) 
 
 pub fn direct(recipe: Operations.Recipe) bool {
     return switch (recipe) {
-        .event_target, .input_selectionStart, .input_selectionEnd, .input_selectionDirection, .document_active, .document_body, .event_error, .read_result_value, .text_content, .headers_get, .storage_get, .storage_key, .cf_idName, .cf_requestSignal, .cf_kv, .cf_kvGet, .document_by_id, .map_get, .key_map_get => true,
+        .event_target, .input_selectionStart, .input_selectionEnd, .input_selectionDirection, .document_active, .document_body, .event_error, .read_result_value, .text_content, .headers_get, .element_get_attribute, .storage_get, .storage_key, .cf_idName, .cf_requestSignal, .cf_kv, .cf_kvGet, .document_by_id, .map_get, .key_map_get => true,
         else => false,
     };
 }
@@ -159,6 +161,7 @@ fn directCall(l: anytype, recipe: Operations.Recipe, values: []const N, p: u32) 
     }
     const method = switch (recipe) {
         .headers_get, .cf_kvGet, .map_get, .key_map_get => "get",
+        .element_get_attribute => "getAttribute",
         .storage_get => "getItem",
         .storage_key => "key",
         else => unreachable,
@@ -188,6 +191,8 @@ pub fn payloadCallback(recipe: Operations.Recipe, index: usize) bool {
 // ownership pin end: host_error
 // ownership pin end: host_errorMessage
 // ownership pin end: host_get
+// ownership pin end: host_getAttribute
+// ownership pin end: host_querySelector
 // ownership pin end: host_group
 // ownership pin end: host_init
 // ownership pin end: host_key

@@ -1,6 +1,6 @@
-import { Inline$root, Inline$caught, Inline$take, Inline$bucket, Inline$when, Inline$entry, Inline$pass, Inline$unchanged, Inline$guarded, Inline$listen, Inline$first, Inline$deliver } from "./_platform/Inline.mjs";
-const HydratingMount$main = ($id$1) => {
-  const $root$2 = Inline$root(undefined);
+import { Inline$defaultRoot, Inline$root, Inline$caught, Inline$take, Inline$bucket, Inline$when, Inline$entry, Inline$pass, Inline$unchanged, Inline$guarded, Inline$listen, Inline$first, Inline$deliver, Inline$client } from "./_platform/Inline.mjs";
+const HydratingMount$main = Inline$client(($id$1) => {
+  const $root$2 = Inline$root(Inline$defaultRoot(null));
   const $init$3 = { open: false };
   let $model$4 = $init$3;
   Inline$caught($root$2);
@@ -22,6 +22,6 @@ const HydratingMount$main = ($id$1) => {
   });
   Inline$first();
   Inline$deliver($elements$5[0]);
-};
+});
 export { HydratingMount$main };
 //# sourceMappingURL=HydratingMount.mjs.map

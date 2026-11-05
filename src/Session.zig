@@ -2156,6 +2156,19 @@ fn resolveModules(session: *Session) RunError!void {
     try session.reportResolveDiagnostics();
 }
 
+/// Bridge ownership follows the registered lowering's own runtime layer,
+/// regardless of whether that layer was read from the binary or a directory.
+fn markupBridgeOwner(chain: *const platform_chain.Chain, lowering_name: []const u8) ?Graph.Platforms.RuntimeOwner {
+    for (chain.layers, 0..) |layer, i| {
+        const name = layer.manifest.markup.lowering orelse continue;
+        if (!std.mem.eql(u8, name, lowering_name)) continue;
+        if (@import("js/Emit.zig").findLowering(name) == null) return null;
+        const module = layer.manifest.markup.module orelse return null;
+        return .{ .layer = @intCast(i), .module = module };
+    }
+    return null;
+}
+
 /// What the graph needs of the platform chain (`Graph.Platforms`), in
 /// `scratch`.
 fn graphPlatforms(session: *const Session, scratch: Allocator) Allocator.Error!Graph.Platforms {
@@ -2164,15 +2177,11 @@ fn graphPlatforms(session: *const Session, scratch: Allocator) Allocator.Error!G
     const sees = try scratch.alloc(u64, chain.layers.len);
     var reexports: std.ArrayList(Graph.Platforms.Reexport) = .empty;
     var cloudflare_layer: ?u8 = null;
-    var browser_layer: ?u8 = null;
     const lowerings = try scratch.alloc(?[]const u8, chain.layers.len);
     for (chain.layers, sees, lowerings, 0..) |layer, *s, *l, i| {
         s.* = layer.sees;
         if (layer.manifest.name) |name| if (std.mem.eql(u8, name, "cloudflare")) {
             cloudflare_layer = @intCast(i);
-        };
-        if (layer.embedded) |embedded| if (std.mem.eql(u8, embedded.name, "browser")) {
-            browser_layer = @intCast(i);
         };
         l.* = layer.manifest.markup.lowering;
         for (layer.manifest.reexports) |name| try reexports.append(scratch, .{ .module = name, .layer = @intCast(i) });
@@ -2182,7 +2191,8 @@ fn graphPlatforms(session: *const Session, scratch: Allocator) Allocator.Error!G
         .sees = sees,
         .reexports = reexports.items,
         .cloudflare_layer = cloudflare_layer,
-        .browser_layer = browser_layer,
+        .browser_runtime = markupBridgeOwner(chain, "dom"),
+        .inline_runtime = markupBridgeOwner(chain, "inline"),
         .chain = true,
         .vocabulary = if (chain.firstMarkup("vocabulary")) |f| f.value else null,
         .markup_type = if (chain.firstMarkup("type")) |f| f.value else null,

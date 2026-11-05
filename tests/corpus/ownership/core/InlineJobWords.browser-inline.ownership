@@ -1,0 +1,27 @@
+module InlineJobWords
+  15:5 List.push values: rejected escaped: a function value that Browser.client hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  23:5 List.push values: rejected escaped: a function value that Inline.client hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  29:5 List.push values: rejected escaped: a function value that Browser.tree hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  35:5 List.push values: rejected escaped: a function value that Inline.tree hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
+  41:5 List.push values: accepted fresh
+  47:5 List.push values: accepted fresh
+  63:5 List.push values: accepted fresh
+  68:35 List.push items: pending: Inline.Load.loadJob loses sight of what calls it
+  81:13 List.push values: rejected alias: result.kept holds it and is read at 82:14
+  summary clientCapture: res esc1
+  summary inlineClientCapture: res esc1
+  summary treeCapture: res esc1
+  summary inlineTreeCapture: res esc1
+  summary jobCapture: res fresh1
+  summary inlineJobCapture: res fresh1
+  summary marker: π1 R
+  summary query: π1 R; res ⊤{lost}r{lost}
+  summary attribute: π1 R
+  summary rawEscape: π1#LoadJob.0 R; res fresh1; π1#LoadJob.0 calls ≤1, supply 1 fresh1 borrowed
+  summary modelWriter: unused
+  summary retainingRaw: res .0 fresh1
+  summary keptLength: π1 R, π1⟨as 1:List::List(15:1:Basics::Int())⟩ R
+  demands 9: accepted 3 (fresh 3, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 5
+total 9: accepted 3 (fresh 3, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 5
+cause escaped 4
+cause alias 1

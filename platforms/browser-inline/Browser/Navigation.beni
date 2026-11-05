@@ -31,6 +31,10 @@
 --! the program's mount hands a subscription's start enters the guard itself.
 
 import Browser
+import Browser.Host.Event as HostEvent
+import Browser.Host.EventTarget as EventTarget
+import Browser.Host.HTMLAnchorElement as Anchor
+import Browser.Host.Window as HostWindow
 import Cmd exposing (Cmd)
 import Inline
 import Js
@@ -216,59 +220,61 @@ sendRequest send r =
 -- click is dispatched: a default already prevented has been handled, a
 -- modified or non-main click is the user asking the host, and so is a link
 -- that downloads or opens elsewhere.
-request : Js.Value → Maybe Browser.UrlRequest
+request : HostEvent.Event → Maybe Browser.UrlRequest
 request event =
     if
-        Js.to (Js.get event "defaultPrevented")
-            || not (Js.same (Js.get event "button") (Js.from 0))
-            || Js.to (Js.get event "ctrlKey")
-            || Js.to (Js.get event "metaKey")
-            || Js.to (Js.get event "shiftKey")
-            || Js.to (Js.get event "altKey")
+        HostEvent.defaultPrevented event
+            || HostEvent.button event ≠ 0
+            || HostEvent.ctrlKey event
+            || HostEvent.metaKey event
+            || HostEvent.shiftKey event
+            || HostEvent.altKey event
     then
         Nothing
     else
-        a = anchorOf event
-        if
-            Js.isNull a
-                || not (Js.to (Js.call a "hasAttribute" [ Js.from "href" ]))
-                || Js.to (Js.call a "hasAttribute" [ Js.from "download" ])
-                || not (sameContext (Js.call (Js.get a "target") "toLowerCase" []))
-        then
+        case anchorOf (HostEvent.composedPath event) of
+            Nothing →
+                Nothing
+            Just anchor →
+                if
+                    not (Anchor.hasAttribute anchor "href")
+                        || Anchor.hasAttribute anchor "download"
+                        || not (sameContext (String.toLower (Anchor.target anchor)))
+                then
+                    Nothing
+                else
+                    HostEvent.preventDefault event
+                    href = Anchor.href anchor
+                    location = Js.global "location"
+                    case Url.fromString href of
+                        Just url →
+                            if
+                                Anchor.protocol anchor == Js.to (Js.get location "protocol")
+                                    && Anchor.host anchor == Js.to (Js.get location "host")
+                            then
+                                Just (Browser.Internal url)
+                            else
+                                Just (Browser.External href)
+                        Nothing →
+                            Just (Browser.External href)
+
+
+sameContext : String → Bool
+sameContext target = target == "" || target == "_self"
+
+
+-- The nearest anchor in the event's composed path.
+anchorOf : List EventTarget.EventTarget → Maybe Anchor.HTMLAnchorElement
+anchorOf path =
+    case path of
+        [] →
             Nothing
-        else
-            _ = Js.call event "preventDefault" []
-            href : String
-            href = Js.to (Js.get a "href")
-            location = Js.global "location"
-            case Url.fromString href of
-                Just url →
-                    if
-                        Js.same (Js.get a "protocol") (Js.get location "protocol")
-                            && Js.same (Js.get a "host") (Js.get location "host")
-                    then
-                        Just (Browser.Internal url)
-                    else
-                        Just (Browser.External href)
-
+        [ node, …rest ] →
+            case EventTarget.asAnchor node of
+                Just anchor →
+                    Just anchor
                 Nothing →
-                    Just (Browser.External href)
-
-
-sameContext : Js.Value → Bool
-sameContext target = Js.same target (Js.from "") || Js.same target (Js.from "_self")
-
-
--- The nearest `<a>` at or above the click's target, along its composed
--- path, or null.
-anchorOf : Js.Value → Js.Value
-anchorOf event =
-    found = Js.ref Js.null
-    anchor = Js.global "HTMLAnchorElement"
-    Js.each (Js.call event "composedPath" []) λnode →
-        if Js.isNull (Js.read found) && Js.instanceOf node anchor then
-            Js.write found node
-    Js.read found
+                    anchorOf rest
 
 
 --| The page's new address each time it changes: the back and forward
@@ -295,32 +301,22 @@ sendUrl send url =
 -- back and forward buttons, and this module's own announcement of a push
 -- or a replace, are heard in the order they fire; the address is read when
 -- each fires.
-listen : String, String, sync (Js.Value → ⊤) → (⊤ → ⊤)
+listen : String, String, sync (HostEvent.Event → ⊤) → (⊤ → ⊤)
 listen name other f =
-    host = Js.global "window"
     handler = live f
-    _ = Js.call host "addEventListener" [ Js.from name, handler ]
-    _ = Js.call host "addEventListener" [ Js.from other, handler ]
-
+    remove = HostWindow.listen name handler
+    removeOther = HostWindow.listen other handler
     λ⊤ →
-        _ = Js.call host "removeEventListener" [ Js.from name, handler ]
-        Js.to (Js.call host "removeEventListener" [ Js.from other, handler ])
+        remove ⊤
+        removeOther ⊤
 
 
--- One listener on the window, in the bubbling phase, and what removes it.
-listenOne : String, sync (Js.Value → ⊤) → (⊤ → ⊤)
-listenOne name f =
-    host = Js.global "window"
-    handler = live f
-    _ = Js.call host "addEventListener" [ Js.from name, handler ]
-    λ⊤ → Js.to (Js.call host "removeEventListener" [ Js.from name, handler ])
+listenOne : String, sync (HostEvent.Event → ⊤) → (⊤ → ⊤)
+listenOne name f = HostWindow.listen name (live f)
 
 
--- The host's listener: nothing once the page has stopped. A defect stops
--- the page without removing its listeners, and a stopped page must not
--- keep preventing the host from following a link (`boundary.md` §9.8.14).
-live : sync (Js.Value → ⊤) → Js.Value
-live f = Js.from λevent → if Inline.stopped ⊤ then ⊤ else f event
+live : sync (HostEvent.Event → ⊤) → (HostEvent.Event → ⊤)
+live f = λevent → Inline.observe f event Inline.unchanged
 
 
 -- The event every push and replace is announced by: the platform's own,

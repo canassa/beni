@@ -1,0 +1,39 @@
+import Browser.Host.Document as Document
+import Browser.Host.Element as Element
+
+
+query : Element.Element, String → String
+query root selector =
+    case Element.querySelector root selector of
+        Err Element.SyntaxError →
+            "syntax"
+        Ok Nothing →
+            "missing"
+        Ok (Just found) →
+            case Element.getAttribute found "data-value" of
+                Nothing →
+                    "absent"
+                Just value →
+                    "found[" ++ value ++ "]"
+
+
+pub describe : ⊤ → String
+describe ⊤ =
+    case Document.body ⊤ of
+        Nothing →
+            "no body"
+        Just root →
+            String.join
+                [ query root "#present"
+                , query root "#empty"
+                , query root "#absent"
+                , query root "#missing"
+                , query root "["
+                ]
+                " | "
+
+
+pub foreign type Program
+
+
+pub foreign pure program : sync (⊤ → String) → Program

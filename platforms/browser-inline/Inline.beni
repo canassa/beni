@@ -6,6 +6,7 @@
 --! beni over core's `Js`, and the platform's runtime module (`boundary.md`
 --! §9.2, *A runtime module*): a page ships only what it reaches.
 
+import Browser
 import Browser.Host.Array as Array
 import Browser.Host.Document as HostDocument
 import Browser.Host.Element as HostElement
@@ -16,10 +17,11 @@ import Browser.Host.KeyMap as NativeMap
 import Browser.Host.Node as HostNode
 import Browser.Host.Rejection as HostRejection
 import Cmd exposing (Cmd)
+import Inline.Load as Load
 import Js
 import Js.Dispatch as Dispatch
 import Js.Protocol as Protocol
-import Schema exposing (Field, Index, Issue, PathSegment, Schema)
+import Schema exposing (Issue, Schema)
 import Url exposing (Url)
 
 
@@ -29,21 +31,24 @@ type alias V =
 
 -- ---- The dispatch guard -------------------------------------------------
 
--- Every entry uses the typed dispatch queue. The renderer's legacy raw
--- callbacks are adapted here while their native interfaces are migrated.
-pub send : V, V, V → ⊤
-send callback value project =
-    Dispatch.onDefect λ⊤ → if Js.development ⊤ then crashScreen ⊤
-    Dispatch.read (λread → Js.to (Js.apply callback [ read ])) value λraw →
-        if Js.isUndefined project then raw else Js.apply project [ raw ]
+-- Share the defect callback once; registering the guard allocates nothing.
+guardDefect : ⊤ → ⊤
+guardDefect ⊤ = if Js.development ⊤ then crashScreen ⊤
 
 
 -- The compiler's typed event bridge. Projection happens inside the guard
 -- immediately, even for nested sends; only the mapped payload is queued.
 pub guarded : sync (a → ⊤), b, sync (b → a) → ⊤
 guarded callback value project =
-    Dispatch.onDefect λ⊤ → if Js.development ⊤ then crashScreen ⊤
+    Dispatch.onDefect guardDefect
     Dispatch.read callback value project
+
+
+-- Native listener senders already enter dispatch; preserve their queue order.
+pub observe : sync (a → ⊤), b, sync (b → a) → ⊤
+observe callback value project =
+    Dispatch.onDefect guardDefect
+    Dispatch.observe callback value project
 
 
 -- Shared by generated sites without an extractor, with no adapter closure.
@@ -92,37 +97,16 @@ crashScreen ⊤ =
 --| a function of the id of the element it mounts at — mounted inside one
 --| dispatch, so a throw while it mounts, a missing element included,
 --| stops the page as any defect does.
-pub run : sync (Js.Value → ⊤) → ⊤
-run program = guarded program Js.undefined unchanged
+pub run : Browser.Program → ⊤
+run program = guarded (λid → Browser.runAt program id) Nothing unchanged
 
 
---| `(id)`: the element a program mounts at, the one `id` names or
---| `document.body`. A development build marks it and says in prose what is
---| wrong with one that is missing or already holds a program; a release
---| build does neither, and a missing element fails inside the guard
---| (`browser-inline.md` §6).
-pub root : V → V
-root id =
-    -- `document` is read where it is used: a binding of a host read is
-    -- kept by the release optimiser, never folded into its one use.
-    at =
-        if Js.isUndefined id then
-            Js.get (Js.global "document") "body"
-        else
-            Js.call (Js.global "document") "getElementById" [ id ]
-
-    if Js.development ⊤ then
-        if Js.isNull at || not (Js.isUndefined (Js.get at "$$root")) then
-            shown : String
-            shown = Js.to id
-            fault
-                "cannot mount at ${shown}: no element has that id, or a program is mounted there already"
-        Js.set at "$$root" (Js.from True)
-    at
+pub root : Maybe String → HostElement.Element
+root id = Browser.root id
 
 
 fault : String → ⊤
-fault message = Js.throw (Js.construct (Js.global "Error") [ Js.from message ])
+fault message = Protocol.defect message
 
 
 -- ---- Commands (`boundary.md` §9.8.4, amended 2026-10-17) ----------------
@@ -133,7 +117,7 @@ fault message = Js.throw (Js.construct (Js.global "Error") [ Js.from message ])
 --| `dispatch`, the program's.
 pub commands : Cmd msg, sync (msg → ⊤) → ⊤
 commands cmd dispatch =
-    Dispatch.onDefect λ⊤ → if Js.development ⊤ then crashScreen ⊤
+    Dispatch.onDefect guardDefect
     List.foldl (Cmd.bodies cmd) ⊤ λbody _ →
         Dispatch.send (λ⊤ → body λmessage → Dispatch.send dispatch message) ⊤
 
@@ -255,71 +239,12 @@ title value =
 --| `schema` — `[route, value]`, the route its `data-beni-data` names. A
 --| page with no such script, or whose text does not decode, is not one the
 --| build wrote, and stops as a defect: there is no value to start from.
-pub pageData : Schema e d, V → V
-pageData schema at =
-    script = Js.call at "querySelector" [ Js.from ":scope>script[data-beni-data]" ]
-    if Js.isNull script then
-        if Js.development ⊤ then
-            fault
-                "cannot start the page: it holds no <script type=\"application/json\" data-beni-data> as a child of the element the program mounts at, so it has no value for init. It is not a page the build wrote, or something took the script out."
-        else
-            fault "no data"
-    route = Js.call script "getAttribute" [ Js.from "data-beni-data" ]
-    held : String
-    held = Js.to (Js.get script "textContent")
-    _ = Js.call script "remove" []
-    case Schema.parse schema held of
-        Ok value →
-            Js.array [ route, Js.from value ]
-
-        Err issues →
-            if Js.development ⊤ then
-                lines = issueLines issues
-                shown : String
-                shown = Js.to (Js.call lines "join" [ Js.from "; " ])
-                fault "cannot start the page: the value its script holds does not decode: ${shown}"
-            else
-                fault "bad data"
-            Js.undefined
+pub pageData : Schema e d, HostElement.Element → String × d
+pageData schema at = Browser.pageData schema at
 
 
---| `(schema, text)`: the prerender tree's decode of a page's text with the
---| function the page decodes it with (`prerender.md` §8.5 item 5): `{ value }`,
---| or `{ issues }`, each issue a line naming its path and its message.
-pub decoded : Schema e d, V → V
-decoded schema page =
-    answer = Js.construct (Js.global "Object") []
-    case Schema.parse schema (Js.to page) of
-        Ok value →
-            Js.set answer "value" (Js.from value)
-
-        Err issues →
-            Js.set answer "issues" (issueLines issues)
-    answer
-
-
--- Each issue as a line, `.posts[0].title: <message>`, in an array.
-issueLines : List Issue → V
-issueLines issues =
-    lines = Js.array []
-    List.foldl issues ⊤ λissue _ →
-        _ = Js.call lines "push" [ Js.from "${pathText issue.path}: ${issue.message}" ]
-        ⊤
-    lines
-
-
-pathText : List PathSegment → String
-pathText path =
-    if List.isEmpty path then
-        "the value"
-    else
-        List.foldl path "" λsegment shown →
-            case segment of
-                Field name →
-                    "${shown}.${name}"
-
-                Index i →
-                    "${shown}[${String.fromInt i}]"
+pub decoded : Schema e d, String → Result (List Issue) d
+decoded schema pageText = Schema.parse schema pageText
 
 
 -- ---- The unmount (`boundary.md` §9.4.5, amended 2026-10-17) -------------
@@ -999,190 +924,100 @@ pub roots : List (⊤ → ⊤) → ⊤
 roots jobs = List.foldl jobs ⊤ λjob _ → Protocol.call job ⊤
 
 
--- ---- Pushed state (`browser-inline.md` §8.4, amended 2026-10-22, 2026-10-24)
-
--- A route's row is `[key, F, field]`: the source's key, `0` for a row no
--- keyed route names; the source's function, which validates and gives the
--- old value or a new one; and the model's field. A program one of whose
--- routes has a record field whose object the copy keeps adds the row's
--- copy plan, `[key, F, field, plan]`, and calls the `…Planned` loaders. A
--- row whose function is "the decoded value, or the old one" holds its run's
--- shape in place of `F`, and the program calls the `…Shaped` loaders, which
--- take `validShape` last. Each loader hands the rows' loader a copy function
--- of its own, so a page ships only what it calls.
-
---| `(model, table, key, raw)`: a keyed route. The first row of `table`
---| whose key is `key`, when there is one, is loaded with `raw`. An unknown
---| key does nothing, as the route's default does.
-pub load : V, V, V, V → ⊤
-load model table key raw = loadRows model (keyedRow table key) (λ_ → raw) assign
+-- Private typed once-per-site jobs; the model is passed on each invocation.
+pub loadJob : sync (Js.Value, m → m) → Load.LoadJob m
+loadJob job = Load.loadJob job
 
 
---| `(model, rows, raws)`: routes in turn, each row loaded with the value
---| `raws` holds at its field.
-pub loadAll : V, V, V → ⊤
-loadAll model rows raws = loadRows model rows (atField raws) assign
+pub keyedLoads : List (String × Load.LoadJob m) → Load.KeyedLoads m
+keyedLoads jobs = Load.keyedLoads jobs
 
 
---| `load` for rows with copy plans.
-pub loadPlanned : V, V, V, V → ⊤
-loadPlanned model table key raw = loadRows model (keyedRow table key) (λ_ → raw) planned
+pub runLoad : Load.LoadJob m, Js.Value, m → m
+runLoad job raw model = Load.runLoad job raw model
 
 
---| `loadAll` for rows with copy plans.
-pub loadAllPlanned : V, V, V → ⊤
-loadAllPlanned model rows raws = loadRows model rows (atField raws) planned
+pub runKeyed : Load.KeyedLoads m, String, Js.Value, m → m
+runKeyed jobs key raw model = Load.runKeyed jobs key raw model
 
 
---| `load` for rows that may hold a shape, `check` core's `validShape`,
---| which the lowering hands it.
-pub loadShaped : V, V, V, V, (V, V → Result V V) → ⊤
-loadShaped model table key raw check =
-    loadShapedRows model (keyedRow table key) (λ_ → raw) check assign
+pub loadDecoded : Result e m, m → m
+loadDecoded result old = Result.withDefault result old
 
 
---| `loadAll` for rows that may hold a shape.
-pub loadAllShaped : V, V, V, (V, V → Result V V) → ⊤
-loadAllShaped model rows raws check = loadShapedRows model rows (atField raws) check assign
+pub client : escaped sync (Maybe String → ⊤) → Browser.Program
+client mount = Browser.client mount
 
 
---| `loadPlanned` for rows that may hold a shape.
-pub loadShapedPlanned : V, V, V, V, (V, V → Result V V) → ⊤
-loadShapedPlanned model table key raw check =
-    loadShapedRows model (keyedRow table key) (λ_ → raw) check planned
+pub tree :
+      escaped sync (Browser.RenderRequest → Result Browser.RenderError Browser.Rendered)
+    → Browser.Program
+tree render = Browser.tree render
 
 
---| `loadAllPlanned` for rows that may hold a shape.
-pub loadAllShapedPlanned : V, V, V, (V, V → Result V V) → ⊤
-loadAllShapedPlanned model rows raws check = loadShapedRows model rows (atField raws) check planned
+pub defaultRoot : ⊤ → Maybe String
+defaultRoot ⊤ = Nothing
 
 
--- A row that holds a shape may hold constants after it, `[key, shape,
--- field, constants]` or `[key, shape, field, plan, constants]`: a record of
--- the fields the route's `case` gives a constant beside the decoded ones
--- (`browser-inline.md` §8.4, amended 2026-10-24, #946). The `…Const`
--- loaders' copy writes them after the decoded fields.
-
---| `loadShaped` for rows that may hold constants.
-pub loadShapedConst : V, V, V, V, (V, V → Result V V) → ⊤
-loadShapedConst model table key raw check =
-    loadShapedRows model (keyedRow table key) (λ_ → raw) check assignConst
+pub namedRoot : String → Maybe String
+namedRoot name = Just name
 
 
---| `loadAllShaped` for rows that may hold constants.
-pub loadAllShapedConst : V, V, V, (V, V → Result V V) → ⊤
-loadAllShapedConst model rows raws check =
-    loadShapedRows model rows (atField raws) check assignConst
+pub ssrRender : Browser.Program, String, String → Js.Value
+ssrRender page route pageText = Browser.renderWire page route pageText
 
 
---| `loadShapedPlanned` for rows that may hold constants.
-pub loadShapedPlannedConst : V, V, V, V, (V, V → Result V V) → ⊤
-loadShapedPlannedConst model table key raw check =
-    loadShapedRows model (keyedRow table key) (λ_ → raw) check plannedConst
+pub ssrRoutes : Browser.Program → Js.Value
+ssrRoutes page = Browser.routesWire page
 
 
---| `loadAllShapedPlanned` for rows that may hold constants.
-pub loadAllShapedPlannedConst : V, V, V, (V, V → Result V V) → ⊤
-loadAllShapedPlannedConst model rows raws check =
-    loadShapedRows model rows (atField raws) check plannedConst
+pub requestRoute : Browser.RenderRequest → String
+requestRoute request = request.route
 
 
--- The row of `table` whose key is `key`, as a list of rows: empty when
--- there is none. A keyed table's keys are the string patterns of one
--- `case`, which differ, since a repeated one is `redundant_pattern`: so at
--- most one row has the key (`browser-inline.md` §8.4, amended 2026-10-24).
-keyedRow : V, V → V
-keyedRow table key = Js.call table "filter" [ Js.from λr → Js.same (Js.at r 0) key ]
+pub requestText : Browser.RenderRequest → String
+requestText request =
+    case request.text of
+        Just pageText →
+            pageText
+        Nothing →
+            Protocol.defect "a data prerender needs its page text"
 
 
-atField : V → (V → V)
-atField raws = λrow → Js.get raws (fieldOf row)
+pub decodedOk : Result e d → Bool
+decodedOk result =
+    case result of
+        Ok _ →
+            True
+        Err _ →
+            False
 
 
--- Every row's function runs first, each with its raw value and the model's
--- old value at its field, in order; then each result is copied in.
-loadRows : V, V, (V → V), (V, V, V → ⊤) → ⊤
-loadRows model rows rawOf into =
-    nexts =
-        Js.call rows "map"
-            [ Js.from λrow → Js.apply (Js.at row 1) [ rawOf row, Js.get model (fieldOf row) ] ]
-    copyIn model rows nexts into
+pub decodedValue : Result e d → d
+decodedValue result =
+    case result of
+        Ok value →
+            value
+        Err _ →
+            Protocol.defect "an invalid decoded page was read as valid"
 
 
--- `loadRows` for rows that may hold a shape in place of the function: the
--- value `check` decodes from the raw value with it, or the old value when
--- it does not decode, as the function's `Result.withDefault
--- (Json.decodeValue raw) old` gives.
-loadShapedRows : V, V, (V → V), (V, V → Result V V), (V, V, V → ⊤) → ⊤
-loadShapedRows model rows rawOf check into =
-    nexts =
-        Js.call rows "map"
-            [ Js.from λrow →
-                f = Js.at row 1
-                raw = rawOf row
-                old = Js.get model (fieldOf row)
-                if Js.typeIs f "function" then
-                    Js.apply f [ raw, old ]
-                else
-                    Result.withDefault (check f raw) old
-            ]
-    copyIn model rows nexts into
+pub decodedIssues : Result (List Issue) d → List Issue
+decodedIssues result =
+    case result of
+        Err issues →
+            issues
+        Ok _ →
+            Protocol.defect "a valid decoded page was read as invalid"
 
 
--- Each result that is not the old value at its row's field is copied into
--- it, by `into`.
-copyIn : V, V, V, (V, V, V → ⊤) → ⊤
-copyIn model rows nexts into = Js.each rows λrow →
-    old = Js.get model (fieldOf row)
-    next = Js.call nexts "shift" []
-    if not (Js.same next old) then
-        into old next row
+pub invalid : Browser.RenderRequest, List Issue → Result Browser.RenderError Browser.Rendered
+invalid request issues = Err { route = request.route, issues = issues }
 
 
-fieldOf : V → String
-fieldOf row = Js.to (Js.at row 2)
+pub rendered : String → Result Browser.RenderError Browser.Rendered
+rendered html = Ok { html = html, title = Nothing }
 
 
--- Every field of `next` into `old`: `next` is a record of the route's type,
--- which a function of the raw value alone made, so its own fields are
--- exactly the type's, and no field of it is a record whose object the copy
--- keeps.
-assign : V, V, V → ⊤
-assign old next _ =
-    _ = Js.call (Js.global "Object") "assign" [ old, next ]
-    ⊤
-
-
-planned : V, V, V → ⊤
-planned old next row = copy old next (Js.at row 3)
-
-
--- `assign`, then the row's constants, when it has any: a row without them
--- has nothing at that index, which `Object.assign` skips. A row whose
--- result is the old value is not copied at all (`copyIn`), so the constants
--- are written only with a decoded value, as the route's `Ok` arm gives them.
-assignConst : V, V, V → ⊤
-assignConst old next row =
-    _ = Js.call (Js.global "Object") "assign" [ old, next, Js.at row 3 ]
-    ⊤
-
-
-plannedConst : V, V, V → ⊤
-plannedConst old next row =
-    copy old next (Js.at row 3)
-    _ = Js.call (Js.global "Object") "assign" [ old, Js.at row 4 ]
-    ⊤
-
-
--- `next`'s fields into `old`, as `plan` lists them: a name is written, a
--- `[name, plan]` pair is copied into the object `old` holds there.
-copy : V, V, V → ⊤
-copy old next plan = Js.each plan λitem →
-    if Js.typeIs item "string" then
-        name : String
-        name = Js.to item
-        Js.set old name (Js.get next name)
-    else
-        name : String
-        name = Js.to (Js.at item 0)
-        copy (Js.get old name) (Js.get next name) (Js.at item 1)
+pub renderedDocument : String, String → Result Browser.RenderError Browser.Rendered
+renderedDocument html pageTitle = Ok { html = html, title = Just pageTitle }

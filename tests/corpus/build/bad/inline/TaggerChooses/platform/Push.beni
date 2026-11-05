@@ -5,7 +5,7 @@
 --! a `rr-push` event on `window` whose `detail` is the event, as plain data;
 --! the program reads it with a schema.
 
-import Js
+import Browser.Host.Event as HostEvent
 import Listen
 import Sub exposing (Sub)
 
@@ -20,5 +20,4 @@ pub onPush : (Int → msg) → Sub msg
 onPush tag = Sub.on Pushed (Listen.on "window" "rr-push" detail _) tag
 
 
-detail : Js.Value → Int
-detail event = Js.to (Js.get event "detail")
+pub foreign impure detail : borrowed HostEvent.Event → Int

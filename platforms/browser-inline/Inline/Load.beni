@@ -1,0 +1,35 @@
+-- Private once-per-site typed load jobs. Only raw JSON has the host value type.
+import Js
+
+
+pub opaque type LoadJob m
+    = LoadJob (Js.Value, m → m)
+
+
+pub opaque type KeyedLoads m
+    = KeyedLoads (List (String × LoadJob m))
+
+
+pub loadJob : sync (Js.Value, m → m) → LoadJob m
+loadJob job = LoadJob job
+
+
+pub keyedLoads : List (String × LoadJob m) → KeyedLoads m
+keyedLoads jobs = KeyedLoads jobs
+
+
+pub runLoad : LoadJob m, Js.Value, m → m
+runLoad (LoadJob job) raw model = job raw model
+
+
+pub runKeyed : KeyedLoads m, String, Js.Value, m → m
+runKeyed (KeyedLoads jobs) key raw model = find jobs key raw model
+
+
+find : List (String × LoadJob m), String, Js.Value, m → m
+find jobs key raw model =
+    case jobs of
+        [] →
+            model
+        [ ( name, job ), …rest ] →
+            if name == key then runLoad job raw model else find rest key raw model

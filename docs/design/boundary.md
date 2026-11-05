@@ -1710,6 +1710,46 @@ interleaved items and the `Show` node (§9.4.2–§9.4.3); host access is restat
 really does (§9.4.4); start data has one shape (§9.4.5); and the interface is versioned so that an
 addition breaks no lowering (§9.4.6, the owner's answer).
 
+
+*Amended 2026-11-05 (Part of #1807, native root and page data):* general
+DOM operations come from the generated native catalogue, rather than a composite
+inline bridge. Element.querySelector follows Document.querySelector's
+Result QueryError (Maybe Element) contract: SyntaxError is individually captured,
+null is a successful absent selection, and every unknown exception escapes.
+Element.getAttribute returns Maybe String, mapping only the specified null absence.
+Node.textContent already exists; removal uses the existing typed Node removal
+operation. The generated wrappers use #1937's typed Opt recipes and construct
+Maybe/Result in beni, with byte-exact generation and platform fences. Receiver
+words borrow the native handle; bodies and words are pinned and reviewed.
+Inline.root and pageData are ordinary beni over these operations, preserving
+named defects, development/release messages and read/remove/parse order.
+
+The only inline bridge operation is read/mark of the development duplicate-root
+marker $$root: borrowed Element → Bool, returning whether the element was already
+marked and marking an unmarked element. Its compiler-owned body is recognised
+only in the actual loaded browser-inline layer, with the owning-layer fence,
+app and foreign-platform refusal fixtures and a body pin. It is impure, allocates
+nothing, reads/retains no beni sequence and exposes no generic getter/cast.
+Release output does not call or retain this development-only marker operation.
+
+*Amended 2026-11-05 (Part of #1807, copying load jobs):* load input remains Js.Value data. The load optimisation is enabled only when every
+row's final decoder is proven to copy every mutable structure it retains.
+The compiler reads the resolved schema plan used by SchemaLower: records and
+arrays construct fresh outputs recursively; scalar leaves are safe; Value /
+shapeValue leaves, conversions, unknown schemas and bounded-out proofs are not.
+An unproven site executes the original source calls and keeps their ownership
+and object-identity analysis. This decision precedes the write-set/view plan,
+so a fallback cannot inherit the in-place identity assumptions of a load job.
+
+Jobs passing this gate never retain mutable structure from their Js.Value
+input. Their ordinary body-derived summaries therefore borrow raw input while
+keeping model writes visible, with no §24.2 change or explicit parameter word.
+The rule works equally for host input, Event.detail and Json.encodeValue data.
+All-decodes-before-copy still preserves evaluation order. Host mutations after
+dispatch cannot change a copied model; a Value-retaining decoder keeps ordinary
+execution instead. BuiltRawCase keeps its load job; RawEscape is a run case,
+where mutating the original list after decoding is safe and prints correctly.
+
 ### 9.1 Layers, and a platform that depends on a platform
 
 *Amended 2026-11-05 (Part of #1807; PR #1924 follow-up):* browser `Program`
@@ -1720,9 +1760,9 @@ defect before root inspection or mounting. A stopped page accepts no render-only
 request, just as it accepts no message. `Browser.Bridge` recognition requires the
 browser platform’s own loaded layer (`samePlatformLayer`); a same-named module in
 another platform gets neither compiler-owned foreign coverage nor intrinsic lowering.
-The bridge is separate from frozen Html.Runtime 1.30. Browser-inline still uses
-compiled constructors with an impure unreachable-defect fallback; honest pure
-construction awaits its typed Program (#1934), without a checker rung override.
+The bridge is separate from frozen Html.Runtime 1.30. Browser-inline's typed Program now gives its compiled constructors honest pure
+construction (#1934), without a checker rung override; the fallback mount defect
+remains deferred in its closed client job and absent from ordinary page output.
 
 | Layer | Is | Knows |
 |---|---|---|
@@ -3399,6 +3439,7 @@ caller's module spelling. Compiler bodies are pinned and ownership words describ
 their actual lowering, including retained callbacks and their effects. A wrong
 word must be caught by misuse fixtures; unknown callback effects remain refused.
 Html.Runtime's frozen 1.30 API and source SHA are unchanged by this bridge.
+*Amended 2026-11-05 (Part of #1807):* both bridge owners are identified by the compiled-in registered markup lowering (dom or inline) and its layer's runtime module, whether embedded or directory-loaded, and recognition and access retain samePlatformLayer; a matching module spelling or a different registered lowering grants no bridge ownership. The inline marker reads and marks the existing `$$root` property, so a host-premarked root is recognised before mounting.
 
 Hosted control messages distinguish real input from a render-only nudge using
 shared constants. They allocate no object per message or render. A closed job

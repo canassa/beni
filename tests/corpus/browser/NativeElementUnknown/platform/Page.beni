@@ -1,0 +1,21 @@
+import Browser.Host.Document as Document
+import Browser.Host.Element as Element
+
+
+pub describe : ⊤ → String
+describe ⊤ =
+    case Document.body ⊤ of
+        Nothing →
+            "no body"
+        Just root →
+            case Element.querySelector root "#unknown" of
+                Err _ →
+                    "wrongly captured"
+                Ok _ →
+                    "wrongly returned"
+
+
+pub foreign type Program
+
+
+pub foreign pure program : sync (⊤ → String) → Program

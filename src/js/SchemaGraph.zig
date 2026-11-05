@@ -513,6 +513,42 @@ pub fn shapeable(g: SchemaGraph, scratch: Allocator, r: Ref) Allocator.Error!boo
     return true;
 }
 
+/// The decode bodies allocate every retained mutable container. Value is
+/// identity in both worker and shape paths; opaque conversions are unproven.
+/// Recursive plain schemas are safe by the same structural induction as their
+/// generated depth-bounded readers. This fact confers no ownership itself.
+pub fn copiesInput(g: SchemaGraph, scratch: Allocator, r: Ref) Allocator.Error!bool {
+    var stack: std.ArrayList(Ref) = .empty;
+    var seen: std.ArrayList(Ref) = .empty;
+    try stack.append(scratch, r);
+    while (stack.pop()) |at| {
+        var done = false;
+        for (seen.items) |x| done = done or (x.module == at.module and x.decl == at.decl);
+        if (done) continue;
+        if (seen.items.len >= 1024) return false;
+        try seen.append(scratch, at);
+        const d = g.definition(at.module, at.decl) orelse return false;
+        if (d.params_end != d.params_start) return false;
+        const plan = g.planOf(at.module);
+        var nodes: std.ArrayList(SchemaPlan.NodeIndex) = .empty;
+        try subtree(plan, scratch, d.root, &nodes);
+        for (nodes.items) |n| switch (tag(plan, n)) {
+            .primitive => if ((std.enums.fromInt(SchemaPlan.Primitive, lhs(plan, n)) orelse .value) == .value) return false,
+            .list, .nullable, .record, .tagged, .tuple, .constructors, .maybe, .check, .annotation => {},
+            .reference => {
+                if (args(plan, n).len != 0) return false;
+                try stack.append(scratch, g.target(at.module, @fromBackingInt(@intCast(lhs(plan, n)))) orelse return false);
+            },
+            .codec_ref => {
+                if (args(plan, n).len != 0) return false;
+                try stack.append(scratch, g.codecTarget(at.module, lhs(plan, n)));
+            },
+            .conversion, .parameter, .codec_value => return false,
+        };
+    }
+    return true;
+}
+
 /// The `core/Schema` reader a node's shape names first, or null for a
 /// reference, a check or an annotation, which name none. A record with a
 /// key, or a union with a discriminator, that is a name `Object.prototype`

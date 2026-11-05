@@ -481,3 +481,12 @@ core Browser.Host.Map.has ownership/core/NativeMapHasWords.beni - NativeMap.has
 browser Browser.Bridge.block ownership/core/BrowserBridgeWords.beni 1:returned>borrowed Bridge.block
 browser Browser.Bridge.installRoot ownership/core/BrowserBridgeWords.beni 2:escaped>borrowed Bridge.installRoot
 browser Browser.Bridge.installFuzz ownership/core/BrowserBridgeWords.beni 1:escaped>borrowed Bridge.installFuzz
+browser-inline Browser.client ownership/core/InlineJobWords.beni 1:escaped>borrowed Browser.client
+browser-inline Browser.tree ownership/core/InlineJobWords.beni 1:escaped>borrowed Browser.tree
+browser-inline Inline.client ownership/core/InlineJobWords.beni 1:escaped>borrowed Inline.client
+browser-inline Inline.tree ownership/core/InlineJobWords.beni 1:escaped>borrowed Inline.tree
+browser-inline Inline.Bridge.markRoot ownership/core/InlineJobWords.beni - Bridge.markRoot
+core Browser.Host.Element.querySelector ownership/core/InlineJobWords.beni - Element.querySelector
+core Browser.Host.Element.getAttribute ownership/core/InlineJobWords.beni - Element.getAttribute
+core Browser.Host.Element.host_querySelector ownership/core/InlineJobWords.beni - Element.querySelector
+core Browser.Host.Element.host_getAttribute ownership/core/InlineJobWords.beni - Element.getAttribute

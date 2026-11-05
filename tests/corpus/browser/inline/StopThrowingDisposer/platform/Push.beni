@@ -4,6 +4,7 @@
 --! rule 9): the disposers older than it are skipped, and the throw reaches
 --! the page that called `stop`, whose program has stopped either way.
 
+import Browser.Host.Event as HostEvent
 import Js
 import Listen
 import Schema exposing (Value)
@@ -30,5 +31,4 @@ pub breaks : sync (Value → ⊤) → (⊤ → ⊤)
 breaks _ = λ⊤ → Js.throw (Js.construct (Js.global "Error") [ Js.from "the removal failed" ])
 
 
-detail : Js.Value → Value
-detail event = Js.to (Js.get event "detail")
+foreign impure detail : borrowed HostEvent.Event → Value

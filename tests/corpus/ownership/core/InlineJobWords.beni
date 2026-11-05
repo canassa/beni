@@ -1,0 +1,89 @@
+-- Stored jobs retain captures; consumers keep inferred model effects.
+import Browser
+import Browser.Host.Element as Element
+import Inline
+import Inline.Bridge as Bridge
+import Inline.Load as Load
+import Js
+
+
+pub clientCapture ⊤ =
+    values = [ 1 ]
+    _ = Browser.client λ_ →
+        _ = List.length values
+        ⊤
+    List.push values 2
+
+
+pub inlineClientCapture ⊤ =
+    values = [ 1 ]
+    _ = Inline.client λ_ →
+        _ = List.length values
+        ⊤
+    List.push values 2
+
+
+pub treeCapture ⊤ =
+    values = [ 1 ]
+    _ = Browser.tree λ_ → Ok { html = String.fromInt (List.length values), title = Nothing }
+    List.push values 2
+
+
+pub inlineTreeCapture ⊤ =
+    values = [ 1 ]
+    _ = Inline.tree λ_ → Ok { html = String.fromInt (List.length values), title = Nothing }
+    List.push values 2
+
+
+pub jobCapture ⊤ =
+    values = [ 1 ]
+    _ = Load.loadJob λ_ model → model + List.length values
+    List.push values 2
+
+
+pub inlineJobCapture ⊤ =
+    values = [ 1 ]
+    _ = Inline.loadJob λ_ model → model + List.length values
+    List.push values 2
+
+
+pub marker node = Bridge.markRoot node
+
+
+pub query node selector = Element.querySelector node selector
+
+
+pub attribute node name = Element.getAttribute node name
+
+
+-- The callback may retain raw JSON, even when the job itself is reused.
+pub rawEscape job =
+    values = [ 1 ]
+    _ = Load.runLoad job (Js.from values) 0
+    List.push values 2
+
+
+-- A retained job cannot quietly acquire write permission to an aliased model.
+pub modelWriter ⊤ =
+    job = Load.loadJob λ_ items → List.push items 9
+    values = [ 1 ]
+    kept = values
+    _ = Load.runLoad job Js.null values
+    List.length kept
+
+
+-- The inferred summary must retain aliases for an actually retaining callback.
+-- This is a core-only misuse of the producer, not an admitted emitted load job.
+pub retainingRaw ⊤ =
+    job = Load.loadJob λraw _ → { kept = raw }
+    values = [ 1 ]
+    result = Load.runLoad job (Js.from values) { kept = Js.null }
+    grown = List.push values 2
+    ( grown, keptLength result.kept )
+
+
+keptLength : Js.Value → Int
+keptLength raw =
+    items : List Int
+    items = Js.to raw
+    List.length items

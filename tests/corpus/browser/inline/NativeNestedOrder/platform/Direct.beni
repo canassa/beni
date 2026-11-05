@@ -1,0 +1,12 @@
+import Sub exposing (Sub)
+
+
+type Key
+    = Direct
+
+
+pub on : (Int → msg) → Sub msg
+on tag = Sub.on Direct start tag
+
+
+pub foreign impure start : escaped sync (Int → ⊤) → (⊤ → ⊤)

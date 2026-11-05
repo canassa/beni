@@ -1,0 +1,20 @@
+-- load
+<body>
+  <div>
+    <button>"Reset"</button>
+    <section>
+      <output>"0"</output>
+    </section>
+    <output>"0"</output>
+  </div>
+</body>
+-- click button
+<body>
+  <div>
+    <button>"Reset"</button>
+    <section>
+      <output>"3"</output>
+    </section>
+    <output>"4"</output>
+  </div>
+</body>

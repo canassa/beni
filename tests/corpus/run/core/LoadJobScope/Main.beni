@@ -1,0 +1,22 @@
+-- The same once-built job receives different typed model bindings.
+-- No closure captures the first model, or a binding from an earlier call.
+import Inline.Load as Load
+import Js
+import Probe
+
+
+job : Load.LoadJob { count : Int }
+job = Load.loadJob λ_ model → { count = model.count + 1 }
+
+
+apply : { count : Int } → Int
+apply model = (Load.runLoad job Js.null model).count
+
+
+main : Probe.Program
+main =
+    Probe.printLines
+        [ String.fromInt (apply { count = 2 })
+        , String.fromInt (apply { count = 20 })
+        , String.fromInt (apply { count = 200 })
+        ]

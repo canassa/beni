@@ -1,7 +1,7 @@
-import { Inline$root, Inline$caught, Inline$take, Inline$bucket, Inline$when, Inline$entry, Inline$pass, Inline$unchanged, Inline$guarded, Inline$listen, Inline$first, Inline$deliver } from "./_platform/Inline.mjs";
+import { Inline$defaultRoot, Inline$root, Inline$caught, Inline$take, Inline$bucket, Inline$when, Inline$entry, Inline$pass, Inline$unchanged, Inline$guarded, Inline$listen, Inline$first, Inline$deliver, Inline$client } from "./_platform/Inline.mjs";
 import { Widget$view$$html$0, Widget$view$$root$0 } from "./Widget.mjs";
-const HydratedPiece$main = ($id$1) => {
-  const $root$2 = Inline$root(undefined);
+const HydratedPiece$main = Inline$client(($id$1) => {
+  const $root$2 = Inline$root(Inline$defaultRoot(null));
   const $init$3 = { open: false, w: { on: false } };
   let $model$4 = $init$3;
   Inline$caught($root$2);
@@ -25,6 +25,6 @@ const HydratedPiece$main = ($id$1) => {
   Widget$view$$root$0($elements$6, $model$4.w, $table$7[1]);
   Inline$first();
   Inline$deliver($elements$5[0]);
-};
+});
 export { HydratedPiece$main };
 //# sourceMappingURL=HydratedPiece.mjs.map

@@ -1,0 +1,16 @@
+import Io
+import Js.Dispatch as Dispatch
+import Node
+import Probe
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    Node.print
+        (Probe.exercise
+            Dispatch.observe
+            Dispatch.send
+            Dispatch.onDefect
+            Dispatch.busy
+            Dispatch.stopped
+        )

@@ -9,6 +9,93 @@ what a golden cannot show — which facts the lowering takes from which analysis
 it refuses, with what. It grows one section per slice; section numbers are never renumbered
 (CLAUDE.md rule 2), and a later change is a dated amendment in place.*
 
+*Amended 2026-11-05 (Part of #1807; closes #1934 when built):* the private
+inline Program is opaque beni data with closed typed client and SSR jobs. Its
+client mount has type `sync (Maybe String → ⊤)`; its render job takes
+`{ route : String, text : Maybe String }` and returns a typed result containing
+`{ html : String, title : Maybe String }` or all schema issues with the route.
+Placement wrappers carry typed Programs and List String routes; data jobs close
+over their concrete schema and body. Callable values, native roots and decoded
+data never pass through Js.Value to reach this boundary. Private constructors
+and consumers are fenced to the owning inline platform layer. Source Tea
+constructors build a real Program holding an unreachable mount job: construction
+is pure; invoking the unlowered job defects. No compiler effect override is used.
+
+The lowering constructs a client job in client output and a render job in the
+prerender tree. The opposite runtime is not rooted. Root lookup returns a typed
+native Element; pageData returns String × d, and decoded returns
+Result (List Schema.Issue) d. Missing roots/data are named defects. The external
+render/routes exports, their wire forms, HTML, title, data-error envelope and
+route order remain byte-identical. Node rendering starts no browser runtime,
+listener or Task kernel; hydration and capture order are unchanged.
+
+Load groups use opaque LoadJob m / KeyedLoads m jobs built once per site.
+A job holds sync (Js.Value, m → m), with static decoders, shapes, plans and
+constants. The concrete typed model is passed explicitly on each invocation,
+never captured from a helper's local parameter. Factories and consumers keep
+ordinary body-derived summaries, preserving callback classes, return aliases
+and model writes; §24.2 does not mix explicit words with inferred model facts.
+Only decoders proven to copy every retained mutable object/array receive jobs;
+Value-retaining and unproven decoders keep ordinary source execution. Thus raw
+input is borrowed for all admitted jobs. No borrowed model or optimistic result
+word is asserted. All decodes run against old fields in row order before any
+copy occurs; lexical temporaries retain results, then identity checks and
+copy/constant writes run in order. Keyed groups select the same unique string
+key and do nothing when absent. No staging closure or cell is allocated per
+message/load. Pins follow the real bodies, and fixtures cover host mutation,
+mutation of Beni-built raw input, decoder fallback, and model-write honesty.
+
+Listeners use native Event and existing typed native registration. Dispatch
+projects events immediately inside its guard, including nested sends, and queues
+only typed closed work. Exact remover identity, ordering, stopped-page behaviour
+and defect handling remain. Html.Runtime 1.30 and its SHA stay frozen. No new
+foreign primitive is authorised by this amendment. Public Browser/Tea/Navigation/
+Events/Sub signatures stay unchanged; private Listen readers use native Event.
+
+
+*Amended 2026-11-05 (Part of #1807, native root and page data):* general
+DOM operations come from the generated native catalogue, rather than a composite
+inline bridge. Element.querySelector follows Document.querySelector's
+Result QueryError (Maybe Element) contract: SyntaxError is individually captured,
+null is a successful absent selection, and every unknown exception escapes.
+Element.getAttribute returns Maybe String, mapping only the specified null absence.
+Node.textContent already exists; removal uses the existing typed Node removal
+operation. The generated wrappers use #1937's typed Opt recipes and construct
+Maybe/Result in beni, with byte-exact generation and platform fences. Receiver
+words borrow the native handle; bodies and words are pinned and reviewed.
+Inline.root and pageData are ordinary beni over these operations, preserving
+named defects, development/release messages and read/remove/parse order.
+
+The only inline bridge operation is read/mark of the development duplicate-root
+marker $$root: borrowed Element → Bool, returning whether the element was already
+marked and marking an unmarked element. Its compiler-owned body is recognised
+only in the actual loaded browser-inline layer, with the owning-layer fence,
+app and foreign-platform refusal fixtures and a body pin. It is impure, allocates
+nothing, reads/retains no beni sequence and exposes no generic getter/cast.
+Release output does not call or retain this development-only marker operation.
+
+
+*Amended 2026-11-05 (Part of #1807, copying load jobs):* load input remains Js.Value data. The load optimisation is enabled only when every
+row's final decoder is proven to copy every mutable structure it retains.
+The compiler reads the resolved schema plan used by SchemaLower: records and
+arrays construct fresh outputs recursively; scalar leaves are safe; Value /
+shapeValue leaves, conversions, unknown schemas and bounded-out proofs are not.
+For a case-form replacement, selecting or renaming fields of the copied
+decoded record and adding scalar literals or nullary constructors also retains
+no raw mutable structure; this does not authorise shape substitution of the
+replacement function. An unproven site executes the original source calls and keeps their ownership
+and object-identity analysis. This decision precedes the write-set/view plan,
+so a fallback cannot inherit the in-place identity assumptions of a load job.
+
+Jobs passing this gate never retain mutable structure from their Js.Value
+input. Their ordinary body-derived summaries therefore borrow raw input while
+keeping model writes visible, with no §24.2 change or explicit parameter word.
+The rule works equally for host input, Event.detail and Json.encodeValue data.
+All-decodes-before-copy still preserves evaluation order. Host mutations after
+dispatch cannot change a copied model; a Value-retaining decoder keeps ordinary
+execution instead. BuiltRawCase keeps its load job; RawEscape is a run case,
+where mutating the original list after decoding is safe and prints correctly.
+
 ## 1. The platform
 
 `platforms/browser-inline/` depends on `html` alone. It imports nothing of `browser`'s, of
@@ -54,6 +141,21 @@ interface:
 | whether a list is edited in place safely | the ownership checker, through the manifest's `"lists": "in-place"` | — (its refusals are its own) |
 
 ## 3. Subscriptions
+
+*Amended 2026-11-05 (Part of #1807): guarded native observation.* Core/platform-private
+`Js.Dispatch.observe : sync (a → ⊤), b, sync (b → a) → ⊤` projects a native
+notification and calls its already-guarded sender immediately, under the existing fatal
+dispatch guard. `Listen.on` and `Navigation.live` use it through `Inline.observe`;
+generated DOM dispatch continues to use `Inline.guarded`. Observation adds no second
+queue turn: nested notifications retain their original send order. At outermost entry it
+drains work queued by the sender; nested observation leaves draining to the outer guard.
+Readers run while the native notification is live. A reader, sender or drain failure restores
+the prior dispatch state in `finally`, stops the page and invokes the existing defect hook.
+Unknown exceptions propagate; no catch consumes them. Stopped observation reads nothing and
+sends nothing. Delivery, draining and ordinary return add no object, closure or cell per invocation;
+callback effects remain the callbacks' effects. Fatal stop retains the existing one-time
+empty-array allocation in Fifo.clear when the page dies (manager clarification, 2026-11-05). The module-wide CorePrivate platform fence covers this helper.
+
 
 The pass evaluates `subscriptions` applied to the model's root ρ, walking the platform layer's
 functions (`Push.onPush`, `Interval.every`) as it walks the program's, and recognising the four

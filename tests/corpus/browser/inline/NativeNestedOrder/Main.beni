@@ -1,0 +1,42 @@
+import Cmd
+import Direct
+import Html
+import Json
+import Poke
+import Push
+import Schema exposing (Value)
+import Sub
+import Tea
+
+
+type Msg
+    = Trigger
+    | Pushed Value
+    | DirectMessage Int
+
+
+update : Msg, String → String × Cmd.Cmd Msg
+update message model =
+    case message of
+        Trigger →
+            Poke.burst ⊤
+            ( model ++ "T", Cmd.none )
+        Pushed raw →
+            case Json.decodeValue raw of
+                Ok number →
+                    ( model ++ String.fromInt number, Cmd.none )
+                Err _ →
+                    ( model, Cmd.none )
+        DirectMessage number →
+            ( model ++ String.fromInt number, Cmd.none )
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( "", Cmd.none )
+        , update = update
+        , view =
+            λmodel → <div><button onClick={Trigger}>Burst</button><output>{model}</output></div>
+        , subscriptions = λ_ → Sub.batch [ Push.onPush Pushed, Direct.on DirectMessage ]
+        }
