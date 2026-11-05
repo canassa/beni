@@ -1,0 +1,10 @@
+# v2 refuses each traversal callback's edit of an element read elsewhere: read again, shared, kept, captured (§2.11.3).
+37:18 list_still_used List.map
+39:13 list_may_be_shared List.map
+41:13 list_may_be_shared List.map
+43:14 list_may_be_shared SanitiserTakenElement.viaLambda
+44:26 list_still_used SanitiserTakenElement.keeps
+46:9 list_still_used List.foldl
+48:16 list_may_be_shared List.map
+51:16 list_may_be_shared List.map
+53:16 list_may_be_shared List.map

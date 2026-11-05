@@ -1,0 +1,75 @@
+-- The twin of `SanitiserTakenElement` (`ownership-v2.md` §2.11.3, *A taken
+-- supply*; Appendix C.6): a traversal hands each callback an element nothing
+-- else reads, so the callback edits it in place. Through `List.map`,
+-- `indexedMap`, `filterMap`, `concatMap`, `foldl` and `foldr`, on a parameter
+-- and on a local, through a helper, nested, on a field and a tuple's part, and
+-- with a capture apart from the list answered at some positions. v2 accepts
+-- every edit; the sanitised run prints what the plain run prints.
+import List
+import Node exposing (Program)
+import String
+
+
+type alias Row =
+    f : List Int
+    g : List Int
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+bump : List (List Int) → List (List Int)
+bump rows = List.map rows λr → List.push r 9
+
+
+viaLambda : List (List Int), (List Int → List Int) → List (List Int)
+viaLambda rs f = List.map rs λv → f v
+
+
+direct : List (List Int), (List Int → List Int) → List (List Int)
+direct rs f = List.map rs f
+
+
+edit : List (List Int), (List Int → List Int) → List (List Int)
+edit list f = List.map list λrow → if List.length row > 1 then f row else row
+
+
+main : Program
+main =
+    local = [ [ 1 ], [ 2 ] ]
+    d = [ 0 ]
+    n = List.foldl [ [ 1 ], [ 2 ] ] 0 λl acc → List.length (List.push l 1) + acc
+    r = List.foldr [ [ 1 ] ] 0 λl acc → List.length (List.push l 2) + acc
+    xss = [ [ [ 1 ] ], [ [ 2 ], [ 3 ] ] ]
+    rows = [ { f = [ 1 ], g = [ 5 ] }, { f = [ 6 ], g = [ 2 ] } ]
+    tuples = [ ( [ 1 ], [ 5 ] ), ( [ 6 ], [ 2 ] ) ]
+    Node.printLines
+        [ shows (List.map local λl → List.push l 1)
+        , shows (bump [ [ 3 ], [ 4, 5 ] ])
+        , shows (List.indexedMap [ [ 1 ], [ 2 ] ] λi l → List.push l i)
+        , shows (List.filterMap [ [ 1 ], [ 2 ] ] λl → Just (List.push l 1))
+        , shows (List.concatMap [ [ 1 ], [ 2 ] ] λl → [ List.push l 1, [ 0 ] ])
+        , String.fromInt n ++ " " ++ String.fromInt r
+        , shows (viaLambda [ [ 1 ], [ 2 ] ] λv → List.push v 5)
+        , shows (direct [ [ 1 ], [ 2 ] ] λv → List.push v 6)
+        , String.join (List.map (List.map xss λxs → List.map xs λx → List.push x 1) shows) "#"
+        , String.join
+            (List.map (List.map rows λw → { w | f = List.push w.f 1 }) λw →
+                show w.f ++ "/" ++ show w.g
+            )
+            ";"
+        , String.join
+            (List.map (List.map tuples λ( p, q ) → ( List.push p 1, q )) λ( p, q ) →
+                show p ++ "/" ++ show q
+            )
+            ";"
+        , shows (edit [ [ 1, 2 ], [ 3 ] ] λv → List.push v 9)
+        , shows (List.map [ [ 1 ], [ 2, 3 ] ] λl → if List.length l == 1 then d else List.push l 7)
+            ++ " "
+            ++ show d
+        ]
