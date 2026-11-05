@@ -1,0 +1,52 @@
+-- The twin of `SanitiserLaterFunction` (`ownership-v2.md` §2.11.3, *a later
+-- function*): the function the row runs later holds nothing the write reaches.
+-- v2 accepts every edit in place; the sanitised run prints what the plain run prints.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+run :
+      (List Int → List Int)
+    , (List Int → List Int)
+    , List Int
+    , List (List Int)
+    → List Int × List (List Int)
+run f w zs l =
+    y = w zs
+    ( y, List.update l 0 f )
+
+
+inner : (List Int → List Int), List (List Int) → List (List Int)
+inner f l = List.update l 0 f
+
+
+run2 :
+      (List Int → List Int)
+    , (List Int → List Int)
+    , List Int
+    , List (List Int)
+    → List Int × List (List Int)
+run2 f w zs l =
+    y = w zs
+    ( y, inner f l )
+
+
+main : Program
+main =
+    k = [ 3 ]
+    ( y1, m1 ) = run (λv → v) (λv → List.push v 9) [ 1 ] [ [ 7 ] ]
+    ( y2, m2 ) = run2 (λ_ → k) (λv → List.push v 9) [ 1 ] [ [ 7 ] ]
+    lines =
+        [ show y1 ++ "|" ++ shows m1
+        , show y2 ++ "|" ++ shows m2
+        ]
+    Node.print (String.join lines "\n")

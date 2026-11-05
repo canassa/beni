@@ -2102,6 +2102,12 @@ on `y` in a place no label names, and its write was judged by nobody. So each cl
 each closure an escape reaches (stored by a callee, spawned), which joins `fn_escapes` and so `Closures`' own writes, has the function slots
 its contract's labels and `escapes` name escape in turn, a deep escape deep, and a writer handed to `chain` is refused `unknown`. A reading `g` is accepted (`run/SanitiserClosureList`,
 `run/SanitiserClosureListApart`). Refused that a perfect checker accepts: a writer of a list the closure itself makes, `λ⊤ → g [ 1 ]`.
+*Amended 2026-11-05 (#2050): **a later function.*** A row's footprint says nothing of its callback, so `( y = w zs; ( y, List.update l 0 f ) )`
+read nothing of `f`, and a `w` that writes what `f` holds was asked nothing of it. A read of the function at the row would make it an operand at
+every pass, which asks `π{[*]…}` plain and refuses rows that share a key the callback does not write (`run/SanitiserPassedTupleRowApart`). So
+the supply of a label run at a point asks each function the frame passes on later apart, deep, its own too (`π1{ε*~}`), and no more
+(`LaterFunctions.zig`): nothing about what that function is handed. Sound because the later function can reach only what it holds and
+what it is handed, and the second is that pass's own supply, judged at it. Fixtures `run/SanitiserLaterFunction`, `run/SanitiserLaterFunctionApart`.
 
 Sound because every call of a function value now runs a code that a label names, or a code that has escaped.
 For a label, its writes become demands where the label is applied and its count adds up outward (§2.11.3).
