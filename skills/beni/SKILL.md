@@ -99,6 +99,7 @@ Open the file that your task needs. Each is short.
   `where`, `eq` and `compare`, return-type dispatch, `Dict` and `Set` keys.
 - `references/effects.md` — the two inferred bits, `Result` and no exceptions, `Task`, `Ref`, `Deferred`,
   `Semaphore`, `Queue`, `Latch`, `Task.forever`, `Debug` in a release build, `Log`.
+- `references/dates.md` — `Date`: ISO 8601 text, zones by name, the calendar parts of a moment.
 - `references/schemas.md` — the `schema` declaration, `Type` and `Encoded`, `parse` and `print`, the modifiers,
   `tagged`, `Json` with a derived `codec`.
 - `references/markdown.md` — `Markdown.parse`: the CommonMark tree, raw HTML as text, the limits.
