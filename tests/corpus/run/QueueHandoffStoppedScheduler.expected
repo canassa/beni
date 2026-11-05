@@ -1,0 +1,29 @@
+masked: s busy: True
+masked: t took: Just 7
+masked: stop done, cut: 0
+masked: u took: Nothing
+masked: t: "Cancelled"
+masked: u: Nothing
+masked: size: 0
+returned: s busy: True
+returned: t took: Just 7
+returned: stop done, cut: 0
+returned: u took: Nothing
+returned: t: "Cancelled"
+returned: u: Nothing
+returned: size: 0
+cut: t release waits: ⊤
+cut: stop done, cut: 1
+cut: s busy: False
+cut: t: "Cancelled"
+cut: u took: Just 7
+cut: u: Just 7
+cut: size: 0
+long: t release waits: ⊤
+long: s busy: True
+long: t took: Just 7
+long: stop done, cut: 0
+long: u took: Nothing
+long: t: "Cancelled"
+long: u: Nothing
+long: size: 0
