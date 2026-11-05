@@ -1,0 +1,60 @@
+-- The controls of `SanitiserCellReentry` (`ownership-v2.md` §2.11.3,
+-- §2.13.7, #1955): the callee holds a loan of one cell's contents while the
+-- callback edits another cell's contents in place, directly, through a
+-- named helper and passed on to another function. The loan is not what the
+-- callback edits, so v2 accepts each, and the sanitised run prints the
+-- golden.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+bump : Ref (List Int) → ⊤
+bump r = Ref.update r λxs → List.push xs 1
+
+
+apply : (⊤ → ⊤) → ⊤
+apply f = f ⊤
+
+
+reenter : Ref (List Int), (⊤ → ⊤) → Int
+reenter r f =
+    v = Ref.get r
+    f ⊤
+    List.length v
+
+
+passed : Ref (List Int), (⊤ → ⊤) → Int
+passed r f =
+    v = Ref.get r
+    apply f
+    List.length v
+
+
+direct : ⊤ → Int
+direct ⊤ =
+    r = Ref.make [ 0 ]
+    q = Ref.make [ 5 ]
+    n = reenter r λ⊤ → Ref.update q λxs → List.push xs 1
+    n * 10 + List.length (Ref.get q)
+
+
+helper : ⊤ → Int
+helper ⊤ =
+    r = Ref.make [ 0 ]
+    q = Ref.make [ 5 ]
+    n = reenter r λ⊤ → bump q
+    n * 10 + List.length (Ref.get q)
+
+
+passedOn : ⊤ → Int
+passedOn ⊤ =
+    r = Ref.make [ 0 ]
+    q = Ref.make [ 5 ]
+    n = passed r λ⊤ → bump q
+    n * 10 + List.length (Ref.get q)
+
+
+main : Program
+main = Node.print (String.join (List.map [ direct ⊤, helper ⊤, passedOn ⊤ ] String.fromInt) " ")

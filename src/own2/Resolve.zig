@@ -379,6 +379,11 @@ const Resolver = struct {
             o.exactness = .approximate;
             return line;
         }
+        // A kept supply written by a known code.
+        if (d.kept or d.many) {
+            refuse(o, if (d.many) .once else .call);
+            return line;
+        }
         // A call's other arguments by the operand index (§2.8 step 4): the
         // aggregated ones join `req` once, at the end.
         const by_call = r.aggregate and d.call != none and !fr.calls.items[d.call].virtual and d.operands.len + 1 == fr.calls.items[d.call].args.len;
@@ -402,11 +407,6 @@ const Resolver = struct {
                     },
                 }
             }
-        }
-        // A kept supply written by a known code.
-        if (d.kept or d.many) {
-            refuse(o, if (d.many) .once else .call);
-            return line;
         }
         // Dead: the pending operands, then the live locals.
         try r.stack.build(r.ev(), w, r.regions, &r.keys);
