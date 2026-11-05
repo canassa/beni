@@ -160,9 +160,51 @@ const Walker = struct {
             return w.children(e.children_start, e.children_end);
         };
         for (items) |at| try w.item(tag, at);
+        try w.srcdocSandbox(tag, items);
         const kids = b.extraSlice(.{ .start = e.children_start, .end = e.children_end }, Bir.ExtraIndex);
         if (row.has(.void) and kids.len != 0) try w.fault(.void_children, nodeToken(b, kids[0]), tag, tag, null);
         try w.children(e.children_start, e.children_end);
+    }
+
+    /// A typed `srcdoc` needs a constant `sandbox` without the token
+    /// `allow-same-origin` on the same element (the owner's decision,
+    /// language.md §11.5): the frame's document then has an opaque origin,
+    /// and its scripts cannot reach the page. Decided from the syntax, at
+    /// the `srcdoc` name; a `srcdoc` the vocabulary does not declare here is
+    /// its `unknown_attribute` alone.
+    fn srcdocSandbox(w: *Walker, tag: Symbol, items: []const Bir.ExtraIndex) Error!void {
+        const b = w.bir();
+        const interner = w.g.cx.interner;
+        const srcdoc: Bir.MarkupItem = for (items) |at| {
+            const it = b.extraData(at, Bir.MarkupItem);
+            if (it.kind != .attr or !std.ascii.eqlIgnoreCase(interner.slice(b.symbol(it.name)), "srcdoc")) continue;
+            if (w.vocab.item(tag, b.symbol(it.name)) == null) return;
+            break it;
+        } else return;
+        var found = false;
+        const kind: Tree.MarkupFault.Kind = for (items) |at| {
+            const it = b.extraData(at, Bir.MarkupItem);
+            if (it.kind == .spread or !std.ascii.eqlIgnoreCase(interner.slice(b.symbol(it.name)), "sandbox")) continue;
+            found = true;
+            switch (it.constant) {
+                .none => break .srcdoc_sandbox_dynamic,
+                .string => if (sameOrigin(b.string_bytes[it.constant_offset..][0..it.constant_len])) break .srcdoc_sandbox_same_origin,
+                // A bare name or a number holds no token, and is its own
+                // `bare_value` or `type_mismatch`: one message.
+                .number, .true, .false => {},
+            }
+        } else if (found) return else .srcdoc_no_sandbox;
+        try w.fault(kind, srcdoc.token, tag, tag, null);
+    }
+
+    /// Whether a `sandbox` value holds `allow-same-origin`, as a browser
+    /// reads its tokens: split on ASCII whitespace, ASCII case folded.
+    fn sameOrigin(value: []const u8) bool {
+        var tokens = std.mem.tokenizeAny(u8, value, " \t\n\x0C\r");
+        while (tokens.next()) |t| {
+            if (std.ascii.eqlIgnoreCase(t, "allow-same-origin")) return true;
+        }
+        return false;
     }
 
     /// One attribute, escape or event of the element `tag` (§25.3).

@@ -1,0 +1,2 @@
+module SrcdocWithSandbox
+  value view : String → Html msg

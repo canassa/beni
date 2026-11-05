@@ -1,0 +1,22 @@
+-- `srcdoc_without_sandbox` (the owner's decision, language.md §11.5): an
+-- element that writes the typed `srcdoc` must also write a constant
+-- `sandbox` without `allow-same-origin`, or the frame's scripts run with
+-- the page's origin. Each frame here is refused at its `srcdoc`, on lines
+-- 15 to 21: no `sandbox`; a `sandbox` from a parameter and from an
+-- interpolation; the token in a quoted value, after a tab in a string
+-- literal, in another case, from a character reference, and in the quoted
+-- escape `"sandbox"`.
+import Html exposing (Html)
+
+
+pub view : String, String → Html msg
+view page mode =
+    <div>
+        <iframe srcdoc={page} />
+        <iframe sandbox={mode} srcdoc={page} />
+        <iframe sandbox="allow-${mode}" srcdoc={page} />
+        <iframe sandbox="allow-scripts allow-same-origin" srcdoc={page} />
+        <iframe sandbox={"allow-scripts\tALLOW-Same-Origin"} srcdoc={page} />
+        <iframe sandbox="allow-same&#45;origin" srcdoc={page} />
+        <iframe "SANDBOX"="allow-same-origin" srcdoc={page} />
+    </div>

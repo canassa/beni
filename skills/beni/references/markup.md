@@ -24,9 +24,11 @@ from the `html` platform (`api-html.md` lists all of it); the language knows non
   a style list. A plain `String` works on both.
 - `<iframe sandbox="" srcdoc={page} />` shows a document from HTML text. The value is escaped, so
   it never becomes markup of your page. The frame runs the document's scripts only when `sandbox`
-  holds `allow-scripts`. Write a constant `sandbox` without `allow-same-origin`: with that token,
-  or with no `sandbox`, the frame's scripts can read and change your page. A quoted `"srcdoc"` is
-  the error `untyped_srcdoc_attribute`.
+  holds `allow-scripts`. An element with `srcdoc` must have a constant `sandbox` without
+  `allow-same-origin`: with that token, or with no `sandbox`, the frame's scripts can read and
+  change your page. Anything else is the error `srcdoc_without_sandbox`: no `sandbox`, a `sandbox`
+  from a value, or a `sandbox` with `allow-same-origin`. A quoted `"srcdoc"` is the error
+  `untyped_srcdoc_attribute`.
 
 ```beni platform=html
 import Html exposing (Html)
@@ -44,6 +46,16 @@ view rows =
             {λrow → <tr class={[ ( "row", True ), ( "late", row.late ) ]}><td>{row.label}</td></tr>}
         </For>
     </table>
+```
+
+A `sandbox` from a value is refused, because the compiler cannot see its tokens:
+
+```beni platform=html refused=srcdoc_without_sandbox
+import Html exposing (Html)
+
+
+pub frame : String, String → Html msg
+frame mode page = <iframe sandbox={mode} srcdoc={page} />
 ```
 
 ## Events

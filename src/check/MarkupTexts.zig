@@ -12,6 +12,7 @@ const Render = @import("Render.zig");
 const Report = @import("Report.zig");
 const TypeStore = @import("TypeStore.zig");
 const Diagnostics = @import("Diagnostics.zig");
+const Tree = @import("constrain/Tree.zig");
 const CategoryFile = @import("Category.zig");
 
 const Category = CategoryFile.Category;
@@ -184,9 +185,54 @@ pub fn srcdocEscape(r: *Report, region: Bir.Inst.Index, token: u32, name: Symbol
         \\`"{s}"` writes a whole document into a frame as an untyped attribute.
         \\
         \\A page runs that document, its scripts included, so a value there could inject
-        \\one. Load the frame's document from a URL, `src={{url}}`.
+        \\one. Write the typed `srcdoc`, with a constant `sandbox` that does not hold
+        \\`allow-same-origin`:
+        \\
+        \\    <iframe sandbox="" srcdoc={{page}} />
+        \\
+        \\Or load the frame's document from a URL, `src={{url}}`.
     , .{text(r, name)}) catch return error.OutOfMemory;
     try emit(r, .untyped_srcdoc_attribute, .@"error", region, token, &out);
+}
+
+/// A typed `srcdoc` without a safe `sandbox` (language.md §11.5): the
+/// owner's rule, which keeps the frame's document out of the page's origin.
+pub fn srcdocWithoutSandbox(r: *Report, region: Bir.Inst.Index, token: u32, element: Symbol, kind: Tree.MarkupFault.Kind) Error!void {
+    var out: std.Io.Writer.Allocating = .init(r.gpa);
+    defer out.deinit();
+    const w = &out.writer;
+    const tag = text(r, element);
+    switch (kind) {
+        .srcdoc_sandbox_dynamic => w.print(
+            \\This `<{s}>` writes `srcdoc`, and its `sandbox` comes from a value, so I
+            \\cannot see its tokens.
+            \\
+            \\If the value holds `allow-same-origin`, the frame runs the document with the
+            \\page's origin, and its scripts can read and change this page. Write the
+            \\`sandbox` as a constant:
+        , .{tag}) catch return error.OutOfMemory,
+        .srcdoc_sandbox_same_origin => w.print(
+            \\This `<{s}>` writes `srcdoc`, and its `sandbox` holds `allow-same-origin`.
+            \\
+            \\With that token, the frame runs the document with the page's origin, and its
+            \\scripts can read and change this page. Remove the token from the `sandbox`:
+        , .{tag}) catch return error.OutOfMemory,
+        else => w.print(
+            \\This `<{s}>` writes `srcdoc`, but it has no `sandbox`.
+            \\
+            \\Without a `sandbox`, the frame runs the document with the page's origin, and
+            \\its scripts can read and change this page. Write a constant `sandbox`:
+        , .{tag}) catch return error.OutOfMemory,
+    }
+    w.print(
+        \\
+        \\
+        \\    <{s} sandbox="" srcdoc={{page}} />
+        \\
+        \\`sandbox="allow-scripts"` lets the document run its scripts, in an origin of its
+        \\own, where they cannot reach this page.
+    , .{tag}) catch return error.OutOfMemory;
+    try emit(r, .srcdoc_without_sandbox, .@"error", region, token, &out);
 }
 
 /// A quoted or bare attribute value the declared type does not admit
