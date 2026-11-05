@@ -7,6 +7,7 @@ import Api exposing (Cred)
 import Author exposing (Author)
 import Date exposing (Apr, Aug, Dec, Feb, Jan, Jul, Jun, Mar, May, Month, Nov, Oct, Sep)
 import Html exposing (Html)
+import Html.Markdown
 import Http
 import Route
 import Url.Builder
@@ -281,15 +282,11 @@ monthName month =
             "December"
 
 
--- GAP: an article's body is Markdown, and Conduit renders it as HTML. That
--- needs a Markdown → `Html` library in beni (a CommonMark subset, specified
--- first; elm-explorations/markdown is the Elm one). Until then the body is
--- shown as its text, paragraphs split on blank lines.
+-- An article's body is Markdown (CommonMark), rendered as HTML. Raw HTML in
+-- the body is shown as text, and a `javascript:` link is written as `""`
+-- (docs/design/markdown.md §6), so an author cannot put a script into the page.
 pub body : String → Html msg
-body markdown =
-    <div class="article-content">
-        <For each={String.split markdown "\n\n"} keyed={False}>{λpara → <p>{para}</p>}</For>
-    </div>
+body markdown = <div class="article-content">{Html.Markdown.fromString markdown}</div>
 
 
 pub tagList : List String → Html msg

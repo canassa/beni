@@ -121,17 +121,16 @@ program Main.main : Tea.application
   key RouteRefused                                exact      ∅
   keys 97: bounded 96 (98%), exact 77, indexed 16, structural 3, * 1; capped 0
   summary Url.Parser.firstMatch (cap I)
-  hole Article.beni:241:24                        dynamic    reads tag ρ; tag ρ.Home#0.feed; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].createdAt; tag ρ.Home#0.feed.Loaded#0.Model#0.session; ρ.Home#0.feed.Loaded#0.Model#0.session.LoggedIn#1; ρ.Home#0.feed.Loaded#0.Model#0.session.LoggedIn#1.Named#0; ρ.Home#0.feed.Loaded#0.Model#0.session.Guest#1; ρ.Home#0.feed.Loaded#0.Model#0.session.Guest#1.Named#0; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].createdAt; tag ρ.Profile#1.feed.Loaded#0.Model#0.session; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1.Named#0; ρ.Profile#1.feed.Loaded#0.Model#0.session.Guest#1; ρ.Profile#1.feed.Loaded#0.Model#0.session.Guest#1.Named#0; tag ρ.Article#0.article; ρ.Article#0.article.Loaded#0.createdAt; tag ρ.Article#0.comments; ρ.Article#0.comments.Loaded#0.1[*].createdAt; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.Named#0; ρ.Article#0.session.Guest#1; ρ.Article#0.session.Guest#1.Named#0
-  hole Article.beni:291:10                        dynamic    reads ρ.Article#0.article.Loaded#0.body
-  hole Article.beni:291:76                        dynamic    reads ρ.Article#0.article.Loaded#0.body
-  hole Article.beni:298:10                        dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags; ρ.Article#0.article.Loaded#0.tags
-  hole Article.beni:299:66                        dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Article#0.article.Loaded#0.tags[*]
-  hole Article.beni:308:17                        static     reads ∅
-  hole Article.beni:310:13                        dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Article#0.article.Loaded#0.favoritesCount
-  hole Article.beni:313:17                        static     reads ∅
-  hole Article.beni:315:13                        dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Article#0.article.Loaded#0.favoritesCount
-  hole Article.beni:321:29                        dynamic    reads tag ρ; tag ρ.Home#0.feed; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].slug; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].slug
-  hole Article.beni:321:76                        dynamic    reads tag ρ; tag ρ.Home#0.feed; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].description; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].title; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].description; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].title
+  hole Article.beni:242:24                        dynamic    reads tag ρ; tag ρ.Home#0.feed; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].createdAt; tag ρ.Home#0.feed.Loaded#0.Model#0.session; ρ.Home#0.feed.Loaded#0.Model#0.session.LoggedIn#1; ρ.Home#0.feed.Loaded#0.Model#0.session.LoggedIn#1.Named#0; ρ.Home#0.feed.Loaded#0.Model#0.session.Guest#1; ρ.Home#0.feed.Loaded#0.Model#0.session.Guest#1.Named#0; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].createdAt; tag ρ.Profile#1.feed.Loaded#0.Model#0.session; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1.Named#0; ρ.Profile#1.feed.Loaded#0.Model#0.session.Guest#1; ρ.Profile#1.feed.Loaded#0.Model#0.session.Guest#1.Named#0; tag ρ.Article#0.article; ρ.Article#0.article.Loaded#0.createdAt; tag ρ.Article#0.comments; ρ.Article#0.comments.Loaded#0.1[*].createdAt; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.Named#0; ρ.Article#0.session.Guest#1; ρ.Article#0.session.Guest#1.Named#0
+  hole Article.beni:289:46                        dynamic    reads ρ.Article#0.article.Loaded#0.body
+  hole Article.beni:295:10                        dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags; ρ.Article#0.article.Loaded#0.tags
+  hole Article.beni:296:66                        dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Article#0.article.Loaded#0.tags[*]
+  hole Article.beni:305:17                        static     reads ∅
+  hole Article.beni:307:13                        dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Article#0.article.Loaded#0.favoritesCount
+  hole Article.beni:310:17                        static     reads ∅
+  hole Article.beni:312:13                        dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Article#0.article.Loaded#0.favoritesCount
+  hole Article.beni:318:29                        dynamic    reads tag ρ; tag ρ.Home#0.feed; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].slug; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].slug
+  hole Article.beni:318:76                        dynamic    reads tag ρ; tag ρ.Home#0.feed; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].description; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].title; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].description; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].title
   hole ArticlePage.beni:225:33                    dynamic    reads ρ.Article#0.article.Loaded#0.title
   hole ArticlePage.beni:226:29                    dynamic    reads tag ρ; tag ρ.Article#0.article; tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username; ρ.Article#0.article.Loaded#0.createdAt; tag ρ.Article#0.article.Loaded#0.favorited; ρ.Article#0.article.Loaded#0.favoritesCount; ρ.Article#0.article.Loaded#0.slug; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.Named#0; ρ.Article#0.session.LoggedIn#2; ρ.Article#0.session.LoggedIn#2.cred; ρ.Article#0.session.Guest#1; ρ.Article#0.session.Guest#1.Named#0
   hole ArticlePage.beni:227:29                    dynamic    reads ρ.Article#0.errors; ρ.Article#0.errors[*]
@@ -267,15 +266,14 @@ program Main.main : Tea.application
   hole Settings.beni:292:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.bio
   hole Settings.beni:301:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.email
   hole Settings.beni:311:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.password
-  holes 146: static 13, literal 6, static-key 0, dynamic 127
-  site Article.beni:241:5                         instanced
-  site Article.beni:290:5                         unique
-  site Article.beni:291:73                        instanced
-  site Article.beni:297:5                         instanced
-  site Article.beni:299:21                        instanced
-  site Article.beni:308:9                         instanced
-  site Article.beni:313:9                         instanced
-  site Article.beni:321:5                         instanced
+  holes 145: static 13, literal 6, static-key 0, dynamic 126
+  site Article.beni:242:5                         instanced
+  site Article.beni:289:17                        unique
+  site Article.beni:294:5                         instanced
+  site Article.beni:296:21                        instanced
+  site Article.beni:305:9                         instanced
+  site Article.beni:310:9                         instanced
+  site Article.beni:318:5                         instanced
   site ArticlePage.beni:222:17                    unique
   site ArticlePage.beni:249:44                    unique
   site ArticlePage.beni:262:5                     shared     2 calls
@@ -347,13 +345,12 @@ program Main.main : Tea.application
   site Settings.beni:244:33                       unique
   site Settings.beni:255:41                       unique
   site Settings.beni:266:5                        unique
-  sites 79: unique 38, shared 18, instanced 23, value 0
-  markup_value_roots 0 (0% of 79 sites)
+  sites 78: unique 38, shared 18, instanced 22, value 0
+  markup_value_roots 0 (0% of 78 sites)
   carriers yes: commands
   constructors 75: under * 1 (1%)
-  pairs 791 over 96 keys and 114 groups (8.24 per key); every key calls 0 of 114 groups (0%)
-  list Article.beni:291:10                        positional ChangedUrl *; GotArticleMsg · CompletedLoadArticle · Ok derived; GotArticleMsg · CompletedLoadArticle · Err derived; GotArticleMsg · CompletedFavoriteChange · Ok derived; GotArticleMsg · PassedSlowLoadThreshold derived
-  list Article.beni:298:10                        positional ChangedUrl *; GotHomeMsg · CompletedFeedLoad · Ok derived; GotHomeMsg · CompletedFeedLoad · Err derived; GotHomeMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotHomeMsg · PassedSlowLoadThreshold derived; GotProfileMsg · CompletedFeedLoad#1 · Ok derived; GotProfileMsg · CompletedFeedLoad#1 · Err derived; GotProfileMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotProfileMsg · PassedSlowLoadThreshold derived; GotArticleMsg · CompletedLoadArticle · Ok derived; GotArticleMsg · CompletedLoadArticle · Err derived; GotArticleMsg · CompletedFavoriteChange · Ok derived; GotArticleMsg · PassedSlowLoadThreshold derived
+  pairs 787 over 96 keys and 113 groups (8.20 per key); every key calls 0 of 113 groups (0%)
+  list Article.beni:295:10                        positional ChangedUrl *; GotHomeMsg · CompletedFeedLoad · Ok derived; GotHomeMsg · CompletedFeedLoad · Err derived; GotHomeMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotHomeMsg · PassedSlowLoadThreshold derived; GotProfileMsg · CompletedFeedLoad#1 · Ok derived; GotProfileMsg · CompletedFeedLoad#1 · Err derived; GotProfileMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotProfileMsg · PassedSlowLoadThreshold derived; GotArticleMsg · CompletedLoadArticle · Ok derived; GotArticleMsg · CompletedLoadArticle · Err derived; GotArticleMsg · CompletedFavoriteChange · Ok derived; GotArticleMsg · PassedSlowLoadThreshold derived
   list ArticlePage.beni:324:18                    reconciler ChangedUrl *; GotArticleMsg · CompletedLoadComments · Ok value ρ.Article#0.comments; GotArticleMsg · CompletedLoadComments · Err value ρ.Article#0.comments; GotArticleMsg · PassedSlowLoadThreshold value ρ.Article#0.comments
   list Editor.beni:307:14                         positional ChangedUrl *; GotEditorMsg · ClickedSave derived; GotEditorMsg · CompletedCreate · Err derived; GotEditorMsg · CompletedEdit · Err derived; GotEditorMsg · CompletedArticleLoad#1 · Err derived; GotEditorMsg · CompletedArticleLoad#1 · Ok derived; GotEditorMsg · PassedSlowLoadThreshold derived
   list Feed.beni:82:18                            reconciler ChangedUrl *; GotHomeMsg · CompletedFeedLoad · Ok derived; GotHomeMsg · CompletedFeedLoad · Err derived; GotHomeMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotHomeMsg · PassedSlowLoadThreshold derived; GotProfileMsg · CompletedFeedLoad#1 · Ok derived; GotProfileMsg · CompletedFeedLoad#1 · Err derived; GotProfileMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotProfileMsg · PassedSlowLoadThreshold derived
