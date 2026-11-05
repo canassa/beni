@@ -149,33 +149,26 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Err
     switch (l.kind) {
         .site, .fresh => try Put.arrive(s, q, try Made.made(s, l), out),
         .shared => try Put.arriveWide(s, q, .{ .kind = .shared, .j = l.atom, .slot = l.extra }, out),
-        .top, .loan => try Put.arrive(s, q, .{ .kind = .top }, out),
+        // Unknown here, unknown below: no step of it is fresh (§2.1, a fold).
+        .top, .loan => for ([_]bool{ false, true }) |wide| if (wide) try Put.arriveWide(s, q, .{ .kind = .top }, out) else try Put.arrive(s, q, .{ .kind = .top }, out),
         .host => try Put.arrive(s, q, .{ .kind = .host }, out),
         .answer => try Put.arrive(s, q, try Made.answer(s, l.atom, l.extra), out),
         .recons => unreachable,
         .ref => {
             const r = f.roots.items[l.root];
             const pslot = f.pos.items[l.pos].slot;
-            // A value read back at its own place is read by its own
-            // structure: an unstepped cast at a place structurally identical
-            // to its inner's restores the inner exactly (§2.13.9), so the
-            // result's storage is the position's, not every object below it.
+            // A value read back at its own place is read by its own structure: an unstepped
+            // cast restores the inner exactly (§2.13.9), its storage the position's.
             const by_structure = !whole or f.places.pathPlace(pslot) == f.places.pathPlace(q);
-            // A parameter's whole subtree of more than `Slots.below_min` objects
-            // read by structure at its own place, where no place below it is on
-            // a cycle (so its paths are its steps), is one open arrival, never
-            // one a slot below it (§2.10, *Arrivals by structure*). So is one
-            // in the result at its own path (its paths fold as the result's),
-            // whatever its size: the identity tree, one node (§2.11.2).
+            // A parameter's whole subtree of more than `Slots.below_min` objects read
+            // by structure at its own place, with no cycle below, is one open arrival,
+            // never one a slot below it (§2.10, *Arrivals by structure*). So is one in
+            // the result at its own path, whatever its size (§2.11.2).
             if (r.kind == .param and !l.at_pos and f.places.pathPlace(pslot) == f.places.pathPlace(q) and Subtree.symbolic(f.slots, l.slots) and l.slots == try Subtree.below(f.slots, gpa, f.account, f.places, pslot) and (try acyclicBelow(s, f.places.pathPlace(q)) or (pslot == q and out.label == none))) return Put.arriveWide(s, q, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, pslot), .deep = f.places.kind(f.places.pathPlace(pslot)) == .@"var", .path = pslot.int() }, out);
-            // A call's or a supply's whole subtree read by structure is read
-            // through one key below its position, never one per slot below it
-            // (§2.10 *Read-off*).
+            // A call's or a supply's whole subtree by structure: one key below it (§2.10).
             if (by_structure and (r.kind == .call or r.kind == .supply) and Subtree.wholeOf(f.slots, l.slots) == pslot) return describeCallWide(s, l, pslot, q, out);
-            // A whole subtree (`↓p`, §2.3.1): a call's or a supply's through
-            // one key below `p`, a parameter's read at `q` itself one deep
-            // arrival; else named slot by slot, as a contract names each
-            // result slot (§2.10).
+            // A whole subtree (`↓p`, §2.3.1): a call's or a supply's through one key
+            // below `p`, a parameter's at `q` one deep arrival; else slot by slot.
             const held = r.kind == .call or r.kind == .supply or (r.kind == .param and !by_structure);
             var named: std.ArrayList(u32) = .empty;
             defer named.deinit(gpa);
@@ -199,6 +192,7 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Err
                 // The result slot of this object: q, below by the steps from
                 // the position to the slot.
                 var at = q;
+                var mapped = false;
                 if (by_structure) {
                     var ps: std.ArrayList(u32) = .empty;
                     defer ps.deinit(gpa);
@@ -208,9 +202,15 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Err
                     } else {
                         for (ps.items[1..]) |p2| try describeOne(s, l, r, sl, .from(p2), out);
                         at = .from(ps.items[0]);
+                        mapped = true;
                     }
                 }
                 try describeOne(s, l, r, sl, at, out);
+                // Past a fold (§2.1): no slot below a concrete `at` names it.
+                if (mapped and f.places.kind(f.places.pathPlace(.from(sl))) == .@"var" and f.places.kind(f.places.pathPlace(at)) != .@"var") {
+                    // A parameter's by its slot; any other root's contract names no such slot.
+                    if (r.kind == .param) try Put.arriveWide(s, at, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, .from(sl)), .deep = true, .path = sl }, out) else try Put.arriveWide(s, at, .{ .kind = .top }, out);
+                }
             }
         },
     }
@@ -787,7 +787,8 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: Put.EffList) Error!void {
                     if (Slots.isNot(sl)) continue;
                     var eff: Contract.Effect = .{ .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, Slots.pathOf(sl)), .deep = deep or Slots.isSub(sl) };
                     // An edit in place of what a cell holds is deep at its `◆`: never a cell operation (§2.13.7).
-                    eff.deep = eff.deep or (out == .writes and !l.at_pos and Cells.endsInContents(f.slots, eff.slot));
+                    // So is a write below a non-regular type's fold, a `var` place no step can name.
+                    eff.deep = eff.deep or (out == .writes and ((!l.at_pos and Cells.endsInContents(f.slots, eff.slot)) or f.places.kind(f.places.pathPlace(Slots.pathOf(sl))) == .@"var"));
                     if (try Contract.Draft.addEffect(Put.effList(s, out), s.arena, eff)) if (out != .reads) if (e.solver) |sv| try sv.effFact(sv.ctx, e.x, out == .writes, eff);
                 }
             },
@@ -864,8 +865,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
     d.flags.returns = rv.kind != .bot;
     d.flags.cross = !Slots.holdsAny(f.places, rpath);
     if (d.flags.returns and !d.flags.cross) try describe(s, w.result, rpath, .{});
-    // Reads: every use of a local whose value is a parameter's, at its path, in
-    // one pass (§2.3.4 *Reading*): a leaf set read deep before adds no read.
+    // Reads: every use of a local whose value is a parameter's, in one pass (§2.3.4).
     const pass = f.sets.newPass();
     if (code.called) |cd| for (0..cd.own_places.len) |j| {
         _ = try Contract.Draft.addEffect(&d.reads, arena, .{ .j = @intCast(j), .slot = Slots.root, .deep = true });
@@ -955,7 +955,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
             _ = try d.labels.items[at].supplyOf(arena, su.k);
             for (es.items.items) |x| {
                 const rel = f.slots.rels.find(es.wordsOf(x)) orelse try f.slots.relOfWords(gpa, f.account, f.places, es.wordsOf(x));
-                if (at_site) try SupplyAnswers.closesAtSite(e, su, x, call.args.len) else if (x.open) try Contract.Draft.markOpen(&(try d.labels.items[at].supplyOf(arena, su.k)).res, arena, rel);
+                if (at_site and !SupplyAnswers.staysOpen(x)) try SupplyAnswers.closesAtSite(e, su, x, call.args.len) else if (x.open) try Contract.Draft.markOpen(&(try d.labels.items[at].supplyOf(arena, su.k)).res, arena, rel);
                 for (x.arrivals) |a| {
                     var ls: std.ArrayList(u32) = .empty;
                     defer ls.deinit(gpa);

@@ -1,0 +1,29 @@
+-- The twin of `SanitiserFoldedType` (`ownership-v2.md` §2.1, *A step past a
+-- fold*): a list no other holder reads, before the fold. v2 accepts the write
+-- in place; the sanitised run prints what the plain run prints.
+import List
+import Node exposing (Program)
+import String
+
+
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+near : T (List Int) → Int
+near t =
+    case t of
+        Leaf ys →
+            List.length (List.push ys 1)
+
+        _ →
+            0
+
+
+main : Program
+main =
+    lines =
+        [ String.fromInt (near (Leaf [ 1, 2, 3 ]))
+        ]
+    Node.print (String.join lines "\n")
