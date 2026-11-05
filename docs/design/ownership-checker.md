@@ -915,6 +915,9 @@ value holds closures or top-level functions, or of a function parameter — whos
      translated: its `calls`, its `need`, its `seen`, and its supply entries, each provenance instantiated
      through this call (item 6) and each `owned` kept only if the cells it now names pass the four
      conditions at this call — a *probe*, a demand that is resolved but not printed;
+     A class the callee runs with that parameter hands it on as well: when a callback instantiated here is handed
+     the caller's own function parameter, a `need`, record `need`, conditional `need` or send of the callback's
+     `fun` reaches the caller's `fun`, whatever its `calls` and `seen` (#1751);
    - when `S.fun(j)` is not `seen`, an actual that writes a parameter is `pending` (§16.5).
 5. **Returns owned** (thesis §3.7, *A callback's result is owned only when the rules show it*): the
    actual's class returns owned when every provenance of its `res` is some `fresh_k`, a parameter path
@@ -3280,6 +3283,13 @@ the condition that two arguments share no cell, and an atom about a callback the
 class's result — `sep cb_j cb_j` holds when every provenance of it is `fresh_k`, or the element the callee
 hands it destructively (each call gets another position).
 
+*Amended 2026-11-05 (#1956).* A cell does not tell a pattern's rest from the list it split, because a rest is a
+view of the same cells. So a split element is apart from its container's element cell only until something other
+than that pattern's own bindings reaches that cell: a read of any other local, or an operand evaluated before the
+match and still waiting. From there the pair is `lost`. `[ …l, p ]`, `List.push l p` and `List.reverse l` beside
+`p` hold one list twice and are refused; `[ …rest, p ]` is not. The price: `[ el, …xs ]` followed by its tail holds
+each element once, and is refused too.
+
 A callee's `xreq` that fails at a call is reported on the call-site demand of the argument it names; an
 `xreq` is recorded only beside a write of that parameter, so the line exists.
 
@@ -3358,6 +3368,11 @@ The write inside it is then **accepted `once`** (a new acceptance kind) or rejec
 demand's own cause, or the cause **`once`** ("it is handed to `List.map`, which may call it more than
 once"). `captured-edit` is left for a write of a capture the walk cannot place in a closure.
 
+*Amended 2026-11-05 (#1956).* A write of a capture also meets, in the closure's own body, every later read of
+what holds that list outside: a local, a function value that captured it, or a lambda made there, whose captures
+of enclosing frames are reads where it is made. The list is one capture cell inside the closure, which no other
+local names, so the check looks each local up in the frame that binds it.
+
 ### 18.9 Capture paths of function parameters
 
 A call of the declaration's function parameter `πⱼ` inside a lambda is recorded with the lambda, its
@@ -3368,6 +3383,10 @@ supplies the lambda (or the call passes), owned when the lambda's probe, the cal
 the call all pass. A lambda's class names such a result `cb_j` of the enclosing declaration. A lambda that
 leaves the walk's sight takes `πⱼ` out of sight with it. So `Set.foldl`'s callback, handed to `Dict.foldl`
 inside a lambda, is supplied `Dict.foldl`'s accumulator owned.
+
+*Amended 2026-11-05 (#1959).* A supply that rests on a destructive one (§18.5) also keeps that supply's list and
+record conditions. The deep condition of the element says nothing about its siblings, so `List.update rs 1 λv → f v`
+owes `excl π1`, as `List.update rs 1 f` does.
 
 ### 18.10 The report
 

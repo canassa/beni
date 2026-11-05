@@ -1,0 +1,1 @@
+A runtime catch for a list pattern element stored beside an operand evaluated before the match (#1956): built again under the list stale-read sanitiser. v1 refuses the edit; were it to accept it, the sanitised run would trap on the stale read.

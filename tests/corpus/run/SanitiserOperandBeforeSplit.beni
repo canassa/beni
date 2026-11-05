@@ -1,0 +1,33 @@
+-- A runtime catch for a list pattern's element stored beside an operand that
+-- was evaluated before the pattern matched (#1956): `List.reverse l` already
+-- holds the head when `p` is bound, so the pushed list holds one list at two
+-- positions. No read after the match shows it. Accepted, the sanitised run
+-- traps on the stale read.
+import List
+import Node exposing (Program)
+import String
+
+
+dup : List (List Int) → List (List Int)
+dup l =
+    List.push
+        (List.reverse l)
+        (case l of
+            [ p, …_ ] →
+                p
+
+            _ →
+                []
+        )
+
+
+edited : ⊤ → List (List Int)
+edited ⊤ = List.update (dup [ [ 1 ] ]) 0 λv → List.push v 9
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main = Node.print (String.join (List.map (edited ⊤) ints) ";")

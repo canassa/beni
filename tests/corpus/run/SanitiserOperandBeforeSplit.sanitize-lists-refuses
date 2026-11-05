@@ -1,0 +1,2 @@
+# v1 refuses the edit of a list held at two positions, one of them by an operand evaluated before the match (#1956).
+25:47 list_may_be_shared `List.push`

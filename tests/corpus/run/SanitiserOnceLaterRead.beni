@@ -11,35 +11,27 @@ import String
 viaFunction : List Int → List Int × Int
 viaFunction xs =
     h = λ⊤ → List.length xs
-    f =
-        λ⊤ →
-            ( List.push xs 1, h ⊤ )
+    f = λ⊤ → ( List.push xs 1, h ⊤ )
     f ⊤
 
 
 viaLocal : List Int → List Int × Int
 viaLocal xs =
     zs = xs
-    f =
-        λ⊤ →
-            ( List.push xs 1, List.length zs )
+    f = λ⊤ → ( List.push xs 1, List.length zs )
     f ⊤
 
 
 viaLambda : List Int → List Int × Int
 viaLambda xs =
-    f =
-        λ⊤ →
-            ( List.push xs 1, (λ⊤ → List.length xs) ⊤ )
+    f = λ⊤ → ( List.push xs 1, (λ⊤ → List.length xs) ⊤ )
     f ⊤
 
 
 viaNested : List Int → List Int × Int
 viaNested xs =
     h = λ⊤ → List.length xs
-    f =
-        λ⊤ →
-            ( List.push xs 1, (λ⊤ → h ⊤) ⊤ )
+    f = λ⊤ → ( List.push xs 1, (λ⊤ → h ⊤) ⊤ )
     f ⊤
 
 
@@ -51,4 +43,9 @@ show p =
 
 main : Program
 main =
-    Node.printLines [ show (viaFunction [ 5 ]), show (viaLocal [ 5 ]), show (viaLambda [ 5 ]), show (viaNested [ 5 ]) ]
+    Node.printLines
+        [ show (viaFunction [ 5 ])
+        , show (viaLocal [ 5 ])
+        , show (viaLambda [ 5 ])
+        , show (viaNested [ 5 ])
+        ]
