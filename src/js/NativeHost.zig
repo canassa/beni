@@ -81,7 +81,7 @@ pub fn emit(l: anytype, out: *List, row: Operations.Row, callee: ?N, values: []N
             const error_name = try l.member(value, try l.interner.getOrPut(l.gpa, "name"), p);
             const security = try l.condOf(try l.binary(.strict_eq, error_name, try l.stringNode("SecurityError", p), p), absent, invalid, p);
             const failure = try l.condOf(try l.binary(.strict_eq, error_name, try l.stringNode("SyntaxError", p), p), none, security, p);
-            break :blk l.condOf(try l.binary(.instance_of, value, try l.member(global, try l.interner.getOrPut(l.gpa, "Error"), p), p), failure, value, p);
+            break :blk l.condOf(try l.unary(.not, try l.binary(.instance_of, value, try l.member(global, try l.interner.getOrPut(l.gpa, "Worker"), p), p), p), failure, value, p);
         },
     };
 }

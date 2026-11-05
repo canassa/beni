@@ -24,6 +24,7 @@ pub fn seed(e: *Effects, cx: *const Context, schemes: []const TypeStore.Var.Opti
         return;
     }
     if (!Operations.nativeModule(name)) return;
+    try @import("NativeBinding.zig").checkHostReferences(cx, report);
     for (cx.bir.decls, 0..) |decl, i| {
         if (decl.kind != .foreign_value) continue;
         const op = Operations.lookup(name, cx.interner.slice(cx.bir.symbol(decl.name))) orelse {

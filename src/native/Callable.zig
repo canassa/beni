@@ -387,7 +387,7 @@ pub fn sibling(arena: Allocator, module: []const u8) ![]const u8 {
             .response_reader => "(response) => { const stream = response.body; return stream === null ? null : stream.getReader(); }",
             .reader_bytes => "(reader) => { return reader.read(); }",
             .read_result_done => "(result) => { return result.done; }",
-            .read_result_value => "(result) => { return result.value === undefined ? undefined : result.value; }",
+            .read_result_value => "(result) => result.value",
             .decoder_create => "(_) => { return new globalThis.TextDecoder(); }",
             .decoder_more => "(decoder, bytes) => { return decoder.decode(bytes, { stream: true }); }",
             .decoder_finish => "(decoder) => { return decoder.decode(); }",

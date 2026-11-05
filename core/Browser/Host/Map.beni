@@ -19,7 +19,7 @@ get a0 a1 =
 foreign impure host_get : Map String a, String → a
 
 
-pub foreign impure has : Map String a, String → Bool
+pub foreign impure has : borrowed Map String a, String → Bool
 
 
 pub foreign impure set : Map String a, String, a → ⊤

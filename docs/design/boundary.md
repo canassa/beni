@@ -436,6 +436,12 @@ and TypeError. The catalogue validates both the public signature and its typed
 host projection, preserving native identities, shared type variables, arities,
 realms and effects. HostFree applies to the wrappers without an exemption.
 
+*Review amendment 2026-11-05:* a private `host_*` projection may appear
+only as the direct callee of a saturated call. Taking it as a value, passing
+it as an argument or using a `_` placeholder is `invalid_native_binding`:
+only the compiler's call recipe maps host absence to `Js.Opt`. Public beni
+wrappers remain ordinary first-class functions.
+
 The operation-specific absence mappings and their specification sources are:
 
 | Recipe / public operation | Host value mapped to absence | Specification |
@@ -486,7 +492,7 @@ The operation-specific absence mappings and their specification sources are:
 | `headers_get` / `Browser.Host.Headers.get` | `null` | [Specification](https://fetch.spec.whatwg.org/#dom-headers-get) |
 | `response_reader` / `Browser.Host.Response.reader` | `null` | [Specification](https://fetch.spec.whatwg.org/#dom-body-body) |
 | `read_result_value` / `Browser.Host.ReadResult.value` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://streams.spec.whatwg.org/#readable-stream-read-result) |
-| `regexp_create` / `Browser.Host.RegExp.create` | The individually caught `SyntaxError`; all parsed data, including `null`, stays present | [Specification](https://tc39.es/ecma262/#sec-regexp-pattern-flags) |
+| `regexp_create` / `Browser.Host.RegExp.create` | The individually caught `SyntaxError`; a valid pattern and flags pass through the native RegExp handle | [Specification](https://tc39.es/ecma262/#sec-regexp-pattern-flags) |
 | `json_parse` / `Browser.Host.Json.parse` | The individually caught `SyntaxError`; all parsed data, including `null`, stays present | [Specification](https://tc39.es/ecma262/#sec-json.parse) |
 | `rejection_code` / `Browser.Host.Rejection.code` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://nodejs.org/docs/latest-v24.x/api/errors.html#errorcode) |
 | `as_anchor` / `Browser.Host.EventTarget.asAnchor` | `undefined` (including a failed reviewed narrowing predicate) | [Specification](https://html.spec.whatwg.org/) |

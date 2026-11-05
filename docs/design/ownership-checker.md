@@ -4415,6 +4415,17 @@ aliases and generic escape behavior are unchanged. Renderer primitive branches
 still return before the new host-projection branch and keep their existing
 borrowed native-handle behavior.
 
+**Native projection review** (2026-11-05). `Map.has` has the same borrowed
+receiver contract as `KeyMap.has`: the native membership test only reads the
+map and returns Bool, without storing or returning the receiver. Its generated
+sibling is pinned and its typed summary has a dedicated fixture. The
+`ReadResult.host_value` identity still returns the exact same byte-array handle;
+removing its redundant undefined conditional changes no alias. Worker result
+normalization now tests the successful Worker handle instead of assuming a
+DOMException inherits Error. The three empty positions and the successful
+handle retain exactly their former ownership and allocation behavior. Re-read
+and re-pinned these bodies and the shared native recipe helper.
+
 **Private renderer native handles** (2026-11-04; #1822). The borrowed
 arguments of `Browser.Host.Node.rendererFirstChild`, `rendererNextSibling`,
 `rendererParent`, `rendererInsertBefore`, `rendererAppend`, `rendererRemove`,

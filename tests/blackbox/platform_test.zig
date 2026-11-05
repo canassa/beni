@@ -2904,3 +2904,27 @@ test "a platform consumer cannot splice a property descriptor's native accessors
             "But the type annotation says it should be:\n\n    Property\n",
     }, checked.diagnostics[0]);
 }
+
+test "native host projections refuse values arguments and placeholders" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTreeInto("core", "core", "_expected.");
+    const original = try w.read("core/Browser/Host/Headers.beni");
+    try w.write("Main.beni", "import Browser.Host.Headers as Headers\npub get = Headers.get\n");
+    // The public wrapper remains first-class. Only its compiler-only projection
+    // is restricted, including a reference in a declaration that is not used.
+    try w.write("core/Browser/Host/Headers.beni", try std.fmt.allocPrint(w.arena.allocator(), "{s}\n\ndirect h k = host_get h k\nexplicit = λh k → host_get h k\n", .{original}));
+    const good = try w.run(&.{ "check", "--core-root=core", "--no-cache", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), good.exit_code);
+    for ([_][]const u8{
+        "escaped = host_get\n",
+        "escaped = identity host_get\n",
+        "escaped = host_get _ \"missing\"\n",
+    }) |form| {
+        try w.write("core/Browser/Host/Headers.beni", try std.fmt.allocPrint(w.arena.allocator(), "{s}\n\n{s}", .{ original, form }));
+        const result = try w.run(&.{ "check", "--core-root=core", "--no-cache", "Main.beni" });
+        try testing.expectEqual(@as(u8, 1), result.exit_code);
+        try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
+        try testing.expectEqual(diagnostic.Code.invalid_native_binding, result.diagnostics[0].code);
+    }
+}

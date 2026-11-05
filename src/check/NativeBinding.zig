@@ -656,3 +656,44 @@ fn hostShape(cx: *const Context, public: Var, host: Var, pairs: *[64][2]Var, cou
     for (ap, bp) |av, bv| if (!hostShape(cx, av, bv, pairs, count, depth + 1)) return false;
     return true;
 }
+
+/// Host projections have no first-class sibling ABI: only Lower's direct
+/// recipe translates host absence and named failures into the private Opt.
+pub fn checkHostReferences(cx: *const Context, report: *@import("Report.zig")) std.mem.Allocator.Error!void {
+    const bir = cx.bir;
+    const tags = bir.insts.items(.tag);
+    const data = bir.insts.items(.data);
+    const tokens = bir.insts.items(.main_token);
+    const projections = try cx.scratch.alloc(bool, bir.decls.len);
+    defer cx.scratch.free(projections);
+    @memset(projections, false);
+    const module = cx.interner.slice(cx.graph.moduleName(cx.module));
+    var any = false;
+    for (bir.decls, 0..) |decl, i| {
+        if (decl.kind != .foreign_value) continue;
+        const row = Operations.lookup(module, cx.interner.slice(bir.symbol(decl.name))) orelse continue;
+        projections[i] = row.host_projection;
+        any = any or row.host_projection;
+    }
+    if (!any) return;
+    const direct = try cx.scratch.alloc(bool, tags.len);
+    defer cx.scratch.free(direct);
+    @memset(direct, false);
+    for (tags, data) |tag, d| if (tag == .call) {
+        direct[d.lhs] = true;
+    };
+    // Placeholder lowering makes a lambda and call at the same source token.
+    // An explicitly written lambda retains its own token and its direct call.
+    for (tags, data, tokens) |tag, d, token| if (tag == .lambda and tags[d.rhs] == .call and tokens[d.rhs] == token) {
+        direct[data[d.rhs].lhs] = false;
+    };
+    for (bir.decls, 0..) |decl, owner| {
+        var at = decl.inst_start.int();
+        while (at < decl.inst_end.int()) : (at += 1) {
+            if (tags[at] != .top or !projections[data[at].lhs] or direct[at]) continue;
+            report.at(@intCast(owner));
+            try report.emitText(.invalid_native_binding, @fromBackingInt(at), tokens[at], "A private host projection must be called directly; it cannot be a value, argument or placeholder function.");
+            report.at(null);
+        }
+    }
+}

@@ -1,0 +1,5 @@
+-- load
+<body>
+  <div id="found"></div>
+  <output>"found | missing | syntax | w-syntax | w-security | w-type | w-ok | got v | quota"</output>
+</body>
