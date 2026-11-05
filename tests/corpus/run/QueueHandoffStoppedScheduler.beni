@@ -1,0 +1,98 @@
+-- run: a taker on a scheduler that stops does not lose a hand-off that
+-- another scheduler makes after the stop's deadline (#1051;
+-- transparent-effects-proposal.md §17.9 point 7, amended 2026-11-05). A
+-- taker that the stop cannot interrupt keeps its scheduler from stopping
+-- for good, so the hand-off is resumed through that scheduler's own queue
+-- and the taker runs with the value; then the stop ends, and the taker
+-- behind it sees the end. A taker in a release that the deadline cuts runs
+-- its canceller, so it leaves the line and the value goes to the next
+-- taker. `t` is the taker on the scheduler `s` that stops, `u` a taker on
+-- the program's scheduler, and the offer comes from a third scheduler.
+-- Each stop's deadline is 1 ms or 10 s, and the main fiber sleeps 20 ms
+-- after the stop: a timer fires only once every microtask has run, so the
+-- order does not depend on the machine.
+import Duration
+import Io
+import Node exposing (Program)
+import Queue exposing (Queue)
+import Task exposing (Cancelled, Done, Exit, Scheduler)
+
+
+outcome : Exit a → String
+outcome exit =
+    case exit of
+        Done _ →
+            "Done"
+
+        Cancelled →
+            "Cancelled"
+
+
+report : String, Int → ⊤
+report name cut =
+    _ = Debug.log "${name}: stop done, cut" cut
+    ⊤
+
+
+taking : Queue Int, String → ⊤
+taking q name =
+    _ = Debug.log "${name}: t took" (Queue.take q)
+    ⊤
+
+
+-- The take is in an `uninterruptible` region.
+masked : Queue Int, String → ⊤
+masked q name = Task.uninterruptible λ⊤ → taking q name
+
+
+-- The take is in a release that runs when the use returns, before the
+-- stop: a release cannot be interrupted.
+returned : Queue Int, String → ⊤
+returned q name = Task.bracket (λ⊤ → ⊤) (λ_ _ → taking q name) λ_ → ⊤
+
+
+-- The take is in a release that the stop's cancellation runs.
+released : Queue Int, String → ⊤
+released q name =
+    Task.bracket
+        (λ⊤ → ⊤)
+        (λ_ _ →
+            Debug.log "${name}: t release waits" ⊤
+            taking q name
+        )
+        λ_ → Task.never ⊤
+
+
+-- `u` joins the line after `t` has joined it, and after the deadline.
+scenario : Scheduler, String, Int, (Queue Int, String → ⊤) → ⊤
+scenario other name deadline body =
+    s = Task.scheduler λ⊤ → ⊤
+
+    q : Queue Int
+    q = Queue.unbounded ⊤
+
+    t = Task.withScheduler s λ⊤ →
+        f = Task.spawn λ⊤ → body q name
+        Task.yieldNow ⊤
+        f
+    Task.stopScheduler s deadline (report name _)
+    Task.sleep (Duration.millis 20)
+    u = Task.spawn λ⊤ → Debug.log "${name}: u took" (Queue.take q)
+    Task.yieldNow ⊤
+    _ = Debug.log "${name}: s busy" (Task.schedulerBusy s)
+    _ = Task.withScheduler other λ⊤ → Queue.offer q 7
+    Queue.end q
+    _ = Debug.log "${name}: t" (outcome (Task.wait t))
+    _ = Debug.log "${name}: u" (Task.join u)
+    _ = Debug.log "${name}: size" (Queue.size q)
+    ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    other = Task.scheduler λ⊤ → ⊤
+    scenario other "masked" 1 masked
+    scenario other "returned" 1 returned
+    scenario other "cut" 1 released
+    scenario other "long" 10000 released
+    Node.done
