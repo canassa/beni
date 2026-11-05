@@ -1,4 +1,4 @@
--- ownership: the ownership words of core and the `node` platform
+-- ownership: the ownership words of core and `node` (Ssr.ssrText included)
 -- (`ownership-checker.md` §24.8), each pinned by a verdict that depends on
 -- it. `String.join`, `String.fromList` and `Node.printLines` only read
 -- (`borrowed`): the list is written afterwards, accepted. `Schema.print`

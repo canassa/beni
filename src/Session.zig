@@ -2164,7 +2164,7 @@ fn markupBridgeOwner(chain: *const platform_chain.Chain, lowering_name: []const 
         const name = layer.manifest.markup.lowering orelse continue;
         if (!std.mem.eql(u8, name, lowering_name)) continue;
         if (@import("js/Emit.zig").findLowering(name) == null) return null;
-        const module = layer.manifest.markup.module orelse continue;
+        const module = layer.manifest.markup.module;
         const owner: Graph.Platforms.RuntimeOwner = .{ .layer = @intCast(i), .module = module };
         if (layer.embedded != null) return owner;
         if (directory_owner == null) directory_owner = owner;
@@ -2196,6 +2196,7 @@ fn graphPlatforms(session: *const Session, scratch: Allocator) Allocator.Error!G
         .cloudflare_layer = cloudflare_layer,
         .browser_runtime = markupBridgeOwner(chain, "dom"),
         .inline_runtime = markupBridgeOwner(chain, "inline"),
+        .ssr_runtime = markupBridgeOwner(chain, "ssr"),
         .chain = true,
         .vocabulary = if (chain.firstMarkup("vocabulary")) |f| f.value else null,
         .markup_type = if (chain.firstMarkup("type")) |f| f.value else null,

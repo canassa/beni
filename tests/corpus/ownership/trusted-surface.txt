@@ -62,6 +62,7 @@ node       Node.print            ownership/Words.beni            -
 node       Node.printLines       ownership/Words.beni            -
 node       Node.exitWith         ownership/Words.beni            -
 node       Ssr.render            ownership/Words.beni            -
+node       Ssr.ssrText           ownership/Words.beni            -
 # entry declares a privileged runtime protocol; removing it leaves callback writers pending.
 browser    Browser.program       ownership/EntryInitProgram.beni  1:entry>-
 browser    Browser.hosted        ownership/HostedEntry.beni       1:entry>-

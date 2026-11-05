@@ -1,0 +1,2 @@
+-- A matching module and value name grant no compiler-owned implementation.
+pub foreign pure ssrText : borrowed Int → String

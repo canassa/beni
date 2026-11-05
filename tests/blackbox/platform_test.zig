@@ -3028,3 +3028,48 @@ test "an embedded browser keeps bridge ownership below a user dom layer" {
         try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
     }
 }
+
+// The registered SSR layer owns both boundaries even when read from disk.
+test "typed node SSR and socket boundaries work with a directory platform" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTree("tests/corpus/run/TypedSocketUpgrade", "_expected.");
+    try w.copyTreeInto("platforms/node", "node-platform", "_expected.");
+    try w.write("platform/beni.json",
+        \\{ "platform": true, "name": "directory-node-boundaries", "platforms": ["../node-platform"], "reexports": ["Node", "WebSocket", "Ssr", "Probe"] }
+        \\
+    );
+    for ([_]bool{ false, true }) |release| {
+        const built = try w.run(if (release)
+            &.{ "build", "--release", "--platform=platform", "Main.beni" }
+        else
+            &.{ "build", "--platform=platform", "Main.beni" });
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+        const ran = try w.runNode(&.{"out/_main.mjs"});
+        try testing.expectEqual(@as(u8, 0), ran.exit_code);
+        try testing.expectEqualStrings("", ran.stderr);
+        try testing.expectEqualStrings("<p>typed</p>/gone/typed\n", ran.stdout);
+    }
+}
+
+// A private local call must be the same direct read as an external bridge call.
+test "SSR text is a direct read in development output" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Html exposing (Html)
+        \\import Ssr
+        \\pub render : Html msg → String
+        \\render html = Ssr.render html
+        \\
+    );
+    const built = try w.run(&.{ "build", "--library", "--platform=node", "--no-source-maps", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+    try testing.expectEqualStrings(
+        \\const Ssr$render = (html$1) => html$1.t;
+        \\export { Ssr$render };
+        \\
+    , try w.read("out/_platform/Ssr.mjs"));
+}

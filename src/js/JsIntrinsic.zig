@@ -88,6 +88,8 @@ pub const Which = enum {
     none,
     some,
     inlineMarkRoot,
+    ssrText,
+    nodeUpgrade,
     browserBlock,
     browserInstallRoot,
     browserInstallFuzz,
@@ -269,6 +271,11 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
     const d = bir.instData(inst);
     const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
     if (module.int() >= interfaces.len) return null;
+    if (graph.isSsr(module) and same(interner.slice(graph.moduleName(module)), "Ssr")) {
+        const iface_ = &interfaces[module.int()];
+        if (d.rhs >= iface_.values.len) return null;
+        return if (same(interner.slice(iface_.symbols[@backingInt(iface_.values[d.rhs].name)]), "ssrText")) .ssrText else null;
+    }
     if (graph.isInline(module) and same(interner.slice(graph.moduleName(module)), "Inline.Bridge")) {
         const iface_ = &interfaces[module.int()];
         if (d.rhs >= iface_.values.len) return null;
@@ -310,9 +317,19 @@ pub fn of(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, i
 /// These typed operations have no JavaScript sibling export. Both saturated
 /// calls and first-class values are written by the compiler, so adding them
 /// does not change the sibling copied by an existing development program.
+/// The SSR runtime itself calls its private read through a local top binding.
+/// Recognise that direct call with the same owner check as external references.
+pub fn localSsrText(graph: *const Graph, bir: *const Bir, module: Graph.Index, inst: Inst.Index, interner: anytype) bool {
+    if (!graph.isSsr(module) or !same(interner.slice(graph.moduleName(module)), "Ssr") or bir.instTag(inst) != .top) return false;
+    const index = bir.instData(inst).lhs;
+    if (index >= bir.decls.len) return false;
+    const decl = bir.decls[index];
+    return decl.kind == .foreign_value and same(interner.slice(bir.symbol(decl.name)), "ssrText");
+}
+
 pub fn compilerOnly(which: Which) bool {
     return switch (which) {
-        .any_unpack_opt, .inlineMarkRoot, .browserBlock, .browserInstallRoot, .browserInstallFuzz, .kernelPack, .kernelRead, .schemaIdentity, .arrayAllocate, .arraySet, .arrayDone, .arrayGet, .arrayLength, .arrayWrite, .arraySort, .optNone, .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
+        .any_unpack_opt, .ssrText, .inlineMarkRoot, .browserBlock, .browserInstallRoot, .browserInstallFuzz, .kernelPack, .kernelRead, .schemaIdentity, .arrayAllocate, .arraySet, .arrayDone, .arrayGet, .arrayLength, .arrayWrite, .arraySort, .optNone, .cell, .cellRead, .cellWrite, .none, .some, .optMatch, .optWithDefault => true,
         else => false,
     };
 }

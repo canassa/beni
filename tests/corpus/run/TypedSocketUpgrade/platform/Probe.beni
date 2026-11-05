@@ -1,0 +1,4 @@
+import Js
+
+
+pub foreign impure incoming : Bool → Js.Value

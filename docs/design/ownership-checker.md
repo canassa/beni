@@ -4312,7 +4312,7 @@ names the fixture that pins each (§24.6).
 | `Html.Event` | `crossing` | a DOM event, made by the host: no beni value is ever put in one |
 | `Node.print`, `Node.exitWith` | `→ fresh Program` | `Node.beni` (2026-10-23, #877): `Js.object [ ( "$c", code ), ( "$o", out ) ]`, a new object of a number and a string |
 | `Node.printLines` | `borrowed List String → fresh Program` | `Node.beni`: `Js.get` of the list's `length`, then `String.join` on it, which keeps nothing |
-| `Ssr.render` | `borrowed Html msg → String` | `Ssr.beni`: `Js.get (Js.from html) "t"`, the markup's text |
+| `Ssr.render`, `Ssr.ssrText` (amended 2026-11-05) | `borrowed Html msg → String` | `Ssr.beni` delegates to the pinned `Lower.ssrText` read of the already-escaped string `t`; native-handle-only fields/functions `Ssr.render`, `Ssr.ssrText`: §24.8 native-handle rationale, no sequence verdict separates borrowed from unused |
 
 *Amended 2026-10-16 (§30.9):* `Task.timeout`, `Task.raceOk` and `crossing Int32` have words, justified
 there; a `List` of functions written out takes a function's words, which describe each element.
@@ -4620,6 +4620,18 @@ words cannot express requires a separately reduced manager review.
 | siteDispose | invokes the row disposal operation | impure (false pure corrected) | impure |
 
 All 22 false pure field claims are corrected by the same record declaration change; the 12 read/allocate-only fields are sound conservative over-approximations. The existing per-field lowering body pins remain the guard for every audited body. The protocol declaration itself is also pinned, so changing its rung requires a fresh review. run/ProtocolEffects invokes the actual supplied sendRoot: development and release must both print sent. Its pre-fix release emits no send and prints nothing. The typed root-send browser fuzz fixture and a release emit shape additionally guard the real page boundary.
+
+**Node boundary audit (2026-11-05, Part of #1807).** Ssr.render keeps its
+borrowed input: its replacement body calls pure Ssr.ssrText, whose pinned
+lowering reads only the already-escaped immutable string field t and keeps no
+Html, mutable structure or callback. The direct SSR emit and app/foreign fences
+pin this claim. WebSocket.fromUpgrade stays impure and unworded: its existing
+handshake sibling and its null-to-Opt binding adapter are both pinned; the
+adapter calls once, maps only null to NONE and otherwise preserves a native
+Socket. No fresh, escaped or borrowed ownership is invented for the raw host
+input. The socket-only optional path has §24.8's native-handle rationale: no
+sequence verdict distinguishes borrowed from unused; the successful and
+went-away run paths pin its observable behaviour.
 
 ### 24.9 The decoder in `Expect`
 

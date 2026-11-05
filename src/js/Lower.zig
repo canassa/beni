@@ -3530,6 +3530,11 @@ pub const Lowerer = struct {
     }
 
     fn typedIntrinsicDecl(l: *Lowerer, decl: Bir.Decl) ?JsIntrinsic.Which {
+        if (l.in.graph.isSsr(l.in.module)) {
+            const name_ = l.text(l.bir.symbol(decl.name));
+            if (std.mem.eql(u8, l.text(l.module_name), "Ssr") and std.mem.eql(u8, name_, "ssrText")) return .ssrText;
+            if (std.mem.eql(u8, l.text(l.module_name), "WebSocket") and std.mem.eql(u8, name_, "fromUpgrade")) return .nodeUpgrade;
+        }
         if (l.in.graph.isInline(l.in.module) and std.mem.eql(u8, l.text(l.module_name), "Inline.Bridge") and std.mem.eql(u8, l.text(l.bir.symbol(decl.name)), "markRoot")) return .inlineMarkRoot;
         if (l.in.graph.isBrowser(l.in.module) and std.mem.eql(u8, l.text(l.module_name), "Browser.Bridge")) return JsIntrinsic.browserBridge(l.text(l.bir.symbol(decl.name)));
         if (l.in.graph.modulePackage(l.in.module) == .core and std.mem.eql(u8, l.text(l.module_name), "Schema") and std.mem.eql(u8, l.text(l.bir.symbol(decl.name)), "endpointIdentity")) return .schemaIdentity;
@@ -4092,7 +4097,7 @@ pub const Lowerer = struct {
         // Foreign values first: `import { add as Basics$add } from "./Basics.js"`.
         var siblings: std.ArrayList(JsIr.Specifier) = .empty;
         for (l.bir.decls, 0..) |d, index| {
-            if (d.kind != .foreign_value or l.typedIntrinsicDecl(d) != null or l.rendererDecl(d) != null or l.loweringSupplied(d) != null) continue;
+            if (d.kind != .foreign_value or (l.typedIntrinsicDecl(d) != null and l.typedIntrinsicDecl(d) != .nodeUpgrade) or l.rendererDecl(d) != null or l.loweringSupplied(d) != null) continue;
             // §5: the one import leg that is not use-driven. Every other
             // `import` shrinks for free with the declaration that wanted
             // it; this loop walks `bir.decls` and would otherwise import
@@ -4101,7 +4106,7 @@ pub const Lowerer = struct {
             const base = l.bir.symbol(d.name);
             try siblings.append(l.scratch, .{
                 .imported = try l.name(.{ .module = .none, .base = base, .tag = JsIr.Name.no_tag }),
-                .local = try l.name(.{ .module = l.module_name.toOptional(), .base = base, .tag = JsIr.Name.no_tag }),
+                .local = if (l.typedIntrinsicDecl(d) == .nodeUpgrade) try l.nodeUpgradeHostName() else try l.name(.{ .module = l.module_name.toOptional(), .base = base, .tag = JsIr.Name.no_tag }),
             });
         }
         if (siblings.items.len != 0 and l.in.sibling.len != 0) {
@@ -11992,6 +11997,7 @@ pub const Lowerer = struct {
     /// an ordinary function.
     /// The `Js` intrinsic `inst` names, or null (research 47).
     fn jsIntrinsicOf(l: *Lowerer, inst: Inst.Index) ?JsIntrinsic.Which {
+        if (JsIntrinsic.localSsrText(l.in.graph, l.bir, l.in.module, inst, l.interner)) return .ssrText;
         return JsIntrinsic.of(l.in.graph, l.in.interfaces, l.bir, inst, l.interner);
     }
 
@@ -12662,10 +12668,27 @@ pub const Lowerer = struct {
     }
     // ownership pin end: markRoot
 
+    // ownership pin begin: ssrText
+    fn ssrText(l: *Lowerer, html: Node.Index, p: u32) Allocator.Error!Node.Index {
+        return l.member(html, try l.interner.getOrPut(l.gpa, "t"), p);
+    }
+    // ownership pin end: ssrText
+
+    fn nodeUpgradeHostName(l: *Lowerer) Allocator.Error!JsIr.NameIndex {
+        return l.name(.{ .module = l.module_name.toOptional(), .base = try l.interner.getOrPut(l.gpa, "fromUpgrade$host"), .tag = JsIr.Name.no_tag });
+    }
+
+    // ownership pin begin: fromUpgrade
+    fn nodeUpgrade(l: *Lowerer, out: *StmtList, values: []const Node.Index, p: u32) Allocator.Error!Node.Index {
+        const socket = try l.bindSubject(out, try l.call(try l.ident(try l.nodeUpgradeHostName(), p), values, p), p);
+        return l.condOf(try l.binary(.strict_eq, socket, try l.nullNode(p), p), try l.optNone(p), socket, p);
+    }
+    // ownership pin end: fromUpgrade
+
     /// A first-class typed intrinsic, with no sibling export or import.
     fn jsTypedValue(l: *Lowerer, which: JsIntrinsic.Which, p: u32) !Node.Index {
         const arity: usize = switch (which) {
-            .optMatch, .arraySet, .arrayWrite => 3,
+            .nodeUpgrade, .optMatch, .arraySet, .arrayWrite => 3,
             .browserInstallRoot, .any_unpack_opt, .schemaIdentity, .optWithDefault, .arrayDone, .arrayGet, .arraySort => 2,
             else => 1,
         };
@@ -12674,6 +12697,12 @@ pub const Lowerer = struct {
         for (0..arity) |i| {
             names[i] = try l.fresh(l.well.temp);
             values[i] = try l.ident(names[i], p);
+        }
+        if (which == .nodeUpgrade) {
+            var body: StmtList = .empty;
+            const result_ = try l.nodeUpgrade(&body, values[0..arity], p);
+            try body.append(l.scratch, try l.returnStmt(result_, p));
+            return l.arrowOf(names[0..arity], body.items, p);
         }
         if (which == .inlineMarkRoot) {
             var body: StmtList = .empty;
@@ -12701,6 +12730,7 @@ pub const Lowerer = struct {
             return l.arrowOf(names[0..arity], body.items, p);
         }
         const result = switch (which) {
+            .ssrText => try l.ssrText(values[0], p),
             .kernelPack, .kernelRead, .schemaIdentity => values[0],
             .cell => try l.object(&.{try l.add(.spread_property, p, values[0].int(), Node.Data.unused)}, p),
             .some => values[0],
@@ -12884,6 +12914,8 @@ pub const Lowerer = struct {
             W.kernelPack, W.kernelRead => v[0],
             // ownership pin end: slotRead
             // ownership pin end: slotPack
+            W.ssrText => l.ssrText(v[0], p),
+            W.nodeUpgrade => unreachable,
             W.inlineMarkRoot => l.inlineMarkRoot(out, v[0], p),
             W.browserBlock, W.browserInstallRoot, W.browserInstallFuzz => l.browserBridgeOperation(out, which, v, p),
             W.from, W.to => v[0],

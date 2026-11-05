@@ -1,0 +1,9 @@
+import Ssr
+
+
+pub type Program
+    = Program String
+
+
+pub page : Program
+page = Program (Ssr.ssrText 7)

@@ -6,7 +6,6 @@
 --! writes no markup does not check the `html` vocabulary to print a line.
 
 import Html exposing (Html)
-import Js
 
 
 --| The HTML a view renders to.
@@ -19,4 +18,8 @@ render html =
     -- Markup under `ssr` is `{ t: string }`, its HTML already escaped
     -- (`backend.md` §15.6), which this platform may read because it names
     -- that lowering (`boundary.md` §9.3). Reading a field changes nothing.
-    Js.pure λ⊤ → Js.to (Js.get (Js.from html) "t")
+    ssrText html
+
+
+-- Private read supplied by the owning node SSR lowering.
+pub foreign pure ssrText : borrowed Html msg → String
