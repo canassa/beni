@@ -814,12 +814,13 @@ a function returns; a `()` it is handed, and a `()` it returns, may be either.
 
 ### 4.3 What crosses the wall in a checked build
 
-*Added 2026-11-05 (the owner's #1988, `language.md` §13). Specified, not built.* A checked build's
-guarantee is that every value is true of its type (`language.md` §13.2). Beni's own operations can
-be checked. A value that comes through this wall cannot be, by its type alone: `Js.to : Value → a`
-is an unchecked cast, and §4.2's "the caller answers for the type" is the whole of the protection
-today. This section says what "answers for" now means. One question stays open: whether a checked
-build tests `Js.to` itself (`research/111` §5, D2; #1997).
+*Added 2026-11-05 (the owner's #1988, `language.md` §13). Specified, not built. Revised the same day
+after an independent review of #1999, with the owner's decision D2 (`language.md` §13.10).* A
+checked build's guarantee is that every value is true of its type (`language.md` §13.2). Beni's own
+operations can be checked. A value that comes through this wall cannot be, by its type alone:
+`Js.to : Value → a` is an unchecked cast, and §4.2's "the caller answers for the type" was the whole
+of the protection. This section says what "answers for" now means (a)–(g), and what a checked build
+tests on its own (h).
 
 **(a) A read is true, or it is not a read of that type.** A core or platform function that reads a
 host value and hands it to a program at a concrete type states why the value is true of the type:
@@ -827,8 +828,10 @@ the host's specification, or a test in the wrapper. A host read that can answer 
 (`undefined`, `null`, a string, a fraction, `NaN`) tests it and answers `Maybe` or a typed error, or
 crashes with a message that names the read. It does not pass the value on. A cast to a type the host
 does not promise is the defect §4.1 describes, and `Html.targetValue` on an element with no `value`
-is one (#1993): `undefined` typed `String` reached `++`, and the page stopped with
-`TypeError: Cannot read properties of undefined (reading '$plain')`, far from the cause.
+was one (#1993): `undefined` typed `String` reached a `String` operation, and the page stopped far
+from the cause. *Decided by the owner, 2026-11-05:* **`Html.targetValue : Event → Maybe String`**,
+`Nothing` when the target has no string `value`. A program that knows its target writes the default
+it wants.
 
 **(b) An `Int` read from a host.** A host number read at `Int` is whole and in range by the host's
 specification, or the wrapper tests it with `Number.isSafeInteger`, or the wrapper reads it at
@@ -836,14 +839,23 @@ specification, or the wrapper tests it with `Number.isSafeInteger`, or the wrapp
 
 **(c) An `Int` written to a host.** Every `Int` is in range in a checked build, but a host may take
 less. A wrapper that passes an `Int` to an API that narrows it owns the narrowing: past `2³¹−1`,
-`setTimeout` fires after 1 ms, and `Task.sleep`'s chain of timers is the model. Past `2³²`,
-`history.go` converts to 0. A process exit code is taken modulo 256. The wrapper chains, clamps,
-or answers a typed error, and its documentation says which.
+`setTimeout` fires after 1 ms, and `Task.sleep`'s chain of timers is the model. `history.go` takes a
+WebIDL `long`, which is the value modulo `2³²` read as signed 32 bits: `2³²` is `0`, a reload, and
+`2³² + 1` is `1`. A process exit code is taken modulo 256. The wrapper chains, clamps, or answers a
+typed error, and its documentation says which.
 
 **(d) A host call that throws on a program's argument.** Rule 9 stands: each failure the API
 documents is tested first or caught by name, and becomes a typed error. A program-controlled
 argument that reaches a throw with no typed error is a defect in the wrapper, even though the throw
-does take the defect path. The known ones are #1995.
+does take the defect path. The **reproduced** ones, with their host: a `trailer` response header on
+Node 24.19 (#1995); a non-Latin-1 MIME type in Node 24.19's `Headers`, reached by the browser's
+`Http` (#1995); a file input's non-empty `value` in happy-dom and Chrome 153, from `browser` and
+`browser-inline`, including the property writes the markup lowering generates (#2020). Hosts differ:
+workerd (Miniflare, compatibility date 2026-05-18) accepts a Japanese header value that Node rejects,
+and returns 204 for `Worker.text 204 ""`; it accepted `alarmAt` of `M`, of `-1` and `alarmIn` of
+the longest duration. Those predictions of the first draft are withdrawn. A claim about a host names
+the host, its version or compatibility date, and whether it was run. Predictions not yet reproduced
+are listed in #1995 as predictions.
 
 **(e) The `Js` operators carry no check.** `Js.at`'s bounds check is the one exception
 (`language.md` §13.6). `Js.rem`, `Js.lt`, `Js.same`, the bit operators and `Js.get` compile as
@@ -851,8 +863,8 @@ does take the defect path. The known ones are #1995.
 is not checked. An arithmetic operator written in core is an ordinary beni operator and is checked,
 in core as in a program. So core may not write `+` at a type that is false: `core/Basics.beni`'s
 `append` and `core/String.beni`'s `append` read two strings as `Int` "only so that `+` can be
-written", and in a checked build that `+` would crash. They need an unchecked operator (`backend.md`
-§16.4).
+written", and in a checked build that `+` would crash. They use a named unchecked `Js` operation,
+scoped to those bodies (`language.md` §13.9, `backend.md` §16.4).
 
 **(f) `Js.checked`.** `Js.checked ⊤ : bool` is `true` in the development build and under
 `--release-safe`, and `false` under `--release`, written in place as `Js.development` is, with the
@@ -864,6 +876,40 @@ needs asks `Js.checked`.
 `Error` would catch it, so a test names a subclass, a `name` or a `code`, as §4.2 asks. `Js.finally`
 stays allowed. A `catchIf` body that runs program code is reviewed as a catch of that code's crash
 too.
+
+**(h) What a checked build tests at the wall.** *Decided by the owner, 2026-11-05 (D2, #1997).*
+
+- **`Js.to` at a scalar type** is tested in a checked build, with **exact** predicates, and a value
+  that fails is a crash that names the read and the type:
+
+  | Type | The test |
+  |---|---|
+  | `Int` | `Number.isSafeInteger(v)`, which `-0` passes |
+  | `Float` | `typeof v === "number"` |
+  | `Int32` | `typeof v === "number" && (v \| 0) === v`, so a fraction, `NaN` and a number past 32 bits fail (`-0` passes, as `-0 \| 0` is `0`) |
+  | `Char` | a string of exactly one code point, a lone surrogate counting as one (`language.md` §13.2) |
+  | `String` | `typeof v === "string"` |
+  | `Bool` | `v === true \|\| v === false` |
+  | `⊤` | nothing: any value is the unit |
+
+  A test with a weaker predicate is a defect: `typeof v === "number"` does not make an `Int32`, and
+  `typeof v === "string"` does not make a `Char`.
+- **A `case` gets a default arm** in a checked build where it has none, which crashes: "a case met a
+  value its type does not admit". It catches a constructor tag that is not the type's.
+- **Trusted escapes.** Core's intentional representation operations, such as `Int32.toInt`,
+  `Int32.fromInt`, the two `append`s and the list protocol's reads, use a separate unchecked
+  spelling, `Js.cast`, which is never tested. It is for a representation change core makes on a value
+  it holds, never for a read from the host: a host read that the exact test would refuse is fixed,
+  not escaped. `platforms/cloudflare/Worker/Object.beni:1292–1297` is such a read: it casts optional
+  error flags (`overloaded`, `durableObjectReset`, `retryable`) to `Bool` and compares with `True`,
+  and an absent flag is `undefined`, which the `Bool` test would refuse. It compares with
+  `Js.same … (Js.from True)` on the host value instead.
+- **What stays trusted**, said plainly: this defence is **partial**. It does not test a record's
+  fields or a constructor's payload at a cast, a `Js.to` instantiated at a type variable or a
+  function type, a list's elements, or a value a match never inspects (an irrefutable pattern, a
+  field read, a value passed on). Those rest on the wrapper's own test under (a). **The host audit
+  continues whatever the checks find**: a check turns a lie into a crash with a name; it does not
+  make the API right.
 
 ## 5. `main`, and what a platform provides
 
@@ -3637,7 +3683,17 @@ the branch the build takes, in reachability and in lowering.
   `--release-safe`, like `--release`, adds nothing. Two paths miss the guards below today, and
   each is a defect to fix, not a limit of the rule (#1994): a fiber's throw under a plain
   `Browser.program`, where no mount gave `Task.onDefect` its hook, leaves the page running; and a
-  throw while a module loads, such as a top-level value, runs before `run` and shows no screen.
+  throw while a module loads, such as a top-level value, runs before `run` and shows no screen, in
+  `browser-tea` and in `browser-inline` (happy-dom and Chrome 153). *Amended again the same day,
+  after the review of #1999:* the path covers **every** platform that runs a page, `browser-inline`
+  included, and every place a program's code or the code the markup lowering generates runs: module
+  load, `init`, `update`, `view`, a handler, a render's patch and its generated property writes (a
+  file input's `value` throws `InvalidStateError` there today, #2020), after-render work and a fiber.
+  `platforms/browser-inline/Inline.beni`'s `prop` (around `:451–482`) and the Zig lowering's property
+  writes are audited with `Rt.beni`'s host wrappers. The Cloudflare development build of a Worker
+  with a Durable Object does not start today (`ReferenceError: Rt$$cloudflare_workers is not
+  defined`, Miniflare, compatibility date 2026-05-18; #2019): startup and host-import emission are
+  part of this inventory.
 - **Where it is caught.** Four guards, each a `Js.finally` whose body ends by noting that it
   completed and whose cleanup stops the page when it did not: the delegated and own listeners'
   `fire` (a handler and the dispatch it starts), the hosted dispatcher (a send from a fiber), the
