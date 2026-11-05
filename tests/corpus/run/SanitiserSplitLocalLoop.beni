@@ -1,0 +1,31 @@
+-- The control of `SanitiserSplitInClosure` (#1956): a local loop that stores
+-- each head into its accumulator holds every element once. A scrutinee read
+-- in the group's next round is no read after this round's split, so the edit
+-- stays accepted, and the sanitised run prints the golden.
+import List
+import Node exposing (Program)
+import String
+
+
+copied : List (List Int) → List (List Int)
+copied l =
+    go xs acc =
+        case xs of
+            [] →
+                acc
+
+            [ p, …r ] →
+                go r [ …acc, p ]
+    go l []
+
+
+edited : ⊤ → List (List Int)
+edited ⊤ = List.update (copied [ [ 1 ], [ 2 ], [ 3 ] ]) 0 λv → List.push v 9
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main = Node.print (String.join (List.map (edited ⊤) ints) ";")

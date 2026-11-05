@@ -1,0 +1,1 @@
+A runtime catch for a list pattern element stored back into its list in a lambda or local function (#1956): built again under the list stale-read sanitiser. v1 refuses each edit; were it to accept one, the sanitised run would trap on the stale read.
