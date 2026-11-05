@@ -5199,6 +5199,37 @@ declaration with its bit set is published as absent, so an importer's markup mee
 or `unknown_attribute` rather than a half-read row, and a use of a failed primitive the ordinary
 unbound-name path.
 
+*Amended 2026-11-05 (#1096): a refused row is published, and hides the uses of its name.*
+"Published as absent" let a use fall through to a row that does answer the name — a pattern, or
+the wildcard `pub attribute "*" : String` — so `onProbe={λv → v}`, against an event whose `via`
+named nothing, was a `type_mismatch` ("`onProbe` is declared to take: String") at each handler,
+printed before the platform's own `unbound_variable`. With no row to fall to, it was an
+`unknown_element` or `unknown_attribute` whose "did you mean" pointed away from the cause. So:
+
+- **A vocabulary declaration whose failure bit is set is published, marked `refused`**, with the
+  scheme `<error>` (an element has no scheme), in its place in the sorted table. The vocabulary
+  module's own markup reads the same rows (§25.9's *As built*), so a row's index is one index
+  either way. A half-read row is still never read: a refused row's type is `<error>` and its facts
+  answer nothing.
+- **Resolution is unchanged and runs over every row**, refused ones included: exact before
+  pattern, the longer literal part, scoped before unscoped. **A tie that holds a refused row
+  answers the refused row**: two rows that answer one name at one precedence are a
+  `duplicate_declaration`, and which of the two the program meant is what the program cannot know.
+- **A use that resolves to a refused row is no error of the program's.** Its value, or an
+  element's items, are typed as values of their own, as an unknown name's are (§25.3), its
+  children as ever, and nothing is reported: the row's own diagnostic is the one message. That
+  is the rule a failed markup primitive's `<error>` follows (§25.8's *As built*), and a failed
+  value's, whose importers are silent (§14.1, §15.3's *No cascades*); Elm does not check a module
+  whose import failed at all.
+- **"Did you mean" never suggests a refused row**, and neither does `untyped_event_attribute`'s
+  list of typed events: the name is declared, but nothing a program writes with it can check.
+
+Nothing reaches the backend: a refused row is an error the vocabulary module reported, so a build
+that holds one stops before it lowers, and a module that uses one has `dependency_errors` (its
+vocabulary module is a direct import, `frontend.md` §9.8). `tests/corpus/build/bad/VocabRefusedRow/`
+holds the five kinds of refusal, each used from `Main.beni` and once from the vocabulary module's
+own markup.
+
 **In every platform package of the chain**, a `foreign` value whose declared type mentions the
 markup type (after aliases) is **`markup_type_in_foreign`** unless the package's own manifest names a
 lowering and that lowering is the build's (`boundary.md` §9.3). It is a guarantee, not a taste: such
@@ -5408,7 +5439,10 @@ published; typing markup against them is the next slice. Where the text left a c
   `property` or event `name` argument, the extractor BY NAME rather than a value index (an extractor
   need not be `pub`), the `on` range and the scheme; 24 bytes on disk. `dump --stage=interface`
   prints `element "input" void`, `attribute "value" on "input" property stateful : String`, and a
-  primitive as `markup value map : …`.
+  primitive as `markup value map : …`. *Amended 2026-11-05 (#1096, §25.2):* bit 30 of the fact
+  word is `refused`, the row of a declaration whose failure bit is set, published with the scheme
+  `<error>`; the dump prints it last among the facts, `attribute "count" refused : <error>`.
+  `iface_bytes.format_version` 18 → 19.
 - **The markup term of the cache key.** Why a module has no vocabulary, and which type is the markup
   type, reach a module that writes markup and the vocabulary module through no import, so both keys
   carry them in their option string (`cache/Key.zig`); every other module's key is unchanged.
@@ -5454,7 +5488,8 @@ superseded. Where the text left a choice, the smallest reading, and these are th
   vocabulary declarations are checked and before any value group: the vocabulary module's
   published rows, or — in the vocabulary module itself — its interface skeleton's rows less those
   whose declaration failed, so a row's index is its published index either way. A row's type is
-  read once, at rank `generalized`, and every use copies it.
+  read once, at rank `generalized`, and every use copies it. *Amended 2026-11-05 (#1096, §25.2):*
+  not less them: a failed declaration's row is kept, marked refused, as publication keeps it.
 - **What the syntax and the rows decide alone** — an unknown element or attribute, a quoted value
   a row's type does not admit (reported at the value's first token), a bare attribute that is not
   `Bool`, children of a `void` element, a `raw` attribute, a quoted `on…` name — is found by the
