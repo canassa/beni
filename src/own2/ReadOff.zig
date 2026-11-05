@@ -1046,7 +1046,7 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
         const at = try Put.labelIndex(s, @intCast(ci));
         for (cb.args, 0..) |_, k| {
             const sup = try d.labels.items[at].supplyOf(arena, @intCast(k));
-            if (ci < v.supply_cond.len) sup.cond = try Cond.conj(arena, f.account, sup.cond, v.supply_cond[ci]);
+            if (ci * v.width + k < v.supply_cond.len) sup.cond = try Cond.conj(arena, f.account, sup.cond, v.supply_cond[ci * v.width + k]);
         }
         for (v.kept) |kp| if (kp[0] == ci) {
             const sup = try d.labels.items[at].supplyOf(arena, kp[1]);
@@ -1060,20 +1060,20 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts) Error!void {
         for (e.contracts.suppliesOf(lab.supplies)) |su| {
             const sup = try d.labels.items[at].supplyOf(arena, su.k);
             sup.cond = try Cond.conj(arena, f.account, sup.cond, try Distinct.instSelFeed(&e.ev, try e.contracts.cond(arena, su.cond), p[1], .{ .j = f.cbs.items[p[0]].j, .slot = f.cbs.items[p[0]].slot, .label = p[2] }));
-            if (pi < v.pass_cond.len) sup.cond = try Cond.conj(arena, f.account, sup.cond, v.pass_cond[pi]);
+            if (pi * v.width + su.k < v.pass_cond.len) sup.cond = try Cond.conj(arena, f.account, sup.cond, v.pass_cond[pi * v.width + su.k]);
             // Passed on inside a known code, the outer labels' too (#1721).
             try Outward.passSupply(e, arena, p[1], su, sup);
             for (v.pass_kept) |kp| if (kp[0] == pi and kp[1] == su.k) try keptAt(s, kp[2], kp[3], &sup.kept);
         }
     }
-    // A code that writes one of its captures is `once` (R-2.8); a cell
-    // operation on a captured `Ref` is not such a write (§2.11.4).
+    // A code writing a capture is `once` (R-2.8); a cell operation is no such write (§2.11.4).
     var flat: std.ArrayList(Contract.Effect) = .empty;
     defer flat.deinit(e.gpa());
     for (d.writes.items) |x| if (x.j >= code.params.len) try e.contracts.effectFlat(e.gpa(), e.gpa(), f.account, f.slots, f.places, x, &flat);
     for (flat.items) |x| if (!Eval.cellWrite(f.slots, x)) {
         d.flags.once = true;
     };
+    d.flags.many_write = e.many_write;
     // Each condition in its one spelling (§2.9.1, *One spelling of a subtree*).
     var nj: usize = 0;
     for (f.roots.items) |r| if (r.kind == .param) {
