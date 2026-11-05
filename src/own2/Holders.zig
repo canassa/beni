@@ -206,7 +206,7 @@ pub const Keys = struct {
                     fx.shared = leastShared(fx.shared, .{ l.atom, l.extra });
                     if (mode == .runs) try acc.append(g, .{ 3, l.atom, l.extra });
                 },
-                .answer, .top => fx.unknown = true,
+                .answer, .top, .loan => fx.unknown = true,
                 .host => fx.host = true,
                 .recons => unreachable,
             }

@@ -24,10 +24,11 @@
 //! | result `cellempty` | a fresh cell |
 //! | `cellwrite`, `cellcomplete` | a storage write of the cell `π1` |
 //! | `cellstored` | the value escapes behind the barrier |
-//! | `cellupdate`, `cellmodify` | a label called once, supplied `π1◆` |
+//! | `cellupdate`, `cellmodify` | a label called once, supplied `π1◆`; `cellmodify`: the result its answer at `.0` |
 //! | callback `taken` | a label (`once`, else many) supplied `π1[*]`; `stored`: its answer at `[*]` |
 //! | callback `aliased` | escaped, and a label (`once`, else many) of no supply whose answer is at every result slot |
-//! | anything else (`lent`, callbacks' rows), `unknown` | the result `⊤` (a `foreign`'s not `lent`: `host`; a loan is beni's), not separated |
+//! | result `lent` | a loan of every object `π1◆` holds |
+//! | anything else (`lentoptional`, callbacks' rows), `unknown` | the result `⊤` (a `foreign`'s not lent: `host`; a loan is beni's), not separated |
 //!
 //! Obligations kept here: O9 (rows state their bodies: a row is taken as
 //! given, never inferred).
@@ -136,6 +137,13 @@ pub fn fromWords(env: Env, sig: Signature) Error!Contract.Id {
                 const su = try d.labels.items[li].supplyOf(env.arena, 0);
                 try env.identityInto(&su.res, try env.root(env.places.pathPlace(cs)), 0, cs);
                 exclusive = false;
+                // `modify` answers what the callback answers at `.0`: its owner
+                // or a loan of the cell is the caller's to say (`Loans.lends`).
+                if (Env.has(ws, .cellmodify) and !d.flags.cross) {
+                    try Draft.markOpen(&d.res, env.arena, Slots.root);
+                    _ = try Draft.addArrival(&d.res, env.arena, Slots.root, .{ .kind = .cb, .j = li, .slot = try env.slots.relOfWords(env.gpa, env.account, env.places, &.{(try Place.Step.index(env.account, 0)).word()}) });
+                    known_result = true;
+                }
                 continue;
             };
             // A `taken` callback (`List.update`'s `focus`, §2.13.6): called
@@ -245,12 +253,20 @@ pub fn fromWords(env: Env, sig: Signature) Error!Contract.Id {
         } else if (Env.has(rw, .builderdone) and sig.params.len >= 1) {
             try env.identity(&d, r, 0, try env.root(sig.params[0].place));
             known_result = true;
+        } else if (Env.has(rw, .lent) and sig.params.len >= 1) {
+            // A loan of every object the cell holds (§2.13.7).
+            if (try env.places.extend(env.gpa, .growth(env.account), try env.root(sig.params[0].place), Place.Step.contents)) |cs| {
+                try Draft.markOpen(&d.res, env.arena, Slots.root);
+                _ = try Draft.addArrival(&d.res, env.arena, Slots.root, .{ .kind = .lent, .j = 0, .slot = try env.rel(cs), .deep = true });
+                known_result = true;
+                exclusive = false;
+            }
         } else if ((Env.has(rw, .cellnew) or Env.has(rw, .cellempty))) {
             _ = try Draft.addArrival(&d.res, env.arena, Slots.root, .{ .kind = .fresh });
             if (Env.has(rw, .cellnew) and sig.params.len >= 1) if (try env.places.extend(env.gpa, .growth(env.account), r, Place.Step.contents)) |c| try env.identity(&d, c, 0, try env.root(sig.params[0].place));
             known_result = true;
         }
-        if (!known_result or Env.has(rw, .unknown) or Env.has(rw, .escaped) or Env.has(rw, .lent) or Env.has(rw, .lentoptional)) {
+        if (!known_result or Env.has(rw, .unknown) or Env.has(rw, .escaped) or Env.has(rw, .lentoptional)) {
             const unknown: Contract.ArrivalKind = if (sig.foreign and !Env.has(rw, .lent) and !Env.has(rw, .lentoptional)) .host else .top;
             try env.everySlot(&d, sig.result, .{ .kind = unknown });
             try Draft.markOpen(&d.res, env.arena, Slots.root);

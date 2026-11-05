@@ -167,6 +167,9 @@ const layers = [_]Entry{
     .{ .file = "Across.zig", .layer = 9, .max_lines = 60 },
     // What a cell callback's write-back makes escape, from `Eval` (#1729, #1955).
     .{ .file = "Stored.zig", .layer = 9, .max_lines = 65 },
+    // A cell callback's label, and what it answers: a loan of the cell or
+    // `modify`'s owned `.0` (#1977).
+    .{ .file = "Loans.zig", .layer = 9, .max_lines = 110 },
     // The subtree symbol's read-off beside the passed-on labels (§2.3.1).
     // A closure's cell operations on its captures, at its creation (#1727).
     .{ .file = "Eval.zig", .layer = 10, .max_lines = 640 },
@@ -497,7 +500,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 83), layers.len);
+    try testing.expectEqual(@as(usize, 84), layers.len);
     try testing.expectEqual(@as(usize, 20), causes.len);
 }
 

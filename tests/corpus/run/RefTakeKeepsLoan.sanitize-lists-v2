@@ -1,0 +1,4 @@
+A runtime catch for Ref.modify's loan (ownership-v2.md §2.13.7, #1977): where the stored .1 may hold what .0 answers,
+the result is a loan of the cell. Built again under --ownership=v2 and the list stale-read sanitiser. v2 refuses each
+edit of the loan; were .0 read as owned, every edit would be accepted and the sanitised run would trap where the cell
+is read after the edit.

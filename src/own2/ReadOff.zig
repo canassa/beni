@@ -30,6 +30,7 @@ const Canon = @import("Canon.zig");
 const AtomGraft = @import("AtomGraft.zig");
 const Put = @import("Put.zig");
 const Host = @import("Host.zig");
+const Cells = @import("Cells.zig");
 const Dests = @import("Dests.zig");
 
 const Error = Eval.Error;
@@ -145,7 +146,7 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Err
     switch (l.kind) {
         .site, .fresh => try Put.arrive(s, q, .{ .kind = .fresh }, out),
         .shared => try Put.arrive(s, q, .{ .kind = .shared, .j = l.atom, .slot = l.extra }, out),
-        .top => try Put.arrive(s, q, .{ .kind = .top }, out),
+        .top, .loan => try Put.arrive(s, q, .{ .kind = .top }, out),
         .host => try Put.arrive(s, q, .{ .kind = .host }, out),
         .answer => try Put.arrive(s, q, .{ .kind = .cb, .j = try Put.labelIndex(s, l.atom), .slot = l.extra }, out),
         .recons => unreachable,
@@ -163,9 +164,7 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Err
             // one a slot below it (§2.10, *Arrivals by structure*). So is one
             // in the result at its own path (its paths fold as the result's),
             // whatever its size: the identity tree, one node (§2.11.2).
-            if (r.kind == .param and !l.at_pos and f.places.pathPlace(pslot) == f.places.pathPlace(q) and Subtree.symbolic(f.slots, l.slots) and l.slots == try Subtree.below(f.slots, gpa, f.account, f.places, pslot) and (try acyclicBelow(s, f.places.pathPlace(q)) or (pslot == q and out.label == none))) {
-                return Put.arriveWide(s, q, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, pslot), .deep = f.places.kind(f.places.pathPlace(pslot)) == .@"var", .path = pslot.int() }, out);
-            }
+            if (r.kind == .param and !l.at_pos and f.places.pathPlace(pslot) == f.places.pathPlace(q) and Subtree.symbolic(f.slots, l.slots) and l.slots == try Subtree.below(f.slots, gpa, f.account, f.places, pslot) and (try acyclicBelow(s, f.places.pathPlace(q)) or (pslot == q and out.label == none))) return Put.arriveWide(s, q, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, pslot), .deep = f.places.kind(f.places.pathPlace(pslot)) == .@"var", .path = pslot.int() }, out);
             // A call's or a supply's whole subtree read by structure is read
             // through one key below its position, never one per slot below it
             // (§2.10 *Read-off*).
@@ -584,7 +583,7 @@ fn describeWide(s: *Sink, li: u32, q: PathId, out: Put.ResList) Error!void {
     switch (l.kind) {
         .site, .fresh => try Put.arriveWide(s, q, .{ .kind = .fresh }, out),
         .shared => try Put.arriveWide(s, q, .{ .kind = .shared, .j = l.atom, .slot = l.extra }, out),
-        .top => try Put.arriveWide(s, q, .{ .kind = .top }, out),
+        .top, .loan => try Put.arriveWide(s, q, .{ .kind = .top }, out),
         .host => try Put.arriveWide(s, q, .{ .kind = .host }, out),
         .answer => try Put.arriveWide(s, q, .{ .kind = .cb, .j = try Put.labelIndex(s, l.atom), .slot = l.extra }, out),
         .recons => unreachable,
@@ -781,10 +780,10 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: Put.EffList) Error!void {
                 // A whole subtree (`↓p`, §2.3.1): one deep effect at `p`.
                 for (f.slots.elems(l.slots)) |sl| {
                     if (Slots.isNot(sl)) continue;
-                    const eff: Contract.Effect = .{ .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, Slots.pathOf(sl)), .deep = deep or Slots.isSub(sl) };
-                    if (try Contract.Draft.addEffect(Put.effList(s, out), s.arena, eff)) {
-                        if (out != .reads) if (e.solver) |sv| try sv.effFact(sv.ctx, e.x, out == .writes, eff);
-                    }
+                    var eff: Contract.Effect = .{ .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, Slots.pathOf(sl)), .deep = deep or Slots.isSub(sl) };
+                    // An edit in place of what a cell holds is deep at its `◆`: never a cell operation (§2.13.7).
+                    eff.deep = eff.deep or (out == .writes and !l.at_pos and Cells.endsInContents(f.slots, eff.slot));
+                    if (try Contract.Draft.addEffect(Put.effList(s, out), s.arena, eff)) if (out != .reads) if (e.solver) |sv| try sv.effFact(sv.ctx, e.x, out == .writes, eff);
                 }
             },
             .call, .supply => {
@@ -1110,7 +1109,7 @@ fn supplyArrive(s: *Sink, li: u32, rel: Slots.Rel, out: Put.ResList) Error!void 
         const a: Contract.Arrival = switch (l.kind) {
             .site, .fresh => .{ .kind = .fresh },
             .shared => .{ .kind = .shared, .j = l.atom, .slot = l.extra },
-            .top => .{ .kind = .top },
+            .top, .loan => .{ .kind = .top },
             .host => .{ .kind = .host },
             .answer => .{ .kind = .cb, .j = try Put.labelIndex(s, l.atom), .slot = l.extra },
             .recons => unreachable,

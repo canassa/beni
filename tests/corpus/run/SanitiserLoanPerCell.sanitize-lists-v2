@@ -1,0 +1,4 @@
+A loan names its cell (ownership-v2.md §2.13.7, #1977): a loan of one cell's contents beside an in-place edit of
+another cell's, a fresh .0 of Ref.modify edited in place, and a loan of the old contents read after a Ref.set
+(#1404). Built again under --ownership=v2 and the list stale-read sanitiser. v2 accepts every edit, and no loan reads
+a list an edit changed.

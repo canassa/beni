@@ -738,7 +738,7 @@ pub const Table = struct {
                 const lq = t.labelAt(ids[1], q.j);
                 return lp.j == lq.j and lp.slot == lq.slot and std.mem.eql(u32, &lp.origin, &lq.origin) and continues(slots, q.slot, suffix, p.slot, false);
             },
-            .param => return p.j == q.j and (!p.deep or q.deep) and continues(slots, q.slot, suffix, p.slot, q.deep),
+            .param, .lent => return p.j == q.j and (!p.deep or q.deep) and continues(slots, q.slot, suffix, p.slot, q.deep),
         }
     }
 

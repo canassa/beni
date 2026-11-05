@@ -104,8 +104,8 @@ const Res = struct {
         }
         if (open) try w.writeAll("…");
         for (run) |a| switch (a.kind) {
-            .param => {
-                try w.print(" π{d}", .{a.j + 1});
+            .param, .lent => {
+                try w.print(" {s}π{d}", .{ if (a.kind == .lent) "lent " else "", a.j + 1 });
                 try relText(r.slots, r.places, r.names, w, a.slot);
                 if (a.deep) try w.writeAll("*");
             },

@@ -19,7 +19,7 @@ const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
 
 pub const magic: u32 = 0x324e574f;
-pub const version: u32 = 19;
+pub const version: u32 = 20;
 pub const Error = Ids.ChargeError || error{BadBlock};
 const Step = Place.Step;
 
@@ -121,7 +121,7 @@ const Writer = struct {
         for (run) |a| {
             try w.word(@backingInt(a.kind) | (@as(u32, @intFromBool(a.deep)) << 8));
             switch (a.kind) {
-                .param, .cb => {
+                .param, .cb, .lent => {
                     try w.word(a.j);
                     try w.rel(a.slot);
                 },
@@ -285,10 +285,10 @@ const Reader = struct {
         const out = try r.arena.alloc(Contract.Arrival, try r.count());
         for (out) |*a| {
             const kw = try r.next();
-            if ((kw & 0xff) > @backingInt(Contract.ArrivalKind.host) or kw >> 9 != 0) return error.BadBlock;
+            if ((kw & 0xff) > @backingInt(Contract.ArrivalKind.lent) or kw >> 9 != 0) return error.BadBlock;
             a.* = .{ .kind = @fromBackingInt(@intCast(kw & 0xff)), .deep = kw >> 8 != 0 };
             switch (a.kind) {
-                .param, .cb => {
+                .param, .cb, .lent => {
                     a.j = try r.next();
                     a.slot = try r.rel();
                 },

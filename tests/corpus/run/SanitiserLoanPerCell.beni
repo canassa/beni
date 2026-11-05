@@ -1,0 +1,81 @@
+-- A loan names its cell (`ownership-v2.md` §2.13.7, #1977): a loan of one
+-- cell's contents does not refuse an in-place edit of another cell's, nor of
+-- what `Ref.modify` answers fresh. And a loan of the old contents stays good
+-- across a `Ref.set` (#1404: `direct`, and the loan kept in a record or a
+-- pair), since the set replaces the contents and changes no list. Each line
+-- prints the loan, then what the edited cell holds.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs =
+    sep = ","
+    joined = String.join (List.map xs String.fromInt) sep
+    "[${joined}]"
+
+
+disjoint : ⊤ → String
+disjoint ⊤ =
+    a = Ref.make [ 0 ]
+    b = Ref.make [ 1 ]
+    v = Ref.get a
+    Ref.update b λxs → List.push xs 2
+    "disjoint ${ints v} ${ints (Ref.get b)}"
+
+
+freshFirst : ⊤ → String
+freshFirst ⊤ =
+    r = Ref.make [ 0 ]
+    a = Ref.modify r λxs → ( [ 9 ], xs )
+    Ref.update r λxs → List.push xs 1
+    b = List.push a 8
+    "freshFirst ${ints b} ${ints (Ref.get r)}"
+
+
+edit : Ref (List Int), Ref (List Int) → String
+edit a b =
+    v = Ref.get a
+    Ref.update b λxs → List.push xs 1
+    ints v
+
+
+params : ⊤ → String
+params ⊤ =
+    c = Ref.make [ 0 ]
+    d = Ref.make [ 5 ]
+    "params ${edit c d} ${ints (Ref.get d)}"
+
+
+direct : ⊤ → String
+direct ⊤ =
+    cell = Ref.make [ 0 ]
+    xs = Ref.get cell
+    Ref.set cell [ 1 ]
+    "direct ${ints xs} ${ints (Ref.get cell)}"
+
+
+boxBuiltRecord : ⊤ → String
+boxBuiltRecord ⊤ =
+    cell = Ref.make [ 0 ]
+    box = { v = Ref.get cell }
+    Ref.set cell [ 1 ]
+    "boxBuiltRecord ${ints box.v} ${ints (Ref.get cell)}"
+
+
+boxBuiltTuple : ⊤ → String
+boxBuiltTuple ⊤ =
+    cell = Ref.make [ 0 ]
+    box = ( Ref.get cell, 1 )
+    Ref.set cell [ 1 ]
+    case box of
+        ( v, _ ) →
+            "boxBuiltTuple ${ints v} ${ints (Ref.get cell)}"
+
+
+main : Program
+main =
+    Node.printLines
+        [ disjoint ⊤, freshFirst ⊤, params ⊤, direct ⊤, boxBuiltRecord ⊤, boxBuiltTuple ⊤ ]

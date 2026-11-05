@@ -22,10 +22,11 @@ const Runs = @import("Runs.zig").Runs;
 
 pub const Range = Ids.Range;
 
-pub const ArrivalKind = enum(u8) { param, fresh, shared, cb, top, host };
+pub const ArrivalKind = enum(u8) { param, fresh, shared, cb, top, host, lent };
 
 /// One arrival (§2.10 `res`): `π_j·slot`, `fresh`, `shared (module, decl)`
-/// (`j`, `slot`), `cb label` (`j`: the label's index in its contract), `⊤`.
+/// (`j`, `slot`), `cb label` (`j`: the label's index in its contract), `⊤`,
+/// `lent π_j·slot`: a loan of every object a cell holds there (§2.13.7).
 pub const Arrival = struct {
     kind: ArrivalKind,
     /// `param`: the parameter's slot is a type variable's, so the arrival is
