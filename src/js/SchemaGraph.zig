@@ -44,8 +44,8 @@ share: SchemaShare.Share = .{},
 ///   and `write`;
 /// - `root`, `S.schema`'s value, a compiled schema. It reaches the
 ///   description and each worker set only through guards: the description
-///   on `core/Schema`'s `nodeOf`, a worker set on a `core/Schema` value that
-///   runs a compiled schema's worker of that operation (`root_guards`);
+///   on `core/Schema`'s `nodeOf` (`description_guard`), a worker set on the
+///   node of its operation (`op_runners`);
 /// - `parse` and `print`, the root wrappers `S.parse`/`S.parseWith` and
 ///   `S.print`/`S.printWith`, which only those members reach, so a build
 ///   that runs `S.schema` alone ships none of them.
@@ -118,6 +118,8 @@ pub const Op = enum(u3) {
     /// `read` as a validator: `read`'s ends, no issue made.
     valid = 6,
 
+    pub const count = 7;
+
     pub fn decoding(o: Op) bool {
         return switch (o) {
             .parse, .decode, .read, .valid => true,
@@ -165,30 +167,80 @@ pub const Op = enum(u3) {
     }
 };
 
-/// The `core/Schema` declarations whose survival lets a root reach each of
-/// the other members, any one of them enough: `nodeOf`, the one reader of
-/// a compiled schema's description; for each operation, its runner
-/// (`parseWith` …) and its slot maker (`readSlot` …), which run a compiled
-/// schema's worker of that operation. Every other value that touches a
-/// worker — `list`, `nullable`, `converted` — only passes it on to one of
-/// these.
-pub const root_guards = [_]struct { Member, []const u8 }{
-    .{ .description, "nodeOf" },
-    .{ .read, "parseWith" },
-    .{ .read, "readSlot" },
-    .{ .write, "printWith" },
-    .{ .write, "writeSlot" },
+/// The `core/Schema` declaration whose survival lets a root reach its
+/// description: `nodeOf`, the one reader of a compiled schema's
+/// description. A root reaches each worker set through its operation's node
+/// (`Reach.Kind.op`, `op_runners`).
+pub const description_guard = "nodeOf";
+
+/// The `core/Schema` declarations that run a compiled schema's worker of an
+/// operation, by operation: its runner (`parseWith` …) and its slot maker
+/// (`readSlot` …). Each one reaches its operation's node (`backend.md` §9,
+/// *An operation is a node*). Every other value that touches a worker only
+/// passes it on: into a worker field of the same operation, or, reading
+/// another operation's field there, through that operation's node
+/// (`schema.md` §6, *A runtime builder makes a worker only for an
+/// operation the build runs*).
+pub const op_runners = [_]struct { Op, []const u8 }{
+    .{ .parse, "parseWith" },
+    .{ .parse, "readSlot" },
+    .{ .print, "printWith" },
+    .{ .print, "writeSlot" },
     .{ .decode, "decodeWith" },
     .{ .decode, "decodeSlot" },
     .{ .encode, "encodeWith" },
     .{ .encode, "encodeSlot" },
-    .{ .read_value, "readWith" },
-    .{ .read_value, "readValueSlot" },
-    .{ .write_value, "writeWith" },
-    .{ .write_value, "writeValueSlot" },
-    .{ .read_valid, "readValid" },
-    .{ .read_valid, "readValidSlot" },
+    .{ .read, "readWith" },
+    .{ .read, "readValueSlot" },
+    .{ .write, "writeWith" },
+    .{ .write, "writeValueSlot" },
+    .{ .valid, "readValid" },
+    .{ .valid, "readValidSlot" },
 };
+
+/// The operation whose worker a field of this name holds in a worker set
+/// (`Workers`, `Product`): its name is the operation's.
+pub fn opOfField(name: []const u8) ?Op {
+    for (0..Op.count) |i| {
+        const o: Op = @fromBackingInt(@intCast(i));
+        if (std.mem.eql(u8, name, @tagName(o))) return o;
+    }
+    return null;
+}
+
+/// Whether the `record` instruction `inst` of `core/Schema` is a worker set:
+/// a literal with a `parse` field and a `print` field (`schema.md` §6, *A
+/// runtime builder makes a worker only for an operation the build runs*).
+/// `Reach` guards its worker fields on their operations and `Lower` writes
+/// the fields of an operation that does not run as `undefined`; both ask
+/// this, so they cannot disagree about which literal is one.
+pub fn workerFields(bir: *const Bir, interner: anytype, inst: Bir.Inst.Index) ?[]const Bir.Field {
+    if (inst.int() >= bir.insts.len or bir.instTag(inst) != .record) return null;
+    const all = bir.extraSlice(Bir.inlineRange(bir.instData(inst)), Bir.Field);
+    var parse = false;
+    var print = false;
+    for (all) |f| {
+        const name = interner.slice(bir.symbol(f.name));
+        if (std.mem.eql(u8, name, "parse")) parse = true;
+        if (std.mem.eql(u8, name, "print")) print = true;
+    }
+    return if (parse and print) all else null;
+}
+
+/// Whether a worker field's value only passes a worker on: a local, or a
+/// field of a local. It names no declaration, so `Lower` writes it as it is
+/// in every build, and `declared` and `erasedWorkers` keep their bodies.
+pub fn passesOn(bir: *const Bir, value: Bir.Inst.Index) bool {
+    if (value.int() >= bir.insts.len) return false;
+    return switch (bir.instTag(value)) {
+        .local => true,
+        .field_access => blk: {
+            const read: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(value).lhs));
+            break :blk read.int() < bir.insts.len and bir.instTag(read) == .local;
+        },
+        else => false,
+    };
+}
 
 /// A schema declaration of some module.
 pub const Ref = struct { module: Graph.Index, decl: u32 };

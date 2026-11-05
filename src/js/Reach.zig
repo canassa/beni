@@ -122,7 +122,12 @@ const Reach = @This();
 /// by `decl * Member.count + member`: its description, its root value, its
 /// root wrappers and one worker set per operation, each reached by its own
 /// uses (`schema.md` §6).
-pub const Kind = enum(u8) { decl, derived, twin, ctor, schema, lift };
+/// `op` is one of the seven operations a compiled schema runs
+/// (`SchemaGraph.Op`), in `core/Schema`'s module: reached from the runners
+/// and slot makers of `SchemaGraph.op_runners`, and what a worker field of a
+/// worker set waits on (`backend.md` §9, *An operation is a node*). Like a
+/// constructor, it emits nothing and has no edges of its own.
+pub const Kind = enum(u8) { decl, derived, twin, ctor, schema, lift, op };
 
 /// One node of the graph: a declaration of a module, or one of its derived
 /// rows. Flat and comparable; nothing here is a pointer.
@@ -145,8 +150,17 @@ pub const Live = struct {
     ctors: std.DynamicBitSetUnmanaged = .{},
     /// The schema members that survived, `decl * Member.count + member`.
     schemas: std.DynamicBitSetUnmanaged = .{},
+    /// The operations the build runs, by `SchemaGraph.Op`: in `core/Schema`'s
+    /// module only, empty in every other.
+    ops: std.DynamicBitSetUnmanaged = .{},
 
     pub const empty: Live = .{ .decls = .{}, .derived = .{} };
+
+    /// Whether the build runs operation `o` (`Kind.op`).
+    pub fn op(l: *const Live, o: SchemaGraph.Op) bool {
+        const index = @backingInt(o);
+        return index < l.ops.bit_length and l.ops.isSet(index);
+    }
 
     /// Whether member `member` of schema declaration `decl` survived.
     pub fn schema(l: *const Live, at: usize, member: SchemaGraph.Member) bool {
@@ -355,6 +369,20 @@ pub const Input = struct {
     /// How many schema definitions module `m` has members for: its
     /// declarations, then its derived codecs, each a virtual declaration
     /// after the last (`SchemaPlan.codecs`, schema.md §12.10).
+    /// Whether `m` is `core/Schema`, the module that holds the operation
+    /// nodes (`Kind.op`).
+    pub fn isCoreSchema(in: Input, m: Graph.Index) bool {
+        const core = in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) orelse return false;
+        return core == m;
+    }
+
+    /// The node of operation `o`, or null when the build holds no
+    /// `core/Schema`.
+    pub fn opNode(in: Input, o: SchemaGraph.Op) ?Node {
+        const core = in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) orelse return null;
+        return .{ .module = core, .kind = .op, .index = @backingInt(o) };
+    }
+
     pub fn schemaSlots(in: Input, m: Graph.Index) usize {
         const codecs = if (m.int() < in.plans.len) in.plans[m.int()].codecs.len else 0;
         return in.birOf(m).decls.len + codecs;
@@ -528,6 +556,7 @@ pub fn walk(scratch: Allocator, in: Input, edges: []const ModuleEdges) Allocator
             .lifts = try .initEmpty(scratch, in.lift_targets.len),
             .schemas = try .initEmpty(scratch, in.schemaSlots(m) * SchemaGraph.Member.count),
             .ctors = try .initEmpty(scratch, in.birOf(m).ctors.len),
+            .ops = try .initEmpty(scratch, if (in.isCoreSchema(m)) SchemaGraph.Op.count else 0),
         };
     }
     try exempt(in, scratch, modules);
@@ -833,6 +862,7 @@ fn mark(modules: []Live, node: Node) bool {
         .schema => &live.schemas,
         .ctor => &live.ctors,
         .lift => &live.lifts,
+        .op => &live.ops,
     };
     if (node.index >= set.bit_length) return false;
     if (set.isSet(node.index)) return false;
@@ -893,6 +923,7 @@ pub const ModuleEdges = struct {
             .schema => .{ e.schema_at, e.schema_targets },
             .ctor => return &.{},
             .lift => return &.{},
+            .op => return &.{},
         };
         if (node.index + 1 >= at.len) return &.{};
         return list[at[node.index]..at[node.index + 1]];
@@ -917,6 +948,7 @@ pub const ModuleEdges = struct {
                     .schema => guard.index < live.schemas.bit_length and live.schemas.isSet(guard.index),
                     .derived => live.derivedRow(guard.index),
                     .lift => live.lift(guard.index),
+                    .op => guard.index < live.ops.bit_length and live.ops.isSet(guard.index),
                 };
                 if (!reached) return guard;
             }
@@ -966,6 +998,10 @@ pub const Builder = struct {
     /// calls (`SchemaValid`).
     valid_shape: ?Node = null,
     shape_parse: ?Node = null,
+    /// `core/Schema`'s runners and slot makers, by their row in
+    /// `SchemaGraph.op_runners`: found once, the first time `core/Schema`'s
+    /// edges are built (`operationEdges`).
+    op_runner_decls: ?[SchemaGraph.op_runners.len]?u32 = null,
     /// The shared walk's output for one node, cleared and refilled per
     /// node: a caller-owned buffer, so the whole module's edges cost one
     /// allocation.
@@ -1206,6 +1242,8 @@ pub const Builder = struct {
                 }
             };
             try guards.constructions(&decl_targets);
+            try guards.operationReads(&decl_targets);
+            try b.operationEdges(m, @intCast(i), &decl_targets);
             try b.effectEdges(m, @intCast(i), &guards, &decl_targets, &twin_extra);
             try b.listEdges(m, bir, d, &decl_targets);
             try b.memberUses(m, bir, d, &guards, &decl_targets, valid);
@@ -1517,31 +1555,36 @@ pub const Builder = struct {
         const ref: SchemaGraph.Ref = .{ .module = m, .decl = decl };
         if (member == .root) {
             // `S.schema`'s compiled value (`schema.md` §6, *A statically
-            // known schema runs compiled*): each other member behind the
-            // `core/Schema` declarations that run it, one edge per guard,
-            // so any one of them is enough. A member left out is written
-            // `null` in the value (`SchemaLower`).
-            for (SchemaGraph.root_guards) |pick| {
-                const target = schemaNode(ref, pick[0]);
-                const guard = b.coreSchemaDecl(pick[1]) orelse {
-                    // A guard `core/Schema` does not declare is a rename
-                    // `root_guards` missed: the edge below stays sound, but
-                    // every root would keep every member, so a checked
-                    // build says so rather than lose the elimination quietly.
-                    if (std.debug.runtime_safety and b.in.interner != null and
-                        b.in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) != null)
-                    {
-                        std.debug.panic("SchemaGraph.root_guards names `{s}`, which core/Schema does not declare", .{pick[1]});
-                    }
-                    try out.append(b.scratch, .{ .node = target });
-                    continue;
-                };
-                if (guards.chains.items.len == 0) try guards.chains.append(b.scratch, .{ .parent = 0, .start = 0, .end = 0 });
-                const first: u32 = @intCast(guards.chain_ctors.items.len);
-                try guards.chain_ctors.append(b.scratch, guard);
-                const chain: u32 = @intCast(guards.chains.items.len);
-                try guards.chains.append(b.scratch, .{ .parent = 0, .start = first, .end = first + 1 });
-                try out.append(b.scratch, .{ .node = target, .chain = chain });
+            // known schema runs compiled*): the description behind
+            // `core/Schema`'s `nodeOf`, and each worker set behind its
+            // operation's node. A member left out is written `null` in the
+            // value (`SchemaLower`).
+            const description = schemaNode(ref, .description);
+            if (b.coreSchemaDecl(SchemaGraph.description_guard)) |guard| {
+                try out.append(b.scratch, .{ .node = description, .chain = try guards.single(guard) });
+            } else {
+                // A guard `core/Schema` does not declare is a rename
+                // `description_guard` missed: the edge below stays sound,
+                // but every root would keep its description, so a checked
+                // build says so rather than lose the elimination quietly.
+                if (std.debug.runtime_safety and b.in.interner != null and
+                    b.in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) != null)
+                {
+                    std.debug.panic("SchemaGraph.description_guard names `{s}`, which core/Schema does not declare", .{SchemaGraph.description_guard});
+                }
+                try out.append(b.scratch, .{ .node = description });
+            }
+            // Each worker set behind its operation's node (`backend.md` §9,
+            // *An operation is a node*): a runner, a slot maker, or a worker
+            // of a runtime builder that runs it.
+            for (0..SchemaGraph.Member.count) |k| {
+                const which: SchemaGraph.Member = @fromBackingInt(@intCast(k));
+                if (which.op()) |o| {
+                    const target = schemaNode(ref, which);
+                    if (b.in.opNode(o)) |guard| {
+                        try out.append(b.scratch, .{ .node = target, .chain = try guards.single(guard) });
+                    } else try out.append(b.scratch, .{ .node = target });
+                }
             }
         }
         const calls_vias = member == .description or (member.op() != null);
@@ -1634,6 +1677,33 @@ pub const Builder = struct {
         return null;
     }
 
+    /// The edge of a runner or a slot maker of `core/Schema` to its
+    /// operation's node (`SchemaGraph.op_runners`, `backend.md` §9, *An
+    /// operation is a node*).
+    fn operationEdges(b: *Builder, m: Graph.Index, decl: u32, out: *std.ArrayList(Target)) Allocator.Error!void {
+        if (!b.in.isCoreSchema(m)) return;
+        const runners = b.op_runner_decls orelse blk: {
+            var found: [SchemaGraph.op_runners.len]?u32 = undefined;
+            for (SchemaGraph.op_runners, &found) |row, *slot| {
+                const node = b.coreSchemaDecl(row[1]);
+                slot.* = if (node) |n| n.index else null;
+                // A runner `core/Schema` does not declare is a rename
+                // `op_runners` missed: its operation would never run, and
+                // its workers would be written `undefined`.
+                if (node == null and std.debug.runtime_safety and b.in.interner != null) {
+                    std.debug.panic("SchemaGraph.op_runners names `{s}`, which core/Schema does not declare", .{row[1]});
+                }
+            }
+            b.op_runner_decls = found;
+            break :blk found;
+        };
+        for (SchemaGraph.op_runners, runners) |row, index| {
+            if (index != decl) continue;
+            const node = b.in.opNode(row[0]) orelse continue;
+            try out.append(b.scratch, .{ .node = node });
+        }
+    }
+
     /// The node of `core/Schema`'s value declaration `name`, or null when
     /// the build holds no `core/Schema` or the interner does not know the
     /// name.
@@ -1679,6 +1749,10 @@ pub const Builder = struct {
         /// writes them, so a choice of body there that is `poly` is never
         /// the suspendable one (`effectEdges`).
         direct_only: std.ArrayList([2]u32) = .empty,
+        /// In `core/Schema`, the reads inside a worker field of another
+        /// operation's field, by position: each one reaches that
+        /// operation's node (`backend.md` §9, *An operation is a node*).
+        op_reads: std.ArrayList(struct { at: u32, op: SchemaGraph.Op }) = .empty,
         stack: std.ArrayList(Open) = .empty,
 
         const Arm = struct { from: u32, to: u32, start: u32, end: u32 };
@@ -1712,6 +1786,7 @@ pub const Builder = struct {
             g.tops.clearRetainingCapacity();
             g.arms.clearRetainingCapacity();
             g.direct_only.clearRetainingCapacity();
+            g.op_reads.clearRetainingCapacity();
             try g.heads.resize(scratch, end - start, false);
             g.heads.unsetAll();
 
@@ -1766,6 +1841,7 @@ pub const Builder = struct {
                 },
                 else => {},
             };
+            if (g.b.in.isCoreSchema(g.m)) try g.workerFields(start, end);
             std.mem.sort(u32, g.tops.items, {}, std.sort.asc(u32));
             if (g.arms.items.len == 0) return;
 
@@ -1795,6 +1871,81 @@ pub const Builder = struct {
                 }
                 if (g.stack.items.len != 0) g.chain_of.items[p - start] = g.stack.items[g.stack.items.len - 1].chain;
             }
+        }
+
+        /// The worker sets of a `core/Schema` declaration (`schema.md` §6,
+        /// *A runtime builder makes a worker only for an operation the
+        /// build runs*): each worker field is an arm guarded by its
+        /// operation's node, and each read inside it of another
+        /// operation's field is kept for `operationReads`.
+        fn workerFields(g: *Guards, start: u32, end: u32) Allocator.Error!void {
+            const interner = g.b.in.interner orelse return;
+            const bir = g.b.in.birOf(g.m);
+            const tags = bir.insts.items(.tag);
+            for (tags[start..end], start..) |tag, p| {
+                if (tag != .record) continue;
+                const fields = SchemaGraph.workerFields(bir, interner, @fromBackingInt(@intCast(p))) orelse continue;
+                for (fields) |f| {
+                    const o = SchemaGraph.opOfField(interner.slice(bir.symbol(f.name))) orelse continue;
+                    const node = g.b.in.opNode(o) orelse continue;
+                    const to: u32 = @backingInt(f.value);
+                    const from = try g.subtreeStart(f.value, start);
+                    if (!(from >= start and from <= to and to < p)) continue;
+                    const first: u32 = @intCast(g.chain_ctors.items.len);
+                    try g.chain_ctors.append(g.b.scratch, node);
+                    try g.arms.append(g.b.scratch, .{ .from = from, .to = to, .start = first, .end = first + 1 });
+                    for (tags[from .. to + 1], from..) |inner, q| {
+                        if (inner != .field_access) continue;
+                        const name: Bir.SymbolIndex = @fromBackingInt(@intCast(bir.insts.items(.data)[q].rhs));
+                        const read = SchemaGraph.opOfField(interner.slice(bir.symbol(name))) orelse continue;
+                        if (read == o) continue;
+                        try g.op_reads.append(g.b.scratch, .{ .at = @intCast(q), .op = read });
+                    }
+                }
+            }
+        }
+
+        /// The first instruction of the expression whose root is `root`:
+        /// `Bir` is post-order, so the expression is that instruction up to
+        /// its root. None before `floor`, the declaration's first.
+        fn subtreeStart(g: *Guards, root: Bir.Inst.Index, floor: u32) Allocator.Error!u32 {
+            const bir = g.b.in.birOf(g.m);
+            var least: u32 = @backingInt(root);
+            var work: std.ArrayList(Bir.Inst.Index) = .empty;
+            defer work.deinit(g.b.scratch);
+            var operands: std.ArrayList(Bir.Inst.Index) = .empty;
+            defer operands.deinit(g.b.scratch);
+            try work.append(g.b.scratch, root);
+            while (work.pop()) |inst| {
+                operands.clearRetainingCapacity();
+                try Bir.operands(bir, g.b.scratch, inst, &operands);
+                for (operands.items) |o| {
+                    const index: u32 = @backingInt(o);
+                    if (index < floor or index >= @backingInt(inst)) continue;
+                    if (index < least) least = index;
+                    try work.append(g.b.scratch, o);
+                }
+            }
+            return least;
+        }
+
+        /// The edges of `op_reads`: each read reaches its operation's node,
+        /// guarded where it stands.
+        fn operationReads(g: *const Guards, out: *std.ArrayList(Target)) Allocator.Error!void {
+            for (g.op_reads.items) |read| {
+                const node = g.b.in.opNode(read.op) orelse continue;
+                try out.append(g.b.scratch, .{ .node = node, .chain = g.at(read.at) });
+            }
+        }
+
+        /// A chain of its own that waits on `guard` alone.
+        fn single(g: *Guards, guard: Node) Allocator.Error!u32 {
+            if (g.chains.items.len == 0) try g.chains.append(g.b.scratch, .{ .parent = 0, .start = 0, .end = 0 });
+            const first: u32 = @intCast(g.chain_ctors.items.len);
+            try g.chain_ctors.append(g.b.scratch, guard);
+            const chain: u32 = @intCast(g.chains.items.len);
+            try g.chains.append(g.b.scratch, .{ .parent = 0, .start = first, .end = first + 1 });
+            return chain;
         }
 
         /// The chain the instruction at `position` is under.

@@ -1,0 +1,74 @@
+-- `erased` decodes with its child's `read` worker and encodes with its
+-- `write` worker (`schema.md` §6, *A runtime builder makes a worker only for
+-- an operation the build runs*, 2026-11-05). This program decodes and
+-- encodes erased schemas and calls no `Schema.read` and no `Schema.write`,
+-- so only `erased` makes the `read` and `write` operations run. Before
+-- 2026-11-05 the build left out the declaration's `read` and `write`
+-- workers, and the first decode stopped on "an eliminated schema worker was
+-- reached" (#1944). The record case runs the same path through a runtime
+-- builder whose field is the declaration.
+import Node
+import Schema
+
+
+schema Point =
+    x : Int
+
+
+one ( ⊤, a ) = { a = a }
+
+
+unOne r = ( ⊤, r.a )
+
+
+holder =
+    Schema.record
+        (Schema.fields ▷ Schema.field "a" (Point.schema ⊤))
+        (Schema.mapping one unOne)
+        (Schema.mapping one unOne)
+
+
+decodeText : Schema.Codec a, (a → String), String → String
+decodeText codec show text =
+    case Schema.parse Schema.value text of
+        Ok raw →
+            case Schema.decode codec raw of
+                Ok v →
+                    "decoded ${show v}"
+
+                Err issues →
+                    "refused (${String.fromInt (List.length issues)})"
+
+        Err _ →
+            "not JSON"
+
+
+encodeText : Schema.Codec a, a → String
+encodeText codec v =
+    case Schema.encode codec v of
+        Ok raw →
+            case Schema.print Schema.value raw of
+                Ok text →
+                    text
+
+                Err _ →
+                    "unprintable"
+
+        Err issues →
+            "refused (${String.fromInt (List.length issues)})"
+
+
+main : Node.Program
+main =
+    point = Schema.erased (Point.schema ⊤)
+    held = Schema.erased holder
+    Node.print
+        (String.join
+            [ decodeText point (λp → String.fromInt p.x) "{\"x\":1}"
+            , decodeText point (λp → String.fromInt p.x) "{\"x\":\"one\"}"
+            , decodeText held (λr → String.fromInt r.a.x) "{\"a\":{\"x\":3}}"
+            , encodeText point { x = 2 }
+            , encodeText held { a = { x = 4 } }
+            ]
+            "\n"
+        )

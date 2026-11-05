@@ -24,7 +24,8 @@
 //! 3. `Task.andThen` and `Task.isWaiting`, which a body that may suspend
 //!    calls (`effectEdges`);
 //! 4. the `core/Schema` values a schema member's code calls
-//!    (`memberEdges`).
+//!    (`memberEdges`), and the operation nodes a root's worker sets wait
+//!    on (`Reach.Kind.op`, `backend.md` §9, *An operation is a node*).
 //!
 //! The last three can name a core module the module does not import. The
 //! builder finds each of them by name in the build's graph and adds no
@@ -68,7 +69,8 @@ const Reach = @import("Reach.zig");
 const SchemaGraph = @import("SchemaGraph.zig");
 
 const magic = "BENIEDGE";
-pub const version: u32 = 4;
+/// 5: a node may be an operation (`Reach.Kind.op`).
+pub const version: u32 = 5;
 
 /// The build options an edge list depends on.
 pub const Options = struct {
@@ -318,7 +320,7 @@ const Reader = struct {
         const kind_word = r.word() orelse return null;
         const index = r.word() orelse return null;
         if (slot >= modules.len) return null;
-        if (kind_word > @backingInt(Reach.Kind.schema)) return null;
+        if (kind_word > @backingInt(Reach.Kind.op)) return null;
         const m = modules[slot] orelse return .absent;
         const kind: Reach.Kind = @fromBackingInt(@intCast(kind_word));
         const bir = in.birOf(m);
@@ -328,6 +330,7 @@ const Reader = struct {
             .ctor => bir.ctors.len,
             .schema => in.schemaSlots(m) * SchemaGraph.Member.count,
             .lift => return null,
+            .op => if (in.isCoreSchema(m)) SchemaGraph.Op.count else 0,
         };
         if (index >= bound and !(kind == .ctor and index == Reach.never_ctor)) return null;
         return .{ .at = .{ .module = m, .kind = kind, .index = index } };

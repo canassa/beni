@@ -1,0 +1,57 @@
+-- emit/release/app: a program that builds schemas at run time and only
+-- describes them runs no operation, so it ships no worker of a runtime
+-- builder (`schema.md` §6, *A runtime builder makes a worker only for an
+-- operation the build runs*, 2026-11-05; `backend.md` §9, *An operation is a
+-- node*). `record`, `field`, `list` and `nullable` keep their descriptions,
+-- and every worker field of theirs is `undefined`. Before 2026-11-05 this
+-- file held each builder's seven workers (#1943). The primitives' workers
+-- still ship: `scalarSchema` passes them to `declared` as arguments (#1958).
+import Node exposing (Program)
+import Schema exposing (ListOf, NullableOf, Primitive, RecordOf, Schema, Shape)
+
+
+type alias Item =
+    id : Int
+    tags : List String
+    note : Schema.Nullable String
+
+
+toItem ( ( ( ⊤, id ), tags ), note ) = { id = id, tags = tags, note = note }
+
+
+fromItem r = ( ( ( ⊤, r.id ), r.tags ), r.note )
+
+
+item : Schema Item Item
+item =
+    Schema.record
+        (Schema.fields
+            ▷ Schema.field "id" Schema.int
+            ▷ Schema.field "tags" (Schema.list Schema.string)
+            ▷ Schema.field "note" (Schema.nullable Schema.string)
+        )
+        (Schema.mapping toItem fromItem)
+        (Schema.mapping toItem fromItem)
+
+
+name : Shape → String
+name shape =
+    case shape of
+        Primitive _ →
+            "primitive"
+
+        ListOf _ →
+            "list"
+
+        NullableOf _ →
+            "nullable"
+
+        RecordOf fields →
+            "record of ${String.fromInt (List.length fields)}"
+
+        _ →
+            "other"
+
+
+main : Program
+main = Node.print (name (Schema.describe item).root)

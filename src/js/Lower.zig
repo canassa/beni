@@ -2326,6 +2326,24 @@ pub const Lowerer = struct {
             if (l.dead_arms.bit_length == 0) try l.dead_arms.resize(l.scratch, l.bir.insts.len, false);
             if (d.rhs < l.dead_arms.bit_length) l.dead_arms.set(d.rhs);
         }
+        // A worker field of an operation the build does not run (`schema.md`
+        // §6, *A runtime builder makes a worker only for an operation the
+        // build runs*; `backend.md` §9, *An operation is a node*): `Reach`
+        // followed nothing out of it, and nothing reads it.
+        const schema = l.in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) orelse return;
+        if (schema != l.in.module) return;
+        const live = r.of(l.in.module);
+        for (tags, 0..) |tag, i| {
+            if (tag != .record) continue;
+            const fields = SchemaGraph.workerFields(l.bir, l.interner, @fromBackingInt(@intCast(@as(u32, @intCast(i))))) orelse continue;
+            for (fields) |f| {
+                const o = SchemaGraph.opOfField(l.interner.slice(l.bir.symbol(f.name))) orelse continue;
+                if (live.op(o) or SchemaGraph.passesOn(l.bir, f.value)) continue;
+                const body: u32 = @backingInt(f.value);
+                if (l.dead_arms.bit_length == 0) try l.dead_arms.resize(l.scratch, l.bir.insts.len, false);
+                if (body < l.dead_arms.bit_length) l.dead_arms.set(body);
+            }
+        }
     }
 
     /// Whether `pattern` names, at any depth, a constructor this build
