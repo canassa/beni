@@ -1,10 +1,12 @@
-# Deploys the example programs to GitHub Pages on every push to master.
-# Every pull request builds the site and does not deploy it. The build has
-# no paths filter: it reads the compiler, core/, the platforms, the flake,
-# build.zig and build.zig.zon, the playground and the examples, and a list
-# of those paths would miss the next input that is added. This workflow
-# loads no page: ci.yml's `browser` job builds the site again and loads it
-# in Chrome with Pages' 404 rule (`zig build test-pages`, issue #244).
+# Builds the example programs into the site of GitHub Pages. ci.yml calls
+# this workflow on every pull request and every push, and deploys the site
+# from master in its job `deploy-pages`, after its `browser` job loads the
+# site in Chrome with Pages' 404 rule (`zig build test-pages`, issue #244).
+# The deploy is in ci.yml because a job cannot need a job of another
+# workflow. The build has no paths filter: it reads the compiler, core/,
+# the platforms, the flake, build.zig and build.zig.zon, the playground and
+# the examples, and a list of those paths would miss the next input that is
+# added.
 #
 # Pages takes its site from GitHub Actions (Settings, Pages, Source), so the
 # site is this workflow's artifact, served as it is: no branch, and no
@@ -15,17 +17,9 @@
 name: pages
 
 on:
-  push:
-    branches: [master]
-  pull_request:
+  workflow_call:
 
 permissions: {}
-
-# Deploys run one at a time, and a newer push replaces a waiting one. A
-# newer push to a pull request cancels its older run.
-concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('pages-pr-{0}', github.event.pull_request.number) || 'pages-deploy' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -101,19 +95,3 @@ jobs:
         with:
           path: ${{ runner.temp }}/site
           retention-days: 7
-
-  deploy:
-    name: deploy to GitHub Pages
-    needs: build
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    timeout-minutes: 10
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
