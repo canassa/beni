@@ -1,0 +1,68 @@
+-- A synchronous native subscription takes Hosted's relay queue. Initial
+-- sends arrive while it is being installed; the first delivered message
+-- reentrantly queues another burst. Unsubscribe and a tagger defect each
+-- remove the native listener exactly once and leave no live delivery.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Probe
+import Sub exposing (Sub)
+import Tea
+
+
+type Msg
+    = Start
+    | Stop
+    | Burst
+    | Fail
+    | Heard Int
+
+
+type alias Model =
+    seen : String
+    enabled : Bool
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Start →
+            ( { model | enabled = True }, Cmd.none )
+        Stop →
+            ( { model | enabled = False }, Cmd.none )
+        Burst →
+            ( model, Cmd.do Probe.burst )
+        Fail →
+            ( model, Cmd.do Probe.fail )
+        Heard value →
+            ( { model | seen = "${model.seen}${String.fromInt value}," }
+            , if value == 1 then Cmd.do Probe.burst else Cmd.none
+            )
+
+
+tag : Int → Msg
+tag value = if value == 5 then Debug.todo "relay queue defect" else Heard value
+
+
+subscriptions : Model → Sub Msg
+subscriptions model = if model.enabled then Sub.on "relay" Probe.listen tag else Sub.none
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p id="seen">{model.seen}</p>
+        <button id="start" onClick={Start}>start</button>
+        <button id="stop" onClick={Stop}>stop</button>
+        <button id="burst" onClick={Burst}>burst</button>
+        <button id="fail" onClick={Fail}>fail</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { seen = "", enabled = True }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

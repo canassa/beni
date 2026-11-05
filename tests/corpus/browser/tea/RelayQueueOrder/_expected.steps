@@ -1,0 +1,5 @@
+click #stop
+click #burst
+click #start
+throws click #fail
+click #burst

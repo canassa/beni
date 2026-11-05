@@ -1,0 +1,45 @@
+-- load
+<body data-listeners="1">
+  <main>
+    <p id="seen">"1,2,3,4,"</p>
+    <button id="start">"start"</button>
+    <button id="stop">"stop"</button>
+    <button id="burst">"burst"</button>
+    <button id="fail">"fail"</button>
+  </main>
+</body>
+-- click #stop
+<body data-listeners="0" data-removes="1">
+  <main>
+    <p id="seen">"1,2,3,4,"</p>
+    <button id="start">"start"</button>
+    <button id="stop">"stop"</button>
+    <button id="burst">"burst"</button>
+    <button id="fail">"fail"</button>
+  </main>
+</body>
+-- click #burst
+(the DOM did not change)
+-- click #start
+<body data-listeners="1" data-removes="1">
+  <main>
+    <p id="seen">"1,2,3,4,1,2,3,4,"</p>
+    <button id="start">"start"</button>
+    <button id="stop">"stop"</button>
+    <button id="burst">"burst"</button>
+    <button id="fail">"fail"</button>
+  </main>
+</body>
+-- throws click #fail
+(threw: Error: TODO: listener queue defect)
+<body data-listeners="0" data-removes="2">
+  <main>
+    <p id="seen">"1,2,3,4,1,2,3,4,"</p>
+    <button id="start">"start"</button>
+    <button id="stop">"stop"</button>
+    <button id="burst">"burst"</button>
+    <button id="fail">"fail"</button>
+  </main>
+</body>
+-- click #burst
+(the DOM did not change)
