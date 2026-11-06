@@ -63,7 +63,7 @@ fn noContract(mod: anytype, t: [2]u32, arity: u32) !u32 {
     return mod.pessimisticOf(arity, mod.in.birs[t[0]].decls[t[1]].params == 0);
 }
 
-/// PROTOTYPE: the contract the arms of a value's body join to, when each arm is a capture-free
+/// The contract the arms of a value's body join to, into `acc`, when each arm is a capture-free
 /// lambda, constructor, local function or a function declaration.
 pub fn armContracts(mod: anytype, rs: u32, inst: u32, acc: *u32, n: *u32, arena: std.mem.Allocator, account: anytype) !bool {
     const bir = mod.in.bir;
@@ -105,6 +105,7 @@ pub fn armContracts(mod: anytype, rs: u32, inst: u32, acc: *u32, n: *u32, arena:
     return true;
 }
 
+/// The local function `ref` names, read outside a walk: `base` is its declaration's first local.
 fn localFunctionAny(mod: anytype, base: u32, ref: u32) ?u32 {
     const bir = mod.in.bir;
     const l = bir.instData(@fromBackingInt(ref)).lhs;
