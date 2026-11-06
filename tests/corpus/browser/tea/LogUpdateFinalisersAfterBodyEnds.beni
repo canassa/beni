@@ -1,0 +1,59 @@
+-- A throw out of an event handler does not reach the code that fired the
+-- event: the DOM reports it, and `Dom.focus` returns (boundary.md
+-- §9.8.16 (b), amended 2026-10-24, #859). This body waits, so it runs in
+-- a fiber, and it keeps the context of the `update` arm that made it
+-- (#597). It focuses an input whose `onFocus` sends `Boom`. `Boom`'s
+-- `update` annotates, opens a `bracket` and throws, so its finalisers stay
+-- behind. The body goes on, logs and ends before the teardown starts.
+-- `send` took `update`'s finalisers off the body's list, and the fiber that
+-- ended hands them to a fiber of their own (§9.8.16 (b), amended
+-- 2026-11-06, #1154). So `Boom`'s release runs once, at the teardown, with
+-- `update`'s context (§9.8.14 (a)). `UpdateBracketAfterBodyEnds` is the
+-- same with no slot set.
+import Cmd exposing (Cmd)
+import Dom
+import Html exposing (Html)
+import Log
+import Sub
+import Task
+import Tea
+import Time
+
+
+type Msg
+    = Go
+    | Boom
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Go →
+            Log.annotate "request" "r1" λ⊤ →
+                ( n + 1
+                , Cmd.perform λ_ →
+                    Time.sleep (Time.millis 5)
+                    _ = Dom.focus "target"
+                    Log.info "the body, after the focus"
+                )
+
+        Boom →
+            Log.annotate "update" "u" λ⊤ →
+                Log.info "Boom's update"
+                Task.bracket (λ⊤ → ⊤) (λ_ _ → Log.info "Boom's release") λ_ →
+                    Debug.todo "Boom's update threw"
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <p id="n">{String.fromInt n}</p>
+        <button id="go" onClick={Go}>go</button>
+        <input id="target" onFocus={Boom} />
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }
