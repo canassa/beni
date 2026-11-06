@@ -1909,6 +1909,20 @@ imported declaration (its published contract, §3.6, or the pessimistic one); a 
 user `eq`/`compare` that `Dispatch` names (§2.13.13); a function **value** (§2.11.3–4). A call whose result
 and arguments all cross is harmless: no contract is read.
 
+*Amended 2026-11-06 (#2132): a published contract is a call's only at the call's arity.* A declaration with no
+parameters, called with arguments, is a function value whose contract is what its body answers: `res ε fresh` for
+`mk = Pt`, arity 0, which says nothing of what a call does. Read as the contract of `Lib.mk [] k`, it let `k` go
+free while the result held it, and the sanitised run trapped. In one module the rule was already right: a value's
+lambda runs when one is its body, and anything else is the pessimistic contract. The same holds of an imported
+one now, on every route that reads a block for a call, whatever the name it is reached by: a call, a method call,
+a pipe, each name of an alias chain, and a function reference used as a value (§2.11.4). A contract whose arity is
+not the call's is not read, and the call has the pessimistic contract. A block has no contract for the lambda of
+such a value: called contracts (§2.11.3) exist only below a declaration's own parameters, and a value's own slot
+`ε` has none. So `mk = λu v → …` and `mk = Pt`, imported, are the pessimistic contract where the same call in
+their own module is not: every argument escapes and the result is `⊤`. A worded declaration and a `foreign` keep
+their words, which are stated over the scheme, and an alias of a declaration with parameters keeps that
+declaration's contract, whose arity is the call's. Pinned: `run/SanitiserValueCallImported` and its `…Apart`.
+
 #### 2.11.2 Instantiation, once per call site
 
 A call `k` of a code with contract `C` and argument values `a1…an`:

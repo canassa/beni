@@ -733,6 +733,15 @@ pub const Module = struct {
         return if (di < cs.len and cs[di] != none) cs[di] else null;
     }
 
+    /// What declaration `di` of module `m` publishes for a call of `arity`
+    /// arguments, or null. A value with no parameters publishes what its
+    /// body answers, which is never what a call of that value does, and a
+    /// block has no contract for its lambda (R-5.5.6).
+    fn importedCall(mod: *Module, m: u32, di: u32, arity: u32) Error!?u32 {
+        const c = (try mod.importedContract(m, di)) orelse return null;
+        return if (mod.contracts.head(c).arity == arity) c else null;
+    }
+
     // ---- what a walk reads ----------------------------------------------------
 
     fn self(ctx: *anyopaque) *Module {
@@ -946,8 +955,7 @@ pub const Module = struct {
         // A `foreign` publishes nothing an importer applies: its words, or none (§2.10).
         if (decl.kind == .foreign_value) return try mod.pessimisticOf(@intCast(params.len), true);
         if (t[0] == mod.in.module) return null;
-        if (try mod.importedContract(t[0], t[1])) |c| return c;
-        return null;
+        return mod.importedCall(t[0], t[1], @intCast(params.len));
     }
 
     /// The arguments of a call or a method call (the receiver first).
@@ -1018,7 +1026,7 @@ pub const Module = struct {
             var n = t0;
             var hops: usize = 64;
             while (hops > 0 and !std.mem.eql(u32, &n, &t)) : (hops -= 1) {
-                if (n[0] != mod.in.module) if (try mod.importedContract(n[0], n[1])) |c| return .{ .contract = c };
+                if (n[0] != mod.in.module) if (try mod.importedCall(n[0], n[1], @intCast(args.len))) |c| return .{ .contract = c };
                 n = Prepass.aliasStep(mod.in.birs, mod.in.provenance, n) orelse break;
             }
             if (bir.instTag(@fromBackingInt(inst)) == .method_call and mod.in.isCore(t[0]) and composedOrigin(bir, inst)) composed = true;

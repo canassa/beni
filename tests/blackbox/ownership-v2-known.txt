@@ -5726,3 +5726,10 @@ tests/corpus/run/SanitiserRowLevel.beni SanitiserRowLevel 34:13 #0 :: SanitiserR
 tests/corpus/run/SanitiserRowLevel.beni SanitiserRowLevel 41:9 #0 :: SanitiserRowLevel.wr r.t#Leaf.0 :: absent :: accepted  one demand per level in v2, one per opaque slot in v1
 tests/corpus/run/SanitiserRowLevel.beni SanitiserRowLevel 41:9 #0 :: SanitiserRowLevel.wr r.t#Wrap.0#Leaf.0 :: absent :: accepted  one demand per level in v2, one per opaque slot in v1
 tests/corpus/run/SanitiserRowLevel.beni SanitiserRowLevel 41:9 #0 :: SanitiserRowLevel.wr r.t#Wrap.0#Wrap.0#Leaf.0 :: absent :: rejected  one demand per level in v2, one per opaque slot in v1
+tests/corpus/run/SanitiserValueCallImported Main 23:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
+tests/corpus/run/SanitiserValueCallImported Main 55:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
+tests/corpus/run/SanitiserValueCallImported Main 63:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
+tests/corpus/run/SanitiserValueCallImported Main 71:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
+tests/corpus/run/SanitiserValueCallImported Main 87:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
+tests/corpus/run/SanitiserValueCallImported Main 96:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
+tests/corpus/run/SanitiserValueCallImported Main 104:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
