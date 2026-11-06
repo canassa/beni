@@ -1,0 +1,23 @@
+-- The accepted twin: the same four fields, whose first function answers a list it
+-- makes, so no field holds `q` and `push` writes it in place (§2.9.2, #2146).
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main =
+    q = [ 1 ]
+    kh = λu v → if List.length u > 5 then u else if List.length v > 5 then v else [ 7 ]
+    ka = λu v → if List.length u > 0 then u else v
+    kb = λv → v
+    kc = λv → v
+    r = List.foldl [ 1, 2, 3, 4, 5, 6, 7, 8 ] ( [], [], [], [] ) λi acc →
+        ( kh acc.1 acc.3, ka acc.2 acc.0, kb acc.1, kc acc.2 )
+    w = ( r.3, r.0 )
+    z = List.push q 2
+    Node.print (show z ++ "|" ++ show w.0)

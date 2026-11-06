@@ -200,6 +200,7 @@ pub const own2 = struct {
     pub const Leaves = @import("own2/Leaves.zig");
     pub const Value = @import("own2/Value.zig");
     pub const Liveness = @import("own2/Liveness.zig");
+    pub const Pairs = @import("own2/Pairs.zig");
     pub const Relation = @import("own2/Relation.zig");
     pub const Eval = @import("own2/Eval.zig");
     pub const Resolve = @import("own2/Resolve.zig");

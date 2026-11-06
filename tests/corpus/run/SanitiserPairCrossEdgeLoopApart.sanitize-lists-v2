@@ -1,0 +1,1 @@
+v2 keeps what a cycle of pairs does not reach, and takes what is dead at the write (§2.9.2, #2146): built again under --ownership=v2 and the sanitiser.
