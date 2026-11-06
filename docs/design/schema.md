@@ -2587,6 +2587,14 @@ and `encode` workers are its `read` and `write` ones run on that context (`hostW
 definition writes no `decode` or `encode` worker set: its root's `decode` and `encode` are
 `hostWorker` of its `read` and `write` workers (`SchemaGraph.hostAliased`).
 
+*Amended 2026-11-06 (#1944).* Erasing a declaration must retain the workers it
+selects even when no direct `read` or `write` survives. A reachable decoding worker,
+when `erased` is kept, also reaches that declaration's host-input reading worker;
+a reachable encoding worker similarly reaches its host-output writing worker.
+These are guarded dependencies, so a build without `erased` keeps its existing
+reachability. Erasing an endpoint requires no extra runner call from the program.
+The checked-core edge row semantic version changes to reject older dependency rows.
+
 **`Http.expectJson` is inferred** (amends A.11's *`Http`'s API is unchanged* and
 `boundary.md` §9.8.12 (a)). The owner asked for it in #193. It is now `expectJson : Expect Error a
 where a.codec : ⊤ → Codec a`, a constant whose type is fixed by the request it is given to, as
