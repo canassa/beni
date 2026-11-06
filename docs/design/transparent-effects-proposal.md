@@ -2487,6 +2487,12 @@ the teardown with the context that it was put on in, as an `onExit` finaliser wo
 `update`'s commands. The other slots are the caller's. `boundary.md` §9.8.16 (b), amended the
 same day, has the details.
 
+*Amended 2026-11-06 (#1153):* `send` now puts the caller's slots back after every `update`, also
+when the caller has no log context of its own, through `Task.beginUpdate` and `Task.endUpdate`,
+which replace `withoutLogContext`. A body that goes on after a throw that the DOM reports thus
+has its own context, also when it has none. `boundary.md` §9.8.16 (b), amended the same day, has
+the details.
+
 **Changing a slot** is only ever **scoped to a function**: `Clock.run`, `Log.annotate`, `Log.span`,
 `Log.minimum`, `Log.withSink`, `Trace.span`, `Trace.withExporter` and (P9) `Random.withSeed` set
 the field on the current fiber (or the outside record), run their function, and put the old value

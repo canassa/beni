@@ -7506,6 +7506,16 @@ file must defeat it (a DOM node's own `h`, an object passed to a sibling), and e
   left when a function written where it is called (*A function called once â¦*) ends in a value
   that folds to a literal â `return c ? f() : null` with `c` folded false â which `if (x) null;`
   printed; it does nothing. Fixture: `emit/release/app/SpecLiteralStatement`.
+- *Amended 2026-11-06 (#1153)*: **a `try` that has no `catch` and whose `finally` folded to
+  nothing is its guarded statements.** A `finally` that runs nothing changes nothing of how they
+  end: a `return`, a `throw` or a jump leaves as before. They join the list as a folded `if`'s arm
+  does, or stay a block. It is what is left of a `Js.finally` whose cleanup reads a cell that the
+  build never writes: `send` in `platforms/browser/Rt.beni`, in a build in which nothing sets a
+  slot (`boundary.md` §9.8.16 (b), amended 2026-11-06). It also removes two latches of a hosted
+  page whose `busy` nothing reads: the render's and the after-render phase's `finally` only clear
+  it, so they fold to nothing. Fixtures: `build_test`'s *a release page ships the hosted program's
+  loop only when it mounts one* (5 `finally` before, 3 now), and the release goldens of the pages
+  that set no slot (`emit/release/tea/`, `emit/release/dom/`).
 
 Measured: `emit/release/split/EmptyPage` **1 043 â 957** brotli (the hand-written runtime's page
 is 980) â `template`'s flags and html folded into `parse`, a slot's constant marker and context;
