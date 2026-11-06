@@ -20,6 +20,7 @@ const Relation = @import("Relation.zig");
 const LabelChain = @import("LabelChain.zig");
 const Cells = @import("Cells.zig");
 const Trees = @import("Trees.zig");
+const SlotWords = @import("SlotWords.zig");
 
 const Error = Relation.Error;
 const Step = Place.Step;
@@ -41,7 +42,7 @@ pub fn supply(f: *Value.Frame, contracts: *const Contract.Table, l: Contract.Lab
 fn cellAt(t: *const Trees.Table, slots: *const Slots.Table, n: Contract.Node, path: *std.ArrayList(u32), gpa: std.mem.Allocator) Error!?struct { Contract.Arrival, []const u32 } {
     for ([_][]const Contract.Arrival{ t.here(n), t.open(n) }) |run| for (run) |a| if (a.kind == .param) {
         const ws = slots.relWords(a.slot);
-        if (ws.len <= path.items.len or !std.mem.endsWith(u32, ws, path.items)) continue;
+        if (ws.len <= path.items.len or !SlotWords.endsAt(ws, path.items)) continue;
         if (Step.fromWord(ws[ws.len - path.items.len - 1]).kind == .contents) return .{ a, ws[0 .. ws.len - path.items.len] };
     };
     for (t.kids(n)) |k| {

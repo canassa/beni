@@ -6,6 +6,7 @@
 
 const std = @import("std");
 const Contract = @import("Contract.zig");
+const SlotWords = @import("SlotWords.zig");
 const Relation = @import("Relation.zig");
 const Entries = @import("Entries.zig");
 const Subtree = @import("Subtree.zig");
@@ -63,6 +64,8 @@ pub fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32, i
         if (hits.items.len == 0) return instSel(e, full, call);
         for (hits.items) |hit| for (hit.arrivals) |a| {
             if (a.kind != .param) continue;
+            // A row reads by more than its words, and a miss below relaxes the check (§2.1).
+            if (SlotWords.hasRow(e.f.slots.relWords(a.slot))) return instSel(e, full, call);
             // The arrival's slot is its own steps, then what the plain
             // slot takes on below an open one.
             const aw = try std.mem.concat(e.arena, u32, &.{ &.{a.j}, e.f.slots.relWords(a.slot), words[hit.depth..] });
@@ -71,6 +74,8 @@ pub fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32, i
             for (1..aw.len) |n| try mark(&reach, g, aw[0..n], below);
         };
     }
+    for (full.sel) |o| if (SlotWords.hasRow(e.f.slots.relWords(Contract.occRel(o)))) return instSel(e, full, call);
+    for (plain.items) |words| if (SlotWords.hasRow(words)) return instSel(e, full, call);
     const out = try e.arena.alloc(u64, full.sel.len);
     for (full.sel, 0..) |o, k| {
         out[k] = o;

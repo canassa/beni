@@ -1,0 +1,31 @@
+-- A label handed on at a site that names more (`ownership-v2.md` §2.1, *The row of a
+-- record*): `nar`'s row is `app`'s `.b` and its own row, and each was given the whole
+-- argument's row, so a caller's `.b` held `c` too. Each step is the argument's own step
+-- now. `out.a` is apart from what `out` goes on to read. Accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+nar : { r | a : L }, ({ r | a : L } → { r | a : L }) → { r | a : L }
+nar rec f = f rec
+
+
+app : { r | a : L, b : L }, ({ r | a : L, b : L } → { r | a : L, b : L }) → { r | a : L, b : L }
+app rec f = nar rec f
+
+
+main : Program
+main =
+    k = [ 1 ]
+    out = app { a = [], b = [ 3 ], c = [ 2 ] } λs → { s | a = [] }
+    n = List.push out.a 1
+    Node.print (show n ++ "|" ++ show k ++ "|" ++ show out.b)

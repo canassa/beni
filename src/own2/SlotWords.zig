@@ -17,6 +17,7 @@ const Step = Place.Step;
 
 pub const same = WordRun.same;
 pub const startsAt = WordRun.startsAt;
+pub const endsAt = WordRun.endsAt;
 pub const rowThen = StepWord.rowThen;
 
 /// `words` past a leading row step that the next step stands for; the words themselves
@@ -35,6 +36,12 @@ pub fn overRow(places: *const Place.Table, words: []const u32) ?[]const u32 {
 /// Whether `words` read a field out of a row that excludes it: a true nothing, no fold.
 pub fn excluded(places: *const Place.Table, words: []const u32) bool {
     for (0..words.len) |i| if (collapse(places, words[i..]) == null) return true;
+    return false;
+}
+
+/// Whether a row step is among `words`.
+pub fn hasRow(words: []const u32) bool {
+    for (words) |w| if (Step.fromWord(w).isRow()) return true;
     return false;
 }
 
