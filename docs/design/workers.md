@@ -515,10 +515,17 @@ members remain covered by the API correspondence table.
 | Shared memory/Atomics | Isolation/constructor availability → `SharedMemoryUnavailable`; invalid integer view kind → `AtomicViewKind`; invalid index → `AtomicIndexOutOfBounds`; non-shared wait view → `WaitRequiresShared`; unavailable host blocking permission → `BlockingWaitForbidden`; native wait outcomes map to `Woken`, `NotEqual`, `TimedOut`. Checked wrappers consume documented TypeError/RangeError only at the corresponding validated operation. |
 | Protocol liveness | Caller-visible closed connection → `ChannelClosed`; lease deadline → `PeerUnresponsive`; bounded queue refusal → `QueueFull`; externally received schema mismatch → `ProtocolRejected issues`; same-build fingerprint mismatch → `ProtocolVersionMismatch` at handshake, before work runs. |
 
-The owned-policy adapter resolves callbacks before the native constructor guard.
-This prevents a user callback TypeError from being mistaken for sink rejection.
+*Amended 2026-11-07, owner decision (#2129).* The owned `policyName`/`policy`/`trust`
+adapter resolves user allow/refusal decisions before the native constructor guard.
+An existing default policy not owned by beni returns `ScriptPolicy (PolicyRefused …)`
+without invoking it or constructing a worker. Owned native policy identities are
+tracked privately; their callbacks are total. The native constructor guard never
+runs arbitrary foreign callbacks. This replaces pre-resolving arbitrary defaults:
+Chrome proves that a null-refusing default and an empty-string-returning default
+produce the same branded empty URL through public `createScriptURL`, while direct
+Worker construction rejects only the former. Both foreign defaults must be refused.
 [Research §10](research/workers-api-research.md#10-owned-trusted-types-policy-adapter)
-retains the precise creation/validation/default-policy algorithm and fixtures.
+owns the algorithm, counterexample and required fixtures.
 
 A shared constructor's SecurityError uses its operation-specific name because
 the browser does not reliably distinguish all underlying security causes.
