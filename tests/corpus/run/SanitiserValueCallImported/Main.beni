@@ -1,0 +1,134 @@
+-- A value of another module with no parameters, called (`ownership-v2.md`
+-- §2.11.1, #2132): what it publishes is what its body answers, never what a
+-- call of it does. Each form below holds its argument `k` in what it answers.
+import Lib exposing (Box)
+import List
+import Mid
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+apply : a, b, (a, b → c) → c
+apply u v f = f u v
+
+
+ctor : ⊤ → String
+ctor ⊤ =
+    k = [ 1 ]
+    x = (Lib.ctor [] k).a
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+nominal : ⊤ → String
+nominal ⊤ =
+    k = [ 1 ]
+    x = Lib.sec (Lib.nominal [] k)
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+lam : ⊤ → String
+lam ⊤ =
+    k = [ 1 ]
+    x = (Lib.lam [] k).a
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+choice : ⊤ → String
+choice ⊤ =
+    k = [ 1 ]
+    x = (Lib.choice [] k).a
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+called : ⊤ → String
+called ⊤ =
+    k = [ 1 ]
+    x = (Lib.called [] k).a
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+named : ⊤ → String
+named ⊤ =
+    k = [ 1 ]
+    x = (Lib.named [] k).a
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+chain : ⊤ → String
+chain ⊤ =
+    k = [ 1 ]
+    x = (Mid.again [] k).a
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+method : ⊤ → String
+method ⊤ =
+    k = [ 1 ]
+    x = ((Box []).meth k).a
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+pipe : ⊤ → String
+pipe ⊤ =
+    k = [ 1 ]
+    x = ([] ▷ Lib.ctor k).a
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+field : ⊤ → String
+field ⊤ =
+    k = [ 1 ]
+    r = { f = Lib.ctor }
+    x = (r.f [] k).a
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+handed : ⊤ → String
+handed ⊤ =
+    k = [ 1 ]
+    x = (apply [] k Lib.ctor).a
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+same : ⊤ → String
+same ⊤ =
+    k = [ 1 ]
+    x = Lib.same k
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+main : Program
+main =
+    Node.print
+        (String.join
+            [ ctor ⊤
+            , nominal ⊤
+            , lam ⊤
+            , choice ⊤
+            , called ⊤
+            , named ⊤
+            , chain ⊤
+            , method ⊤
+            , pipe ⊤
+            , field ⊤
+            , handed ⊤
+            , same ⊤
+            ]
+            ";"
+        )
