@@ -5,7 +5,8 @@
 --! the platform's `inline` lowering recognises where it is called
 --! (`boundary.md` §9.4.6, version 1.6), and the call is compiled as the
 --! constructor applied to the program's mount. The record is never a value,
---! and no constructor's body is ever reached (`unreachable`, below).
+--! and no constructor's body is ever reached: one that is reached throws a
+--! named defect (`unreachable`, below).
 
 import Browser exposing (UrlRequest)
 import Browser.Navigation as Navigation
@@ -30,7 +31,7 @@ pub sandbox :
             , view : sync (model → Html msg)
             }
     → Program
-sandbox app = unreachable app
+sandbox _ = unreachable "Tea.sandbox"
 
 
 --| A page with a model and effects: `init ⊤` is the first model and the
@@ -45,7 +46,7 @@ pub element :
             , subscriptions : sync (model → Sub msg)
             }
     → Program
-element app = unreachable app
+element _ = unreachable "Tea.element"
 
 
 --| What the `view` of a `document` or an `application` makes: the page's
@@ -66,7 +67,7 @@ pub document :
             , subscriptions : sync (model → Sub msg)
             }
     → Program
-document app = unreachable app
+document _ = unreachable "Tea.document"
 
 
 --| A `document` that owns the page's address (`docs/design/boundary.md`
@@ -94,14 +95,24 @@ pub application :
             , onUrlChange : sync (Url → msg)
             }
     → Program
-application app = unreachable app
+application _ = unreachable "Tea.application"
 
 
--- What a constructor gives if a call reached it: none does, since the
+-- What a constructor does if a call reached it: none does, since the
 -- `inline` lowering compiles each call as the program's mount
--- (`Lowering.constructs`) and refuses one used as a value. All four are
--- beni rather than `foreign` (`sandbox` and `element` since 2026-10-29,
--- `plans/runtime-in-beni.md` step 9), so the platform has no sibling and
--- a development build copies none (`browser-inline.md` §10.5).
-unreachable : a → Program
-unreachable _ = Js.to Js.undefined
+-- (`Lowering.constructs`) and refuses one used as a value. A call that
+-- reached it would be one the lowering did not compile, a bug in beni, so
+-- it throws an `Error` that names the constructor, and the page stops as
+-- for any defect; it never answers a `Program` (`CLAUDE.md` rule 9,
+-- `browser-inline.md` §10.5, amended 2026-11-06). All four are beni rather
+-- than `foreign` (`sandbox` and `element` since 2026-10-29,
+-- `plans/runtime-in-beni.md` step 9), so the platform has no sibling and a
+-- development build copies none.
+unreachable : String → Program
+unreachable name =
+    Js.throw
+        (Js.construct (Js.global "Error")
+            [ Js.from
+                "${name} was called, and the inline lowering did not compile the call as the program's mount (docs/design/boundary.md §9.4.6, Lowering.constructs). This is a bug in beni, not in the program."
+            ]
+        )

@@ -1,0 +1,25 @@
+-- `view_not_compiled`, once for each of the four program constructors:
+-- `Tea.sandbox`, `Tea.element`, `Tea.document` and `Tea.application`, held
+-- in a tuple rather than called with a record. `browser-inline` compiles
+-- each call of one as the program's mount and refuses every other use, so
+-- no call reaches a constructor's body, which throws a named defect if one
+-- does (docs/design/browser-inline.md §10.5, amended 2026-11-06, #1232).
+-- `main` itself is a program the lowering compiles; its `init` reads the
+-- tuple, so the tuple's declaration survives and is checked.
+import Html exposing (Html)
+import Tea
+
+
+constructors = ( Tea.sandbox, Tea.element, Tea.document, Tea.application )
+
+
+none : a → {}
+none _ = {}
+
+
+view : {} → Html {}
+view _ = <p>one program</p>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → none constructors, update = λ_ m → m, view = view }
