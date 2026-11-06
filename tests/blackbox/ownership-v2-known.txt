@@ -5730,22 +5730,3 @@ tests/corpus/run/SanitiserValueCallImported Main 71:9 #0 :: List.push k :: accep
 tests/corpus/run/SanitiserValueCallImported Main 87:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
 tests/corpus/run/SanitiserValueCallImported Main 96:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
 tests/corpus/run/SanitiserValueCallImported Main 104:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
-||||||| parent of d0a7eb9505 (🐛 read what a value's call does, across modules and routes)
-tests/corpus/run/SanitiserValueCallImported Main 23:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
-tests/corpus/run/SanitiserValueCallImported Main 55:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
-tests/corpus/run/SanitiserValueCallImported Main 63:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
-tests/corpus/run/SanitiserValueCallImported Main 71:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
-tests/corpus/run/SanitiserValueCallImported Main 87:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
-tests/corpus/run/SanitiserValueCallImported Main 96:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
-tests/corpus/run/SanitiserValueCallImported Main 104:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
-tests/corpus/run/SanitiserValueCallImported Main 32:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
-tests/corpus/run/SanitiserValueCallImported Main 64:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
-tests/corpus/run/SanitiserValueCallImported Main 72:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
-tests/corpus/run/SanitiserValueCallImported Main 80:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
-tests/corpus/run/SanitiserValueCallImported Main 96:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
-tests/corpus/run/SanitiserValueCallImported Main 105:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
-tests/corpus/run/SanitiserValueCallImported Main 113:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
-tests/corpus/run/SanitiserValueCallImported Main 136:9 #0 :: Main.apply1 k :: absent :: rejected  #2132: v2 refuses a writer a value reaches through its alias; v1 reports no such demand, #2158
-tests/corpus/run/SanitiserValueCallImported Main 143:9 #0 :: Main.grown <call> :: absent :: rejected  #2132: v2 refuses a writer evidence reaches through its alias; v1 reports no such demand, #2158
-tests/corpus/run/SanitiserValueCallImported Lib 97:10 #0 :: value Lib.grow :: pending :: absent  v2 makes no value demand of a writer handed as a value (§7.3)
-tests/corpus/run/SanitiserValueCallImported Lib 101:9 #0 :: value Lib.growing :: pending :: absent  v2 makes no value demand of a writer handed as a value (§7.3)

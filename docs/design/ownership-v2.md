@@ -570,7 +570,7 @@ The **leaves** of a value are its objects, each said once:
 | `site ι`, `fresh k` | the atom's objects |
 | `shared d` | the top-level value's objects |
 | `⊤` | unknown objects. With an **origin** `v`, a value of the frame: objects inside `v` that no slot names |
-| `host` | objects JavaScript made, or beni objects that escaped (§2.10, *host objects*): a `foreign`'s unknown result, or an escaped object a callee answers |
+| `host` | objects JavaScript made, beni objects that escaped (§2.10, *host objects*), or what a top-level value's call answers and no block names (§2.11.1): a `foreign`'s unknown result, an escaped object a callee answers, or such a call's result |
 
 A deep read of a value reaches every leaf of it: for a `ref`, `below` of its slot, a symbol `↓p` past
 `below_min` slots (§2.3.1). **Shallow storage and
@@ -1917,17 +1917,22 @@ free while the result held it, and the sanitised run trapped. The one reading of
 value (§2.11.4), and a dispatch site's evidence. Each reads the chain's end and then each name of the alias chain
 (R-5.5.6), since a private end publishes nothing and its alias publishes its contract. A contract is read only at the
 call's arity. What it answers then, for a value:
-- **Its lambda or constructor**, when its body is one: the called contract at `ε` (§2.11.3, *A value's lambda*), of the
-  same arity. In its own module, that code.
-- **Else the pessimistic contract**, its result `host`. So `mk = if c then f else g`, `mk = build ⊤`, `mk = r.f` and a
-  let around a lambda escape every argument and answer `host`, imported or in their own module. That refusal is not
-  caution: such a value may keep what it is handed, as a fiber it spawns does, and nothing a block publishes says that
-  it does not.
+- **What its body is**, when that is a lambda or a constructor, or a choice, `case` or `let` whose every arm is one of
+  these, a declaration, or a local function, none with captures: the called contract at `ε` (§2.11.3, *A value's
+  lambda*), of the same arity, the join of the arms'. In its own module, that code, or that join.
+- **Else the pessimistic contract**, its result `host`. So `mk = build ⊤`, `mk = r.f` and a let around a lambda with
+  captures escape every argument and answer `host`, imported or in their own module. This is a refusal for want of a
+  contract, not a finding about the program: `x = (Lib.mk [] k).a; s = show x; List.push k 2` over `mk = build ⊤`
+  runs correctly, and it is refused because a block says nothing of what the call does. A value of the same form may
+  keep what it is handed in a fiber, and the caller is the same text (`run/SanitiserValueKept`, accepted before and wrong). So
+  the caller cannot be accepted on today's block. #2152 holds the precision.
 - **Why `host` holds and `⊤` was too much.** A value's function is made when its module starts, so no frame's
   object is in its closure. It reaches a frame's object only through an argument, which escapes deep at the call, or
   as something that escaped at an earlier point. So §2.10's argument for a `foreign` holds as it stands: an object
   that no host leaf names is an object it does not hold, and one it may name is refused `escaped`. A value's closure
-  holds what its module made for it, which nothing else names, or a shared value, which is not writable. `⊤` said
+  holds what its module made for it, or a shared value. A shared value's cell is written (`Queue.offer` writes a
+  top-level `q`), but what goes in has escaped at that call, and what comes out of such a call is `host`, refused as a
+  target: `run/SanitiserValueCallQueue`. `⊤` said
   more: a later `List.push k 2` of a list the call never saw was refused, as held by the call's result. A function
   **parameter** stays unknown code: its closure holds its caller's objects, escaped or not.
 A worded declaration and a `foreign` keep their words, stated over the scheme. An alias of a declaration with
@@ -4360,7 +4365,7 @@ of them holds.
 | `shared d` | `reach` of top-level value `d` |
 | `answer L, s` | the objects at slot `s` of the value of any run of `L`'s function that `a` can observe |
 | `⊤` | **every object**. With an origin `v` it stands for the same set. The origin adds readers (§2.3.4); it never narrows `γ`. `Distinct.overlapRaw` answers `may` for a `⊤` once tags have not parted the two leaves, and unless the target is a `◆` at its own position (a cell's barrier) |
-| `host` | objects JavaScript made, and objects that escaped at an earlier point (§2.10, *host objects*) |
+| `host` | objects JavaScript made; objects that escaped at an earlier point (§2.10, *host objects*); and what a top-level value's call answers (§2.11.1): objects that activation made, objects that module made when it started, and shared values |
 | `loan l, k` | `γ_a(l)`, reached through a cell's contents. Held, it holds what `l` names. Written, it is refused |
 | `recons ι` | a prepend's base storage in an `a` where the item put in front is `Js.same` as the element stored before the base's view (§2.13.6); else nothing |
 
@@ -4565,6 +4570,22 @@ design. **A slot names objects, so a code has no name but a label**: every route
 **What would change this finding.** A failing program in a class of the table above with every rule of that row applied, or a
 new class. The audit counts 17 such defects in 15 hours and no new class. That count is not re-checked here, and about 30 probes of
 mine are no sweep.
+
+**The route of a called value (#2132, rule 3).** A call of a top-level value with no contract is a run of "anything else":
+its arguments escape deep and its answer is `host` (§2.11.1). With a contract, its lambda's or its arms', it is a call of
+a fixed contract, and its labels are that contract's, so the table applies as to any callee. Without one, by row:
+- **H1.** A holder in the caller after the call: what the value was handed escaped, so a write of it is refused by
+  Unescaped, and what it answers is `host`, refused by Known.
+- **H2.** What the value holds after the run: it was handed the object, so the object escaped. No `kept` is read.
+- **H3.** Another run over one family: a callback handed to it escapes with its captures, and each run is unknown code.
+  The family's objects escaped, so a write of them in a run is `Closures.escapedWrites`, a demand on `⊤`.
+- **H4.** The callback's closure for its next run: an escaped closure may run again, so its capture writes are `once`.
+- **H5.** Another function value's closure: both are operands of one call, and both escape, deep with their captures, so
+  `disjoint` asks them apart at the call, or `once` refuses the write.
+- **H6.** Unknown code, a cell, a fiber: that is what the escape stands for. A value that keeps its argument in a fiber or
+  passes it through a shared `Queue` holds an object that escaped, and an object that comes back is `host`.
+Pinned, a refused program per row: `run/SanitiserValueCallRuns` (H1–H5, for a value with no contract and for a value's
+lambda), `run/SanitiserValueKept` and `run/SanitiserValueCallQueue` (H6).
 
 #### 2.14.6 Obligations
 

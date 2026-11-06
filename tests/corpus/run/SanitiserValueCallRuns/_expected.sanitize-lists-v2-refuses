@@ -1,0 +1,13 @@
+# v2 refuses each edit a value of another module may see (§2.11.1, §2.14.5, #2132).
+22:9 list_still_used Lib.run
+22:17 list_still_used once
+29:10 list_may_be_shared Lib.mapv
+36:10 list_still_used Lib.mapl
+43:10 list_may_be_shared Lib.mapv
+50:10 list_may_be_shared Lib.mapl
+57:10 list_still_used Lib.mapv
+64:10 list_still_used Lib.mapl
+71:9 list_still_used Lib.two
+71:18 list_still_used once
+78:9 list_still_used Lib.twol
+78:19 list_still_used once
