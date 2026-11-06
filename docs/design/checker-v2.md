@@ -1101,10 +1101,17 @@ Three things keep the old key, so that nothing changes there:
 - **A shape that is not known** keys by every argument: an alias with more than 64 parameters, a
   recursive one, and one whose expansion names a schema endpoint, a variable that is not a
   parameter, a type that did not resolve, or a type with the wrong number of arguments (an `err`
-  in a read). A schema endpoint is read through the schema state (§11.5), and that read is left
-  as it is.
+  in a read); and an application with fewer arguments than its shape names, which only an
+  interface record that does not describe itself can hold (`AliasShape.fits`). A schema endpoint
+  is read through the schema state (§11.5), and that read is left as it is.
 - **The key-kind preparation** (`KeyKinds.Preparation`, which notes every application its reads
   make) does not use the entry.
+
+A hidden argument is still checked at each application. The preparation lifts every key-kind
+requirement in an alias's body, a hidden position's included, to the alias's own parameter, and
+`Builder.apply` checks those before it looks at either entry. So `X (Int → Int)`, with `X a = Y
+(Dict a Int)` and `Y z = Int`, is refused after a clean `X Int` as before
+(`check/bad/AliasSharedHiddenKeyArgument`, and its `Imported` twin across modules).
 
 An application found this way costs one level of the reader's depth, as a hit of the memo above
 does. The interface reader applies the same rule to an alias row, with the row's shape settled
