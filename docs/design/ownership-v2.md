@@ -1380,6 +1380,34 @@ reference's slots lose the plain ones' at its route by `Subtree.without`. Withou
 
 The relation is computed once per pair of leaves per walk and reserved before work.
 
+**The fixed point of the pairs** [#2146]. The steps above are one equation per pair, and the pairs a pair reaches
+can reach it back: a fold's supply and its answer are `S → [ init, A ]`, `A → [ S, q ]`. The relation is the
+**least fixed point** of those equations (§2.11.3), so a depth-first read that cuts a pair met again has a partial
+value everywhere below the cut. At `(A, t)` with `t = q`, the read of `(S, t)` reaches `(A, t)` again, and that
+`no` is `S`'s value only until `A` is done. Kept, it answered the next read of `(S, t)`, whose true value holds
+`q`, so which pair was asked first decided the verdict: `w = ( r.0, r.1 )` over a fold's two-field accumulator
+wrote in place under a live reader, and the same program with `w = ( r.1, r.0 )` was refused.
+
+The relation is solved by one depth-first walk that finds the equations' strongly connected components as it goes
+(`Pairs.zig`). Each row of the walk keeps the value it has so far; a row read while it is open gives that value and
+records the shallowest open row read; a row that read no shallower row than itself is its component's head, and it
+walks the component again until no value of it moves. Each value only joins upward, over a finite lattice, so this
+ends. A value read in a later pass goes on from where it was, so the answer does not depend on which pair the walk
+met first. `may` is the top: a head that reaches it stops at once and forgets its members, which saw less.
+
+- **What is kept.** A solved component's values are the relation, as a key's leaves are the instantiation, and they
+  live as long: an evaluation, and only while no key grows (§2.12), since a key that grew changed what a leaf expands
+  to. A value enters them when its component is solved, never before. A row of a walk is not kept, in any form.
+- **Why it is kept.** Two measurements. With no rows, cutting only the pairs on the path is correct and exponential:
+  `x_k = pick (id1 x_(k-1)) (id2 x_(k-1))` walks 2ⁿ paths and passes its account at n = 20. With rows per query, each
+  demand walks again what the last solved, so `y_k = pick c y_(k-1) (List.push z k)` is n²: continuation 69 564 at
+  n = 200 and 760 296 at n = 800, against 29 369 and 119 501 here: a pair is solved once.
+- **A query.** A read made while another runs (a call's separation inside a pair's equation, a delivery) has a walk
+  of its own: it reads no open row of the other, so what it leaves in `solved` or in a call's condition rests on no
+  unsolved value.
+- **Cost.** Each pair once, a component once more per pass that moved a value. Core's heads settle in two passes, the
+  second only to confirm what the first found.
+
 #### 2.9.3 Non-duplication: the distinct check
 
 `Sep(v)`, the separation of a value built by this frame, says that `v`'s objects each occur once. It is the
@@ -2131,7 +2159,8 @@ At a caller where the label's function value is **known** — a lambda, a local 
 constructor, or an `alt` of them — the label is applied: for each possible code `K`, `K`'s contract is
 instantiated (§2.11.2) on the supplies (projected onto the caller) and `K`'s captures. The answer `cb L` is the
 least fixed point of that instantiation over the caller's leaves (a fold's accumulator is fed its own
-answer: `foldl f acc xs` supplies `cb L` back to `L`), a finite set of leaves. `K`'s writes become demands at
+answer: `foldl f acc xs` supplies `cb L` back to `L`), a finite set of leaves; a read of it is solved to that
+fixed point, and a value met under a cycle's cut is never an answer (§2.9.2, *The fixed point of the pairs*). `K`'s writes become demands at
 the call (`callsite`): refused `later-use` on a kept slot, relying on the supply's distinctness condition and
 on `K.req`; accepted `callback-param` otherwise. `K`'s escapes escape the supplies. `K.once` with `calls`
 many refuses `once`.
@@ -2473,7 +2502,7 @@ are not, their labels' supplies being `kept`, and `any` is not, as it reads with
    an answer is unknown code's, and a family of them is any object at all. A contract now keeps a second condition, `res_read`,
    printed `answers ⇐ …`, only where `res_cond` is `no`: the result's separation with its answers **read**. Reading is a second run of
    the distinct check (§2.9.3, `Answers.zig`), asked only where the first says `no` and met an answer, a `taken` element or a call with a `res_read`
-   on the way (`Relation.read_mode`). The memos of a call's condition and of the relation are kept per mode, since an ask outside a check may fall back to
+   on the way (`Relation.read_mode`). A call's kept condition and a pair's value are per mode, since an ask outside a check may fall back to
    reading (`Distinct.modeOf`). The first run, and every call inside it, is exactly the old one: a call that vouches
    is read differently from one that does not, so a selection in place of `no` inside a check would refuse what the old check took apart.
    Only the outcome `no` of a whole check can change, and only to a condition that also holds. A recursive code with no label and no `taken`
@@ -4314,7 +4343,7 @@ is there**, and it must be true for one of five reasons.*
 | `crossing` | the place holds no object | Lemma T | `Slots.holdsAny`, `Frame.resolveRef`, `Frame.setsOf` for `scalar` |
 | `impossible` | this arm cannot run | another constructor of a literal, an index past a literal's end, `[]`, two tags of one choice | `Relation.Eval.project`'s `built` arms, `Frame.mergeTags` |
 | `bot` | no value yet | a fixpoint's start, or an activation that does not return, §2.12 | `Walk.Walker.project`, `case` dropping an arm |
-| `cycle` | what this read would add is added by the reader it re-enters | true of a cycle's **head** only: the head unites every member. A member's own answer, read before the head ends, is short, so it may not be kept. `Relation.Eval.instAt` honours this; `Distinct.overlap` does not, and the claim is false of it (G5) | `Relation.Eval.instAt`, `Relation.Eval.expandRouted`, `Distinct.overlap`, §2.12's keys |
+| `cycle` | what this read would add is added by the reader it re-enters | true of a cycle's **head** only: the head unites every member. A member's own answer, read before the head ends, is short, so it may not be kept. `Relation.Eval.instAt` honours this, and `Pairs.zig` solves the relation to it (G5, closed) | `Relation.Eval.instAt`, `Relation.Eval.expandRouted`, `Pairs.zig`, §2.12's keys |
 | `covered` | another reader names these objects | named per site: a held atom, an unchanged set node, a label of a later round | `Held.has`, `Leaves` passes, `Relation.Eval.feedDraft` |
 
 An empty set is the most permissive answer there is. A caller reads it as *nothing to judge*, and `fresh` is the ground left
@@ -4327,7 +4356,7 @@ refuses core (five refusals in `core/Markdown`, two in `platforms/browser`'s `We
 with no reason panics under runtime safety, and is `⊤` otherwise.* The rule can be stated, and it is not built: nothing in
 `src/own2/` tells an empty read from a lost one (G4). It is necessary and not sufficient. The review of 2026-11-06 sorts 60 of
 the then 170 oracle failures as wrong **non-empty** reads (a level along the wrong cycle, an arrival read at the object and
-not the subtree), which only O3 reaches. And it would pass G5: that read has a true-sounding reason, `cycle`, and a wrong answer.
+not the subtree), which only O3 reaches. And it would have passed G5: that read had a true-sounding reason, `cycle`, and a wrong answer.
 
 #### 2.14.4 The invariant
 
@@ -4401,7 +4430,7 @@ about interleavings, which is why P-sync is the only scheduling fact used.
 - **Testable on a program (B):** rows of §2.14.7 a tool could decide from the source: it declares a non-regular type (G2), an open row
   reaches a write (G3), it has an `entry` parameter (G1), it calls an imported value (G9), it is built with `--library` (G11), it writes a
   record in place (G8).
-- **Not testable on any program (C):** G4, G5, G6, G12. Each says that the checker's own reads are right. No fact of a program
+- **Not testable on any program (C):** G4, G6 and what is left of G12 (G5 is closed). Each says that the checker's own reads are right. No fact of a program
   shows that a read of the checker was not short.
 
 **Theorem (conditional on A, B and C).** *Let a program be accepted, with no demand refused or pending, and let no row of (B)
@@ -4409,8 +4438,8 @@ apply to it. If the rows of (C) are closed, then in every execution of `S_u`, an
 holder reads: for a write at demand `d` at point `p` of activation `a`, of object `o`, no reference to `o` other than the write's own
 result is dereferenced after `p`.*
 
-**So the Theorem cannot claim this:** *this accepted program is safe.* (C) is open today, and G5 has failing programs, so the implication
-has a false premise. What stands is a map: if a program fails, the failure is a row of §2.14.7 or a row nobody has found.
+**So the Theorem cannot claim this:** *this accepted program is safe.* (C) is open today, so the implication
+has a premise nobody has shown. What stands is a map: if a program fails, the failure is a row of §2.14.7 or a row nobody has found.
 
 *Proof sketch.* `o ∈ γ_a(t)` for a target `t` of `d`: a direct write by I2, a callee's by Lemma C(b), a known code's by Lemma 3
 below. `t` is not `⊤`, a loan, `host` or `shared`: `Resolve.judge` refuses those first. (In `keeping` mode, a supplied part judged by
@@ -4435,7 +4464,7 @@ position of its base, so it meets the base's storage: Dead), a loan (Dead over l
 
 §2.11.3 is 602 lines with 15 dated amendments, so the question is whether it hides a second design problem. **Finding: the
 argument can be stated, as one lemma with one case split and six classes of holder. That no class lacks a rule is unrefuted, not
-shown. One of its three facts is false (F1). The other two have no counterexample yet. It is a list of routes, not a derivation.**
+shown. One of its three facts was false (F1, closed by #2146). The other two have no counterexample yet. It is a list of routes, not a derivation.**
 
 **A run is one of four things** (Lemma 2's third clause, `FnRun.zig`, `Closures.zig`). A call of a function value is a call of
 a closure built here (a code call), of a choice of them (each arm), of one parameter's function slot (a label), or of anything
@@ -4468,9 +4497,10 @@ design. **A slot names objects, so a code has no name but a label**: every route
 
 **The three facts.**
 
-- **F1, the answer is a least fixed point** (§2.11.3). **Refuted on regular types.** It is computed by a depth-first read that
-  cuts a cycle, and `Distinct.overlap` keeps what it computed under a cut, so a holder of a member reads a short answer. `C11foldTwo`
-  is a plain `List.foldl` with two labels and a tuple accumulator: accepted, and the sanitised run traps (G5).
+- **F1, the answer is a least fixed point** (§2.11.3). **Refuted on regular types, then closed by #2146.** It was computed by a
+  depth-first read that cuts a cycle, and `Distinct.overlap` kept what it computed under a cut, so a holder of a member read a short
+  answer. `C11foldTwo`, a plain `List.foldl` with two labels and a tuple accumulator, was accepted and its sanitised run trapped.
+  The relation is now solved by components (§2.9.2, *The fixed point of the pairs*; G5).
 - **F2, the induction of `fed`, `each` and `taken`:** no counterexample. Each has a soundness paragraph in §2.11.3, and each relies on a fact
   about all runs that no check sees: `each`'s E2 (no position handed twice), `fed` (an answer holds at the written slots only the
   argument's objects or fresh ones), and the index obligation. `taken` is pinned; `each` and `fed` are derived by the walk and
@@ -4515,7 +4545,7 @@ rule O1. The headers keep the numbers but not the meanings (G7).
 #### 2.14.7 The gap list
 
 Each row is a fact the argument needs that the code does not give. A row is of hypothesis (B), testable on a program (G1, G2, G3, G8, G9,
-G11), or (C), about the checker's own reads and testable on none (G4, G5, G6, G12). G7 and G10 are about the argument's tools. Probe
+G11), or (C), about the checker's own reads and testable on none (G4, G6, G12; G5 is closed). G7 and G10 are about the argument's tools. Probe
 names are directories under `~/.cache/beni-agents/`, in `s214/probes/` where no other path is given.
 
 | | The argument needs | The code gives | Evidence | Issue |
@@ -4524,14 +4554,14 @@ names are directories under `~/.cache/beni-agents/`, in `s214/probes/` where no 
 | G2 | **Open hole: non-regular types.** Lemma T for a value past a non-regular fold; O3 for a `⟲` or an open arrival there | a `var` place with structure below it, and hand-listed readers (`FoldRead`, `Origin`, `FnRun`, `ReadOff`, `paramEffects`). A rule for this case cannot be stated while the owner has not said whether these types stay. If they stay, a fold needs a place of its own or a refusal; if they go, the checker refuses the declaration, and §2.1's fold rules go with it | sweeps `m1`, `m2`: 4 744 and 272 DIFF on master. Real code has none, over 2 422 roots (both the review's counts) | #2062, #2104, #2112; the owner's decision |
 | G3 | Lemma T for an open record | a row step at every open record (§2.1, *The row of a record*) | every oracle and generator `TRAP` with an open row becomes `REFUSED` (#2135's table) | Closed by #2135 for #2057, with §2.1's own totality argument |
 | G4 | Lemma E: every empty read has a reason | no reader says why. `Relation.Eval.project` gives nothing on a step of another form, with no `else` (its `else` arm reads everything). `Walk.Walker.project` gives `scalar` where §2.3.3 says `bot`. `Eval.callWriteFrom` drops a write with no target as *a crossing value consumed*, while `Resolve.judge` refuses `targets.len == 0` `unknown`: two meanings of one empty | a census of the readers (source only, `Groups`, `Enforce`, `Traversal` in part): no assert on any. Eleven have no reason from the code alone; six probes of them are refused | #2145 |
-| G5 | F1: a cycle's reads end in the least fixed point | **False on regular types.** `Distinct.overlap` answers `no` to a pair in progress and **memoises what it computes under that cut**, where `Relation.Eval.instAt` has `min_cut` for exactly this. `instBelow` and `expandRouted` also cut with no `min_cut` | `C11foldTwo`, `C7swap`, `C13param` (`review-2150/probes`): accepted, `TRAP` on master; refused once such entries are dropped. The ledger's 2 429 roots show nothing either way, which is a measure of the corpus | #2146 |
+| G5 | F1: a cycle's reads end in the least fixed point | **Closed (#2146).** It was false on regular types: `Distinct.overlap` answered `no` to a pair in progress and **memoised what it computed under that cut**. `Pairs.zig` keeps no value before its component is solved (§2.9.2, *The fixed point of the pairs*). `instBelow` and `expandRouted` cut with no `min_cut`, and no program reaches either: outside a group a fill's reads go to older points, and each panics under runtime safety if reached | `C11foldTwo`, `C7swap`, `C13param` (`review-2150/probes`), `run/SanitiserPairCycle*`: `TRAP` before, refused now. A generator of 27 120 programs over this shape: 244 `TRAP`s to 0. Those two cuts: 0 of 58 823 programs. The ledger's roots show nothing either way, which is a measure of the corpus | #2146 |
 | G6 | O2: a fast path answers what the plain reading answers (`aggregated`, `Operands`, `Stack`, `Descent`, `Graft`, `Kept`, `Twins`) | §2.8 argues each one. In v2, `-Downership-full-cross-check` covers `Kept` alone (`Kept.cross`; the spine is v1's), and no CI job or gate runs it | `.github/workflows/`, `build.zig:231` | #2147 |
 | G7 | §7 item 7: a rule mutation harness, and each trusted word's flip report (R-8.7, R-5.10.7) | `test-own-mutations` does not exist, and `-Downership-v2-mutation` (`build.zig:242`) is read by nothing in `src/own2/`. `rules_test` checks that a header has the words, not that its `O`n exists or means this table's | `grep`, 2026-11-06 | #2148 |
 | G8 | S5: Theorem for records | §2.11.5 copies, no `update` demand exists, and the sanitiser has no record pass. The Theorem says nothing of a record write yet | §2.11.5, §7.3 | #1018 |
 | G9 | a call's value names its contract, across modules | an imported value called with arguments reads the value's contract | `review-2117b/probes/X4btop` | #2132 |
 | G10 | §2.3.3's `family` | a value's `family` is never set: `Walk.Walker.project` makes one only from one. Every family arm is dead, so the claim that a family stands for a step a position cannot name is no fact of the code | `grep`, census | #2149 |
 | G11 | the Theorem's (iv): a checked caller at every export | a `--library` export accepts `param` with no caller: JavaScript is the caller, and its next read traps | `review-2150/probes/Lib1` | #2151 |
-| G12 | a verdict does not depend on the order pairs are asked | it does: the memo of G5 is filled in the order holds are read, and `Resolve.heldAt` calls `HoldAt.holdsAt` before it asks for a later use, so a dead field's `may` fills it. `C7swap` and `C8swapB`, and `C11foldTwo` and `C12foldTwoB`, differ only in which tuple field is read, and only the second of each is refused. `ordering_test.zig` varies declarations, never the order of questions | `review-2150/probes` | #2146 |
+| G12 | a verdict does not depend on the order pairs are asked | **Closed for the relation (#2146).** It did: the memo of G5 was filled in the order holds were read, and `Resolve.heldAt` calls `HoldAt.holdsAt` before it asks for a later use, so a dead field's `may` filled it. `C7swap` and `C8swapB`, and `C11foldTwo` and `C12foldTwoB`, differ only in which tuple field is read, and only the second of each was refused. **Open for a call's condition:** `instCond` keeps a value computed under its cut, sound since the cut reads `no`, and no program is known whose verdict moves. `ordering_test.zig` varies declarations, never the order of questions | `review-2150/probes`; 3 804 classes of the generator: 112 split before, 0 now | #2146, #2160 |
 
 **In flight: two pull requests make programs worse, and this section did not stop them.** The first version of this list read #2134 and
 #2104 as fitting. They do not. On the heads their reviews read, master's `REFUSED` becomes a wrong run:
@@ -4631,8 +4661,8 @@ demands   : Columns { point, kind, base_inst, base_local, base_path, token, call
 escapes   : (leaf, point) pairs
 ```
 
-No table holds a pointer; every reference is an index. The relation (§2.9.2) and the distinct check (§2.9.3)
-(`Distinct.zig`) keep their per-walk results in `FixedDict`s keyed by leaf pairs and value ids, reserved before insertion.
+No table holds a pointer; every reference is an index. The relation (§2.9.2) (`Pairs.zig`) and the distinct check
+(§2.9.3) (`Distinct.zig`) keep their per-walk results in `FixedDict`s keyed by leaf pairs and value ids, reserved before insertion.
 
 ### 3.4 Conditions
 
@@ -4855,7 +4885,7 @@ every growth reservation of §4.4 does. Per walk:
 |---|---|---|
 | values, positions, leaves, tags | one record each, interned: O(source + projections) | `shape`, `path`, `cell`, `set` |
 | `below`, `canon` of a path | once per path per module, its slots | `memo`, `path` |
-| the relation of two leaves | once per pair met, plus a call's expansion | `cond` |
+| the relation of two leaves | once per pair met, a cycle's pairs once more per pass (§2.9.2, *The fixed point of the pairs*), plus a call's expansion | `cond` |
 | the distinct check | linear in entries and their ancestors' index hits (§2.9.3); pairs only for list-step groups | `cond`, `inspection` |
 | a call's instantiation | once per call per candidate generation: the callee's arrivals × the projected positions | `edge`, `inspection` |
 | demand resolution | per demand, its targets × the holders live at it (§2.8, *The holder index and its sweep*), plus one liveness query per holder path; its escapes by the escape index, O((1 + k) log e) | `demand`, `use`, `inspection` |
@@ -5600,6 +5630,7 @@ L0  Ids  Counters  Scratch
 | `Value.zig` | 5 | a walk's roots, positions, values, leaves and tags; each value's leaf set made with it (§2.3, §3.3) | Ids, Place, Slots, Replay, ValueTypes, Subtree, Contract, Leaves |
 | `Liveness.zig` | 5 | the use index and its queries (§2.7, §3.4a) | Ids, Facts, Place, Regions |
 | `Ancestry.zig` | 6 | compatibility for one pair of points: binary lifting over the region tree (§2.5, §4.1) | Ids, Regions |
+| `Pairs.zig` | 6 | the relation solved: its equations' least fixed point, by strongly connected components (§2.9.2) | Ids, Conds |
 | `Relation.zig` | 6 | a value's leaves, projection, a call's instantiation and expansion (§2.11.2) | Ids, Place, Slots, Subtree, Contract, Value |
 | `Entries.zig` | 6 | the distinct check's entries and its rounds' state: groups kept across rounds, the within-group index, the heaps of roots to expand (§2.9.3) | Ids, Slots, Subtree, Contract, Value |
 | `AtomGraft.zig` | 7 | a call's subtree of atoms read as the callee's node: the atom test on a result tree's node, and whether a cycle spans a result slot (§2.10 *Read-off*, #1714) | Ids, Trees, Forest, Value |
