@@ -18,3 +18,9 @@ pub fn same(a: []const u32, b: []const u32) bool {
 pub fn startsAt(words: []const u32, prefix: []const u32) bool {
     return std.mem.startsWith(u32, words, prefix);
 }
+
+/// Whether `words` end in `tail`, word by word. For a tree's own entry and an arrival of
+/// that entry, which say one row by one word.
+pub fn endsAt(words: []const u32, tail: []const u32) bool {
+    return std.mem.endsWith(u32, words, tail);
+}

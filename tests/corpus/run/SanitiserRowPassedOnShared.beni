@@ -1,0 +1,29 @@
+-- `SanitiserRowPassedOn`'s refused twin: `b` and `c` are one list and the callback
+-- writes `.b`, so pairing a row with the argument's own steps must still see `.c` (§2.1).
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+nar : { r | a : L }, ({ r | a : L } → { r | a : L }) → { r | a : L }
+nar rec f = f rec
+
+
+app : { r | a : L, b : L }, ({ r | a : L, b : L } → { r | a : L, b : L }) → { r | a : L, b : L }
+app rec f = nar rec f
+
+
+main : Program
+main =
+    k = [ 1 ]
+    out = app { a = [], b = k, c = k } λs → { s | b = List.push s.b 1 }
+    n = List.push out.a 1
+    Node.print (show n ++ "|" ++ show k ++ "|" ++ show out.c)

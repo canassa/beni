@@ -48,7 +48,7 @@ const layers = [_]Entry{
     .{ .file = "Ids.zig", .layer = 0, .max_lines = 1120 },
     .{ .file = "Counters.zig", .layer = 0, .max_lines = 580 },
     .{ .file = "RowSets.zig", .layer = 0, .max_lines = 60 },
-    .{ .file = "WordRun.zig", .layer = 0, .max_lines = 25 },
+    .{ .file = "WordRun.zig", .layer = 0, .max_lines = 30 },
     .{ .file = "StepWord.zig", .layer = 0, .max_lines = 90 },
     // §5 says 1 100 since #1345: the fold targets and levels of a read on a
     // cycle, memoised per path.
@@ -325,14 +325,102 @@ const base_imports = [_]BaseImport{
 const test_imports = [_][]const u8{ "../lex/Tokenizer.zig", "../parse/Parse.zig", "../bir/Lower.zig" };
 
 /// The files that compare no name to a string literal.
-/// The plain compares of `u32` runs `SlotWords` alone may make of a slot's words.
-const word_compares = [_][]const u8{ "std.mem.startsWith(u32, ", "std.mem.eql(u32, " };
-/// Files that compare runs of words that are no slot's: an event log, a block's words,
-/// interned runs, a place's name set.
-const no_slot_words = [_][]const u8{ "Block.zig", "Kept.zig", "PlaceIdentity.zig", "RouteWalk.zig", "Runs.zig", "Twins.zig" };
+/// `std.mem`'s compares, by the start of their names: a run of words compared with
+/// another, or searched, whatever the spelling.
+const mem_compares = [_][]const u8{ "eql", "startsWith", "endsWith", "order", "lessThan", "indexOf", "lastIndexOf", "find", "containsAtLeast", "count" };
+/// Files whose runs of words are no slot's: an event log, a block's words, interned
+/// runs, a place's name set, route sets, a caller's capture ids, a type's places.
+const no_slot_words = [_][]const u8{ "Block.zig", "CodeCaps.zig", "Counters.zig", "Enforce.zig", "Groups.zig", "Ids.zig", "Kept.zig", "Ownership.zig", "PlaceIdentity.zig", "RouteWalk.zig", "Routes.zig", "RowSets.zig", "Runs.zig", "Twins.zig", "WordRun.zig" };
+/// A line of a file with slots that compares something else, by a needle on the line.
+const not_slots = [_]struct { file: []const u8, needle: []const u8 }{
+    // Parameter, code, value and leaf ids in small lists.
+    .{ .file = "Answers.zig", .needle = "ids, c.code" },
+    .{ .file = "Closures.zig", .needle = "cl.value" },
+    .{ .file = "Distinct.zig", .needle = "js.items, j" },
+    .{ .file = "MovedReq.zig", .needle = "js.items, Contract.occParam(o)" },
+    .{ .file = "Routed.zig", .needle = "js.items, x.j" },
+    .{ .file = "Contract.zig", .needle = "js.items, e.j" },
+    .{ .file = "Value.zig", .needle = "m.items, q" },
+    .{ .file = "Walk.zig", .needle = "items.items, c" },
+    // A record's kid ranks, and a row's names: these read one name, no slot.
+    .{ .file = "Walk.zig", .needle = "ranks.items, st.kidWord()" },
+    .{ .file = "Place.zig", .needle = "t.rowNames(row)" },
+    // Tarjan's stack of places.
+    .{ .file = "Place.zig", .needle = "stack.items" },
+    .{ .file = "Place.zig", .needle = "PlaceId, kids" },
+    // The canonical order's keys, which rank and name, and tell no slot from another's row.
+    .{ .file = "Slots.zig", .needle = "t.keyOf(a)" },
+    // Whole selections and runs compared as stored: equal words, the same facts, a miss
+    // only says "changed".
+    .{ .file = "Conds.zig", .needle = "a.sel, b.sel" },
+    .{ .file = "Contract.zig", .needle = "t.occsOf(a)" },
+    .{ .file = "Contract.zig", .needle = "t.readsOf(x.reads)" },
+    // A `[*]` among a slot's words: one step, which no row stands for.
+    .{ .file = "Each.zig", .needle = "Place.Step.elem.word()" },
+    .{ .file = "Traversal.zig", .needle = "relWords(a.slot), elem" },
+    // Two arrivals by their slots' ids: one answer run's, one frame's.
+    .{ .file = "Traversal.zig", .needle = "src.?, pass.?" },
+    // The keys have no row: `arrives` falls back to `instSel` when one has (§2.1).
+    .{ .file = "PlainReach.zig", .needle = "sliceAsBytes(key" },
+};
 /// Files that read a tree's kid by a step word; `Trees.rowKid` or the reason it is not
-/// needed is in each (§2.1, *One rule per reader*).
-const kid_readers = [_][]const u8{ "Deliver.zig", "Descent.zig", "Eval.zig", "Forest.zig", "Graft.zig", "Later.zig", "ReadOff.zig", "Relation.zig", "Trees.zig", "Within.zig" };
+/// needed is in each (§2.1, *One rule per reader*). `Forest.at`'s nothing is no reading:
+/// `AtomGraft` and `Relation` read the row by `Forest.atSlot` and `rowKid` beside it.
+const kid_readers = [_][]const u8{ "AtomGraft.zig", "Deliver.zig", "Descent.zig", "Eval.zig", "Forest.zig", "Graft.zig", "Later.zig", "ReadOff.zig", "Relation.zig", "Trees.zig", "Within.zig" };
+
+fn lineAround(text: []const u8, at: usize) []const u8 {
+    const start = if (std.mem.lastIndexOfScalar(u8, text[0..at], '\n')) |nl| nl + 1 else 0;
+    const end = std.mem.indexOfScalarPos(u8, text, at, '\n') orelse text.len;
+    return text[start..end];
+}
+
+fn notSlots(name: []const u8, line: []const u8) bool {
+    for (not_slots) |x| if (std.mem.eql(u8, x.file, name) and std.mem.indexOf(u8, line, x.needle) != null) return true;
+    return false;
+}
+
+/// Refuses a compare of `std.mem` on anything but bytes, however it is spelled, an alias
+/// of `std.mem` or of one of its compares, `std.meta.eql`, and a slice of words as bytes,
+/// which hashes or compares a slot by its words. A fixed key (`&x`) is no slot (§2.1).
+fn refuse(bad: *usize, quiet: bool, comptime fmt: []const u8, args: anytype) void {
+    if (quiet) bad.* += 1 else fail(bad, fmt, args);
+}
+
+fn wordCompares(name: []const u8, text: []const u8, bad: *usize, quiet: bool) void {
+    if (isListed(&no_slot_words, name)) return;
+    for ([_][]const u8{ "std.mem;", "std.mem\n", "\").mem;", "\").mem\n", "std.meta.eql" }) |needle| {
+        var from: usize = 0;
+        while (std.mem.indexOfPos(u8, text, from, needle)) |at| {
+            from = at + needle.len;
+            if (!isComment(lineAround(text, at)) and !notSlots(name, lineAround(text, at))) refuse(bad, quiet, "{s}: `{s}` hides a compare of words from this rule: slots go through `SlotWords` (§2.1)", .{ name, needle });
+        }
+    }
+    var from: usize = 0;
+    while (std.mem.indexOfPos(u8, text, from, "sliceAsBytes(")) |at| {
+        from = at + 1;
+        const line = lineAround(text, at);
+        if (!isComment(line) and !notSlots(name, line)) refuse(bad, quiet, "{s}: words as bytes: slots go through `SlotWords` (§2.1)", .{name});
+    }
+    from = 0;
+    while (std.mem.indexOfPos(u8, text, from, "mem.")) |at| {
+        from = at + 4;
+        if (at != 0 and (std.ascii.isAlphanumeric(text[at - 1]) or text[at - 1] == '_')) continue;
+        var e = from;
+        while (e < text.len and (std.ascii.isAlphanumeric(text[e]) or text[e] == '_')) e += 1;
+        const known = for (mem_compares) |c| {
+            if (std.mem.startsWith(u8, text[from..e], c)) break true;
+        } else false;
+        const line = lineAround(text, at);
+        if (!known or isComment(line)) continue;
+        if (e >= text.len or text[e] != '(') {
+            refuse(bad, quiet, "{s}: an alias of `mem.{s}`: slots go through `SlotWords` (§2.1)", .{ name, text[from..e] });
+            continue;
+        }
+        const comma = std.mem.indexOfScalarPos(u8, text, e, ',') orelse continue;
+        if (std.mem.eql(u8, text[e + 1 .. comma], "u8") or std.mem.startsWith(u8, text[comma..], ", &") or notSlots(name, line)) continue;
+        refuse(bad, quiet, "{s}: `mem.{s}` on {s}: slots go through `SlotWords` (§2.1)", .{ name, text[from..e], text[e + 1 .. comma] });
+    }
+}
 
 fn isListed(list: []const []const u8, name: []const u8) bool {
     for (list) |x| if (std.mem.eql(u8, x, name)) return true;
@@ -534,25 +622,13 @@ test "own2 fences: alias, name comparisons, Cause order, records asserted" {
                 if (!allowed) fail(&bad, "{s}:{d}: a name compared to a string literal in a fenced file (§5)", .{ s.name, n });
             }
         }
-        // A slot's words are compared in one file, which reads a row (§2.1): a callee's `…`
-        // and a caller's `.b` are unequal words and may be one object. Comparing a fixed key
-        // (`&x`) is no comparison of slots; `no_slot_words` are files with no slots to compare.
-        for (word_compares) |needle| {
-            if (std.mem.eql(u8, s.name, "WordRun.zig") or isListed(&no_slot_words, s.name)) break;
-            var from: usize = 0;
-            const text = production(s.text);
-            while (std.mem.indexOfPos(u8, text, from, needle)) |at| {
-                from = at + needle.len;
-                const line_start = if (std.mem.lastIndexOfScalar(u8, text[0..at], '\n')) |nl| nl + 1 else 0;
-                if (isComment(text[line_start..at]) or text[from] == '&') continue;
-                fail(&bad, "{s}: a plain compare of words: slots go through `SlotWords` (§2.1)", .{s.name});
-            }
-        }
+        // A slot's words are compared in `WordRun`/`SlotWords` alone (§2.1).
+        wordCompares(s.name, production(s.text), &bad, false);
         // A tree's kid by a caller's word: each of these files is decided, and a new one
         // decides too, by `rowKid` or by saying why an exact kid will do (§2.1).
-        if (std.mem.indexOf(u8, production(s.text), ".kidAt(") != null and !isListed(&kid_readers, s.name)) {
+        for ([_][]const u8{ ".kidAt(", "Forest.at(" }) |needle| if (std.mem.indexOf(u8, production(s.text), needle) != null and !isListed(&kid_readers, s.name)) {
             fail(&bad, "{s} reads a tree's kid: take `Trees.rowKid` too, or add it to `kid_readers` (§2.1)", .{s.name});
-        }
+        };
         // `Facts.Cause` is exactly R-6.3's list, in its order.
         if (std.mem.eql(u8, s.name, "Facts.zig")) {
             members.clearRetainingCapacity();
@@ -623,6 +699,28 @@ test "the import verdict refuses back doors and accepts the base layer" {
     try testing.expect(importVerdict("Ids.zig", "Slots.zig", false) != null);
     try testing.expect(importVerdict("Slots.zig", "Facts.zig", false) != null);
     try testing.expect(importVerdict("Shape.zig", "Nowhere.zig", false) != null);
+}
+
+test "a plain compare of words is refused however it is spelled" {
+    const refused = [_][]const u8{
+        "const mem = std.mem;\nfn f(a: []const u32) bool { return mem.startsWith(u32, a, a); }\n",
+        "fn f(a: []const u32) ?usize { return std.mem.indexOfDiff(u32, a, a); }\n",
+        "fn f(a: []const u32) std.math.Order { return std.mem.order(u32, a, a); }\n",
+        "const same = std.mem.eql;\n",
+        "const m = @import(\"std\").mem;\n",
+        "fn f(a: []const u32) bool { return std.mem.endsWith(u32, a, a); }\n",
+        "fn f(a: []const u32) bool { return std.mem.eql(u8, std.mem.sliceAsBytes(a), std.mem.sliceAsBytes(a)); }\n",
+        "fn f(a: []const u32) bool { return std.mem.eql(Step, a, a); }\n",
+        "fn f(a: []const u32) bool { return std.meta.eql(a, a); }\n",
+    };
+    for (refused) |text| {
+        var bad: usize = 0;
+        wordCompares("Probe.zig", text, &bad, true);
+        try testing.expect(bad != 0);
+    }
+    var ok: usize = 0;
+    wordCompares("Probe.zig", "fn f(x: [2]u32) bool { return std.mem.eql(u32, &x, &x) or std.mem.eql(u8, \"a\", \"b\"); }\nconst A = std.mem.Allocator;\n", &ok, true);
+    try testing.expectEqual(@as(usize, 0), ok);
 }
 
 test "the enum member reader is exact: extras, order and words inside words fail" {

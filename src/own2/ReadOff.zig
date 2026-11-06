@@ -13,6 +13,7 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Replay = @import("Replay.zig");
+const SlotWords = @import("SlotWords.zig");
 const Subtree = @import("Subtree.zig");
 const BelowSize = @import("BelowSize.zig");
 const Forest = @import("Forest.zig");
@@ -981,7 +982,14 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
                     var ps: std.ArrayList(u32) = .empty;
                     defer ps.deinit(gpa);
                     try Replay.replay(gpa, f.account, f.places, try f.places.rootPath(gpa, site.items[su.k]), es.wordsOf(rs), &ps);
-                    for (ps.items) |p2| try describe(s, v, .from(p2), .{ .label = at, .k = su.k });
+                    // A row read at a wider site is each of its steps there, the argument's own (§2.1).
+                    const aw = f.slots.relWords(a.slot);
+                    const paired = SlotWords.endsInRow(es.wordsOf(rs)) and SlotWords.endsInRow(aw);
+                    for (ps.items) |p2| {
+                        const st = f.places.pathStep(.from(p2)).word();
+                        const at_step = if (paired) try e.ev.valueAt(call.args[a.j], try std.mem.concat(e.ev.arena, u32, &.{ aw[0 .. aw.len - 1], &.{st} })) else v;
+                        try describe(s, at_step, .from(p2), .{ .label = at, .k = su.k });
+                    }
                 }
             };
             _ = try d.labels.items[at].supplyOf(arena, su.k);
