@@ -1,0 +1,26 @@
+-- `SanitiserRowKept`'s accepted twin: the callback writes a field the row excludes, a
+-- copy the update made, so what the supply keeps is untouched (§2.1).
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+c : { r | a : L }, ({ r | a : L } → x) → x × { r | a : L }
+c rec f =
+    g = λ⊤ → f { rec | a = [] }
+    y = g ⊤
+    ( y, rec )
+
+
+main : Program
+main =
+    k = [ 1 ]
+    ( y, r ) = c { a = [], b = k } λs → List.push s.a 1
+    Node.print (show y ++ "|" ++ show r.b)

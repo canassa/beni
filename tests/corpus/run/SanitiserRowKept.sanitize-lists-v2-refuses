@@ -1,0 +1,2 @@
+# v2 refuses a call whose callback writes what a row keeps (§2.1, The row of a record).
+28:16 list_still_used SanitiserRowKept.c

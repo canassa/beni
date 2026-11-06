@@ -2,7 +2,6 @@
 //! §2.10, §2.13.6), split from `Rows`: the tables a contract is made of,
 //! a row's result slots at and below a place, a parameter's slots as the
 //! result's, and what a `taken` callback's write asks at its caller.
-//!
 //! Obligations kept here: none of §2.14's directly (`Rows` keeps O9).
 
 const std = @import("std");
@@ -11,6 +10,7 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Replay = @import("Replay.zig");
+const SlotWords = @import("SlotWords.zig");
 const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
@@ -126,7 +126,7 @@ pub fn takenOccs(contracts: *const Contract.Table, places: *const Place.Table, s
     try es.of(&contracts.trees, gpa, places, su.res_root, &.{});
     var best: ?u32 = null;
     for (es.items.items) |rs| for (rs.arrivals) |a| {
-        if (a.kind == .param) best = @max(best orelse 0, @as(u32, @intCast(Replay.under(places, es.wordsOf(rs), words) orelse continue)));
+        if (a.kind == .param) best = @max(best orelse 0, @as(u32, @intCast(SlotWords.under(places, es.wordsOf(rs), words) orelse continue)));
     };
     const at_best = best orelse return null;
     var out: std.ArrayList(u64) = .empty;
@@ -135,12 +135,12 @@ pub fn takenOccs(contracts: *const Contract.Table, places: *const Place.Table, s
         // An arrival below another's is in its deep occurrence already.
         const covered = blk: {
             for (es.items.items) |rt| for (rt.arrivals) |b| {
-                if (b.kind == .param and b.j == a.j and b.slot != a.slot and std.mem.startsWith(u32, slots.relWords(a.slot), slots.relWords(b.slot))) break :blk true;
+                if (b.kind == .param and b.j == a.j and b.slot != a.slot and SlotWords.under(places, slots.relWords(b.slot), slots.relWords(a.slot)) != null) break :blk true;
             };
             break :blk false;
         };
         if (!covered) try out.append(arena, Contract.occDeep(Contract.occApart(a.j, a.slot)));
-        const n = Replay.under(places, es.wordsOf(rs), words) orelse continue;
+        const n = SlotWords.under(places, es.wordsOf(rs), words) orelse continue;
         if (n != at_best and !rs.open) continue;
         const at = try std.mem.concat(arena, u32, &.{ slots.relWords(a.slot), words[n..] });
         const o = Contract.occ(a.j, try slots.relOfWords(gpa, account, places, at));

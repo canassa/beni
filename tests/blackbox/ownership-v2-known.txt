@@ -5706,3 +5706,23 @@ tests/corpus/run/SanitiserRowWide.beni SanitiserRowWide 32:9 #0 :: <lambda> rec.
 tests/corpus/run/SanitiserRowWide.beni SanitiserRowWide 32:9 #0 :: h rec.a :: absent :: accepted  one demand, named two ways: v1 calls the local function <lambda>, v2 by its name
 tests/corpus/run/SanitiserRowWide.beni SanitiserRowWide 45:10 #0 :: once x3.a :: absent :: accepted  v2's demand that a closure writing its capture runs once (§2.11.4)
 tests/corpus/run/SanitiserRowWide.beni SanitiserRowWide 46:10 #0 :: h3 <call> :: absent :: rejected  v2 asks the capture's fields apart at the call of the closure that writes it; v1 has no such demand
+tests/corpus/run/SanitiserRowKept.beni SanitiserRowKept 28:41 #0 :: List.push s.b :: rejected :: accepted  v2 refuses the call that supplies what the row keeps; v1 refuses the write in the callback (§2.1)
+tests/corpus/run/SanitiserRowKept.beni SanitiserRowKept 28:16 #0 :: SanitiserRowKept.c <call> :: absent :: rejected  v2 refuses the call that supplies what the row keeps; v1 refuses the write in the callback (§2.1)
+tests/corpus/run/SanitiserRowKeptApart.beni SanitiserRowKeptApart 25:41 #0 :: List.push s.a :: rejected :: accepted  v1 reads an updated field from the base; v2 has it fresh beside the row (§2.1, The row of a record)
+tests/corpus/run/SanitiserRowKeptApart.beni SanitiserRowKeptApart 25:16 #0 :: SanitiserRowKeptApart.c <call> :: absent :: accepted  v2's demand at the call a known code's write comes through (§2.11.3)
+tests/corpus/run/SanitiserRowLevelApart.beni SanitiserRowLevelApart 32:13 #0 :: SanitiserRowLevelApart.wr u⟨T⟩#Leaf.0 :: accepted :: absent  one demand per level in v2, one per opaque slot in v1
+tests/corpus/run/SanitiserRowLevelApart.beni SanitiserRowLevelApart 39:9 #0 :: SanitiserRowLevelApart.wr r.t⟨T⟩#Leaf.0 :: accepted :: absent  one demand per level in v2, one per opaque slot in v1
+tests/corpus/run/SanitiserRowLevelApart.beni SanitiserRowLevelApart 32:13 #0 :: SanitiserRowLevelApart.wr u#Leaf.0 :: absent :: accepted  one demand per level in v2, one per opaque slot in v1
+tests/corpus/run/SanitiserRowLevelApart.beni SanitiserRowLevelApart 32:13 #0 :: SanitiserRowLevelApart.wr u#Wrap.0#Leaf.0 :: absent :: accepted  one demand per level in v2, one per opaque slot in v1
+tests/corpus/run/SanitiserRowLevelApart.beni SanitiserRowLevelApart 32:13 #0 :: SanitiserRowLevelApart.wr u#Wrap.0#Wrap.0#Leaf.0 :: absent :: accepted  one demand per level in v2, one per opaque slot in v1
+tests/corpus/run/SanitiserRowLevelApart.beni SanitiserRowLevelApart 39:9 #0 :: SanitiserRowLevelApart.wr r.t#Leaf.0 :: absent :: accepted  one demand per level in v2, one per opaque slot in v1
+tests/corpus/run/SanitiserRowLevelApart.beni SanitiserRowLevelApart 39:9 #0 :: SanitiserRowLevelApart.wr r.t#Wrap.0#Leaf.0 :: absent :: accepted  one demand per level in v2, one per opaque slot in v1
+tests/corpus/run/SanitiserRowLevelApart.beni SanitiserRowLevelApart 39:9 #0 :: SanitiserRowLevelApart.wr r.t#Wrap.0#Wrap.0#Leaf.0 :: absent :: accepted  one demand per level in v2, one per opaque slot in v1
+tests/corpus/run/SanitiserRowLevel.beni SanitiserRowLevel 34:13 #0 :: SanitiserRowLevel.wr u⟨T⟩#Leaf.0 :: accepted :: absent  one demand per level in v2, one per opaque slot in v1
+tests/corpus/run/SanitiserRowLevel.beni SanitiserRowLevel 41:9 #0 :: SanitiserRowLevel.wr r.t⟨T⟩#Leaf.0 :: rejected :: absent  one demand per level in v2, one per opaque slot in v1
+tests/corpus/run/SanitiserRowLevel.beni SanitiserRowLevel 34:13 #0 :: SanitiserRowLevel.wr u#Leaf.0 :: absent :: accepted  one demand per level in v2, one per opaque slot in v1
+tests/corpus/run/SanitiserRowLevel.beni SanitiserRowLevel 34:13 #0 :: SanitiserRowLevel.wr u#Wrap.0#Leaf.0 :: absent :: accepted  one demand per level in v2, one per opaque slot in v1
+tests/corpus/run/SanitiserRowLevel.beni SanitiserRowLevel 34:13 #0 :: SanitiserRowLevel.wr u#Wrap.0#Wrap.0#Leaf.0 :: absent :: accepted  one demand per level in v2, one per opaque slot in v1
+tests/corpus/run/SanitiserRowLevel.beni SanitiserRowLevel 41:9 #0 :: SanitiserRowLevel.wr r.t#Leaf.0 :: absent :: accepted  one demand per level in v2, one per opaque slot in v1
+tests/corpus/run/SanitiserRowLevel.beni SanitiserRowLevel 41:9 #0 :: SanitiserRowLevel.wr r.t#Wrap.0#Leaf.0 :: absent :: accepted  one demand per level in v2, one per opaque slot in v1
+tests/corpus/run/SanitiserRowLevel.beni SanitiserRowLevel 41:9 #0 :: SanitiserRowLevel.wr r.t#Wrap.0#Wrap.0#Leaf.0 :: absent :: rejected  one demand per level in v2, one per opaque slot in v1

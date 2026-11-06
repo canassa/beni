@@ -9,6 +9,7 @@
 
 const std = @import("std");
 const Ids = @import("Ids.zig");
+const SlotWords = @import("SlotWords.zig");
 const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
 
@@ -36,7 +37,7 @@ pub fn atoms(f: *Value.Frame, res: *const Contract.Draft.Res, q: Ids.PathId) Err
     const qw = f.slots.relWords(try f.slots.relOf(f.gpa, f.account, f.places, q));
     var held: Atoms = .{};
     for (res.items.items) |rs| {
-        if (!rs.wide or rs.node != 0 or !std.mem.startsWith(u32, qw, f.slots.relWords(rs.slot))) continue;
+        if (!rs.wide or rs.node != 0 or SlotWords.under(f.places, f.slots.relWords(rs.slot), qw) == null) continue;
         switch (rs.a.kind) {
             .fresh => held.fresh = true,
             .top => held.top = true,

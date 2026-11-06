@@ -12,7 +12,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Slots = @import("Slots.zig");
-const Replay = @import("Replay.zig");
+const SlotWords = @import("SlotWords.zig");
 const Forest = @import("Forest.zig");
 const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
@@ -226,7 +226,7 @@ pub const Solver = struct {
             var sub = n;
             var d: usize = rw.len;
             if (pw.len > rw.len) {
-                if (!std.mem.eql(u32, rw, pw[0..rw.len])) continue;
+                if (!SlotWords.startsAt(pw, rw)) continue;
                 // Down to the prefix: an open node on the way holds below it.
                 while (d < pw.len and sub != 0) : (d += 1) {
                     const on = t.kidAt(sub, pw[d]);
@@ -237,7 +237,7 @@ pub const Solver = struct {
                     };
                     sub = on orelse 0;
                 }
-            } else if (!std.mem.eql(u32, pw, rw[0..pw.len])) continue;
+            } else if (SlotWords.under(e0.ev.f.places, pw, rw) == null) continue;
             var es: Forest.Entries = .{};
             defer es.deinit(s.gpa);
             try es.of(t, s.gpa, e0.ev.f.places, sub, if (pw.len > rw.len) pw else rw);
@@ -254,7 +254,7 @@ pub const Solver = struct {
             const e = &s.evals[kw[0]];
             try e.ev.f.charge(.edge, 1);
             const words = sl.relWords(kw[2]);
-            if (words.len < rw.len or !std.mem.eql(u32, rw, words[0..rw.len])) continue;
+            if (!SlotWords.startsAt(words, rw)) continue;
             hits.clearRetainingCapacity();
             _ = try Forest.atSlot(t, e.ev.f.places, s.gpa, n, words[rw.len..], &hits);
             var arrs: std.ArrayList(struct { a: Contract.Arrival, n: u32, open: bool }) = .empty;
@@ -284,9 +284,8 @@ pub const Solver = struct {
                 const e = &s.evals[kw[0]];
                 try e.ev.f.charge(.edge, 1);
                 const words = e.ev.f.slots.relWords(kw[2]);
-                const row = Replay.inRowOf(e.ev.f.places, rw, words);
-                if (!row and (words.len < rw.len or !std.mem.eql(u32, rw, words[0..rw.len]))) continue;
-                try e.ev.feedDraft(kw[1], arrival, @intCast(if (row) rw.len - 1 else rw.len), true);
+                const n = SlotWords.under(e.ev.f.places, rw, words) orelse continue;
+                try e.ev.feedDraft(kw[1], arrival, @intCast(n), true);
             }
         } else if (s.res_watch.get(.{ x, rel })) |li| {
             var i: usize = 0;

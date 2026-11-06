@@ -24,6 +24,7 @@ const AnswerKeep = @import("AnswerKeep.zig");
 const HeldBy = @import("HeldBy.zig");
 const FedCall = @import("FedCall.zig");
 const Entries = @import("Entries.zig");
+const OneSet = @import("OneSet.zig");
 const RouteWalk = @import("RouteWalk.zig");
 const CallGraft = @import("CallGraft.zig");
 const ApartPlain = @import("ApartPlain.zig");
@@ -451,7 +452,7 @@ fn check(e: *Eval, ps: []const Proj, routed: bool, read: ?*Answers.Reader) Error
                             // At a slot no step below can name, the arrivals
                             // are one set: `xs` twice inside a cast is one leaf
                             // there, so expansion cannot count it (#1710).
-                            if (idx.len == 1 and Entries.wildEntry(f, ents[idx[0]])) return Cond.unprovable;
+                            if (idx.len == 1 and OneSet.of(f, ents[idx[0]])) return Cond.unprovable;
                             gr.must = 1;
                         } else if (try Chains.gather(e, &occs, c)) return Cond.unprovable;
                     }

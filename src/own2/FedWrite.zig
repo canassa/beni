@@ -6,7 +6,8 @@
 //! object a run writes is what it was handed or its own, each run.
 
 const std = @import("std");
-const Replay = @import("Replay.zig");
+const Place = @import("Place.zig");
+const SlotWords = @import("SlotWords.zig");
 const Contract = @import("Contract.zig");
 const LabelChain = @import("LabelChain.zig");
 const Relation = @import("Relation.zig");
@@ -23,8 +24,8 @@ const Cond = Contract.Cond;
 const Written = struct {
     words: []const u32,
     deep: bool,
-    pub fn reaches(w: Written, at_slot: []const u32) bool {
-        return std.mem.startsWith(u32, w.words, at_slot) or (w.deep and std.mem.startsWith(u32, at_slot, w.words));
+    pub fn reaches(w: Written, places: *const Place.Table, at_slot: []const u32) bool {
+        return SlotWords.under(places, at_slot, w.words) != null or (w.deep and SlotWords.under(places, w.words, at_slot) != null);
     }
 };
 
@@ -62,7 +63,7 @@ fn asked(e: *Relation.Eval, c: LabelChain.Chain, lab: Contract.Label, su: Contra
             if (o == self) continue;
             var y = o;
             if (!Contract.isFed(o)) for (es.items.items) |rs| for (rs.arrivals) |a| {
-                if (a.kind == .param and a.j == Contract.occParam(o) and std.mem.startsWith(u32, f.slots.relWords(Contract.occRel(o)), f.slots.relWords(a.slot))) y |= Contract.apart_bit;
+                if (a.kind == .param and a.j == Contract.occParam(o) and SlotWords.under(f.places, f.slots.relWords(a.slot), f.slots.relWords(Contract.occRel(o))) != null) y |= Contract.apart_bit;
             };
             try run.append(arena, y);
         }
@@ -72,7 +73,7 @@ fn asked(e: *Relation.Eval, c: LabelChain.Chain, lab: Contract.Label, su: Contra
     var named = false;
     for (es.items.items) |rs| for (rs.arrivals) |a| {
         if (a.kind != .param) continue;
-        const n = Replay.under(f.places, es.wordsOf(rs), words) orelse continue;
+        const n = SlotWords.under(f.places, es.wordsOf(rs), words) orelse continue;
         const at = try std.mem.concat(arena, u32, &.{ f.slots.relWords(a.slot), words[n..] });
         const o = Contract.occ(a.j, try f.slots.relOfWords(f.gpa, f.account, f.places, at));
         try run.append(arena, if (deep) Contract.occDeep(o) else o);

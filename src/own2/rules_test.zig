@@ -48,6 +48,7 @@ const layers = [_]Entry{
     .{ .file = "Ids.zig", .layer = 0, .max_lines = 1120 },
     .{ .file = "Counters.zig", .layer = 0, .max_lines = 580 },
     .{ .file = "RowSets.zig", .layer = 0, .max_lines = 60 },
+    .{ .file = "WordRun.zig", .layer = 0, .max_lines = 25 },
     .{ .file = "StepWord.zig", .layer = 0, .max_lines = 90 },
     // §5 says 1 100 since #1345: the fold targets and levels of a read on a
     // cycle, memoised per path.
@@ -74,6 +75,7 @@ const layers = [_]Entry{
     .{ .file = "PlaceIdentity.zig", .layer = 2, .max_lines = 190 },
     .{ .file = "Slots.zig", .layer = 2, .max_lines = 440 },
     .{ .file = "Replay.zig", .layer = 2, .max_lines = 130 },
+    .{ .file = "SlotWords.zig", .layer = 2, .max_lines = 110 },
     // A contract's result trees, hash-consed by node (#1714, §2.10).
     .{ .file = "Trees.zig", .layer = 2, .max_lines = 200 },
     // The readers and the union of result trees, below the contracts (#1714).
@@ -141,6 +143,7 @@ const layers = [_]Entry{
     // A write onto a caller's parameter stops there, its targets read off
     // the callee's tree (#1714, §2.11.2).
     .{ .file = "Graft.zig", .layer = 8, .max_lines = 520 },
+    .{ .file = "OneSet.zig", .layer = 8, .max_lines = 40 },
     // A callee's tree and condition taken as the caller's at a call whose
     // arguments are its parameters whole (#1225, #1714, §2.10).
     .{ .file = "CallGraft.zig", .layer = 8, .max_lines = 170 },
@@ -195,6 +198,7 @@ const layers = [_]Entry{
     // One entry of many objects; an answer apart from nothing (#1710,
     // #1711); what an answer may hold (§2.9.2 step 7).
     .{ .file = "Distinct.zig", .layer = 9, .max_lines = 750 },
+    .{ .file = "MovedReq.zig", .layer = 9, .max_lines = 75 },
     // A call's writes projected by the walk, and a set written out (#1714).
     .{ .file = "Routed.zig", .layer = 9, .max_lines = 90 },
     // What a callee holds across a run of a known code it is handed (#1955).
@@ -264,6 +268,7 @@ const layers = [_]Entry{
     .{ .file = "TypeVarParam.zig", .layer = 12, .max_lines = 95 },
     // A module's codes and one declaration's answer, split from `Groups` (#1758).
     .{ .file = "Codes.zig", .layer = 12, .max_lines = 55 },
+    .{ .file = "BlockWords.zig", .layer = 12, .max_lines = 70 },
     // Evidence terms as function values (#1708).
     .{ .file = "Groups.zig", .layer = 13, .max_lines = 1900 },
     // A refused loan's text, split from `Message` (#1991).
@@ -320,6 +325,20 @@ const base_imports = [_]BaseImport{
 const test_imports = [_][]const u8{ "../lex/Tokenizer.zig", "../parse/Parse.zig", "../bir/Lower.zig" };
 
 /// The files that compare no name to a string literal.
+/// The plain compares of `u32` runs `SlotWords` alone may make of a slot's words.
+const word_compares = [_][]const u8{ "std.mem.startsWith(u32, ", "std.mem.eql(u32, " };
+/// Files that compare runs of words that are no slot's: an event log, a block's words,
+/// interned runs, a place's name set.
+const no_slot_words = [_][]const u8{ "Block.zig", "Kept.zig", "PlaceIdentity.zig", "RouteWalk.zig", "Runs.zig", "Twins.zig" };
+/// Files that read a tree's kid by a step word; `Trees.rowKid` or the reason it is not
+/// needed is in each (§2.1, *One rule per reader*).
+const kid_readers = [_][]const u8{ "Deliver.zig", "Descent.zig", "Eval.zig", "Forest.zig", "Graft.zig", "Later.zig", "ReadOff.zig", "Relation.zig", "Trees.zig", "Within.zig" };
+
+fn isListed(list: []const []const u8, name: []const u8) bool {
+    for (list) |x| if (std.mem.eql(u8, x, name)) return true;
+    return false;
+}
+
 const no_name_compare = [_][]const u8{ "Eval.zig", "Relation.zig", "Resolve.zig", "Rows.zig" };
 
 /// A `std.mem.eql(u8, …, "literal")` a fenced file is allowed, by file and
@@ -515,6 +534,25 @@ test "own2 fences: alias, name comparisons, Cause order, records asserted" {
                 if (!allowed) fail(&bad, "{s}:{d}: a name compared to a string literal in a fenced file (§5)", .{ s.name, n });
             }
         }
+        // A slot's words are compared in one file, which reads a row (§2.1): a callee's `…`
+        // and a caller's `.b` are unequal words and may be one object. Comparing a fixed key
+        // (`&x`) is no comparison of slots; `no_slot_words` are files with no slots to compare.
+        for (word_compares) |needle| {
+            if (std.mem.eql(u8, s.name, "WordRun.zig") or isListed(&no_slot_words, s.name)) break;
+            var from: usize = 0;
+            const text = production(s.text);
+            while (std.mem.indexOfPos(u8, text, from, needle)) |at| {
+                from = at + needle.len;
+                const line_start = if (std.mem.lastIndexOfScalar(u8, text[0..at], '\n')) |nl| nl + 1 else 0;
+                if (isComment(text[line_start..at]) or text[from] == '&') continue;
+                fail(&bad, "{s}: a plain compare of words: slots go through `SlotWords` (§2.1)", .{s.name});
+            }
+        }
+        // A tree's kid by a caller's word: each of these files is decided, and a new one
+        // decides too, by `rowKid` or by saying why an exact kid will do (§2.1).
+        if (std.mem.indexOf(u8, production(s.text), ".kidAt(") != null and !isListed(&kid_readers, s.name)) {
+            fail(&bad, "{s} reads a tree's kid: take `Trees.rowKid` too, or add it to `kid_readers` (§2.1)", .{s.name});
+        }
         // `Facts.Cause` is exactly R-6.3's list, in its order.
         if (std.mem.eql(u8, s.name, "Facts.zig")) {
             members.clearRetainingCapacity();
@@ -566,7 +604,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 126), layers.len);
+    try testing.expectEqual(@as(usize, 131), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

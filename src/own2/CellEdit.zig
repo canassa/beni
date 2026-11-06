@@ -7,6 +7,7 @@ const std = @import("std");
 const Ids = @import("Ids.zig");
 const Slots = @import("Slots.zig");
 const Place = @import("Place.zig");
+const SlotWords = @import("SlotWords.zig");
 const Forest = @import("Forest.zig");
 const Relation = @import("Relation.zig");
 
@@ -14,8 +15,8 @@ const Step = Place.Step;
 
 /// Whether a supply's write at `words` is of a list's element: a parameter's
 /// arrival at a `[*]` (a fold's accumulator is not one).
-pub fn ofElement(es: *const Forest.Entries, slots: *const Slots.Table, words: []const u32) bool {
-    for (es.items.items) |rs| if (std.mem.startsWith(u32, words, es.wordsOf(rs))) for (rs.arrivals) |a| {
+pub fn ofElement(es: *const Forest.Entries, places: *const Place.Table, slots: *const Slots.Table, words: []const u32) bool {
+    for (es.items.items) |rs| if (SlotWords.under(places, es.wordsOf(rs), words) != null) for (rs.arrivals) |a| {
         const ws = slots.relWords(a.slot);
         if (a.kind == .param and ws.len != 0 and Step.fromWord(ws[ws.len - 1]).kind == .elem) return true;
     };

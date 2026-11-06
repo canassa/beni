@@ -17,6 +17,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
+const WordRun = @import("WordRun.zig");
 const Runs = @import("Runs.zig").Runs;
 const ByPath = @import("Runs.zig").ByPath;
 
@@ -328,7 +329,7 @@ pub const Table = struct {
     pub fn relBelow(t: *Table, gpa: Allocator, account: *Ids.Account, places: *Place.Table, from: PathId, p: PathId) Error!?Rel {
         const a = t.relWords(try t.relOf(gpa, account, places, from));
         const b = t.relWords(try t.relOf(gpa, account, places, p));
-        if (b.len >= a.len and std.mem.eql(u32, a, b[0..a.len])) {
+        if (WordRun.startsAt(b, a)) {
             const rest = try gpa.dupe(u32, b[a.len..]);
             defer gpa.free(rest);
             return try t.relOfWords(gpa, account, places, rest);

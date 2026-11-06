@@ -13,6 +13,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
+const SlotWords = @import("SlotWords.zig");
 const Slots = @import("Slots.zig");
 const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
@@ -77,7 +78,7 @@ fn moved(e: *Evaluation, vi: u32, es: *const Forest.Entries, modify: bool, besid
             ws = ws[1..];
         }
         for (rs.arrivals) |a| {
-            if (a.kind != .param or a.j != 0 or std.mem.eql(u32, f.slots.relWords(a.slot), ws)) continue;
+            if (a.kind != .param or a.j != 0 or SlotWords.same(f.slots.relWords(a.slot), ws)) continue;
             const n = e.demands.items.len;
             try Eval.callWrite(e, vi, .{ .j = 0, .slot = a.slot, .deep = true });
             if (beside != none) for (e.demands.items[n..]) |*d| {

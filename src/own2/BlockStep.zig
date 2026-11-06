@@ -4,14 +4,14 @@
 //! Obligations kept here: none of §2.14's directly.
 
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 const Place = @import("Place.zig");
 const RowSets = @import("RowSets.zig");
+const BlockWords = @import("BlockWords.zig");
 
 const Step = Place.Step;
 
 /// One step as `(kind, a, b)`.
-pub fn write(w: anytype, wd: u32) Allocator.Error!void {
+pub fn write(w: BlockWords.Out, wd: u32) std.mem.Allocator.Error!void {
     const s = Step.fromWord(wd);
     switch (s.kind) {
         .field => try w.out.appendSlice(w.gpa, &.{ @backingInt(s.kind), w.names.field(w.names.ctx, s.payload), 0 }),
@@ -28,10 +28,10 @@ pub fn write(w: anytype, wd: u32) Allocator.Error!void {
 }
 
 /// One step `(kind, a, b)` as this module's step word.
-pub fn read(r: anytype) !u32 {
-    const kind = try r.next();
-    const a = try r.next();
-    const b = try r.next();
+pub fn read(r: BlockWords.In) !u32 {
+    const kind = try r.cur.next();
+    const a = try r.cur.next();
+    const b = try r.cur.next();
     if (kind > @backingInt(Place.StepKind.row)) return error.BadBlock;
     const k: Place.StepKind = @fromBackingInt(@intCast(kind));
     const s: Step = switch (k) {
@@ -42,7 +42,7 @@ pub fn read(r: anytype) !u32 {
         },
         .ctor_arg => try r.places.ctorStep(r.gpa, r.account, a, b),
         .row => blk: {
-            const ranks = try r.arena.alloc(u32, try r.count());
+            const ranks = try r.arena.alloc(u32, try r.cur.count());
             for (ranks) |*n| n.* = try rowName(r);
             std.mem.sort(u32, ranks, {}, std.sort.asc(u32));
             break :blk try r.places.rowStep(r.gpa, r.account, ranks);
@@ -52,8 +52,8 @@ pub fn read(r: anytype) !u32 {
     return s.word();
 }
 
-fn rowName(r: anytype) !u32 {
-    const st = try r.next();
+fn rowName(r: BlockWords.In) !u32 {
+    const st = try r.cur.next();
     const rank = r.remap.field(r.remap.ctx, st) orelse return error.BadBlock;
     (try r.field_string.getOrPut(r.gpa, .{rank})).value_ptr.* = st;
     return rank;

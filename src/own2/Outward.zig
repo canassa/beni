@@ -5,17 +5,17 @@
 //! their supplies' conditions and a `taken` row's container occurrences
 //! (#1758, #1760). A label the frame passes on inside such a code takes the
 //! same of every label outward for its own supplies (#1721).
-//!
 //! Obligations kept here: O14's label half (a supply's condition, and a
 //! `taken` supply's container occurrences, hold at each call that applies
 //! the label, outward).
 
 const std = @import("std");
 const Ids = @import("Ids.zig");
+const SlotWords = @import("SlotWords.zig");
 const Contract = @import("Contract.zig");
 const RowEnv = @import("RowEnv.zig");
 const LabelChain = @import("LabelChain.zig");
-const Graft = @import("Graft.zig");
+const MovedReq = @import("MovedReq.zig");
 const Distinct = @import("Distinct.zig");
 const Eval = @import("Eval.zig");
 const CellEdit = @import("CellEdit.zig");
@@ -37,7 +37,7 @@ pub fn finishDemands(e: *Evaluation) Error!void {
         if (d.call == none) continue;
         const call = f.calls.items[d.call];
         const c = if (req_of[d.call] == null) try e.contracts.cond(e.ev.arena, e.contracts.head(call.contract).req) else Cond.yes;
-        if (req_of[d.call] == null) req_of[d.call] = (try Graft.movedReq(&e.ev, call, c)) orelse try Distinct.instSel(&e.ev, c, d.call);
+        if (req_of[d.call] == null) req_of[d.call] = (try MovedReq.of(&e.ev, call, c)) orelse try Distinct.instSel(&e.ev, c, d.call);
         d.relies = req_of[d.call].?;
         const held = e.contracts.head(call.contract).flags.taken_write;
         if (held and try CellEdit.reachesParam(&e.ev, e.w.leavesOfRun(d.targets))) e.marks.taken_write = true;
@@ -47,7 +47,7 @@ pub fn finishDemands(e: *Evaluation) Error!void {
         try LabelChain.supplyLevels(e.chain(), d.call, d.arg, f.slots.relWords(d.wslot), &lvs);
         for (lvs.items) |lv| for (e.contracts.suppliesOf(lv.lab.supplies)) |su| if (su.k == lv.k) {
             const es = try Eval.entriesOf(e, su.res_root);
-            if (lv.lab.calls == .many and CellEdit.ofElement(es, f.slots, lv.words) and try CellEdit.reachesParam(&e.ev, e.w.leavesOfRun(d.targets))) e.marks.taken_write = true;
+            if (lv.lab.calls == .many and CellEdit.ofElement(es, f.places, f.slots, lv.words) and try CellEdit.reachesParam(&e.ev, e.w.leavesOfRun(d.targets))) e.marks.taken_write = true;
             for (try FedWrite.relies(&e.ev, e.chain(), lv.lab, su, lv.call, lv.words, d.deep)) |x| d.relies = try Cond.conj(e.ev.arena, f.account, d.relies, x);
             if (su.each) continue;
             if (lv.lab.origin[2] & RowEnv.taken_origin != 0) if (try RowEnv.takenOccs(e.contracts, f.places, f.slots, f.account, e.gpa(), e.ev.arena, su, lv.words, d.deep)) |os| {
@@ -76,7 +76,7 @@ pub fn passSupply(e: *Evaluation, arena: Allocator, q: u32, su: Contract.Supply,
         try LabelChain.supplyLevels(e.chain(), q, a.j, f.slots.relWords(a.slot), &lvs);
         for (lvs.items) |lv| for (e.contracts.suppliesOf(lv.lab.supplies)) |ou| if (ou.k == lv.k) {
             sup.cond = try Cond.conj(arena, f.account, sup.cond, try Distinct.instSel(&e.ev, try e.contracts.cond(arena, ou.cond), lv.call));
-            for (e.contracts.effectsOf(ou.kept)) |kp| if (LabelChain.overlaps(lv.words, f.slots.relWords(kp.slot))) {
+            for (e.contracts.effectsOf(ou.kept)) |kp| if (SlotWords.overlaps(f.places, lv.words, f.slots.relWords(kp.slot))) {
                 _ = try Contract.Draft.addEffect(&sup.kept, arena, .{ .j = 0, .slot = try f.slots.relOfWords(e.gpa(), f.account, f.places, es.wordsOf(rs)), .deep = true });
             };
         };

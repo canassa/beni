@@ -18,14 +18,15 @@ pub fn rootOf(f: anytype, v0: u32) PlaceId {
     return x.place;
 }
 
-/// The place `words` reach from `root`, a level staying where it is; `own`,
-/// the value's own place, where a step names no place.
+/// The place `words` reach from `root`, a level or a row staying where it is: a row
+/// step names the field after it, or the record's other fields (§2.1); `own`, the
+/// value's own place, where a step names no place.
 pub fn of(pl: *const Place.Table, root: PlaceId, words: []const u32, own: PlaceId) PlaceId {
     if (root == .none) return own;
     var p = root;
     for (words) |w| {
         const st = Place.Step.fromWord(w);
-        if (st.kind == .level) continue;
+        if (st.kind == .level or st.isRow()) continue;
         p = pl.child(p, st) orelse return own;
     }
     return p;

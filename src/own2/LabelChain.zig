@@ -7,7 +7,7 @@
 //! Obligations kept here: none of §2.14's directly.
 
 const std = @import("std");
-const Replay = @import("Replay.zig");
+const SlotWords = @import("SlotWords.zig");
 const Ids = @import("Ids.zig");
 const Forest = @import("Forest.zig");
 const Contract = @import("Contract.zig");
@@ -104,9 +104,9 @@ pub fn supplyLevels(c: Chain, q: u32, k: u32, words: []const u32, out: *std.Arra
                 for (es.items.items) |rs| for (rs.arrivals) |a| {
                     if (a.kind != .param or a.j >= own) continue;
                     const at = es.wordsOf(rs);
-                    const nw: []const u32 = if (Replay.under(f.places, at, kw.words)) |n| try std.mem.concat(c.arena, u32, &.{ f.slots.relWords(a.slot), kw.words[n..] }) else if (std.mem.startsWith(u32, at, kw.words)) f.slots.relWords(a.slot) else continue;
+                    const nw: []const u32 = if (SlotWords.under(f.places, at, kw.words)) |n| try std.mem.concat(c.arena, u32, &.{ f.slots.relWords(a.slot), kw.words[n..] }) else if (SlotWords.under(f.places, kw.words, at) != null) f.slots.relWords(a.slot) else continue;
                     const seen = for (next.items) |n| {
-                        if (n.k == a.j and std.mem.eql(u32, n.words, nw)) break true;
+                        if (n.k == a.j and SlotWords.same(n.words, nw)) break true;
                     } else false;
                     if (!seen) try next.append(gpa, .{ .call = o[0], .lab = lab, .k = a.j, .words = nw });
                 };
@@ -125,14 +125,9 @@ pub fn keptOutward(c: Chain, q: u32, k: u32, words: []const u32) Error!bool {
     defer lvs.deinit(c.f.gpa);
     try supplyLevels(c, q, k, words, &lvs);
     for (lvs.items) |lv| for (c.contracts.suppliesOf(lv.lab.supplies)) |su| if (su.k == lv.k) {
-        for (c.contracts.effectsOf(su.kept)) |kp| if (overlaps(lv.words, c.f.slots.relWords(kp.slot))) return true;
+        for (c.contracts.effectsOf(su.kept)) |kp| if (SlotWords.overlaps(c.f.places, lv.words, c.f.slots.relWords(kp.slot))) return true;
     };
     return false;
-}
-
-/// Whether one of two slots' words is a prefix of the other's.
-pub fn overlaps(a: []const u32, b: []const u32) bool {
-    return std.mem.startsWith(u32, a, b) or std.mem.startsWith(u32, b, a);
 }
 
 /// Every entry of tree `root`, in the canonical order, in the chain's arena.

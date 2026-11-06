@@ -24,6 +24,7 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Replay = @import("Replay.zig");
+const SlotWords = @import("SlotWords.zig");
 const StepsTo = @import("StepsTo.zig");
 const LevelCycle = @import("LevelCycle.zig");
 const Subtree = @import("Subtree.zig");
@@ -376,7 +377,7 @@ pub const Eval = struct {
     /// at those steps names in this frame. `deep`: every object below too.
     pub fn project(e: *Eval, v: u32, words: []const u32, deep0: bool, tags: u32, route: u32, out: *std.ArrayList(Proj)) Error!void {
         // A row's objects are read whole: no step below it names one (§2.1).
-        const deep = deep0 or Replay.endsInRow(words);
+        const deep = deep0 or SlotWords.endsInRow(words);
         const given = e.tail_place;
         e.tail_place = .none;
         const Item = struct { v: u32, at: u32, tags: u32, route: u32 };
@@ -388,8 +389,8 @@ pub const Eval = struct {
             const x = e.f.val(it.v);
             const rest = words[it.at..];
             // A row step followed by a field's or a wider row's is that step (§2.1).
-            if (Replay.rowThen(rest)) {
-                if (Replay.collapse(e.places(), rest) != null) try stack.append(e.gpa(), .{ .v = it.v, .at = it.at + 1, .tags = it.tags, .route = it.route });
+            if (SlotWords.rowThen(rest)) {
+                if (SlotWords.collapse(e.places(), rest) != null) try stack.append(e.gpa(), .{ .v = it.v, .at = it.at + 1, .tags = it.tags, .route = it.route });
                 continue;
             }
             switch (x.kind) {
@@ -690,12 +691,12 @@ pub const Eval = struct {
                 const rs = list.items.items[si];
                 const rw = e.f.slots.relWords(rs.slot);
                 // A member's row is read by the caller's own step (§2.1).
-                if (Replay.inRowOf(e.places(), rw, words)) {
+                const cov = SlotWords.under(e.places(), rw, words) orelse continue;
+                if (cov < rw.len) {
                     if (std.debug.runtime_safety) std.debug.assert(rs.node == 0); // `Put.emitPart`
-                    try e.feedDraft(ki, rs.a, @intCast(rw.len - 1), true);
+                    try e.feedDraft(ki, rs.a, @intCast(cov), true);
                     continue;
                 }
-                if (rw.len > words.len or !std.mem.eql(u32, rw, words[0..rw.len])) continue;
                 if (rs.node == 0) {
                     if (rw.len == words.len or list.isOpen(rs)) try e.feedDraft(ki, rs.a, @intCast(rw.len), list.isOpen(rs));
                     continue;
@@ -829,7 +830,7 @@ pub const Eval = struct {
         const r = e.f.roots.items[e.rootOfKey(ki)];
         const pw = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), k.slot));
         const rw = e.f.slots.relWords(rel);
-        if (rw.len >= pw.len and std.mem.eql(u32, pw, rw[0..pw.len])) {
+        if (SlotWords.startsAt(rw, pw)) {
             // The caller slots of the entry: the root's column.
             const col = &e.slot_cols.cols.items[try e.slot_cols.col(e.gpa(), .{r.path.int()})];
             try Dests.addRel(.{ .gpa = e.gpa(), .account = e.account(), .places = e.places(), .slots = e.f.slots }, col, r.path, rel);
@@ -838,11 +839,11 @@ pub const Eval = struct {
             try paths.appendSlice(e.gpa(), col.at(rel).?);
             if (paths.items.len == 0) try paths.append(e.gpa(), k.slot.int());
             // A row's arrival is read by each caller slot it names, from that slot's own step (§2.1).
-            const n = if (Replay.endsInRow(rw)) rw.len - 1 else rw.len;
+            const n = if (SlotWords.endsInRow(rw)) rw.len - 1 else rw.len;
             for (paths.items) |at0| try e.feedAt(ki, .from(at0), @intCast(n), open, a);
-        } else if (open and rw.len < pw.len and std.mem.eql(u32, rw, pw[0..rw.len])) {
-            try e.feedAt(ki, k.slot, @intCast(rw.len), true, a);
-        } else if (Replay.inRowOf(e.places(), rw, pw)) try e.feedAt(ki, k.slot, @intCast(rw.len - 1), true, a);
+        } else if (SlotWords.under(e.places(), rw, pw)) |n| {
+            if (open or n < rw.len) try e.feedAt(ki, k.slot, @intCast(n), true, a);
+        }
     }
 
     /// Arrival `a` of an entry `n` steps from the call's root, read at the
@@ -855,7 +856,7 @@ pub const Eval = struct {
     /// at `base`; any other plain arrival is read through `base`'s key.
     fn feedAt(e: *Eval, ki: u32, base: PathId, n: u32, open: bool, a0: Contract.Arrival) Error!void {
         var a = a0;
-        if ((a.kind == .param or a.kind == .cb or a.kind == .lent) and Replay.endsInRow(e.f.slots.relWords(a.slot))) a.deep = false;
+        if ((a.kind == .param or a.kind == .cb or a.kind == .lent) and SlotWords.endsInRow(e.f.slots.relWords(a.slot))) a.deep = false;
         const k = e.keys.items[ki];
         const saved = e.cur_sub;
         defer e.cur_sub = saved;
@@ -1133,7 +1134,7 @@ pub const Eval = struct {
         defer words.deinit(e.gpa());
         var a = a0;
         // A caller's slot in a row is that slot of the argument, by structure (§2.1).
-        if (suffix.len != 0 and a.kind != .fresh and a.kind != .top and a.kind != .host and a.kind != .shared and Replay.endsInRow(e.f.slots.relWords(a.slot))) a.deep = false;
+        if (suffix.len != 0 and a.kind != .fresh and a.kind != .top and a.kind != .host and a.kind != .shared and SlotWords.endsInRow(e.f.slots.relWords(a.slot))) a.deep = false;
         if (a.kind == .param or a.kind == .cb or a.kind == .lent) try words.appendSlice(e.gpa(), e.f.slots.relWords(a.slot));
         try words.appendSlice(e.gpa(), suffix);
         const start = out.items.len;
@@ -1144,7 +1145,7 @@ pub const Eval = struct {
             .param, .lent => {
                 if (a.j >= cl.args.len) return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
                 try e.routed(e, cl.args[a.j], words.items, a.deep, if (suffix.len == 0 and a.kind == .param) a.path else none, out);
-                if (out.items.len == start and words.items.len != 0 and !Replay.excluded(e.places(), words.items)) try FoldRead.read(e, cl.args[a.j], words.items, out);
+                if (out.items.len == start and words.items.len != 0 and !SlotWords.excluded(e.places(), words.items)) try FoldRead.read(e, cl.args[a.j], words.items, out);
                 if (a.kind == .lent) try e.lend(out, start, null, call);
             },
             .cb => {

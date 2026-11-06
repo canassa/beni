@@ -1,0 +1,40 @@
+-- `SanitiserRowLevel`'s accepted twin: `k` is not read after the level's write, so the
+-- row's level is the same write and nothing else holds what it edits (§2.1).
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+idr : { r | a : L } → { r | a : L }
+idr rec = rec
+
+
+type T a
+    = Leaf (List Int) a
+    | Wrap (T (List a))
+
+
+wr : T a → Int
+wr t =
+    case t of
+        Leaf xs _ →
+            List.length (List.push xs 1)
+
+        Wrap u →
+            wr u
+
+
+main : Program
+main =
+    k = [ 1 ]
+    r = idr { a = [], t = Wrap (Wrap (Wrap (Leaf k [ [ [ 1 ] ] ]))) }
+    n = wr r.t
+    Node.print (String.fromInt n)

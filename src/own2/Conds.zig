@@ -11,6 +11,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Slots = @import("Slots.zig");
+const SlotWords = @import("SlotWords.zig");
 
 pub const Rel = Slots.Rel;
 pub const Error = Ids.ChargeError;
@@ -58,7 +59,7 @@ pub const Cond = struct {
             for (b.sel) |y| {
                 if (!isDeep(y) or occParam(y) != occParam(x) or (isApart(y) and !isApart(x))) continue;
                 const yw = slots.relWords(occRel(y));
-                if (xw.len >= yw.len and std.mem.eql(u32, yw, xw[0..yw.len])) continue :outer;
+                if (SlotWords.startsAt(xw, yw)) continue :outer;
             }
             return false;
         }
