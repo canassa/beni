@@ -136,9 +136,10 @@ pub fn summarise(e: *Effects, in: Input, members: []const u32) Error!bool {
 /// and scratch-owned (§14.3 rule 3, amended 2026-11-06): what a use's copy
 /// of `nd`'s class flows into. Empty for a fixed `nd`, whose copies are the
 /// class itself, and in a module with no fixed class.
-fn fixedReached(e: *Effects, nd: u32, scratch: Allocator) Error![]u32 {
+fn fixedReached(e: *Effects, nd: u32, scratch: Allocator) Error![]const u32 {
     const s = &e.solved;
-    if (!s.any_fixed or s.fixed.items[nd]) return scratch.alloc(u32, 0);
+    // No allocation for none: freeing an empty slice does nothing.
+    if (!s.any_fixed or s.isFixed(nd)) return &.{};
     var out: std.ArrayList(u32) = .empty;
     errdefer out.deinit(scratch);
     s.nextEpoch();
@@ -153,7 +154,7 @@ fn fixedReached(e: *Effects, nd: u32, scratch: Allocator) Error![]u32 {
             const y = s.find(s.to.items[at]);
             if (s.maskOf(y) != 0) continue;
             s.orMask(y, 1);
-            if (s.fixed.items[y]) {
+            if (s.isFixed(y)) {
                 try out.append(scratch, y);
                 continue;
             }

@@ -647,7 +647,9 @@ pub const Solved = struct {
     /// class of a top-level value whose evaluation is not `pure`, or one
     /// with it. Every copy of it is the class itself, and it is never
     /// sensitive (§16.2). Meaningful at a root; `any_fixed` says whether
-    /// any node is.
+    /// any node is. Empty until `fixClasses` runs, and as long as the nodes
+    /// were then: a node made later is no fixed class, since no class is
+    /// joined after step 1 of the solve.
     fixed: std.ArrayList(bool) = .empty,
     any_fixed: bool = false,
     /// The fixed nodes the summaries' classes reach (`Class.outs_start`).
@@ -689,7 +691,7 @@ pub const Solved = struct {
     /// Whether node `x`, a root, is a fixed class (§14.3 rule 3, amended
     /// 2026-11-06).
     pub fn isFixed(s: *const Solved, x: u32) bool {
-        return s.any_fixed and s.fixed.items[x];
+        return x < s.fixed.items.len and s.fixed.items[x];
     }
 
     pub fn outsOf(s: *const Solved, c: Class) []const u32 {
@@ -714,7 +716,6 @@ pub const Solved = struct {
         try s.mask.append(gpa, 0);
         try s.stamp.append(gpa, 0);
         try s.demanded.append(gpa, false);
-        try s.fixed.append(gpa, false);
         at.* = id + 1;
         return id;
     }
@@ -814,7 +815,9 @@ pub fn run(e: *Effects, in: Input) Error!void {
     // is not `pure` does not generalise its classes. Which values those are
     // is the solve's answer, so solve again with them fixed, until the set
     // stops growing; sharing only raises a rung, so it only grows. A module
-    // with no such value is solved once.
+    // with no such value is solved once. A solve writes `solved` and
+    // `scheme_decl` and nothing else: every other list is recorded before
+    // `run` and only read here. So those two are what a second solve resets.
     var fixed = try e.fixedValues(in, &.{});
     while (fixed.len != 0) {
         e.solved.deinit(e.gpa);
@@ -988,9 +991,20 @@ fn unite(e: *Effects, a: Var, b: Var) Error!void {
     // alone (nodes are numbered in the order the graph meets them).
     if (x < y) e.solved.uf.items[y] = x else e.solved.uf.items[x] = y;
     // A class one with a fixed class is fixed (§14.3 rule 3, amended
-    // 2026-11-06).
+    // 2026-11-06). `x` and `y` are roots: `nodeFor` returns one.
+    if (!e.solved.any_fixed) return;
+    try e.growFixed();
     const fixed = e.solved.fixed.items;
     fixed[@min(x, y)] = fixed[x] or fixed[y];
+}
+
+/// `Solved.fixed` as long as the nodes, a new node not fixed.
+fn growFixed(e: *Effects) Error!void {
+    const s = &e.solved;
+    const old = s.fixed.items.len;
+    if (old == s.uf.items.len) return;
+    try s.fixed.resize(e.gpa, s.uf.items.len);
+    @memset(s.fixed.items[old..], false);
 }
 
 /// §14.3 rule 3, amended 2026-11-06: the classes of each of `decls`, top-level
@@ -1007,6 +1021,7 @@ fn fixClasses(e: *Effects, in: Input, decls: []const u32, scheme_decl: SchemeDec
         const scheme = in.decl_scheme[d].unwrap() orelse continue;
         nodes.clearRetainingCapacity();
         try EffectsSummary.schemeNodes(e, scheme, &nodes);
+        try e.growFixed();
         for (nodes.items) |nd| {
             s.fixed.items[s.findCompress(nd)] = true;
             s.any_fixed = true;
@@ -1019,7 +1034,7 @@ fn fixClasses(e: *Effects, in: Input, decls: []const u32, scheme_decl: SchemeDec
             if (scheme_decl.get(r.scheme) == null) continue;
             for (e.pairs.items[r.start..][0..r.len]) |p| {
                 const x = try e.nodeFor(p.a);
-                if (!s.fixed.items[x]) continue;
+                if (!s.isFixed(x)) continue;
                 if (x == try e.nodeFor(p.b)) continue;
                 try e.unite(p.a, p.b);
                 again = true;
@@ -1031,7 +1046,10 @@ fn fixClasses(e: *Effects, in: Input, decls: []const u32, scheme_decl: SchemeDec
 /// A summary applied before a fixed class it reaches rose gave its copies
 /// the rung it had then (§14.3 rule 3, amended 2026-11-06): give each class
 /// whose node rose its new rung, and raise every copy of it, until no rung
-/// rises. The ladder has three points, so this ends.
+/// rises. The ladder has three points, so this ends. It runs after the last
+/// `summarise`, so every class's `outs` is final and `applyRecord` has made
+/// each copy's edges into them: a raise here reaches the fixed classes by
+/// those edges, and no `outs` needs to be read again.
 fn refresh(e: *Effects, in: Input, scheme_decl: SchemeDecls, work: *std.ArrayList(u32)) Error!void {
     const s = &e.solved;
     const scratch = in.scratch;
@@ -1319,7 +1337,11 @@ fn applyRecord(e: *Effects, r: Record, target: u32, work: *std.ArrayList(u32), s
         }
         // §15.3: the use's copy of a `sync` class must not suspend. Where
         // the class sits is read off `target`'s scheme when it is reported.
-        if (c.sync) try e.addSource(.{
+        // Not for a fixed class: the copy is the class itself, which
+        // reaches the demanded node, and that node's own source reports it
+        // where the demand is — not at every use of the value (§14.3 rule
+        // 3, amended 2026-11-06).
+        if (c.sync and !s.isFixed(s.find(c.node))) try e.addSource(.{
             .node = rep,
             .demand = .{ .v = @fromBackingInt(@intCast(none)), .kind = .argument, .site = r.site, .decl = r.owner, .holder = try e.nodeIsHolder(r, ci, target) },
             .target = target,
