@@ -1236,10 +1236,12 @@ pub const Builder = struct {
         // arguments, whose `actual` is its forwarded argument or the first
         // expansion's chain end; nothing is expanded again. Not while a
         // key observer collects every application (`KeyKinds.Preparation`).
-        const shape: AliasShape = if (!b.shallow and args.len != 0 and b.key_observer == null) e.shape else .{};
+        const shape: AliasShape = if (!b.shallow and args.len != 0 and b.key_observer == null and e.shape.fits(args.len)) e.shape else .{};
         const shape_key: ?[]u32 = if (shape.known) try shape.key(b.store, @backingInt(id), args, b.scratch) else null;
+        // Ours until the memo takes it.
+        var owned = shape_key;
+        defer if (owned) |k| b.scratch.free(k);
         if (shape_key) |k| if (b.memo().get(k)) |end| {
-            b.scratch.free(k);
             const v = try b.store.fresh(.{ .alias = .{ .type = id, .args = try b.store.addVars(args), .actual = shape.actualOf(args, end) } }, b.varRank());
             try b.memo().put(b.scratch, key, v);
             return v;
@@ -1248,19 +1250,20 @@ pub const Builder = struct {
         const range = try b.store.addVars(args);
         const actual = if (b.shallow) try b.store.freshErr(b.varRank()) else try b.aliasBody(e, id, args);
         const v = try b.store.fresh(.{ .alias = .{ .type = id, .args = range, .actual = actual } }, b.varRank());
-        try b.memo().put(b.scratch, key, v);
-        if (shape_key) |k| {
-            // Only a clean expansion is shared: one that ran out of depth
-            // or met a key-kind issue is read again at every application,
-            // as before, so each gets what it got.
-            const issues_after = if (b.key_errors) |list| list.items.len else 0;
-            if (b.too_deep or issues_after != issues_before) {
-                b.scratch.free(k);
-            } else {
-                const slot = try b.memo().getOrPut(b.scratch, k);
-                if (slot.found_existing) b.scratch.free(k) else slot.value_ptr.* = shape.endOf(b.store, actual);
+        // Both entries or neither: nothing can fail between them.
+        try b.memo().ensureUnusedCapacity(b.scratch, 2);
+        b.memo().putAssumeCapacity(key, v);
+        // Only a clean expansion is shared: one that ran out of depth or met
+        // a key-kind issue is read again at every application, as before, so
+        // each gets what it got.
+        const issues_after = if (b.key_errors) |list| list.items.len else 0;
+        if (shape_key) |k| if (!b.too_deep and issues_after == issues_before) {
+            const slot = b.memo().getOrPutAssumeCapacity(k);
+            if (!slot.found_existing) {
+                slot.value_ptr.* = shape.endOf(b.store, actual);
+                owned = null;
             }
-        }
+        };
         return v;
     }
 

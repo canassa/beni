@@ -80,6 +80,16 @@ pub const Context = enum {
     }
 };
 
+/// Whether the shape speaks of an application of `len` arguments: every
+/// parameter it names is one of them. Not, for an interface row written
+/// with the wrong count, which no writer makes; the read then keys by
+/// every argument.
+pub fn fits(s: AliasShape, len: usize) bool {
+    if (!s.known) return false;
+    if (s.forward != none and s.forward >= len) return false;
+    return len >= max_params or s.shown >> @intCast(len) == 0;
+}
+
 pub fn isShown(s: AliasShape, j: usize) bool {
     return j < max_params and s.shown & (@as(u64, 1) << @intCast(j)) != 0;
 }
@@ -189,6 +199,16 @@ pub const Rows = struct {
 };
 
 const testing = std.testing;
+
+test "a shape fits only an application with every parameter it names" {
+    const id: AliasShape = .{ .forward = 1, .known = true };
+    const pair: AliasShape = .{ .shown = 0b100, .known = true };
+    try testing.expect(id.fits(2));
+    try testing.expect(!id.fits(1));
+    try testing.expect(pair.fits(3));
+    try testing.expect(!pair.fits(2));
+    try testing.expect(!(AliasShape{}).fits(3));
+}
 
 test "a context maps an alias's arguments by its shape" {
     const id: AliasShape = .{ .forward = 0, .known = true };

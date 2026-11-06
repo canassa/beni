@@ -223,10 +223,13 @@ pub const Reader = struct {
         // Expanded already in this read with the same shown arguments: a
         // variable of its own arguments over the first one's chain end.
         const expands = !r.shallow and body != .none;
-        const shape: AliasShape = if (expands and args.len != 0 and ref & AliasShape.tag == 0) try r.rows.of(r.iface, ref, r.scratch, max_depth) else .{};
+        const row_shape: AliasShape = if (expands and args.len != 0 and ref & AliasShape.tag == 0) try r.rows.of(r.iface, ref, r.scratch, max_depth) else .{};
+        const shape: AliasShape = if (row_shape.fits(args.len)) row_shape else .{};
         const shape_key: ?[]u32 = if (shape.known) try shape.key(r.store, ref, args, r.scratch) else null;
+        // Ours until the memo takes it.
+        var owned = shape_key;
+        defer if (owned) |k| r.scratch.free(k);
         if (shape_key) |k| if (r.expansions.get(k)) |end| {
-            r.scratch.free(k);
             const v = try r.store.fresh(.{ .alias = .{ .type = r.typeId(ref), .args = try r.store.addVars(args), .actual = shape.actualOf(args, end) } }, r.rank);
             try r.expansions.put(r.scratch, key, v);
             return v;
@@ -236,10 +239,16 @@ pub const Reader = struct {
         else
             try r.readBody(body, args);
         const v = try r.store.fresh(.{ .alias = .{ .type = r.typeId(ref), .args = try r.store.addVars(args), .actual = actual } }, r.rank);
-        try r.expansions.put(r.scratch, key, v);
+        // Both entries or neither, so `key`'s `errdefer` never frees a key
+        // the memo holds.
+        try r.expansions.ensureUnusedCapacity(r.scratch, 2);
+        r.expansions.putAssumeCapacity(key, v);
         if (shape_key) |k| {
-            const slot = try r.expansions.getOrPut(r.scratch, k);
-            if (slot.found_existing) r.scratch.free(k) else slot.value_ptr.* = shape.endOf(r.store, actual);
+            const slot = r.expansions.getOrPutAssumeCapacity(k);
+            if (!slot.found_existing) {
+                slot.value_ptr.* = shape.endOf(r.store, actual);
+                owned = null;
+            }
         }
         return v;
     }
