@@ -5723,10 +5723,45 @@ tests/corpus/run/SanitiserRowLevel.beni SanitiserRowLevel 34:13 #0 :: SanitiserR
 tests/corpus/run/SanitiserRowLevel.beni SanitiserRowLevel 41:9 #0 :: SanitiserRowLevel.wr r.t#Leaf.0 :: absent :: accepted  one demand per level in v2, one per opaque slot in v1
 tests/corpus/run/SanitiserRowLevel.beni SanitiserRowLevel 41:9 #0 :: SanitiserRowLevel.wr r.t#Wrap.0#Leaf.0 :: absent :: accepted  one demand per level in v2, one per opaque slot in v1
 tests/corpus/run/SanitiserRowLevel.beni SanitiserRowLevel 41:9 #0 :: SanitiserRowLevel.wr r.t#Wrap.0#Wrap.0#Leaf.0 :: absent :: rejected  one demand per level in v2, one per opaque slot in v1
-tests/corpus/run/SanitiserValueCallImported Main 23:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
-tests/corpus/run/SanitiserValueCallImported Main 55:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
-tests/corpus/run/SanitiserValueCallImported Main 63:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
-tests/corpus/run/SanitiserValueCallImported Main 71:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
-tests/corpus/run/SanitiserValueCallImported Main 87:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
-tests/corpus/run/SanitiserValueCallImported Main 96:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
-tests/corpus/run/SanitiserValueCallImported Main 104:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
+tests/corpus/run/SanitiserValueCallImported Lib 101:9 #0 :: value Lib.growing :: pending :: absent  v2 makes no value demand of a writer handed as a value (§7.3)
+tests/corpus/run/SanitiserValueCallImported Lib 97:10 #0 :: value Lib.grow :: pending :: absent  v2 makes no value demand of a writer handed as a value (§7.3)
+tests/corpus/run/SanitiserValueCallImported Main 105:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
+tests/corpus/run/SanitiserValueCallImported Main 113:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
+tests/corpus/run/SanitiserValueCallImported Main 136:9 #0 :: Main.apply1 k :: absent :: rejected  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallImported Main 143:9 #0 :: Main.grown <call> :: absent :: rejected  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallImported Main 32:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
+tests/corpus/run/SanitiserValueCallImported Main 64:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
+tests/corpus/run/SanitiserValueCallImported Main 72:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
+tests/corpus/run/SanitiserValueCallImported Main 80:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
+tests/corpus/run/SanitiserValueCallImported Main 96:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
+tests/corpus/run/SanitiserValueCallQueue Main 20:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
+tests/corpus/run/SanitiserValueCallQueue Main 38:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 22:17 #0 :: once k :: absent :: rejected  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 22:22 #0 :: List.push k :: rejected :: accepted  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 22:9 #0 :: Lib.run <lambda> :: absent :: rejected  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 29:10 #0 :: Lib.mapv <lambda> :: absent :: rejected  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 29:30 #0 :: List.push l :: pending :: accepted  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 36:10 #0 :: Lib.mapl <literal>[*] :: absent :: rejected  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 36:30 #0 :: List.push l :: pending :: accepted  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 43:10 #0 :: Lib.mapv <lambda> :: absent :: rejected  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 43:33 #0 :: List.push l :: pending :: accepted  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 50:10 #0 :: Lib.mapl <literal>[*] :: absent :: rejected  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 50:33 #0 :: List.push l :: pending :: accepted  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 57:10 #0 :: Lib.mapv <lambda> :: absent :: rejected  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 57:36 #0 :: once k :: absent :: accepted  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 57:41 #0 :: List.push k :: pending :: accepted  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 64:10 #0 :: Lib.mapl <call> :: absent :: rejected  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 64:36 #0 :: once k :: absent :: accepted  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 64:41 #0 :: List.push k :: pending :: accepted  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 71:18 #0 :: once k :: absent :: rejected  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 71:23 #0 :: List.push k :: rejected :: accepted  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 71:9 #0 :: Lib.two <lambda> :: absent :: rejected  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 78:19 #0 :: once k :: absent :: rejected  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 78:24 #0 :: List.push k :: rejected :: accepted  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 78:9 #0 :: Lib.twol <call> :: absent :: rejected  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 85:18 #0 :: once k :: absent :: rejected  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 85:23 #0 :: List.push k :: rejected :: accepted  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueCallRuns Main 85:9 #0 :: Lib.runl <call> :: absent :: rejected  #2132: v2 refuses through a called value (§2.14.5); v1 reads it as the call, #2158
+tests/corpus/run/SanitiserValueKept Main 21:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
+tests/corpus/run/SanitiserValueKept Main 26:9 #0 :: List.push j :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
+tests/corpus/run/SanitiserValueKept Main 29:9 #0 :: List.push d :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158

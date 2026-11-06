@@ -2,6 +2,10 @@ ra : (⊤ → List Int) → List Int
 ra f = f ⊤
 
 
+pub runl : (⊤ → List Int) → List Int
+runl = λf → f ⊤
+
+
 ra0 : ⊤ → ((⊤ → List Int) → List Int)
 ra0 _ = ra
 

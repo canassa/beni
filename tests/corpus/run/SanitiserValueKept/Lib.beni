@@ -35,3 +35,19 @@ build _ = keep
 
 pub made : List Int, List Int → Pt
 made = build ⊤
+
+
+hold : List (List Int) → ⊤
+hold ls =
+    _ = Task.spawnDetached λ⊤ →
+        Io.sleep 5
+        Debug.log "held" (List.length ls)
+    ⊤
+
+
+holdOf : ⊤ → (List (List Int) → ⊤)
+holdOf _ = hold
+
+
+pub held : List (List Int) → ⊤
+held = holdOf ⊤
