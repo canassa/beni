@@ -1,0 +1,25 @@
+-- check/bad: a hidden argument that reaches a `Dict` key is still checked at
+-- every application (checker-v2.md §7.4, amended 2026-11-06; §37). `X a = Y
+-- (Dict a Int)` hides `a`, because `Y` drops its argument, so `X Int` and `X
+-- (Int → Int)` have one shape key. The key-kind preparation lifts the `Dict`
+-- key's requirement to `X`'s parameter, and `Builder.apply` checks it before
+-- it looks at the memo: the function key is refused in both orders, the clean
+-- application first and second. The golden is the one the read printed before
+-- the change.
+import Dict exposing (Dict)
+
+
+type alias Y z =
+    Int
+
+
+type alias X a =
+    Y (Dict a Int)
+
+
+cleanFirst : X Int × X (Int → Int)
+cleanFirst = ( 1, 2 )
+
+
+dirtyFirst : X (Int → Int) × X Int
+dirtyFirst = ( 1, 2 )
