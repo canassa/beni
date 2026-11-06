@@ -1,0 +1,3 @@
+# v1 refuses the write of a record a forwarded list holds, and a local still reads.
+33:41 record_still_used `List.map
+33:80 record_may_be_shared `<lambda>`

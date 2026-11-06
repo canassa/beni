@@ -1,0 +1,5 @@
+# v1 refuses a kept record that a second callback writes or answers, or that a closure keeps (#1000, #1001).
+67:39 record_may_be_shared `Box`
+68:40 record_may_be_shared `Box`
+69:48 record_may_be_shared `Box`
+70:48 record_may_be_shared `Box`

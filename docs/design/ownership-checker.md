@@ -7160,15 +7160,21 @@ and their later additions. No cause is new: a record demand is rejected for the 
 - **A record handed to a function, and what it holds** (*amended 2026-11-06, #1000, #1001*). A callee's supply of
   records is owned only where the caller can no longer reach them, and a failed probe leaves it borrowed for
   §16.4's keep edge to judge. The probe asks more than the object at the root of what is handed over:
-  - every record the value holds, at every path, is probed, so `f [ r ]` and `f { w = r }` ask about `r`;
+  - when the value has a record at its root, every record it holds outside a closure is probed, so `f [ r ]` and
+    `f { w = r }` ask about `r`. A value with none at its root is a probe on nothing, which fails;
   - a read of any field after the call is a use, written or not: a callback writes when it runs, so §31.14's
     hoist has no place to go, and `b = f r` then `r.x` is refused where `f` may write `r`;
   - a local that holds a record inside the supplied one is a holder of it, bound before the call or after it:
     `i = o.inner` then a write of `i` reaches what `f` kept of `o`. A list's probe reads the same holders.
 
+  The keep edge reads two more things. A record counts as written when another function the callee hands it to
+  may write it, or may answer it for the callee to write. And a capture of a closure counts as kept by any
+  function it is handed to, because no result of that function names it.
+
   This is a coarsening, accepted because a failed probe refuses only where the callee writes the supply or the
   function writes or keeps it: a read in one arm and the write in another arm of the callee are refused together,
-  as #999's order is, and `Record.copy` is the fix.
+  as #999's order is, and `Record.copy` is the fix. An open record written through a named function reaches no
+  `rsupply` row, so this rule does not see it.
 
 ### 31.6 Closures, messages and commands
 

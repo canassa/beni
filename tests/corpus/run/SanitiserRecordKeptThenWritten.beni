@@ -1,0 +1,72 @@
+-- A record a function keeps, then changed by something other than the callee's
+-- own update (`ownership-checker.md` §31.5, #1000, #1001): a second callback
+-- writes it, a second callback answers it and the callee writes the answer, or
+-- the keeper holds it in a closure. Each line prints what the keeper still
+-- shows, then the new record.
+import Debug
+import Node exposing (Program)
+import String
+
+
+type alias R =
+    x : Int
+
+
+type Box a
+    = Box a
+
+
+bump : R → R
+bump v = { v | x = 1 }
+
+
+otherWrites : (R → Box R), (R → R), R → Box R × R
+otherWrites f up r =
+    b = f r
+    w = up r
+    ( b, w )
+
+
+otherAnswers : (R → Box R), (R → R), R → Box R × R
+otherAnswers f ident r =
+    b = f r
+    i = ident r
+    w = { i | x = 1 }
+    ( b, w )
+
+
+inClosure : ((⊤ → R) → Box (⊤ → R)), R → Box (⊤ → R) × R
+inClosure f r =
+    b = f λ⊤ → r
+    w = { r | x = 1 }
+    ( b, w )
+
+
+read : R, Int → R
+read r _ = r
+
+
+inPartial : ((Int → R) → Box (Int → R)), R → Box (Int → R) × R
+inPartial f r =
+    b = f (read r _)
+    w = { r | x = 1 }
+    ( b, w )
+
+
+unClosure : Box (⊤ → R) × R → R × R
+unClosure ( Box c, r ) = ( c ⊤, r )
+
+
+unPartial : Box (Int → R) × R → R × R
+unPartial ( Box c, r ) = ( c 0, r )
+
+
+main : Program
+main =
+    lines =
+        [ Debug.toString (otherWrites Box bump { x = 0 })
+        , Debug.toString (otherAnswers Box (λv → v) { x = 0 })
+        , Debug.toString (unClosure (inClosure Box { x = 0 }))
+        , Debug.toString (unPartial (inPartial Box { x = 0 }))
+        ]
+    Node.print (String.join lines "\n")

@@ -1,0 +1,1 @@
+a forwarded list whose element a callback writes: v1 refuses it, and the sanitised run shows the stale read when it does not

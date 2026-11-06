@@ -1,0 +1,33 @@
+-- A list made here and forwarded to a callback through a function, whose
+-- element holds a record a local still reads (`ownership-checker.md` §31.5). The
+-- callback writes the element, so the forwarded supply must stay borrowed: a
+-- probe of those records, with no record at its root, fails. Printing 1 for the
+-- old `x` is the wrong answer.
+import Debug
+import List
+import Node exposing (Program)
+
+
+type alias R =
+    x : Int
+
+
+bump : R → R
+bump v = { v | x = 1 }
+
+
+apply f v = f v
+
+
+via f r = apply f [ { w = r } ]
+
+
+t f ident r =
+    i = ident r
+    b = via f r
+    ( b, i.x )
+
+
+main : Program
+main =
+    Node.print (Debug.toString (t (λl → List.map l λv → { v | w = bump v.w }) (λv → v) { x = 0 }))

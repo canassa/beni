@@ -1,0 +1,1 @@
+a kept record changed by another callback or held in a closure: v1 refuses it, and the sanitised run shows the stale keeper when it does not

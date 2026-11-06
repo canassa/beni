@@ -16395,6 +16395,7 @@ const Walker = struct {
             for (s.uses) |u| {
                 if (u.param == e.prov.a and u.bits & bit_f != 0 and w.o.overlap(u.path, e.prov.path)) rwritten = true;
             }
+            if (!rwritten) rwritten = try w.recordWrittenByCallback(s, avs, e);
             const lwritten = !record and for (s.uses) |u| {
                 if (u.param == e.prov.a and u.bits & bit_w != 0 and w.o.writeOverlap(u.path, e.prov.path, u.extent)) break true;
             } else try w.writtenByCallback(s, avs, e, ei, &writers);
@@ -16416,7 +16417,8 @@ const Walker = struct {
                 continue;
             }
             const classes = try w.classesOf(actual);
-            var keeps = classes.len == 0;
+            // A closure's capture: no result names it, whoever keeps the closure.
+            var keeps = classes.len == 0 or w.o.hasStep(e.path, .env);
             for (classes) |cls| {
                 const c = (try w.classSummary(cls)) orelse {
                     keeps = true;
@@ -16474,6 +16476,28 @@ const Walker = struct {
     /// supplied, one with no class, or the caller's own function parameter,
     /// whose writes are decided outside (#281). Those symbolic writers
     /// are collected as guards instead of forcing an unconditional need.
+    /// §31.5: whether another function the callee hands the record to may
+    /// write it, or answer it for the callee to write: the keep edge's
+    /// `rwritten` through a callback.
+    fn recordWrittenByCallback(w: *Walker, s: *const Summary, avs: []const AV, e: SupplyEntry) Allocator.Error!bool {
+        for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |entries| for (entries) |x| {
+            if (x.fun == e.fun or x.prov.kind != .param or x.prov.a != e.prov.a or !w.o.overlap(x.prov.path, e.prov.path)) continue;
+            const actual = (try w.actualOf(s, avs, x.fun)) orelse continue;
+            if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |_| return true;
+            const classes = try w.classesOf(actual);
+            if (classes.len == 0) return true;
+            const rneed = if (s.funOf(x.fun)) |facts| facts.rneed else false;
+            for (classes) |cls| {
+                const c = (try w.classSummary(cls)) orelse return true;
+                for (c.uses) |u| if (u.param == x.k and u.bits & bit_f != 0) return true;
+                if (rneed) for ([_][]const ResEntry{ c.res, c.objs }) |answers| for (answers) |r| {
+                    if (r.prov.kind == .param and r.prov.a == x.k) return true;
+                };
+            }
+        };
+        return false;
+    }
+
     fn writtenByCallback(w: *Walker, s: *const Summary, avs: []const AV, e: SupplyEntry, ei: usize, writers: *std.ArrayList(u32)) Allocator.Error!bool {
         for (s.supply, 0..) |x, xi| {
             if (xi == ei or x.prov.kind != .param or x.prov.a != e.prov.a or !w.o.overlap(x.prov.path, e.prov.path)) continue;
@@ -20182,12 +20206,16 @@ const Walker = struct {
         try w.probe_approx.append(w.a, false);
         try w.probe_info.append(w.a, null);
         var base: std.ArrayList(Entry) = .empty;
+        var below: std.ArrayList(Entry) = .empty;
         for (try w.expand(av)) |e| {
             const k = w.cells.items[e.cell].kind;
             if (k == .closure or k == .func) continue;
             if (w.isSend(w.cells.items[e.cell])) continue;
-            try base.append(w.a, .{ .path = eps, .cell = e.cell, .approx = e.approx, .grown = e.grown });
+            const at_root = e.path == eps and !w.cells.items[e.cell].condition_only and w.recordObject(e.cell) != null;
+            try (if (at_root) &base else &below).append(w.a, .{ .path = eps, .cell = e.cell, .approx = e.approx, .grown = e.grown });
         }
+        // With no record at the root it is a probe on nothing, which fails.
+        if (base.items.len != 0) try base.appendSlice(w.a, below.items);
         try w.demandOn(.{
             .kind = .probe,
             .token = w.token(inst),
