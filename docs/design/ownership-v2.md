@@ -182,6 +182,8 @@ name it. The `⊤` a step past a fold gives keeps the value at the fold, its **o
 `fs` at the fold, and only a fold's `var` holds a function, since code cannot call another type variable's value (`Want.fold`). Before this `pf` said nothing of `f`, and a writer edited what it was handed in place (#2069). Fixtures
 `run/SanitiserFoldFunction`, `run/SanitiserFoldFunctionApart`, `run/SanitiserTopOrigin`, `run/SanitiserTopOriginApart`.
 
+**A record alias's constructor** (#2056). `type alias Pt = { xs : List Int, n : Int }` declares a constructor of its fields, argument `i` being field `i` in declaration order, and `Pt k 1` is the record, at a `record` place, which has field steps and no `C#i`. So the walk builds a record of the fields those arguments name, a pattern `Pt ys _` takes the field's step, and a constructor used as a function hands each argument to its field by declaration, not by the order of the place's steps, which is the text's. Before this `(Pt k 1).xs` named no step, read as a scalar, and `k` was edited under it. Fixtures `run/SanitiserRecordCtor`, `run/SanitiserRecordCtorApart`.
+
 **A step no place names** (#2043). A fold is not the only such step. `Q { r | a : List Int }` in a template drops its row, so `Q { b : List Int }` has a
 record place with no `.b`, and a schema member inside a nominal type is read through a template that cannot name its fields. A step a place
 cannot name is `⊤` at any place but `cross`, which holds no object, and a schema member in a template is a `var` place, as a fold is. Refused

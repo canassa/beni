@@ -26,6 +26,8 @@ pub const Context = struct {
     fieldRank: *const fn (ctx: *anyopaque, s: Bir.SymbolIndex) u32,
     /// A constructor reference's `(ordinal, arity)`.
     ctorOf: *const fn (ctx: *anyopaque, ref: u32) ?[2]u32,
+    /// The field rank argument `n` of a record alias's constructor names; null for any other constructor (§2.1).
+    ctorField: *const fn (ctx: *anyopaque, ref: u32, n: u32) ?u32,
     /// A parameterless value's `(module, declaration)`; `.{ none, 0 }` for a
     /// `foreign`'s, `.{ none, 1 }` for one that holds no object.
     sharedOf: *const fn (ctx: *anyopaque, ref: u32) ?[2]u32,

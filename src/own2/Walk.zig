@@ -370,7 +370,7 @@ const Walker = struct {
                 .pat_ctor => {
                     const c = k.ctx.ctorOf(k.ctx.ctx, d.lhs) orelse continue;
                     for (k.args(pat), 0..) |a, n| {
-                        const st = try k.f().places.ctorStep(k.gpa, k.f().account, c[0], @intCast(n));
+                        const st = if (k.ctx.ctorField(k.ctx.ctx, d.lhs, @intCast(n))) |r| try Step.field(k.f().account, r) else try k.f().places.ctorStep(k.gpa, k.f().account, c[0], @intCast(n));
                         try stack.append(k.gpa, .{ a.int(), try k.project(v, .plain, st.word(), 0) });
                     }
                 },
@@ -756,13 +756,18 @@ const Walker = struct {
             }
             k.pop(b);
         }
-        // Fields in rank order, as the place's steps.
-        const n = ranks.items.len;
+        return k.recordOf(i, ranks.items, ks.items);
+    }
+
+    /// The record `ranks` name, of values `ks`: fields in rank order, as the place's steps.
+    fn recordOf(k: *Walker, i: u32, ranks: []const u32, ks: []const u32) Error!u32 {
+        const fr = k.f();
+        const n = ranks.len;
         const order = try k.gpa.alloc(u32, n);
         defer k.gpa.free(order);
         for (order, 0..) |*o, x| o.* = @intCast(x);
-        std.mem.sort(u32, order, ranks.items, struct {
-            fn lt(r: []u32, x: u32, y: u32) bool {
+        std.mem.sort(u32, order, ranks, struct {
+            fn lt(r: []const u32, x: u32, y: u32) bool {
                 return r[x] < r[y];
             }
         }.lt);
@@ -771,8 +776,8 @@ const Walker = struct {
         var sk: std.ArrayList(u32) = .empty;
         defer sk.deinit(k.gpa);
         for (order) |o| {
-            try sr.append(k.gpa, ranks.items[o]);
-            try sk.append(k.gpa, ks.items[o]);
+            try sr.append(k.gpa, ranks[o]);
+            try sk.append(k.gpa, ks[o]);
         }
         return k.built(i, .record, 0, i, sk.items, try fr.mkWords(sr.items));
     }
@@ -840,6 +845,10 @@ const Walker = struct {
             },
             .ctor => |c| {
                 for (arg_insts) |a| try k.consume(a, i);
+                var ranks: std.ArrayList(u32) = .empty;
+                defer ranks.deinit(k.gpa);
+                for (0..vals.items.len) |n| if (k.ctx.ctorField(k.ctx.ctx, k.data(i).lhs, @intCast(n))) |r| try ranks.append(k.gpa, r);
+                if (ranks.items.len != 0) return k.recordOf(i, ranks.items, vals.items);
                 return k.built(i, .ctor, c[0], none, vals.items, &.{});
             },
             .code => |c| {
