@@ -1,0 +1,19 @@
+-- A runtime's own suspension must remain visible through nested aliases.
+import Start exposing (Program)
+import Task
+
+
+pub type alias Identity a =
+    a
+
+
+pub type alias Arrow a =
+    a → ⊤
+
+
+pub type alias Runner =
+    Identity (Arrow Program)
+
+
+pub run : Runner
+run _ = Task.yieldNow ⊤

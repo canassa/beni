@@ -3565,3 +3565,17 @@ takeOn stack ks i =
     else
         _ = Js.call stack "push" [ Js.at ks i ]
         takeOn stack ks (i - 1)
+
+
+--| Spike port: chain a defect hook before the current one, erased storage.
+pub chainDefect : sync (⊤ → ⊤) → ⊤
+chainDefect hook =
+    previous = Js.read defect
+    Js.write defect
+        (Js.from λ⊤ →
+            hook ⊤
+            if Js.isNull previous then
+                ⊤
+            else
+                Js.to (Js.apply previous [ Js.null ])
+        )

@@ -1,0 +1,12 @@
+-- Generated from @webref/idl 3.86.0; reviewed adapters in native/Operations.zig.
+import Browser.Host.Element as Element
+
+
+pub type QueryError
+    = SyntaxError
+
+
+pub foreign type Document
+
+
+pub foreign impure querySelector : Document, String → Result QueryError (Maybe Element.Element)

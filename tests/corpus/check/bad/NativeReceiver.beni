@@ -1,0 +1,6 @@
+-- Native receivers retain their nominal identity.
+import Browser.Host.Document as Document
+import Browser.Host.TextEncoder as TextEncoder
+
+
+wrong = Document.querySelector (TextEncoder.create ⊤) "body"

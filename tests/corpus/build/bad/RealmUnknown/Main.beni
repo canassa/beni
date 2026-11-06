@@ -1,0 +1,15 @@
+-- A platform without entryHost must not claim the Node realm.
+import Browser.Host.Document as Document
+import Browser.Host.Window as Window
+import Prog
+
+
+main : Prog.Program
+main =
+    Prog.Program
+        (case Document.querySelector (Window.document ⊤) "body" of
+            Ok _ →
+                "found"
+            Err _ →
+                "bad selector"
+        )

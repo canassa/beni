@@ -1,0 +1,21 @@
+-- A worker Program cannot be executed as a descriptor in the page.
+import Page
+import Worker
+
+
+worker : Worker.Program String String ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle = λmessage _ _ → message
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+start : ⊤ → ⊤
+start _ = Worker.run worker
+
+
+main : Page.Program
+main = Page.program start

@@ -1,0 +1,13 @@
+-- Wildcard exposure uses the full native realm universe, including node.
+import Browser.Host.TextEncoder as TextEncoder
+import Browser.Host.Uint8Array as Uint8Array
+import Debug
+import Node
+import String
+
+
+main : Node.Program
+main =
+    encoder = TextEncoder.create (Debug.log "unit argument" ⊤)
+    bytes = TextEncoder.encode encoder "hello é"
+    Node.print (String.fromInt (Uint8Array.byteLength bytes))

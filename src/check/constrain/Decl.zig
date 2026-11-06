@@ -180,6 +180,7 @@ fn rigidReading(g: *Generator, annotation: Bir.Inst.Index, scheme: Var, name: Tr
     var b = g.cx.builder(.rigid, g.rank);
     defer b.deinit();
     const check = try g.cx.readAnnotation(&b, annotation, @backingInt(g.decl));
+    if (g.cx.wire_readings) |readings| try readings.append(g.cx.scratch, .{ .scheme = scheme, .body = check, .decl = @backingInt(g.decl) });
     if (top) |d| try attachWhere(g.cx, d, &b, @backingInt(g.decl));
     // The annotation promises no bits: this reading and the scheme are one
     // class position by position (transparent-effects-proposal.md §14.3

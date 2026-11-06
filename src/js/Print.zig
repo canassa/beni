@@ -165,6 +165,8 @@ pub const Options = struct {
     marks: ?*SourceMap.Marks = null,
     /// Bytes written after the module: its `//# sourceMappingURL=` line.
     footer: []const u8 = "",
+    // Output-root-relative path after relocation and scope hoisting.
+    artifact_path: []const u8 = "",
 };
 
 /// A set of whole-program ordinals (`Rename.Globals`): dense, from 0 to
@@ -183,6 +185,7 @@ pub fn print(gpa: Allocator, scratch: Allocator, ir: *const JsIr, names: Names, 
         .ir = ir,
         .names = names,
         .plan = options.plan,
+        .artifact_path = options.artifact_path,
         .rename = options.rename,
         .compact = options.compact,
         .imported = options.imported,
@@ -199,7 +202,7 @@ pub fn print(gpa: Allocator, scratch: Allocator, ir: *const JsIr, names: Names, 
     };
     // `Rename` names a loop's variable as the loop's own only when the
     // printer will write it in the loop's head, and asks the printer which.
-    if (p.rename) |m| m.heads = .{ .ctx = &p, .headOf = Printer.headThunk };
+    if (p.rename) |m| m.heads = .{ .ctx = &p, .headOf = Printer.headThunk, .resolve = Printer.resolveThunk };
     defer if (p.rename) |m| {
         m.heads = null;
     };
@@ -486,6 +489,7 @@ const Spelling = struct {
 };
 
 const Printer = struct {
+    artifact_path: []const u8 = "",
     joiner: Joiner,
     ir: *const JsIr,
     names: Names,
@@ -589,6 +593,16 @@ const Printer = struct {
         const at = p.ir.pos(node);
         if (at == Node.no_pos) return;
         try marks.add(p.joiner.length, at, try p.mapName(marks, index));
+    }
+
+    fn workerPath(p: *Printer, node: Index) Allocator.Error!void {
+        var path: std.ArrayList(u8) = .empty;
+        const depth = std.mem.count(u8, p.artifact_path, "/");
+        if (depth == 0) try path.appendSlice(p.spelled, "./") else {
+            for (0..depth) |_| try path.appendSlice(p.spelled, "../");
+        }
+        try path.appendSlice(p.spelled, p.ir.bytes(node));
+        try p.quoted(path.items);
     }
 
     /// `index`'s entry in the map's `names`, numbered the first time it is
@@ -2013,7 +2027,7 @@ const Printer = struct {
         var budget: u32 = 64;
         while (budget > 0) : (budget -= 1) {
             switch (p.ir.tag(n)) {
-                .ident, .global_this, .this_lit => return true,
+                .ident, .global_this, .import_meta_url, .this_lit => return true,
                 .member => n = p.resolve(@fromBackingInt(@intCast(p.ir.data(n).lhs))),
                 else => return false,
             }
@@ -2421,13 +2435,18 @@ const Printer = struct {
     fn later(p: *Printer, w: Work) Allocator.Error!void {
         try p.work.append(p.spelled, w);
     }
+    fn resolveThunk(ctx: *anyopaque, node: Index) Index {
+        const p: *Printer = @ptrCast(@alignCast(ctx));
+        return p.resolve(node);
+    }
+
     /// Follow §9 item 1's substitutions to the node that is really printed.
     /// A chain of them — `const x = p.a; const y = x.b;` — collapses here, so
     /// the pass itself needs neither a fixpoint nor a backward walk.
     ///
     /// **One step, and total**: `Opt.compress` records every
-    /// substitution already resolved, so a target is never itself
-    /// substituted. This used to loop with a budget of 64 and, once a chain
+    /// name substitution already resolved, so its target is never itself
+    /// a substituted name. This used to loop with a budget of 64 and, once a chain
     /// of single-use aliases outran it, print the name it stopped at — whose
     /// binding the plan had dropped — and a `--release` build printed an
     /// unrelated top-level's value.
@@ -2436,13 +2455,14 @@ const Printer = struct {
     /// `ident`, itself resolved already; an `ident` whose binding was an
     /// arrow made once and used once resolves to that arrow, and then one
     /// step further if the arrow reduces. Two steps at most, each total.
-    /// A third step cannot exist: a substitution's target is never itself
-    /// substituted (`Opt.compress`), `Opt.eta` declines a callee whose
-    /// substitution is substituted, and an arrow's replacement is always an
-    /// `ident`.
+    /// An equal-arm conditional is checked after the first substitution:
+    /// its replacement is an already compressed atom. `Opt.eta` declines
+    /// a callee whose substitution is substituted. Neither rule creates a
+    /// chain that needs a fixpoint.
     fn resolve(p: *Printer, node: Index) Index {
         var n = node;
         if (p.ir.tag(n) == .ident) n = p.plan.replacement(n) orelse return n;
+        if (p.ir.tag(n) == .cond) n = p.plan.replacement(n) orelse n;
         if (p.ir.tag(n) == .arrow) {
             // §9 item 6's veto: the join knows which names the build
             // imports from a hand-written file, and `Opt` does not, so a
@@ -2553,6 +2573,8 @@ const Printer = struct {
             .null_lit => try p.push("null"),
             .undefined_lit => try p.push("undefined"),
             .global_this => try p.push("globalThis"),
+            .import_meta_url => try p.push("import.meta.url"),
+            .worker_path => try p.workerPath(node),
             .this_lit => try p.push("this"),
             .call, .new_call => {
                 if (p.ir.tag(node) == .new_call) {
@@ -2725,6 +2747,8 @@ const Printer = struct {
             .null_lit => try p.push("null"),
             .undefined_lit => try p.push("undefined"),
             .global_this => try p.push("globalThis"),
+            .import_meta_url => try p.push("import.meta.url"),
+            .worker_path => try p.workerPath(node),
             .this_lit => try p.push("this"),
             .call => {
                 // callee, then `call_rest`
@@ -2971,7 +2995,7 @@ const Printer = struct {
         var n = p.resolve(node);
         while (true) switch (p.ir.tag(n)) {
             .member => n = p.resolve(@fromBackingInt(@intCast(p.ir.data(n).lhs))),
-            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => return true,
+            .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit => return true,
             else => return false,
         };
     }
@@ -4641,4 +4665,32 @@ fn mapNameIn(
         try marks.src.append(marks.allocator, index.int());
     }
     return slot.*;
+}
+
+test "release copies capture their replacement inside a loop" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const gpa = arena.allocator();
+    var f = try Fixture.init(gpa);
+    defer f.deinit();
+    const console = try f.node(.member, (try f.node(.global_this, 0, 0)).int(), (try f.name("console")).int());
+    const callee = try f.node(.member, console.int(), (try f.name("log")).int());
+    const args = try f.b.addRange(&.{ try f.ident("copy"), try f.ident("item"), try f.ident("copy") });
+    const call = try f.node(.call, callee.int(), @backingInt(try f.b.addRecord(args)));
+    const body = try f.b.addRange(&.{try f.node(.expr_stmt, call.int(), 0)});
+    const loop_record = try f.b.addRecord(JsIr.ForOf{ .iterable = try f.ident("input"), .body_start = body.start, .body_end = body.end });
+    const loop = try f.node(.for_of, (try f.name("item")).int(), @backingInt(loop_record));
+    const copy = try f.node(.const_decl, (try f.name("copy")).int(), (try f.ident("base")).int());
+    const arrow = try f.func(&.{ try f.name("base"), try f.name("input") }, &.{ copy, loop });
+    const top = try f.node(.const_decl, (try f.qualified("Fixture", "run")).int(), arrow.int());
+    var ir = try f.b.toOwned(try f.b.addRange(&.{top}));
+    defer ir.deinit(gpa);
+    try ir.verify();
+    const plan = try Opt.run(gpa, &ir);
+    var globals: Rename.Globals = .{};
+    defer globals.deinit(gpa);
+    for (try Rename.collectGlobals(gpa, &ir, &plan)) |n| _ = try globals.intern(gpa, ir.name(n));
+    var rename = try Rename.begin(gpa, &ir, &globals);
+    const text = try printAlone(gpa, &ir, .fromLocal(&f.interner), .{ .compact = true, .plan = &plan, .rename = &rename });
+    try testing.expectEqualStrings("const a=(b,c)=>{for(let d of c)globalThis.console.log(b,d,b)};\n", text);
 }

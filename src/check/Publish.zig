@@ -53,6 +53,8 @@ pub const Input = struct {
     /// instantiations cross into JavaScript (`TypeKeys`, checker-v2.md §36),
     /// published as its `crosses` bit.
     crossing: []const bool = &.{},
+    wire: []const bool = &.{},
+    wire_paths: []const @import("Wire.zig").Requirement = &.{},
 };
 
 /// Fill the module's record, round-trip it under the flag, and translate its
@@ -72,6 +74,8 @@ pub fn fill(in: Input) Error!u32 {
     bodies.shallow = true;
     writer.bodies = &bodies;
     writer.crossing = in.crossing;
+    writer.wire = in.wire;
+    writer.wire_paths = in.wire_paths;
     try writer.seedExtra(iface.extra);
     var p: Publisher = .{ .cx = cx, .stacks = in.stacks, .writer = &writer };
 

@@ -1,0 +1,21 @@
+-- A Program has one normalization plan. Its message type must be concrete.
+import Page
+import Worker
+
+
+pub type Envelope a
+    = Envelope a
+
+
+worker : Worker.Program (Envelope a) (Envelope a) ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle = λmessage _ _ → message
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+main : Page.Program
+main = Page.program λ_ → ⊤

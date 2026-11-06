@@ -3,9 +3,22 @@
   "name": "browser",
   "program": "Browser.Program",
   "html": "index.html",
-  "host": "page",
+  "entryHost": "window",
   "platforms": ["html"],
   "reexports": ["Html", "Html.Markdown"],
   "markup": { "lowering": "dom", "module": "Rt" },
-  "zig": "zig/root.zig"
+  "zig": "zig/root.zig",
+  "entryKinds": [{
+    "programType": "Browser.Worker.Program",
+    "realm": "dedicatedWorker",
+    "runtime": "Browser.WorkerRuntime",
+    "constructors": [{"name": "Browser.Worker.program", "parameter": 0, "callbackProtocol": "handlers"}],
+    "launches": [{"name": "Browser.Worker.open", "parameter": 1}],
+    "parameters": [
+      {"index":0,"role":"wire"}, {"index":1,"role":"local"},
+      {"index":2,"path":["call"],"role":"wire"}, {"index":2,"path":["reply"],"role":"wire"},
+      {"index":2,"path":["stream"],"role":"wire"}, {"index":2,"path":["error"],"role":"wire"},
+      {"index":2,"path":["event"],"role":"wire"}, {"index":2,"path":["chunk"],"role":"wire"}
+    ]
+  }]
 }

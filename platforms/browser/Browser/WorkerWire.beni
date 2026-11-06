@@ -1,0 +1,110 @@
+-- Executes the compiler's Wire plan. Known stable subgraphs pass directly to
+-- structured clone; runtime shape walking is confined to type-variable positions.
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+pub normalize : V, Int, String, V → V
+normalize plan parameter member value =
+    if Js.isNullish plan then
+        value
+    else
+        roles = Js.at plan 0
+        nodes = Js.at plan 1
+        found = Js.ref value
+        Js.each roles λrole →
+            path = Js.at role 3
+            if
+                Js.to (Js.at role 0) == parameter
+                    && (if member == "" then
+                           Js.to (Js.get path "length") == 0
+                        else
+                           Js.same (Js.at path 0) (Js.from member)
+                       )
+            then
+                Js.write found (visit nodes (Js.to (Js.at role 1)) value)
+        Js.read found
+
+
+visit : V, Int, V → V
+visit nodes index value =
+    node = Js.at nodes index
+    if Js.same node (Js.from 0) then
+        value
+    else
+        kind : Int
+        kind = Js.to (Js.at node 0)
+        edges = Js.at node 1
+        if kind == 1 then
+            array =
+                if Js.to (Js.call (Js.global "Array") "isArray" [ value ]) then
+                    value
+                else
+                    Js.call value "$plain" []
+            child : Int
+            child = Js.to (Js.at (Js.at edges 0) 1)
+            if Js.same (Js.at nodes child) (Js.from 0) then
+                array
+            else
+                mapFields array λ_ item → visit nodes child item
+        else if kind == 4 then
+            variant =
+                Js.call edges "find" [ Js.from λedge → Js.same (Js.at edge 0) (Js.get value "$") ]
+            visit nodes (Js.to (Js.at variant 1)) value
+        else if kind == 5 then
+            variable value
+        else
+            result = Js.ref value
+            Js.each edges λedge →
+                field = Js.at edge 0
+                child : Int
+                child = Js.to (Js.at edge 1)
+                if Js.same (Js.at nodes child) (Js.from 0) then
+                    ⊤
+                else
+                    replace result value field (visit nodes child (Js.get value field))
+            if kind == 6 then
+                -- An open row is a type-variable position too. Known fields
+                -- already followed their plans, including stable ones to skip.
+                Js.each (Js.call (Js.global "Object") "keys" [ value ]) λfield →
+                    known = Js.call edges "some" [ Js.from λedge → Js.same field (Js.at edge 0) ]
+                    if not (Js.to known) then
+                        replace result value field (variable (Js.get value field))
+            Js.read result
+
+
+variable : V → V
+variable value =
+    if Js.isNullish value || not (Js.typeIs value "object") then
+        value
+    else if Js.typeIs (Js.get value "$plain") "function" then
+        variable (Js.call value "$plain" [])
+    else
+        mapFields value λ_ item → variable item
+
+
+mapFields : V, (V, V → V) → V
+mapFields value transform =
+    result = Js.ref value
+    Js.each (Js.call (Js.global "Object") "keys" [ value ]) λfield →
+        replace result value field (transform field (Js.get value field))
+    Js.read result
+
+
+replace : Js.Ref V, V, V, V → ⊤
+replace result value field next =
+    if Js.to (Js.call (Js.global "Object") "is" [ Js.get value field, next ]) then
+        ⊤
+    else
+        if Js.same (Js.read result) value then
+            Js.write
+                result
+                (if Js.to (Js.call (Js.global "Array") "isArray" [ value ]) then
+                    Js.call value "slice" []
+                 else
+                    Js.call (Js.global "Object") "assign" [ Js.object [], value ]
+                )
+        Js.set (Js.read result) field next

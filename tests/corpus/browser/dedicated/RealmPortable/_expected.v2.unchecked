@@ -1,0 +1,7 @@
+Main unreachable: lines 15-21 (not built: call)
+Main encode: lines 24-27 (not built: call)
+Main worker: lines 34-44 (not built: lambda)
+Main pageDom: lines 48-60 (not built: call)
+Main launch: lines 74-81 (not built: call)
+Main start: lines 63-71 (not built: call)
+Main main: lines 84-85 (not built: top)

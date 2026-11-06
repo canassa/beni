@@ -68,6 +68,33 @@ module Basics
   value truncate : Float → Int
   value turns : Float → Float
   value xor : Bool, Bool → Bool
+module Browser.Host.Document
+  type Document
+  type QueryError
+    SyntaxError
+  value querySelector : Document, String → Result QueryError (Maybe Element)  -- impure
+module Browser.Host.Element
+  type Element
+  value toNode : Element → Node
+module Browser.Host.Node
+  type Node
+  value setTextContent : Node, String → ⊤  -- impure
+  value textContent : Node → Maybe String  -- impure
+module Browser.Host.TextEncoder
+  type TextEncoder
+  value create : ⊤ → TextEncoder  -- impure
+  value encode : TextEncoder, String → Uint8Array  -- impure
+module Browser.Host.Timers
+  value setTimeout : (⊤ → ⊤), Int → Int  -- impure
+module Browser.Host.Uint8Array
+  type Uint8Array
+  value byteLength : Uint8Array → Int
+module Browser.Host.Window
+  type Window
+  value document : ⊤ → Document  -- impure
+module Browser.Host.WorkerGlobalScope
+  type WorkerGlobalScope
+  value self : ⊤ → WorkerGlobalScope  -- impure
 module Char
   type Char
   value fromCode : Int → Char

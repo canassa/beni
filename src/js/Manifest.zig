@@ -60,9 +60,9 @@
 //!   `ownership-checker.md` §28.2): the chain's code may write a list's
 //!   array in place, so `check` and `build` run the ownership checker and
 //!   its rejections are errors. No other value; inherited first-found.
-//! - `host` — `"page"`, since 2026-10-24 (`boundary.md` §5.2): the chain's
-//!   code always runs in a page, so a release build writes `window` bare
-//!   (`backend.md` §9, item 8). No other value; inherited first-found.
+//! - `entryHost` — the top entry realm (`workers.md` §4), inherited first-found.
+//!   `entryKinds` give worker entries their own realm. The old `host: page`
+//!   promise is diagnosed as obsolete before output.
 //! - `build` — an app's defaults for `build` and `serve` (`frontend.md`
 //!   §10.1): `platform`, `paths` and `out`, each used when the command line
 //!   does not say. A platform package's is ignored.
@@ -92,6 +92,7 @@ runtime: ?[]const u8 = null,
 /// A beni module of this package that supplies `run` where the chain
 /// declares no markup lowering (§5.2, *A runtime module without markup*).
 module: ?[]const u8 = null,
+entryKinds: []const EntryKind = &.{},
 entry: ?[]const u8 = null,
 platforms: []const []const u8 = &.{},
 reexports: []const []const u8 = &.{},
@@ -99,6 +100,7 @@ markup: Markup = .{},
 html: ?[]const u8 = null,
 lists: ?Lists = null,
 host: ?Host = null,
+entryHost: ?EntryHost = null,
 build: Build = .{},
 exports: Exports = .none,
 
@@ -146,6 +148,7 @@ pub const Lists = enum { @"in-place" };
 /// `"host"` (`boundary.md` §5.2, added 2026-10-24): where the chain's code
 /// always runs. One value, `"page"`; any other is a malformed manifest.
 pub const Host = enum { page };
+pub const EntryHost = enum { window, dedicatedWorker, sharedWorker, serviceWorker, node };
 
 /// `"markup"`'s four fields (`boundary.md` §9.2), each absent unless written.
 pub const Markup = struct {
@@ -156,6 +159,29 @@ pub const Markup = struct {
     /// A beni module of the same package whose `pub` values supply runtime
     /// exports in the file's place (§9.2, *A runtime module*).
     module: ?[]const u8 = null,
+};
+
+/// Generic entry metadata (workers-entry-implementation.md). Symbol references
+/// remain source text until the platform contract resolves checked interfaces.
+pub const EntryKind = struct {
+    programType: []const u8,
+    realm: []const u8,
+    runtime: []const u8,
+    constructors: []const Constructor,
+    launches: []const Launch,
+    parameters: []const Parameter,
+
+    pub const Constructor = struct {
+        name: []const u8,
+        parameter: u32,
+        callbackProtocol: []const u8,
+    };
+    pub const Launch = struct { name: []const u8, parameter: u32 };
+    pub const Parameter = struct {
+        index: u32,
+        path: []const []const u8 = &.{},
+        role: []const u8,
+    };
 };
 
 pub const ParseError = error{
@@ -171,6 +197,7 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         program: ?[]const u8 = null,
         runtime: ?[]const u8 = null,
         module: ?[]const u8 = null,
+        entryKinds: ?[]const EntryKind = null,
         entry: ?[]const u8 = null,
         platforms: ?[]const []const u8 = null,
         reexports: ?[]const []const u8 = null,
@@ -178,6 +205,7 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         html: ?[]const u8 = null,
         lists: ?Lists = null,
         host: ?Host = null,
+        entryHost: ?EntryHost = null,
         build: ?Build = null,
         exports: ?std.json.Value = null,
     };
@@ -209,6 +237,7 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         .program = parsed.program,
         .runtime = parsed.runtime,
         .module = parsed.module,
+        .entryKinds = parsed.entryKinds orelse &.{},
         .entry = parsed.entry,
         .platforms = parsed.platforms orelse &.{},
         .reexports = parsed.reexports orelse &.{},
@@ -216,6 +245,7 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         .html = parsed.html,
         .lists = parsed.lists,
         .host = parsed.host,
+        .entryHost = parsed.entryHost,
         .build = parsed.build orelse .{},
         .exports = exports,
     };
@@ -418,4 +448,47 @@ test "malformed manifests are reported, not guessed at" {
     try testing.expectError(error.Malformed, parse(arena.allocator(),
         \\{ "platform": "yes" }
     ));
+}
+
+test "entryKinds retains runtime and callback metadata with explicit empty tables" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const m = try parse(arena.allocator(),
+        \\{ "entryKinds": [{ "programType": "Start.Program", "realm": "node", "runtime": "Rt",
+        \\  "constructors": [{"name":"Start.program","parameter":0,"callbackProtocol":"handlers"}],
+        \\  "launches": [{"name":"Start.open","parameter":1}],
+        \\  "parameters": [{"index":0,"path":["call"],"role":"wire"}] }] }
+    );
+    try testing.expectEqualDeep(@as([]const EntryKind, &.{.{
+        .programType = "Start.Program",
+        .realm = "node",
+        .runtime = "Rt",
+        .constructors = &.{.{ .name = "Start.program", .parameter = 0, .callbackProtocol = "handlers" }},
+        .launches = &.{.{ .name = "Start.open", .parameter = 1 }},
+        .parameters = &.{.{ .index = 0, .path = &.{"call"}, .role = "wire" }},
+    }}), m.entryKinds);
+    const empty = try parse(arena.allocator(),
+        \\{"entryKinds":[{"programType":"Start.Program","realm":"node","runtime":"Rt","constructors":[],"launches":[],"parameters":[]}]}
+    );
+    try testing.expectEqualDeep(@as([]const EntryKind, &.{.{ .programType = "Start.Program", .realm = "node", .runtime = "Rt", .constructors = &.{}, .launches = &.{}, .parameters = &.{} }}), empty.entryKinds);
+    for ([_][]const u8{
+        "{\"entryKinds\":{}}",
+        "{\"entryKinds\":[{}]}",
+        "{\"entryKinds\":[{\"programType\":\"Start.Program\",\"realm\":\"node\",\"runtime\":\"Rt\",\"parameters\":[{\"index\":-1,\"role\":\"wire\"}],\"constructors\":[],\"launches\":[]}]}",
+    }) |bad| try testing.expectError(error.Malformed, parse(arena.allocator(), bad));
+}
+
+test "fuzz platform manifest including entry kind records" {
+    try std.testing.fuzz({}, struct {
+        fn testOne(_: void, smith: *std.testing.Smith) anyerror!void {
+            var bytes: [4096]u8 = undefined;
+            const len = smith.sliceWithHash(&bytes, 0xE17A);
+            var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+            defer arena.deinit();
+            _ = parse(arena.allocator(), bytes[0..len]) catch |err| switch (err) {
+                error.Malformed => return,
+                error.OutOfMemory => return error.OutOfMemory,
+            };
+        }
+    }.testOne, .{});
 }

@@ -1,0 +1,14 @@
+{
+  "platform": true,
+  "name": "worker-test",
+  "program": "Page.Program",
+  "runtime": "runtime.js",
+  "entryKinds": [{
+    "programType": "Worker.Program",
+    "realm": "dedicatedWorker",
+    "runtime": "WorkerRuntime",
+    "constructors": [{"name": "Worker.program", "parameter": 0, "callbackProtocol": "handlers"}],
+    "launches": [{"name": "Worker.open", "parameter": 0}],
+    "parameters": []
+  }]
+}

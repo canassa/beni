@@ -30,7 +30,7 @@ const Session = @import("../Session.zig");
 /// and the handful of `List`/`Maybe`/`Result`/`String` functions the tests
 /// call. The embedded core would work too and costs ~2,800 lines of parsing
 /// per test; this way a test that turns on `number` says so in the fixture.
-const test_core = [_]TestProject.Module{
+pub const test_core = [_]TestProject.Module{
     .{ .path = "Basics.beni", .package = .core, .source =
     \\pub equatable foreign type Int
     \\
