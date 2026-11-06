@@ -107,7 +107,8 @@ vocabulary of type paths, with (c)'s loud contract and driver. A selection repla
    A call instantiates it once (§2.11.2). A function parameter is a label, resolved where the code is known (§2.11.3). A
    function in a result has a called contract. A contract names no declaration: the room #587 needs.
 7. **One fixpoint shape**: ⊥, deliveries of facts along edges, then one validation walk that trusts nothing the
-   deliveries computed (§2.12). There is no round cap (R-7.4).
+   deliveries computed (§2.12). Rounds end by the finite vocabulary. A resource cap of 4 096 rounds stands behind that
+   (`Groups.zig`) and fails `ownership_limit`: it accepts nothing (R-7.4, O11).
 8. **The contract fails loudly** (Koka `fip`): every unprovable write is an error with a named fix; a resource limit is
    an `ownership_limit`; nothing is ever a copy. Rows are data (§2.13.6), and no Zig names a declaration.
 
@@ -131,8 +132,8 @@ recommendation 5, a soundness argument per rule over the slot carrier, was not t
 
 **What the implementation gave up,** beyond those limits:
 
-- **Materialisation as a fact of the value.** `elem`, `others`, `level` and `below` are gone. A position says what the
-  source projected, in one frame. Across a call only a selection separates two objects of one slot.
+- **Materialisation as a fact of the value.** The refinements `elem`, `others`, `level` and `below·s` are gone (not
+  `below(p)`, the slot set of §2.3.1). A position says what the source projected, in one frame. Across a call only a selection separates two objects of one slot.
 - **`delta`.** A record update copies (§2.11.5), so R-4.8's `update` demand, O7 and O12 wait for S5. Records are not
   written in place today, and no sanitiser pass checks them.
 - **Non-regular types.** A non-regular type folds at its head (§2.1), so a place stands for instantiations that differ
@@ -778,7 +779,7 @@ pre-pass (§2.12) as a two-arm region, so it has arms in this tree.
 
 ### 2.6 Transfer rules
 
-*Amended 2026-11-02 (#1685).* `Transfer.eval` is now `Eval.eval`, one case per BIR tag over the values of
+*Amended 2026-11-02 (#1685).* `Transfer.eval` is now `Walk.Walker.eval`, one case per BIR tag over the values of
 §2.3.3; its value table, not a shape, is what each case returns. The table's rules stand with these changes:
 `local`, projections and patterns give positions (§2.3.2); `lambda` and `let_def` with parameters are codes
 (§2.11.4); `call` and `method_call` instantiate a contract (§2.11.2), or apply a label (§2.11.3);
@@ -2879,8 +2880,8 @@ its demand records fall from 198 658 to 58 232. The cost table's other rows are 
 
 **Termination.** The vocabulary is finite: the slots are fixed by the types, the arrivals by the parameters'
 slots and the labels by the instructions. Every delivered fact is added once; every condition moves at most
-once per occurrence. The account (§4.4) bounds the work in records, reserved before work; there is no round
-cap.
+once per occurrence. The account (§4.4) bounds the work in records, reserved before work. *As built:* a group
+past 4 096 rounds fails `ownership_limit` (`Groups.zig`). It is loud, and it accepts nothing.
 
 **Soundness.** The validation walk is an ordinary walk under the candidates. A post-fixed point of the
 contract transfer is a sound summary of every activation of the group by induction on the activation tree,
@@ -4185,10 +4186,22 @@ path-multiset primitive, none of which exist since the slot domain replaced them
 Lemma 1, Lemma 2, I-κ, the Corollary and O1–O15 stay, since other sections cite them. κ reads as a selection (§2.3's note).*
 
 **What this section is.** An argument in prose, walked against the code at `cf263c80ef`. It is not a proof, and the Lean
-oracle does not cover it: `proofs/ownership/` models the thesis's summaries and names `src/own2` nowhere (R-8.11). The
-argument is **conditional**. §2.14.7 lists each fact it needs that the code does not give. Two of them are open holes in
-the argument, not open tasks: the program entry (G1) and non-regular types (G2). Until G1 and G2 close, the theorem below
-holds of no whole program that reaches them.
+oracle does not cover it: `proofs/ownership/` models the thesis's summaries and names `src/own2` nowhere (R-8.11).
+
+**The review's verdict (2026-11-06, #2150).** *The argument maps holes, and it cannot reject a wrong fix, because nothing in it
+runs.* Its first version called a refuted fact unchecked (G5), and read two pull requests that turn refusals into wrong runs
+as fitting (§2.14.7). A reader can use this section to find where a hole lies. A reviewer cannot use it to say that a change is
+sound. Three things would make it run:
+
+1. **The mutation harness** (#2148): each obligation's rule broken on purpose, and a fixture that fails, so that a pin is a measurement.
+2. **A check per obligation:** a run-time-safety check or a differential that fails on the obligation's own statement, as
+   `SupplyAnswers.closesAtSite` does for one claim and `Kept`'s cross-check for one fast path.
+3. **A rule for new routes:** a change that adds a route a function value or an answer takes answers H1–H6 of §2.14.5 in its text,
+   row by row, and adds a negative fixture for each row it says holds.
+
+**What the Theorem does not claim.** It does not say that an accepted program is safe. Its hypotheses split in three (§2.14.7),
+and the last part cannot be tested on any program: `C11foldTwo` has regular types, no open row and no entry, is accepted,
+and traps.
 
 #### 2.14.1 The concrete semantics
 
@@ -4235,7 +4248,7 @@ of them holds.
 | `fresh k` | every object allocated during call `k` in `a` that no value before the call reached. One atom names them all |
 | `shared d` | `reach` of top-level value `d` |
 | `answer L, s` | the objects at slot `s` of the value of any run of `L`'s function that `a` can observe |
-| `⊤` | **every object**. With an origin `v` it stands for the same set. The origin adds readers (§2.3.4); it never narrows `γ`: `Distinct.overlapRaw` answers `may` for any `⊤` |
+| `⊤` | **every object**. With an origin `v` it stands for the same set. The origin adds readers (§2.3.4); it never narrows `γ`. `Distinct.overlapRaw` answers `may` for a `⊤` once tags have not parted the two leaves, and unless the target is a `◆` at its own position (a cell's barrier) |
 | `host` | objects JavaScript made, and objects that escaped at an earlier point (§2.10, *host objects*) |
 | `loan l, k` | `γ_a(l)`, reached through a cell's contents. Held, it holds what `l` names. Written, it is refused |
 | `recons ι` | a prepend's base storage in an `a` where the item put in front is `Js.same` as the element stored before the base's view (§2.13.6); else nothing |
@@ -4272,7 +4285,7 @@ is there**, and it must be true for one of five reasons.*
 | `crossing` | the place holds no object | Lemma T | `Slots.holdsAny`, `Frame.resolveRef`, `Frame.setsOf` for `scalar` |
 | `impossible` | this arm cannot run | another constructor of a literal, an index past a literal's end, `[]`, two tags of one choice | `Relation.Eval.project`'s `built` arms, `Frame.mergeTags` |
 | `bot` | no value yet | a fixpoint's start, or an activation that does not return, §2.12 | `Walk.Walker.project`, `case` dropping an arm |
-| `cycle` | what this read would add is added by the reader it re-enters | a least fixed point, so the head of the cycle unites every member | `Relation.Eval.instAt`, `Relation.Eval.expandRouted`, `Distinct.overlap`, §2.12's keys |
+| `cycle` | what this read would add is added by the reader it re-enters | true of a cycle's **head** only: the head unites every member. A member's own answer, read before the head ends, is short, so it may not be kept. `Relation.Eval.instAt` honours this; `Distinct.overlap` does not, and the claim is false of it (G5) | `Relation.Eval.instAt`, `Relation.Eval.expandRouted`, `Distinct.overlap`, §2.12's keys |
 | `covered` | another reader names these objects | named per site: a held atom, an unchanged set node, a label of a later round | `Held.has`, `Leaves` passes, `Relation.Eval.feedDraft` |
 
 An empty set is the most permissive answer there is. A caller reads it as *nothing to judge*, and `fresh` is the ground left
@@ -4283,9 +4296,9 @@ refuses core (five refusals in `core/Markdown`, two in `platforms/browser`'s `We
 
 **Rule (each empty read carries its reason).** *A read that gives nothing returns one of the five reasons, by name. A read
 with no reason panics under runtime safety, and is `⊤` otherwise.* The rule can be stated, and it is not built: nothing in
-`src/own2/` tells an empty read from a lost one (G4). It is necessary and not sufficient: the review of 2026-11-06 sorts 60 of
+`src/own2/` tells an empty read from a lost one (G4). It is necessary and not sufficient. The review of 2026-11-06 sorts 60 of
 the then 170 oracle failures as wrong **non-empty** reads (a level along the wrong cycle, an arrival read at the object and
-not the subtree), which only O3 reaches.
+not the subtree), which only O3 reaches. And it would pass G5: that read has a true-sounding reason, `cycle`, and a wrong answer.
 
 #### 2.14.4 The invariant
 
@@ -4294,8 +4307,12 @@ point `p`, for each local `x` in scope and pending operand `m`:
 
 - **I1, coverage.** `reach(x) ⊆ γ_a(A(x))`, by the tags of the choices `a` took.
 - **I2, storage.** `x`'s own object is in `γ_a` of its storage set (§2.3.4).
-- **I3, separation.** Where the frame's `req` holds on entry (I-κ), two leaves the relation answers `no` for, or `under`
-  a selection the frame gathered, have disjoint `γ_a`.
+- **I3, separation.** Where the frame's `req` holds on entry (I-κ), a leaf and a **writable** target the relation answers
+  `under` a gathered selection for have disjoint `γ_a`. `no` is weaker: **it does not mean disjoint.** A parameter's leaf and an atom answer
+  `no` (`Distinct.overlapRaw`), and a parameter may hold a `shared` value or a `host` object; a `host` leaf answers `no` to all but `⊤`
+  and `host`. Such a `no` is sound only because the relation is read to accept a write, and such a target is refused by Known or
+  Unescaped first, here or in a caller's demand. For a `site` or `fresh` target, `no` does mean disjoint: it did not exist when the
+  parameter was bound.
 - **I4, escape.** Every object a holder outside the frame's fiber or outside beni can reach is in `γ_a` of a leaf in
   `Esc` at an earlier compatible point, or is `host`, `⊤` or `shared`.
 
@@ -4312,7 +4329,7 @@ it in `reads`, `writes`, `escapes` or `stores`, or (v) held by the runtime, Java
 `o ∈ γ(l)` for a `host`, `⊤`, `shared` or `loan` leaf held at one of (i)–(iv).*
 
 *Proof sketch.* Induction on the execution prefix. Base: a frame's entry, where each object of an argument is at a `ref` of
-`param j` by Lemma T. Step: one `Eval.eval` case (O1, O2), a pattern (O6), a join (O4), an escape (O8), a row (O9), or a call by
+`param j` by Lemma T. Step: one `Walk.Walker.eval` case (O1, O2), a pattern (O6), a join (O4), an escape (O8), a row (O9), or a call by
 Lemma C. A cell's contents are behind `◆`, so a holder of the cell is no holder of them (`Cells.behindCell`, in `Resolve.judge`):
 what reaches them is a store, read through `Contents.check` and the `stores` of §2.10, or a loan, which is a leaf of its own. ∎
 
@@ -4346,17 +4363,37 @@ contents is `once`, so it is refused where it escapes (§2.11.4). So the objects
 one is refused `escaped`. This is coarser than the suspension rule §2.13.7 specifies, which is not built. It needs no reasoning
 about interleavings, which is why P-sync is the only scheduling fact used.
 
-**Theorem.** *Let a program be accepted, with no demand refused or pending, and let no row of §2.14.7 apply to it. In every execution
-of `S_u`, an accepted in-place write edits an object that no live holder reads: for a write at demand `d` at point `p` of
-activation `a`, of object `o`, no reference to `o` other than the write's own result is dereferenced after `p`.*
+**The Theorem's hypotheses.** Stated here so that none is silent.
+
+- **Assumed of the world (A):** the checker's types are sound, so Lemma T's typed steps hold. Every row states its body (O9): a row's
+  words are read as true, and a false one (#1759's `fresh`) is a hole no rule here sees. P-sync and P1–P4, P7 hold of each runtime.
+  Thesis Lemma 6.1: no stale reference in `S_u` implies the trace of `S_v`. That lemma is about the thesis's calculus, and nobody has
+  checked that its calculus covers beni's fibers and cells.
+- **Testable on a program (B):** rows of §2.14.7 a tool could decide from the source: it declares a non-regular type (G2), an open row
+  reaches a write (G3), it has an `entry` parameter (G1), it calls an imported value (G9), it is built with `--library` (G11), it writes a
+  record in place (G8).
+- **Not testable on any program (C):** G4, G5, G6, G12. Each says that the checker's own reads are right. No fact of a program
+  shows that a read of the checker was not short.
+
+**Theorem (conditional on A, B and C).** *Let a program be accepted, with no demand refused or pending, and let no row of (B)
+apply to it. If the rows of (C) are closed, then in every execution of `S_u`, an accepted in-place write edits an object that no live
+holder reads: for a write at demand `d` at point `p` of activation `a`, of object `o`, no reference to `o` other than the write's own
+result is dereferenced after `p`.*
+
+**So the Theorem cannot claim this:** *this accepted program is safe.* (C) is open today, and G5 has failing programs, so the implication
+has a false premise. What stands is a map: if a program fails, the failure is a row of §2.14.7 or a row nobody has found.
 
 *Proof sketch.* `o ∈ γ_a(t)` for a target `t` of `d`: a direct write by I2, a callee's by Lemma C(b), a known code's by Lemma 3
-below. `t` is not `⊤`, a loan, `host` or `shared`: `Resolve.judge` refuses those first. Take any reference to `o`. By Lemma 1 it is
-one of (i)–(v). (i), and (v) by its escaped leaf: `Resolve.judge`'s Unescaped, O8. (ii): the live sweep (O2) finds the holder, and
-Dead refuses a `may`; an `under` joins `req`, and I-κ keeps the two apart, so `o` is not the holder's. (iii): the same through
-`Stack.Index.judge`. (iv): the write is published in `writes`, so the caller makes a demand for it, and the argument recurs on
-the activation tree. It ends at `main`, which has no arguments, or at an `entry` parameter (G1). Disjoint covers the other operands of the
-instruction. Two fibers: Lemma F. ∎
+below. `t` is not `⊤`, a loan, `host` or `shared`: `Resolve.judge` refuses those first. (In `keeping` mode, a supplied part judged by
+`Supplied`, it does not refuse an unknown target; that judgement makes no write and only keeps a slot.) Take any reference to `o`. By
+Lemma 1 it is one of (i)–(v). (i), and (v) by its escaped leaf: `Resolve.judge`'s Unescaped, O8. (ii): the live sweep (O2) finds the
+holder, and Dead refuses a `may`. An `under` joins `req`, and I-κ keeps the two apart. A `no` is I3: disjoint for an atom this activation
+made, and otherwise a case a caller's demand refuses. So case (ii) rests on the caller's demand as (iv) does. (iii): the same through
+`Stack.Index.judge`. (iv): the write is published in `writes`, so the caller makes a demand for it, and the argument recurs on the
+activation tree. **The recursion has four ends, and only the first closes it:** `main`, which has no arguments; an `entry` parameter (G1); a
+`--library` export, whose caller is JavaScript (G11, #2151); and a comparison, which `==` and `<` run by dispatch with no call that reads a
+contract, so `Groups` turns an accepted `param` line there into `comparison_changes_value` (§2.13.13): a refusal, not a caller. Disjoint
+covers the other operands of the instruction. Two fibers: Lemma F. ∎
 
 **Corollary (no stale read).** If a demand at `p` on target `t` is accepted, no reference to any `o ∈ γ(t)` other than the
 demand's own result is dereferenced after `p` compatibly: not by a local (Dead, Lemma 1 (ii)), a pending or other operand
@@ -4368,8 +4405,8 @@ position of its base, so it meets the base's storage: Dead), a loan (Dead over l
 #### 2.14.5 Callbacks
 
 §2.11.3 is 602 lines with 15 dated amendments, so the question is whether it hides a second design problem. **Finding: the
-argument can be stated, as one lemma with one case split and six classes of holder. I found no class with no rule, and no
-probe of mine crossed one. It rests on three facts the code does not check, and it is a list of routes, not a derivation.**
+argument can be stated, as one lemma with one case split and six classes of holder. That no class lacks a rule is unrefuted, not
+shown. One of its three facts is false (F1). The other two have no counterexample yet. It is a list of routes, not a derivation.**
 
 **A run is one of four things** (Lemma 2's third clause, `FnRun.zig`, `Closures.zig`). A call of a function value is a call of
 a closure built here (a code call), of a choice of them (each arm), of one parameter's function slot (a label), or of anything
@@ -4397,18 +4434,19 @@ reached and never written; `⊤` has escaped.
 
 **Each amendment of §2.11.3 is one row of that table on one route** (a direct call, a pass, a lambda inside a label, a result,
 an answer). Nothing makes a new route answer every row: `need` (#2134) adds a route, and its soundness argument has to walk
-H1–H6 by hand. That explains the rate of amendments. It is not by itself a defect of the design, and **a slot names objects, so
-a code has no name but a label**: every route a label does not follow ends in an escape, which costs precision and not soundness.
+H1–H6 by hand. That explains the rate of amendments, and it is why this section's third demand above is a rule. It is not by itself a defect of the
+design. **A slot names objects, so a code has no name but a label**: every route a label does not follow ends in an escape, which costs precision and not soundness.
 
 **The three facts.**
 
-- **F1, the answer is a least fixed point** (§2.11.3). It is computed by a depth-first read that cuts a cycle, and
-  `Distinct.overlap` keeps what it computed under a cut (G5).
-- **F2, the induction of `fed`, `each` and `taken`.** Each has a soundness paragraph in §2.11.3, and each relies on a fact
+- **F1, the answer is a least fixed point** (§2.11.3). **Refuted on regular types.** It is computed by a depth-first read that
+  cuts a cycle, and `Distinct.overlap` keeps what it computed under a cut, so a holder of a member reads a short answer. `C11foldTwo`
+  is a plain `List.foldl` with two labels and a tuple accumulator: accepted, and the sanitised run traps (G5).
+- **F2, the induction of `fed`, `each` and `taken`:** no counterexample. Each has a soundness paragraph in §2.11.3, and each relies on a fact
   about all runs that no check sees: `each`'s E2 (no position handed twice), `fed` (an answer holds at the written slots only the
   argument's objects or fresh ones), and the index obligation. `taken` is pinned; `each` and `fed` are derived by the walk and
   tested, and only `SupplyAnswers.closesAtSite` checks one of these claims at run time, under safety.
-- **F3, a kept slot is complete.** H2 needs `kept` to name every slot `D` reads after a run. `kept` is derived by the holder sweep at
+- **F3, a kept slot is complete:** no counterexample. H2 needs `kept` to name every slot `D` reads after a run. `kept` is derived by the holder sweep at
   the call, so it inherits O2, and past a fold it inherits G2.
 
 **What would change this finding.** A failing program in a class of the table above with every rule of that row applied, or a
@@ -4417,27 +4455,28 @@ mine are no sweep.
 
 #### 2.14.6 Obligations
 
-*Restated 2026-11-06 (#2143) for slots, numbers kept (each slice's review checklist). "Pinned" names fixtures whose text or
-amendment says a sanitised run fails without the rule, unless marked **mutated**, which means a mutation of that rule was run
-by hand on 2026-11-06. No rule mutation harness exists (G7). A file header's `O`n is a claim, and
+*Restated 2026-11-06 (#2143) for slots, numbers kept (each slice's review checklist). "Pinned" names fixtures whose text says a sanitised run fails without the rule, which is a claim, unless marked **mutated**, which
+means a mutation of that rule was run by hand on 2026-11-06 and that fixture failed. The review's eight mutations
+(`~/.cache/beni-agents/review-2150/res/`) failed **no** pin the first version of this table named in five cases, so an unmarked pin is a hope.
+No rule mutation harness runs (G7). A file header's `O`n is a claim, and
 `rules_test` checks only that a header has the words `Obligations kept here:` (G7).*
 
 | | Obligation, restated | Met by | Pinned by | Status |
 |---|---|---|---|---|
-| O1 | *Over-approximation.* A value's leaf set names every object it can hold (I1). A construct without facts yields `⊤` and escapes its operands | `Walk.Walker.eval`, `Walk.Walker.project`, `Value.Frame.setsOf`, `Relation.Eval.project`, `Rows.pessimistic`, `Eval.callEscape` | `run/SanitiserUnnamedStep`, `run/SanitiserLambdaPattern`, `run/SanitiserRecordCtor` | broken past G2, G3 |
-| O2 | *Uses at consumers,* at a path at or above the one read, in the right region, with the right kind (`field` only for this frame's own reads). Every live holder, pending operand and later use is visited | `Walk.Walker.use`, `Liveness.Index.build`, `Regions`, `Later.Uses`, `Sweep.Live`, `Descent.descend`, `HoldAt.holdsAt`, `Stack.Index.judge`, `Holders.Operands.judged` | `run/SanitiserRowCallbackHolds`, `run/SanitiserPatternStoredBack`, `run/SanitiserWideDistinct` | kept. Fast paths: G6 |
-| O3 | *Reads are extensive.* `project`, `expand`, `instAt`, `instBelow`, `Subtree.readAt` and `below` lose no object of `γ`. `no` and `under` from the relation mean disjoint `γ` under that condition. `within` implies inclusion of what is said | `Relation.Eval.project`, `Relation.Eval.arrivalLeaves`, `RouteWalk.project`, `Distinct.overlapRaw`, `Distinct.positional`, `Entries`, `Within.within` | `run/SanitiserRecordCallbackShared`, `run/SanitiserPartitionHolds`, `run/SanitiserFoldAnswerWide` | broken past G2; G5 |
+| O1 | *Over-approximation.* A value's leaf set names every object it can hold (I1). A construct without facts yields `⊤` and escapes its operands | `Walk.Walker.eval`, `Walk.Walker.project`, `Value.Frame.setsOf`, `Relation.Eval.project`, `Rows.pessimistic`, `Eval.callEscape` | `run/SanitiserUnnamedStep` **mutated**, `run/SanitiserRecordCtor` | broken past G2, G3, by `J11wideClosed`, `B1closureInRowHeld` |
+| O2 | *Uses at consumers,* at a path at or above the one read, in the right region, with the right kind (`field` only for this frame's own reads). Every live holder, pending operand and later use is visited | `Walk.Walker.use`, `Liveness.Index.build`, `Regions`, `Later.Uses`, `Sweep.Live`, `Descent.descend`, `HoldAt.holdsAt`, `Stack.Index.judge`, `Holders.Operands.judged` | none measured: pending operands off in `Stack` failed none of the three fixtures named here before | unshown. Fast paths: G6 |
+| O3 | *Reads are extensive.* `project`, `expand`, `instAt`, `instBelow`, `Subtree.readAt` and `below` lose no object of `γ`. `no` and `under` from the relation mean disjoint `γ` under that condition. `within` implies inclusion of what is said | `Relation.Eval.project`, `Relation.Eval.arrivalLeaves`, `RouteWalk.project`, `Distinct.overlapRaw`, `Distinct.positional`, `Entries`, `Within.within` | `run/SanitiserFoldedType` **mutated** (`Subtree.readAt`). `run/SanitiserRecordCallbackShared`, `run/SanitiserPartitionHolds`, `run/SanitiserFoldAnswerWide` did not fail it | **broken on regular types: G5, `C11foldTwo`**; broken past G2 |
 | O4 | *Join is union;* escapes only grow. A `case` keeps each arm's value whole, and a contract join never drops a slot. (The header of `Resolve.zig` calls another claim O4: it is O5's `req`) | `Leaves.Table.alt`, `Contract.Table.join`, `Forest.unite`, `Eval.addEscapeAt` | no named fixture for the join alone | kept, not pinned |
 | O5 | *Contracts cover bodies:* `res`, `reads`, `writes`, `req`, `escapes`, `stores`, `labels`, `need`. Instantiation is extensive. Each published contract was walked under candidates it stays within (Lemma C) | `ReadOff.factsOff`, `Put`, `Deliver`, `Groups`' validation round, `Within.within`, `Relation.Eval.arrivalLeaves`, `Eval.callEffects`, `Graft` | every `ownership/` golden through a group's verdict lines; `Within.within` **mutated**: it fails ownership goldens and a unit test, and no `Sanitiser*` fixture | no file names it |
-| O6 | *Positions partition.* Two positions of one root are related when they may name one element (§2.3.2); `[*]` meets each list step; `⟲` covers every level; a slice is a range of its parent. Replaces materialisation | `Steps.stepRel`, `Value.Frame.related`, `Value.Frame.child`, `Steps.fileUnder`, `Place.extend`, `Place.expandLevels`, `Slots.canon` | `run/SanitiserPatternStoredBack`, `run/SanitiserWideDistinct`, `Value.zig`'s index test | kept |
+| O6 | *Positions partition.* Two positions of one root are related when they may name one element (§2.3.2); `[*]` meets each list step; `⟲` covers every level; a slice is a range of its parent. Replaces materialisation | `Steps.stepRel`, `Value.Frame.related`, `Value.Frame.child`, `Steps.fileUnder`, `Place.extend`, `Place.expandLevels`, `Slots.canon` | `run/SanitiserPatternStoredBack`, `run/SanitiserWideDistinct`, both **mutated** (`Steps.stepRel`); `Value.zig`'s index test | the step relation kept. **`⟲` covers every level is broken**: `MidInst` reads one route of a `⟲` into a literal (`DIFF` on master, G2) |
 | O7 | *Withdrawn until S5.* `delta` is gone: a record update builds a record (`Walk.Walker.record`) with a fresh site, and no storage of the base is written (§2.11.5). When S5 makes a record write, this obligation returns: the written object is the base's, and the kept fields are its | — | — | withdrawn |
 | O8 | *Escape is deep and forever:* every leaf of an escaped value is escaped, through `◆`; a write is blocked by an escape of itself or of a leaf it lies inside, a deep demand also below it; `shared` is never written | `Eval.addEscapeAt`, `ReadOff.escapeFacts`, `Holders.Escapes.escaped`, `Closures.escapedWrites`, `Stored`, `Contents.check`, `Host` | `run/SanitiserEscapedResult`, `run/SanitiserFiberReader`; Unescaped **mutated**: 15 tests of the `Sanitiser*` corpus fail | no file names it |
-| O9 | *Rows state their bodies.* A row is taken as given (§2.13.6). The index obligation of a `taken` result is pinned on each caller. P-sync and P1–P4, P7 hold of each runtime. Every fiber starter's row escapes its work | `Rows.fromWords`, `Taken`, `RowEnv`, `tests/corpus/ownership/p-sync.txt` | `run/SanitiserTakenElement`, `run/SanitiserTimeoutAnswer` (a row's `fresh` was false, #1759) | trusted; the flip reports do not exist (G7) |
-| O10 | *Unknown is never empty.* Every empty read has a reason of Lemma E | the `⊤` fallbacks of `Relation.Eval.instAt`, `arrivalLeaves`, `Walk.Walker.project`; `FoldRead.read`, `Origin.leaves` | `run/SanitiserFoldedType`, `run/SanitiserTopOrigin` | **not kept by construction: G4** |
+| O9 | *Rows state their bodies.* A row is taken as given (§2.13.6). The index obligation of a `taken` result is pinned on each caller. P-sync and P1–P4, P7 hold of each runtime. Every fiber starter's row escapes its work | `Rows.fromWords`, `Taken`, `RowEnv`, `tests/corpus/ownership/p-sync.txt` | `run/SanitiserTakenElement`, `run/SanitiserTimeoutAnswer` (a row's `fresh` was false, #1759) | hypothesis A; the flip reports do not exist (G7) |
+| O10 | *Unknown is never empty.* Every empty read has a reason of Lemma E | the `⊤` fallbacks of `Relation.Eval.instAt`, `arrivalLeaves`, `Walk.Walker.project`; `FoldRead.read`, `Origin.leaves` | `run/SanitiserTopOrigin` **mutated** (`Origin.leaves`). `FoldRead.read` off fails nothing in `Sanitiser*` or `ownership/`: **unpinned** | **not kept by construction: G4** |
 | O11 | *No bound accepts:* reserve before expansion, terminal error on exhaustion, no partial summary or lowering channel | `Ids.Account.reserve`, `Ownership`, `Hoists.Builder.finish` | `ownership/LimitSpine` | kept |
 | O12 | *Hoisted reads are this frame's own* (§2.7, §3.7). Nothing hoists until S5; `Liveness` already reports `field` uses, and `Hoists` publishes the list half only | `Liveness.Index.build`, `Hoists` | — | waits for S5 |
-| O13 | *Constructions keep I-κ.* A value's `Sep` is the distinct check: two entries of one atom that coexist, related positions whose slots meet, or a `⊤` or `shared` entry make it `no` | `Distinct.sepOf`, `Distinct.distinct`, `Entries`, `Distinct.resConds` | `run/SanitiserOnceCallbackShared`; the mutation tried panics in `core_pack`, so it says nothing | no file names it |
-| O14 | *Instantiation keeps I-κ.* A callee's selection at a call asks every projected object; `yes` only when the entries hold of the actual arguments. A label's half: a supply's condition holds at every call that applies the label, outward. An answer's half: `fed`, `fresh`, `answers` are decided at a known code from its contract | `Distinct.instSel`, `Distinct.instSelFeed`, `CallGraft.sel`, `Graft.movedReq`, `SupplyCond.publish`, `Outward.finishDemands`, `Traversal`, `FedCall`, `AnswerCall`, `Answers` | `run/SanitiserForwardedLabel`, `run/SanitiserTraversal`, `run/SanitiserAnswerHandedOn`, `run/SanitiserFoldStored` | §2.14.5's F2 |
+| O13 | *Constructions keep I-κ.* A value's `Sep` is the distinct check: two entries of one atom that coexist, related positions whose slots meet, or a `⊤` or `shared` entry make it `no` | `Distinct.sepOf`, `Distinct.distinct`, `Entries`, `Distinct.resConds` | `ownership/NestedLambdaSend` **mutated** (a `⊤` entry not `no`); `run/SanitiserOnceCallbackShared` did not fail it | no file names it |
+| O14 | *Instantiation keeps I-κ.* A callee's selection at a call asks every projected object; `yes` only when the entries hold of the actual arguments. A label's half: a supply's condition holds at every call that applies the label, outward. An answer's half: `fed`, `fresh`, `answers` are decided at a known code from its contract | `Distinct.instSel`, `Distinct.instSelFeed`, `CallGraft.sel`, `Graft.movedReq`, `SupplyCond.publish`, `Outward.finishDemands`, `Traversal`, `FedCall`, `AnswerCall`, `Answers` | `run/SanitiserAnswers`, `run/SanitiserClosureSlotHolder`, `run/SanitiserFoldAlternativesShared` and 118 `ownership/` goldens **mutated** (`Outward`: relies on nothing); `run/SanitiserForwardedLabel` did not fail it | §2.14.5's F2 |
 | O15 | *A join only weakens.* An `alt` keeps its arms, routes are exact (§2.3.5), `many` is the arms' maximum, a condition only weakens, and `no` is never made a selection. Replaces the widen rule | `Leaves.Table.alt`, `Routes`, `Coexist.setsMeet`, `Cond.conj`, `Contract.Table.join` | `§2.3.5`'s `Rejected, measured` | no file names it |
 
 **The headers, checked 2026-11-06.** 79 of the 121 files of `src/own2` say `none`. O5, O7, O8, O13 and O15 are cited by none. A file
@@ -4446,8 +4485,9 @@ rule O1. The headers keep the numbers but not the meanings (G7).
 
 #### 2.14.7 The gap list
 
-Each row is a fact the argument needs that the code does not give. `Probe` names a directory under
-`~/.cache/beni-agents/s214/probes/`.
+Each row is a fact the argument needs that the code does not give. A row is of hypothesis (B), testable on a program (G1, G2, G3, G8, G9,
+G11), or (C), about the checker's own reads and testable on none (G4, G5, G6, G12). G7 and G10 are about the argument's tools. Probe
+names are directories under `~/.cache/beni-agents/`, in `s214/probes/` where no other path is given.
 
 | | The argument needs | The code gives | Evidence | Issue |
 |---|---|---|---|---|
@@ -4455,22 +4495,29 @@ Each row is a fact the argument needs that the code does not give. `Probe` names
 | G2 | **Open hole: non-regular types.** Lemma T for a value past a non-regular fold; O3 for a `⟲` or an open arrival there | a `var` place with structure below it, and hand-listed readers (`FoldRead`, `Origin`, `FnRun`, `ReadOff`, `paramEffects`). A rule for this case cannot be stated while the owner has not said whether these types stay. If they stay, a fold needs a place of its own or a refusal; if they go, the checker refuses the declaration, and §2.1's fold rules go with it | sweeps `m1`, `m2`: 4 744 and 272 DIFF on master. Real code has none, over 2 422 roots (both the review's counts) | #2062, #2104, #2112; the owner's decision |
 | G3 | Lemma T for an open record | a place with the named fields only | 156 oracle `TRAP`s become `REFUSED` on `own2-row-slot` (#2135's table) | #2057, #2135 in flight, with §2.1's own totality argument |
 | G4 | Lemma E: every empty read has a reason | no reader says why. `Relation.Eval.project` gives nothing on a step of another form, with no `else` (its `else` arm reads everything). `Walk.Walker.project` gives `scalar` where §2.3.3 says `bot`. `Eval.callWriteFrom` drops a write with no target as *a crossing value consumed*, while `Resolve.judge` refuses `targets.len == 0` `unknown`: two meanings of one empty | a census of the readers (source only, `Groups`, `Enforce`, `Traversal` in part): no assert on any. Eleven have no reason from the code alone; six probes of them are refused | #2145 |
-| G5 | F1: a cycle's reads end in the least fixed point | `Distinct.overlap` answers `no` to a pair in progress and **memoises what it computes under that cut**, where `Relation.Eval.instAt` has `min_cut` for exactly this. `instBelow` and `expandRouted` also cut with no `min_cut` | a build that drops such entries moves no verdict over 2 429 roots, and core reaches the cut. **No failing program found** | #2146 |
-| G6 | O2: a fast path answers what the plain reading answers (`aggregated`, `Operands`, `Stack`, `Descent`, `Graft`, `Kept`, `Twins`) | §2.8 argues each one. `-Downership-full-cross-check` covers `Kept` and the spine, and no CI job or gate runs it | `.github/workflows/`, `build.zig:231` | #2147 |
-| G7 | §7 item 7: a rule mutation harness, and each trusted word's flip report (R-8.7, R-5.10.7) | `-Downership-mutation` and `test-own-mutations` do not exist. `rules_test` checks that a header has the words, not that its `O`n exists or means this table's | `grep`, 2026-11-06 | #2148 |
+| G5 | F1: a cycle's reads end in the least fixed point | **False on regular types.** `Distinct.overlap` answers `no` to a pair in progress and **memoises what it computes under that cut**, where `Relation.Eval.instAt` has `min_cut` for exactly this. `instBelow` and `expandRouted` also cut with no `min_cut` | `C11foldTwo`, `C7swap`, `C13param` (`review-2150/probes`): accepted, `TRAP` on master; refused once such entries are dropped. The ledger's 2 429 roots show nothing either way, which is a measure of the corpus | #2146 |
+| G6 | O2: a fast path answers what the plain reading answers (`aggregated`, `Operands`, `Stack`, `Descent`, `Graft`, `Kept`, `Twins`) | §2.8 argues each one. In v2, `-Downership-full-cross-check` covers `Kept` alone (`Kept.cross`; the spine is v1's), and no CI job or gate runs it | `.github/workflows/`, `build.zig:231` | #2147 |
+| G7 | §7 item 7: a rule mutation harness, and each trusted word's flip report (R-8.7, R-5.10.7) | `test-own-mutations` does not exist, and `-Downership-v2-mutation` (`build.zig:242`) is read by nothing in `src/own2/`. `rules_test` checks that a header has the words, not that its `O`n exists or means this table's | `grep`, 2026-11-06 | #2148 |
 | G8 | S5: Theorem for records | §2.11.5 copies, no `update` demand exists, and the sanitiser has no record pass. The Theorem says nothing of a record write yet | §2.11.5, §7.3 | #1018 |
 | G9 | a call's value names its contract, across modules | an imported value called with arguments reads the value's contract | `review-2117b/probes/X4btop` | #2132 |
 | G10 | §2.3.3's `family` | a value's `family` is never set: `Walk.Walker.project` makes one only from one. Every family arm is dead, so the claim that a family stands for a step a position cannot name is no fact of the code | `grep`, census | #2149 |
+| G11 | the Theorem's (iv): a checked caller at every export | a `--library` export accepts `param` with no caller: JavaScript is the caller, and its next read traps | `review-2150/probes/Lib1` | #2151 |
+| G12 | a verdict does not depend on the order pairs are asked | it does: the memo of G5 is filled in the order holds are read, and `Resolve.heldAt` calls `HoldAt.holdsAt` before it asks for a later use, so a dead field's `may` fills it. `C7swap` and `C8swapB`, and `C11foldTwo` and `C12foldTwoB`, differ only in which tuple field is read, and only the second of each is refused. `ordering_test.zig` varies declarations, never the order of questions | `review-2150/probes` | #2146 |
 
-**In flight, and how it fits.** #2134 (*a need*) adds a route to §2.14.5: its three-question argument is H1, H2 and H3 for a write
-the callee makes. Lemma 3 reads it as a callee's write of an answer: its first question is O5, its second is Lemma 2's case split, its
-third is the arrival cases of *What an answer can be*. It relies on `FoldCross`, so it inherits G2. #2135 closes G3. Its
-*Why it is sound* is Lemma T's row for a record, and it adds `…` to `τ`. #2104 and `own2-open-past-fold-wip` change how a level and an
-open arrival are read past a fold. They reduce G2's count, and neither closes the hole: a fold still has no place of its own.
+**In flight: two pull requests make programs worse, and this section did not stop them.** The first version of this list read #2134 and
+#2104 as fitting. They do not. On the heads their reviews read, master's `REFUSED` becomes a wrong run:
+
+- #2104: `Rs1` (with `ResWrapP`, `ResWrapQ`, `ResCase`, 50 of `n7`) goes `REFUSED` → `DIFF`. A `⟲`'s fold word misses `Forest.atSlot`'s exact lookup.
+- #2134: `N5polyframe` goes `REFUSED` → `DIFF`, since `FoldCross` misses a fold of one place. `L1` goes `REFUSED` → wrong, a need short past a fold. Holes
+  that master hid behind an `unknown` are moved into acceptances.
+
+Nothing in §2.14 would have refused either. G2 absorbs every non-regular case, so an argument that says *past a fold, see G2* cannot tell a
+change that shrinks the hole from one that widens it. #2135 closes G3's cases, and its *Why it is sound* is Lemma T's row for a record.
+`own2-open-past-fold-wip` changes how an open arrival is read past a fold; it does not give a fold a place.
 
 **The audit, checked.** (`~/.cache/beni-agents/fable-conv/report.md`.) Right: §1 and §2.14 had no argument for this domain; `γ(`
 occurred only in §2.14; 79 of 121 headers say `none`; O5, O7, O8, O13 and O15 are cited nowhere; `family`'s neighbours are as it says.
-Wrong: the map is not the only cause (60 of the 170 are wrong non-empty reads, per the review; `MidRec*`, `Base` are of that kind);
+Wrong: the map is not the only cause (60 of the 170 are wrong non-empty reads, per the review; `MidRec*`, `Base` are of that kind), and G5 is no map at all;
 a `⊤` is `⊤` wherever it is stored, and only its origin was lost (#2091's review); *a read that finds nothing is `⊤`* refuses core.
 §2.14 keeps the review's position: empty is a claim that needs its reason.
 
@@ -5808,7 +5855,8 @@ are identical and nothing is written (R-7.11).
    refused. `twoAt` over `[x,x]` cannot establish distinct objects from distinct positions.
 7. **Rule mutations** (R-8.7): `-Downership-mutation=<rule>`; `zig build test-own-mutations` requires each to fail a
    fixture; every trusted word's flip fails its pinning fixture. **Limits gate** (R-7.4): `own_limits_test.zig`.
-   *As built, 2026-11-06:* neither the flag nor the step exists (#2148, §2.14.7 G7).
+   *As built, 2026-11-06:* `test-own-mutations` does not exist, and `-Downership-v2-mutation` (`build.zig:242`) is declared and read by
+   nothing in `src/own2/` (#2148, §2.14.7 G7).
 8. **Lists independent of records** (R-8.6): `--ownership-records-lost` keeps every list line byte-identical.
 
 ---
