@@ -6,6 +6,7 @@
 //! object a run writes is what it was handed or its own, each run.
 
 const std = @import("std");
+const Replay = @import("Replay.zig");
 const Contract = @import("Contract.zig");
 const LabelChain = @import("LabelChain.zig");
 const Relation = @import("Relation.zig");
@@ -70,8 +71,9 @@ fn asked(e: *Relation.Eval, c: LabelChain.Chain, lab: Contract.Label, su: Contra
     // whatever a type variable's slot could hold in the callee.
     var named = false;
     for (es.items.items) |rs| for (rs.arrivals) |a| {
-        if (a.kind != .param or !std.mem.startsWith(u32, words, es.wordsOf(rs))) continue;
-        const at = try std.mem.concat(arena, u32, &.{ f.slots.relWords(a.slot), words[rs.len..] });
+        if (a.kind != .param) continue;
+        const n = Replay.under(f.places, es.wordsOf(rs), words) orelse continue;
+        const at = try std.mem.concat(arena, u32, &.{ f.slots.relWords(a.slot), words[n..] });
         const o = Contract.occ(a.j, try f.slots.relOfWords(f.gpa, f.account, f.places, at));
         try run.append(arena, if (deep) Contract.occDeep(o) else o);
         named = true;

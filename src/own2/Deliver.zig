@@ -230,11 +230,10 @@ pub const Solver = struct {
                 // Down to the prefix: an open node on the way holds below it.
                 while (d < pw.len and sub != 0) : (d += 1) {
                     const on = t.kidAt(sub, pw[d]);
-                    for ([_]Forest.Node{ sub, if (on == null) t.rowKid(sub, pw[d]) orelse 0 else 0 }) |o| if (o != 0) {
+                    const row = if (on == null) t.rowKid(e0.ev.f.places, sub, pw[d]) orelse 0 else 0;
+                    for ([_][]const Contract.Arrival{ t.open(sub), t.here(row), t.open(row) }) |run| if (run.len != 0) {
                         const at = sl.rels.find(pw[0..d]) orelse try sl.relOfWords(s.gpa, e0.ev.f.account, e0.ev.f.places, pw[0..d]);
-                        const opens = try s.gpa.dupe(Contract.Arrival, t.open(o));
-                        defer s.gpa.free(opens);
-                        for (opens) |a| try e.ev.feedBelowDraft(kw[1], at, true, a);
+                        for (try e.ev.arena.dupe(Contract.Arrival, run)) |a| try e.ev.feedBelowDraft(kw[1], at, true, a);
                     };
                     sub = on orelse 0;
                 }
@@ -257,7 +256,7 @@ pub const Solver = struct {
             const words = sl.relWords(kw[2]);
             if (words.len < rw.len or !std.mem.eql(u32, rw, words[0..rw.len])) continue;
             hits.clearRetainingCapacity();
-            _ = try Forest.atSlot(t, s.gpa, n, words[rw.len..], &hits);
+            _ = try Forest.atSlot(t, e.ev.f.places, s.gpa, n, words[rw.len..], &hits);
             var arrs: std.ArrayList(struct { a: Contract.Arrival, n: u32, open: bool }) = .empty;
             defer arrs.deinit(s.gpa);
             for (hits.items) |h| for (h.arrivals) |a| try arrs.append(s.gpa, .{ .a = a, .n = @intCast(rw.len + h.depth), .open = h.open });
@@ -285,7 +284,7 @@ pub const Solver = struct {
                 const e = &s.evals[kw[0]];
                 try e.ev.f.charge(.edge, 1);
                 const words = e.ev.f.slots.relWords(kw[2]);
-                const row = Replay.inRowOf(rw, words);
+                const row = Replay.inRowOf(e.ev.f.places, rw, words);
                 if (!row and (words.len < rw.len or !std.mem.eql(u32, rw, words[0..rw.len]))) continue;
                 try e.ev.feedDraft(kw[1], arrival, @intCast(if (row) rw.len - 1 else rw.len), true);
             }

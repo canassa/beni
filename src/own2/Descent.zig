@@ -14,6 +14,7 @@
 //! or by a subtree's that answers for it; none is skipped.
 
 const std = @import("std");
+const Place = @import("Place.zig");
 const Ids = @import("Ids.zig");
 const Facts = @import("Facts.zig");
 const Slots = @import("Slots.zig");
@@ -217,37 +218,37 @@ fn cover(uses: *Later.Uses, u: Facts.Use, c: PathId) Error!Cover {
     const rw = fr.slots.relWords(rem);
     try fr.charge(.inspection, @intCast(rw.len + 1));
     var got: Cover = .none;
-    for (uses.contracts.readsOf(hd.reads)) |r| if (r[0] == foot[1]) switch (readCover(&uses.contracts.trees, r[1], rw)) {
+    for (uses.contracts.readsOf(hd.reads)) |r| if (r[0] == foot[1]) switch (readCover(&uses.contracts.trees, fr.places, r[1], rw)) {
         .all => return .all,
         .some => got = .some,
         .none => {},
     };
     // A write at `c` or above it is all of it; one only below it, some.
     for (uses.contracts.writesOf(hd.writes)) |r| if (r[0] == foot[1]) {
-        if (writtenAbove(&uses.contracts.trees, r[1], rw)) return .all;
-        if (Later.writeMeets(&uses.contracts.trees, r[1], rw)) return .some;
+        if (writtenAbove(&uses.contracts.trees, fr.places, r[1], rw)) return .all;
+        if (Later.writeMeets(&uses.contracts.trees, fr.places, r[1], rw)) return .some;
     };
     return got;
 }
 
 /// Whether write tree `n0` writes the slot `words` below its root or a
 /// prefix of it: the walk down its steps, charged by the caller.
-fn writtenAbove(t: *const Trees.Table, n0: Trees.Node, words: []const u32) bool {
+fn writtenAbove(t: *const Trees.Table, places: *const Place.Table, n0: Trees.Node, words: []const u32) bool {
     var n = n0;
     for (words) |w| {
         if (t.here(n).len != 0 or t.open(n).len != 0) return true;
-        n = t.kidAt(n, w) orelse return false;
+        n = t.kidAt(n, w) orelse return t.rowReaches(places, n, w);
     }
     return t.here(n).len != 0 or t.open(n).len != 0;
 }
 
 /// An effect tree's reach of the subtree at `words` below its root: an
 /// open (deep) node at or above it all of it, none below it none.
-fn readCover(t: *const Trees.Table, n0: Trees.Node, words: []const u32) Cover {
+fn readCover(t: *const Trees.Table, places: *const Place.Table, n0: Trees.Node, words: []const u32) Cover {
     var n = n0;
     for (words) |w| {
         if (t.open(n).len != 0) return .all;
-        n = t.kidAt(n, w) orelse return .none;
+        n = t.kidAt(n, w) orelse return if (t.rowReaches(places, n, w)) .all else .none;
     }
     if (t.open(n).len != 0) return .all;
     return if (t.count(n) == 0) .none else .some;

@@ -13,7 +13,8 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
-const RecordRow = @import("RecordRow.zig");
+const ValueTypes = @import("ValueTypes.zig");
+const Replay = @import("Replay.zig");
 const Subtree = @import("Subtree.zig");
 const Leaves = @import("Leaves.zig");
 
@@ -31,154 +32,23 @@ pub const StepClass = Steps.StepClass;
 pub const none: u32 = Ids.none_int;
 
 /// The sources of values (§2.3.2).
-pub const RootKind = enum(u8) {
-    /// `a`: the parameter's index (a capture is a parameter after its code's own).
-    param,
-    /// `a`: the call's index in `Frame.calls`.
-    call,
-    /// `a`: the label's index in `Frame.cbs`: its answer (§2.11.3).
-    cb,
-    /// `a`: the index in `Frame.supplies`: what a callee hands one of its labels, described by the callee's supply (§2.11.3).
-    supply,
-};
+pub const RootKind = ValueTypes.RootKind;
+pub const Call = ValueTypes.Call;
+pub const Cb = ValueTypes.Cb;
+pub const Supply = ValueTypes.Supply;
+pub const Root = ValueTypes.Root;
+pub const Kind = ValueTypes.Kind;
+pub const Form = ValueTypes.Form;
+pub const Val = ValueTypes.Val;
+pub const LeafKind = ValueTypes.LeafKind;
+pub const Leaf = ValueTypes.Leaf;
 
-/// A call site (§2.11.2): its instruction and point, its arguments (a run
-/// of `Frame.kids`, the values; a closure's captures after them), its
-/// result root, and the contract read at it (set per evaluation; `none`:
-/// the pessimistic one). `virtual`: a label's application to a known code,
-/// made by an evaluation (§2.11.3), not by the walk.
-pub const Call = struct {
-    inst: u32,
-    /// The callee's reference instruction (a method call's own), for texts.
-    head: u32 = none,
-    point: u32,
-    args: []const u32,
-    /// The arguments' instructions, `none` for a capture or a virtual one.
-    arg_insts: []const u32,
-    root: u32,
-    contract: u32 = none,
-    /// The code the call runs when it is one of the module's (`Groups`' numbering), else `none`.
-    code: u32 = none,
-    /// The callee's value when the call is of a function value.
-    callee_val: u32 = none,
-    virtual: bool = false,
-    /// A virtual call: the label (`cbs`) it answers.
-    answers: u32 = none,
-};
-
-/// A label of the frame (§2.11.3): the function slot `(j, slot)` of a
-/// parameter, its origin, its answer's root (a direct call's; `none` for
-/// a callee's label the frame passes on), and how it was met.
-pub const Cb = struct {
-    j: u32,
-    slot: u32,
-    origin: [3]u32,
-    root: u32 = none,
-    /// A direct callback call: its instruction, point and argument values.
-    inst: u32 = none,
-    point: u32 = none,
-    args: []const u32 = &.{},
-    /// Direct invocations of the label in this frame.
-    calls: u8 = 0,
-    /// The operand stack's clock at a direct call (the walk's entries).
-    pending: u32 = Ids.none_int,
-};
-
-/// A supply root (§2.11.3): what call `call`'s callee hands its label
-/// `label` (the index in the callee's contract) as argument `k`.
-pub const Supply = struct { call: u32, label: u32, k: u32, root: u32 };
-
-pub const Root = struct {
-    kind: RootKind,
-    a: u32,
-    place: PlaceId,
-    /// The root place's `ε` path: every position's slot is below it.
-    path: PathId,
-    pos: u32 = none,
-};
-
-pub const Kind = enum(u8) {
-    scalar,
-    bot,
-    top,
-    built,
-    ref,
-    alt,
-    shared,
-    /// A parameterless `foreign`'s value (§2.10, *host objects*).
-    host,
-};
-
-/// What a `built` value is (§2.3.3).
-pub const Form = enum(u8) {
-    tuple,
-    /// (`list`: `head` is 0, or one more than the value whose storage the
-    /// list is: a construction over its base, §2.13.2.)
-    /// `head`: the constructor's ordinal in its type.
-    ctor,
-    list,
-    /// `extra`: the run of the fields' ranks in `words`, in the kids' order.
-    record,
-    /// `head`: the code (`Groups` numbers codes); kids are the captures.
-    closure,
-    /// A markup tree or another opaque object: its kids are what it holds.
-    opaque_,
-};
-
-/// One value (§2.3.3). `built`: `form`, `head`, `site` (the instruction whose
-/// object is its storage, or `none`), `extra`. `ref`: `root`, `pos` and
-/// `family` (a slot set, or `Slots.empty` for the position's own subtree).
-/// `alt`: `head` the choice; kids are `(arm, value)` pairs. `shared`:
-/// `head` the module, `site` the declaration. `top`: `site` its origin (a `top` leaf's `root`, §2.3.4).
-pub const Val = struct {
-    kind: Kind,
-    /// The value's place, `.none` when unknown: a `⟲` projection of a
-    /// built value follows the parts that stay on the place's cycle.
-    place: PlaceId = .none,
-    form: Form = .tuple,
-    head: u32 = 0,
-    site: u32 = none,
-    extra: []const u32 = &.{},
-    root: u32 = none,
-    pos: u32 = none,
-    family: SetId = Slots.empty,
-    kids: []const u32 = &.{},
-};
-
-pub const LeafKind = enum(u8) {
-    /// The objects at `slots` in the subtree at `pos` of `root`.
-    ref,
-    /// The object built by instruction `atom`.
-    site,
-    /// The objects call `atom`'s callee allocated.
-    fresh,
-    /// A top-level value: `atom` the module, `extra` the declaration.
-    shared,
-    /// The answer of a label the frame cannot apply (§2.11.3): `atom` its `cbs` index, `extra` the answer's slot (a `Slots.Rel`).
-    answer,
-    top,
-    /// A loan of what a cell holds (§2.13.7): `atom` the leaf it lends.
-    /// A holder of it holds what that leaf names; written, it is unknown.
-    loan,
-    /// A prepend's deferred storage, `atom` its value (§2.3.4; a leaf set's).
-    recons,
-    /// Objects JavaScript made, or beni objects that escaped (§2.10, *host objects*).
-    host,
-};
-
-pub const Leaf = struct {
-    kind: LeafKind,
-    atom: u32 = 0,
-    extra: u32 = 0,
-    root: u32 = none,
-    pos: u32 = none,
-    slots: SetId = Slots.empty,
-    /// A tag set (`Frame.tags`), 0 for none; a route set a projection
-    /// reached it under, relative to `tags` (§2.11.2), 0 for none.
-    tags: u32 = 0,
-    routes: u32 = 0,
-    /// A shallow target at its position's own slot only.
-    at_pos: bool = false,
+/// Which kids a step of a built record reads (§2.1), one rule for every reader of them.
+pub const RecordKid = struct {
+    /// Whether step `st` reads the kid of word `r`: its own, or one a row step's names leave.
+    pub fn holds(f: *Frame, st: Step, r: u32) Error!bool {
+        return st.inRow() and (r == st.kidWord() or (st.isRow() and f.places.rowHolds(st, try Step.ofRank(f.account, r))));
+    }
 };
 
 pub const Frame = struct {
@@ -322,9 +192,9 @@ pub const Frame = struct {
             const x = f.val(v);
             const st = Step.fromWord(wd);
             v = switch (x.kind) {
-                .ref => if (x.family != Slots.empty) try f.top() else if (st.isRow()) try RecordRow.ofRef(f, v, st) else if (try f.child(x.pos, .plain, wd, 0)) |p| try f.mk(.{ .kind = .ref, .root = x.root, .pos = p }) else try f.top(),
+                .ref => if (x.family != Slots.empty) try f.top() else if (st.isRow()) try f.rowOfRef(v, st) else if (try f.child(x.pos, .plain, wd, 0)) |p| try f.mk(.{ .kind = .ref, .root = x.root, .pos = p }) else try f.top(),
                 .built => blk: {
-                    if (x.form == .record and st.inRow()) break :blk try RecordRow.kid(f, v, st);
+                    if (x.form == .record and st.inRow()) break :blk try f.recordKid(v, st);
                     const ks = f.kidsOf(x);
                     switch (x.form) {
                         .tuple => if (st.kind == .index and st.payload < ks.len) break :blk ks[st.payload],
@@ -342,6 +212,57 @@ pub const Frame = struct {
             };
         }
         return v;
+    }
+
+    /// Step `st` of a built record `v`: the field's kid, read from the row's
+    /// kid when none names it. A row step that is not the record's own is the kids its names do
+    /// not hold, a view with no storage of its own (§2.1, *The row of a record*).
+    pub fn recordKid(f: *Frame, v: u32, st: Step) Error!u32 {
+        const x = f.val(v);
+        const ks = f.kidsOf(x);
+        const rs = f.wordsOf(x.extra);
+        if (!st.inRow()) return f.scalar();
+        if (st.isRow()) {
+            for (rs, ks) |r, k| if (r == st.kidWord()) return k;
+            var kids: std.ArrayList(u32) = .empty;
+            defer kids.deinit(f.gpa);
+            var ranks: std.ArrayList(u32) = .empty;
+            defer ranks.deinit(f.gpa);
+            for (rs, ks) |r, k| if (try RecordKid.holds(f, st, r)) {
+                try kids.append(f.gpa, k);
+                try ranks.append(f.gpa, r);
+            };
+            if (kids.items.len == 0) return f.scalar();
+            return f.mk(.{ .kind = .built, .form = .record, .kids = try f.mkKids(kids.items), .extra = try f.mkWords(ranks.items) });
+        }
+        for (rs, ks) |r, k| if (r == st.kidWord()) return k;
+        if (rs.len != 0 and rs[rs.len - 1] & Place.row_rank != 0) return f.mk(.{ .kind = .top, .site = v });
+        return f.scalar();
+    }
+
+    /// Row step `st` of `v`, a reference: the position's own row where its place has this
+    /// step, else a view of the positions the row reads there (§2.1).
+    fn rowOfRef(f: *Frame, v: u32, st: Step) Error!u32 {
+        const x = f.val(v);
+        const place = f.places.pathPlace(f.pos.items[x.pos].slot);
+        if (f.places.kind(place) != .record) return f.mk(.{ .kind = .top, .site = v });
+        var kids: std.ArrayList(u32) = .empty;
+        defer kids.deinit(f.gpa);
+        var ranks: std.ArrayList(u32) = .empty;
+        defer ranks.deinit(f.gpa);
+        const steps = f.places.steps(place).steps;
+        if (steps.len == f.places.rowNames(st).len + 1 and steps[steps.len - 1].eql(st)) {
+            const p = (try f.child(x.pos, .plain, st.word(), 0)).?;
+            return f.mk(.{ .kind = .ref, .root = x.root, .pos = p });
+        }
+        for (steps) |s| {
+            if (!f.places.rowHolds(st, s)) continue;
+            const p = (try f.child(x.pos, .plain, s.word(), 0)) orelse continue;
+            try kids.append(f.gpa, try f.mk(.{ .kind = .ref, .root = x.root, .pos = p }));
+            try ranks.append(f.gpa, s.kidWord());
+        }
+        if (kids.items.len == 0) return f.scalar();
+        return f.mk(.{ .kind = .built, .form = .record, .kids = try f.mkKids(kids.items), .extra = try f.mkWords(ranks.items) });
     }
 
     pub fn scalar(f: *Frame) Error!u32 {

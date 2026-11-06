@@ -25,7 +25,7 @@ pub const Arrival = Trees.Arrival;
 /// depth), then the slot's own node's plain and open arrivals, in the
 /// canonical entries' order (an ancestor first, a plain run before an open
 /// one). Returns the nodes visited.
-pub fn atSlot(t: *const Trees.Table, gpa: Allocator, root: Node, words: []const u32, out: *std.ArrayList(Hit)) Allocator.Error!u32 {
+pub fn atSlot(t: *const Trees.Table, places: *const Place.Table, gpa: Allocator, root: Node, words: []const u32, out: *std.ArrayList(Hit)) Allocator.Error!u32 {
     var n = root;
     var d: usize = 0;
     while (true) : (d += 1) {
@@ -37,7 +37,7 @@ pub fn atSlot(t: *const Trees.Table, gpa: Allocator, root: Node, words: []const 
         if (t.open(n).len != 0) try out.append(gpa, .{ .depth = @intCast(d), .open = true, .arrivals = t.open(n) });
         n = t.kidAt(n, words[d]) orelse {
             // A step the node names no kid for, read from its row: the words go on from here.
-            if (t.rowKid(n, words[d])) |r| {
+            if (t.rowKid(places, n, words[d])) |r| {
                 if (t.here(r).len != 0) try out.append(gpa, .{ .depth = @intCast(d), .open = true, .arrivals = t.here(r) });
                 if (t.open(r).len != 0) try out.append(gpa, .{ .depth = @intCast(d), .open = true, .arrivals = t.open(r) });
             }
@@ -343,11 +343,11 @@ pub fn effectsWithin(t: *const Trees.Table, gpa: Allocator, memo: *Ids.FixedDict
 
 /// Whether effect tree `n` reaches the slot `words` below its root: an
 /// effect at it or below it, or a deep one above it.
-pub fn effectReaches(t: *const Trees.Table, n0: Node, words: []const u32) bool {
+pub fn effectReaches(t: *const Trees.Table, places: *const Place.Table, n0: Node, words: []const u32) bool {
     var n = n0;
     for (words) |w| {
         if (t.open(n).len != 0) return true;
-        n = t.kidAt(n, w) orelse return if (t.rowKid(n, w)) |r| t.count(r) != 0 else false;
+        n = t.kidAt(n, w) orelse return t.rowReaches(places, n, w);
     }
     return t.count(n) != 0;
 }
@@ -370,7 +370,7 @@ test "a slot reader walks only its steps, and the entries come in order" {
     const top = try t.node(gpa, &.{.{ .kind = .fresh }}, &.{}, &k2);
     var hits: std.ArrayList(Hit) = .empty;
     defer hits.deinit(gpa);
-    try testing.expectEqual(@as(u32, 3), try atSlot(&t, gpa, top, &.{ w2, w1 }, &hits));
+    try testing.expectEqual(@as(u32, 3), try atSlot(&t, &places, gpa, top, &.{ w2, w1 }, &hits));
     try testing.expectEqual(@as(usize, 1), hits.items.len);
     try testing.expect(hits.items[0].open and hits.items[0].depth == 2 and hits.items[0].arrivals[0].eql(p));
     try testing.expect(at(&t, top, &.{ w1, 99 }) == null);

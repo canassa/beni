@@ -73,13 +73,12 @@ const layers = [_]Entry{
     // A place graph's encoding and equality, split from `Place` (#1714).
     .{ .file = "PlaceIdentity.zig", .layer = 2, .max_lines = 190 },
     .{ .file = "Slots.zig", .layer = 2, .max_lines = 440 },
-    .{ .file = "Replay.zig", .layer = 2, .max_lines = 100 },
+    .{ .file = "Replay.zig", .layer = 2, .max_lines = 130 },
     // A contract's result trees, hash-consed by node (#1714, §2.10).
     .{ .file = "Trees.zig", .layer = 2, .max_lines = 200 },
     // The readers and the union of result trees, below the contracts (#1714).
     // A read's result slots as a column, for `ReadOff` and `Relation` (#1714).
     .{ .file = "FoldRead.zig", .layer = 3, .max_lines = 50 },
-    .{ .file = "RecordRow.zig", .layer = 3, .max_lines = 100 },
     .{ .file = "StepsTo.zig", .layer = 3, .max_lines = 45 },
     .{ .file = "Origin.zig", .layer = 3, .max_lines = 20 },
     .{ .file = "Dests.zig", .layer = 3, .max_lines = 200 },
@@ -108,6 +107,7 @@ const layers = [_]Entry{
     .{ .file = "Within.zig", .layer = 5, .max_lines = 140 },
     // A value's leaf set (#1714): made with the value, read by `Relation`.
     .{ .file = "Leaves.zig", .layer = 5, .max_lines = 600 },
+    .{ .file = "ValueTypes.zig", .layer = 5, .max_lines = 170 },
     // Worded contracts by declaration and places, one footprint a callee (#1714).
     .{ .file = "Worded.zig", .layer = 5, .max_lines = 60 },
     .{ .file = "Rows.zig", .layer = 6, .max_lines = 320 },

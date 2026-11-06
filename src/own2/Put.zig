@@ -131,6 +131,12 @@ pub fn end(s: *Sink) Error!Contract.Node {
 pub fn emitPart(s: *Sink, q: PathId, n: Contract.Node, out: ResList) Error!void {
     if (n == 0) return;
     const f = s.e.fr();
+    // No draft keeps a node at a row's slot: a reader of a row reads arrivals (§2.1).
+    if (s.building.items.len == 0 and f.places.pathParent(q) != .none and f.places.pathStep(q).isRow()) {
+        const t = &s.e.contracts.trees;
+        for ([_][]const Contract.Arrival{ t.here(n), t.open(n) }) |run| for (try s.e.gpa().dupe(Contract.Arrival, run)) |a| try arrive(s, q, a, out);
+        return;
+    }
     try f.charge(.edge, 1);
     if (s.building.items.len != 0) {
         _ = try Contract.Draft.addNode(&s.building.items[s.building.items.len - 1].res, s.arena, try relIn(s, q), n);

@@ -9,6 +9,7 @@
 //! read whose levels fold above it), none skipped.
 
 const std = @import("std");
+const Place = @import("Place.zig");
 const Ids = @import("Ids.zig");
 const Facts = @import("Facts.zig");
 const Slots = @import("Slots.zig");
@@ -125,8 +126,8 @@ pub const Uses = struct {
         // The callee's read and write trees a parameter (§2.7), charged.
         const rw = fr.slots.relWords(rem);
         try fr.charge(.inspection, @intCast(rw.len + 1));
-        for (u.contracts.readsOf(h.reads)) |r| if (r[0] == foot[1] and Forest.effectReaches(&u.contracts.trees, r[1], rw)) return true;
-        for (u.contracts.writesOf(h.writes)) |r| if (r[0] == foot[1] and writeMeets(&u.contracts.trees, r[1], rw)) return true;
+        for (u.contracts.readsOf(h.reads)) |r| if (r[0] == foot[1] and Forest.effectReaches(&u.contracts.trees, fr.places, r[1], rw)) return true;
+        for (u.contracts.writesOf(h.writes)) |r| if (r[0] == foot[1] and writeMeets(&u.contracts.trees, fr.places, r[1], rw)) return true;
         return false;
     }
 };
@@ -134,11 +135,11 @@ pub const Uses = struct {
 /// Whether write tree `n0` meets the slot `words` below its root (§2.7, a
 /// footprint entry read at a path): a write at it or below it, or at a
 /// proper prefix of it. The walk down its steps, charged by the caller.
-pub fn writeMeets(t: *const Trees.Table, n0: Trees.Node, words: []const u32) bool {
+pub fn writeMeets(t: *const Trees.Table, places: *const Place.Table, n0: Trees.Node, words: []const u32) bool {
     var n = n0;
     for (words) |w| {
         if (t.here(n).len != 0 or t.open(n).len != 0) return true;
-        n = t.kidAt(n, w) orelse return false;
+        n = t.kidAt(n, w) orelse return t.rowReaches(places, n, w);
     }
     return t.count(n) != 0;
 }

@@ -1,0 +1,25 @@
+-- A setter (`ownership-v2.md` §2.1, *The row of a record*): a read of the row is
+-- no read of a field it excludes, so an edit of `x.a` made for the new value is
+-- no holder's. v2 accepts it; the sanitised run prints what the plain run prints.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+setA : L, { r | a : L } → { r | a : L }
+setA v rec = { rec | a = v }
+
+
+main : Program
+main =
+    x = { a = [ 1 ], b = [ 2 ] }
+    y = setA (List.push x.a 3) x
+    Node.print (show y.a ++ show y.b)

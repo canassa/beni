@@ -355,7 +355,12 @@ const Fold = struct {
             var e = k;
             while (e < run.len and fd.wordsOf(run[e])[depth] == s) e += 1;
             const c = pl.child(p, Place.Step.fromWord(s));
-            const kid = if (c) |cp| try fd.go(run[k..e], depth + 1, cp) else false;
+            // A step the frame's place has no such child at (a callee's row, read at a record
+            // that names more) is kept as it is: its occurrences are read by the caller (§2.1).
+            const kid = if (c) |cp| try fd.go(run[k..e], depth + 1, cp) else blk: {
+                try fd.out.appendSlice(g, run[k..e]);
+                break :blk false;
+            };
             if (c != null and kid) met += 1 else full = false;
             k = e;
         }

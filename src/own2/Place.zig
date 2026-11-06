@@ -344,6 +344,14 @@ pub const Table = struct {
         return .{ .kind = .row, .payload = @intCast(try t.rows.intern(gpa, ranks)) };
     }
 
+    /// The row step of a record whose fields are `kids`, each a `.step`, sorted.
+    pub fn rowOf(t: *Table, gpa: Allocator, account: *Account, kids: anytype) Error!Step {
+        var ranks: std.ArrayList(u32) = .empty;
+        defer ranks.deinit(gpa);
+        for (kids) |k| try ranks.append(gpa, k.step.payload);
+        return t.rowStep(gpa, account, ranks.items);
+    }
+
     /// The field ranks row step `step` excludes, sorted.
     pub fn rowNames(t: *const Table, step: Step) []const u32 {
         std.debug.assert(step.kind == .row);

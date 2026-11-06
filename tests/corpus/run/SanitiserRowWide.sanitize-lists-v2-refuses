@@ -1,0 +1,4 @@
+# v2 keeps a callee's row in what a wider frame asks (§2.1, The row of a record).
+40:10 list_may_be_shared SanitiserRowWide.mid3
+42:10 list_may_be_shared SanitiserRowWide.inLambda
+46:10 list_may_be_shared h3

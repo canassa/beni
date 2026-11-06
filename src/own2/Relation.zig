@@ -24,7 +24,6 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Replay = @import("Replay.zig");
-const RecordRow = @import("RecordRow.zig");
 const StepsTo = @import("StepsTo.zig");
 const LevelCycle = @import("LevelCycle.zig");
 const Subtree = @import("Subtree.zig");
@@ -389,9 +388,8 @@ pub const Eval = struct {
             const x = e.f.val(it.v);
             const rest = words[it.at..];
             // A row step followed by a field's or a wider row's is that step (§2.1).
-            if (rest.len > 1 and Step.fromWord(rest[0]).isRow() and Step.fromWord(rest[1]).inRow()) {
-                if (!e.places().rowHolds(Step.fromWord(rest[0]), Step.fromWord(rest[1]))) continue;
-                try stack.append(e.gpa(), .{ .v = it.v, .at = it.at + 1, .tags = it.tags, .route = it.route });
+            if (Replay.rowThen(rest)) {
+                if (Replay.collapse(e.places(), rest) != null) try stack.append(e.gpa(), .{ .v = it.v, .at = it.at + 1, .tags = it.tags, .route = it.route });
                 continue;
             }
             switch (x.kind) {
@@ -466,8 +464,7 @@ pub const Eval = struct {
                         },
                         .field, .row => if (x.form == .record) {
                             for (e.f.wordsOf(x.extra), 0..) |r, k| {
-                                const hit = r == st.kidWord() or (st.isRow() and e.places().rowHolds(st, try Step.ofRank(e.account(), r)));
-                                if (hit) try stack.append(e.gpa(), .{ .v = ks[k], .at = it.at + 1, .tags = it.tags, .route = try e.routeStep(it.route, @intCast(k)) });
+                                if (try Value.RecordKid.holds(e.f, st, r)) try stack.append(e.gpa(), .{ .v = ks[k], .at = it.at + 1, .tags = it.tags, .route = try e.routeStep(it.route, @intCast(k)) });
                             }
                         } else if (st.isRow()) try e.readAt(it.v, true, it.tags, try e.routeStep(it.route, none), out),
                         .env => if (x.form == .closure) {
@@ -552,7 +549,7 @@ pub const Eval = struct {
                     for (e.f.kidsOf(x), 0..) |k, n| {
                         const kst: Step = switch (x.form) {
                             .list => Step.elem,
-                            .record => try Step.field(e.account(), e.f.wordsOf(x.extra)[n]),
+                            .record => try Step.ofRank(e.account(), e.f.wordsOf(x.extra)[n]),
                             .tuple => try Step.index(e.account(), @intCast(n)),
                             .ctor => try pl.ctorStep(e.gpa(), e.account(), x.head, @intCast(n)),
                             .closure, .opaque_ => continue,
@@ -569,7 +566,7 @@ pub const Eval = struct {
                     // `T`): its next level is the steps to the cycle's place.
                     var to: std.ArrayList(u32) = .empty;
                     defer to.deinit(e.gpa());
-                    if (it.place != place and x.family == Slots.empty) try StepsTo.of(e, e.f.pos.items[x.pos].slot, place, &to);
+                    if (it.place != place and x.family == Slots.empty) try StepsTo.of(e.gpa(), e.account(), e.places(), e.f.pos.items[x.pos].slot, place, &to);
                     // Its own levels below, by its slots (never its own storage).
                     var lv: std.ArrayList(u32) = .empty;
                     defer lv.deinit(e.gpa());
@@ -610,7 +607,7 @@ pub const Eval = struct {
     /// the key it fills pays for (§4.1); a test that reads a contract
     /// pays an inspection a node visited (`uniformAtoms`).
     pub fn hitsAt(e: *Eval, root: Contract.Node, words: []const u32, out: *std.ArrayList(Contract.Hit)) Error!void {
-        _ = try Forest.atSlot(&e.contracts.trees, e.gpa(), root, words, out);
+        _ = try Forest.atSlot(&e.contracts.trees, e.places(), e.gpa(), root, words, out);
     }
 
     pub fn contractOf(e: *Eval, call: u32) ?Contract.Id {
@@ -693,8 +690,9 @@ pub const Eval = struct {
                 const rs = list.items.items[si];
                 const rw = e.f.slots.relWords(rs.slot);
                 // A member's row is read by the caller's own step (§2.1).
-                if (Replay.inRowOf(rw, words)) {
-                    if (rs.node == 0) try e.feedDraft(ki, rs.a, @intCast(rw.len - 1), true);
+                if (Replay.inRowOf(e.places(), rw, words)) {
+                    if (std.debug.runtime_safety) std.debug.assert(rs.node == 0); // `Put.emitPart`
+                    try e.feedDraft(ki, rs.a, @intCast(rw.len - 1), true);
                     continue;
                 }
                 if (rw.len > words.len or !std.mem.eql(u32, rw, words[0..rw.len])) continue;
@@ -773,17 +771,17 @@ pub const Eval = struct {
             if (Forest.at(&e.contracts.trees, root, pw)) |n| try e.feedTree(ki, n, pw, false);
             var n = root;
             for (0..pw.len) |d| {
-                const opens = try e.gpa().dupe(Contract.Arrival, e.contracts.trees.open(n));
-                defer e.gpa().free(opens);
-                if (opens.len != 0) {
+                // Open above the prefix, and a row the prefix goes through.
+                const t = &e.contracts.trees;
+                const on = t.kidAt(n, pw[d]);
+                const row = if (on == null) t.rowKid(e.places(), n, pw[d]) orelse 0 else 0;
+                for ([_][]const Contract.Arrival{ t.open(n), t.here(row), t.open(row) }) |run| if (run.len != 0) {
+                    const opens = try e.gpa().dupe(Contract.Arrival, run);
+                    defer e.gpa().free(opens);
                     const rel = e.f.slots.rels.find(pw[0..d]) orelse try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), pw[0..d]);
                     for (opens) |a| try e.feedBelow(ki, rel, true, a);
-                }
-                n = e.contracts.trees.kidAt(n, pw[d]) orelse {
-                    // Below a row: its arrivals, by the prefix's own steps.
-                    if (e.contracts.trees.rowKid(n, pw[d])) |r| try RecordRow.feed(e, ki, r, pw[0..d]);
-                    break;
                 };
+                n = on orelse break;
             }
         } else try e.addBelow(ki, try e.f.leaf(.{ .kind = .top }), prefix.int() | open_bit);
         e.inst_depth -= 1;
@@ -844,7 +842,7 @@ pub const Eval = struct {
             for (paths.items) |at0| try e.feedAt(ki, .from(at0), @intCast(n), open, a);
         } else if (open and rw.len < pw.len and std.mem.eql(u32, rw, pw[0..rw.len])) {
             try e.feedAt(ki, k.slot, @intCast(rw.len), true, a);
-        } else if (Replay.inRowOf(rw, pw)) try e.feedAt(ki, k.slot, @intCast(rw.len - 1), true, a);
+        } else if (Replay.inRowOf(e.places(), rw, pw)) try e.feedAt(ki, k.slot, @intCast(rw.len - 1), true, a);
     }
 
     /// Arrival `a` of an entry `n` steps from the call's root, read at the
@@ -982,7 +980,7 @@ pub const Eval = struct {
         if (Forest.at(&e.contracts.trees, root, xw)) |n| if (e.contracts.trees.kids(n).len != 0 or e.contracts.trees.here(n).len != 0) return false;
         var hits: std.ArrayList(Contract.Hit) = .empty;
         defer hits.deinit(e.gpa());
-        try e.charge(.inspection, try Forest.atSlot(&e.contracts.trees, e.gpa(), root, xw, &hits));
+        try e.charge(.inspection, try Forest.atSlot(&e.contracts.trees, e.places(), e.gpa(), root, xw, &hits));
         var any = false;
         for (hits.items) |hit| {
             if (!hit.open) continue;

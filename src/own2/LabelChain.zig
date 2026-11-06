@@ -7,6 +7,7 @@
 //! Obligations kept here: none of §2.14's directly.
 
 const std = @import("std");
+const Replay = @import("Replay.zig");
 const Ids = @import("Ids.zig");
 const Forest = @import("Forest.zig");
 const Contract = @import("Contract.zig");
@@ -103,9 +104,7 @@ pub fn supplyLevels(c: Chain, q: u32, k: u32, words: []const u32, out: *std.Arra
                 for (es.items.items) |rs| for (rs.arrivals) |a| {
                     if (a.kind != .param or a.j >= own) continue;
                     const at = es.wordsOf(rs);
-                    const nw: []const u32 = if (std.mem.startsWith(u32, kw.words, at))
-                        try std.mem.concat(c.arena, u32, &.{ f.slots.relWords(a.slot), kw.words[at.len..] })
-                    else if (std.mem.startsWith(u32, at, kw.words)) f.slots.relWords(a.slot) else continue;
+                    const nw: []const u32 = if (Replay.under(f.places, at, kw.words)) |n| try std.mem.concat(c.arena, u32, &.{ f.slots.relWords(a.slot), kw.words[n..] }) else if (std.mem.startsWith(u32, at, kw.words)) f.slots.relWords(a.slot) else continue;
                     const seen = for (next.items) |n| {
                         if (n.k == a.j and std.mem.eql(u32, n.words, nw)) break true;
                     } else false;
