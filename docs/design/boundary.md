@@ -750,10 +750,12 @@ realm probes retain their semantics.
 Concrete entry builds write the Boolean in place and eliminate the untaken arm
 of an `if` on the selector before checking kept worker code. No selector call,
 fallback, or runtime realm test is emitted in a page or worker entry, in either
-mode. Only `--library` output may retain the sibling's `typeof document !==
+mode. Only `--library` output may retain an inline `typeof globalThis.document !==
 "undefined"` fallback. Unknown-entry internal cache rows preserve the symbolic
 reference, never a page's or worker's answer. The backend subsection specifies
-per-entry emission and cache reuse.
+per-entry emission and cache reuse. This compiler-only foreign has no sibling
+export: lowering supplies both the concrete answer and the library fallback.
+A nonliteral unit argument is still evaluated for its effects.
 
 **`object : fields → Value`** (pure, 2026-10-02, the owner's decision on research 50 §7) is an
 object literal: `Js.object [ ( "k1", v1 ), ( "k2", v2 ) ]` is `{k1: v1, k2: v2}`. The argument is a

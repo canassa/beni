@@ -1,0 +1,11 @@
+import Js
+
+
+pub pageBase : ⊤ → ⊤
+pageBase _ = ⊤
+
+
+pub observe : ⊤ → String
+observe _ =
+    Js.set (Js.global "globalThis") "window" (Js.from True)
+    if Js.isUndefined (Js.global "window") then "missing" else "present"

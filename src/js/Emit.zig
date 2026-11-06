@@ -2356,6 +2356,11 @@ const Emitter = struct {
             var declared: std.ArrayList(Declared) = .empty;
             for (b.decls, 0..) |d, index| {
                 if (d.kind != .foreign_value) continue;
+                // This private selector has no sibling: even library output
+                // writes its fallback inline, so unrelated Js.js users pay nothing.
+                if (e.graph().modulePackage(m) == .core and
+                    std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), "Js") and
+                    std.mem.eql(u8, e.session.interner.slice(b.symbol(d.name)), "entryWindow")) continue;
                 // The calling convention every call of this `foreign` is
                 // lowered with (`check/Convention.zig`, checker-v2.md §12.5),
                 // so check 4 and the call sites cannot disagree: the arity is
@@ -6284,6 +6289,7 @@ const Emitter = struct {
             try wire_types.appendSlice(e.scratch, wire.types);
         }
         var in: Reach.Input = .{
+            .entry_window = JsIntrinsic.entryWindow(e.options.platform.entry_host, e.options.library),
             .wire_types = wire_types.items,
             .graph = e.graph(),
             .store = &e.session.store,
@@ -6333,7 +6339,9 @@ const Emitter = struct {
             // No packed row holds `--test-hooks`: that build makes every
             // edge list afresh (`backend.md` §4, *`Js.testHooks` is the
             // build's test hooks*).
-            if (!e.options.test_hooks and e.session.packCovers(e.graph().moduleFile(m)) and e.session.keys.isCacheable(m)) {
+            // Embedded edge rows were made without a concrete entry realm.
+            const realm_sensitive = JsIntrinsic.entryWindow(e.options.platform.entry_host, e.options.library) != null and JsIntrinsic.hasEntryWindow(e.graph(), e.session.resolution.interfaces, b, &e.session.interner);
+            if (!realm_sensitive and !e.options.test_hooks and e.session.packCovers(e.graph().moduleFile(m)) and e.session.keys.isCacheable(m)) {
                 row.* = e.session.pack.find(.edges, EdgePack.key(e.session.keys.of(m), options));
             }
             if (row.* == null) built_insts += b.insts.len;
@@ -7290,7 +7298,9 @@ const Emitter = struct {
             // The cross-check (`crossCheck`) lowers a module again only to
             // compare trees, so it reads no row either: its units are fresh
             // and must compare with the first lowering's.
-            if (read_rows and event_constructors.items.len == 0 and e.worker_wire_direct_module != m and e.workerHostModule() != m and (e.workerHostClient()) != m and !t.lower_only and !e.options.release and !e.options.test_hooks and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
+            // A guarded module must be lowered for this entry, not from the unknown-realm pack.
+            const realm_sensitive = JsIntrinsic.entryWindow(e.options.platform.entry_host, e.options.library) != null and JsIntrinsic.hasEntryWindow(e.graph(), e.session.resolution.interfaces, e.bir(m), &e.session.interner);
+            if (!realm_sensitive and read_rows and event_constructors.items.len == 0 and e.worker_wire_direct_module != m and e.workerHostModule() != m and (e.workerHostClient()) != m and !t.lower_only and !e.options.release and !e.options.test_hooks and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
                 const key = EmitPack.key(e.session.keys.of(m), .{ .schema_library = e.options.schema_library });
                 if (e.session.pack.find(.emit, key)) |bytes| {
                     if (try EmitPack.decode(scratch, bytes)) |decoded| {
@@ -7301,6 +7311,7 @@ const Emitter = struct {
                 }
             }
             return Lower.lower(e.gpa, scratch, overlay, .{
+                .entry_window = JsIntrinsic.entryWindow(e.options.platform.entry_host, e.options.library),
                 .encode_worker_private = e.privateWorkerModule(m),
                 .worker_events = e.worker_events,
                 .worker_event_constructors = event_constructors.items,

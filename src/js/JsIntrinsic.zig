@@ -89,6 +89,8 @@ pub const Which = enum {
     /// on it drops an arm as one on `Js.development` does (`backend.md` §4,
     /// *`Js.testHooks` is the build's test hooks*).
     testHooks,
+    /// Private Boolean selector resolved independently for each entry.
+    entryWindow,
     /// `true` in a development build, `false` under `--release`; an `if`
     /// on it keeps only the branch the build takes (`backend.md` §4,
     /// *`Js.development` is the build's mode*).
@@ -105,6 +107,18 @@ pub const Which = enum {
     fingerprint,
 };
 
+/// No concrete realm is available to library output or embedded packs.
+pub fn entryWindow(realm: @import("../entry/Plan.zig").Realm, library: bool) ?bool {
+    return if (library) null else realm == .window;
+}
+
+pub fn hasEntryWindow(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, interner: anytype) bool {
+    for (bir.insts.items(.tag), 0..) |tag, i| {
+        if ((tag == .ext_value or tag == .top) and of(graph, interfaces, bir, @fromBackingInt(@intCast(i)), interner) == .entryWindow) return true;
+    }
+    return false;
+}
+
 /// Whether `inst` is a `case` on `Js.development` or on `Js.testHooks` —
 /// what an `if` on either desugars to — and, when it is, which of its arms
 /// the build drops: the `branch` instruction of the arm whose pattern is the
@@ -113,7 +127,8 @@ pub const Which = enum {
 /// with it, for `Js.testHooks`). `Reach` follows no edge out of that arm and
 /// `Lower` writes it as `undefined`, so a declaration only it names is
 /// neither kept nor named.
-pub fn droppedArm(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, inst: Inst.Index, interner: anytype, release: bool, test_hooks: bool) ?Inst.Index {
+/// The private entry selector has an answer only for a concrete entry.
+pub fn droppedArm(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, inst: Inst.Index, interner: anytype, release: bool, test_hooks: bool, entry_window: ?bool) ?Inst.Index {
     if (inst.int() >= bir.insts.len or bir.instTag(inst) != .case) return null;
     const d = bir.instData(inst);
     var scrutinee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
@@ -125,6 +140,15 @@ pub fn droppedArm(graph: *const Graph, interfaces: []const Interface, bir: *cons
     return switch (of(graph, interfaces, bir, scrutinee, interner) orelse return null) {
         .development => armOf(graph, interfaces, bir, inst, interner, release),
         .testHooks => armOf(graph, interfaces, bir, inst, interner, !test_hooks),
+        .entryWindow => blk: {
+            // A unit expression may have effects. Only the literal has none;
+            // otherwise lower the condition normally to retain its evaluation.
+            const condition: Inst.Index = @fromBackingInt(@intCast(d.lhs));
+            if (bir.instTag(condition) != .call) break :blk null;
+            const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(condition).rhs))), Inst.Index);
+            if (args.len != 1 or bir.instTag(args[0]) != .unit) break :blk null;
+            break :blk if (entry_window) |present| armOf(graph, interfaces, bir, inst, interner, !present) else null;
+        },
         else => null,
     };
 }

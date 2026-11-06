@@ -244,6 +244,7 @@ pub const Dispatch = @import("../check/Dispatch.zig");
 const Convention = @import("../check/Convention.zig");
 
 pub const Input = struct {
+    entry_window: ?bool = null,
     encode_worker_private: bool = false,
     worker_descriptors: []const @import("WorkerEntry.zig").Descriptor = &.{},
     worker_definition: ?u32 = null,
@@ -2242,7 +2243,7 @@ pub const Lowerer = struct {
         // followed nothing out of it, with or without a survivor set.
         for (tags, 0..) |tag, i| {
             if (tag != .case) continue;
-            const branch = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, @fromBackingInt(@intCast(@as(u32, @intCast(i)))), l.interner, !l.in.development, l.in.test_hooks) orelse continue;
+            const branch = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, @fromBackingInt(@intCast(@as(u32, @intCast(i)))), l.interner, !l.in.development, l.in.test_hooks, l.in.entry_window) orelse continue;
             const body = l.bir.instData(branch).rhs;
             if (l.dead_arms.bit_length == 0) try l.dead_arms.resize(l.scratch, l.bir.insts.len, false);
             if (body < l.dead_arms.bit_length) l.dead_arms.set(body);
@@ -2332,7 +2333,7 @@ pub const Lowerer = struct {
     fn developmentArm(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
         l.askSelf(.development, l.in.development, 0, 0);
         l.askSelf(.test_hooks, l.in.test_hooks, 0, 0);
-        const dropped = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, inst, l.interner, !l.in.development, l.in.test_hooks) orelse
+        const dropped = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, inst, l.interner, !l.in.development, l.in.test_hooks, l.in.entry_window) orelse
             l.probeDroppedArm(inst) orelse return null;
         const branches = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(inst).rhs))), Inst.Index);
         for (branches) |branch| {
@@ -7499,6 +7500,7 @@ pub const Lowerer = struct {
                 l.askSelf(.development, l.in.development, 0, 0);
                 return l.add(if (l.in.development) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
             },
+            .entryWindow => return l.returnArrow(&.{}, try l.entryWindowValue(p), p),
             .testHooks => {
                 l.askSelf(.test_hooks, l.in.test_hooks, 0, 0);
                 return l.add(if (l.in.test_hooks) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
@@ -10900,6 +10902,17 @@ pub const Lowerer = struct {
     /// lowered IS core's `Basics`. Keyed on the core package and on the
     /// well-known symbols, never on the spelling, so a user's own `and` is
     /// an ordinary function.
+    // ownership pin begin: entryWindow
+    /// Only library lowering lacks an entry and emits a runtime fallback.
+    fn entryWindowValue(l: *Lowerer, p: u32) !Node.Index {
+        if (l.in.entry_window) |present| return l.add(if (present) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
+        const global = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
+        const document = try l.member(global, try l.interner.getOrPut(l.gpa, "document"), p);
+        return l.binary(.strict_ne, try l.unary(.type_of, document, p), try l.stringNode("undefined", p), p);
+    }
+
+    // ownership pin end: entryWindow
+
     /// The `Js` intrinsic `inst` names, or null (research 47).
     fn jsIntrinsicOf(l: *Lowerer, inst: Inst.Index) ?JsIntrinsic.Which {
         return JsIntrinsic.of(l.in.graph, l.in.interfaces, l.bir, inst, l.interner);
@@ -11395,6 +11408,10 @@ pub const Lowerer = struct {
 
     fn jsIntrinsicCall(l: *Lowerer, out: *StmtList, which: JsIntrinsic.Which, args: []const Inst.Index, p: u32) !Node.Index {
         const W = JsIntrinsic.Which;
+        if (which == .entryWindow) {
+            for (args) |arg| if (l.bir.instTag(arg) != .unit) try l.discard(out, arg, p);
+            return l.entryWindowValue(p);
+        }
         // A `Js.Ref` written as a `let` (§4, *A `Js.Ref` that does not
         // escape is a `let`*): a read is its name, a write assigns it. The
         // name is not an atom, so whatever holds a read pins it before a
@@ -11532,6 +11549,7 @@ pub const Lowerer = struct {
                 l.askSelf(.development, l.in.development, 0, 0);
                 break :blk l.add(if (l.in.development) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
             },
+            W.entryWindow => l.entryWindowValue(p),
             W.testHooks => blk: {
                 l.askSelf(.test_hooks, l.in.test_hooks, 0, 0);
                 break :blk l.add(if (l.in.test_hooks) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);

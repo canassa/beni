@@ -281,6 +281,11 @@ pub foreign pure pure : once returned sync (⊤ → a) → a
 pub foreign pure development : ⊤ → bool
 
 
+--| Private entry realm selector. Written as a Boolean literal in entry
+--| builds; only library output writes a runtime fallback.
+pub foreign pure entryWindow : ⊤ → fresh bool
+
+
 --| `True` under the hidden build flag `--test-hooks` and `False` otherwise,
 --| as `development` is true in a development build: an `if` on it keeps
 --| only the branch the build takes, so a platform's test hooks — what a

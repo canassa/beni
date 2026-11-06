@@ -2682,8 +2682,12 @@ There is no runtime selector, fallback or selector call in entry output.
 Frontend, interface and unknown-entry cache facts keep the reference symbolic.
 Modules referring to this intrinsic do not reuse unknown-realm packed edge or
 emit rows when emitting a concrete entry; other modules retain existing reuse.
-A library has no concrete realm and may retain the sibling implementation,
-`typeof document !== "undefined"`, exclusively in `--library` output. Tests
+A library has no concrete realm and may retain an inline fallback,
+`typeof globalThis.document !== "undefined"`, exclusively in `--library` output. This is a compiler-only intrinsic: its foreign export is discharged by
+lowering, with no `Js.js` export or dependency, so even development library
+builds that copy the whole sibling remain unchanged. Branch elimination
+requires the literal unit argument; an effectful unit expression is evaluated
+normally before the constant answer. Tests
 compare all artifacts of one page-plus-worker build cold and warm, at jobs 1
 and 8, and check both modes for absence of the fallback and selector calls.
 

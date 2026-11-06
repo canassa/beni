@@ -1,0 +1,104 @@
+-- Both relative URLs use the worker entry, even with a different page base.
+import Browser
+import Browser.Navigation as Navigation
+import Browser.Worker as Worker
+import Hosted
+import Html exposing (Html)
+import Http
+import Probe
+import Task
+import Url
+import WebSocket
+
+
+type alias Protocol =
+    Worker.Protocol ⊤ String ⊥ ⊥ ⊥ ⊥
+
+
+network : ⊤ → String
+network _ =
+    http =
+        case Http.get { url = "worker-network", expect = Http.expectString } of
+            Ok text →
+                text
+            Err _ →
+                "HTTP failed"
+    websocket = WebSocket.connect "worker-network" [] λsocket →
+        case WebSocket.write socket "worker-websocket" of
+            Err _ →
+                "write failed"
+            Ok _ →
+                case WebSocket.read socket of
+                    Ok text →
+                        text
+                    Err _ →
+                        "read failed"
+    inside =
+        case Navigation.currentUrl ⊤ of
+            Just url →
+                String.contains (Url.toString url) "/_workers/"
+            Nothing →
+                False
+    case websocket of
+        Ok text →
+            if inside && not (String.isEmpty (Probe.language ⊤)) then
+                http ++ " / " ++ text
+            else
+                "worker globals failed"
+        Err _ →
+            "WebSocket failed"
+
+
+worker : Worker.Program ⊤ ⊤ Protocol
+worker =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ _ → Ok (network ⊤)
+        , stream = Worker.noStream
+        }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+exercise : ⊤ → String
+exercise _ = Task.scope λowner →
+    case Worker.open owner worker ⊤ Worker.options of
+        Err _ →
+            "open failed"
+        Ok handle →
+            result = Worker.call handle ⊤
+            _ = Worker.close handle
+            case result of
+                Ok text →
+                    text
+                Err _ →
+                    "worker call failed"
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init =
+            λ_ →
+                Probe.pageBase ⊤
+                "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel →
+                <main>
+                    <button onClick={Launch}>launch</button><output>{if model == "idle" then "idle" else "done"}</output><p>{model}</p>
+                </main>
+        }

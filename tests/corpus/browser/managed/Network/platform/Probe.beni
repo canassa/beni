@@ -1,0 +1,13 @@
+import Js
+
+
+pub pageBase : ⊤ → ⊤
+pageBase _ =
+    document = Js.global "document"
+    base = Js.call document "createElement" [ Js.from "base" ]
+    Js.set base "href" (Js.from "/page-base/")
+    Js.to (Js.call (Js.get document "head") "appendChild" [ base ])
+
+
+pub language : ⊤ → String
+language _ = Js.to (Js.get (Js.global "navigator") "language")

@@ -1,4 +1,4 @@
---! HTTP requests from a page (`docs/design/boundary.md` §9.8.12): elm/http
+--! HTTP requests from a page or worker (`docs/design/boundary.md` §9.8.12): elm/http
 --! 2.0, its pieces under their names, as direct forms. A request waits in
 --! the calling fiber and returns its answer as a `Result`, and every way a
 --! request can fail is a value: each failure the URL and Fetch standards
@@ -231,7 +231,7 @@ fractionReceived p =
 
 
 --| A request. It is checked before it is sent: the URL (relative to the
---| page), the method, each header and the body, each failure a
+--| entry base), the method, each header and the body, each failure a
 --| `BadRequest` or `BadUrl`. `credentials` is `same-origin`. The timeout,
 --| when there is one, runs from the moment the request is sent until its
 --| body has been read; zero or less times out at once.
@@ -584,13 +584,17 @@ exchange checks credentials method headers url body accept timer reading =
                 sent credentials method headers target body accept timer reading
 
 
--- The URL resolved against the page, or null: `URL.parse` answers null
+-- The URL resolved against the entry base, or null: `URL.parse` answers null
 -- for what does not parse, and an engine without it has `new URL`, whose
 -- one documented failure is a `TypeError`.
 resolve : String → Js.Value
 resolve url =
     constructor = Js.global "URL"
-    base = Js.get (Js.global "document") "baseURI"
+    base =
+        if Js.entryWindow ⊤ then
+            Js.get (Js.global "document") "baseURI"
+        else
+            Js.get (Js.global "location") "href"
     if Js.isUndefined (Js.get constructor "parse") then
         Js.catchIf
             (λ⊤ → Js.construct constructor [ Js.from url, base ])

@@ -36,3 +36,13 @@ and accepts only operations available in all known realms. The old `host: page` 
 worker checks are under construction.
 
 Design: `workers.md` §4; `workers-native-bindings.md`.
+
+A worker build checks its retained code for page-only globals after dead-code
+removal. `worker_realm_violation` names the offending kept declaration and
+access. Computed names and passing `Js.global` as a value are unproved. A worker
+has its own `location` and `navigator`: `location.href` and navigator language
+reads work, but Location navigation methods do not. Unused page declarations
+are allowed. This adds no runtime guard.
+
+`Http` and `WebSocket` resolve relative URLs against the worker entry's URL.
+Pages keep document-base semantics, including a `<base>` element. Entry-specific compilation removes the unused URL-base branch before emission.

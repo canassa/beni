@@ -2122,3 +2122,181 @@ test "worker realm obligations survive generic imported writers and warm interfa
         try testing.expect(!w.exists("refused"));
     }
 }
+
+test "worker kept-code globals refuse raw page access through indirect routes" {
+    const scenarios = [_]struct { body: []const u8, owner: []const u8, global: []const u8 }{
+        .{ .body = "pub read _ = Js.to (Js.get (Js.global \"document\") \"title\")", .owner = "Probe.read", .global = "document" },
+        .{ .body = "pub read _ =\n    Navigation.reloadPage ⊤\n    \"ok\"", .owner = "Browser.Navigation.reloadPage", .global = "location.reload" },
+        .{ .body = "pub read _ =\n    _ = Navigation.loadPage \"/worker\"\n    \"ok\"", .owner = "Browser.Navigation.loadPage", .global = "location.assign" },
+        .{ .body = "page _ = Js.to (Js.get (Js.global \"document\") \"title\")\ninvoke f = f 0\npub read n = invoke page", .owner = "Probe.page", .global = "document" },
+        .{ .body = "page _ = Js.to (Js.get (Js.global \"document\") \"title\")\npub read n =\n    pair = { good = λ_ → \"ok\", bad = page }\n    pair.bad n", .owner = "Probe.page", .global = "document" },
+        .{ .body = "page _ = Js.to (Js.get (Js.global \"document\") \"title\")\npub read n = Task.join (Task.spawn (λ⊤ → page n))", .owner = "Probe.page", .global = "document" },
+        .{ .body = "page n = Js.to (Js.get (Js.global \"document\") \"title\")\npub read n = Js.to (Js.apply (Js.from page) [ Js.from n ])", .owner = "Probe.page", .global = "document" },
+        .{ .body = "title = Js.get (Js.global \"document\") \"title\"\npub read _ = Js.to title", .owner = "Probe.title", .global = "document" },
+        .{ .body = "pub read n = Js.to (Js.get (Js.global (if n == 0 then \"document\" else \"window\")) \"title\")", .owner = "Probe.read", .global = "(computed)" },
+    };
+    var unexpected_acceptance = false;
+    for (scenarios, 0..) |scenario, si| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try writeWorkerPlatform(&w);
+        const manifest = try w.read("platform/beni.json");
+        try w.write("platform/beni.json", try std.mem.replaceOwned(u8, w.arena.allocator(), manifest, "\"name\": \"worker-test\",", "\"name\": \"worker-test\",\"platforms\":[\"browser\"],"));
+        try w.write("platform/Probe.beni", try std.fmt.allocPrint(w.arena.allocator(), "import Js\nimport Task\nimport Browser.Navigation as Navigation\n{s}\n", .{scenario.body}));
+        try w.write("Main.beni",
+            \\import Page
+            \\import Worker
+            \\import Probe
+            \\worker : Worker.Program String String ⊤
+            \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → Probe.read 0, stream = λ_ _ _ _ → ⊤ }
+            \\main : Page.Program
+            \\main = Page.program (λ_ →
+            \\    _ = Worker.open worker
+            \\    ⊤)
+        );
+        for ([_]bool{ false, true }) |release| {
+            const args = try std.mem.concat(w.arena.allocator(), []const u8, &.{ &.{ "build", "--allow-unchecked-workers", "--platform=platform", "--out=out", "Main.beni" }, if (release) &.{"--release"} else &.{} });
+            const result = try w.run(args);
+            if (result.exit_code == 0) {
+                std.debug.print("unexpected acceptance: route {d}, release {any}\n", .{ si, release });
+                unexpected_acceptance = true;
+                continue;
+            }
+            try testing.expectEqual(@as(u8, 1), result.exit_code);
+            try testing.expectEqual(@as(usize, 1), result.diagnostics.len);
+            var actual = result.diagnostics[0];
+            actual.message = try std.mem.replaceOwned(u8, w.arena.allocator(), actual.message, "\n", " ");
+            try testing.expectEqualDeep(diagnostic.Diagnostic{
+                .code = .worker_realm_violation,
+                .severity = .@"error",
+                .span = .{ .file = "Main.beni", .start = .{ .line = 5, .col = 1 }, .end = .{ .line = 5, .col = 7 } },
+                .title = "WORKER REALM VIOLATION",
+                .message = try std.fmt.allocPrint(w.arena.allocator(), "`{s}` uses the page-only JavaScript global `{s}`, which entry realm `dedicatedWorker` does not have.", .{ scenario.owner, scenario.global }),
+            }, actual);
+            try testing.expect(!w.exists("out"));
+        }
+    }
+    try testing.expect(!unexpected_acceptance);
+}
+
+test "worker kept-code globals preserve shared reads and resolve private entry selectors across caches" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeWorkerPlatform(&w);
+    const manifest = try w.read("platform/beni.json");
+    try w.write("platform/beni.json", try std.mem.replaceOwned(u8, w.arena.allocator(), manifest, "\"name\": \"worker-test\",", "\"name\": \"worker-test\",\"platforms\":[\"browser\"],"));
+    try w.write("platform/Probe.beni",
+        \\import Js
+        \\import Browser.Navigation as Navigation
+        \\import Http
+        \\unused _ = Js.to (Js.get (Js.global "document") "title")
+        \\pub read _ =
+        \\    _ = Http.get { url = "relative", expect = Http.expectString }
+        \\    _ = Navigation.currentUrl ⊤
+        \\    _ = Js.get (Js.global "navigator") "language"
+        \\    if Js.entryWindow ⊤ then
+        \\        Js.to (Js.get (Js.global "document") "baseURI")
+        \\    else
+        \\        Js.to (Js.get (Js.global "location") "href")
+    );
+    try w.write("Main.beni",
+        \\import Page
+        \\import Worker
+        \\import Probe
+        \\worker : Worker.Program String String ⊤
+        \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → Probe.read 0, stream = λ_ _ _ _ → ⊤ }
+        \\main : Page.Program
+        \\main = Page.program (λ_ →
+        \\    _ = Probe.read 0
+        \\    _ = Worker.open worker
+        \\    ⊤)
+    );
+    for ([_]bool{ false, true }) |release| {
+        var expected: ?[]const []const u8 = null;
+        var contents: std.ArrayList([]const u8) = .empty;
+        for ([_][]const u8{ "--jobs=1", "--jobs=1", "--jobs=8", "--jobs=8" }) |jobs| {
+            const cache = try std.fmt.allocPrint(w.arena.allocator(), "--cache-dir=cache-{s}-{s}", .{ if (release) "release" else "dev", jobs[7..] });
+            const result = try w.run(if (release) &.{ "build", "--release", "--allow-unchecked-workers", cache, "--platform=platform", jobs, "--out=out", "Main.beni" } else &.{ "build", "--allow-unchecked-workers", cache, "--platform=platform", jobs, "--out=out", "Main.beni" });
+            try testing.expectEqual(@as(u8, 0), result.exit_code);
+            try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{}), result.diagnostics);
+            const files = try w.listFiles("out");
+            if (expected) |old| {
+                try testing.expectEqualDeep(old, files);
+                for (files, contents.items) |file, bytes| try testing.expectEqualStrings(bytes, try w.read(try std.fmt.allocPrint(w.arena.allocator(), "out/{s}", .{file})));
+            } else {
+                expected = files;
+                for (files) |file| try contents.append(w.arena.allocator(), try w.read(try std.fmt.allocPrint(w.arena.allocator(), "out/{s}", .{file})));
+                var probes: usize = 0;
+                for (files) |file| {
+                    if (std.mem.endsWith(u8, file, ".mjs")) {
+                        const output = try w.read(try std.fmt.allocPrint(w.arena.allocator(), "out/{s}", .{file}));
+                        try testing.expect(std.mem.indexOf(u8, output, "entryWindow") == null);
+                        try testing.expect(std.mem.indexOf(u8, output, "typeof document") == null);
+                        try testing.expect(std.mem.indexOf(u8, output, "typeof globalThis.document") == null);
+                    }
+                    if (release or !std.mem.endsWith(u8, file, "/Probe.mjs")) continue;
+                    probes += 1;
+                    const bytes = try w.read(try std.fmt.allocPrint(w.arena.allocator(), "out/{s}", .{file}));
+                    try testing.expect(std.mem.indexOf(u8, bytes, "globalThis.window") == null);
+                    if (std.mem.startsWith(u8, file, "_workers/")) {
+                        try testing.expect(std.mem.indexOf(u8, bytes, "globalThis.location.href") != null);
+                        try testing.expect(std.mem.indexOf(u8, bytes, "globalThis.document") == null);
+                    } else {
+                        try testing.expect(std.mem.indexOf(u8, bytes, "globalThis.document.baseURI") != null);
+                    }
+                }
+                try testing.expectEqual(@as(usize, if (release) 0 else 2), probes);
+            }
+        }
+    }
+}
+
+test "private entry selector keeps a runtime fallback only in library output" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeWorkerPlatform(&w);
+    try w.write("platform/Probe.beni",
+        \\import Js
+        \\pub select _ = Js.entryWindow ⊤
+    );
+    try w.write("Main.beni",
+        \\import Probe
+        \\pub select _ = Probe.select 0
+    );
+    const result = try w.run(&.{ "build", "--library", "--platform=platform", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), result.exit_code);
+    const files = try w.listFiles("out");
+    var fallback = false;
+    for (files) |file| {
+        if (!std.mem.endsWith(u8, file, ".mjs")) continue;
+        const output = try w.read(try std.fmt.allocPrint(w.arena.allocator(), "out/{s}", .{file}));
+        fallback = fallback or std.mem.indexOf(u8, output, "typeof globalThis.document") != null;
+    }
+    try testing.expect(fallback);
+}
+
+test "private entry selector preserves effects in its unit argument" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeWorkerPlatform(&w);
+    const manifest = try w.read("platform/beni.json");
+    try w.write("platform/beni.json", try std.mem.replaceOwned(u8, w.arena.allocator(), manifest, "\"runtime\": \"runtime.js\",", "\"module\": \"Page\","));
+    try w.write("platform/Probe.beni",
+        \\import Js
+        \\effect : ⊤ → ⊤
+        \\effect _ = Js.to (Js.call (Js.global "console") "log" [ Js.from "effect" ])
+        \\pub run _ =
+        \\    if Js.entryWindow (effect ⊤) then ⊤ else ⊤
+    );
+    try w.write("Main.beni",
+        \\import Page
+        \\import Probe
+        \\main : Page.Program
+        \\main = Page.program Probe.run
+    );
+    for ([_]bool{ false, true }) |release| {
+        const result = try w.run(if (release) &.{ "build", "--release", "--platform=platform", "--out=out", "Main.beni" } else &.{ "build", "--platform=platform", "--out=out", "Main.beni" });
+        try testing.expectEqual(@as(u8, 0), result.exit_code);
+        try w.expectProgram("out/_main.mjs", .{ .stdout = "effect\n" });
+    }
+}

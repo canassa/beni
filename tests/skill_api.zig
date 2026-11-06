@@ -95,8 +95,13 @@ pub fn generate(arena: Allocator, io: Io, beni: []const u8, root: []const u8, pa
     try text.appendSlice(arena, "```text\n");
     var lines = std.mem.splitScalar(u8, r.stdout, '\n');
     var in_never = false;
+    var in_js = false;
     while (lines.next()) |line| {
         if (line.len == 0 and lines.peek() == null) break;
+        if (std.mem.startsWith(u8, line, "module ")) in_js = is_core and std.mem.eql(u8, line, "module Js");
+        // The private entry selector belongs only to privileged implementation
+        // code, not the application API reference (boundary.md §4.2).
+        if (in_js and std.mem.indexOf(u8, line, "value entryWindow :") != null) continue;
         // `type Never` in Basics and its constructor line: one comment (§12.1).
         if (std.mem.eql(u8, line, "  type Never")) {
             in_never = true;

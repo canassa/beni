@@ -273,6 +273,7 @@ pub const Result = struct {
 
 /// The whole-program input. Every slice is indexed by `Graph.Index`.
 pub const Input = struct {
+    entry_window: ?bool = null,
     graph: *const Graph,
     store: *const SourceStore,
     birs: []const *const Bir,
@@ -1243,7 +1244,8 @@ pub const Builder = struct {
                 // its `Basics.append` is no reference.
                 if (dispatch.isListAppend(@fromBackingInt(@intCast(i)))) {
                     marks[d.lhs] = true;
-                } else if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @fromBackingInt(@intCast(d.lhs)), interner) != null) {
+                } else if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @fromBackingInt(@intCast(d.lhs)), interner)) |which| {
+                    _ = which;
                     marks[d.lhs] = true;
                 } else if (SchemaGraph.jsonCall(b.in.graph, b.in.interfaces, bir, dispatch, interner, @fromBackingInt(@intCast(i))) != null) {
                     // A derived codec's own `parse` or `print` (schema.md
@@ -1257,7 +1259,7 @@ pub const Builder = struct {
                 }
             },
             .ext_value => if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @fromBackingInt(@intCast(i)), interner)) |which| {
-                if (which == .null or which == .undefined or which == .development or which == .testHooks) marks[i] = true;
+                if (which == .null or which == .undefined or which == .development or which == .testHooks or which == .entryWindow) marks[i] = true;
             },
             else => {},
         };
@@ -1661,7 +1663,7 @@ pub const Builder = struct {
                 .case => if (g.b.in.interner) |interner| {
                     const case_inst: Bir.Inst.Index = @fromBackingInt(@intCast(@as(u32, @intCast(p))));
                     const never: Node = .{ .module = g.m, .kind = .ctor, .index = never_ctor };
-                    if (JsIntrinsic.droppedArm(g.b.in.graph, g.b.in.interfaces, bir, case_inst, interner, g.b.in.release, g.b.in.test_hooks)) |branch| {
+                    if (JsIntrinsic.droppedArm(g.b.in.graph, g.b.in.interfaces, bir, case_inst, interner, g.b.in.release, g.b.in.test_hooks, g.b.in.entry_window)) |branch| {
                         try g.guardArm(branch, never, start, @intCast(p));
                         continue;
                     }

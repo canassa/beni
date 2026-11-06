@@ -330,3 +330,5 @@ platforms/node/WebSocket.beni                    WebSocket.fromUpgrade          
 platforms/browser/Browser/Worker.beni Browser.Worker.listen e88211e8be765e11de2a2b898f74e3d88d96cba5efe71306778a6ac8edf11b39
 platforms/browser/Browser/Worker.beni Browser.Worker.installFatal c3b108ee115718986d307c19d16740d5f189f2b225dfd6d3c027926058159b6b
 platforms/browser/Browser/Worker.beni Browser.Worker.runDefinition eeec99b49d5936256543971d5a31908ddb14983b2495d652d083fcfad7f6a35c
+core/Js.beni                    Js.entryWindow      08f81b7e42b0d7af28376e83e95549f17491d5fbb371fed98aaad2adeba2900b
+src/js/Lower.zig                Js.entryWindow      a706f857621de12a7bf8c9485e34a314c7533d3ddc404c494b5e7f87d07dc209
