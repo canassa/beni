@@ -807,8 +807,21 @@ finish value =
 
 finished : V → V
 finished value =
-    complete (Js.read current) (host (Done value))
-    value
+    fiber = Js.read current
+    if stranded fiber then
+        -- It ends while it holds finalisers that a message's `update` left
+        -- when it threw: only after the DOM reported the throw, so the page
+        -- is stopping. It runs them first, as its unwinding would, each
+        -- above a boundary, and then ends with `value` (`boundary.md`
+        -- §9.8.14 (a): every finaliser runs exactly once). Its own list is
+        -- empty: every scope it opened has closed.
+        _ = Js.call (Js.get fiber "stack") "push" [ Js.from λ_ → finished value ]
+        Js.set fiber "finalizers" (withStranded fiber)
+        cleanups fiber
+        Js.null
+    else
+        complete fiber (host (Done value))
+        value
 
 
 -- Replace `fiber`'s stack with its cancellation: its children first, then
@@ -831,7 +844,7 @@ unwind fiber =
 -- last first.
 cleanups : V → ⊤
 cleanups fiber =
-    fins = Js.get fiber "finalizers"
+    fins = if Js.read stranding then withStranded fiber else Js.get fiber "finalizers"
     Js.set fiber "finalizers" Js.null
     stack = Js.get fiber "stack"
     if Js.isNull fins then
@@ -1686,12 +1699,17 @@ teardown ⊤ =
             enqueue c Js.null Js.null
     o = Js.read outside
 
-    if not (Js.read finalising) || Js.isNull o || none (Js.get o "finalizers") then
+    if
+        not (Js.read finalising) || Js.isNull o || not (stranded o) && none (Js.get o "finalizers")
+    then
         ⊤
     else
         fiber = newFiber Js.null (Js.array [])
         Js.write live (Js.read live + 1)
-        Js.set fiber "finalizers" (Js.get o "finalizers")
+        Js.set
+            fiber
+            "finalizers"
+            (if Js.read stranding then withStranded o else Js.get o "finalizers")
         if Js.read slotted then withSlotsOf o fiber
         Js.set o "finalizers" Js.null
         Js.set o "masks" (Js.from 0)
@@ -2103,9 +2121,10 @@ inLogContext context work =
 --| to the default, the program's, and answer what `endUpdate` needs to
 --| put the caller's slots back. For `browser`'s `send`, which runs `update`
 --| between the two, in a `Js.finally` (`boundary.md` §9.8.16 (b), amended
---| 2026-10-23 and 2026-11-06). It reads `slotted` first, so in a build in
---| which nothing sets a slot it is undefined, and a release build keeps no
---| call of it. The other slots stay the caller's.
+--| 2026-10-23 and 2026-11-06). It reads `slotted` and `finalising` first,
+--| so in a build in which nothing sets a slot or registers a finaliser it
+--| is undefined, and a release build keeps no call of it. The other slots
+--| stay the caller's.
 pub beginUpdate : ⊤ → Js.Value
 beginUpdate ⊤ =
     -- The record that holds the slots, found as `slotRecord` finds it:
@@ -2114,13 +2133,13 @@ beginUpdate ⊤ =
     -- no fiber folds away (`newFiber`'s `fibered`). `update` cannot wait,
     -- so `send`'s `Js.finally` puts the old slots back, and no finaliser is
     -- needed; nor is a write of `slotted`, which was set already.
-    if Js.read slotted then
+    if Js.read slotted || Js.read finalising then
         c = Js.read current
         holder = if Js.isNull c then Js.read outside else c
         if Js.isNull holder then
             Js.undefined
         else
-            old = Js.get holder "slots"
+            old = if Js.read slotted then Js.get holder "slots" else Js.undefined
             below = finalizerCount holder
             if Js.isNullish old || Js.isUndefined (Js.get old "logContext") then
                 ⊤
@@ -2135,26 +2154,24 @@ beginUpdate ⊤ =
 
 --| After a message's `update`, returned or thrown: put back the slots of
 --| the caller of `send` at once. When `update` throws and leaves
---| finalisers, the teardown runs them first, with `update`'s slots. `mark`
---| is what `beginUpdate` answered. It reads `slotted` first, so in a build
---| in which nothing sets a slot a release build keeps no call of it.
+--| finalisers, they go off the caller's list, and the teardown runs them
+--| first, with `update`'s slots. `mark` is what `beginUpdate` answered. It
+--| reads `slotted` and `finalising` first, so in a build in which nothing
+--| sets a slot or registers a finaliser a release build keeps no call of
+--| it.
 pub endUpdate : Js.Value → ⊤
 endUpdate mark =
-    if Js.read slotted then
+    if Js.read slotted || Js.read finalising then
         if Js.isUndefined mark then
-            -- No record held a slot as `update` began, so every slot of the
-            -- caller was at its default: `update` set the first one, or
-            -- made the record outside any fiber. One that returned put back
-            -- every slot it set. One that threw may leave its slots on the
-            -- record, with the finalisers that put them back: the defaults
-            -- go back at once, under an entry that sets `update`'s slots
-            -- again for the teardown. Under that entry, the caller's own
-            -- finalisers and the restores of `update`'s scopes all have the
-            -- defaults, so where the restore of the defaults goes in the
-            -- list changes nothing.
+            -- No record held a slot or a finaliser as `update` began: every
+            -- slot of the caller was at its default, and every finaliser on
+            -- the record now is `update`'s, which made the record or put the
+            -- first finaliser on. One that returned took off every finaliser
+            -- it put on, and put back every slot it set. One that threw and
+            -- left a slot set left the finaliser that puts it back.
             c = Js.read current
             holder = if Js.isNull c then Js.read outside else c
-            if Js.isNull holder || Js.isUndefined (Js.get holder "slots") then
+            if Js.isNull holder || finalizerCount holder == 0 then
                 ⊤
             else
                 restoreSlots holder Js.undefined 0
@@ -2162,27 +2179,67 @@ endUpdate mark =
             Js.to (Js.apply mark [ Js.null ])
 
 
--- Put `old` back as `holder`'s slots when a message's `update` ends.
--- A `work` that returned took off every finaliser it put on. One that
+-- Put `old` back as `holder`'s slots when a message's `update` ends. A
+-- `update` that returned took off every finaliser it put on. One that
 -- threw may leave some, an `annotate`'s restore or a `bracket`'s release,
--- and the teardown runs them, last first, with the slots as they are at
--- the throw. So then an entry on top of them sets those slots again, and
--- the restore of `old` goes under them: it runs after them, and before the
--- ones that were there already, as an `onExit` finaliser would (§17.5).
--- The caller can also go on before the teardown, when the DOM reports the
--- throw out of an event handler that the caller fired (`Dom.focus`), so
--- the slots go back at once too. It edits the list that is there, as
--- `addFinalizer` would not, which writes `finalising`.
+-- above the `below` that were there before. They go off the list, so that
+-- what the caller closes later takes its own entry off (#921), and are
+-- kept apart on the record as `stranded`: its unwinding runs them first,
+-- and so does its end, when it ends first (`finished`, #1154).
+-- An entry on top of them keeps the slots as they are when they run and
+-- sets the slots of the throw, with which they run; one under them puts
+-- the kept slots back (§17.5). The caller can also go on before the
+-- teardown, when the DOM reports the throw out of an event handler that
+-- the caller fired (`Dom.focus`), so its slots go back at once too. It
+-- edits lists and writes no cell: `addFinalizer` would write `finalising`.
 restoreSlots : V, V, Int → ⊤
 restoreSlots holder old below =
     if finalizerCount holder > below then
-        fins = Js.get holder "finalizers"
-        thrown = Js.get holder "slots"
-        slotsBack = λ⊤ → Js.set holder "slots" old
-        _ = Js.call fins "splice" [ Js.from below, Js.from 0, Js.from slotsBack ]
-        _ = Js.call fins "push" [ Js.from λ⊤ → Js.set holder "slots" thrown ]
-        ⊤
-    Js.set holder "slots" old
+        Js.write stranding True
+        left = Js.call (Js.get holder "finalizers") "splice" [ Js.from below ]
+        if Js.read slotted then
+            thrown = Js.get holder "slots"
+            kept = Js.ref Js.undefined
+            back = λ⊤ → Js.set holder "slots" (Js.read kept)
+            enter =
+                λ⊤ →
+                    Js.write kept (Js.get holder "slots")
+                    Js.set holder "slots" thrown
+            _ = Js.call left "unshift" [ Js.from back ]
+            _ = Js.call left "push" [ Js.from enter ]
+            ⊤
+        held = Js.get holder "stranded"
+        Js.set
+            holder
+            "stranded"
+            (if Js.isNullish held then left else Js.call held "concat" [ left ])
+    if Js.read slotted then Js.set holder "slots" old
+
+
+-- `holder`'s finalisers, with those a message's `update` left (`stranded`)
+-- on top, so they run first; none of them stays apart.
+withStranded : V → V
+withStranded holder =
+    fins = Js.get holder "finalizers"
+    held = Js.get holder "stranded"
+    if Js.isNullish held then
+        fins
+    else
+        Js.set holder "stranded" Js.null
+        if Js.isNull fins then held else Js.call fins "concat" [ held ]
+
+
+-- Whether a record holds finalisers that a message's `update` left.
+stranded : V → Bool
+stranded holder = Js.read stranding && not (Js.isNullish (Js.get holder "stranded"))
+
+
+-- Whether a message's `update` has left finalisers when it threw
+-- (`restoreSlots`). Until one has, no record holds any apart: a build in
+-- which nothing can, every one with no `send` of `browser`, folds this to
+-- `False` and keeps none of what reads them.
+stranding : Js.Ref Bool
+stranding = Js.ref False
 
 
 finalizerCount : V → Int
