@@ -5614,3 +5614,5 @@ tests/corpus/run/SanitiserLevelPart.beni SanitiserLevelPart 30:20 #0 :: Sanitise
 tests/corpus/run/SanitiserLevelPart.beni SanitiserLevelPart 30:20 #0 :: SanitiserLevelPart.wr y#Wrap.0#Wrap.0#Leaf.0 :: absent :: accepted  #2062: v2 reads a level where two paths part; v1 folds the levels
 tests/corpus/run/SanitiserLevelPart.beni SanitiserLevelPart 41:33 #0 :: SanitiserLevelPart.two <Wrap …>#Wrap.0#Wrap.0#Leaf.0 :: absent :: rejected  #2062: v2 reads a level where two paths part; v1 folds the levels
 tests/corpus/run/SanitiserLevelPart.beni SanitiserLevelPart 41:33 #0 :: SanitiserLevelPart.two <Wrap …>#Wrap.1#Wrap.0#Leaf.0 :: absent :: rejected  #2062: v2 reads a level where two paths part; v1 folds the levels
+tests/corpus/run/SanitiserRecordCtor.beni SanitiserRecordCtor 34:9 #0 :: List.push k :: accepted :: rejected  #2056: v2 reads a record alias constructor as the record; v1 has no field step
+tests/corpus/run/SanitiserRecordCtor.beni SanitiserRecordCtor 40:9 #0 :: List.push c :: accepted :: rejected  #2056: v2 reads a record alias constructor as the record; v1 has no field step

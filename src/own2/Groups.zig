@@ -823,6 +823,16 @@ pub const Module = struct {
         return .{ at[1] - decl.ctors_start, @backingInt(c.args_end) - @backingInt(c.args_start) };
     }
 
+    fn ctorField(ctx: *anyopaque, ref: u32, n: u32) ?u32 {
+        const mod = self(ctx);
+        const at = ctorIndexCtx(mod, ref) orelse return null;
+        const owner = mod.in.birs[at[0]];
+        const body = owner.decl(owner.ctors[at[1]].decl).annotation.unwrap() orelse return null;
+        if (owner.decl(owner.ctors[at[1]].decl).kind != .type_alias or owner.instTag(body) != .type_record) return null;
+        const fields = owner.extraSlice(Bir.inlineRange(owner.instData(body)), Bir.Field);
+        return if (n < fields.len) mod.adapter.rank(owner.symbol(fields[n].name)) else null;
+    }
+
     fn sharedOf(ctx: *anyopaque, ref: u32) ?[2]u32 {
         const mod = self(ctx);
         const md = mod.declOf(ref) orelse return null;
@@ -1036,8 +1046,13 @@ pub const Module = struct {
                 const c = ctorOf(ctx, inst) orelse return null;
                 var rp: std.ArrayList(Rows.Param) = .empty;
                 defer rp.deinit(mod.gpa);
-                for (ps.items) |p| try rp.append(mod.gpa, .{ .place = p });
-                contract = try Rows.ctor(mod.rowsEnv(arena.allocator()), .{ .params = rp.items, .result = result }, c[0]);
+                var ranks: std.ArrayList(u32) = .empty;
+                defer ranks.deinit(mod.gpa);
+                for (ps.items, 0..) |p, n| {
+                    try rp.append(mod.gpa, .{ .place = p });
+                    if (ctorField(ctx, inst, @intCast(n))) |r| try ranks.append(mod.gpa, r);
+                }
+                contract = try Rows.ctor(mod.rowsEnv(arena.allocator()), .{ .params = rp.items, .result = result }, c[0], ranks.items);
             },
             // A member answers what its `via` conversions answer (a top-level
             // list, say), and a constructor holds its arguments: neither is
@@ -1187,6 +1202,7 @@ pub const Module = struct {
             .placeOfLocal = placeOfLocal,
             .fieldRank = fieldRank,
             .ctorOf = ctorOf,
+            .ctorField = ctorField,
             .sharedOf = sharedOf,
             .isListAppend = isListAppend,
             .callee = callee,
