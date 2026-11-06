@@ -1,0 +1,33 @@
+-- A write past what a need can name (`ownership-v2.md` §2.11.3): `wr` writes
+-- `#1.0⟲#0.0` of a non-regular type, whose places never repeat, so no slot of
+-- the answer `h ⊤` says the write. It stays refused `unknown`. The list `k`
+-- lies below two `Wrap`s, and a write of it would change what `List.length k` says.
+import List
+import Node exposing (Program)
+import String
+
+
+type T a
+    = Leaf (List Int) a
+    | Wrap (T (List a))
+
+
+wr : T a → Int
+wr t =
+    case t of
+        Leaf xs _ →
+            List.length (List.push xs 1)
+
+        Wrap u →
+            wr u
+
+
+ap : (⊤ → T (List Int)) → Int
+ap h = wr (Wrap (h ⊤))
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = ap λ⊤ → Wrap (Wrap (Leaf k [ [ [ 1 ] ] ]))
+    Node.print (String.fromInt (a + List.length k))

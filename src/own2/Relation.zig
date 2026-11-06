@@ -404,9 +404,9 @@ pub const Eval = struct {
                     var all: std.ArrayList(u32) = .empty;
                     defer all.deinit(e.gpa());
                     const tops: []const u32 = if (x.family != Slots.empty) e.f.slots.items(x.family) else &.{e.f.pos.items[x.pos].slot.int()};
-                    // A step an opaque or a type variable's place cannot follow
-                    // (a cast's inner, §2.13.9) is some object inside it: all
-                    // of what it reaches, read approximately.
+                    // A step an opaque or a type variable's place cannot follow (a cast's inner, §2.13.9) is some
+                    // object inside it: all of what it reaches, read approximately. A step a label's answer
+                    // cannot follow is unknown code's, past what a need can name (§2.11.3).
                     var inside: std.ArrayList(u32) = .empty;
                     defer inside.deinit(e.gpa());
                     for (tops) |t| {
@@ -418,7 +418,7 @@ pub const Eval = struct {
                                 // A call's result read on past its place: through what arrives there.
                                 if (x.family == Slots.empty and try e.throughCall(x.root, .from(t), rest, deep, it.tags, it.route, out)) continue;
                                 try inside.append(e.gpa(), t);
-                            } else if (try FoldRead.prefix(e, .from(t), rest, &inside) and e.f.roots.items[x.root].kind != .param) try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .top, .tags = it.tags }), .route = it.route });
+                            } else if (try FoldRead.prefix(e, .from(t), rest, &inside) and e.f.roots.items[x.root].kind != .param or e.f.roots.items[x.root].kind == .cb) try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .top, .tags = it.tags }), .route = it.route });
                         }
                     }
                     var set = try e.f.slots.setOf(e.gpa(), e.account(), e.places(), all.items);

@@ -2607,7 +2607,7 @@ whatever its verdict, as a parameter's write is published (`ReadOff.paramEffects
 - the relation (§2.9.2) says it `may` be another leaf of its own root by position, and `may` be what another label's answer holds as that step 7 says: a holder `w = g a` of an answer `g` was handed
   holds `a`. Against anything else it says `no`, since the discharge below judges the rest.
 
-The verdict's ground is `call`. A target that also reaches `⊤` is refused `unknown` as before.
+The verdict's ground is `call`. A target that also reaches `⊤` is refused `unknown` as before, and so is a step the answer's place cannot follow, a `⟲` past a non-regular type's places: a need names slots, and no slot can name that step.
 
 **What a caller does with it.** At a call whose callee's label `L` has a need `s` (`Needs.zig`, in `callEffects`, so that it reads a member of the group as a call's writes do):
 
@@ -2628,7 +2628,7 @@ one as a capture write (`once`) would add nothing a program needs and a hole: th
 
 **Join and fixpoint.** `need` is a set that only grows, so it joins by union, `⊥` is empty, and `leq` is inclusion (`Within`). In a group a member's new need is delivered with its writes (§2.12 *Deliveries*, `Deliver`'s `need` item) and a member `K`'s new result arrival to each discharge that reads it (`need_watch`). Each slot is delivered once per reader, and slots are finite, so the group ends with the rest. A label a member's draft has and the contract a round read does not is read next round; the validation walk reads the settled candidates, so nothing is left out.
 
-**Blocks.** `need` is one run of `(slot, deep)` after a label's supplies, in the canonical slot order (version 27). An importer reads it from the block in the interface, and the callers of the callee's own module from the tables, and they say the same (`run/NeedAcrossModules`, `ownership/NeedAcrossModules`). v2 writes no cache entry yet (§3.6): the block is what S6's entry will hold, so a need has no cached path to test until then.
+**Blocks.** A label's word has a bit for a `need`, and where it is set one run of `(slot, deep)` follows in the canonical slot order (version 27), so a label with no need costs a block nothing. An importer reads it from the block in the interface, and the callers of the callee's own module from the tables, and they say the same (`run/NeedAcrossModules`, `ownership/NeedAcrossModules`). v2 writes no cache entry yet (§3.6): the block is what S6's entry will hold, so a need has no cached path to test until then.
 
 **What it does not touch.** `below`, `sep`, `kept` and `each` are the callee's claims about what it hands; a need is a claim about what it gets back, so a supply is derived as before: an answer in a supply stays unknown code's to `Supplied.judge` (`Demand.supplied`), and §2.11.3 *An answer handed on* holds. `res_read` and `fed` say which objects an answer may be, and a write moves no object. `AnswerRead` looks at result, supplies, escapes and stores, and a need is none of these; a code it calls read-only is known, so it discharges as any code. An `entry` argument has no caller, as a write of its parameter has none (#2004, §2.11.3 *As built*): S7 owes both.
 
@@ -4489,7 +4489,7 @@ checker a build runs; a v2 word error in core or a platform is not carried eithe
 import as unknown (no block, or one that does not decode) says so in its report: `unknown block <Module>: its
 declarations read the pessimistic contract`.
 
-*As built (#2116): version 27.* A label writes its `need` run after its supplies: a count, then each slot's steps and its `deep` bit (§2.11.3, *a need*).
+*As built (#2116): version 27.* A label's `calls` word carries a bit for a `need`, and where it is set the need's run follows: a count, then each slot's steps and its `deep` bit (§2.11.3, *a need*).
 
 *As built (#1979): version 24.* A supply's `k` word carries the `each` mark in its top bit and `walk` in the next (§2.11.3, *a traversal's supply*).
 

@@ -154,8 +154,8 @@ const Writer = struct {
             try w.rel(l.slot);
             try w.word(w.names.decl(w.names.ctx, .{ l.origin[0], l.origin[1] }));
             try w.word(l.origin[2]);
-            try w.word(@backingInt(l.calls) | @as(u32, @intFromBool(l.answer_left)) << 2);
-            try w.effects(l.need);
+            try w.word(@backingInt(l.calls) | @as(u32, @intFromBool(l.answer_left)) << 2 | @as(u32, @intFromBool(l.need.len != 0)) << 3);
+            if (l.need.len != 0) try w.effects(l.need);
             try w.word(l.supplies.len);
             for (w.t.suppliesOf(l.supplies)) |s| {
                 try w.word(s.k | @as(u32, @intFromBool(s.each)) << 31 | @as(u32, @intFromBool(s.walk)) << 30);
@@ -324,11 +324,11 @@ const Reader = struct {
             const md = try r.decl();
             const off = try r.next();
             const calls = try r.next();
-            if (calls & 3 > 2 or calls > 7) return error.BadBlock;
+            if (calls & 3 > 2 or calls > 15) return error.BadBlock;
             const li = try d.labelOf(r.arena, j, slot, .{ md[0], md[1], off });
             d.labels.items[li].calls = @fromBackingInt(@intCast(calls & 3));
-            d.labels.items[li].answer_left = calls >> 2 != 0;
-            try r.effects(&d.labels.items[li].need);
+            d.labels.items[li].answer_left = calls >> 2 & 1 != 0;
+            if (calls >> 3 != 0) try r.effects(&d.labels.items[li].need);
             for (0..try r.count()) |_| {
                 const s = try BlockNames.supply(&d.labels.items[li], r.arena, try r.next());
                 s.res.base = try node(nodes.items, try r.next());
