@@ -1378,7 +1378,7 @@ reference's slots lose the plain ones' at its route by `Subtree.without`. Withou
    the label's own condition (its supplies' elements distinct, its function apart from them) already keeps
    them apart.
 
-The relation is computed once per pair of leaves per walk and reserved before work.
+The relation is a row per pair of leaves per walk, solved as §2.9.2 says, and reserved before work.
 
 **The fixed point of the pairs** [#2146]. The steps above are one equation per pair, and the pairs a pair reaches
 can reach it back: a fold's supply and its answer are `S → [ init, A ]`, `A → [ S, q ]`. The relation is the
@@ -1409,7 +1409,7 @@ members, which saw less.
   on a cycle of its own and keeps what it made. A solved row can rest on that, so a row is free of the relation's cuts,
   not of that one: sound, since each reader of `no` has its own route, and order-sensitive as #2160 says.
 - **What is kept.** `Pairs.solved` is a retained table: computed answers, kept across queries for an evaluation and
-  dropped when a key grows (§2.12), since a key that grew changed what a leaf expands to. A row of a walk is not kept in
+  dropped at the next outer query after a key grows (§2.12), since a key that grew changed what a leaf expands to. A row of a walk is not kept in
   any form: a value enters `solved` when its head has solved its component. **It is kept by the owner's decision
   (2026-11-06), an exception for this table only**: the rule that caches go stands for every other.
 - **Why it is kept.** Two measurements of the alternatives. With no rows, cutting only the pairs on the path is correct
@@ -2174,7 +2174,7 @@ constructor, or an `alt` of them — the label is applied: for each possible cod
 instantiated (§2.11.2) on the supplies (projected onto the caller) and `K`'s captures. The answer `cb L` is the
 least fixed point of that instantiation over the caller's leaves (a fold's accumulator is fed its own
 answer: `foldl f acc xs` supplies `cb L` back to `L`), a finite set of leaves; a read of it is solved to that
-fixed point, and a value met under a cycle's cut is never an answer (§2.9.2, *The fixed point of the pairs*). `K`'s writes become demands at
+fixed point, and a value met under a cycle's cut is never an answer of the pair relation (§2.9.2, *The fixed point of the pairs*; *A value under another cut* is #2160). `K`'s writes become demands at
 the call (`callsite`): refused `later-use` on a kept slot, relying on the supply's distinctness condition and
 on `K.req`; accepted `callback-param` otherwise. `K`'s escapes escape the supplies. `K.once` with `calls`
 many refuses `once`.
