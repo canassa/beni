@@ -1,0 +1,3 @@
+throws click-wait button output "unreachable"
+advance 1000
+click button

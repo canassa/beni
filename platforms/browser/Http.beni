@@ -17,8 +17,6 @@
 --! `track` subscription hears (§9.8.19).
 
 import Browser
-import Browser.Host.TextEncoder as TextEncoder
-import Browser.Host.Uint8Array as Uint8Array
 import Cmd exposing (Cmd)
 import Dict exposing (Dict)
 import Js
@@ -817,7 +815,12 @@ size body =
 
 
 utf8 : String → Int
-utf8 text = Uint8Array.byteLength (TextEncoder.encode (TextEncoder.create ⊤) text)
+utf8 text =
+    Js.to
+        (Js.get
+            (Js.call (Js.construct (Js.global "TextEncoder") []) "encode" [ Js.from text ])
+            "length"
+        )
 
 
 -- The request's timer: when it fires, the request is aborted with a

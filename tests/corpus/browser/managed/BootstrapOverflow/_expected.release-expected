@@ -1,0 +1,11 @@
+-- load
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+    <p id="stage">"waiting"</p>
+  </main>
+</body>
+-- throws click-wait button output "unreachable"
+(threw: RangeError: Worker startup message queue is full)
+(the DOM did not change)

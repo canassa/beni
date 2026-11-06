@@ -1,0 +1,65 @@
+-- A native generic Event before Ready is a load failure. A missing peer never
+-- acknowledges Closed; finite observation reports Unconfirmed, not Confirmed.
+import Browser
+import Browser.Worker as Worker
+import Duration
+import Hosted
+import Probe
+import Task
+
+
+worker : Worker.Program ⊤ ⊤ (Worker.Protocol ⊤ ⊤ ⊥ String ⊥ ⊥)
+worker =
+    Worker.program
+        { init = λ_ _ → Ok ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → Ok ⊤, stream = Worker.noStream }
+
+
+type Msg
+    = Launch
+    | Release
+    | Finished String
+
+
+exercise : ⊤ → String
+exercise _ = Task.scope λowned →
+    Probe.install ⊤
+    case
+        Worker.open owned worker ⊤
+            { Worker.options
+                | cleanupWithin = Duration.millis 20
+                , readyWithin = Duration.millis 20
+            }
+    of
+        Err { reason, cleanup } →
+            case ( reason, cleanup ) of
+                ( Worker.ReadyDeadlineExceeded, Worker.Unconfirmed Worker.ReadyExpired ) →
+                    "ready deadline unconfirmed"
+                _ →
+                    "wrong failure"
+        Ok _ →
+            "unexpected ready"
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        "opening"
+                    Release →
+                        Probe.release ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel →
+                <main>
+                    <button id="launch" onClick={Launch}>launch</button><button id="release" onClick={Release}>release</button><output>{model}</output><p id="stage">waiting</p>
+                </main>
+        }

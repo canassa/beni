@@ -3913,10 +3913,6 @@ pub const Lowerer = struct {
             const spelling = l.text(l.bir.symbol(d.name));
             if (std.mem.eql(u8, spelling, "stop") or std.mem.eql(u8, spelling, "stopped")) return true;
         }
-        if (l.in.graph.lookup(.core, InternPool.WellKnown.Task.symbol()) == l.in.module) {
-            const spelling = l.text(l.bir.symbol(d.name));
-            return std.mem.eql(u8, spelling, "chain") or std.mem.eql(u8, spelling, "continueWith");
-        }
         if (l.in.graph.lookup(.core, InternPool.WellKnown.List.symbol()) != l.in.module) return false;
         if (!d.kind.isValue()) return false;
         return corePrivateSlot(l.bir.symbol(d.name)) != null;

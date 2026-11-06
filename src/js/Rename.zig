@@ -304,9 +304,6 @@ pub const Failure = struct {
 pub const Heads = struct {
     ctx: *anyopaque,
     headOf: *const fn (ctx: *anyopaque, list: []const Index, at: usize) Allocator.Error!?usize,
-    /// The printer's substitutions, including its veto of foreign eta folds.
-    /// A copy moved into a loop captures its replacement there.
-    resolve: ?*const fn (ctx: *anyopaque, node: Index) Index = null,
 };
 
 /// The renamer for one module. Created once per module, then driven by the
@@ -836,8 +833,7 @@ pub const Module = struct {
         defer m.stack.shrinkRetainingCapacity(base);
         try m.stack.append(m.gpa, root);
         while (m.stack.items.len > base) {
-            const original = JsIr.popOperand(&m.stack).?;
-            const node = if (m.heads) |h| if (h.resolve) |resolve| resolve(h.ctx, original) else original else original;
+            const node = JsIr.popOperand(&m.stack).?;
             switch (m.ir.tag(node)) {
                 .ident => try m.see(@fromBackingInt(@intCast(m.ir.data(node).lhs)), mentioned),
                 .arrow => try m.collectFunc(@fromBackingInt(@intCast(m.ir.data(node).lhs)), mentioned),

@@ -1,0 +1,26 @@
+import Browser.Worker as Worker
+
+
+pub type Box a
+    = Box a
+
+
+pub rowv :
+    Worker.Program
+        ⊤
+        ⊤
+        (Worker.Protocol
+            { r | known : b, keep : List Int }
+            { r | known : b, keep : List Int }
+            ⊥
+            String
+            ⊥
+            ⊥
+        )
+rowv =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ message → Ok message
+        , stream = Worker.noStream
+        }

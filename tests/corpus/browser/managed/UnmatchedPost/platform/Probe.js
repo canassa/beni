@@ -1,0 +1,1 @@
+export const arm=()=>{const Native=globalThis.Worker;globalThis.Worker=function(url,options){const worker=new Native(url,options);const post=worker.postMessage.bind(worker);worker.postMessage=frame=>{if((frame.kind === "Request" || frame.kind === 5))throw new globalThis.RangeError("unmatched postMessage");post(frame)};return worker;}};

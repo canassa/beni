@@ -1,0 +1,4 @@
+pub foreign impure install : ⊤ → ⊤
+
+
+pub foreign impure trace : ⊤ → String

@@ -825,3 +825,18 @@ teach proposed syntax as shipped syntax.
 - Owner realm-mechanism decision: [1315](https://github.com/canassa/beni/issues/1315).
 - Owner wire-layout decision: [1305](https://github.com/canassa/beni/issues/1305).
 - Suspending browser commands prerequisite: [1306](https://github.com/canassa/beni/issues/1306).
+
+**Landing corrections, 2026-11-06 (Part of #1612).** Core Schema.Value is
+trusted plain JSON data and is clone-stable Wire data in direct and generic
+positions. Known List payloads normalize through master's `$plain()` protocol,
+including trie headers and active views; ordinary lookalike records stay records.
+A null or non-object managed frame defects with `Invalid managed worker frame`
+before any property read. Defect reports preserve identifier-like error names,
+including digits and `$`, as well as their message, stack and entry metadata.
+
+The dedicated runtime registers realm cleanup through the worker-private
+`Task.chainDefect` bridge. It accepts a synchronous callback, installs it before
+the existing defect handler, and preserves that prior handler. The function is
+impure, stores its callback, and remains fenced to the worker runtime's owning
+platform modules; it is not an application Task API. This bridge retains master’s
+defect storage and scheduler behavior.

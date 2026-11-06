@@ -1,0 +1,2 @@
+-- Arrange a real native missing-script load failure.
+pub foreign impure install : ⊤ → ⊤

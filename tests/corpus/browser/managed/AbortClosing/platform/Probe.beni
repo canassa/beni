@@ -1,0 +1,7 @@
+import Browser.Worker as Worker
+
+
+pub foreign impure hold : Worker.Handle protocol → ⊤
+
+
+pub foreign impure onClose : Worker.Handle protocol, sync (⊤ → ⊤) → ⊤

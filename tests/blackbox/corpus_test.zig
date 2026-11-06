@@ -673,7 +673,7 @@ fn collectFixtures(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]
     // `foreign_outside_platform` in its golden.
     try collect(arena, core_dir, true, false, &fixtures, kind.hasProjects());
     // Dedicated module workers are exercised on a test-only platform.
-    if (kind == .build_bad) {
+    if (kind == .build_bad or kind == .check_good) {
         const worker_dir = try std.fs.path.join(arena, &.{ kind_dir, "dedicated" });
         const start = fixtures.items.len;
         try collect(arena, worker_dir, false, false, &fixtures, true);
@@ -690,6 +690,15 @@ fn collectFixtures(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]
         const worker_platform = if (fixtures.items.len == start) "" else try Io.Dir.cwd().realPathFileAlloc(testing.io, "tests/platforms/worker", arena);
         for (fixtures.items[start..]) |*fixture| {
             fixture.platform = worker_platform;
+            fixture.unchecked_workers = true;
+        }
+    }
+    if (kind == .browser or kind == .build_bad) {
+        const managed_dir = try std.fs.path.join(arena, &.{ kind_dir, "managed" });
+        const start = fixtures.items.len;
+        try collect(arena, managed_dir, false, false, &fixtures, true);
+        for (fixtures.items[start..]) |*fixture| {
+            fixture.platform = "browser";
             fixture.unchecked_workers = true;
         }
     }
@@ -1512,7 +1521,7 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
     const start = out.items.len;
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
-        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split") and !std.mem.eql(u8, entry.name, "inline") and !std.mem.eql(u8, entry.name, "everywhere") and !std.mem.eql(u8, entry.name, "workers") and !std.mem.eql(u8, entry.name, "dedicated") and !std.mem.eql(u8, entry.name, "prerender")) {
+        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split") and !std.mem.eql(u8, entry.name, "inline") and !std.mem.eql(u8, entry.name, "everywhere") and !std.mem.eql(u8, entry.name, "workers") and !std.mem.eql(u8, entry.name, "managed") and !std.mem.eql(u8, entry.name, "dedicated") and !std.mem.eql(u8, entry.name, "prerender")) {
             try refuseRecordsIn(try std.fs.path.join(arena, &.{ dir_path, entry.name }));
             try out.append(arena, .{ .dir = dir_path, .name = try arena.dupe(u8, entry.name), .core = core, .project = true });
             continue;
@@ -1910,7 +1919,7 @@ const Case = struct {
     fn argv(c: Case, args: []const []const u8) ![]const []const u8 {
         var list: std.ArrayList([]const u8) = .empty;
         try list.appendSlice(c.arena, args);
-        if (c.fixture.unchecked_workers and args.len != 0 and std.mem.eql(u8, args[0], "build")) try list.append(c.arena, "--allow-unchecked-workers");
+        if (c.fixture.unchecked_workers and args.len != 0 and (std.mem.eql(u8, args[0], "build") or std.mem.eql(u8, args[0], "check"))) try list.append(c.arena, "--allow-unchecked-workers");
         if (c.fixture.core) try list.append(c.arena, "--core");
         // Enforcement refusals use the same platform as their ownership dump.
         if (c.kind == .check_bad and args.len != 0 and !std.mem.eql(u8, args[0], "fmt")) {
@@ -3483,7 +3492,6 @@ const Case = struct {
         if (c.cfg.chrome == null and c.goldenExists("chrome-only")) {
             var skipped = plan;
             skipped.skip = true;
-            skipped.checked = true;
             return skipped;
         }
         if (c.cfg.mode == .strict and !plan.bless and c.cfg.chrome == null) {

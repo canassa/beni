@@ -1113,6 +1113,7 @@ function step(s) {
     const now = globalThis.performance.now();
     return new Promise((resolve) => {
       const poll = () => {
+        if (globalThis.__beniHarness.errors.length !== 0) return resolve(null);
         const target = document.querySelector(s.target);
         if (target !== null && target.textContent === s.text) return resolve(null);
         if (globalThis.performance.now() - now >= 5000) return resolve(`click-wait: ${s.target} did not become ${JSON.stringify(s.text)}`);

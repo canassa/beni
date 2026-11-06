@@ -3567,7 +3567,7 @@ takeOn stack ks i =
         takeOn stack ks (i - 1)
 
 
---| Spike port: chain a defect hook before the current one, erased storage.
+-- Chain private worker cleanup before the installed defect handler.
 pub chainDefect : sync (⊤ → ⊤) → ⊤
 chainDefect hook =
     previous = Js.read defect

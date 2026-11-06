@@ -374,6 +374,7 @@ const Builder = struct {
                         const child = try w.node(args[0], try std.fmt.allocPrint(a, "{s}[]", .{path}), depth + 1);
                         return w.add(.list, &.{.{ .child = child }});
                     }
+                    if (entry.package == .core and std.mem.eql(u8, cx.interner.slice(entry.module_name), "Schema") and std.mem.eql(u8, cx.interner.slice(entry.name), "Value")) return w.add(.stable, &.{});
                     if (entry.kind == .foreign or entry.schema_endpoint) return w.bad(path, try std.fmt.allocPrint(a, "the native type `{s}.{s}`", .{ cx.interner.slice(entry.module_name), cx.interner.slice(entry.name) }));
                     const index = try w.add(.tagged, &.{});
                     try w.memo.append(a, .{ .type = app.type, .args = args, .node = index });

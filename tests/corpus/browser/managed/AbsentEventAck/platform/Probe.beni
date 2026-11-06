@@ -1,0 +1,5 @@
+import Browser.Worker as Worker
+
+
+-- A malformed control frame on a protocol whose event type is empty.
+pub foreign impure ack : Worker.Handle protocol → ⊤

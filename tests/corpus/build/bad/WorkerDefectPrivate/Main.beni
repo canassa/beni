@@ -1,0 +1,9 @@
+-- The worker cleanup bridge is not an application Task API.
+import Node
+import Task
+
+
+main : Node.Program
+main =
+    Task.chainDefect λ_ → ⊤
+    Node.done

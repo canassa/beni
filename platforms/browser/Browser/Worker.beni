@@ -443,6 +443,8 @@ fatal message =
 received : V, V → ⊤
 received peer event =
     incoming = Js.get event "data"
+    if Js.isNull incoming || not (Js.typeIs incoming "object") then
+        fatal "Invalid managed worker frame"
     kind = Js.get incoming "kind"
     if Js.same kind (Js.from "Defect") then
         workerDefect peer (Js.get incoming "payload")
@@ -992,6 +994,8 @@ runDefinition definition =
     listener =
         λevent →
             incoming = Js.get event "data"
+            if Js.isNull incoming || not (Js.typeIs incoming "object") then
+                fatal "Invalid managed worker frame"
             kind = Js.get incoming "kind"
             if Js.same kind (host "Close") && Js.isNull (Js.get peer "greeting") then
                 Js.set peer "entry" (Js.get incoming "entry")
@@ -1249,7 +1253,8 @@ workerDefect peer report =
         Js.set peer "defected" (host True)
         raw = Js.get report "message"
         named = Js.get report "name"
-        native = Js.call raw "match" [ Js.regExp "^(?:Uncaught )?([A-Za-z]*Error): (.*)$" "s" ]
+        native =
+            Js.call raw "match" [ Js.regExp "^(?:Uncaught )?([A-Za-z_$][A-Za-z0-9_$]*): (.*)$" "s" ]
         message =
             if Js.typeIs named "string" then
                 raw

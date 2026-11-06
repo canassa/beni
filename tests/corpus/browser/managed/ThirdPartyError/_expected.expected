@@ -1,0 +1,24 @@
+-- load
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+  </main>
+</body>
+-- click-wait button output "ready"
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"ready"</output>
+  </main>
+</body>
+-- throws advance 0
+(threw: Error: third party timer)
+(the DOM did not change)
+-- click button
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"still running"</output>
+  </main>
+</body>

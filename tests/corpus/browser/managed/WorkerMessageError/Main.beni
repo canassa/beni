@@ -1,0 +1,73 @@
+-- A receiving messageerror fails waiting calls precisely and closes the
+-- managed channel. Closed still confirms cleanup after that transport failure.
+import Browser
+import Browser.Worker as Worker
+import Hosted
+import Probe
+import Task
+
+
+worker : Worker.Program ⊤ ⊤ (Worker.Protocol ⊤ ⊤ ⊥ String ⊥ ⊥)
+worker =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle =
+            λ_ _ _ →
+                Probe.fail ⊤
+                Task.never ⊤
+        , stream = Worker.noStream
+        }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+exercise : ⊤ → String
+exercise _ = Task.scope λowned →
+    case Worker.open owned worker ⊤ Worker.options of
+        Err _ →
+            "open failed"
+        Ok handle →
+            pending =
+                case Worker.prepare ⊤ of
+                    Ok prepared →
+                        Worker.send handle prepared
+                    Err _ →
+                        Err Worker.ChannelClosed
+            result =
+                case pending of
+                    Ok ticket →
+                        case Worker.await ticket of
+                            Err (Worker.Transport Worker.MessageDeserializationFailed) →
+                                True
+                            _ →
+                                False
+                    Err _ →
+                        False
+            cleanup = Worker.close handle
+            if result && cleanup == Worker.Confirmed then
+                "deserialization failed"
+            else
+                "wrong failure"
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel → <main><button onClick={Launch}>launch</button><output>{model}</output></main>
+        }
