@@ -23,22 +23,22 @@ module Browser.Navigation
     CrossOrigin
     Throttled
   alias Key
-  value back : Key, Int, (Error → msg) → (Cmd msg)
+  value back : Key, Int, (Error → msg) → Cmd msg
   value currentUrl : ⊤ → Maybe Url  -- impure
-  value forward : Key, Int, (Error → msg) → (Cmd msg)
+  value forward : Key, Int, (Error → msg) → Cmd msg
   value goBack : Key, Int → Result Error ⊤  -- impure
   value goForward : Key, Int → Result Error ⊤  -- impure
   value key : ⊤ → Key
-  value load : String, (Error → msg) → (Cmd msg)
+  value load : String, (Error → msg) → Cmd msg
   value loadPage : String → Result Error ⊤  -- impure
-  value onUrlChange : (Url → msg) → (Sub msg)
-  value onUrlRequest : (UrlRequest → msg) → (Sub msg)
+  value onUrlChange : (Url → msg) → Sub msg
+  value onUrlRequest : (UrlRequest → msg) → Sub msg
   value push : Key, String → Result Error ⊤  -- impure
-  value pushUrl : Key, String, (Error → msg) → (Cmd msg)
-  value reload : ⊤ → (Cmd msg)
+  value pushUrl : Key, String, (Error → msg) → Cmd msg
+  value reload : ⊤ → Cmd msg
   value reloadPage : ⊤ → ⊤  -- impure
   value replace : Key, String → Result Error ⊤  -- impure
-  value replaceUrl : Key, String, (Error → msg) → (Cmd msg)
+  value replaceUrl : Key, String, (Error → msg) → Cmd msg
 module Cmd
   type Cmd a
     None
@@ -55,7 +55,7 @@ module Inline
   value arrived : Url → ⊤  -- impure
   value busy : ⊤ → Bool  -- impure
   value caught : V → ⊤  -- impure
-  value commands : (Cmd V), V → ⊤  -- impure
+  value commands : Cmd V, V → ⊤  -- impure
   value decoded : Schema e d, V → V  -- impure
   value deliver : V → ⊤  -- impure
   value entry : V, V → V  -- impure
@@ -101,14 +101,14 @@ module Inline
   value title : String → ⊤  -- impure
   value when : V, Bool → ⊤  -- impure
 module Listen
-  value on : String, String, (Value → a), (a → ⊤) → (⊤ → ⊤)  -- impure
+  value on : String, String, (Value → a), (a → ⊤) → ⊤ → ⊤  -- impure
 module Sub
   type Sub a
     Sub
   value batch : List (Sub msg) → Sub msg
-  value map : (Sub a), (a → msg) → (Sub msg)
+  value map : Sub a, (a → msg) → Sub msg
   value none : Sub msg
-  value on : k, ((a → ⊤) → (⊤ → ⊤)), (a → msg) → (Sub msg) where k.compare : k, k → Order
+  value on : k, ((a → ⊤) → ⊤ → ⊤), (a → msg) → Sub msg where k.compare : k, k → Order
 module Tea
   alias Document a
     Document

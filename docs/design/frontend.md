@@ -2060,6 +2060,13 @@ The generator rewrites each line by these rules:
 
 - It removes every effect class: `!e1`, `!(impure | e1)`, `!sync`, in a type and in a `where`
   clause. The compiler infers them and a program never writes them.
+- *Amended 2026-11-06 (#1645):* it removes the parentheses that the dump writes only to hold a
+  class, so a type reads as a diagnostic prints it. A nominal type with a class is in
+  parentheses everywhere except at the top: `→ (Cmd msg !impure)` becomes `→ Cmd msg`. It keeps
+  them only as an argument of an application, when the type has arguments of its own:
+  `List (Cmd msg)`. A function-typed result is in parentheses when its arrow has a class:
+  `→ (⊤ → ⊤ !impure) !impure` becomes `→ ⊤ → ⊤`, because `→` is right-associative in its result
+  (`language.md` §3). A function in every other position keeps them.
 - A value's own class is the mark after its type and before its `where` clause. A class at the
   end of the line that belongs to the `where` clause is not the value's. When the value's class
   is `impure` or `suspends`, the value keeps that one fact as a trailing comment: `-- impure` or
@@ -2071,7 +2078,8 @@ The generator rewrites each line by these rules:
   `-- ⊥ is declared here: the type with no values`.
 
 So `value map : List a, (a → b !e1) → List b !e1` becomes `value map : List a, (a → b) →
-List b`. `value sleep : Duration → ⊤ !suspends` becomes `value sleep : Duration → ⊤  --
+List b`. `value value : (Generator a !e1) → a !(impure | e1)` becomes `value value : Generator a →
+a  -- impure`. `value sleep : Duration → ⊤ !suspends` becomes `value sleep : Duration → ⊤  --
 suspends`. `value expectJson : Expect Error a !(impure | e1) where a.codec : ⊤ → Codec a !e1`
 becomes `value expectJson : Expect Error a where a.codec : ⊤ → Codec a  -- impure`. Some lines
 stay as the dump prints them: `module …`, `value …`, `alias …`, `opaque type …`, the bare
