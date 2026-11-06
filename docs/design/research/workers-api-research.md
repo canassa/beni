@@ -381,21 +381,34 @@ client rendering, as identified in that receipt.
 
 ## 10. Owned Trusted Types policy adapter
 
-Trusted Types policy callbacks run outside the constructor exception guard.
-The platform accepts an explicit branded script URL produced by a beni policy
-that returns typed refusal before entering the host callback. If a host default
-policy exists, resolve it before the constructor guard; any callback exception
-is a defect, including TypeError. Pass the resulting TrustedScriptURL to the
-constructor, so that call cannot execute arbitrary policy code under the
-TrustedScriptUrlRejected classifier. With no policy, a validated string's
-sink rejection is classified at the native constructor. The native trustedTypes.createPolicy call has a separate guard: its
-TypeError becomes TrustedPolicyDenied (duplicate/disallowed name cannot be
-distinguished unless independently known); missing trustedTypes becomes
-TrustedTypesUnavailable for explicitly requested policies. Its platform-owned
-callback is total and returns an already validated string. Explicit foreign
-TrustedScriptURL intake requires trustedTypes.isScriptURL validation; failed
-validation is NotTrustedScriptUrl. No policy is silently
-created to bypass deployment CSP; the platform's typed policy configuration
-must work under the site's allowed policy names. The implementation slice
-includes typed policy refusal, a policy-thrown TypeError defect and denied
-policy creation fixtures.
+*Amended 2026-11-07, owner decision (#2129).* The platform implements the owned
+`policyName`/`policy`/`trust` adapter. A host default policy not owned by beni is
+refused with `PolicyRefused` before constructing a worker; its callback is never
+invoked. An owned default uses its known total platform callback. No policy is
+silently created to bypass CSP, and a named policy remains subject to allowed
+policy names. Ownership is established by the adapter's private registry of
+native policy identities, not by a policy name supplied by the host.
+
+The previous instruction to pre-resolve every host default is withdrawn. A real
+Chrome counterexample (#2129) shows why: under `require-trusted-types-for 'script'`,
+a default callback returning null makes direct Worker construction throw
+TypeError, but its public `createScriptURL` method produces a branded empty URL
+that Worker accepts. A callback returning an empty string produces the same
+staged value while direct construction accepts. The public method loses the
+refusal distinction. Both foreign-default cases must therefore return
+`PolicyRefused`, never silently accept. The reduced probe and native observations
+are retained in the implementation evidence.
+
+Typed allow/refusal decisions and arbitrary user callbacks execute outside the
+native constructor guard; a thrown error, including TypeError, remains a defect.
+The owned host callback is total and returns only an explicitly accepted URL
+(or refuses an unapproved native default invocation). Passing a branded
+TrustedScriptURL skips arbitrary default callbacks at the constructor. With no
+policy/default, a validated string's native sink rejection is
+`TrustedScriptUrlRejected`. `trustedTypes.createPolicy` has its own guard:
+documented native TypeError is `TrustedPolicyDenied`; missing trustedTypes for an
+explicit policy is `TrustedTypesUnavailable`. Explicit foreign TrustedScriptURL
+intake requires `trustedTypes.isScriptURL`; failure is `NotTrustedScriptUrl`.
+Required Chrome cases include owned success, typed allow refusal, denied policy
+creation, a thrown allow callback TypeError escaping, and foreign defaults that
+return null and empty string both producing `PolicyRefused`.
