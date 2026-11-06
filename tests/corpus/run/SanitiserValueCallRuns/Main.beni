@@ -79,5 +79,25 @@ h5l ⊤ =
     "${show p.0} ${show p.1}"
 
 
+h1l : ⊤ → String
+h1l ⊤ =
+    k = [ 1 ]
+    x = Lib.runl λ⊤ → List.push k 2
+    "${show x} ${show k}"
+
+
+h2reader : ⊤ → String
+h2reader ⊤ =
+    k = [ 1 ]
+    ys = Lib.mapv [ k ] λl → List.copy l
+    n = List.push k 2
+    "${shows ys} ${show n}"
+
+
 main : Program
-main = Node.print (String.join [ h1 ⊤, h2 ⊤, h2l ⊤, h3 ⊤, h3l ⊤, h4 ⊤, h4l ⊤, h5 ⊤, h5l ⊤ ] ";")
+main =
+    Node.print
+        (String.join
+            [ h1 ⊤, h2 ⊤, h2l ⊤, h3 ⊤, h3l ⊤, h4 ⊤, h4l ⊤, h5 ⊤, h5l ⊤, h1l ⊤, h2reader ⊤ ]
+            ";"
+        )

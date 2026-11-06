@@ -21,9 +21,9 @@ const none: u32 = Ids.none_int;
 
 /// What declaration `di` of module `m` publishes for a call of `arity`
 /// arguments, or null. A value with no parameters publishes what its body
-/// answers, which is never what a call of it does: a call of it runs the
-/// lambda its body is, published as its called contract at `ε`, when it
-/// has one of that arity (§2.11.1).
+/// answers, which is never what a call of it does: a call of it reads the
+/// called contract at `ε`, its lambda's, its constructor's or its arms'
+/// join, when it has one of that arity (§2.11.1).
 fn importedCall(mod: anytype, m: u32, di: u32, arity: u32) !?u32 {
     const c = (try mod.importedContract(m, di)) orelse return null;
     if (mod.contracts.head(c).arity == arity) return c;

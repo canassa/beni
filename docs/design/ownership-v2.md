@@ -483,7 +483,7 @@ A **root** is a source of a value in a frame:
 | `cb L` | the result of callback label `L` (§2.11.3): a call of a function this frame was handed |
 | `site ι` | the object built by literal, record, constructor-record or lambda instruction `ι`, one per activation |
 | `fresh k` | the objects call `k`'s callee allocated (one atom per call site: one allocation is one identity at every slot) |
-| `shared d` | the top-level value `d` of some module; never written (`top-level`, §2.8) |
+| `shared d` | the top-level value `d` of some module; a write of it is refused (`top-level`, §2.8), and a cell it holds is written only behind its barrier (§2.13.7) |
 | `⊤` | unknown provenance; never empty, and a write to it is refused `unknown` |
 
 A **position** is a projection of a root by the source: `(root, parent position, step)`. A step is a plain
@@ -2396,7 +2396,7 @@ the instantiation, through one level of a call that holds it, and the frame's fu
 apart. Sound because unknown code answers from what it was handed and what its closure holds. What it was handed is
 that element, a part of the plain occurrence, which already asks each of its objects to occur once among all the
 selected occurrences. What its closure holds is apart from them by the occurrence added. Nothing else reaches a code:
-a top-level value is never written, and `⊤` holds only what has escaped, and an escaped object is refused.
+a write of a top-level value is refused, and `⊤` holds only what has escaped, and an escaped object is refused.
 
 **A cell's contents are a list the condition can read, since the contents relation (#1991, §2.13.7).** A condition over what a cell holds reads what `Ref.make` was given, or an answer as the cell's own. That is sound because a store that may hold one object twice makes the contents escape: after `Ref.set c [ a, a ]`, `Ref.update c λr → List.map r push1` is refused `escaped`, at the caller too when a helper makes the edit (`run/SanitiserTakenElementCell`). `CellEdit.elementEdit`, which refused every write through a `◆` then a `[*]` while v2 could not tell, is gone, so an element of a list in a cell is edited in place when its stores keep the elements apart.
 
@@ -2677,10 +2677,10 @@ called contract at `ε`: the one place it publishes what a call of it does (§2.
 convention in two ways, and only here. Its slot is `ε` of the **value**, not of a function's result, since the value has
 no result to stand in; and it is the lambda's or the constructor's own contract, not a called code: its parameters are the function type's
 own and nothing else, with no `self` and no `D` parameters. That is exact, since `D` has none, and the body of a
-declaration with no parameters has no frame to capture from, so the lambda has no captures and no read of the
-value can make its objects another's. `Callees.importedCall` reads it only at the call's arity. Nothing else meets it: `Called.value` asks `calledOf` of a walked call's contract, and
+declaration with no parameters has no parameter to capture, and `armContracts` takes an arm only with no captures, so
+no read of the value can make its objects another's. `Callees.importedCall` reads it only at the call's arity. Nothing else meets it: `Called.value` asks `calledOf` of a walked call's contract, and
 a value's own contract is never that of a call. No format change: a block already writes a contract's called
-contracts (§3.6, version 23). Any other value has none.
+contracts (§3.6, version 23). A choice, `case` or `let` whose arms are all such codes has their join there, and any other value has none (§2.11.1).
 
 **Which slots.** `ε` of a function result and, below it, a record's field or a tuple's part, on through records and
 tuples (`{ run = λ⊤ → … }`). A slot's type has to be read to know its parameters, and a constructor's argument needs
@@ -4546,7 +4546,7 @@ classes below is used after the write.*
 
 *What an answer can be.* Each rule about an answer rests on one fact: code answers what it was handed, what its closure
 reaches, or what it makes (§2.9.2 step 7). This is I1 applied to `K`'s frame, so it needs nothing new. A `top-level` value is
-reached and never written; `⊤` has escaped.
+reached, and a write of it is refused (a cell it holds is written behind its barrier, and what goes in has escaped); `⊤` has escaped.
 
 **Each amendment of §2.11.3 is one row of that table on one route** (a direct call, a pass, a lambda inside a label, a result,
 an answer). Nothing makes a new route answer every row: `need` (#2134) adds a route, and its soundness argument has to walk
@@ -4574,18 +4574,29 @@ mine are no sweep.
 **The route of a called value (#2132, rule 3).** A call of a top-level value with no contract is a run of "anything else":
 its arguments escape deep and its answer is `host` (§2.11.1). With a contract, its lambda's or its arms', it is a call of
 a fixed contract, and its labels are that contract's, so the table applies as to any callee. Without one, by row:
-- **H1.** A holder in the caller after the call: what the value was handed escaped, so a write of it is refused by
-  Unescaped, and what it answers is `host`, refused by Known.
-- **H2.** What the value holds after the run: it was handed the object, so the object escaped. No `kept` is read.
-- **H3.** Another run over one family: a callback handed to it escapes with its captures, and each run is unknown code.
-  The family's objects escaped, so a write of them in a run is `Closures.escapedWrites`, a demand on `⊤`.
-- **H4.** The callback's closure for its next run: an escaped closure may run again, so its capture writes are `once`.
-- **H5.** Another function value's closure: both are operands of one call, and both escape, deep with their captures, so
-  `disjoint` asks them apart at the call, or `once` refuses the write.
-- **H6.** Unknown code, a cell, a fiber: that is what the escape stands for. A value that keeps its argument in a fiber or
-  passes it through a shared `Queue` holds an object that escaped, and an object that comes back is `host`.
-Pinned, a refused program per row: `run/SanitiserValueCallRuns` (H1–H5, for a value with no contract and for a value's
-lambda), `run/SanitiserValueKept` and `run/SanitiserValueCallQueue` (H6).
+Each row names what a mutation of the rule moved in `run/SanitiserValueCallRuns` (`Main`'s lines), and says where nothing moved. A hand walk of this list overstated three rows, so a row counts only what a mutation shows.
+- **H1.** A holder in the caller after the call. *No contract:* the argument escaped, so Unescaped refuses a write of it;
+  turning Unescaped off moves `h1` 22:9 to `once`, and `Once.demands` off drops 22:17. An answer is `host`, refused by
+  Known: Known off drops `run/SanitiserValueCallQueue` 29:9 and 47:9. *A value's lambda:* `Eval.labelsOf` off drops `h1l`
+  85:9, and `Once.demands` off drops 85:18.
+- **H2.** What the value holds after the run. *No contract:* it was handed the object, so the object escaped; Unescaped off,
+  or `Rows.pessimistic`'s escapes off, drops `h2reader` 93:9, whose callback writes nothing. *A value's lambda:*
+  `Eval.labelsOf` off drops `h2l` 36:10. `Supplied.mayBeHeld` off moves nothing: no fixture here reaches `kept`, since a
+  value with no contract reads none and `mapl` keeps nothing.
+- **H3.** Another run over one family. *No contract:* each run is unknown code, the family's objects escaped, and
+  `Closures.escapedWrites` is a demand on them: off, it drops `h2` 29:10 and `h3` 43:10. *A value's lambda:* `Eval.labelsOf`
+  off drops `h3l` 50:10.
+- **H4.** The callback's closure for its next run. *No contract:* `Closures.escapedWrites` off drops `h4` 57:10. *A value's
+  lambda:* `Eval.labelsOf` off drops `h4l` 64:10.
+- **H5.** Another function value's closure. *No contract:* both are operands of one call and both escape, so Unescaped off moves
+  `h5` 71:9 to `once`, and `Once.demands` off drops 71:18. *A value's lambda:* `twol`'s contract has both labels, and
+  `Across.operands` is what refuses: off, it drops `h5l` 78:9, the `disjoint` of the run's writes with the other operand. `Distinct.deepAt` and `LaterFunctions.ask`
+  off move nothing: the two closures are operands of one call, so no later function is asked, and no fixture of this route can
+  reach them.
+- **H6.** Unknown code, a cell, a fiber: what the escape stands for. Unescaped off accepts `run/SanitiserValueKept`, and drops
+  `run/SanitiserValueCallQueue` 20:9 and 38:9. `Rows.pessimistic`'s escapes off drop Kept's 26:9 and Queue's 38:9. Its `deep` off
+  moves nothing: a built argument escapes through its own leaves, so `Lib.held [ d ]` stays refused.
+Mutated: every row. Unmoved, and so unpinned here: `Supplied.mayBeHeld`, `Distinct.deepAt`, `LaterFunctions.ask`, `Rows.pessimistic`'s `deep`. `Eval.callWrite`, the row's code, is only `callWriteFrom`'s wrapper for a callee's own writes, and off it moves nothing on this route.
 
 #### 2.14.6 Obligations
 

@@ -270,7 +270,6 @@ const layers = [_]Entry{
     // A module's codes and one declaration's answer, split from `Groups` (#1758).
     .{ .file = "Codes.zig", .layer = 12, .max_lines = 55 },
     .{ .file = "BlockWords.zig", .layer = 12, .max_lines = 70 },
-    .{ .file = "Callees.zig", .layer = 12, .max_lines = 240 },
     .{ .file = "Callees.zig", .layer = 12, .max_lines = 290 },
     // Evidence terms as function values (#1708).
     .{ .file = "Groups.zig", .layer = 13, .max_lines = 1900 },
@@ -332,8 +331,8 @@ const test_imports = [_][]const u8{ "../lex/Tokenizer.zig", "../parse/Parse.zig"
 /// another, or searched, whatever the spelling.
 const mem_compares = [_][]const u8{ "eql", "startsWith", "endsWith", "order", "lessThan", "indexOf", "lastIndexOf", "find", "containsAtLeast", "count" };
 /// Files whose runs of words are no slot's: an event log, a block's words, interned
-/// runs, a place's name set, route sets, a caller's capture ids, a type's places.
-const no_slot_words = [_][]const u8{ "Block.zig", "CodeCaps.zig", "Counters.zig", "Enforce.zig", "Groups.zig", "Ids.zig", "Kept.zig", "Ownership.zig", "PlaceIdentity.zig", "RouteWalk.zig", "Routes.zig", "RowSets.zig", "Runs.zig", "Twins.zig", "WordRun.zig" };
+/// runs, a place's name set, route sets, a caller's capture ids, a type's places, a site's codes.
+const no_slot_words = [_][]const u8{ "Block.zig", "Callees.zig", "CodeCaps.zig", "Counters.zig", "Enforce.zig", "Groups.zig", "Ids.zig", "Kept.zig", "Ownership.zig", "PlaceIdentity.zig", "RouteWalk.zig", "Routes.zig", "RowSets.zig", "Runs.zig", "Twins.zig", "WordRun.zig" };
 /// A line of a file with slots that compares something else, by a needle on the line.
 const not_slots = [_]struct { file: []const u8, needle: []const u8 }{
     // Parameter, code, value and leaf ids in small lists.
@@ -683,7 +682,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 132), layers.len);
+    try testing.expectEqual(@as(usize, 133), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

@@ -24,5 +24,8 @@ main = Io.run λ⊤ →
     y = (Lib.made [] j).a
     t = show y
     m = List.push j 6
+    d = [ 7 ]
+    Lib.held [ d ]
+    g = List.push d 8
     Io.sleep 20
-    Node.print (show n ++ "/" ++ s ++ "/" ++ show m ++ "/" ++ t)
+    Node.print (show n ++ "/" ++ s ++ "/" ++ show m ++ "/" ++ t ++ "/" ++ show g)

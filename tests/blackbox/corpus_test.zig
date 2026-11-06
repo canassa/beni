@@ -428,6 +428,11 @@ fn knownDifferences() !*const Known {
         while (lines.next()) |l| {
             const t = std.mem.trim(u8, l, " ");
             if (t.len == 0 or t[0] == '#') continue;
+            // A merge's leftovers key nothing, so no stale check can see them.
+            for ([_][]const u8{ "<<<<<<<", "|||||||", "=======", ">>>>>>>" }) |m| if (std.mem.startsWith(u8, t, m)) {
+                std.debug.print("ownership-v2-known.txt: a conflict marker: {s}\n", .{t});
+                return error.ConflictMarkerInKnownDifferences;
+            };
             const end = std.mem.indexOf(u8, t, "  ") orelse t.len;
             try keys.append(gpa, t[0..end]);
         }
