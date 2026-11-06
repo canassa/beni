@@ -111,6 +111,8 @@ pub const Demand = struct {
     kept: bool = false,
     /// A `once` code's capture written where it may run again: refused `once`.
     many: bool = false,
+    /// A label's supply judged (§2.11.3): an answer in it is unknown code's, a need does not touch it.
+    supplied: bool = false,
     /// A need no code discharges: refused `need` (§2.11.3).
     need: bool = false,
     /// A fresh answer's need: judged, with no line of its own.

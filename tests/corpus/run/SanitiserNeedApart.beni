@@ -1,0 +1,74 @@
+-- A need's discharges (`ownership-v2.md` §2.11.3): every write here lands on
+-- an object only the callee can reach, each accepted and edited in place. A
+-- fresh answer, a fresh argument handed back by an identity, a fresh answer
+-- through a forwarding lambda and a recursive helper, a named
+-- function, and a fresh outer list whose items are one list the
+-- caller reads again, since only the outer list is written.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows xss = String.join (List.map xss show) ";"
+
+
+push1 : (⊤ → List Int) → List Int
+push1 f = List.push (f ⊤) 1
+
+
+pushOf : (a → List Int), a → List Int
+pushOf f x = List.push (f x) 1
+
+
+fwd : (a → List Int), a → List Int
+fwd f x = pushOf (λy → f y) x
+
+
+pushOuter : (⊤ → List (List Int)) → List (List Int)
+pushOuter f = List.push (f ⊤) [ 0 ]
+
+
+go : List a, (a → List Int), List (List Int) → List (List Int)
+go xs f acc =
+    case xs of
+        [ x, …rest ] →
+            go rest f (List.push acc (List.push (f x) 1))
+
+        _ →
+            acc
+
+
+mapPush : List a, (a → List Int) → List (List Int)
+mapPush xs f = List.map xs λx → List.push (f x) 1
+
+
+fresh : ⊤ → List Int
+fresh ⊤ = [ 7 ]
+
+
+outerOnly : ⊤ → String
+outerOnly ⊤ =
+    xs = [ 8 ]
+    out = pushOuter λ⊤ → [ xs, xs ]
+    shows out ++ "|" ++ show xs
+
+
+main : Program
+main =
+    Node.print
+        (String.join
+            [ show (push1 λ⊤ → [ 1 ])
+            , show (pushOf (λl → l) [ 2 ])
+            , show (fwd (λ⊤ → [ 3 ]) ⊤)
+            , shows (go [ [ 4 ], [ 5 ] ] (λl → l) [])
+            , shows (mapPush [ 6 ] λn → [ n ])
+            , show (push1 fresh)
+            , outerOnly ⊤
+            ]
+            "\n"
+        )

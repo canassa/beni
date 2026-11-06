@@ -1,0 +1,46 @@
+module Main
+  12:9 value <lambda>: rejected need: Writers.push1 edits what it returns, which may be a list it does not own
+  19:9 Writers.pushOf x: rejected later-use: x is read again at 20:5
+  26:9 value <lambda>: rejected need: Writers.fwd edits what it returns, which may be a list it does not own
+  33:10 value <lambda>: rejected need: Writers.go edits what it returns, which may be a list it does not own
+  33:10 Writers.go <literal>: accepted fresh
+  account capture: source 23, baseline 588, growth 0 of 65536, total 588, continuation 575 of 23552, demands 3, walks 2, rounds 3, liveness_index lanes 4, transfer_settlement lanes 3
+  summary capture: res .0 fresh, .1 = .0; nondup no
+  account live: source 24, baseline 816, growth 0 of 65536, total 816, continuation 803 of 24576, demands 141, walks 2, rounds 3, liveness_index lanes 4, transfer_settlement lanes 3
+  summary live: res .0 fresh, .1 = .0; nondup no
+  account forward: source 24, baseline 591, growth 0 of 65536, total 591, continuation 578 of 24576, demands 3, walks 2, rounds 3, liveness_index lanes 4, transfer_settlement lanes 3
+  summary forward: res .0 fresh, .1 = .0; nondup no
+  account recursive: source 29, baseline 863, growth 0 of 65536, total 863, continuation 850 of 29696, demands 126, walks 2, rounds 3, liveness_index lanes 4, transfer_settlement lanes 3
+  summary recursive: res .0 fresh, .1 fresh, .1[*] fresh; nondup no
+  account fresh: source 12, baseline 324, growth 0 of 65536, total 324, continuation 322 of 12288, demands 18, walks 2, rounds 3, transfer_settlement lanes 2
+  summary fresh: res ε fresh; nondup yes
+  account argument: source 13, baseline 442, growth 0 of 65536, total 442, continuation 439 of 13312, demands 27, walks 2, rounds 3, liveness_index lanes 1, transfer_settlement lanes 2
+  summary argument: res ε fresh; nondup yes
+  account forwardFresh: source 13, baseline 327, growth 0 of 65536, total 327, continuation 325 of 13312, demands 18, walks 2, rounds 3, transfer_settlement lanes 2
+  summary forwardFresh: res ε fresh; nondup yes
+  account outerOnly: source 27, baseline 832, growth 0 of 65536, total 832, continuation 816 of 27648, demands 63, walks 2, rounds 3, liveness_index lanes 5, transfer_settlement lanes 3
+  summary outerOnly: res .0 fresh, .0[*] fresh, .1 fresh; nondup no
+  block: 1144 bytes, hash cfcd85b62150dbae
+  demands 5: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+module Writers
+  4:14 List.push <call>: accepted call
+  8:11 List.push <call>: accepted call
+  16:15 List.push <call>: accepted call
+  23:13 Writers.go <call List.push>: accepted param
+  23:24 List.push acc: accepted param
+  23:39 List.push <call>: accepted call
+  account pushOf: source 18, baseline 183, growth 0 of 65536, total 183, continuation 178 of 18432, demands 10, walks 1, rounds 1, liveness_index lanes 2, transfer_settlement lanes 1
+  summary pushOf: res ε cb(π1ε@15); nondup yes; reads π1ε* π2ε*; label π1ε@15 once need ε [1: ε… π2ε* sep yes below ⇐ sel π2{ε*}]
+  account push1: source 16, baseline 134, growth 0 of 65536, total 134, continuation 132 of 16384, demands 13, walks 1, rounds 1, liveness_index lanes 1, transfer_settlement lanes 1
+  summary push1: res ε cb(π1ε@13); nondup yes; reads π1ε*; label π1ε@13 once need ε [1: sep yes below yes]
+  account fwd: source 20, baseline 605, growth 0 of 65536, total 605, continuation 595 of 20480, demands 0, walks 2, rounds 3, liveness_index lanes 4, transfer_settlement lanes 2
+  summary fwd: res ε cb(π1ε@16); nondup yes; reads π1ε* π2ε*; label π1ε@16 once need ε [1: ε… π2ε* sep yes below ⇐ sel π2{ε*}]
+  account pushOuter: source 21, baseline 246, growth 0 of 65536, total 246, continuation 244 of 21504, demands 19, walks 1, rounds 1, liveness_index lanes 1, transfer_settlement lanes 1
+  summary pushOuter: res ε cb(π1ε@17), [*] fresh cb(π1ε@17); nondup no; answers ⇐ sel π1{ε!!}; reads π1ε*; label π1ε@17 once need ε [1: sep yes below yes]
+  account go: source 45, baseline 6532, growth 0 of 65536, total 6532, continuation 6501 of 46080, demands 1419, walks 1, rounds 4, liveness_index lanes 7, transfer_settlement lanes 3
+  summary go: res ε π3ε, [*] π3[*] cb(π2ε@35); nondup no; answers ⇐ sel π1{[*]*} π3{ε,[*]} π2{ε!!1}; reads π1ε* π2ε* π3ε*; writes π3ε; req ⇐ sel π1{ε~,[*]*~} π2{ε*~} π3{ε}; label π2ε@35 many need ε [1 each: ε… π1[*]* sep ⇐ sel π1{ε~,[*]*} π2{ε*~} π3{ε~,[*]~} π2{ε!!1} below ⇐ sel π1{[*]*}]
+  block: 1608 bytes, hash 6b6334a5294e0c5d
+  demands 6: accepted 6 (fresh 0, call 4, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 11: accepted 7 (fresh 1, call 4, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause later-use 1
+cause need 3
