@@ -133,8 +133,6 @@ const Node = struct {
     /// `nominal`: the nominal node whose payloads first named it, `none` for
     /// one read off a store variable: the chain a non-regular type folds on.
     origin: u32 = none,
-    /// `nominal`: a non-regular type folded onto this node (`applied`).
-    fold: bool = false,
 };
 
 const Kid = struct { step: Step, id: u32 };
@@ -156,6 +154,7 @@ pub const Adapter = struct {
     var_id: u32 = none,
     cross_id: u32 = none,
     closure_id: u32 = none,
+    heads: @import("HeadFold.zig").Table = .{},
 
     pub fn deinit(a: *Adapter) void {
         a.nodes.deinit(a.gpa);
@@ -165,6 +164,7 @@ pub const Adapter = struct {
         a.list_cells.deinit(a.gpa);
         a.by_var.deinit(a.gpa);
         a.open.deinit(a.gpa);
+        a.heads.deinit(a.gpa);
     }
 
     fn add(a: *Adapter, n: Node) Allocator.Error!u32 {
@@ -450,9 +450,7 @@ pub const Adapter = struct {
             const vars = try a.gpa.alloc(u32, args.len);
             defer a.gpa.free(vars);
             @memset(vars, try a.leaf(&a.var_id, .@"var"));
-            const id = try a.nominal(t, vars, within);
-            a.nodes.items[id].fold = true;
-            return id;
+            return a.nominal(t, vars, within);
         }
         return a.nominal(t, args, within);
     }
@@ -469,10 +467,12 @@ pub const Adapter = struct {
         return false;
     }
 
-    /// Read once a walk is over: a type folds onto a node after the node's place is made.
-    fn folded(ctx: *anyopaque, id: u32) bool {
+    fn folded(ctx: *anyopaque, id: u32) Allocator.Error!bool {
         const a: *Adapter = @ptrCast(@alignCast(ctx));
-        return a.nodes.items[id].fold;
+        const n = a.nodes.items[id];
+        if (n.kind != .nominal) return false;
+        for (0..n.b) |k| if (a.listAt(n.a, @intCast(k)) != a.var_id) return false;
+        return a.heads.nonRegular(a.gpa, a.in, n.head);
     }
 
     fn describe(ctx: *anyopaque, id: u32, out: *std.ArrayList(Place.Child)) Allocator.Error!Place.Description {

@@ -1,0 +1,120 @@
+-- Three types of self-loops on the way to a fold (`ownership-v2.md` §2.1, #2062): the routes are read once a declaration, so the summary stays inside its limit.
+import List
+import Node exposing (Program)
+import String
+
+
+type T a
+    = Leaf (List Int) (List a)
+    | Wrap (B a)
+    | Pair (T a) Int
+
+
+type B a
+    = B1 (C a)
+    | B2 (B a) Int
+
+
+type C a
+    = C1 (T (List a))
+    | C2 (C a) Int
+
+
+wr : T a → Int
+wr t =
+    case t of
+        Leaf xs _ →
+            List.length (List.push xs 1)
+        Wrap v →
+            wrB v
+        Pair u _ →
+            wr u
+
+
+wrB : B a → Int
+wrB v =
+    case v of
+        B1 c →
+            wrC c
+        B2 w _ →
+            wrB w
+
+
+wrC : C a → Int
+wrC v =
+    case v of
+        C1 t →
+            wr t
+        C2 w _ →
+            wrC w
+
+
+pick : T a → List Int
+pick t =
+    case t of
+        Leaf xs _ →
+            xs
+        Wrap v →
+            pickB v
+        Pair u _ →
+            pick u
+
+
+pickB : B a → List Int
+pickB v =
+    case v of
+        B1 c →
+            pickC c
+        B2 w _ →
+            pickB w
+
+
+pickC : C a → List Int
+pickC v =
+    case v of
+        C1 t →
+            pick t
+        C2 w _ →
+            pickC w
+
+
+rd : T a → Int
+rd t =
+    case t of
+        Leaf xs _ →
+            List.length xs
+        Wrap v →
+            rdB v
+        Pair u _ →
+            rd u
+
+
+rdB : B a → Int
+rdB v =
+    case v of
+        B1 c →
+            rdC c
+        B2 w _ →
+            rdB w
+
+
+rdC : C a → Int
+rdC v =
+    case v of
+        C1 t →
+            rd t
+        C2 w _ →
+            rdC w
+
+
+g x = wr (Pair (Wrap (B2 (B1 (C2 (C1 (x)) 0)) 0)) 0)
+
+
+g1 y = g y
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = g1 (Pair (Pair (Leaf k []) 0) 0)
+    Node.print (String.fromInt (a))

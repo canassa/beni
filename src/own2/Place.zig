@@ -184,8 +184,8 @@ pub const Description = struct {
 pub const Source = struct {
     ctx: *anyopaque,
     describe: *const fn (ctx: *anyopaque, v: u32, out: *std.ArrayList(Child)) Allocator.Error!Description,
-    /// Whether a non-regular type folds onto `v` (§2.1, *A level past a fold*); read when a walk is over.
-    folded: ?*const fn (ctx: *anyopaque, v: u32) bool = null,
+    /// Whether a non-regular type folds onto `v` (§2.1, *A level past a fold*).
+    folded: ?*const fn (ctx: *anyopaque, v: u32) Allocator.Error!bool = null,
 };
 
 /// How `encode` writes a head and a field rank: through the block writer's string table, so no session id is written (§3.6).
@@ -289,14 +289,14 @@ pub const Table = struct {
     /// `fold_paths` (§2.7, *A read that leaves its path on a cycle*).
     hit_memo: Ids.IdColumn(PathId) = .{},
     up_memo: Ids.IdColumn(PathId) = .{},
-    level_memo: Ids.IdColumn(PathId) = .{},
     fold_runs: std.ArrayList([2]u32) = .empty,
     fold_paths: std.ArrayList(PathId) = .empty,
+    /// The places of folds' cycles, in place order (`LevelWalk`).
+    fold_places: std.ArrayList(PlaceId) = .empty,
     /// Each memo's fill costs (§4.1, *A module table's entries*): `extend`'s by its memo's entry number, the others by path.
     extend_cost: Ids.Costs = .{},
     hit_cost: Ids.Costs = .{},
     up_cost: Ids.Costs = .{},
-    level_cost: Ids.Costs = .{},
     limits: Limits = .{},
     /// Instrumentation: places visited by the holds fixpoint.
     holds_visits: u32 = 0,
@@ -312,10 +312,10 @@ pub const Table = struct {
         t.ctor_args.deinit(gpa);
         t.hit_memo.deinit(gpa);
         t.up_memo.deinit(gpa);
-        t.level_memo.deinit(gpa);
         t.fold_runs.deinit(gpa);
         t.fold_paths.deinit(gpa);
-        inline for (.{ &t.extend_cost, &t.hit_cost, &t.up_cost, &t.level_cost }) |c| c.deinit(gpa);
+        t.fold_places.deinit(gpa);
+        inline for (.{ &t.extend_cost, &t.hit_cost, &t.up_cost }) |c| c.deinit(gpa);
     }
 
     /// Start a block's place namespace: `ofBlock`'s numbers from here on are the next block's, and meet no earlier block's.
@@ -453,10 +453,11 @@ pub const Table = struct {
             t.step_tab.col.child[slot] = made;
         }
         if (source.folded) |folded| for (added.items, first_new..) |v, p| {
-            t.places.col.below[p].fold = folded(source.ctx, v);
+            t.places.col.below[p].fold = try folded(source.ctx, v);
         };
         try t.settleHolds(gpa, first_new);
         try t.settleCycles(gpa, first_new);
+        for (first_new..t.count()) |p| if (t.places.col.below[p].fold) try t.fold_places.append(gpa, .from(@intCast(p)));
         return top;
     }
 
@@ -758,6 +759,13 @@ pub const Table = struct {
         // reached only through a charged edge, and charged).
         try charge.reserve(gpa, .path, 1);
         const a = charge.account;
+        // A `⟲` may read every level of `path`: once a declaration, as those are.
+        if (step.kind == .level) {
+            if (a.walkedRun(.level_step, path.int())) |hit| return PathId.from(hit[0]);
+            const got = try t.extendFill(gpa, charge, path, step);
+            try a.keepRun(gpa, .level_step, path.int(), &.{got.?.int()});
+            return got;
+        }
         if (t.extend_memo.indexOf(.{ path.int(), step.word() })) |i| {
             try a.readEntry(gpa, .extend, i, t.extend_cost.get(i));
             const hit = t.extend_memo.values.items[i];
@@ -804,7 +812,7 @@ pub const Table = struct {
             // path; several (`B (List B) (List B)`) are `levelPaths`', and `path⟲` stays only
             // as the name of their join where one cell must stand for them (`Cell.alias` reads
             // it on the cycle as overlapping every level path).
-            if (out == null and t.pathParent(path) != .none and !(try t.sealed(charge, gpa, path))) {
+            if (out == null and t.pathParent(path) != .none and !t.manyLevels(path) and !(try t.sealed(charge, gpa, path))) {
                 const r = try t.levelsOf(gpa, charge, path);
                 if (r.len == 1) out = t.fold_paths.items[r.start];
             }
@@ -834,6 +842,16 @@ pub const Table = struct {
         return result;
     }
 
+    /// The first on its cycle, with two steps on it: `levelsOf` is several, `extend` the join.
+    fn manyLevels(t: *const Table, path: PathId) bool {
+        const p = t.pathPlace(path);
+        const up = t.pathPlace(t.pathParent(path));
+        if (up == p or t.sameCycle(up, p)) return false;
+        var n: u32 = 0;
+        for (t.steps(p).children) |c| n += @intFromBool(c == p or t.sameCycle(c, p));
+        return n >= 2;
+    }
+
     /// The canonical paths a `⟲` at `path` stands for when they are several
     /// (§2.1, *one position, one name*): `levelsOf` at a first return that is
     /// not sealed, whose levels fold through more than one route
@@ -853,42 +871,36 @@ pub const Table = struct {
     /// paths (`levelPaths`), which is then each of them, with the steps
     /// after it taken again from each. Appended to `out`, each once.
     pub fn expandLevels(t: *Table, gpa: Allocator, charge: Charge, p: PathId, out: *std.ArrayList(PathId)) Error!void {
-        var route: std.ArrayList(Step) = .empty;
-        defer route.deinit(gpa);
+        const a = charge.account;
+        // The nearest prefix a run is known of, and the nodes below it.
+        var chain: std.ArrayList(PathId) = .empty;
+        defer chain.deinit(gpa);
         var at = p;
-        var join = false;
-        while (t.pathParent(at) != .none) : (at = t.pathParent(at)) {
-            try charge.reserve(gpa, .path, 1);
-            const s = t.pathStep(at);
-            try route.append(gpa, s);
-            if (s.kind == .level and (try t.levelPaths(gpa, charge, t.pathParent(at))) != null) join = true;
-        }
-        if (!join) return out.append(gpa, p);
-        std.mem.reverse(Step, route.items);
-        var cur: std.ArrayList(PathId) = .empty;
+        while (t.paths.col.info[at.int()].levels and a.walkedRun(.expanded, at.int()) == null) : (at = t.pathParent(at)) try chain.append(gpa, at);
+        var cur: std.ArrayList(u32) = .empty;
         defer cur.deinit(gpa);
-        var next: std.ArrayList(PathId) = .empty;
+        var next: std.ArrayList(u32) = .empty;
         defer next.deinit(gpa);
-        try cur.append(gpa, at);
-        for (route.items) |s| {
+        if (a.walkedRun(.expanded, at.int())) |run| try cur.appendSlice(gpa, run) else try cur.append(gpa, at.int());
+        while (chain.pop()) |n| {
+            const s = t.pathStep(n);
             next.clearRetainingCapacity();
-            for (cur.items) |c| {
+            for (cur.items) |x| {
                 try charge.reserve(gpa, .path, 1);
+                const c: PathId = .from(x);
                 if (s.kind == .level) if (try t.levelPaths(gpa, charge, c)) |r| {
                     var k: u32 = 0;
-                    while (k < r.len) : (k += 1) try appendNew(gpa, &next, t.foldPath(r.start + k));
+                    while (k < r.len) : (k += 1) try next.append(gpa, t.foldPath(r.start + k).int());
                     continue;
                 };
-                if (try t.extend(gpa, charge, c, s)) |e| try appendNew(gpa, &next, e);
+                if (c == t.pathParent(n)) try next.append(gpa, n.int()) else if (try t.extend(gpa, charge, c, s)) |e| try next.append(gpa, e.int());
             }
-            std.mem.swap(std.ArrayList(PathId), &cur, &next);
+            std.mem.sort(u32, next.items, {}, std.sort.asc(u32));
+            cur.clearRetainingCapacity();
+            for (next.items) |x| if (cur.items.len == 0 or cur.items[cur.items.len - 1] != x) try cur.append(gpa, x);
+            try a.keepRun(gpa, .expanded, n.int(), cur.items);
         }
-        for (cur.items) |c| try appendNew(gpa, out, c);
-    }
-
-    fn appendNew(gpa: Allocator, list: *std.ArrayList(PathId), p: PathId) Allocator.Error!void {
-        for (list.items) |x| if (x == p) return;
-        try list.append(gpa, p);
+        for (cur.items) |x| try out.append(gpa, .from(x));
     }
 
     fn node(t: *Table, gpa: Allocator, account: *Account, parent: PathId, step: Step, place: PlaceId) Error!PathId {
@@ -958,19 +970,9 @@ pub const Table = struct {
     /// once; memoised per path; empty when the place is on no cycle.
     pub fn levelsOf(t: *Table, gpa: Allocator, charge: Charge, p: PathId) Error!Ids.Range {
         try charge.reserve(gpa, .memo, 1);
-        const a = charge.account;
-        if (t.level_memo.get(p)) |i| {
-            try a.readEntry(gpa, .levels, p.int(), t.level_cost.get(p.int()));
-            return rangeOf(t.fold_runs.items[i]);
-        }
-        const fill = a.beginFill();
-        const r = t.levelsFill(gpa, charge, p) catch |err| {
-            _ = a.endFill(fill);
-            return err;
-        };
-        const cost = a.endFill(fill);
-        try t.level_cost.put(gpa, p.int(), cost);
-        try a.readEntry(gpa, .levels, p.int(), cost);
+        if (charge.account.walkedRun(.levels, p.int())) |hit| return rangeOf(t.fold_runs.items[hit[0]]);
+        const r = try t.levelsFill(gpa, charge, p);
+        try charge.account.keepRun(gpa, .levels, p.int(), &.{@as(u32, @intCast(t.fold_runs.items.len - 1))});
         return r;
     }
 
@@ -986,7 +988,7 @@ pub const Table = struct {
         defer found.deinit(gpa);
         if (try t.sealed(charge, gpa, p)) {
             const lv = (try t.extend(gpa, charge, p, Step.level)).?;
-            return t.memoRun(gpa, &t.level_memo, p, &.{lv});
+            return t.levelRun(gpa, &.{lv});
         }
         try queue.append(gpa, p);
         _ = try seen.getOrPut(gpa, .{p.int()});
@@ -995,8 +997,8 @@ pub const Table = struct {
             var j: usize = 0;
             while (j < n) : (j += 1) {
                 const st = t.steps(t.pathPlace(x));
-                try charge.reserve(gpa, .inspection, 1);
                 if (st.children[j] != target and !t.sameCycle(target, st.children[j])) continue;
+                try charge.reserve(gpa, .inspection, 1);
                 const np = (try t.extend(gpa, charge, x, st.steps[j])) orelse continue;
                 if (t.pathPlace(np) == target and !(try found.getOrPut(gpa, .{np.int()})).found_existing) try acc.append(gpa, np);
                 // A sealed first return at `target` is taken whole: below it
@@ -1011,15 +1013,19 @@ pub const Table = struct {
                 if (!(try seen.getOrPut(gpa, .{np.int()})).found_existing) try queue.append(gpa, np);
             }
         }
-        return t.memoRun(gpa, &t.level_memo, p, acc.items);
+        return t.levelRun(gpa, acc.items);
+    }
+
+    fn levelRun(t: *Table, gpa: Allocator, items: []const PathId) Allocator.Error!Ids.Range {
+        const run: [2]u32 = .{ @intCast(t.fold_paths.items.len), @intCast(items.len) };
+        try t.fold_paths.appendSlice(gpa, items);
+        try t.fold_runs.append(gpa, run);
+        return rangeOf(run);
     }
 
     fn memoRun(t: *Table, gpa: Allocator, memo: *Ids.IdColumn(PathId), p: PathId, items: []const PathId) Allocator.Error!Ids.Range {
-        const run: [2]u32 = .{ @intCast(t.fold_paths.items.len), @intCast(items.len) };
-        try t.fold_paths.appendSlice(gpa, items);
         (try memo.getOrPut(gpa, p)).value_ptr.* = @intCast(t.fold_runs.items.len);
-        try t.fold_runs.append(gpa, run);
-        return rangeOf(run);
+        return t.levelRun(gpa, items);
     }
 
     pub fn foldPath(t: *const Table, i: u32) PathId {

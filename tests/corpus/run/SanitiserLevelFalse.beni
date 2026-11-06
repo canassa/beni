@@ -1,0 +1,45 @@
+-- A place of the fold's head that the template does not reach is no level (`ownership-v2.md` §2.1, #2062): the walk reads the fold's place step for step, so `List (List …)` on the way is not `List`.
+import List
+import Node exposing (Program)
+import String
+
+
+type T a
+    = Leaf (List Int) a
+    | W (List (List (T (List a))))
+    | P (List (T a))
+
+
+wr : T a → Int
+wr t =
+    case t of
+        Leaf xs _ →
+            List.length (List.push xs 1)
+        W m →
+            case m of
+                [ i, …_ ] →
+                    wrIn i
+                _ →
+                    0
+        P m →
+            wrIn m
+
+
+wrIn : List (T a) → Int
+wrIn m =
+    case m of
+        [ t, …_ ] →
+            wr t
+        _ →
+            0
+
+
+h : List (T (List Int)) → Int
+h p = wrIn p
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = h [ P [ W [ [ Leaf k [ [ 1 ] ] ] ] ] ]
+    Node.print (String.fromInt (a + List.length k))

@@ -24,6 +24,7 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const LevelCycle = @import("LevelCycle.zig");
+const LevelProject = @import("LevelProject.zig");
 const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
@@ -289,7 +290,7 @@ pub const Eval = struct {
     /// A leaf two coexisting routes reach (`many`) is read twice; the second
     /// copy is at a route of its own, so the check never takes it for the
     /// first (§2.9.3: one object at two places is two entries).
-    fn readAt(e: *Eval, v: u32, deep: bool, tags: u32, route: u32, out: *std.ArrayList(Proj)) Error!void {
+    pub fn readAt(e: *Eval, v: u32, deep: bool, tags: u32, route: u32, out: *std.ArrayList(Proj)) Error!void {
         var ls: std.ArrayList(u32) = .empty;
         defer ls.deinit(e.gpa());
         if (deep) try e.leavesOf(v, tags, &ls) else try e.storageOf(v, tags, &ls);
@@ -460,7 +461,7 @@ pub const Eval = struct {
                             // A closure's environment: its captures, whole.
                             for (ks, 0..) |k, n| try stack.append(e.gpa(), .{ .v = k, .at = @intCast(words.len), .tags = it.tags, .route = try e.routeStep(it.route, @intCast(n)) });
                         },
-                        .level => try e.projectLevels(it.v, LevelCycle.of(e.places(), if (given != .none) given else LevelCycle.rootOf(e.f, v), words[0..it.at], x.place), st.payload, words[it.at + 1 ..], deep, it.tags, it.route, out),
+                        .level => try LevelProject.levels(e, it.v, LevelCycle.of(e.places(), if (given != .none) given else LevelCycle.rootOf(e.f, v), words[0..it.at], x.place), st.payload, words[it.at + 1 ..], deep, it.tags, it.route, out),
                         else => {
                             // A step the literal cannot follow: every object of it.
                             try e.readAt(it.v, true, it.tags, try e.routeStep(it.route, none), out);
@@ -510,104 +511,6 @@ pub const Eval = struct {
             }
         }
         return true;
-    }
-
-    /// The shortest steps from path `from` to a path at place `target`,
-    /// into `out` (nothing when there is none).
-    pub fn stepsTo(e: *Eval, from: PathId, target: PlaceId, out: *std.ArrayList(u32)) Error!void {
-        const pl = e.places();
-        const Item = struct { p: PathId, back: u32, word: u32 };
-        var queue: std.ArrayList(Item) = .empty;
-        defer queue.deinit(e.gpa());
-        var seen: Ids.FixedDict(1) = .{};
-        defer seen.deinit(e.gpa());
-        try queue.append(e.gpa(), .{ .p = from, .back = none, .word = 0 });
-        _ = try seen.getOrPut(e.gpa(), .{from.int()});
-        var qi: usize = 0;
-        while (qi < queue.items.len) : (qi += 1) {
-            const it = queue.items[qi];
-            try e.charge(.path, 1);
-            if (qi != 0 and pl.pathPlace(it.p) == target) {
-                var k: u32 = @intCast(qi);
-                while (k != 0 and queue.items[k].back != none) : (k = queue.items[k].back) try out.append(e.gpa(), queue.items[k].word);
-                std.mem.reverse(u32, out.items);
-                return;
-            }
-            for (pl.steps(pl.pathPlace(it.p)).steps) |st| {
-                if (st.kind == .level) continue;
-                const nx = (try pl.extend(e.gpa(), e.f.gc(), it.p, st)) orelse continue;
-                if ((try seen.getOrPut(e.gpa(), .{nx.int()})).found_existing) continue;
-                try queue.append(e.gpa(), .{ .p = nx, .back = @intCast(qi), .word = st.word() });
-            }
-        }
-    }
-
-    /// `⟲` into a built value, at `place` (`LevelCycle`): the values one or more levels below, at the
-    /// same place, through the parts that stay on its cycle; then `rest`
-    /// from each (the experiment's fourth requirement). A part not built
-    /// here gives its levels by its own slots, never its own storage.
-    fn projectLevels(e: *Eval, v: u32, place: PlaceId, w: u32, rest: []const u32, deep: bool, tags: u32, route: u32, out: *std.ArrayList(Proj)) Error!void {
-        if (place == .none) {
-            try e.readAt(v, true, tags, route, out);
-            return;
-        }
-        const pl = e.places();
-        const Item = struct { v: u32, place: PlaceId, route: u32, below: bool };
-        var stack: std.ArrayList(Item) = .empty;
-        defer stack.deinit(e.gpa());
-        try stack.append(e.gpa(), .{ .v = v, .place = place, .route = route, .below = false });
-        var met: Ids.FixedDict(4) = .{};
-        defer met.deinit(e.gpa());
-        while (stack.pop()) |it| {
-            if ((try met.getOrPut(e.gpa(), .{ it.v, it.place.int(), @intFromBool(it.below), if (e.no_routes) 0 else it.route })).found_existing) continue;
-            try e.charge(.inspection, 1);
-            const x = e.f.val(it.v);
-            switch (x.kind) {
-                .built => {
-                    if (it.below and try LevelCycle.level(pl, e.gpa(), e.f.gc(), w, it.place, place)) try e.project(it.v, rest, deep, tags, it.route, out);
-                    for (e.f.kidsOf(x), 0..) |k, n| {
-                        const kst: Step = switch (x.form) {
-                            .list => Step.elem,
-                            .record => try Step.field(e.account(), e.f.wordsOf(x.extra)[n]),
-                            .tuple => try Step.index(e.account(), @intCast(n)),
-                            .ctor => try pl.ctorStep(e.gpa(), e.account(), x.head, @intCast(n)),
-                            .closure, .opaque_ => continue,
-                        };
-                        const kp = pl.child(it.place, kst) orelse continue;
-                        if (!try LevelCycle.way(pl, e.gpa(), e.f.gc(), w, kp, place)) continue;
-                        try stack.append(e.gpa(), .{ .v = k, .place = kp, .route = try e.routeStep(it.route, @intCast(n)), .below = true });
-                    }
-                },
-                .scalar, .bot => {},
-                .ref => if (it.below) {
-                    if (try LevelCycle.level(pl, e.gpa(), e.f.gc(), w, it.place, place)) try e.project(it.v, rest, deep, tags, it.route, out);
-                    // A part on the cycle at another place (a `List T` below a
-                    // `T`): its next level is the steps to the cycle's place.
-                    var to: std.ArrayList(u32) = .empty;
-                    defer to.deinit(e.gpa());
-                    if (!try LevelCycle.level(pl, e.gpa(), e.f.gc(), w, it.place, place) and x.family == Slots.empty) try e.stepsTo(e.f.pos.items[x.pos].slot, place, &to);
-                    // Its own levels below, by its slots (never its own storage).
-                    var lv: std.ArrayList(u32) = .empty;
-                    defer lv.deinit(e.gpa());
-                    if (to.items.len != 0) {
-                        try lv.appendSlice(e.gpa(), to.items);
-                        try lv.appendSlice(e.gpa(), rest);
-                        try e.project(it.v, lv.items, deep, tags, it.route, out);
-                        lv.clearRetainingCapacity();
-                        try lv.appendSlice(e.gpa(), to.items);
-                    }
-                    try lv.append(e.gpa(), (Step{ .kind = .level, .payload = @intCast(w) }).word());
-                    try lv.appendSlice(e.gpa(), rest);
-                    try e.project(it.v, lv.items, deep, tags, it.route, out);
-                },
-                .alt => {
-                    const ks = e.f.kidsOf(x);
-                    var i: usize = 0;
-                    while (i < ks.len) : (i += 2) try stack.append(e.gpa(), .{ .v = ks[i + 1], .place = it.place, .route = it.route, .below = it.below });
-                },
-                else => if (it.below) try e.project(it.v, rest, deep, tags, it.route, out),
-            }
-        }
     }
 
     // ---- instantiation (§2.11.2) ---------------------------------------------

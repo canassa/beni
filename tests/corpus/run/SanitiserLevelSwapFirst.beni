@@ -1,0 +1,32 @@
+-- The same program as `SanitiserLevelSwap`, the writer declared first (`ownership-v2.md` §2.1, #2062).
+import List
+import Node exposing (Program)
+import String
+
+
+type T a b
+    = Leaf (List Int) a b
+    | Swap (T b a)
+    | Pair (T a b) Int
+
+
+wr : T a b → Int
+wr t =
+    case t of
+        Leaf xs _ _ →
+            List.length (List.push xs 1)
+        Swap u →
+            wr u
+        Pair u _ →
+            wr u
+
+
+g : T Bool Int → Int
+g x = wr (Swap x)
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = g (Swap (Swap (Leaf k True 1)))
+    Node.print (String.fromInt (a + List.length k))

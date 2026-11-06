@@ -1,0 +1,33 @@
+-- A `T` a type variable stands for is an element, no level (`ownership-v2.md` §2.1, #2062): `k` sits in an element, so nothing writes it.
+import List
+import Node exposing (Program)
+import String
+
+
+type T a
+    = Leaf (List Int) a
+    | Wrap (T (List a))
+    | Pair (T a) Int
+
+
+wr : T a → Int
+wr t =
+    case t of
+        Leaf xs _ →
+            List.length (List.push xs 1)
+        Wrap u →
+            wr u
+        Pair u _ →
+            wr u
+
+
+g : T (List (T Int)) → Int
+g x = wr (Wrap x)
+
+
+main : Program
+main =
+    k = [ 1 ]
+    y = Leaf k 0
+    a = g (Leaf [] [ y ])
+    Node.print (String.fromInt (a + List.length k))

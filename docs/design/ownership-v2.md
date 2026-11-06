@@ -185,15 +185,27 @@ name it. The `⊤` a step past a fold gives keeps the value at the fold, its **o
 **A record alias's constructor** (#2056). `type alias Pt = { xs : List Int, n : Int }` declares a constructor of its fields, argument `i` being field `i` in declaration order, and `Pt k 1` is the record, at a `record` place, which has field steps and no `C#i`. So the walk builds a record of the fields those arguments name, a pattern `Pt ys _` takes the field's step, and a constructor used as a function hands each argument to its field by declaration, not by the order of the place's steps, which is the text's. Before this `(Pt k 1).xs` named no step, read as a scalar, and `k` was edited under it. Fixtures `run/SanitiserRecordCtor`, `run/SanitiserRecordCtorApart`.
 **A level past a fold** (#2062). A fold joins every instantiation of a non-regular type below the first into one place, so a contract's `⟲`, written on the fold's cycle, can land on an
 instantiation off that cycle. `T (List Int)`, where `T a = Leaf (List Int) a | Wrap (T (List a)) | Pair (T a) Int`, has a cycle of its own through `Pair`, and `Wrap` leaves it for the fold,
-the place of `T a`; `wr`'s `π1#1.0⟲#0.0` covers both steps. So a `⟲` written at a place on a fold's cycle has a word of its own (`Step.fold_level`), and read at any other place it means every
-path to a level, by that place's own cycle and past the fold. A level of a place is the place, or another instantiation of its head that is or leads to the head's fold: a place of that head on a
-cycle with the place the adapter folded onto, a mark that is read when the walk is over, since a type can fold through another's template after the place exists. Nothing but that mark tells `T`'s
-`Wrap` from `Tree (Tree Int)`'s element, which reaches another `Tree` by its argument and is no level. A walk goes on into a kid on the place's cycle or on the way to the fold (`LevelWalk`), and
-stops at a level on the fold's cycle, whose own `⟲` names the rest, so the paths are as many as the routes to the fold. A reference's slots (`Slots.replay`) and a literal's kids
+the place of `T a`; `wr`'s `π1#1.0⟲#0.0` covers both steps. So a `⟲` written at a place on a fold's cycle has a word of its own (`Step.fold_level`). It means every way round that cycle back to
+the place it was written at, and a value of another instantiation reads it **step for step with that place**: the walk is a pair, a place of the fold and the reader's place (`LevelWalk`). This one rule
+says what a level is. A level is where the fold's place comes back to itself, whatever the reader's place is, so `T`'s `Wrap` is a step and a `Box (T (List a))` or a `List (List (T (List a)))` on the way is
+walked as the template writes it: a place of the same head that the template does not reach is no level (`List (T a)` beside `List (List (T a))`, `run/SanitiserLevelFalse`). A kid a type variable stands
+for is no step, because the fold's place has a `var` there and a `var` is on no cycle: `T Int` as the element of a `T (List (T Int))`, or a `Tree (Tree Int)`, is an element and no level
+(`run/SanitiserLevelElem`). The walk ends where the reader's place is the fold's place, since `⟲` there names the rest. The reader's self-loop on the way is walked once, by its `⟲`. A walk starts at each place
+of a fold of the reader's kind and head; two such places that both match the reader step for step read the union, which only widens. A reference's slots (`Slots.replay`) and a literal's kids
 (`projectLevels`, `RouteWalk.descend`) read by this one rule, and each reads the rest of the path at every level, so a write of `Leaf.1` is no use of `Leaf.0`. A `⟲` written anywhere else
 stays on its place's cycle: `g : T Int → …`'s contract already names what `wr`'s `⟲` became at `T Int`, by the paths past `Wrap`, and read wide its `#2.0⟲#0.0` would reach them twice. Without this
 `g x = wr (Wrap x)` said `writes π1#2.0⟲#0.0` and nothing past `x`'s `Wrap`: a write there was nobody's (`run/SanitiserLevelRef`, `run/SanitiserLevelMix`, `run/SanitiserLevelMixApart`).
-Refused that a perfect checker accepts: a non-regular `T` whose element is a `T` too reads that element as a level, since the route through an argument is not told from the template's.
+
+Which places are a fold's is a fact of the declarations (`HeadFold`), read from the templates before any place is made: a head is non-regular when it is on a cycle of heads, one of whose applications is not
+the head's own parameters in order, and the place of a non-regular head with every argument a `var` is a fold's. So the word does not depend on which declaration made the place first, nor on the module:
+`T a b = … | Swap (T b a)` folds at `T a b` however `wr : T a b` and `g : T Bool Int` are ordered, across modules too (`run/SanitiserLevelSwap`, `run/SanitiserLevelSwapFirst`). Saying so of a regular head
+(mutual types with their parameters in another order) changes a word and nothing it reads, since the walk follows the steps of the place the word was written at.
+
+The levels a `⟲` stands for are read **once a declaration**, not once a slot: `levelsOf`, a `⟲`'s `extend`, a slot's canonical names (`Slots.canon`, by prefix), a walk past a fold and a replay's prefix are state of the
+owning declaration's walk (`Account.walks`), never a module table's entry and never read by another declaration or by a fill, whose cost is a fact of its entry. An entry's fill would charge every level
+it reads again for every slot that reads it. Routes to a fold are not one name: each route is a position with a canonical path of its own, so `T` with self-loops on the way (`run/SanitiserLevelRoutes`) has each of them, and the charge is near the
+routes times the fold's cycle. A type past `ownership_summary_size` by that product is refused by that name, like §4.4's other families: ten wraps and ten pairs on one type, or two types of self-loops on the way
+read through a concrete instantiation (#2138). Refused that a perfect checker accepts: `⟲` takes every kid on the cycle (above).
 
 **A step no place names** (#2043). A fold is not the only such step. `Q { r | a : List Int }` in a template drops its row, so `Q { b : List Int }` has a
 record place with no `.b`, and a schema member inside a nominal type is read through a template that cannot name its fields. A step a place
@@ -309,7 +321,7 @@ the written lists at the read path as another path of the argument. The rule is 
   A reader that keeps one cell keeps the join (a refinement's `unrefined` cell, a demand's text, a use
   mark at a parameter's join path). `Cell.alias` reads a `⟲` on a cycle as overlapping every path of that
   cycle at its place, so the join is never taken as apart from the level paths it stands for.
-- **Cost.** `levelsOf` is memoised per path and walks a place's strongly connected component once, so a
+- **Cost.** `levelsOf` is memoised per path, for the declaration that reads it (§2.1, *A level past a fold*), and walks a place's strongly connected component once, so a
   direct `⟲` costs one memo hit after its first use; a join's expansion is the product of the joins on a
   path, one per `⟲`, and a canonical path has at most one `⟲` per first return (above). The K-wide build
   test is unchanged (1 814 / 2 038 records at K = 32, plain and through a `Maybe`; master 1 812 / 2 036).
@@ -4293,7 +4305,7 @@ Slots.Table (per module, beside Place.Table; outlives a walk)
   below     : IdColumn PathId → set   the object slots at and below a path, or {↓p} past below_min (§2.3.1)
   all       : IdColumn PathId → set   below written out, for a path whose below is {↓p} (belowAll)
   anchors   : IdColumn PathId → run   p, Up(p) and their canonical names: what a symbol is met by
-  canon     : IdColumn PathId → set   a slot's expansion through expandLevels
+  canon     : per declaration, Account.walks: PathId → set   a slot's expansion through expandLevels
   rel       : []u32 runs of relative step words; interned (`Rel` ids): a contract's slots
 ```
 
@@ -4556,7 +4568,7 @@ every growth reservation of §4.4 does. Per walk:
 | base keys | once per leaf, its expansion's runs or shared sets (§2.8, *Base keys*) | `inspection`, `edge`, `set` |
 | deliveries (§2.12) | once per (edge, fact) | `edge` |
 
-*A module table's entries, charged per account* (#1714, amended 2026-11-02). The module's tables — `Place`'s
+*A module table's entries, charged per account* (#1714, amended 2026-11-02; #2062: `levelsOf`, a `⟲`'s `extend` and `canon` are no module table now but the declaration's `Account.walks`, since an entry's stored cost charged each level again for each slot that read it). The module's tables — `Place`'s
 `extend`, `levelsOf`, `foldsUp`, `hits` and expanded levels, `Slots`' `canon`, `relOf` and `relBelow`'s
 walks, `Subtree`'s `below`, `anchors` and `belowAll` — are filled once and read by every declaration of the
 module. So is `Worded`'s: a worded callee's contract over a use's places, by the run `(module, declaration,

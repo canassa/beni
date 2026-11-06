@@ -64,7 +64,6 @@ pub const Table = struct {
     sets: Runs = .{},
     rels: Runs = .{},
     below_of: ByPath = .{},
-    canon_of: ByPath = .{},
     rel_of: ByPath = .{},
     /// Per path: its index in `walks`, a run of `steps` (`relBelow`'s
     /// walk from it).
@@ -85,7 +84,6 @@ pub const Table = struct {
     /// Per path whose `below` is a symbol: `belowAll`, written out.
     all_of: ByPath = .{},
     /// Each table's fill costs, by path (§4.1, *A module table's entries*).
-    canon_cost: Ids.Costs = .{},
     rel_cost: Ids.Costs = .{},
     walk_cost: Ids.Costs = .{},
     below_cost: Ids.Costs = .{},
@@ -95,11 +93,10 @@ pub const Table = struct {
     pub fn deinit(t: *Table, gpa: Allocator) void {
         t.anchor_of.deinit(gpa);
         t.all_of.deinit(gpa);
-        inline for (.{ &t.canon_cost, &t.rel_cost, &t.walk_cost, &t.below_cost, &t.anchor_cost, &t.all_cost }) |c| c.deinit(gpa);
+        inline for (.{ &t.rel_cost, &t.walk_cost, &t.below_cost, &t.anchor_cost, &t.all_cost }) |c| c.deinit(gpa);
         t.sets.deinit(gpa);
         t.rels.deinit(gpa);
         t.below_of.deinit(gpa);
-        t.canon_of.deinit(gpa);
         t.rel_of.deinit(gpa);
         t.steps_of.deinit(gpa);
         t.steps.deinit(gpa);
@@ -264,19 +261,10 @@ pub const Table = struct {
         try account.reserve(.memo, 1);
         // No `⟲` on the way: `p` is its own name, read off its node (§2.3.1).
         if (!places.paths.col.info[p.int()].levels) return t.sets.intern(gpa, if (isObject(places, p)) &.{p.int()} else &.{});
-        if (t.canon_of.get(p)) |hit| {
-            try account.readEntry(gpa, .canon, p.int(), t.canon_cost.get(p.int()));
-            return hit;
-        }
-        const fill = account.beginFill();
-        const s = t.canonFill(gpa, account, places, p) catch |err| {
-            _ = account.endFill(fill);
-            return err;
-        };
-        const cost = account.endFill(fill);
-        try t.canon_of.put(gpa, p, s);
-        try t.canon_cost.put(gpa, p.int(), cost);
-        try account.readEntry(gpa, .canon, p.int(), cost);
+        // A `⟲`'s levels are read once a declaration, not once a slot.
+        if (account.walkedRun(.canon, p.int())) |hit| return hit[0];
+        const s = try t.canonFill(gpa, account, places, p);
+        try account.keepRun(gpa, .canon, p.int(), &.{s});
         return s;
     }
 
@@ -409,8 +397,24 @@ pub fn replay(gpa: Allocator, account: *Ids.Account, places: *Place.Table, from:
     var next: std.ArrayList(u32) = .empty;
     defer next.deinit(gpa);
     try cur.append(gpa, from.int());
+    // A declaration replays one contract's paths, which share their prefixes.
+    const shared = !account.filling();
+    var run: u32 = none;
+    var stale = false;
     for (words) |w| {
         const st = Step.fromWord(w);
+        try account.reserve(.path, 1);
+        const key_from = if (run == none) from.int() else 0;
+        if (shared) if (account.replays.get(.{ run, key_from, w })) |hit| {
+            run = hit;
+            stale = true;
+            continue;
+        };
+        if (stale) {
+            cur.clearRetainingCapacity();
+            try cur.appendSlice(gpa, account.runAt(run));
+            stale = false;
+        }
         next.clearRetainingCapacity();
         for (cur.items) |a| {
             const at: PathId = .from(a);
@@ -428,8 +432,10 @@ pub fn replay(gpa: Allocator, account: *Ids.Account, places: *Place.Table, from:
         std.mem.sort(u32, next.items, {}, std.sort.asc(u32));
         cur.clearRetainingCapacity();
         for (next.items) |x| if (cur.items.len == 0 or cur.items[cur.items.len - 1] != x) try cur.append(gpa, x);
+        if (shared) run = try account.keepStep(gpa, run, key_from, w, cur.items);
         if (cur.items.len == 0) return;
     }
+    if (stale) return out.appendSlice(gpa, account.runAt(run));
     try out.appendSlice(gpa, cur.items);
 }
 

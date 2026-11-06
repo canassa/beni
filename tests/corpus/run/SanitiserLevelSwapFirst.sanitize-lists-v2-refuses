@@ -1,0 +1,2 @@
+# v2 refuses a write past a fold whichever declaration comes first (§2.1, #2062)
+31:9 list_still_used SanitiserLevelSwapFirst.g
