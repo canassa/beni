@@ -1,0 +1,33 @@
+-- A comparison has no caller to discharge a need (`ownership-v2.md` §2.11.3,
+-- §2.13.13 item 13): whatever its function answers, a write of it, here or in
+-- a helper it hands the function to, is `comparison_changes_value`. `[ q ] == [ q ]`
+-- runs each `eq` with no need read, so the edit would change what `show y` prints.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+push1 : (⊤ → List Int) → List Int
+push1 f = List.push (f ⊤) 1
+
+
+type Box
+    = Box (⊤ → List Int) (⊤ → List Int)
+
+
+pub eq : Box, Box → Bool
+eq a b =
+    case a of
+        Box f g →
+            List.length (List.push (f ⊤) 1) == List.length (push1 g)
+
+
+main : Program
+main =
+    y = [ 1 ]
+    q = Box (λ⊤ → y) λ⊤ → y
+    Node.print ((if [ q ] == [ q ] then "t" else "f") ++ show y)

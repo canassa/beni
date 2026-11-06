@@ -9343,6 +9343,41 @@ test "the checker v2's need crosses a block unchanged" {
     try testing.expect(std.mem.indexOf(u8, try summaryLine(imported.stdout, "via"), " need ε") != null);
 }
 
+test "a sanitised write of a label's answer rests on its callers" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.11.3, *a need*: the ground `call` is a write of an
+    // answer each caller discharges, so a trap there may be a caller's.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\push1 : (⊤ → List Int) → List Int
+        \\push1 f = List.push (f ⊤) 1
+        \\
+        \\
+        \\main : Program
+        \\main = Node.print (String.fromInt (List.length (push1 λ⊤ → [ 1 ])))
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.run(&.{ "build", "--ownership=v2", "--ownership-everywhere", "--sanitize-lists", "--platform=node", "--out=o", "Main.beni" });
+    const emitted = try w.read("o/Main.mjs");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expect(std.mem.indexOf(u8, emitted, "a caller may be unchecked") != null);
+    try testing.expect(std.mem.indexOf(u8, emitted, "whatever its callers") == null);
+}
+
 /// The `req` of `via`'s summary line.
 fn viaXreq(dump: []const u8) ![]const u8 {
     var lines = std.mem.splitScalar(u8, dump, '\n');

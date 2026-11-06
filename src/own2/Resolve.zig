@@ -385,7 +385,7 @@ const Resolver = struct {
         }
         // A kept supply written by a known code.
         if (d.kept or d.many) {
-            refuse(o, if (d.many) .once else .call);
+            refuse(o, if (d.many) .once else if (d.need) .need else .call);
             return line;
         }
         // A call's other arguments by the operand index (§2.8 step 4): the

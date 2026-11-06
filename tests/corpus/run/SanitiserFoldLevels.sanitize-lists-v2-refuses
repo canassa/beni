@@ -1,5 +1,5 @@
-# v2 refuses each write: it is of a list k holds (§2.1, #2062).
-123:9 list_still_used List.push
+# v2 refuses each write: it is of a list k holds (§2.1, #2062). The first is past a call's result no slot names, so it is unknown (§2.11.3).
+123:9 list_may_be_shared List.push
 125:9 list_still_used List.push
 127:9 list_still_used List.push
 129:9 list_still_used List.push

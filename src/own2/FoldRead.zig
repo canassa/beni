@@ -28,6 +28,13 @@ pub fn prefix(e: anytype, t: Ids.PathId, words: []const u32, out: *std.ArrayList
     return false;
 }
 
+/// A read that steps `t` no further (`rest` empty it): whether what `words` reach is
+/// `⊤`. A parameter stays its own (`prefix`, or nothing); no other root names the step.
+pub fn unnamed(e: anytype, t: Ids.PathId, words: []const u32, out: *std.ArrayList(u32), param: bool) !bool {
+    _ = try prefix(e, t, words, out);
+    return !param;
+}
+
 /// What value `v` holds past the fold on `words`, when an empty read met one.
 pub fn read(e: anytype, v: u32, words: []const u32, out: *std.ArrayList(u32)) !void {
     var n = words.len;

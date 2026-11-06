@@ -15,6 +15,7 @@ const Forest = @import("Forest.zig");
 const Contract = @import("Contract.zig");
 const Distinct = @import("Distinct.zig");
 const LabelChain = @import("LabelChain.zig");
+const FoldCross = @import("FoldCross.zig");
 const Graft = @import("Graft.zig");
 const Value = @import("Value.zig");
 const Eval = @import("Eval.zig");
@@ -87,18 +88,24 @@ fn atLabel(st: *State, e: *Evaluation, x: u32, q: u32, li: u32, n: Effect) Error
     const call = f.calls.items[q];
     const l = e.contracts.labelsOf(e.contracts.head(call.contract).labels)[li];
     if (l.j >= call.args.len or !try st.first(e.gpa(), .{ x, q, li, n.slot, @intFromBool(n.deep), none })) return false;
-    if (e.ev.known.get(.{ q, li })) |v| return discharge(st, e, x, q, l, v, n);
+    if (e.ev.known.get(.{ q, li })) |v| {
+        if (!try FoldCross.crosses(e.gpa(), f.places, f.roots.items[f.calls.items[v].root].place)) return discharge(st, e, x, q, l, v, n);
+        // Past a fold no slot names a write, and a callee's contract can run short (§2.11.3).
+        try refuse(e, q, l);
+        return true;
+    }
     if (e.ev.label_map.get(.{ q, li })) |c| return publish(&e.sink, c, n.slot, n.deep);
     const v = f.val(try e.ev.valueAt(call.args[l.j], f.slots.relWords(l.slot)));
-    if (v.kind == .built and v.form == .closure and try allFresh(e, v.head & ~W.fixed_bit, n)) return false;
+    if (v.kind == .built and v.form == .closure and try allFresh(e, v.head & ~W.fixed_bit)) return false;
     try refuse(e, q, l);
     return true;
 }
 
-/// Whether a fixed contract answers `n`'s slots only with fresh objects.
-fn allFresh(e: *Evaluation, c: Contract.Id, n: Effect) Error!bool {
+/// Whether a fixed contract answers only fresh objects, all of them: it has no
+/// place to say where a type's fold is, and a need may be short past one.
+fn allFresh(e: *Evaluation, c: Contract.Id) Error!bool {
     var hs: std.ArrayList(At) = .empty;
-    try arrivals(e, null, c, e.fr().slots.relWords(n.slot), n.deep, &hs);
+    try arrivals(e, null, c, &.{}, true, &hs);
     for (hs.items) |h| if (h.a.kind != .fresh) return false;
     return hs.items.len != 0;
 }
@@ -176,6 +183,17 @@ fn discharge(st: *State, e: *Evaluation, x: u32, q: u32, l: Contract.Label, v: u
         }
     }
     return new;
+}
+
+/// A comparison has no caller to discharge what it passes on (§2.13.13 item 13):
+/// each label it hands a callee with a need is refused at that call.
+pub fn compared(e: *Evaluation) Error!void {
+    const f = e.fr();
+    for (e.passes.items) |p| {
+        const c = f.calls.items[p[1]].contract;
+        const l = e.contracts.labelsOf(e.contracts.head(c).labels)[p[2]];
+        if (l.need.len != 0) try refuse(e, p[1], l);
+    }
 }
 
 /// The demand a need makes at call `q`, for label `l`.
