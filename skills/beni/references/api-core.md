@@ -680,6 +680,7 @@ module Task
   type Soon
   value adjustClock : Value, Value → ⊤  -- suspends
   value andThen : a, (a → b) → b  -- impure
+  value beginUpdate : ⊤ → Value  -- impure
   value bracket : (⊤ → r), (r, Exit a → ⊤), (r → a) → a  -- impure
   value callback : (Resume a → (⊤ → ⊤)) → a  -- suspends
   value cancel : Fiber a → ⊤  -- suspends
@@ -689,11 +690,11 @@ module Task
   value currentClock : ⊤ → Value  -- impure
   value currentLogContext : ⊤ → Value  -- impure
   value defer : Scope, (Exit ⊤ → ⊤) → ⊤  -- impure
+  value endUpdate : Value → ⊤  -- impure
   value forEach : List a, Int, (a → b) → List b  -- suspends
   value forEachOk : List a, Int, (a → Result e b) → Result e (List b)  -- suspends
   value forever : (⊤ → a) → b  -- suspends
   value fromHost : (⊤ → ⊤) → ⊤  -- impure
-  value hasLogContext : ⊤ → Bool  -- impure
   value isWaiting : a → Bool
   value join : Fiber a → a  -- suspends
   value joinAll : List (Fiber a) → List a  -- suspends
@@ -741,7 +742,6 @@ module Task
   value withClock : Value, (⊤ → a) → a  -- impure
   value withLogContext : Value, (⊤ → a) → a  -- impure
   value withScheduler : Scheduler, (⊤ → a) → a  -- suspends
-  value withoutLogContext : (⊤ → a) → a  -- impure
   value yieldNow : ⊤ → ⊤  -- suspends
 module Url
   type Protocol

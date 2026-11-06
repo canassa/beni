@@ -700,16 +700,14 @@ mount program root =
                                     [ Js.from λ⊤ → microtask ⊤ ]
                                 )
                 -- `update` has the program's log context, whoever sends
-                -- the message (`boundary.md` §9.8.16 (b), amended
-                -- 2026-10-23). The call is written twice, so that a build
-                -- in which nothing sets a slot keeps only the second.
-                if Task.hasLogContext ⊤ then
-                    Js.write
-                        model
-                        (Task.withoutLogContext λ⊤ → Js.call program "update" [ msg, Js.read model ]
-                        )
-                else
-                    Js.write model (Js.call program "update" [ msg, Js.read model ])
+                -- the message, and the caller has its own again when it
+                -- returns or throws (`boundary.md` §9.8.16 (b), amended
+                -- 2026-10-23 and 2026-11-06). In a build in which nothing
+                -- sets a slot, both calls fold away, and so does the
+                -- `finally`, which is then empty.
+                mark = Task.beginUpdate ⊤
+                Js.finally (λ⊤ → Js.write model (Js.call program "update" [ msg, Js.read model ])) λ⊤ →
+                    Task.endUpdate mark
         )
     childHtml s (Js.call program "view" [ Js.read model ])
     renderEnded root

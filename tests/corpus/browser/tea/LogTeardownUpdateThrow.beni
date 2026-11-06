@@ -5,7 +5,7 @@
 -- its body keeps that context (#597), and it does not wait, so it runs with
 -- no fiber. Inside a `bracket`, it sends `Boom`, whose `update` has the
 -- program's context (#818), annotates it, opens a `bracket` and throws.
--- `withoutLogContext` leaves `update`'s slots for its finalisers, with a
+-- `Task.endUpdate` leaves `update`'s slots for its finalisers, with a
 -- restore of the body's under them (§9.8.16 (b), amended 2026-10-23). So
 -- `Boom`'s release logs with `update`'s annotation, and the body's release
 -- with the body's. `LogUpdateDefect` is the same page with a body in a
