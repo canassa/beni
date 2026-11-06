@@ -2067,6 +2067,23 @@ call), not `foreign` ones, since a development build copies a sibling file whole
 (`plans/runtime-in-beni.md` step 9):* `sandbox` and `element` are such declarations too, and
 `Tea.js` is gone, so the platform has no sibling and a development build copies none.
 
+*Amended 2026-11-06 (#1232): a body that a call reaches is a defect.* No call reaches the body of
+`sandbox`, `element`, `document` or `application`: the lowering compiles each call as the
+program's mount (`Lowering.constructs`, `boundary.md` §9.4.6, version 1.14), and every other use
+of a constructor is `view_not_compiled` (version 1.6). If a call reaches a body all the same, the
+lowering did not compile that call, which is a bug in beni (`CLAUDE.md` rule 9). So the body does
+not answer `undefined` as a `Program`: it throws an `Error` whose message names the constructor
+and says that the lowering did not compile the call, and the page stops as for any defect (§6),
+with the development crash screen where the throw is inside the dispatch guard. The four bodies
+are one function of the constructor's name, written in beni over `Js` (`Js.throw` of
+`Js.construct (Js.global "Error")`), so the platform still has no sibling. No page loads a body.
+A release build ships none of the four: the release trees of the 222 inline fixtures are the same
+byte for byte, and the `emit/release/inline/` goldens did not move. A development build writes the
+body of the constructor that the program calls into `_platform/Tea.mjs`, as it did before this
+amendment. No module imports that file (#2106). It, its source map and their two lines of
+`_manifest.txt` are the only bytes of a development tree that change.
+`build/bad/inline/ConstructorsAsValues` pins the refusal of all four as values.
+
 *Amended 2026-11-05 (#1169): a URL that changes, and a constant the build cannot decide.* The
 runtime holds `safeUrl` and its pattern, `scriptUrl`, as code of `Inline.beni`: the code of
 `browser`'s `Rt.beni` (`backend.md` §15.11, *`safeUrl` is written in beni*), copied and not
