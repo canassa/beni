@@ -1,0 +1,38 @@
+-- run: a top-level value is evaluated once, even when it is used with a
+-- callback that suspends (transparent-effects-proposal.md §16.2, amended
+-- 2026-11-06; #1662). `apply`'s block counts its own evaluations, and its
+-- evaluation is not `pure`, so its classes are one class at every use and it
+-- has one body. Before, the use with `slowDouble` took a second body,
+-- `Main$apply$s`, which ran the block again: `loads: 2`.
+import Io
+import Node exposing (Program)
+import Ref exposing (Ref)
+import Task
+
+
+loads : Ref Int
+loads = Ref.make 0
+
+
+apply : (Int → Int), Int → Int
+apply =
+    Ref.update loads λn → n + 1
+    λf x → f x
+
+
+slowDouble : Int → Int
+slowDouble x =
+    Task.yieldNow ⊤
+    x * 2
+
+
+main : Program
+main = Io.run λ⊤ →
+    a = apply (λx → x + 1) 1
+    b = apply slowDouble 2
+
+    Node.printLines
+        [ "pure: ${String.fromInt a}"
+        , "suspending: ${String.fromInt b}"
+        , "loads: ${String.fromInt (Ref.get loads)}"
+        ]
