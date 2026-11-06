@@ -1,0 +1,32 @@
+-- A fold that swaps its parameters, the writer declared after its caller (`ownership-v2.md` §2.1, #2062): what folds is a fact of the declarations.
+import List
+import Node exposing (Program)
+import String
+
+
+type T a b
+    = Leaf (List Int) a b
+    | Swap (T b a)
+    | Pair (T a b) Int
+
+
+g : T Bool Int → Int
+g x = wr (Swap x)
+
+
+wr : T a b → Int
+wr t =
+    case t of
+        Leaf xs _ _ →
+            List.length (List.push xs 1)
+        Swap u →
+            wr u
+        Pair u _ →
+            wr u
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = g (Swap (Swap (Leaf k True 1)))
+    Node.print (String.fromInt (a + List.length k))

@@ -1,0 +1,1 @@
+v2 refuses a write at a level past the fold beside a cycle (§2.1, #2062): built again under --ownership=v2 and the sanitiser.

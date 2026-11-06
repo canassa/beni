@@ -1,0 +1,104 @@
+-- A level past a fold keeps the rest of its path (`ownership-v2.md` §2.1,
+-- *A level past a fold*, #2062): `r` holds `Leaf.0` and `wsnd` writes `Leaf.1`.
+-- A `Tree (Tree Int)`'s element reaches a `Tree` by its argument: no level. And
+-- `hold`'s own `⟲` keeps to its cycle: read past the fold it would meet `wr`'s paths twice.
+import List
+import Node exposing (Program)
+import String
+
+
+type alias D =
+    List (List (List (List Int)))
+
+
+type T a
+    = Leaf (List Int) (List Int) a
+    | Wrap (T (List a))
+
+
+fst : T a → List Int
+fst t =
+    case t of
+        Leaf xs _ _ →
+            xs
+        Wrap u →
+            fst u
+
+
+wsnd : T a → Int
+wsnd t =
+    case t of
+        Leaf _ ys _ →
+            List.length (List.push ys 1)
+        Wrap u →
+            wsnd u
+
+
+mk : ⊤ → T (List (List Int))
+mk _ = Wrap (Wrap (Wrap (Leaf [ 1 ] [ 2 ] [ [ [ [ [ 1 ] ] ] ] ])))
+
+
+type Tree a
+    = E
+    | N (Tree a) a (List Int)
+
+
+spine : Tree a → List Int
+spine t =
+    case t of
+        N l _ xs →
+            case l of
+                E →
+                    xs
+                _ →
+                    spine l
+        E →
+            []
+
+
+inner : Tree (Tree Int) → List Int
+inner t =
+    case t of
+        N _ (N _ _ ys) _ →
+            ys
+        _ →
+            []
+
+
+type P a
+    = PLeaf (List Int) (List a)
+    | PWrap (P (List a))
+    | Pair (P a) (List Int)
+
+
+wr : P a → Int
+wr t =
+    case t of
+        PLeaf xs _ →
+            List.length (List.push xs 1)
+        PWrap u →
+            wr u
+        Pair u _ →
+            wr u
+
+
+hold : P Int → Int
+hold x =
+    case x of
+        Pair u ys →
+            c = wr u
+            c + List.length ys
+        _ →
+            0
+
+
+main : Program
+main =
+    x = mk ⊤
+    r = fst (Wrap x)
+    n = wsnd (Wrap x)
+    u = N E (N E 1 [ 3 ]) [ 4 ]
+    h = inner u
+    s = List.push (spine u) 5
+    p = hold (Pair (PWrap (PLeaf [ 1 ] [])) [ 2 ])
+    Node.print (String.fromInt (n + List.length r + List.length h + List.length s + p))

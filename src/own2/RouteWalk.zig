@@ -20,6 +20,7 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const LevelCycle = @import("LevelCycle.zig");
+const LevelProject = @import("LevelProject.zig");
 const Relation = @import("Relation.zig");
 const Coexist = @import("Coexist.zig");
 
@@ -39,15 +40,15 @@ pub const Req = struct { words: []const u32, deep: bool, out: *std.ArrayList(Pro
 /// one or more levels below the `⟲`'s value, at `place` on the cycle of
 /// `origin` (`below`: under it, not the value itself), as
 /// `Eval.projectLevels` walks it: `⟲` is a step the walk shares.
-const Item = struct { v: u32, at: u32, route: u32, run: u32, tags: u32 = 0, routes: u32 = 0, read: bool = false, more: u32 = none, lvl: u32 = none, place: u32 = 0, origin: u32 = 0, below: bool = false };
+const Item = struct { v: u32, at: u32, route: u32, run: u32, tags: u32 = 0, routes: u32 = 0, read: bool = false, more: u32 = none, lvl: u32 = none, place: u32 = 0, r: LevelCycle.Reading = .{ .origin = .none }, below: bool = false };
 
 const Walk = struct {
     e: *Eval,
     reqs: []const Req,
     root: Place.PlaceId, // the place of the value the paths start at
     items: std.ArrayList(Item) = .empty,
-    /// `(value, at, route, run, place, origin)` → its item.
-    index: Ids.FixedDict(6) = .{},
+    /// `(value, at, route, run, place, origin, c)` → its item.
+    index: Ids.FixedDict(7) = .{},
     /// The items not read yet, the greatest value first.
     heap: std.ArrayList(u32) = .empty,
     runs: std.ArrayList([]const u32) = .empty,
@@ -108,7 +109,7 @@ const Walk = struct {
         if (it.routes == none) return;
         const g = w.e.gpa();
         const at = if (it.lvl == none) it.at else it.lvl | 1 << 31 | @as(u32, @intFromBool(it.below)) << 30;
-        const got = try w.index.getOrPut(g, .{ it.v, at, it.route, it.run, it.place, it.origin });
+        const got = try w.index.getOrPut(g, .{ it.v, at, it.route, it.run, it.place, it.r.origin.int(), it.r.c.int() });
         if (got.found_existing and !w.items.items[got.value_ptr.*].read) {
             // A merge is charged here; an item, when it is read (`project`'s
             // own, where it is emitted).
@@ -221,16 +222,16 @@ fn descend(w: *Walk, it: Item) Error!void {
     const pl = e.places();
     const x = e.f.val(it.v);
     const place: Place.PlaceId = @fromBackingInt(@intCast(it.place));
-    const origin: Place.PlaceId = @fromBackingInt(@intCast(it.origin));
+    const lw = Step.fromWord(w.reqs[w.runs.items[it.run][0]].words[it.lvl]);
     var on = withKid(it, it.v, it.route);
     on.lvl = none;
     on.at = it.lvl + 1;
     on.place = 0;
-    on.origin = 0;
+    on.r = .{ .origin = .none };
     on.below = false;
     switch (x.kind) {
         .built => {
-            if (it.below and place == origin) try w.arrive(on);
+            if (it.below and it.r.level(place)) try w.arrive(on);
             for (e.f.kidsOf(x), 0..) |k, n| {
                 const kst: Step = switch (x.form) {
                     .list => Step.elem,
@@ -240,8 +241,8 @@ fn descend(w: *Walk, it: Item) Error!void {
                     .closure, .opaque_ => continue,
                 };
                 const kp = pl.child(place, kst) orelse continue;
-                if (kp != origin and !pl.sameCycle(kp, origin)) continue;
                 var kid = withKid(it, k, try kidRoute(e, it.route, @intCast(n)));
+                kid.r = it.r.kid(pl, kst, kp) orelse continue;
                 kid.place = kp.int();
                 kid.below = true;
                 try w.arrive(kid);
@@ -249,12 +250,11 @@ fn descend(w: *Walk, it: Item) Error!void {
         },
         .scalar, .bot => {},
         .ref => if (it.below) {
-            if (place == origin) try w.arrive(on);
-            // A part on the cycle at another place: its next level is the
-            // steps to the cycle's place; its own levels below by its slots.
+            if (it.r.level(place)) try w.arrive(on);
+            // On the cycle elsewhere: its next level is the steps to the cycle's place.
             var to: std.ArrayList(u32) = .empty;
             defer to.deinit(g);
-            if (place != origin and x.family == Slots.empty) try e.stepsTo(e.f.pos.items[x.pos].slot, origin, &to);
+            if (!it.r.level(place) and x.family == Slots.empty) try LevelProject.toLevel(e, it.r, e.f.pos.items[x.pos].slot, &to);
             var lv: std.ArrayList(u32) = .empty;
             defer lv.deinit(g);
             for (w.runs.items[it.run]) |r| {
@@ -267,7 +267,7 @@ fn descend(w: *Walk, it: Item) Error!void {
                 }
                 lv.clearRetainingCapacity();
                 try lv.appendSlice(g, to.items);
-                try lv.append(g, Step.level.word());
+                try lv.append(g, lw.word());
                 try lv.appendSlice(g, rest);
                 try emitWords(w, r, it, lv.items);
             }
@@ -360,7 +360,10 @@ pub fn project(e: *Eval, v: u32, reqs: []const Req, route: u32, pass: u32) Error
             const kid_run = try w.run(grp.items);
             const kid: Item = .{ .v = 0, .at = it.at + 1, .route = 0, .run = kid_run, .tags = it.tags, .routes = it.routes };
             switch (st.kind) {
-                .level => try w.arrive(.{ .v = it.v, .at = it.at, .route = it.route, .run = kid_run, .tags = it.tags, .routes = it.routes, .lvl = it.at, .place = w.levelPlace(it, x), .origin = w.levelPlace(it, x) }),
+                .level => {
+                    const q = w.levelPlace(it, x);
+                    for (try LevelCycle.readings(e.places(), e.arena, st.payload, @fromBackingInt(@intCast(q)))) |rd| try w.arrive(.{ .v = it.v, .at = it.at, .route = it.route, .run = kid_run, .tags = it.tags, .routes = it.routes, .lvl = it.at, .place = q, .r = rd });
+                },
                 .ctor_arg => {
                     const ca = e.places().ctorArgOf(st);
                     if (ca[0] == x.head and ca[1] < ks.len) try w.arrive(withKid(kid, ks[ca[1]], try kidRoute(e, it.route, ca[1])));

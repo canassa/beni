@@ -154,6 +154,7 @@ pub const Adapter = struct {
     var_id: u32 = none,
     cross_id: u32 = none,
     closure_id: u32 = none,
+    heads: @import("HeadFold.zig").Table = .{},
 
     pub fn deinit(a: *Adapter) void {
         a.nodes.deinit(a.gpa);
@@ -163,6 +164,7 @@ pub const Adapter = struct {
         a.list_cells.deinit(a.gpa);
         a.by_var.deinit(a.gpa);
         a.open.deinit(a.gpa);
+        a.heads.deinit(a.gpa);
     }
 
     fn add(a: *Adapter, n: Node) Allocator.Error!u32 {
@@ -465,6 +467,14 @@ pub const Adapter = struct {
         return false;
     }
 
+    fn folded(ctx: *anyopaque, id: u32) Allocator.Error!bool {
+        const a: *Adapter = @ptrCast(@alignCast(ctx));
+        const n = a.nodes.items[id];
+        if (n.kind != .nominal) return false;
+        for (0..n.b) |k| if (a.listAt(n.a, @intCast(k)) != a.var_id) return false;
+        return a.heads.nonRegular(a.gpa, a.in, n.head);
+    }
+
     fn describe(ctx: *anyopaque, id: u32, out: *std.ArrayList(Place.Child)) Allocator.Error!Place.Description {
         const a: *Adapter = @ptrCast(@alignCast(ctx));
         return a.describeOr(id, out) catch |err| switch (err) {
@@ -524,7 +534,7 @@ pub const Adapter = struct {
     }
 
     pub fn source(a: *Adapter) Place.Source {
-        return .{ .ctx = a, .describe = describe };
+        return .{ .ctx = a, .describe = describe, .folded = folded };
     }
 
     pub fn placeOfVar(a: *Adapter, v: Var.Optional) Error!PlaceId {

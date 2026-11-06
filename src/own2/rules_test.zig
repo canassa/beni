@@ -53,6 +53,9 @@ const layers = [_]Entry{
     // 1 210 since #1566: `equals` skips the pairs an earlier walk proved.
     // 1 220 since #1646: `path_index` reads its keys from the paths.
     .{ .file = "Place.zig", .layer = 1, .max_lines = 1220 },
+    // A `⟲` past a non-regular type's fold (§2.1), over `Place.Table`: `Slots` reads it.
+    .{ .file = "LevelWalk.zig", .layer = 1, .max_lines = 90 },
+    .{ .file = "LevelRead.zig", .layer = 1, .max_lines = 90 },
     .{ .file = "Runs.zig", .layer = 1, .max_lines = 90 },
     // A leaf's base keys as sets shared with its kids' (#1714).
     .{ .file = "KeySets.zig", .layer = 1, .max_lines = 160 },
@@ -115,6 +118,8 @@ const layers = [_]Entry{
     .{ .file = "Liveness.zig", .layer = 6, .max_lines = 750 },
     // Compatibility for one pair of points, split from `Liveness` (#1685).
     .{ .file = "Ancestry.zig", .layer = 6, .max_lines = 130 },
+    // `⟲` into a built value, split from `Relation`.
+    .{ .file = "LevelProject.zig", .layer = 6, .max_lines = 150 },
     .{ .file = "Relation.zig", .layer = 7, .max_lines = 1300 },
     .{ .file = "Taken.zig", .layer = 7, .max_lines = 75 },
     .{ .file = "AnswerKeep.zig", .layer = 7, .max_lines = 90 },
@@ -259,6 +264,8 @@ const layers = [_]Entry{
     .{ .file = "TypeVarParam.zig", .layer = 12, .max_lines = 95 },
     // A module's codes and one declaration's answer, split from `Groups` (#1758).
     .{ .file = "Codes.zig", .layer = 12, .max_lines = 55 },
+    // Which heads a fold can reach, from the templates (§2.1).
+    .{ .file = "HeadFold.zig", .layer = 12, .max_lines = 150 },
     // Evidence terms as function values (#1708).
     .{ .file = "Groups.zig", .layer = 13, .max_lines = 1900 },
     // A refused loan's text, split from `Message` (#1991).
@@ -560,7 +567,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 120), layers.len);
+    try testing.expectEqual(@as(usize, 124), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

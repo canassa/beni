@@ -481,10 +481,8 @@ pub const Failure = union(enum) {
 /// (§4.1, *A module table's entries*).
 pub const ModuleTable = enum(u8) {
     extend,
-    levels,
     folds_up,
     hits,
-    canon,
     rel_of,
     rel_walk,
     below,
@@ -569,6 +567,49 @@ pub const Account = struct {
     fill_depth: u32 = 0,
     fill_count: u64 = 0,
     fill_sum: u64 = 0,
+    /// What a `⟲` stands for, as this declaration has read it: `(Walked, path)`
+    /// → a run of `walk_runs`, or a set for `.canon`. State of its walk, never
+    /// read by another declaration, and never by a fill, whose cost is a fact of its entry.
+    walks: FixedDict(2) = .{},
+    /// A replay's steps as a trie: `(run or none, from, step)` → a run of `walk_runs`.
+    replays: FixedDict(3) = .{},
+    walk_runs: std.ArrayList([2]u32) = .empty,
+    walked: std.ArrayList(u32) = .empty,
+
+    pub const Walked = enum(u32) { past_fold, levels, level_step, expanded, canon };
+
+    /// The run of `path` under `w`, if this declaration has read it.
+    pub fn walkedRun(a: *const Account, w: Walked, path: u32) ?[]const u32 {
+        if (a.filling()) return null;
+        const i = a.walks.get(.{ @backingInt(w), path }) orelse return null;
+        const r = a.walk_runs.items[i];
+        return a.walked.items[r[0]..][0..r[1]];
+    }
+
+    /// Keep `run` as `path`'s under `w`.
+    pub fn keepRun(a: *Account, gpa: Allocator, w: Walked, path: u32, run: []const u32) IndexError!void {
+        if (a.filling()) return;
+        const start: u32 = @intCast(a.walked.items.len);
+        try a.walked.appendSlice(gpa, run);
+        try a.walks.put(gpa, .{ @backingInt(w), path }, @intCast(a.walk_runs.items.len));
+        try a.walk_runs.append(gpa, .{ start, @intCast(run.len) });
+    }
+
+    /// The run of `run`, as `walk_runs` holds it.
+    pub fn runAt(a: *const Account, run: u32) []const u32 {
+        const r = a.walk_runs.items[run];
+        return a.walked.items[r[0]..][0..r[1]];
+    }
+
+    /// Keep `cur` as the step `(run, from, word)`'s, and give its run.
+    pub fn keepStep(a: *Account, gpa: Allocator, run: u32, from: u32, word: u32, cur: []const u32) IndexError!u32 {
+        const start: u32 = @intCast(a.walked.items.len);
+        try a.walked.appendSlice(gpa, cur);
+        const id: u32 = @intCast(a.walk_runs.items.len);
+        try a.walk_runs.append(gpa, .{ start, @intCast(cur.len) });
+        try a.replays.put(gpa, .{ run, from, word }, id);
+        return id;
+    }
 
     pub const default_allowance: u32 = 65_536;
     /// K (§4.1, *The source continuation*): the records each source atom
@@ -591,6 +632,14 @@ pub const Account = struct {
     /// nothing of it reads a module table again.
     pub fn dropFirsts(a: *Account, gpa: Allocator) void {
         for (&a.firsts) |*b| b.deinit(gpa);
+        a.walks.deinit(gpa);
+        a.replays.deinit(gpa);
+        a.walk_runs.deinit(gpa);
+        a.walked.deinit(gpa);
+        a.walks = .{};
+        a.replays = .{};
+        a.walk_runs = .empty;
+        a.walked = .empty;
     }
 
     /// An open fill of a module table's entry (§4.1, *A module table's
