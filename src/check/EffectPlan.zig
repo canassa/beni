@@ -308,6 +308,11 @@ fn sensitivity(p: *Plan, d: u32) Error!bool {
         // A `sync` class never suspends at any use — the check refuses the
         // use that would — so reading it needs no second body.
         if (c.sync) continue;
+        // A fixed class is one class at every use, never a copy, so its
+        // rung is already final; and a top-level value whose evaluation is
+        // not `pure` must be evaluated once (§14.3 rule 3 and §16.2, amended
+        // 2026-11-06).
+        if (s.isFixed(node)) continue;
         const reaches = try reach(p, node, tag);
         if (reaches and !c.sensitive) {
             c.sensitive = true;
