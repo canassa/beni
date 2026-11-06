@@ -499,11 +499,6 @@ pub const Options = struct {
     /// `--sanitize-lists`, the hidden test-only flag (`src/Cli.zig`,
     /// `Lower.Input.sanitize_lists`, `ownership-v2.md` §7.3).
     sanitize_lists: bool = false,
-    /// `--schema-library`, the hidden test-only flag (`src/Cli.zig`): every
-    /// schema declaration's `parse` and `print` run its description through
-    /// the library interpreter, and no worker is written — the forced
-    /// library path of `schema.md` §10, which changes no answer.
-    schema_library: bool = false,
     /// `--schema-shapes`: shapes for every validator run with one (true),
     /// or for none (false), whatever the count; null, the count decides.
     schema_shapes: ?bool = null,
@@ -4079,7 +4074,7 @@ const Emitter = struct {
         const sg = if (e.schema_graph) |*g| g else return;
         // A size optimisation, priced on what ships: a development build
         // writes every branch in place, as it did.
-        if (e.options.schema_library or !e.options.release) return;
+        if (!e.options.release) return;
         sg.share = try SchemaShare.decide(e.scratch, sg, &e.live);
         e.share_roots = try SchemaShare.roots(e.scratch, sg, sg.share);
         if (e.share_roots.len == 0) return;
@@ -4093,7 +4088,7 @@ const Emitter = struct {
     /// more walk settles it.
     fn reshareValidators(e: *Emitter) !bool {
         const sg = if (e.schema_graph) |*g| g else return false;
-        if (e.options.schema_library or !e.options.release) return false;
+        if (!e.options.release) return false;
         const again = try SchemaShare.decide(e.scratch, sg, &e.live);
         if (again.set.eql(sg.share.set)) return false;
         sg.share = again;
@@ -6211,7 +6206,7 @@ const Emitter = struct {
             for (@constCast(prog.routes.rows)) |*row| {
                 if (row.decode == Writes.none) continue;
                 const fm: Graph.Index = @fromBackingInt(@intCast(row.fn_module));
-                const sites = try SchemaValid.sites(e.scratch, e.graph(), in.interfaces, in.provenance, &e.session.interner, birs[row.fn_module], tables[row.fn_module], fm, sg, false, true);
+                const sites = try SchemaValid.sites(e.scratch, e.graph(), in.interfaces, in.provenance, &e.session.interner, birs[row.fn_module], tables[row.fn_module], fm, sg, true);
                 const k = sites.shapeCodecOfCall(row.decode) orelse continue;
                 if (row.case_form and !caseRowFits(in, sg, birs[row.fn_module], fm, k, row)) continue;
                 row.shape = k;
@@ -6306,7 +6301,6 @@ const Emitter = struct {
             .extra_roots = e.extra_roots,
             .deferred = e.deferred,
             .plans = e.session.checked.plans,
-            .schema_library = e.options.schema_library,
             .test_hooks = e.options.test_hooks,
             .forwarding_foreigns = e.forwarding_foreigns,
             .cuts = e.cuts,
@@ -6331,7 +6325,7 @@ const Emitter = struct {
         // core, under its module key and the two options they depend on
         // (`EdgePack`; `fast-compiler.md` §8, *The checked core, embedded*).
         const rows = try e.scratch.alloc(?[]const u8, count);
-        const options: EdgePack.Options = .{ .release = e.options.release, .schema_library = e.options.schema_library };
+        const options: EdgePack.Options = .{ .release = e.options.release };
         var built_insts: usize = 0;
         for (rows, birs, 0..) |*row, b, i| {
             const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
@@ -6351,12 +6345,12 @@ const Emitter = struct {
         // runs over the modules whose edges are built here, in module order,
         // serially, before any edge list is made, so it is input-derived
         // (CLAUDE.md rule 5).
-        if (!e.options.schema_library) {
+        {
             var runs: usize = 0;
             for (rows, birs, 0..) |row, b, i| {
                 if (row != null) continue;
                 const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
-                const s = try SchemaValid.sites(e.scratch, e.graph(), in.interfaces, in.provenance, &e.session.interner, b, tables[i], m, &e.schema_graph.?, false, true);
+                const s = try SchemaValid.sites(e.scratch, e.graph(), in.interfaces, in.provenance, &e.session.interner, b, tables[i], m, &e.schema_graph.?, true);
                 runs += SchemaValid.shapeRunCount(s);
             }
             in.schema_shapes = e.options.schema_shapes orelse (runs >= SchemaValid.shape_threshold);
@@ -7301,7 +7295,7 @@ const Emitter = struct {
             // A guarded module must be lowered for this entry, not from the unknown-realm pack.
             const realm_sensitive = JsIntrinsic.entryWindow(e.options.platform.entry_host, e.options.library) != null and JsIntrinsic.hasEntryWindow(e.graph(), e.session.resolution.interfaces, e.bir(m), &e.session.interner);
             if (!realm_sensitive and read_rows and event_constructors.items.len == 0 and e.worker_wire_direct_module != m and e.workerHostModule() != m and (e.workerHostClient()) != m and !t.lower_only and !e.options.release and !e.options.test_hooks and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
-                const key = EmitPack.key(e.session.keys.of(m), .{ .schema_library = e.options.schema_library });
+                const key = EmitPack.key(e.session.keys.of(m), .{});
                 if (e.session.pack.find(.emit, key)) |bytes| {
                     if (try EmitPack.decode(scratch, bytes)) |decoded| {
                         const row = try scratch.create(EmitPack.Row);
@@ -7365,7 +7359,6 @@ const Emitter = struct {
                 .clean_modules = e.clean_modules,
                 .boundary = if (e.boundary) |*b| b else null,
                 .schemas = if (e.schema_graph) |*g| g else null,
-                .schema_library = e.options.schema_library,
                 .schema_shapes = e.reach.schema_shapes and m.int() < e.edges_read.len and !e.edges_read[m.int()],
                 .core_private = e.core_private,
                 .debug = if (e.debug_context) |*cx| cx else null,

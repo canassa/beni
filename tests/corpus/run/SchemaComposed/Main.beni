@@ -4,12 +4,12 @@
 -- primitive, a list of lists, a generic declaration given a composition, and
 -- a primitive at the root. Each `Schema.parse` and `Schema.print` here runs
 -- compiled workers, and `.compiled-schemas` holds the build to shipping no
--- library interpreter. The issues are the library's: a list element's index
+-- library interpreter. Independent issues include a list element's index
 -- then the field in the path, `AllErrors` in index order, the depth bound
 -- tested before the descent, the options and malformed JSON at the root, a
 -- conversion's issues moved under the value's path, and a print failure
--- named as the output names it. The corpus also builds this with every
--- declaration's `schema` forced through the library (§10).
+-- named as the output names it. Development and release compare complete
+-- values and ordered issues against the same hand-checked golden.
 import Node
 import Schema exposing (Conversion)
 import Show

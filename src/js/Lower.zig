@@ -398,9 +398,6 @@ pub const Input = struct {
     /// The build's schema plans and what reads them (`schema.md` §6), when
     /// a module declares or uses a schema. Null: the module emits none.
     schemas: ?*const SchemaGraph = null,
-    /// `--schema-library`: every schema root runs through the library
-    /// interpreter (`schema.md` §10, the forced library path).
-    schema_library: bool = false,
     /// Whether this module's shape runs take their shapes: the program's
     /// choice (`Reach.Input.schema_shapes`), false for a module whose edges
     /// came from the embedded pack.
@@ -887,12 +884,12 @@ pub fn lower(
     // every unit that reads `valid_sites` asks it where it branches
     // (`referenceName`, `callExpr`, `jsonValidatorCall`), because these
     // prep asks are before the first unit and belong to none.
-    l.valid_sites = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, l.in.dispatch, l.in.module, l.in.schemas, l.schemaLibrary(), l.in.schema_shapes);
+    l.valid_sites = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, l.in.dispatch, l.in.module, l.in.schemas, l.in.schema_shapes);
     // Reachability found the module's validator runs from its own dispatch
     // table (`Reach.Result.dispatch`); the runs this lowering writes must be
     // the ones it kept, or a `Json` run would name a worker set it dropped.
     if (std.debug.runtime_safety) if (l.in.live) |r| if (l.in.module.int() < r.dispatch.len and r.dispatch[l.in.module.int()] != l.in.dispatch) {
-        const reached = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, r.dispatch[l.in.module.int()], l.in.module, l.in.schemas, l.schemaLibrary(), l.in.schema_shapes);
+        const reached = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, r.dispatch[l.in.module.int()], l.in.module, l.in.schemas, l.in.schema_shapes);
         if (!reached.sameRuns(l.valid_sites)) std.debug.panic("SchemaValid: reachability and lowering found different validator runs in module {d}", .{l.in.module.int()});
     };
     // Declarations first: the import list is what lowering DISCOVERS (the
@@ -2043,6 +2040,20 @@ pub const Lowerer = struct {
         return false;
     }
 
+    /// Whether a core schema helper is already reachable from source.
+    /// Cache the external declaration fact before using it to select a shape.
+    pub fn coreSchemaAlive(l: *Lowerer, text_of: []const u8) bool {
+        const m = l.in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) orelse return false;
+        const symbol = l.interner.global.find(text_of) orelse return false;
+        const bir = l.in.birs[m.int()];
+        for (bir.decls, 0..) |d, i| {
+            if (!d.kind.isValue() or bir.symbol(d.name) != symbol) continue;
+            const answer = if (l.in.live) |r| r.decl(m, i) else true;
+            l.ask(.{ .question = .decl, .module = m.int(), .index = @intCast(i), .answer = answer });
+            return answer;
+        }
+        return false;
+    }
     /// One of `core/Schema`'s values by name: a `pub` builder or runner
     /// through its interface, or a core-private value of the specialised
     /// path by its printed name, as `corePrivate` names `List`'s.
@@ -2472,14 +2483,6 @@ pub const Lowerer = struct {
     fn entryDecl(l: *Lowerer) ?u32 {
         l.askSelf(.entry, l.in.entry_decl != null, 0, 0);
         return l.in.entry_decl;
-    }
-
-    /// `Input.schema_library`, `--schema-library`: every schema root runs
-    /// through the library interpreter (`schema.md` §10). A module-fixed
-    /// read of the build.
-    pub fn schemaLibrary(l: *Lowerer) bool {
-        l.askSelf(.schema_library, l.in.schema_library, 0, 0);
-        return l.in.schema_library;
     }
 
     /// Opens a unit's record; `Funnel.no_record` when nobody is recording.
@@ -3032,7 +3035,6 @@ pub const Lowerer = struct {
             // their answer is not build state.
             .nullary, .primitive, .steps => return fact.answer,
             .entry => l.in.entry_decl != null,
-            .schema_library => l.in.schema_library,
             .core_private => blk: {
                 if (fact.where >= l.in.core_private.len) return false;
                 break :blk l.in.core_private[fact.where];
@@ -7546,12 +7548,6 @@ pub const Lowerer = struct {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
         if (l.valid_sites.callees.len != 0 and SchemaValid.has(l.valid_sites.callees, inst.int())) {
-            // A direct run's callee is its call's, which `callExpr` lowers
-            // whole (`directValidatorCall`). Reached here, the run is the
-            // library's — what a build answering `--schema-library` yes
-            // lowers every `S.schema ⊤` read as — so the unit carries the
-            // answer (`EmitPack.Question.schema_library`).
-            l.askSelf(.schema_library, l.in.schema_library, 0, 0);
             std.debug.assert(!SchemaValid.has(l.valid_sites.direct_callees, inst.int()));
             return l.coreSchemaValue("readValid", p);
         }
@@ -7562,10 +7558,6 @@ pub const Lowerer = struct {
         // issue #432).
         l.askSelf(.schema_shapes, l.in.schema_shapes, 0, 0);
         if (l.valid_sites.shape_callees.len != 0 and SchemaValid.has(l.valid_sites.shape_callees, inst.int())) {
-            // `shape_callees` is filled only outside the library
-            // (`SchemaValid.sites`), so the unit carries the answer
-            // (`EmitPack.Question.schema_library`).
-            l.askSelf(.schema_library, l.in.schema_library, 0, 0);
             return l.coreSchemaValue(l.valid_sites.shapeRunner(inst.int()), p);
         }
         return switch (l.bir.instTag(inst)) {
@@ -10473,12 +10465,6 @@ pub const Lowerer = struct {
     /// validator worker where it stands (`validatorRun`); null for any other
     /// call. The reference itself has nothing to evaluate.
     noinline fn jsonValidatorCall(l: *Lowerer, out: *StmtList, inst: Inst.Index, callee_inst: Inst.Index, p: u32) !?Node.Index {
-        // Both runner sets are empty under `--schema-library` and the call
-        // lowers as an ordinary one, so the unit carries the answer
-        // (`EmitPack.Question.schema_library`). The shape choice changes
-        // which set has the call (`EmitPack.Question.schema_shapes`, issue
-        // #432), so it is asked here too.
-        l.askSelf(.schema_library, l.in.schema_library, 0, 0);
         l.askSelf(.schema_shapes, l.in.schema_shapes, 0, 0);
         const d = l.bir.instData(inst);
         const shape = l.valid_sites.shapeCodecOfCall(inst.int());
@@ -10687,17 +10673,10 @@ pub const Lowerer = struct {
         // `S.schema ⊤` a validator run calls directly: `S`'s validator
         // worker (`SchemaValid`).
         if (l.valid_sites.args.len != 0) if (l.valid_sites.refOfArg(inst.int())) |ref| {
-            // `args` is empty under `--schema-library` (`SchemaValid.sites`),
-            // so only a build that answers no takes this road: the unit
-            // carries the answer (`EmitPack.Question.schema_library`).
-            l.askSelf(.schema_library, l.in.schema_library, 0, 0);
             return SchemaLower.validWorker(l, ref, p);
         };
         // `S.schema ⊤` a shape run reads: `S`'s shape.
         if (l.valid_sites.shape_args.len != 0) if (l.valid_sites.shapeOfArg(inst.int())) |ref| {
-            // `shape_args` likewise holds only outside `--schema-library`
-            // (`SchemaValid.sites`), so the unit carries the answer.
-            l.askSelf(.schema_library, l.in.schema_library, 0, 0);
             return SchemaLower.shapeName(l, ref, p);
         };
         // Version 1.14: a placement the program's mount already made.

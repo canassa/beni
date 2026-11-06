@@ -4286,7 +4286,7 @@ names the fixture that pins each (§24.6).
 | `Js.catchIf` | `once returned` body, `once` test, `once returned` handler | `try { return body() } catch (e) { if (!test(e)) throw e; return handler(e) }`: each called at most once, the answer the body's or the handler's |
 | `String.join`, `String.fromList` | `borrowed List …` | `Array.prototype.join` on the list's array or its `$plain()`, which keeps nothing |
 | `String.split`, `words`, `lines`, `toList`, `indexes` | `→ fresh exclusive List …` | `split`, `Array.from`, `filter` and a `Js.array` the body fills make a new array of strings or numbers, which no cell is held twice in |
-| `Schema.print`, `printWith` | `borrowed Schema e a, aliased a → fresh Result …` | the engine reads the value and `JSON.stringify` reads what it made; an issue it answers may hold the value it was handed (`Issue.input`). Re-read 2026-10-15: a compiled schema's encoding worker (`schema.md` §6, *A statically known schema runs compiled*) reads the value and builds the host object the same way, and its issues hold the value as the engine's do. Re-read 2026-10-19: `print` builds its options with `defaultOptions ⊤`, a new record per call (§31.16), which reads neither argument |
+| `Schema.print`, `printWith` | `borrowed Schema e a, aliased a → fresh Result …` | the engine reads the value and `JSON.stringify` reads what it made; an issue it answers may hold the value it was handed (`Issue.input`). Re-read 2026-10-15: a compiled schema's encoding worker (`schema.md` §6, *A statically known schema runs compiled*) reads the value and builds the host object the same way, and its issues hold the value as the engine's do. Re-read 2026-10-19: `print` builds its options with `defaultOptions ⊤`, a new record per call (§31.16), which reads neither argument. Re-read 2026-11-06 (#1789): both generated and composed schemas select compiled encoding workers through `compiledPrintReady`; they build the output, and stringify reads it. Construction checks cache only schema metadata, never the program value. Results remain fresh wrappers, with the supplied value aliased only by reported issues; no ownership word changes |
 | `Schema.parse`, `parseWith` | `borrowed Schema e a, String → unknown Result …` | `JSON.parse` makes new values, but the answer holds what the schema's own mapping, injection and conversion functions return, which may be anything (thesis §6.5). Re-read 2026-10-15: a compiled schema's decoding worker also returns its conversions' answers, so the answer is still unknown |
 | `Debug.toString` | `borrowed a → String` | `toStringAs` walks the value; the set of objects being printed holds each only while it is printed |
 | `Debug.log` | `String, returned a → a` | prints `toStringAs` of the value — a string, so the console keeps no reference to the value — and returns the value |
@@ -6547,6 +6547,12 @@ so a function value with no class that returns a list somebody else holds is wri
 
 ### 30.10 What a schema's run answers (the owner, 2026-10-16; issue #218)
 
+*Amended 2026-11-06 (#1789).* Removing interpretation does not prove a runtime
+mapping's result fresh. The existing maker-slot rule follows the replacement
+`composed` maker instead of the removed `box`: its unfollowed adapters still put
+`⊤` in both outcome slots. No ownership exemption or budget changes. Ownership
+summary blocks advance to version 39 so older maker facts cannot be reused.
+
 *Amends §24.8 (`Schema.parse`, `parseWith`), §24.5's list of rows the checker asserts, §26.7 and §30.9's
 "What O1 does not clear". Sections 1–30.9 keep their text.*
 
@@ -6584,7 +6590,7 @@ its row with the mark unread, which is `⊤`.
 | `converted s c` | `s`'s and `c`'s | `s`'s and `c`'s |
 | `conversion forward backward` | what `forward` may return that its call did not make and that is not its argument: what it captured, a top-level value, `⊤` for a function the walk cannot place; nothing when the target `a` holds no list | the same of `backward`, except that its argument is the program's value: what it returns of it is the input mark; nothing when the source `b` holds no list |
 | `S.schema a₁ … aₙ`, a declaration's | the arguments' and the declaration's own (below) | the same |
-| an interpreting builder (`record`, `tagged`, `recursive`, `flip`, `typeOnly`, `encodedOnly`: whatever calls `box`) | `⊤` | `⊤` |
+| a runtime-composed builder (`record`, `tagged`, `recursive`: whatever calls `composed`) whose adapters are not followed | `⊤` | `⊤` |
 | `derived ⊤`, `structural ⊤`, and `Json`'s runs | the codec its `where a.codec` evidence names at the call (below); `⊤` where the evidence is a parameter | the same |
 
 `list`, `nullable`, `erased` and `converted` branch on their argument's engine at run time, and their

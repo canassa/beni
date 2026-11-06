@@ -1,15 +1,15 @@
--- A generic declaration's `parse` and `print` (`schema.md` §6, *Generic
--- parameters*). A schema the program passes at run time is read by the
--- library engine on the context the specialised parent made, so its issues
--- carry the parent's whole path and obey its options: under `AllErrors` a
--- failure in the parent's own field and one inside the library child are
--- both reported, in traversal order. An argument written in a declaration
--- (`Page Pair` in a field) is compiled like any reference. Before anything is
--- read, each argument the value reaches is checked as `rootProblem` checks a
--- whole schema: a construction failure, then an argument whose Encoded end
--- has no external form — and an argument the declaration never reaches is
--- not looked at, as the library never looks at it. The corpus also builds
--- this with every root through the library (§10).
+-- A generic declaration's parse and print (schema.md §6, Generic
+-- parameters). Runtime schema arguments supply compiled child workers.
+-- The child receives the context the specialised parent made, so
+-- its issues retain the parent's path and obey its options.
+-- Under AllErrors the parent and child report in traversal order.
+-- An argument written in a declaration, such as Page Pair in a field,
+-- is compiled like every other reference. Construction failures in
+-- each reached argument are checked before the input is read.
+-- A parameter the declaration never reaches is not inspected.
+-- Recursive generic references preserve their argument workers.
+-- Development and release output share independent expected answers.
+-- Stored argument slots call their compiled workers directly.
 import Node
 import Schema exposing (Conversion, Schema)
 import Show
@@ -101,10 +101,6 @@ main =
         , Show.result (Page.print Schema.int { items = [ 9007199254740992 ], total = 2 }) λs → s
         , "-- arguments checked first"
         , Show.result (Page.parse (Schema.tagged "k" []) "{\"items\":[],\"total\":0}") ints
-        , Show.result (Page.parse (Schema.flip counted) "{\"items\":[],\"total\":0}") λp →
-            String.join p.items ","
-        , Show.result (Page.parse (Schema.flip counted) "not even JSON") λp →
-            String.join p.items ","
         , Show.result
             (Page.parseWith
                 Schema.int
@@ -112,7 +108,6 @@ main =
                 "{\"items\":[],\"total\":0}"
             )
             ints
-        , Show.result (Page.print (Schema.flip counted) { items = [], total = 0 }) λs → s
         , Show.result (Tagged.parse Schema.int (Schema.tagged "unused" []) "{\"first\":1}") λt →
             String.fromInt t.first
         , "-- arguments written in a declaration"
@@ -150,37 +145,6 @@ main =
         , Show.result (Boxed.print Schema.int (Boxed.Full { content = 7, rest = Boxed.Empty })) λs →
             s
         , "-- decode, encode, read and write, with a schema passed at run time"
-        , Show.result
-            (Schema.decode (Page.schema (Schema.flip counted)) { items = [ 3 ], total = 1 })
-            λp → String.join p.items ","
-        , Show.result
-            (Schema.encodeWith (Page.schema (Schema.flip counted)) all
-                { items = [ "5", "x" ], total = 2 }
-            )
-            λp → String.join (List.map p.items String.fromInt) ","
-        , Show.result
-            (Schema.read
-                (Page.schema (Schema.flip counted))
-                (Show.host "{\"items\":[],\"total\":0}")
-            )
-            λp → String.join p.items ","
-        , Show.value
-            (Schema.write (Page.schema (Schema.flip counted)) { items = [ "6" ], total = 1 })
         , Show.result (Schema.decode (Page.schema (Schema.tagged "k" [])) { items = [], total = 0 }) λ_ →
             "?"
-        , Show.result
-            (Schema.readWith
-                (Page.schema (Schema.list (Schema.flip (Schema.flip counted))))
-                all
-                (Show.host "{\"items\":[[\"1\",2]],\"total\":1}")
-            )
-            λp →
-                String.join
-                    (List.map p.items λxs → String.join (List.map xs String.fromInt) ",")
-                    "/"
-        , Show.value
-            (Schema.write
-                (Boxed.schema (Schema.flip (Schema.flip counted)))
-                (Boxed.Full { content = 8, rest = Boxed.Empty })
-            )
         ]

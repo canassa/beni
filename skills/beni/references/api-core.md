@@ -575,7 +575,7 @@ module Schema
     VariantShape
   value bool : Schema Bool Bool
   value conversion : (b → Result (List Issue) a), (a → Result (List Issue) b) → Conversion b a
-  value converted : Schema e b, Conversion b a → Schema e a  -- impure
+  value converted : Schema e b, Conversion b a → Schema e a
   value decode : Schema e a, e → Result (List Issue) a  -- impure
   value decodeWith : Schema e a, Options, e → Result (List Issue) a  -- impure
   value defaultOptions : ⊤ → Options
@@ -583,23 +583,21 @@ module Schema
   value describe : Schema e a → Description  -- impure
   value encode : Schema e a, a → Result (List Issue) e  -- impure
   value encodeWith : Schema e a, Options, a → Result (List Issue) e  -- impure
-  value encodedOnly : Schema e a → Schema e e  -- impure
-  value erased : Schema e a → Codec a  -- impure
+  value erased : Schema e a → Codec a
   value field : Fields pe pa, String, Schema e a → Fields (pe × e) (pa × a)
   value fields : Fields ⊤ ⊤
   value finiteFloat : Schema Float Float
-  value flip : Schema e a → Schema a e  -- impure
   value float : Schema Float Float
   value injection : (p → a), (a → Maybe p) → Injection p a
   value int : Schema Int Int
   value issue : String → Issue
   value issueAt : List PathSegment, String → Issue
   value key : Fields pe pa, String → Fields pe pa
-  value list : Schema e a → Schema (List e) (List a)  -- impure
+  value list : Schema e a → Schema (List e) (List a)
   value mapping : (p → r), (r → p) → Mapping p r
   value maxDepthCeiling : Int
   value null : Schema (Nullable ⊥) (Nullable ⊥)
-  value nullable : Schema e a → Schema (Nullable e) (Nullable a)  -- impure
+  value nullable : Schema e a → Schema (Nullable e) (Nullable a)
   value nullary : String, String, Injection ⊤ e, Injection ⊤ a → Variant e a
   value optional : Fields pe pa, String, Schema e a → Fields (pe × Presence e) (pa × Presence a)
   value parse : Schema e a, String → Result (List Issue) a  -- impure
@@ -613,7 +611,6 @@ module Schema
   value string : Schema String String
   value structural : ⊤ → Codec a where a.codec : ⊤ → Codec a
   value tagged : String, List (Variant e a) → Schema e a
-  value typeOnly : Schema e a → Schema a a  -- impure
   value value : Schema Value Value
   value variant : String, String, Schema pe pa, Injection pe e, Injection pa a → Variant e a  -- impure
   value write : Schema e a, a → Result (List Issue) Value  -- impure

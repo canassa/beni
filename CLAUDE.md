@@ -75,7 +75,7 @@ changes whether a program checks or what it prints (`ordering_test.zig`).
 [`schema.md`](docs/design/schema.md) records the fork — an inspectable description
 plus specialised top-level parse/print functions, both success and failure paths
 compiled, each direction independently eliminated. Runtime composition uses
-`core/Schema` under the same engine-owned context contract and differential tests.
+`core/Schema` compiled workers under the same engine-owned context contract and behavior tests.
 Validation lowers to JsIr over raw host values, with no Value-ADT marshalling.
 The parser accepts both brace and aligned declaration bodies, the formatter
 emits nonempty record bodies and tagged variants as layout, and unresolved
@@ -83,11 +83,11 @@ schema plans survive in AST/BIR dumps and the frontend cache. The checker
 resolves schema namespaces and both endpoint types, publishes
 member/constructor schemes, and caches an immutable resolved plan.
 `core/Schema` supplies the public type surface and, since 2026-10-02, the
-library interpreter (builders, runners, `describe`; `schema.md` §5, §16 slice S3). **Since 2026-10-02 `build` compiles a `schema` declaration** to its own
+compiled builder workers and inspection metadata (`schema.md` §5, A.14). **Since 2026-10-02 `build` compiles a `schema` declaration** to its own
 parse and print (`schema.md` §6 *The specialised path*, §16 *As built — S4*): faster than the
 library interpreter on every workload and ahead of Valibot, Zod and Effect, each direction
-reachable on its own; the corpus builds every schema `run/` fixture compiled and through the
-library (hidden `--schema-library`) against one golden. A.6 owns interface v2, frontend artifact v3 (now
+reachable on its own; schema `run/` fixtures execute compiled in dev and release against
+independent expected answers. The interpreter and forced-library flag are removed (A.14). A.6 owns interface v2, frontend artifact v3 (now
 v4: a new token and a wider exposed row), cache entry v2 (now v3) and the
 unhashed plan v1. Remaining decisions lead the document; H4 remains open. The
 incrementality-first schema work schema.md A.2–A.4 records has landed.

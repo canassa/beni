@@ -2637,9 +2637,8 @@ test "a --library --release build keeps every core/Schema value it exports, even
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // `core/Schema` exports each core-private value the specialised path
-    // calls from other modules (`schema.md` §6) when it survives. Under
-    // `--schema-library` no worker calls them, and inside `core/Schema` one
-    // of them may be called from one place: a compiled maker's worker calls
+    // calls from other modules (`schema.md` §6) when it survives. Inside
+    // `core/Schema` one may be called once: a composed maker's worker calls
     // `belowBackward` once. A release build writes a function called from
     // one place where it is called (`backend.md` §9), and it did that to
     // such a value too, so no declaration was left. A `--library` build,
@@ -2675,7 +2674,7 @@ test "a --library --release build keeps every core/Schema value it exports, even
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.run(&.{ "build", "--platform=node", "--library", "--release", "--schema-library", "--out=out", "Lib.beni" });
+    const r = try w.run(&.{ "build", "--platform=node", "--library", "--release", "--out=out", "Lib.beni" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -7081,7 +7080,7 @@ test "a program builds the same with the edge lists the binary carries as with l
     // └─────────────────────────────────────────┘
     // A build reads the edge lists of the modules the binary carries from
     // the checked core, keyed by the module key and `--release` and
-    // `--schema-library` (`fast-compiler.md` §8, *The checked core,
+    // (`fast-compiler.md` §8, *The checked core,
     // embedded*, amended 2026-10-15). A core read through `--core-root`
     // installs nothing from it, so the same program then builds every
     // module's lists. The two trees must be the same, in development and

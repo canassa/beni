@@ -378,13 +378,6 @@ pub const Build = struct {
     /// Until record enforcement is apart from list enforcement (O4a), it
     /// enforces both.
     records_in_place: bool = false,
-    /// `--schema-library` — **hidden**, for `--allow-debug`'s reason: every
-    /// schema declaration's `parse` and `print` run through the library
-    /// interpreter rather than its specialised code, which is the forced
-    /// library path the differential corpus builds every schema program with
-    /// (`schema.md` §10). It changes no answer — that is what the corpus
-    /// asserts — and no user has a reason to reach for it.
-    schema_library: bool = false,
     /// `--schema-shapes=always|never` — **hidden**, for `--allow-debug`'s
     /// reason: every validator run with a shape takes it, or none does,
     /// whatever the program's count of them against
@@ -931,7 +924,6 @@ const BuildSpecific = struct {
     sanitize_records: bool = false,
     sanitize_lists: bool = false,
     records_in_place: bool = false,
-    schema_library: bool = false,
     schema_shapes: ?bool = null,
     fuzz: bool = false,
     check_call_graph: bool = false,
@@ -996,11 +988,6 @@ const BuildSpecific = struct {
             // A hidden flag (see `Build.records_in_place`).
             if (value != null) return noValue(name);
             self.records_in_place = true;
-            self.consumed = true;
-        } else if (std.mem.eql(u8, name, "--schema-library")) {
-            // The fourth hidden flag (see `Build.schema_library`).
-            if (value != null) return noValue(name);
-            self.schema_library = true;
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--schema-shapes")) {
             // A hidden flag (see `Build.schema_shapes`).
@@ -1105,7 +1092,6 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
         .sanitize_records = s.specific.sanitize_records,
         .sanitize_lists = s.specific.sanitize_lists,
         .records_in_place = s.specific.records_in_place,
-        .schema_library = s.specific.schema_library,
         .schema_shapes = s.specific.schema_shapes,
         .fuzz = s.specific.fuzz,
         .points_to_largest = s.specific.points_to_largest,

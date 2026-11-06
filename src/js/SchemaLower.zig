@@ -4,18 +4,9 @@
 //! encoding worker behind `print` — each a separate reachability node
 //! (`SchemaGraph.Member`), so a program ships only the directions it calls.
 //!
-//! **The workers are the engine's `run`, specialised.** A worker takes the
-//! engine's own context and answers exactly what `run` answers for the same
-//! node: the result, or `c.fail` after pushing the issues `run` would have
-//! pushed, in the order it would have pushed them. Every branch below cites
-//! the engine function it mirrors in `core/Schema.beni`; the differential
-//! corpus (`--schema-library`, `schema.md` §10) is what holds the two to
-//! one answer.
-//!
-//! The generator writes `JsIr` through `Lower`'s own builders, so a record
-//! field is a field name `--release` renames like any other, a constructor
-//! is §4's representation, and an imported worker is an import like any
-//! other cross-module name.
+//! Workers thread the engine-owned context and preserve complete ordered
+//! issues on both success and failure paths. Runtime builders compose the
+//! same worker ABI; independent dev/release behavior fixtures are the oracle.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -160,12 +151,11 @@ pub fn exports(l: *Lowerer, decl: u32, names: *std.ArrayList(NameIndex)) !void {
         try names.append(l.scratch, try schemaName(l, ref, "description"));
     }
     // The shape, which another module's shape and shape runs name.
-    if (!l.schemaLibrary() and l.liveSchema(ref, .shape)) {
+    if (l.liveSchema(ref, .shape)) {
         try names.append(l.scratch, try schemaName(l, ref, "shape"));
     }
-    // The workers too, which another module's workers call; the forced
-    // library path writes none. Then the root wrappers.
-    const workers = !l.schemaLibrary();
+    // The workers too, which another module's workers call. Then the root wrappers.
+    const workers = true;
     const sg = l.in.schemas.?;
     for (all_ops) |op| {
         // A derived codec's `decode` and `encode` are its `read` and
@@ -224,7 +214,7 @@ pub fn declaration(l: *Lowerer, out: *Stmts, decl: u32, parts: *std.ArrayList(Un
     // has no `via`.
     //
     // **Every gating question is asked INSIDE its part's record** (the
-    // `liveSchema` and `liveDecl` answers, and `schema_library`): the part's
+    // `liveSchema` and `liveDecl` answers): the part's
     // row unit has to carry the answer that decides it exists, or a build
     // that would not write it could take the unit (issue #349, #432).
     if (!codec) {
@@ -250,7 +240,7 @@ pub fn declaration(l: *Lowerer, out: *Stmts, decl: u32, parts: *std.ArrayList(Un
     {
         const at: u32 = @intCast(out.items.len);
         const record = try l.recBegin(Funnel.Selector.schemaPart(decl, 2));
-        if (!l.schemaLibrary() and l.liveSchema(ref, .shape)) {
+        if (l.liveSchema(ref, .shape)) {
             l.restartNames();
             const shape = (try g.shapeOfRoutes(g.def.root)) orelse try g.shapeOf(g.def.root);
             try g.constDecl(out, try g.own("shape"), shape);
@@ -265,7 +255,7 @@ pub fn declaration(l: *Lowerer, out: *Stmts, decl: u32, parts: *std.ArrayList(Un
         const at: u32 = @intCast(out.items.len);
         const record = try l.recBegin(Funnel.Selector.schemaPart(decl, @intCast(3 + op_i)));
         const own_set = sg.hostAliased(ref, Member.worker(op)) == null;
-        const worker = !l.schemaLibrary() and own_set and l.liveSchema(ref, Member.worker(op));
+        const worker = own_set and l.liveSchema(ref, Member.worker(op));
         const wrapper = switch (op) {
             .parse => l.liveSchema(ref, .parse),
             .print => l.liveSchema(ref, .print),
@@ -561,25 +551,10 @@ const Gen = struct {
     /// slots of that operation (`readSlot` …), made once per value; `null`
     /// for each member the build left out, which nothing then reads, and
     /// trailing ones left out. A nongeneric declaration's is one constant,
-    /// `$$declared`. Under
-    /// `--schema-library` it is the description itself, boxed — an
-    /// `Interpreted` schema, one constant for a nongeneric declaration — so
-    /// every composition over it runs through the library (§6, *The forced
-    /// library path*).
+    /// `$$declared`. Runtime composition uses the same raw worker ABI.
     fn root(g: *Gen, out: *Stmts) !void {
         const params = try g.l.scratch.alloc(NameIndex, g.params);
         for (params, 0..) |*slot, i| slot.* = try g.paramName(@intCast(i));
-        if (g.l.schemaLibrary()) {
-            const boxed = try g.call(try g.core("box"), &.{try g.described(params)});
-            if (params.len == 0) {
-                const constant = try g.own("declared");
-                try g.constDecl(out, constant, boxed);
-                try g.constDecl(out, try g.own("schema"), try g.arrowOf(&.{try g.fresh("$u")}, try g.id(constant)));
-            } else {
-                try g.constDecl(out, try g.own("schema"), try g.arrowOf(params, boxed));
-            }
-            return;
-        }
         // `declared`'s arguments: the description, the `parse` and `print`
         // workers, the arguments, then an array of the other four
         // operations' workers, its trailing `null`s left out, or no array
@@ -1202,16 +1177,7 @@ const Gen = struct {
         try with_params.appendSlice(g.l.scratch, params);
         try with_params.append(g.l.scratch, options);
         try with_params.append(g.l.scratch, input);
-        const with_body = if (g.l.schemaLibrary()) blk: {
-            // The whole root through the interpreter (`schema.md` §10's
-            // forced library path): `S.schema`, which is the boxed
-            // description there.
-            var args: std.ArrayList(Node.Index) = .empty;
-            for (params) |param| try args.append(g.l.scratch, try g.id(param));
-            if (params.len == 0) try args.append(g.l.scratch, try g.lit(.null_lit));
-            const s = try g.call(try g.id(try g.own("schema")), args.items);
-            break :blk try g.call(try g.core(with_suffix), &.{ s, try g.id(options), try g.id(input) });
-        } else blk: {
+        const with_body = blk: {
             const worker_name = try g.own(op.workerSuffix());
             // The arguments the value reaches, in the order it meets them
             // (`compiledProblem`).
@@ -1919,7 +1885,7 @@ const Fn = struct {
         var claimed: std.ArrayList([]const u8) = .empty;
         if (owner) |o| try claimed.append(g.l.scratch, o.discriminator);
         for (fields) |f| try claimed.append(g.l.scratch, SchemaGraph.literal(g.plan, f.external));
-        try w.unknownKeys(out, v, claimed.items, false);
+        try w.unknownKeys(out, v, claimed.items, false, offset);
 
         const deep = try g.fresh("$deep");
         if (fields.len != 0) try g.constDecl(out, deep, try w.deepTest(offset));
@@ -2080,13 +2046,17 @@ const Fn = struct {
     /// is an issue at its own path. `wholeFails`: a nullary variant fails on
     /// any (`nullaryOf`), where a record goes on to its fields under
     /// `AllErrors`.
-    fn unknownKeys(w: *Fn, out: *Stmts, v: NameIndex, claimed: []const []const u8, whole_fails: bool) !void {
+    fn unknownKeys(w: *Fn, out: *Stmts, v: NameIndex, claimed: []const []const u8, whole_fails: bool, offset: u32) !void {
         const g = w.g;
         const key = try g.fresh("$key");
         var test_expr: ?Node.Index = null;
         for (claimed) |c| {
             const differs = try g.bin(.strict_ne, try g.id(key), try g.str(c));
             test_expr = if (test_expr) |t| try g.bin(.logical_and, t, differs) else differs;
+        }
+        if (g.l.coreSchemaAlive("compiledClaim")) {
+            const unclaimed = try g.not(try g.call(try g.core("compiledClaim"), &.{ try g.id(w.c), try w.depth(offset), try g.id(key) }));
+            test_expr = if (test_expr) |t| try g.bin(.logical_and, t, unclaimed) else unclaimed;
         }
         const found = try g.fresh("$found");
         var report: Stmts = .empty;
@@ -2240,7 +2210,7 @@ const Fn = struct {
                 try g.ifElse(&arm, try w.deepTest(0), stop.items, &.{});
                 try w.decodeRecord(&arm, payload, v, 1, owner);
             } else {
-                try w.unknownKeys(&arm, v, &.{discriminator}, true);
+                try w.unknownKeys(&arm, v, &.{discriminator}, true, 0);
                 try g.ret(&arm, try g.variantValue(info, @intCast(order), SchemaGraph.symbol(plan, variant.name), null));
             }
             try cases.append(g.l.scratch, try w.switchCase(try g.str(tag_text), arm.items));

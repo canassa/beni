@@ -4,13 +4,9 @@
 //! `Lower` already draws, each with the marks, the names, the import asks,
 //! the facts it consumed and the outgoing edges a join replays.
 //!
-//! **A row is a function of its module's check and of one build option.**
-//! Lowering reads a short list of facts about the build (`Lower.Funnel`),
-//! and of them only `--schema-library` is not a term of the module key (the
-//! same split `EdgePack` made for `--release` and `--schema-library`; a
-//! release build reads no row, `backend.md` §9, *Walk-1*). So the row is
-//! keyed by the module key and that option, and the maker writes one row
-//! per option.
+//! A row depends on its checked module. A development build reuses its
+//! cached units when the facts recorded during lowering still hold. Release
+//! builds lower their units separately (backend.md, Walk-1).
 //!
 //! **A refused module has no row.** A module the maker cannot cache — one
 //! that writes markup, names a program constructor or a placement, declares
@@ -80,27 +76,24 @@ const iface_bytes = @import("../resolve/iface_bytes.zig");
 
 pub const magic = "BENIEMIT";
 /// 1: the first.
-pub const version: u32 = 2;
+pub const version: u32 = 3;
 
 /// The build options a row depends on beyond its module key.
-pub const Options = struct {
-    schema_library: bool,
-};
+pub const Options = struct {};
 
 /// Every combination of `Options`: the rows the maker writes per module.
 pub const every_options = [_]Options{
-    .{ .schema_library = false },
-    .{ .schema_library = true },
+    .{},
 };
 
 /// The key of the row that holds the units of the module whose key is
 /// `module`, made with `options`.
-pub fn key(module: Key.Key, options: Options) Key.Key {
+pub fn key(module: Key.Key, _: Options) Key.Key {
     var bytes: [magic.len + 4 + 16 + 1]u8 = undefined;
     @memcpy(bytes[0..magic.len], magic);
     std.mem.writeInt(u32, bytes[magic.len..][0..4], version, .little);
     @memcpy(bytes[magic.len + 4 ..][0..16], &module);
-    bytes[magic.len + 20] = @intFromBool(options.schema_library);
+    bytes[magic.len + 20] = @intFromBool(false);
     return iface_bytes.hash(&bytes);
 }
 
@@ -225,7 +218,7 @@ pub const Selector = struct {
 /// - `arm_dead` — `index` the arm body's instruction.
 /// - `probe` — `index` the dropped arm's body instruction, `where` the
 ///   `Variant`.
-/// - `development`, `schema_library`, `schema_shapes`, `markup`, `debug` — a
+/// - `development`, `schema_shapes`, `markup`, `debug` — a
 ///   module-level yes-or-no; `module` and `index` are 0.
 /// - `consumed`, `wanted` — `index` the declaration.
 /// - `nullary` — `a` in `module`, `b` in `index`, `where` the key's
@@ -262,7 +255,6 @@ pub const Fact = struct {
         nullary = 11,
         primitive = 12,
         entry = 13,
-        schema_library = 14,
         core_private = 15,
         debug = 16,
         markup = 17,
@@ -814,10 +806,10 @@ test "a row round-trips through its bytes" {
     try testing.expectEqualSlices(u8, bytes, bytes2);
 }
 
-test "a key depends on the module key and on each option" {
+test "a key depends on the module key" {
     const a: Key.Key = @splat(0x11);
     const b: Key.Key = @splat(0x22);
-    var seen: [4]Key.Key = undefined;
+    var seen: [2 * every_options.len]Key.Key = undefined;
     var n: usize = 0;
     for ([_]Key.Key{ a, b }) |module| {
         for (every_options) |options| {
@@ -827,7 +819,7 @@ test "a key depends on the module key and on each option" {
             n += 1;
         }
     }
-    try testing.expectEqualSlices(u8, &key(a, every_options[1]), &key(a, every_options[1]));
+    try testing.expectEqualSlices(u8, &key(a, every_options[0]), &key(a, every_options[0]));
 }
 
 test "malformed rows are refused" {

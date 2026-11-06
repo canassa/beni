@@ -5,8 +5,8 @@
 -- conversion that builds from what it is handed, a derived codec — and,
 -- elsewhere, what returned it: a top-level value a conversion returns
 -- (rejected, `top-level`), a list a conversion captured (rejected while
--- the capture is read again), a schema an interpreting builder made
--- (`flip`: rejected, unknown), and, decoding a host value or encoding, the
+-- the capture is read again), a schema supplied at runtime (rejected,
+-- unknown), and, decoding a host value or encoding, the
 -- program's own value where a `Value` or a `backward` hands it back. Each
 -- answer's list is written in place.
 import Json
@@ -118,13 +118,18 @@ captured held input =
             ( [], held )
 
 
--- An interpreting builder's schema: its functions are not followed, so
--- its answer is unknown — rejected.
-pub interpreted : String → List Int
-interpreted input =
-    case Schema.parse (Schema.flip (Schema.list Schema.int)) input of
+-- Runtime mappings can return a shared value. Their result remains unknown,
+-- preserving the negative after the interpreting flip builder is withdrawn.
+pub runtimeBuilt : String → List String
+runtimeBuilt input =
+    dynamic =
+        Schema.record
+            (Schema.field Schema.fields "tags" (Schema.list Schema.string))
+            (Schema.mapping (λ( ⊤, tags ) → { tags = tags }) λr → ( ⊤, r.tags ))
+            (Schema.mapping (λ_ → kept) λtags → ( ⊤, tags ))
+    case Schema.parse dynamic input of
         Ok xs →
-            List.push xs 1
+            List.push xs "x"
         Err _ →
             []
 

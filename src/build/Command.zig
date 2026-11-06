@@ -155,7 +155,6 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         .test_hooks = build.test_hooks,
         .sanitize_records = build.sanitize_records,
         .sanitize_lists = build.sanitize_lists,
-        .schema_library = build.schema_library,
         .schema_shapes = build.schema_shapes,
         .fuzz = build.fuzz,
         .points_to_largest = build.points_to_largest,

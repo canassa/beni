@@ -5,20 +5,20 @@ module SchemaAnswers
   94:13 List.push s.text: accepted call
   104:13 List.push f.text: rejected top-level: SchemaAnswers.kept is a top-level value
   116:15 List.push ws: rejected call: held may hold it through the call at 114:24, and is read at 116:13 (approx)
-  127:13 List.push xs: rejected unknown: a schema answered it whose functions the checker does not follow — one built at run time, or a conversion it cannot place (approx)
-  139:13 List.push point.tags: accepted call
-  152:15 List.push box.items: accepted call
-  163:15 List.push out.items: rejected call: box⋆ may hold it through the call at 161:10, and is read at 163:13 (approx)
-  173:13 List.push out.items: accepted param
-  185:13 List.push vs: accepted param
-  196:15 List.push xs: accepted call
+  132:13 List.push xs: rejected unknown: a schema answered it whose functions the checker does not follow — one built at run time, or a conversion it cannot place (approx)
+  144:13 List.push point.tags: accepted call
+  157:15 List.push box.items: accepted call
+  168:15 List.push out.items: rejected call: box⋆ may hold it through the call at 166:10, and is read at 168:13 (approx)
+  178:13 List.push out.items: accepted param
+  190:13 List.push vs: accepted param
+  201:15 List.push xs: accepted call
   summary declared: res [*] ~fresh2{lost}, fresh1{lost}
   summary composed: res [*] ~fresh2{lost}r{lost} ~fresh501◦, [*].tags ~fresh3, fresh1{lost}r{lost}
   summary generic: res [*] ~fresh2{lost}r{lost} ~fresh501◦, [*].tags ~fresh3, fresh1{lost}r{lost}
   summary built: res [*] ~fresh2{lost}, fresh1{lost}
   summary topLevel: res [*] ~fresh2{lost}r{lost}, [*]⋆ ~shared(SchemaAnswers.kept) ~shared(SchemaAnswers.kept)⋆, fresh1{lost}, ⋆ ~shared(SchemaAnswers.kept) ~shared(SchemaAnswers.kept)⋆
   summary captured: π1 RAw[storage], π1⋆ RAw[storage]; res .0 fresh1{lost}, .0[*] ~fresh2{lost}r{lost}, .0[*]⋆ ~condition(fresh5) ~π1 ~π1⋆, .0⋆ ~condition(fresh4) ~π1 ~π1⋆, .1 ~condition(fresh6) π1, condition(fresh3){lost}
-  summary interpreted: res [*] ~condition(fresh2) ~fresh2{lost}r{lost}, [*]⋆ ~condition(fresh4) ~⊤schema{lost}r{lost}, fresh1{lost}, ⋆ ~condition(fresh3) ~⊤schema{lost}r{lost}
+  summary runtimeBuilt: res [*] ~condition(fresh2) ~fresh2{lost}r{lost}, [*]⋆ ~condition(fresh4) ~⊤schema{lost}r{lost}, fresh1{lost}, ⋆ ~condition(fresh3) ~⊤schema{lost}r{lost}
   summary derived: res [*] ~fresh2{lost}, fresh1{lost}
   summary decoded: π1 RA; res .0 fresh1{lost}, .0[*] ~fresh2{lost}r{lost}, .1 π1
   summary encodedKept: π1 RA, π1⋆ RAw[storage]; res .0 fresh1{lost}, .0[*] ~fresh2{lost}r{lost}, .0[*]⋆ ~condition(fresh5) ~π1 ~π1⋆, .0⋆ ~condition(fresh4) ~π1 ~π1⋆, .1 ~condition(fresh6) π1, condition(fresh3){lost}r{lost}

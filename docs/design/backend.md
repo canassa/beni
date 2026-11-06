@@ -4906,14 +4906,12 @@ is reached, and not before.
   the build names, and of every type that such a type's constructors or an alias name,
   transitively; and every constructor at all in a `--library` build, whose callers are not in the
   build, or in a build with a `schema` declaration, whose parse will build values no instruction
-  spells. None of these is ever a guard. *Amended 2026-10-15 (`schema.md` Â§6, *A statically known
-  schema runs compiled*):* in an application build, the constructors of `core/Schema`'s private
-  `Engine` (`Interpreted`, `Compiled`) and `Made` are not exempt. Only `core/Schema`'s own code
-  spells them: `box` builds `Interpreted`, and the compiled makers build the rest. The compiler
-  writes none, and no sibling, `foreign` or schema endpoint can name either type. An arm on
-  `Interpreted` is the library interpreter behind every runner, and it survives only where a
-  builder that boxes a node does. An arm on a `Made` constructor is that maker's worker, and it
-  survives only where the maker does.
+  spells. None of these is ever a guard. *Amended 2026-10-15; retained on master
+  2026-11-06 (schema.md A.14):* in an application build the constructors of
+  `core/Schema`'s private `Engine` and `Made` are not exempt. Only core's makers
+  build them; the compiler writes none and no sibling, foreign signature or schema
+  endpoint names either type. Unused maker arms therefore retain no worker helper.
+  Removing the interpreter does not remove this existing private-constructor rule.
 - **Why that is sound.** A value is built by beni code that spells one of its constructors, by the
   compiler for a core type, or by hand-written JavaScript â a sibling, a runtime â which receives
   and returns values only through signatures: it can build a value of a type its signatures name,
