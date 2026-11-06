@@ -64,3 +64,42 @@ meth = λb v → { xs = [], a = v }
 
 pub same : List Int → List Int
 same = λu → u
+
+
+pub f : Box → (List Int → Pt)
+f b = λv → { xs = [], a = v }
+
+
+pub type T
+    = T (List Int)
+
+
+pub eq : T, T → Bool
+eq = λa b → size a == size b
+
+
+size : T → Int
+size t =
+    case t of
+        T l →
+            List.length l
+
+
+pub wrap : List Int → T
+wrap l = T l
+
+
+grow : List Int → List Int
+grow v = List.push v 1
+
+
+pub writer : List Int → List Int
+writer = grow
+
+
+pub grows : Box, List Int → List Int
+grows = growing
+
+
+growing : Box, List Int → List Int
+growing b v = List.push v 1

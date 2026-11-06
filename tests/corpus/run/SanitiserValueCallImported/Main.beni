@@ -16,6 +16,15 @@ apply : a, b, (a, b → c) → c
 apply u v f = f u v
 
 
+apply1 : a, (a → b) → b
+apply1 u f = f u
+
+
+grown : a, List Int → List Int
+    where a.grows : a, List Int → List Int
+grown b k = b.grows k
+
+
 ctor : ⊤ → String
 ctor ⊤ =
     k = [ 1 ]
@@ -113,6 +122,28 @@ same ⊤ =
     "${show n} ${show x}"
 
 
+head : ⊤ → String
+head ⊤ =
+    k = [ 1 ]
+    x = (((Box []).f) k).a
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+written : ⊤ → String
+written ⊤ =
+    k = [ 1 ]
+    x = apply1 k Lib.writer
+    "${show k} ${show x}"
+
+
+evidence : ⊤ → String
+evidence ⊤ =
+    k = [ 1 ]
+    x = grown (Box []) k
+    "${show k} ${show x}"
+
+
 main : Program
 main =
     Node.print
@@ -129,6 +160,9 @@ main =
             , field ⊤
             , handed ⊤
             , same ⊤
+            , head ⊤
+            , written ⊤
+            , evidence ⊤
             ]
             ";"
         )

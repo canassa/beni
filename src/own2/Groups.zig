@@ -56,6 +56,7 @@ const Deliver = @import("Deliver.zig");
 const Closures = @import("Closures.zig");
 const Once = @import("Once.zig");
 const Called = @import("Called.zig");
+const Callees = @import("Callees.zig");
 const CodeCaps = @import("CodeCaps.zig");
 const TypeVarParam = @import("TypeVarParam.zig");
 const CondsOff = @import("CondsOff.zig");
@@ -710,7 +711,7 @@ pub const Module = struct {
     }
 
     /// The contract declaration `di` of module `m` publishes, read from `m`'s block at the first need.
-    fn importedContract(mod: *Module, m: u32, di: u32) Error!?u32 {
+    pub fn importedContract(mod: *Module, m: u32, di: u32) Error!?u32 {
         const imports = mod.in.imports orelse return null;
         if (!mod.imported.contains(m)) {
             const a = mod.account;
@@ -731,15 +732,6 @@ pub const Module = struct {
         try mod.account.readEntry(mod.gpa, .import, m, mod.import_cost.get(m));
         const cs = mod.imported.get(m).? orelse return null;
         return if (di < cs.len and cs[di] != none) cs[di] else null;
-    }
-
-    /// What declaration `di` of module `m` publishes for a call of `arity`
-    /// arguments, or null. A value with no parameters publishes what its
-    /// body answers, which is never what a call of that value does, and a
-    /// block has no contract for its lambda (R-5.5.6).
-    fn importedCall(mod: *Module, m: u32, di: u32, arity: u32) Error!?u32 {
-        const c = (try mod.importedContract(m, di)) orelse return null;
-        return if (mod.contracts.head(c).arity == arity) c else null;
     }
 
     // ---- what a walk reads ----------------------------------------------------
@@ -795,13 +787,15 @@ pub const Module = struct {
         };
     }
 
-    /// A function value declared with no parameters (`f = λx → …`): its
-    /// lambda's code, which a call runs (never the declaration's own code,
-    /// whose answer is the closure).
-    fn lambdaBody(mod: *const Module, di: u32) ?u32 {
+    /// A function value declared with no parameters (`f = λx → …`, `f = Pt`):
+    /// the code of the lambda or the constructor its body is, which a call
+    /// runs (never the declaration's own code, whose answer is the closure).
+    pub fn lambdaBody(mod: *const Module, di: u32) ?u32 {
         const b = mod.in.bir.decls[di].body.unwrap() orelse return null;
-        if (mod.in.bir.instTag(b) != .lambda) return null;
-        return mod.code_of_inst.get(.{b.int()});
+        return switch (mod.in.bir.instTag(b)) {
+            .lambda, .ctor, .ext_ctor => mod.code_of_inst.get(.{b.int()}),
+            else => null,
+        };
     }
 
     pub fn aliasTarget(mod: *const Module, t: [2]u32) [2]u32 {
@@ -833,7 +827,7 @@ pub const Module = struct {
     }
 
     /// A constructor reference's `(ordinal, arity)`.
-    fn ctorOf(ctx: *anyopaque, ref: u32) ?[2]u32 {
+    pub fn ctorOf(ctx: *anyopaque, ref: u32) ?[2]u32 {
         const mod = self(ctx);
         const at = ctorIndexCtx(mod, ref) orelse return null;
         const owner = mod.in.birs[at[0]];
@@ -842,7 +836,7 @@ pub const Module = struct {
         return .{ at[1] - decl.ctors_start, @backingInt(c.args_end) - @backingInt(c.args_start) };
     }
 
-    fn ctorField(ctx: *anyopaque, ref: u32, n: u32) ?u32 {
+    pub fn ctorField(ctx: *anyopaque, ref: u32, n: u32) ?u32 {
         const mod = self(ctx);
         const at = ctorIndexCtx(mod, ref) orelse return null;
         const owner = mod.in.birs[at[0]];
@@ -879,7 +873,7 @@ pub const Module = struct {
         return mod.places.kind(at) == .ref and mod.places.child(at, Step.contents) != null;
     }
 
-    fn pessimisticOf(mod: *Module, arity: u32, host: bool) Error!u32 {
+    pub fn pessimisticOf(mod: *Module, arity: u32, host: bool) Error!u32 {
         const at = 2 * arity + @intFromBool(host);
         while (mod.pessimistic_of.items.len <= at) try mod.pessimistic_of.append(mod.gpa, none);
         if (mod.pessimistic_of.items[at] == none) {
@@ -895,7 +889,7 @@ pub const Module = struct {
     }
 
     /// The places of a function type: its parameters' and its result's.
-    fn fnPlaces(mod: *Module, v: Var.Optional, params: *std.ArrayList(PlaceId)) Error!?PlaceId {
+    pub fn fnPlaces(mod: *Module, v: Var.Optional, params: *std.ArrayList(PlaceId)) Error!?PlaceId {
         const t = v.unwrap() orelse return null;
         switch (mod.in.store.resolvedContent(t)) {
             .structure => |s| switch (s) {
@@ -911,7 +905,7 @@ pub const Module = struct {
     }
 
     /// A worded declaration's contract over the given places.
-    fn wordedContract(mod: *Module, owner: u32, di: u32, params: []const PlaceId, result: PlaceId) Error!u32 {
+    pub fn wordedContract(mod: *Module, owner: u32, di: u32, params: []const PlaceId, result: PlaceId) Error!u32 {
         const k = try mod.worded.find(mod.gpa, mod.account, .{ owner, di, @backingInt(result) }, params);
         if (k.contract) |c| return c;
         const fill = mod.account.beginFill();
@@ -947,17 +941,6 @@ pub const Module = struct {
         return Rows.fromWords(mod.rowsEnv(arena.allocator()), .{ .params = ps.items, .result = result, .result_words = result_words, .origin = .{ owner, di }, .foreign = decl.kind == .foreign_value });
     }
 
-    /// The contract of declaration `t` (another module's, or this one's when worded) over a use's places, or null.
-    fn declContract(mod: *Module, t: [2]u32, params: []const PlaceId, result: PlaceId) Error!?u32 {
-        const owner = mod.in.birs[t[0]];
-        const decl = owner.decls[t[1]];
-        if (owner.ownSlotsV2(decl).len != 0) return try mod.wordedContract(t[0], t[1], params, result);
-        // A `foreign` publishes nothing an importer applies: its words, or none (§2.10).
-        if (decl.kind == .foreign_value) return try mod.pessimisticOf(@intCast(params.len), true);
-        if (t[0] == mod.in.module) return null;
-        return mod.importedCall(t[0], t[1], @intCast(params.len));
-    }
-
     /// The arguments of a call or a method call (the receiver first).
     fn argsOf(mod: *const Module, inst: u32, out: *std.ArrayList(u32)) Allocator.Error!void {
         const bir = mod.in.bir;
@@ -971,175 +954,22 @@ pub const Module = struct {
         for (bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Bir.Inst.Index)) |x| try out.append(mod.gpa, x.int());
     }
 
-    /// The local function a `.local` reference names, as its code.
-    fn localFunction(mod: *Module, ref: u32) ?u32 {
-        const bir = mod.in.bir;
-        if (bir.instTag(@fromBackingInt(ref)) != .local) return null;
-        const l = bir.instData(@fromBackingInt(ref)).lhs;
-        const binding = bir.locals[mod.cur_locals + l].inst.int();
-        if (bir.instTag(@fromBackingInt(binding)) != .let_def) return null;
-        return mod.code_of_inst.get(.{binding});
-    }
-
     fn callee(ctx: *anyopaque, inst: u32, args: []const u32) Error!Walk.Callee {
-        const mod = self(ctx);
-        const bir = mod.in.bir;
-        var target: ?[2]u32 = null;
-        var composed = false;
-        if (bir.instTag(@fromBackingInt(inst)) == .call) {
-            const head = bir.instData(@fromBackingInt(inst)).lhs;
-            if (ctorOf(ctx, head)) |c| return .{ .ctor = c };
-            if (mod.localFunction(head)) |c| return .{ .code = c };
-            target = mod.declOf(head);
-        } else if (mod.in.dispatch) |dt| if (dt.siteOf(@fromBackingInt(inst))) |site| if (site.callee.unwrap()) |ti| {
-            switch (dt.term(ti)) {
-                .top => |u| target = .{ mod.in.module, u.decl.int() },
-                .ext => |u| if (mod.in.provenance.len > u.module.int()) if (mod.in.provenance[u.module.int()].valueDecl(@backingInt(u.value))) |d| {
-                    target = .{ u.module.int(), d.int() };
-                },
-                // A record field of function type: its value, called (§2.11.5).
-                .field => return .field,
-                .param, .codec => {},
-                else => composed = true,
-            }
-        };
-        // Every argument and the result cross: nothing to track.
-        var harmless = !Slots.holdsAny(&mod.places, try mod.places.rootPath(mod.gpa, try placeOfInst(ctx, inst)));
-        for (args) |x| harmless = harmless and !Slots.holdsAny(&mod.places, try mod.places.rootPath(mod.gpa, try placeOfInst(ctx, x)));
-        // A function value is never harmless: its code may write what its
-        // closure holds, a label of the frame (§2.11.3).
-        if (harmless and (target != null or composed)) return .harmless;
-        var ps: std.ArrayList(PlaceId) = .empty;
-        defer ps.deinit(mod.gpa);
-        for (args) |x| try ps.append(mod.gpa, try placeOfInst(ctx, x));
-        const result = try placeOfInst(ctx, inst);
-        if (target) |t0| {
-            const t = mod.aliasTarget(t0);
-            if (t[0] == mod.in.module and t[1] < mod.body_code.len and mod.body_code[t[1]] != none) {
-                if (mod.in.bir.decls[t[1]].params == 0 and args.len != 0) return if (mod.lambdaBody(t[1])) |c| .{ .code = c } else .{ .contract = try mod.pessimisticOf(@intCast(args.len), false) };
-                // A container's comparison in core is its components'.
-                if (!(mod.in.isCore(t[0]) and bir.instTag(@fromBackingInt(inst)) == .method_call and composedOrigin(bir, inst))) return .{ .code = mod.body_code[t[1]] };
-            }
-            if (try mod.declContract(t, ps.items, result)) |c| return .{ .contract = c };
-            // An imported alias: the contract a module publishes under a
-            // name of the chain (R-5.5.6).
-            var n = t0;
-            var hops: usize = 64;
-            while (hops > 0 and !std.mem.eql(u32, &n, &t)) : (hops -= 1) {
-                if (n[0] != mod.in.module) if (try mod.importedCall(n[0], n[1], @intCast(args.len))) |c| return .{ .contract = c };
-                n = Prepass.aliasStep(mod.in.birs, mod.in.provenance, n) orelse break;
-            }
-            if (bir.instTag(@fromBackingInt(inst)) == .method_call and mod.in.isCore(t[0]) and composedOrigin(bir, inst)) composed = true;
-            if (!composed) return .{ .contract = try mod.pessimisticOf(@intCast(args.len), false) };
-        }
-        if (composed) {
-            var arena: std.heap.ArenaAllocator = .init(mod.gpa);
-            defer arena.deinit();
-            return .{ .contract = try Rows.comparison(mod.rowsEnv(arena.allocator()), @intCast(args.len)) };
-        }
-        if (bir.instTag(@fromBackingInt(inst)) == .method_call) return .{ .contract = try mod.pessimisticOf(@intCast(args.len), false) };
-        return .value;
+        return Callees.callee(self(ctx), inst, args);
     }
 
-    fn composedOrigin(bir: *const Bir, inst: u32) bool {
-        const m = bir.extraData(@fromBackingInt(@intCast(bir.instData(@fromBackingInt(inst)).rhs)), Bir.MethodCall);
-        return m.origin != .none;
-    }
-
-    /// A function reference used as a value: its code (§2.11.4).
     fn funcRef(ctx: *anyopaque, inst: u32) Error!?u32 {
-        const mod = self(ctx);
-        const bir = mod.in.bir;
-        if (mod.code_of_inst.get(.{inst})) |c| return c;
-        const tag = bir.instTag(@fromBackingInt(inst));
-        var ps: std.ArrayList(PlaceId) = .empty;
-        defer ps.deinit(mod.gpa);
-        const v: Var.Optional = if (inst < mod.in.inst_type.len) mod.in.inst_type[inst] else .none;
-        const result = (try mod.fnPlaces(v, &ps)) orelse return null;
-        var arena: std.heap.ArenaAllocator = .init(mod.gpa);
-        defer arena.deinit();
-        var contract: u32 = none;
-        switch (tag) {
-            .ctor, .ext_ctor => {
-                const c = ctorOf(ctx, inst) orelse return null;
-                var rp: std.ArrayList(Rows.Param) = .empty;
-                defer rp.deinit(mod.gpa);
-                var ranks: std.ArrayList(u32) = .empty;
-                defer ranks.deinit(mod.gpa);
-                for (ps.items, 0..) |p, n| {
-                    try rp.append(mod.gpa, .{ .place = p });
-                    if (ctorField(ctx, inst, @intCast(n))) |r| try ranks.append(mod.gpa, r);
-                }
-                contract = try Rows.ctor(mod.rowsEnv(arena.allocator()), .{ .params = rp.items, .result = result }, c[0], ranks.items);
-            },
-            // A member answers what its `via` conversions answer (a top-level
-            // list, say), and a constructor holds its arguments: neither is
-            // fresh, so neither has a row here (§2.13.10).
-            .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor => contract = try mod.pessimisticOf(@intCast(ps.items.len), false),
-            .top, .ext_value => {
-                const t = mod.aliasTarget(mod.declOf(inst) orelse return null);
-                if (t[0] == mod.in.module and t[1] < mod.body_code.len and mod.body_code[t[1]] != none and (ps.items.len == 0 or mod.in.bir.decls[t[1]].params != 0)) {
-                    try mod.code_of_inst.put(mod.gpa, .{inst}, mod.body_code[t[1]]);
-                    return mod.body_code[t[1]];
-                }
-                if (t[0] == mod.in.module and t[1] < mod.body_code.len and mod.body_code[t[1]] != none) if (mod.lambdaBody(t[1])) |c| return c;
-                contract = (try mod.declContract(t, ps.items, result)) orelse try mod.pessimisticOf(@intCast(ps.items.len), false);
-            },
-            else => return null,
-        }
-        const id: u32 = @intCast(mod.codes.items.len);
-        const pstart: u32 = @intCast(mod.code_places.items.len);
-        try mod.code_places.appendSlice(mod.gpa, ps.items);
-        try mod.codes.append(mod.gpa, .{ .kind = .ref, .inst = inst, .params = .{ .start = pstart, .len = @intCast(ps.items.len) }, .own = @intCast(ps.items.len), .result = result, .contract = contract });
-        try mod.code_of_inst.put(mod.gpa, .{inst}, id);
-        return id;
+        return Callees.funcRef(self(ctx), inst);
     }
 
-    /// The codes of the declarations a dispatch site at `inst` passes as
-    /// evidence, every term however deep, each once (§2.11.4: a function
-    /// value handed to code the checker does not see).
     fn evidenceCodes(ctx: *anyopaque, inst: u32, out: *std.ArrayList(u32)) Error!void {
-        const mod = self(ctx);
-        const dt = mod.in.dispatch orelse return;
-        const site = dt.siteOf(@fromBackingInt(inst)) orelse return;
-        var todo: std.ArrayList(Dispatch.TermIndex) = .empty;
-        defer todo.deinit(mod.gpa);
-        try todo.appendSlice(mod.gpa, dt.argsAt(site.evidence));
-        var seen: std.ArrayList(Dispatch.TermIndex) = .empty;
-        defer seen.deinit(mod.gpa);
-        while (todo.pop()) |ti| {
-            if (std.mem.indexOfScalar(Dispatch.TermIndex, seen.items, ti) != null) continue;
-            try seen.append(mod.gpa, ti);
-            try todo.appendSlice(mod.gpa, dt.argsOfTerm(ti));
-            const t0: [2]u32 = switch (dt.term(ti)) {
-                .top => |u| .{ mod.in.module, u.decl.int() },
-                .ext => |u| if (mod.in.provenance.len > u.module.int()) if (mod.in.provenance[u.module.int()].valueDecl(@backingInt(u.value))) |d| .{ u.module.int(), d.int() } else continue else continue,
-                else => continue,
-            };
-            // A type's `eq` or `compare` writes nothing in place (R-5.13.1
-            // refuses its writes), and a comparison composes it (§2.13.13).
-            const name = mod.in.birs[t0[0]].symbol(mod.in.birs[t0[0]].decls[t0[1]].name);
-            if (name == InternPool.WellKnown.eq.symbol() or name == InternPool.WellKnown.compare.symbol()) continue;
-            const t = mod.aliasTarget(t0);
-            if (t[0] == mod.in.module) {
-                if (t[1] >= mod.body_code.len or mod.body_code[t[1]] == none) continue;
-                const c = if (mod.in.bir.decls[t[1]].params != 0) mod.body_code[t[1]] else mod.lambdaBody(t[1]) orelse continue;
-                if (std.mem.indexOfScalar(u32, out.items, c) == null) try out.append(mod.gpa, c);
-                continue;
-            }
-            // Another module's: its published contract (a worded row writes
-            // only where its own call site is authorised, never through a
-            // function value).
-            const owner = mod.in.birs[t[0]];
-            if (owner.ownSlotsV2(owner.decls[t[1]]).len != 0) continue;
-            const got = try mod.evidence_code.getOrPut(mod.gpa, .{ t[0], t[1] });
-            if (!got.found_existing) {
-                const contract = (try mod.importedContract(t[0], t[1])) orelse none;
-                got.value_ptr.* = @intCast(mod.codes.items.len);
-                try mod.codes.append(mod.gpa, .{ .kind = .ref, .inst = inst, .own = owner.decls[t[1]].params, .contract = contract });
-            }
-            if (std.mem.indexOfScalar(u32, out.items, got.value_ptr.*) == null) try out.append(mod.gpa, got.value_ptr.*);
-        }
+        return Callees.evidenceCodes(self(ctx), inst, out);
+    }
+
+    /// The parameters and the result of the function type `inst` has, or null.
+    pub fn instFnPlaces(mod: *Module, inst: u32, ps: *std.ArrayList(PlaceId)) Error!?PlaceId {
+        const v: Var.Optional = if (inst < mod.in.inst_type.len) mod.in.inst_type[inst] else .none;
+        return mod.fnPlaces(v, ps);
     }
 
     fn codeOf(ctx: *anyopaque, inst: u32) ?u32 {
@@ -1680,6 +1510,9 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
     for (codes.items) |id| if (mod.codes.items[id].kind == .called) {
         const c = mod.codes.items[id];
         try mod.contracts.putCalled(gpa, mod.codes.items[c.of].contract, c.slot, c.contract);
+    };
+    for (rs) |r| if (mod.in.bir.decls[r.decl].params == 0) if (mod.lambdaBody(r.decl)) |c| {
+        try mod.contracts.putCalled(gpa, mod.codes.items[mod.body_code[r.decl]].contract, Slots.root, mod.codes.items[c].contract);
     };
     for (rs, lines.items) |*r, *l| {
         r.rounds = round + 1;

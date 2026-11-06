@@ -1719,7 +1719,7 @@ its own (§2.3.4), and never `⊤`. An imported `foreign` is read this way too: 
 importer applies, so the importer reads its words, or their absence, itself. A parameterless `foreign`
 (`Js.null`) is a `host` value. `lent` and `lentoptional` results, and every other source of `⊤` (unknown
 code's answer, a worded declaration that is not a `foreign`, a declaration past its limit, an imported one
-with no contract), stay `⊤`.
+with no contract), stay `⊤`, except a called value's (§2.11.1, #2132).
 - **Why it holds.** A `foreign` body is JavaScript. It reaches a beni object in three ways only: through an
   argument, through what an earlier `foreign` call kept, and through what a beni callback that it calls
   answers. An argument with no word, or `escaped`, escapes deep at the call (§2.4, boundary rule 6); a
@@ -1910,18 +1910,32 @@ user `eq`/`compare` that `Dispatch` names (§2.13.13); a function **value** (§2
 and arguments all cross is harmless: no contract is read.
 
 *Amended 2026-11-06 (#2132): a published contract is a call's only at the call's arity.* A declaration with no
-parameters, called with arguments, is a function value whose contract is what its body answers: `res ε fresh` for
-`mk = Pt`, arity 0, which says nothing of what a call does. Read as the contract of `Lib.mk [] k`, it let `k` go
-free while the result held it, and the sanitised run trapped. In one module the rule was already right: a value's
-lambda runs when one is its body, and anything else is the pessimistic contract. The same holds of an imported
-one now, on every route that reads a block for a call, whatever the name it is reached by: a call, a method call,
-a pipe, each name of an alias chain, and a function reference used as a value (§2.11.4). A contract whose arity is
-not the call's is not read, and the call has the pessimistic contract. A block has no contract for the lambda of
-such a value: called contracts (§2.11.3) exist only below a declaration's own parameters, and a value's own slot
-`ε` has none. So `mk = λu v → …` and `mk = Pt`, imported, are the pessimistic contract where the same call in
-their own module is not: every argument escapes and the result is `⊤`. A worded declaration and a `foreign` keep
-their words, which are stated over the scheme, and an alias of a declaration with parameters keeps that
-declaration's contract, whose arity is the call's. Pinned: `run/SanitiserValueCallImported` and its `…Apart`.
+parameters, called with arguments, is a function value, and what it publishes is what its body answers: `res ε fresh`
+for `mk = Pt`, arity 0, which says nothing of what a call does. Read as the contract of `Lib.mk [] k`, it let `k` go
+free while the result held it, and the sanitised run trapped. The one reading of a block for a call is
+`Callees.publishedCall`, and these go through it: a call and a pipe, a method call, a function reference used as a
+value (§2.11.4), and a dispatch site's evidence. Each reads the chain's end and then each name of the alias chain
+(R-5.5.6), since a private end publishes nothing and its alias publishes its contract. A contract is read only at the
+call's arity. What it answers then, for a value:
+- **Its lambda or constructor**, when its body is one: the called contract at `ε` (§2.11.3, *A value's lambda*), of the
+  same arity. In its own module, that code.
+- **Else the pessimistic contract**, its result `host`. So `mk = if c then f else g`, `mk = build ⊤`, `mk = r.f` and a
+  let around a lambda escape every argument and answer `host`, imported or in their own module. That refusal is not
+  caution: such a value may keep what it is handed, as a fiber it spawns does, and nothing a block publishes says that
+  it does not.
+- **Why `host` holds and `⊤` was too much.** A value's function is made when its module starts, so no frame's
+  object is in its closure. It reaches a frame's object only through an argument, which escapes deep at the call, or
+  as something that escaped at an earlier point. So §2.10's argument for a `foreign` holds as it stands: an object
+  that no host leaf names is an object it does not hold, and one it may name is refused `escaped`. A value's closure
+  holds what its module made for it, which nothing else names, or a shared value, which is not writable. `⊤` said
+  more: a later `List.push k 2` of a list the call never saw was refused, as held by the call's result. A function
+  **parameter** stays unknown code: its closure holds its caller's objects, escaped or not.
+A worded declaration and a `foreign` keep their words, stated over the scheme. An alias of a declaration with
+parameters keeps that declaration's contract, whose arity is the call's. `(x.m) a` is two calls: the method at its
+own instruction, and a call of what it answers, a function value (§2.11.3), never the method again. Evidence is read
+at the declaration's own arity: its reader looks for writes, and a value's own contract has none, since a writer held
+in a top-level value is refused where it is made (`once`, §2.11.4).
+Pinned: `run/SanitiserValueCallImported` and its `…Apart`.
 
 #### 2.11.2 Instantiation, once per call site
 
@@ -2651,6 +2665,17 @@ down. Every level's cost is its own, one more walk of a body. The tower is bound
 finite form on `grow` (its capture is its own result, whose capture is its own result) and doubles on `ClosureTower`.
 It needs a fold, and each fold needs an argument that it is sound. The called contract *is* that fold: the captures are
 closed over by `D`'s parameters and `self`, so what stays is what the call does.
+
+**A value's lambda** (*amended 2026-11-06, #2132*). A declaration with no parameters whose body is a lambda or a
+constructor has a
+called contract at `ε`: the one place it publishes what a call of it does (§2.11.1). It bends this section's
+convention in two ways, and only here. Its slot is `ε` of the **value**, not of a function's result, since the value has
+no result to stand in; and it is the lambda's or the constructor's own contract, not a called code: its parameters are the function type's
+own and nothing else, with no `self` and no `D` parameters. That is exact, since `D` has none, and the body of a
+declaration with no parameters has no frame to capture from, so the lambda has no captures and no read of the
+value can make its objects another's. `Callees.importedCall` reads it only at the call's arity. Nothing else meets it: `Called.value` asks `calledOf` of a walked call's contract, and
+a value's own contract is never that of a call. No format change: a block already writes a contract's called
+contracts (§3.6, version 23). Any other value has none.
 
 **Which slots.** `ε` of a function result and, below it, a record's field or a tuple's part, on through records and
 tuples (`{ run = λ⊤ → … }`). A slot's type has to be read to know its parameters, and a constructor's argument needs
@@ -5705,7 +5730,8 @@ L0  Ids  Counters  Scratch
 | `CondsOff.zig` | 12 | the conditions of a contract, split from `ReadOff` (§2.10) | as `ReadOff` |
 | `CodeCaps.zig` | 12 | nested codes' captures, split from `Groups` (§2.11.4) | Ids |
 | `TypeVarParam.zig` | 12 | whether a parameter's annotated type is a type variable, split from `Groups` (§2.13.9) | Ids |
-| `Groups.zig` | 10 | the module: adapters, callees, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Worded, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver, Closures |
+| `Callees.zig` | 12 | what a call runs and what a function reference is, the one reading of a block for a call, split from `Groups` (§2.11.1, §2.11.4) | Ids, Slots, Rows, Prepass, Walk |
+| `Groups.zig` | 10 | the module: adapters, groups, rounds, validation, results (§2.12) | Ids, Facts, Place, Slots, Contract, Rows, Worded, Prepass, Regions, Value, Relation, Walk, Eval, Resolve, Deliver, Closures |
 | `Block.zig` | 11 | contracts ↔ words, format v-next, validation by re-encoding (§3.6) | Ids, Place, Slots, Contract, Groups |
 | `FedWrite.zig` | 10 | a write of a fold's accumulator, by its slot (§2.11.3) | FedCall, Distinct, LabelChain |
 | `Each.zig` | 8 | what a traversal's supply says: its family, what its callee takes, what a write of it asks (§2.11.3) | Contract, LabelChain, Place |

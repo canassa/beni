@@ -270,6 +270,7 @@ const layers = [_]Entry{
     // A module's codes and one declaration's answer, split from `Groups` (#1758).
     .{ .file = "Codes.zig", .layer = 12, .max_lines = 55 },
     .{ .file = "BlockWords.zig", .layer = 12, .max_lines = 70 },
+    .{ .file = "Callees.zig", .layer = 12, .max_lines = 240 },
     // Evidence terms as function values (#1708).
     .{ .file = "Groups.zig", .layer = 13, .max_lines = 1900 },
     // A refused loan's text, split from `Message` (#1991).
