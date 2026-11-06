@@ -4761,7 +4761,7 @@ const Spec = struct {
         // Then this one.
         var changed = false;
         for (items) |raw| {
-            if (try s.decided(m, @fromBackingInt(@intCast(raw))) != null or try s.deadWrite(m, @fromBackingInt(@intCast(raw))) or literalStmt(m.ir, @fromBackingInt(@intCast(raw)))) changed = true;
+            if (try s.decided(m, @fromBackingInt(@intCast(raw))) != null or try s.deadWrite(m, @fromBackingInt(@intCast(raw))) or literalStmt(m.ir, @fromBackingInt(@intCast(raw))) or bareTry(m.ir, @fromBackingInt(@intCast(raw))) != null) changed = true;
         }
         if (!changed) {
             // What follows a statement that cannot complete, when it may go.
@@ -4778,6 +4778,21 @@ const Spec = struct {
             // of a value folded where nothing reads it (a function written
             // in whose last `return` folded to `null`).
             if (literalStmt(m.ir, stmt)) continue;
+            // A `try` with no `catch` whose cleanup folded away is its
+            // guarded statements: a `finally` that does nothing changes
+            // nothing of how they end. They join the list as a kept arm
+            // does, or stay a block of their own.
+            if (bareTry(m.ir, stmt)) |guarded| {
+                if (guarded.len() == 0) continue;
+                if (s.spliceable(m, guarded)) {
+                    try out.appendSlice(s.arena, m.ir.extraSlice(guarded, u32));
+                    continue;
+                }
+                const at = try m.append(s.gpa, &.{ @backingInt(guarded.start), @backingInt(guarded.end) });
+                m.setNode(stmt, .block_stmt, @backingInt(NameIndex.none), at);
+                try out.append(s.arena, raw);
+                continue;
+            }
             // Fact 3: a write of a property no reachable read reaches is not
             // written, nor one of a variable nothing reads; its value is
             // still evaluated when it may do something.
@@ -17369,6 +17384,18 @@ fn literalStmt(ir: *const JsIr, stmt: Index) bool {
         .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
         else => false,
     };
+}
+
+/// The guarded statements of `stmt` when it is a `try` with no `catch` and
+/// an empty `finally`: what is left of a `Js.finally` whose cleanup folded
+/// to nothing, as `Rt.beni`'s `send` leaves one in a build in which nothing
+/// sets a slot (`boundary.md` §9.8.16 (b), amended 2026-11-06). Null for
+/// any other statement.
+fn bareTry(ir: *const JsIr, stmt: Index) ?JsIr.SubRange {
+    if (ir.tag(stmt) != .try_stmt) return null;
+    const t = ir.extraData(@fromBackingInt(@intCast(ir.data(stmt).rhs)), JsIr.Try);
+    if (t.catches() or t.finalBody().len() != 0) return null;
+    return t.body();
 }
 
 /// How deep `pureCall` follows a call that is an argument of a call.

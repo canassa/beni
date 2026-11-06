@@ -1,0 +1,52 @@
+-- `LogBareBodyAfterReportedThrow` where a slot is set before the throw:
+-- `Go`'s `update` logs inside `Log.annotate`, and makes its command after
+-- the scope, so the body has no context. The DOM reports the throw of
+-- `Boom`'s `update`, and the body goes on (#859). `send` kept the slots
+-- of the record outside any fiber as `update` began, and puts them back
+-- after it (boundary.md §9.8.16 (b), amended 2026-11-06, #1153). So the
+-- rest of the body has no context, and `Boom`'s release has `update`'s.
+import Cmd exposing (Cmd)
+import Dom
+import Html exposing (Html)
+import Log
+import Sub
+import Task
+import Tea
+
+
+type Msg
+    = Go
+    | Boom
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Go →
+            Log.annotate "go" "g" λ⊤ → Log.info "Go's update"
+            ( n + 1
+            , Cmd.perform λ_ →
+                _ = Dom.focus "target"
+                Log.info "the body, after the focus"
+            )
+
+        Boom →
+            Log.annotate "update" "u" λ⊤ →
+                Log.info "Boom's update"
+                Task.bracket (λ⊤ → ⊤) (λ_ _ → Log.info "Boom's release") λ_ →
+                    Debug.todo "Boom's update threw"
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <p id="n">{String.fromInt n}</p>
+        <button id="go" onClick={Go}>go</button>
+        <input id="target" onFocus={Boom} />
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

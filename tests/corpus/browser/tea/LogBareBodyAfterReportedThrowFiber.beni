@@ -1,0 +1,55 @@
+-- `LogBareBodyAfterReportedThrow` with a body that waits, so it runs in a
+-- fiber, and that still waits when the teardown starts. The DOM reports
+-- the throw of `Boom`'s `update`, and the body goes on (#859). After
+-- `update`, `send` puts back the fiber's slots, the defaults
+-- (boundary.md §9.8.16 (b), amended 2026-11-06, #1153), so the rest of
+-- the body has no context. The teardown unwinds the fiber, and `Boom`'s
+-- release has `update`'s context.
+import Cmd exposing (Cmd)
+import Dom
+import Html exposing (Html)
+import Log
+import Sub
+import Task
+import Tea
+import Time
+
+
+type Msg
+    = Go
+    | Boom
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Go →
+            ( n + 1
+            , Cmd.perform λ_ →
+                Time.sleep (Time.millis 5)
+                _ = Dom.focus "target"
+                Log.info "the body, after the focus"
+                Time.sleep (Time.millis 1000)
+                Log.info "the body, after the sleep"
+            )
+
+        Boom →
+            Log.annotate "update" "u" λ⊤ →
+                Log.info "Boom's update"
+                Task.bracket (λ⊤ → ⊤) (λ_ _ → Log.info "Boom's release") λ_ →
+                    Debug.todo "Boom's update threw"
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <p id="n">{String.fromInt n}</p>
+        <button id="go" onClick={Go}>go</button>
+        <input id="target" onFocus={Boom} />
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

@@ -3900,9 +3900,12 @@ test "a release page ships the hosted program's loop only when it mounts one" {
     // Every page guards `run` and `flush` with a `try … finally` that stops
     // it on a defect (`boundary.md` §9.8.10 (c)); the hosted loop adds its
     // own three latches, the dispatcher's, the render's and the
-    // after-render phase's.
+    // after-render phase's. The last two only clear `busy`, which nothing
+    // of this page reads: their cleanup folds away, and a `try` whose
+    // `finally` is empty is its guarded statements (`backend.md` §9,
+    // amended 2026-11-06). So the dispatcher's is the one the loop adds.
     try testing.expectEqual(@as(usize, 2), std.mem.count(u8, plain_js, "finally"));
-    try testing.expectEqual(@as(usize, 5), std.mem.count(u8, hosted_js, "finally"));
+    try testing.expectEqual(@as(usize, 3), std.mem.count(u8, hosted_js, "finally"));
 }
 
 test "a page with no delegated event calls no start and ships no listener" {
