@@ -83,14 +83,11 @@ main : Tea.Program
 main = Tea.sandbox { init = λ⊤ → 0, update = update, view = view }
 ```
 
-Build and run: `beni new <dir>` writes a project; `beni build` compiles it to `out/`; `node out/_main.mjs`
+`beni new <dir>` writes a project; `beni build` compiles it to `out/`; `node out/_main.mjs`
 runs a `node` program; `beni serve` serves a page with live reload.
 
 ## References
-Native host types and realm diagnostics: `references/native-host.md`.
-
-
-Open the file that your task needs. Each is short.
+Open a reference.
 
 - `references/syntax.md` — files and modules, `pub`, imports, comments, strings, layout, blocks, `λ`,
   `⊤` and `⊥`, `if` without `else`, the Unicode notation, records, tuples, `?`.
@@ -109,7 +106,7 @@ Open the file that your task needs. Each is short.
   lists, `Html.map`, what is refused.
 - `references/platforms.md` — `node`, `browser`, `browser-tea`, `browser-inline`, `html` and `cloudflare`: what `main` is on
   each, commands, subscriptions and the modules each adds.
-- `references/entry-runtimes.md` — custom platform runtime selection and its checked contract.
+- `references/entry-runtimes.md`, `references/native-host.md` — runtimes and realms.
 - `references/prerender.md` — `Browser.prerender`: a page per route on `browser-inline`, routes and files,
   `"build"."origin"`, `{{view}}` and `{{title}}`, what must be pure.
 - `references/routing.md` — `Tea.document`, `Tea.application`, `Browser.Navigation` and their limits on

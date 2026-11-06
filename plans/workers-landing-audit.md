@@ -38,3 +38,17 @@ Evidence is on dagon in ~/worktree-evidence/wd-fiber/workers-landing/:
 byte-audit/REPORT.md, summary-final.json, results.json and retained output trees;
 SPIKE-EDITS.md; master-pages.jsonl and paired page outputs. Full gates, Chrome
 and Workers results are recorded separately before requesting review.
+
+The replay's worker-reference branch copied descriptors on the recursive
+`Lower.expr` stack, even when a program had no worker descriptors. In the
+self-hosted ReleaseSafe build its frame grew from master's 400 B to 848 B.
+Moving that lookup into a non-inlined helper reduces it to 464 B. Both unchanged
+4095-term plus-chain tests fail before this factoring and pass afterwards in
+development and release; no depth, stack or fixture cap changed.
+
+The existing exact-demand parity inventory records 33 differences across 17
+worker realm fixtures under #2127. A nine-line non-worker reduction reproduces
+the storage-demand gap on master: v1 reports no demand and opt-in v2 rejects
+the top-level Ref cell. No new exemption mechanism or checker work is included.
+The stale copied unchecked summaries are removed only where the actual dump
+is empty; the per-file audit is retained in the evidence folder.

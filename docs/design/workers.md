@@ -389,12 +389,16 @@ owning module's native serialization/transfer contract; generic type variables
 retain obligations until instantiated. Worker-local state is excluded from
 this judgment because it never crosses.
 
-Until type-variable positions have selective runtime normalization, each
-wire role must be concrete at the Program declaration after alias expansion.
-An unresolved variable, including one nested in a List or tagged type, is
-`worker_message_not_concrete` at that declaration; give it a concrete message
-type. Generic helpers may still carry Wire obligations. The temporary
-restriction is tracked in #1652.
+Each Program declaration supplies one normalization plan in both realms,
+shared by all of its instantiations. A type-variable position walks its runtime
+value to materialize Lists inside records, tagged payloads, tuples and arrays.
+An open record row walks only its unknown fields. Known fields retain their
+static plans, so clone-stable subgraphs are skipped; normalization preserves
+unchanged objects and arrays by identity. This selective walk neither encodes
+values into a universal format nor relies on launch-site specialization.
+Generic declarations retain their Wire obligations, discharged at concrete
+launches; functions and native values are still refused. An unused role whose
+value type remains unfixed, such as an error or event role, is accepted.
 
 Shared names determine how Wire evidence lowers without weakening this guarantee.
 Under the decided shared-name design, clone-stable records/unions/tuples/
@@ -840,3 +844,12 @@ the existing defect handler, and preserves that prior handler. The function is
 impure, stores its callback, and remains fenced to the worker runtime's owning
 platform modules; it is not an application Task API. This bridge retains master’s
 defect storage and scheduler behavior.
+
+The replay's P-sync inventory pins `Browser.Worker.listen`, `installFatal`
+and `runDefinition`. `listen` retains a guarded host listener on its peer and
+stops the realm on an escaping defect. `installFatal` installs the private
+cleanup bridge and records the first native defect without running application
+work. `runDefinition` registers the worker control-frame listeners: these mutate
+transport state, enqueue requests or start/resume owned fibers; handlers run
+through those fibers. The bodies retain transport callbacks and peer state,
+so these pins assert no borrowed or pure ownership shortcut.

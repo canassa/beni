@@ -1778,10 +1778,19 @@ test "worker discovery terminates cycles and emits identical entries at jobs 1 a
         // catches an initializer order that still follows a descriptor's
         // original body and would read a callback before its binding exists.
         var script: std.ArrayList(u8) = .empty;
-        try script.appendSlice(w.arena.allocator(), "const replies=[];\n");
+        try script.appendSlice(w.arena.allocator(),
+            \\const replies=[];
+            \\globalThis.self=globalThis;
+            \\let message;
+            \\globalThis.addEventListener=(kind,callback)=>{if(kind==='message')message=callback};
+            \\globalThis.removeEventListener=(kind,callback)=>{if(kind==='message'&&message===callback)message=null};
+            \\globalThis.postMessage=value=>replies.push(value);
+            \\globalThis.close=()=>{};
+            \\
+        );
         for (files) |path| {
-            if (!std.mem.startsWith(u8, path, "_workers/") or !std.mem.endsWith(u8, path, "/Main.mjs")) continue;
-            try script.print(w.arena.allocator(), "replies.push(Object.values(await import('./one/{s}'))[0].a.handle('plain',null,null));\n", .{path});
+            if (!std.mem.startsWith(u8, path, "_workers/") or !std.mem.endsWith(u8, path, "/_main.mjs")) continue;
+            try script.print(w.arena.allocator(), "await import('./one/{s}');\nawait new Promise(resolve=>setTimeout(resolve,0));\nmessage({{data:'plain'}});\nawait new Promise(resolve=>setTimeout(resolve,0));\n", .{path});
         }
         try script.appendSlice(w.arena.allocator(), "console.log(replies.sort().join(','));\n");
         try w.write("probe.mjs", script.items);
@@ -1864,7 +1873,7 @@ test "worker launch URLs stay relative to their module under release specializat
         \\  }
         \\  addEventListener() {}
         \\};
-        \\Object.values(await import('./out/Main.mjs'))[0].a(null);
+        \\await import('./out/_main.mjs');
         \\console.log(`launched ${launches} workers`);
         \\
     );
@@ -1883,9 +1892,11 @@ test "worker launch URLs stay relative to their module under release specializat
 }
 
 test "worker Wire rejects function fields and native values" {
-    const cases = [_]struct { message: []const u8, path: []const u8, reason: []const u8, line: u32 = 8, col: u32 = 9, end_col: u32 = 20 }{
+    const cases = [_]struct { message: []const u8, path: []const u8, reason: []const u8, line: u32 = 8, col: u32 = 9, end_col: u32 = 20, generic: bool = false }{
         .{ .message = "{ callback : (⊤ → ⊤) }", .path = "message.callback", .reason = "a function" },
         .{ .message = "{ raw : Worker.Raw }", .path = "message.raw", .reason = "the native type `Js.Value`" },
+        .{ .message = "{ callback : (⊤ → ⊤) }", .path = "message.callback", .reason = "a function", .generic = true },
+        .{ .message = "{ raw : Worker.Raw }", .path = "message.raw", .reason = "the native type `Js.Value`", .generic = true },
         .{ .message = "{ outer : { inner : { callback : (⊤ → ⊤) } } }", .path = "message.outer.inner.callback", .reason = "a function" },
     };
     for (cases) |scenario| {
@@ -1896,7 +1907,11 @@ test "worker Wire rejects function fields and native values" {
         // Expose the native alias from the same platform as the transport.
         const worker = try w.read("platform/Worker.beni");
         try w.write("platform/Worker.beni", try std.fmt.allocPrint(w.arena.allocator(), "{s}\n\npub type alias Raw = Js.Value\n", .{worker}));
-        try w.write("Main.beni", try std.fmt.allocPrint(w.arena.allocator(), "import Page\nimport Worker\n\nworker : Worker.Program {s} String ⊤\nworker = Worker.program {{ init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → \"ok\", stream = λ_ _ _ _ → ⊤ }}\nmain : Page.Program\nmain = Page.program (λ_ →\n    _ = Worker.open worker\n    ⊤)\n", .{scenario.message}));
+        try w.write("Main.beni", try std.fmt.allocPrint(w.arena.allocator(), "import Page\nimport Worker\n\nworker : Worker.Program {s} String ⊤\nworker = Worker.program {{ init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → \"ok\", stream = λ_ _ _ _ → ⊤ }}\n{s}main : Page.Program\nmain = Page.program (λ_ →\n    _ = Worker.open {s}\n    ⊤)\n", .{
+            if (scenario.generic) "a" else scenario.message,
+            if (scenario.generic) try std.fmt.allocPrint(w.arena.allocator(), "specific : Worker.Program {s} String ⊤\nspecific = worker\n", .{scenario.message}) else "",
+            if (scenario.generic) "specific" else "worker",
+        }));
         for ([_][]const []const u8{
             &.{ "check", "--platform=platform", "--cache-dir=cache", "Main.beni" },
             &.{ "build", "--platform=platform", "--cache-dir=cache", "--out=out", "Main.beni" },
@@ -1910,7 +1925,7 @@ test "worker Wire rejects function fields and native values" {
             try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
                 .code = .worker_message_not_serializable,
                 .severity = .@"error",
-                .span = .{ .file = "Main.beni", .start = .{ .line = scenario.line, .col = scenario.col }, .end = .{ .line = scenario.line, .col = scenario.end_col } },
+                .span = .{ .file = "Main.beni", .start = .{ .line = scenario.line + @as(u32, if (scenario.generic) 2 else 0), .col = scenario.col }, .end = .{ .line = scenario.line + @as(u32, if (scenario.generic) 2 else 0), .col = scenario.end_col } },
                 .title = "WORKER MESSAGE NOT SERIALIZABLE",
                 .message = message,
             }}), result.diagnostics);
@@ -1930,11 +1945,11 @@ test "worker Wire obligations survive generic helpers and warm interfaces" {
         );
         try w.write("Forward.beni",
             \\import Worker
-            \\worker : a → Worker.Program a String ⊤
-            \\worker _ = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → "ok", stream = λ_ _ _ _ → ⊤ }
+            \\worker : Worker.Program a String ⊤
+            \\worker = Worker.program { init = λ_ _ → ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → "ok", stream = λ_ _ _ _ → ⊤ }
             \\pub forward : a → ⊤
             \\forward value =
-            \\    case Worker.open (worker value) of
+            \\    case Worker.open worker of
             \\        Ok handle → Worker.send handle value
             \\        Err _ → ⊤
             \\
@@ -1945,17 +1960,10 @@ test "worker Wire obligations survive generic helpers and warm interfaces" {
             "import Page\nimport Forward\nmain : Page.Program\nmain = Page.program (λ_ → Forward.forward \"ok\")\n");
         // EXECUTE: the second check reads the helper's cached interface.
         for (0..2) |_| {
-            const good = try w.run(&.{ "check", "--self-profile=warm.json", "--root=.", "--platform=platform", "--cache-dir=cache", "Main.beni", "Forward.beni" });
-            // The checker accepts the generic obligations; the unchanged
-            // unchecked-worker gate is the only remaining diagnostic.
-            try testing.expectEqual(@as(u8, 1), good.exit_code);
-            try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
-                .code = .invalid_entry_kind,
-                .severity = .@"error",
-                .span = .{ .file = "platform/beni.json", .start = .{ .line = 1, .col = 1 }, .end = .{ .line = 1, .col = 1 } },
-                .title = "INVALID ENTRY KIND",
-                .message = "Worker launches are unavailable until realm and Wire checks are implemented.",
-            }}), good.diagnostics);
+            const good = try w.run(&.{ "check", "--allow-unchecked-workers", "--self-profile=warm.json", "--root=.", "--platform=platform", "--cache-dir=cache", "Main.beni", "Forward.beni" });
+            // Checking discharges generic Wire obligations without launching a worker.
+            try testing.expectEqual(@as(u8, 0), good.exit_code);
+            try testing.expectEqual(@as(usize, 0), good.diagnostics.len);
         }
         const Trace = struct { traceEvents: []const struct { args: struct { modules_checked: ?u64 = null } = .{} } };
         const trace = try std.json.parseFromSlice(Trace, w.arena.allocator(), try w.read("warm.json"), .{ .ignore_unknown_fields = true });

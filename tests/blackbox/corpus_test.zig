@@ -1922,7 +1922,7 @@ const Case = struct {
         if (c.fixture.unchecked_workers and args.len != 0 and (std.mem.eql(u8, args[0], "build") or std.mem.eql(u8, args[0], "check"))) try list.append(c.arena, "--allow-unchecked-workers");
         if (c.fixture.core) try list.append(c.arena, "--core");
         // Enforcement refusals use the same platform as their ownership dump.
-        if (c.kind == .check_bad and args.len != 0 and !std.mem.eql(u8, args[0], "fmt")) {
+        if ((c.kind == .check_bad or c.kind == .check_good) and args.len != 0 and !std.mem.eql(u8, args[0], "fmt")) {
             if (c.fixture.platform) |name| try list.append(c.arena, try std.fmt.allocPrint(c.arena, "--platform={s}", .{name}));
         }
         if (c.fixture.markup and args.len != 0 and !std.mem.eql(u8, args[0], "fmt")) try list.append(c.arena, "--platform=html");

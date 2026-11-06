@@ -327,3 +327,6 @@ platforms/node/Http/Server.beni                  Http.Server.receive            
 platforms/node/Http/Server.beni                  Http.Server.takeUpgrade          1825577fb408e1e152d476265dfc2b56d70b94a91e379c7b399e35fabd41f12e
 platforms/node/Io.beni                           Io.run                           f78afb0cabb1e257ebdf30547b22bd81f41099db323c79cfef0fba9fe2786f14
 platforms/node/WebSocket.beni                    WebSocket.fromUpgrade            e6582f92cf20d97bc533cfb2802d513d5f75beb72e5452d2580b2d8f5858296b
+platforms/browser/Browser/Worker.beni Browser.Worker.listen e88211e8be765e11de2a2b898f74e3d88d96cba5efe71306778a6ac8edf11b39
+platforms/browser/Browser/Worker.beni Browser.Worker.installFatal c3b108ee115718986d307c19d16740d5f189f2b225dfd6d3c027926058159b6b
+platforms/browser/Browser/Worker.beni Browser.Worker.runDefinition eeec99b49d5936256543971d5a31908ddb14983b2495d652d083fcfad7f6a35c
