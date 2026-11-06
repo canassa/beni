@@ -2107,6 +2107,16 @@ There are two cases, by `G_d`'s effective status.
     - *Rejected alternative:* an explicit continuation stack. It would have to turn `constrain`,
       `solve` and `resolve`, three mutually recursive tree walks, into a state machine. That is the
       largest complexity cost in the design, paid for input no person writes.
+      - *Amended 2026-11-06 (#2090): one narrow exception.* The WebAssembly compiler has the
+        engine's stack, about 1 MB in V8 (`playground.md` §2.3), not `check_stack_size`. A
+        written operator chain `x + x + … + x` nests one call per operator in the call's FIRST
+        argument, and the parser accepts it `Parse.max_depth` levels deep, so one native frame
+        pair per operator ran out of that stack. `constrain` now begins a first argument that is
+        itself a call on a list of open calls, not by recursion (`constrain/Expr.zig`, `call`).
+        It makes every variable and node in the same order and keeps `depth` and the refusal
+        past `Generator.max_depth`, so the tree is the one the recursion built. Every other walk
+        stays recursive under this budget: `solve` and `resolve` on that tree fit the engine's
+        stack at `Parse.max_depth` (`wasm_test.zig`).
     - **Tested** by generated scenarios (`ordering_test.zig`):
       - a reverse-ordered method chain, under the budget and over it;
       - a pair of deep declarations.

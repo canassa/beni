@@ -661,6 +661,13 @@ levels deep (`abuse_test.zig`). Three page loads gave the same depth. A program 
 writes rarely nests a few hundred levels; a long operator chain does, because the parser
 nests one level per operator (`x + x + … + x`).
 
+*Amended 2026-11-06 (#2090):* an operator chain written left to right no longer stops here. The
+checker's constraint generator (`checker-v2.md` §10.2) and emit's lowering (`backend.md`, *Emitted
+JavaScript nests only as deep as the source*, #1673) walk it with explicit frames. The
+WebAssembly compiler builds `run/WideArithmetic`, 4 095 terms, as the native one does
+(`wasm_test.zig` in the gates, `test-playground` on the shipped `.wasm`). The depths above for
+`f (f (… 1))` were not measured again.
+
 **A program that does not stop holds its frame.** The compiled program runs in the output frame,
 not in the worker, and nothing bounds its time. In Chrome the sandboxed frame has a process of
 its own (Chrome isolates sandboxed frames; the page tests attach to it as a separate target),
