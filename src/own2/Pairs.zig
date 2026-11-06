@@ -12,7 +12,7 @@
 //! sibling would pass for a head with a value made under a cut.
 //!
 //! `solved` is a retained table of the answers so far, kept for an evaluation
-//! and dropped when a key grows: the owner's decision, an exception for this
+//! and dropped at the next outer query after a key grows: the owner's decision, an exception for this
 //! table only (§2.9.2, *What is kept*). A row enters it when its head has
 //! solved its component. A walk's own rows hold everything else and go with
 //! the query. Equations that are not joins (`AnswerKeep.kept`) are not monotone
