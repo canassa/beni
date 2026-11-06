@@ -1,0 +1,6 @@
+# v1 refuses a record kept inside a fresh value and written after the call (#1000).
+66:34 record_may_be_shared `Box`
+67:36 record_may_be_shared `Box`
+68:34 record_may_be_shared `Box`
+69:40 record_may_be_shared `Box`
+70:35 record_may_be_shared `Box`

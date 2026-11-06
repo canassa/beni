@@ -1,0 +1,52 @@
+-- The accepted twins of `SanitiserRecordInnerKept` (#1001): the parent is kept
+-- and only read after, the function keeps nothing and the local is written,
+-- or the write comes first and its result is handed on.
+import Debug
+import Node exposing (Program)
+import String
+
+
+type alias R =
+    x : Int
+
+
+type alias O =
+    inner : R
+    y : Int
+
+
+type Box a
+    = Box a
+
+
+readAfter : (O → Box O), O → Box O × Int
+readAfter f o =
+    b = f o
+    i = o.inner
+    ( b, i.x )
+
+
+keepsNothing : (O → Int), O → Int × R
+keepsNothing f o =
+    n = f o
+    i = o.inner
+    i2 = { i | x = 1 }
+    ( n, i2 )
+
+
+writtenFirst : (O → Box O), O → Box O
+writtenFirst f o =
+    i = o.inner
+    i2 = { i | x = 1 }
+    f { o | inner = i2 }
+
+
+main : Program
+main =
+    o0 ⊤ = { inner = { x = 0 }, y = 2 }
+    lines =
+        [ Debug.toString (readAfter Box (o0 ⊤))
+        , Debug.toString (keepsNothing (λq → q.y) (o0 ⊤))
+        , Debug.toString (writtenFirst Box (o0 ⊤))
+        ]
+    Node.print (String.join lines "\n")

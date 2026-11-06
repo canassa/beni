@@ -158,14 +158,6 @@ tests/pending/ownership/RecordSchemaRun.beni exit=0 ownership-differs
 # the order of the write and the call.
 tests/pending/ownership/RecordWriteBeforeKeep.beni exit=0 ownership-differs
 
-# CK-273 (#1000): a record inside a fresh literal handed to a function that
-# keeps it, written after: a miscompile.
-tests/pending/ownership/RecordKeptInLiteral.beni exit=0 ownership-differs
-
-# CK-274 (#1001): a nested record written through a local after a function
-# kept its parent: a miscompile.
-tests/pending/ownership/RecordInnerKept.beni exit=0 ownership-differs
-
 # The ownership checker v2's acceptance gaps (ownership-requirements.md
 # R-8.2, #1006), one per row of its table that v1 does not meet.
 

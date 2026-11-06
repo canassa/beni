@@ -1,0 +1,72 @@
+-- A record handed to a function inside a fresh value, and written after the
+-- call (`ownership-checker.md` §31.5, #1000). `Box` keeps what it is handed,
+-- so the box must still show the old `x`: an in-place write of `r` changes
+-- it. Each line prints what the box kept, then the new `x`.
+import Debug
+import List
+import Node exposing (Program)
+import String
+
+
+type alias R =
+    x : Int
+
+
+type alias W =
+    w : R
+
+
+type alias Deep =
+    a : W
+
+
+type Box a
+    = Box a
+
+
+inList : (List R → Box (List R)), R → Box (List R) × R
+inList f r =
+    b = f [ r ]
+    r2 = { r | x = 1 }
+    ( b, r2 )
+
+
+inRecord : (W → Box W), R → Box W × R
+inRecord f r =
+    b = f { w = r }
+    r2 = { r | x = 1 }
+    ( b, r2 )
+
+
+inDeep : (Deep → Box Deep), R → Box Deep × R
+inDeep f r =
+    b = f { a = { w = r } }
+    r2 = { r | x = 1 }
+    ( b, r2 )
+
+
+inNestedList : (List (List R) → Box (List (List R))), R → Box (List (List R)) × R
+inNestedList f r =
+    b = f [ [ r ] ]
+    r2 = { r | x = 1 }
+    ( b, r2 )
+
+
+inLocal : (List R → Box (List R)), R → Box (List R) × R
+inLocal f r =
+    l = [ r ]
+    b = f l
+    r2 = { r | x = 1 }
+    ( b, r2 )
+
+
+main : Program
+main =
+    lines =
+        [ Debug.toString (inList Box { x = 0 })
+        , Debug.toString (inRecord Box { x = 0 })
+        , Debug.toString (inDeep Box { x = 0 })
+        , Debug.toString (inNestedList Box { x = 0 })
+        , Debug.toString (inLocal Box { x = 0 })
+        ]
+    Node.print (String.join lines "\n")
