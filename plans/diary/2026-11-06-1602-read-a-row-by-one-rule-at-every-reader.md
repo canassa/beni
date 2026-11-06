@@ -1,0 +1,7 @@
+## 2026-11-06 16:02 CET — read a row by one rule at every reader
+
+**What I did.** Answered the review of #2135. Its 108 row TRAP are closed: `Graft`'s fold dropped a callee's row at a wider frame, `Captures` matched `.field` only, and more readers fell past a row silently (`writeMeets`, `Descent`, a row at a `var`, `projectLevels`' kid word). Each kind of reader now has one way in: `Trees.rowKid`, `Replay.under`, `Replay.collapse`, `RecordKid.holds`. A row's names are held there, so the setter helper is accepted again. `RecordRow` is gone and `StepsTo` takes concrete tables, so neither reaches up through `anytype`; `ValueTypes` made the room in `Value`.
+
+**Measured.** Ledger: 8 a2r, all this PR's fixtures; r2a 0; onlyA 0. Oracle over 8 166 probes: 156 TRAP→REFUSED, no new TRAP, DIFF or CRASH. Sweeps and cost unchanged. 14 SAME→REFUSED stay: four shapes filed for the owner (#2136, #2140, #2141, #2142), two the accepted limit at about 2 000 fields.
+
+**What I learned.** A checker that says "found nothing means safe" hides every step kind it does not know. My first sweep covered value readers and missed the word-walkers over trees, because `kidAt … orelse false` reads like a plain miss. Rewriting a condition I thought was the cause (`instCondMixed`) changed nothing: read where a condition comes from first. A file over its size target can usually be cut along data, as `ValueTypes` was, before any `anytype` is reached for.
