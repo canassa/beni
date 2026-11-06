@@ -366,9 +366,6 @@ pub const Input = struct {
         return in.dispatch[m.int()];
     }
 
-    /// How many schema definitions module `m` has members for: its
-    /// declarations, then its derived codecs, each a virtual declaration
-    /// after the last (`SchemaPlan.codecs`, schema.md §12.10).
     /// Whether `m` is `core/Schema`, the module that holds the operation
     /// nodes (`Kind.op`).
     pub fn isCoreSchema(in: Input, m: Graph.Index) bool {
@@ -383,6 +380,9 @@ pub const Input = struct {
         return .{ .module = core, .kind = .op, .index = @backingInt(o) };
     }
 
+    /// How many schema definitions module `m` has members for: its
+    /// declarations, then its derived codecs, each a virtual declaration
+    /// after the last (`SchemaPlan.codecs`, schema.md §12.10).
     pub fn schemaSlots(in: Input, m: Graph.Index) usize {
         const codecs = if (m.int() < in.plans.len) in.plans[m.int()].codecs.len else 0;
         return in.birOf(m).decls.len + codecs;
