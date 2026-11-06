@@ -1329,6 +1329,38 @@ every group of the module has been checked (§14.4).
    definitions generalise their bits — and it is what makes `List.map` serve a pure and a
    suspending callback with one definition. It is also §4.4's subsumption where it matters: a pure
    function passed where a suspending one is expected meets a fresh class, never its definition.
+   *Amended 2026-11-06 (#1662): **a top-level value whose evaluation is not `pure` does not
+   generalise its classes.*** A top-level value with no parameters is evaluated once, when its
+   module is loaded, so each class of its scheme is the class of one value at run time. A fresh
+   copy per use was unsound for a value that holds a cell: with `cellR = Ref.make λ⊤ → "initial"`,
+   `Ref.set cellR slow` in one declaration and `(Ref.get cellR) ⊤` in another, the read checked as
+   `impure`, and the value had two bodies (§16.2), `Main$cellR` and `Main$cellR$s`, so the write
+   went into one cell and the read came from the other (`run/TopLevelRefSuspendingCallback`). This
+   is checker-v2.md §8.4's value restriction applied to the bits, with the same argument: only an
+   effect can make a cell, so a value whose evaluation class (rule 1) is `pure` made none, and rule
+   3 stays sound for it. When the evaluation class is `impure` or `suspends`, every class of the
+   value's scheme is **fixed**:
+   - Every copy that a reference in the module makes of a fixed class is that class, as rule 4
+     shares a local's classes, so a write through one use reaches every read. A class of another
+     declaration's scheme that is one with a fixed class is fixed too (a setter's parameter), and
+     its copies are shared the same way.
+   - A scheme class that reaches a fixed class keeps that edge at every use: the use's copy flows
+     into the fixed class (a setter that stores `λ⊤ → k ⊤`). A scheme class that a fixed class
+     reaches gets the fixed class's final rung at every use (a reader's own arrow).
+   - A fixed class is never sensitive (§16.2), so the value has one body and is evaluated once.
+   - The precision lost is the module's. When one use hands the value a callback that suspends,
+     every use reads the class as one that suspends, and a use in a `sync` position (§15) is
+     refused, although each use had its own copy before (`check/bad/TopLevelFixedClassSync`).
+     The refusal is reported once, where the demand is: a use of a fixed class adds no `sync`
+     source of its own, because the copy is the class itself and reaches the demanded node.
+
+   The set of fixed values is read off the evaluation classes that the solve gives, so
+   `Effects.run` solves again with that set until the set stops growing. It can only grow, because
+   sharing only raises a rung. A module with no such value is solved once, as before, and emits the
+   same bytes. The escape hatch is rule 3's own: a parameter (`mk ⊤ = Ref.make …` is a function and
+   generalises its bits). *Not closed:* another module's use copies an imported value's classes
+   fresh, so a write from another module into an exported cell, or through an exported setter,
+   does not reach the reads of the module that defines the cell (#2126, the owner's decision).
 4. **A reference to a generalised local `let` binding shares its classes** (§4.2 rule 7): its
    instance and its definition are one class, which is §4.3's extraction hazard, accepted.
 5. **An annotation's arrows are inferred, never promised.** The annotation says nothing about
@@ -1826,6 +1858,15 @@ reaches no `$s` body, and elimination (`backend.md` §9) writes none.
   declaration that asks about its argument has two bodies, and the call's answer rides in its
   instruction's choice-of-body column; and a use whose choice is `yes` keeps only the target's
   `$s` body, where it kept both.
+- *Amended 2026-11-06* (#1662, §14.3 rule 3 amended the same day): **a top-level value is
+  evaluated once; a second body never evaluates its initializer again.** A fixed class is never
+  sensitive, so a top-level value whose evaluation is not `pure` has one body. Two bodies had
+  evaluated the initializer twice: one `Ref` became two cells
+  (`run/TopLevelRefSuspendingCallback`, `run/TopLevelRecordCellOnce`), and the statements of a
+  block ran twice (`run/TopLevelBlockRunsOnce`). Where a use's copy may suspend, the one body is
+  the suspendable form, because the shared class then reaches `suspends`. A value whose evaluation
+  is `pure` keeps the two bodies this section gives it: to evaluate it twice makes nothing that a
+  program can tell apart.
 
 ### 16.3 The lowering
 

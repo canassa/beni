@@ -22,7 +22,11 @@
 //! and `run`, after P5, joins, orders the declarations by those references,
 //! and solves each one's summary (§14.4) with the least fixpoint on the
 //! ladder. A summary is what a use instantiates and what the interface
-//! publishes (§14.6, `writeBlock`); `View` is what the dumps print (§14.7).
+//! publishes (§14.6, `writeBlock`); `View` is what the dumps print (§14.7);
+//! `EffectsSummary.zig` reads a summary off the graph. A top-level value
+//! whose evaluation is not `pure` does not generalise its classes: they are
+//! fixed, and `run` solves again with them (§14.3 rule 3, amended
+//! 2026-11-06).
 //!
 //! Nothing here reports, and no emitted byte depends on it. The `sync` step
 //! (§15 there) is the first reader: demands ride beside the rungs — a
@@ -39,6 +43,7 @@ const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
 const Walk = @import("Walk.zig");
 const Scc = @import("Scc.zig");
+const EffectsSummary = @import("EffectsSummary.zig");
 
 const Effects = @This();
 
@@ -591,7 +596,10 @@ pub const Summary = struct { start: u32 = 0, len: u32 = 0 };
 /// `sync`: a use must not let its copy suspend (§15.3).
 /// `sensitive`: the declaration's body reads the class, so the declaration has
 /// a second, suspendable body (§16.2; `EffectPlan`).
-pub const Class = struct { node: u32, rung: Rung, deps_start: u32 = 0, deps_len: u32 = 0, sync: bool = false, sensitive: bool = false };
+/// `outs[outs_start..][0..outs_len]`: the fixed classes (`Solved.fixed`)
+/// the class reaches, which a use's copy flows into (§14.3 rule 3, amended
+/// 2026-11-06). Empty in a module with no fixed class.
+pub const Class = struct { node: u32, rung: Rung, deps_start: u32 = 0, deps_len: u32 = 0, outs_start: u32 = 0, outs_len: u32 = 0, sync: bool = false, sensitive: bool = false };
 
 /// What `run` leaves: the graph, every node's rung, and the summaries.
 ///
@@ -623,6 +631,17 @@ pub const Solved = struct {
     order_starts: []u32 = &.{},
     classes: std.ArrayList(Class) = .empty,
     deps: std.ArrayList(u32) = .empty,
+    /// Per node: a **fixed** class (§14.3 rule 3, amended 2026-11-06), a
+    /// class of a top-level value whose evaluation is not `pure`, or one
+    /// with it. Every copy of it is the class itself, and it is never
+    /// sensitive (§16.2). Meaningful at a root; `any_fixed` says whether
+    /// any node is. Empty until `fixClasses` runs, and as long as the nodes
+    /// were then: a node made later is no fixed class, since no class is
+    /// joined after step 1 of the solve.
+    fixed: std.ArrayList(bool) = .empty,
+    any_fixed: bool = false,
+    /// The fixed nodes the summaries' classes reach (`Class.outs_start`).
+    outs: std.ArrayList(u32) = .empty,
     /// `dependencies`' bits per node, live while `stamp` is `epoch`.
     mask: std.ArrayList(u64) = .empty,
     stamp: std.ArrayList(u32) = .empty,
@@ -651,6 +670,18 @@ pub const Solved = struct {
         gpa.free(s.order_starts);
         s.classes.deinit(gpa);
         s.deps.deinit(gpa);
+        s.fixed.deinit(gpa);
+        s.outs.deinit(gpa);
+    }
+
+    /// Whether node `x`, a root, is a fixed class (§14.3 rule 3, amended
+    /// 2026-11-06).
+    pub fn isFixed(s: *const Solved, x: u32) bool {
+        return x < s.fixed.items.len and s.fixed.items[x];
+    }
+
+    pub fn outsOf(s: *const Solved, c: Class) []const u32 {
+        return s.outs.items[c.outs_start..][0..c.outs_len];
     }
 
     /// How many nodes the graph has.
@@ -679,12 +710,12 @@ pub const Solved = struct {
         return s.slot[r.int()] - 1;
     }
 
-    fn maskOf(s: *const Solved, x: u32) u64 {
+    pub fn maskOf(s: *const Solved, x: u32) u64 {
         return if (s.stamp.items[x] == s.epoch) s.mask.items[x] else 0;
     }
 
     /// A new epoch: every mask reads 0 until set under it.
-    fn nextEpoch(s: *Solved) void {
+    pub fn nextEpoch(s: *Solved) void {
         s.epoch +%= 1;
         if (s.epoch == 0) {
             @memset(s.stamp.items, 0);
@@ -692,7 +723,7 @@ pub const Solved = struct {
         }
     }
 
-    fn orMask(s: *Solved, x: u32, bits: u64) void {
+    pub fn orMask(s: *Solved, x: u32, bits: u64) void {
         if (s.stamp.items[x] != s.epoch) {
             s.stamp.items[x] = s.epoch;
             s.mask.items[x] = 0;
@@ -763,6 +794,46 @@ pub const Input = struct {
 };
 
 pub fn run(e: *Effects, in: Input) Error!void {
+    try e.solve(in, &.{});
+    // §14.3 rule 3, amended 2026-11-06: a top-level value whose evaluation
+    // is not `pure` does not generalise its classes. Which values those are
+    // is the solve's answer, so solve again with them fixed, until the set
+    // stops growing; sharing only raises a rung, so it only grows. A module
+    // with no such value is solved once. A solve writes `solved` and
+    // `scheme_decl` and nothing else: every other list is recorded before
+    // `run` and only read here. So those two are what a second solve resets.
+    var fixed = try e.fixedValues(in, &.{});
+    while (fixed.len != 0) {
+        e.solved.deinit(e.gpa);
+        e.solved = .{};
+        e.gpa.free(e.scheme_decl);
+        e.scheme_decl = &.{};
+        try e.solve(in, fixed);
+        const grown = try e.fixedValues(in, fixed);
+        if (grown.len == fixed.len) break;
+        fixed = grown;
+    }
+}
+
+/// The top-level values with no parameters whose evaluation class the last
+/// solve left above `pure` and whose scheme has a class, ascending, with
+/// every one of `was`.
+fn fixedValues(e: *Effects, in: Input, was: []const u32) Error![]const u32 {
+    var out: std.ArrayList(u32) = .empty;
+    for (e.eval, 0..) |ev, d| {
+        const v = ev.unwrap() orelse continue;
+        const fixed_before = std.mem.indexOfScalar(u32, was, @intCast(d)) != null;
+        if (!fixed_before) {
+            const node = e.nodeOf(v) orelse continue;
+            if (e.solved.level.items[node] == .pure) continue;
+            if (e.solved.classesOf(@intCast(d)).len == 0) continue;
+        }
+        try out.append(in.scratch, @intCast(d));
+    }
+    return out.items;
+}
+
+fn solve(e: *Effects, in: Input, fixed_decls: []const u32) Error!void {
     const gpa = e.gpa;
     const store = e.store;
     const scratch = in.scratch;
@@ -792,6 +863,8 @@ pub fn run(e: *Effects, in: Input) Error!void {
         if (scheme_decl.get(r.scheme) != null) continue;
         for (e.pairs.items[r.start..][0..r.len]) |p| try e.unite(p.a, p.b);
     }
+    // Every copy of a fixed class (§14.3 rule 3, amended 2026-11-06).
+    if (fixed_decls.len != 0) try e.fixClasses(in, fixed_decls, scheme_decl);
     // Every class is final now: flattened, so each later `find` is one read.
     // A root is always the smaller node (`unite`), so ascending order meets
     // a node's parent flattened already. A node met from here on is a class
@@ -850,6 +923,8 @@ pub fn run(e: *Effects, in: Input) Error!void {
         if (scheme_decl.get(r.scheme)) |target| try e.applyRecord(r, target, &work, scratch);
     }
     try e.propagate(&work, scratch);
+    // A fixed class may rise after a summary that it reaches was applied.
+    if (s.any_fixed) try e.refresh(in, scheme_decl, &work);
     // The rungs as the whole module left them: monotone, so at least what
     // each summary read when it was solved. A class that came to suspend
     // publishes no demand (§15.3).
@@ -877,7 +952,7 @@ fn addSource(e: *Effects, src: Source) Error!void {
 pub const none = std.math.maxInt(u32);
 
 /// `v`'s node, through aliases and the effect joins, made the first time.
-fn nodeFor(e: *Effects, v: Var) Error!u32 {
+pub fn nodeFor(e: *Effects, v: Var) Error!u32 {
     // Most variables are no alias: the root without `resolved`'s walk.
     var r = e.store.find(v);
     if (e.store.content(r) == .alias) r, _ = e.store.resolved(r);
@@ -891,6 +966,95 @@ fn unite(e: *Effects, a: Var, b: Var) Error!void {
     // The smaller node is the root: an order that depends on the module
     // alone (nodes are numbered in the order the graph meets them).
     if (x < y) e.solved.uf.items[y] = x else e.solved.uf.items[x] = y;
+    // A class one with a fixed class is fixed (§14.3 rule 3, amended
+    // 2026-11-06). `x` and `y` are roots: `nodeFor` returns one.
+    if (!e.solved.any_fixed) return;
+    try e.growFixed();
+    const fixed = e.solved.fixed.items;
+    fixed[@min(x, y)] = fixed[x] or fixed[y];
+}
+
+/// `Solved.fixed` as long as the nodes, a new node not fixed.
+fn growFixed(e: *Effects) Error!void {
+    const s = &e.solved;
+    const old = s.fixed.items.len;
+    if (old == s.uf.items.len) return;
+    try s.fixed.resize(e.gpa, s.uf.items.len);
+    @memset(s.fixed.items[old..], false);
+}
+
+/// §14.3 rule 3, amended 2026-11-06: the classes of each of `decls`, top-level
+/// values whose evaluation is not `pure`, are fixed, and every copy a
+/// reference made of a fixed class is that class, as rule 4 shares a
+/// local's. A copy that is one with another declaration's scheme class (a
+/// setter's parameter) makes that class fixed too, so its own copies are
+/// shared in a later pass, until a pass unites nothing.
+fn fixClasses(e: *Effects, in: Input, decls: []const u32, scheme_decl: SchemeDecls) Error!void {
+    const s = &e.solved;
+    var nodes: std.ArrayList(u32) = .empty;
+    defer nodes.deinit(e.gpa);
+    for (decls) |d| {
+        const scheme = in.decl_scheme[d].unwrap() orelse continue;
+        nodes.clearRetainingCapacity();
+        try EffectsSummary.schemeNodes(e, scheme, &nodes);
+        try e.growFixed();
+        for (nodes.items) |nd| {
+            s.fixed.items[s.findCompress(nd)] = true;
+            s.any_fixed = true;
+        }
+    }
+    var again = s.any_fixed;
+    while (again) {
+        again = false;
+        for (e.records.items) |r| {
+            if (scheme_decl.get(r.scheme) == null) continue;
+            for (e.pairs.items[r.start..][0..r.len]) |p| {
+                const x = try e.nodeFor(p.a);
+                if (!s.isFixed(x)) continue;
+                if (x == try e.nodeFor(p.b)) continue;
+                try e.unite(p.a, p.b);
+                again = true;
+            }
+        }
+    }
+}
+
+/// A summary applied before a fixed class it reaches rose gave its copies
+/// the rung it had then (§14.3 rule 3, amended 2026-11-06): give each class
+/// whose node rose its new rung, and raise every copy of it, until no rung
+/// rises. The ladder has three points, so this ends. It runs after the last
+/// `summarise`, so every class's `outs` is final and `applyRecord` has made
+/// each copy's edges into them: a raise here reaches the fixed classes by
+/// those edges, and no `outs` needs to be read again.
+fn refresh(e: *Effects, in: Input, scheme_decl: SchemeDecls, work: *std.ArrayList(u32)) Error!void {
+    const s = &e.solved;
+    const scratch = in.scratch;
+    const stale = try scratch.alloc(bool, s.summaries.len);
+    defer scratch.free(stale);
+    while (true) {
+        @memset(stale, false);
+        var any = false;
+        for (s.summaries, 0..) |sum, d| {
+            for (s.classes.items[sum.start..][0..sum.len]) |*c| {
+                const now = s.level.items[s.find(c.node)];
+                if (@backingInt(now) <= @backingInt(c.rung)) continue;
+                c.rung = now;
+                stale[d] = true;
+                any = true;
+            }
+        }
+        if (!any) return;
+        for (e.records.items) |r| {
+            const target = scheme_decl.get(r.scheme) orelse continue;
+            if (!stale[target]) continue;
+            const classes = s.classesOf(target);
+            for (e.pairs.items[r.start..][0..r.len]) |p| {
+                const ci = s.classIndex(target, try e.nodeFor(p.a)) orelse continue;
+                try e.raise(try e.nodeFor(p.b), classes[ci].rung, work, scratch);
+            }
+        }
+        try e.propagate(work, scratch);
+    }
 }
 
 /// Two readings of one type, position by position, as far as both have the
@@ -1089,7 +1253,7 @@ fn solveComponent(e: *Effects, in: Input, members: []const u32, scheme_decl: Sch
             }
         }
         try e.propagate(work, scratch);
-        const changed = try e.summarise(in, members);
+        const changed = try EffectsSummary.summarise(e, in, members);
         // The ladder has three points and a scheme finitely many classes, so
         // the summaries stop changing; the bound only guards a bug.
         if (!inward or !changed or rounds > 64) break;
@@ -1131,9 +1295,20 @@ fn applyRecord(e: *Effects, r: Record, target: u32, work: *std.ArrayList(u32), s
             try e.edgeNodes(from, rep, none);
             try e.raise(rep, s.level.items[from], work, scratch);
         }
+        // The use's copy flows into each fixed class the class reaches
+        // (§14.3 rule 3, amended 2026-11-06).
+        for (s.outsOf(c)) |fixed| {
+            if (fixed == rep) continue;
+            try e.edgeNodes(rep, fixed, none);
+            try e.raise(fixed, s.level.items[rep], work, scratch);
+        }
         // §15.3: the use's copy of a `sync` class must not suspend. Where
         // the class sits is read off `target`'s scheme when it is reported.
-        if (c.sync) try e.addSource(.{
+        // Not for a fixed class: the copy is the class itself, which
+        // reaches the demanded node, and that node's own source reports it
+        // where the demand is — not at every use of the value (§14.3 rule
+        // 3, amended 2026-11-06).
+        if (c.sync and !s.isFixed(s.find(c.node))) try e.addSource(.{
             .node = rep,
             .demand = .{ .v = @fromBackingInt(@intCast(none)), .kind = .argument, .site = r.site, .decl = r.owner, .holder = try e.nodeIsHolder(r, ci, target) },
             .target = target,
@@ -1149,199 +1324,6 @@ fn nodeIsHolder(e: *Effects, r: Record, ci: usize, target: u32) Error!bool {
         if (e.solved.classIndex(target, try e.nodeFor(p.a)) == @as(u32, @intCast(ci))) return e.isHolder(p.b);
     }
     return false;
-}
-
-/// Read each member's summary off the graph: its scheme's classes, each
-/// one's rung, and — 64 classes at a time, one bit each, pushed forward
-/// along the edges — which of the declaration's other classes reach it.
-/// True when a summary changed.
-fn summarise(e: *Effects, in: Input, members: []const u32) Error!bool {
-    const s = &e.solved;
-    const scratch = in.scratch;
-    var changed = false;
-    const demands = s.sources.items.len != 0;
-    for (members) |d| {
-        const kind = in.bir.decls[d].kind;
-        if (!kind.isValue() or kind == .foreign_value or kind == .vocab_markup) continue;
-        const scheme = in.decl_scheme[d].unwrap() orelse continue;
-        // The declaration's own root class publishes no demand (§15.3).
-        const root: u32 = blk: {
-            const r, _ = e.store.resolved(scheme);
-            break :blk if (e.carries(r)) try e.nodeFor(r) else none;
-        };
-        const nodes = &s.scheme_nodes;
-        nodes.clearRetainingCapacity();
-        const rd = e.readings[d];
-        if (rd.scheme_start != none and e.store.content(e.store.find(scheme)) != .err) {
-            // An annotated scheme's variables are its reading's range: no
-            // walk (see `readings`).
-            for (rd.scheme_start..rd.scheme_end) |i| {
-                const r = e.store.find(@fromBackingInt(@intCast(i)));
-                if (!e.carries(r)) continue;
-                const nd = try e.nodeFor(r);
-                if (std.mem.indexOfScalar(u32, nodes.items, nd) == null) try nodes.append(e.gpa, nd);
-            }
-        } else try e.schemeNodes(scheme, nodes);
-        // One class, the common case, depends on no other: no bits to push.
-        if (nodes.items.len <= 1) {
-            const old = s.classesOf(d);
-            if (nodes.items.len == 0) {
-                if (old.len == 0) continue;
-                s.summaries[d] = .{};
-                changed = true;
-                continue;
-            }
-            const nd = nodes.items[0];
-            const sync = demands and nd != root and s.level.items[nd] != .suspends and try e.reachesDemand(nd, scratch);
-            if (old.len == 1 and old[0].node == nd and old[0].rung == s.level.items[nd] and old[0].sync == sync) continue;
-            changed = true;
-            s.summaries[d] = .{ .start = @intCast(s.classes.items.len), .len = 1 };
-            try s.classes.append(e.gpa, .{ .node = nd, .rung = s.level.items[nd], .sync = sync });
-            continue;
-        }
-        const reach = try scratch.alloc(bool, nodes.items.len);
-        defer scratch.free(reach);
-        @memset(reach, false);
-        const deps = try e.dependencies(nodes.items, scratch, if (demands) reach else null);
-        defer {
-            for (deps) |list| scratch.free(list);
-            scratch.free(deps);
-        }
-        for (nodes.items, reach) |nd, *r| r.* = r.* and nd != root and s.level.items[nd] != .suspends;
-        // Compare with the summary in place, then replace it.
-        const old = s.classesOf(d);
-        var same = old.len == nodes.items.len;
-        if (same) {
-            for (old, nodes.items, deps, reach) |c, nd, ds, sync| {
-                if (c.node != nd or c.rung != s.level.items[nd] or c.sync != sync or !std.mem.eql(u32, s.depsOf(c), ds)) same = false;
-            }
-        }
-        if (same) continue;
-        changed = true;
-        const start: u32 = @intCast(s.classes.items.len);
-        for (nodes.items, deps, reach) |nd, ds, sync| {
-            const deps_start: u32 = @intCast(s.deps.items.len);
-            try s.deps.appendSlice(e.gpa, ds);
-            try s.classes.append(e.gpa, .{ .node = nd, .rung = s.level.items[nd], .deps_start = deps_start, .deps_len = @intCast(ds.len), .sync = sync });
-        }
-        s.summaries[d] = .{ .start = start, .len = @intCast(nodes.items.len) };
-    }
-    return changed;
-}
-
-/// Whether node `nd` reaches a demand along the edges, itself included
-/// (§15.3): one walk under a fresh epoch.
-fn reachesDemand(e: *Effects, nd: u32, scratch: Allocator) Error!bool {
-    const s = &e.solved;
-    s.nextEpoch();
-    var work: std.ArrayList(u32) = .empty;
-    defer work.deinit(scratch);
-    s.orMask(nd, 1);
-    try work.append(scratch, nd);
-    while (work.pop()) |x| {
-        if (s.demanded.items[x]) return true;
-        var at = s.head.items[x];
-        while (at != none) : (at = s.next.items[at]) {
-            const y = s.find(s.to.items[at]);
-            if (s.maskOf(y) != 0) continue;
-            s.orMask(y, 1);
-            try work.append(scratch, y);
-        }
-    }
-    return false;
-}
-
-/// For each of `nodes`, the indices of the others that reach it, ascending;
-/// and, into `reach` when given, whether each reaches a demand (§15.3) —
-/// the same pass, since a node's bits are the nodes that reach it.
-fn dependencies(e: *Effects, nodes: []const u32, scratch: Allocator, reach: ?[]bool) Error![][]u32 {
-    const s = &e.solved;
-    const out = try scratch.alloc([]u32, nodes.len);
-    for (out) |*o| o.* = &.{};
-    // One class depends on no other: most functions have only their own.
-    if (nodes.len < 2) return out;
-    var lists = try scratch.alloc(std.ArrayList(u32), nodes.len);
-    defer scratch.free(lists);
-    for (lists) |*l| l.* = .empty;
-    var work: std.ArrayList(u32) = .empty;
-    defer work.deinit(scratch);
-    // The demanded nodes a chunk's walk met.
-    var met: std.ArrayList(u32) = .empty;
-    defer met.deinit(scratch);
-    var chunk: usize = 0;
-    while (chunk < nodes.len) : (chunk += 64) {
-        const end = @min(nodes.len, chunk + 64);
-        // The bits live in a column over the nodes, valid under this pass's
-        // epoch: no clearing, and no map keyed by a dense id.
-        s.nextEpoch();
-        met.clearRetainingCapacity();
-        for (nodes[chunk..end], 0..) |nd, b| {
-            s.orMask(nd, @as(u64, 1) << @intCast(b));
-            try work.append(scratch, nd);
-        }
-        while (work.pop()) |x| {
-            if (reach != null and s.demanded.items[x]) try met.append(scratch, x);
-            const bits = s.maskOf(x);
-            var at = s.head.items[x];
-            while (at != none) : (at = s.next.items[at]) {
-                const y = s.find(s.to.items[at]);
-                if (s.maskOf(y) | bits == s.maskOf(y)) continue;
-                s.orMask(y, bits);
-                try work.append(scratch, y);
-            }
-        }
-        for (nodes, 0..) |nd, i| {
-            const bits = s.maskOf(nd);
-            if (bits == 0) continue;
-            for (chunk..end) |j| {
-                if (j == i) continue;
-                if (bits & (@as(u64, 1) << @intCast(j - chunk)) != 0) try lists[i].append(scratch, @intCast(j));
-            }
-        }
-        if (reach) |out_reach| {
-            // A demanded node's bits are the nodes of the chunk that reach
-            // it; its bits are final once the walk is done.
-            var reaching: u64 = 0;
-            for (met.items) |x| reaching |= s.maskOf(x);
-            for (chunk..end) |j| {
-                if (reaching & (@as(u64, 1) << @intCast(j - chunk)) != 0) out_reach[j] = true;
-            }
-        }
-    }
-    for (lists, out) |*l, *o| o.* = try l.toOwnedSlice(scratch);
-    return out;
-}
-
-/// The distinct nodes of `scheme`'s function types and function-holding
-/// applications, its `where` types included, in a depth-first order.
-/// The order is the walk's, deterministic and otherwise immaterial: a
-/// summary's classes are numbered again by site when published, and named
-/// by first print when dumped.
-fn schemeNodes(e: *Effects, scheme: Var, out: *std.ArrayList(u32)) Error!void {
-    const store = e.store;
-    const stack = &e.solved.walk;
-    stack.clearRetainingCapacity();
-    const mark = store.nextMark();
-    try stack.append(e.gpa, scheme);
-    while (stack.pop()) |next| {
-        const r = store.find(next);
-        if (store.mark(r) == mark) continue;
-        store.setMark(r, mark);
-        switch (store.content(r)) {
-            .flex, .rigid => |flags| {
-                const set = Walk.constraints(flags);
-                for (0..set.count(store)) |i| try stack.append(e.gpa, set.at(store, @intCast(i)).fn_var);
-                continue;
-            },
-            else => {},
-        }
-        if (e.carries(r)) {
-            const nd = try e.nodeFor(r);
-            if (std.mem.indexOfScalar(u32, out.items, nd) == null) try out.append(e.gpa, nd);
-        }
-        var k: u32 = 0;
-        while (Walk.stepped(store, r, k)) |c| : (k += 1) try stack.append(e.gpa, c.v);
-    }
 }
 
 /// §14.3 rule 6: a `foreign`'s own arrow has its rung, and so does every
