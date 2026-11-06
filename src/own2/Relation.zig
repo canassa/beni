@@ -64,7 +64,8 @@ pub const Ov = struct {
 /// one added after. `forward` adds them to another key (`a`); the other
 /// kinds are the read-off's (`Eval.zig` delivers them).
 pub const SubKind = enum(u8) { forward, forward_below, describe, describe_below, effect, supply, escape, escape_fn };
-/// `d`: a `describe_below` consumer's prefix slot (its key's).
+/// `d`: a `describe_below` consumer's prefix slot (its key's); a `describe`
+/// or `supply` consumer's 1 when it reads a leaf past a `var` (§2.1).
 pub const Sub = struct { kind: SubKind, a: u32 = 0, b: u32 = 0, c: u32 = 0, d: u32 = 0, tags: u32 = 0 };
 
 /// A module code's parameters' places, its own place and its result's (`Walk`; `CallGraft` via `Eval.code_sig`).
@@ -410,6 +411,9 @@ pub const Eval = struct {
                     // of what it reaches, read approximately.
                     var inside: std.ArrayList(u32) = .empty;
                     defer inside.deinit(e.gpa());
+                    // Past a fold's `var` (§2.1): no step says how far below.
+                    var past: std.ArrayList(u32) = .empty;
+                    defer past.deinit(e.gpa());
                     for (tops) |t| {
                         const before = all.items.len;
                         try Slots.replay(e.gpa(), e.account(), e.places(), .from(t), rest, &all);
@@ -418,13 +422,18 @@ pub const Eval = struct {
                             if (k == .@"opaque" or k == .@"var") {
                                 // A call's result read on past its place: through what arrives there.
                                 if (x.family == Slots.empty and try e.throughCall(x.root, .from(t), rest, deep, it.tags, it.route, out)) continue;
-                                try inside.append(e.gpa(), t);
-                            } else if (try FoldRead.prefix(e, .from(t), rest, &inside) and e.f.roots.items[x.root].kind != .param) try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .top, .tags = it.tags }), .route = it.route });
+                                try (if (k == .@"var") &past else &inside).append(e.gpa(), t);
+                            } else if (try FoldRead.prefix(e, .from(t), rest, &past) and e.f.roots.items[x.root].kind != .param) try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .top, .tags = it.tags }), .route = it.route });
                         }
                     }
                     var set = try e.f.slots.setOf(e.gpa(), e.account(), e.places(), all.items);
                     if (deep) set = try Subtree.belowSet(e.f.slots, e.gpa(), e.account(), e.places(), try e.f.slots.sorted(e.gpa(), e.account(), all.items));
                     for (inside.items) |t| set = try e.f.slots.unionOf(e.gpa(), e.account(), set, try Subtree.below(e.f.slots, e.gpa(), e.account(), e.places(), .from(t)));
+                    if (past.items.len != 0) {
+                        var whole: Slots.SetId = Slots.empty;
+                        for (past.items) |t| whole = try e.f.slots.unionOf(e.gpa(), e.account(), whole, try Subtree.below(e.f.slots, e.gpa(), e.account(), e.places(), .from(t)));
+                        try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .ref, .root = x.root, .pos = x.pos, .slots = whole, .tags = it.tags, .past = true }), .route = it.route });
+                    }
                     if (set == Slots.empty) continue;
                     try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .ref, .root = x.root, .pos = x.pos, .slots = set, .tags = it.tags }), .route = it.route });
                 },
@@ -494,6 +503,12 @@ pub const Eval = struct {
         };
         if (arrs.items.len == 0) return false;
         for (arrs.items) |x| {
+            if (x.a.past) {
+                const from = out.items.len;
+                try e.project(call.args[x.a.j], e.f.slots.relWords(x.a.slot), true, tags, route, out);
+                for (out.items[from..]) |*p| p.leaf = try e.pastLeaf(p.leaf);
+                continue;
+            }
             var w: std.ArrayList(u32) = .empty;
             defer w.deinit(e.gpa());
             try w.appendSlice(e.gpa(), e.f.slots.relWords(x.a.slot));
@@ -1030,7 +1045,28 @@ pub const Eval = struct {
     }
 
     /// An arrival of call `call`'s contract `c`, as leaves of this frame.
+    /// Stepped past a `var`, it keeps no suffix: no step says how far below
+    /// the slot the value is, so it is all of it, and says so to a reader.
     pub fn arrivalLeaves(e: *Eval, call: u32, _: Contract.Id, a: Contract.Arrival, suffix: []const u32, out: *std.ArrayList(u32)) Error!void {
+        const start = out.items.len;
+        try e.arrivalRead(call, a, if (a.past) &.{} else suffix, out);
+        if (a.past) try e.markPast(out.items[start..]);
+    }
+
+    /// `x` as what a read past a `var` gave: only a reference or an answer
+    /// says more than its objects.
+    pub fn pastLeaf(e: *Eval, x: u32) Error!u32 {
+        var l = e.f.leafAt(x);
+        if (l.past or (l.kind != .ref and l.kind != .answer)) return x;
+        l.past = true;
+        return e.f.leaf(l);
+    }
+
+    fn markPast(e: *Eval, xs: []u32) Error!void {
+        for (xs) |*x| x.* = try e.pastLeaf(x.*);
+    }
+
+    fn arrivalRead(e: *Eval, call: u32, a: Contract.Arrival, suffix: []const u32, out: *std.ArrayList(u32)) Error!void {
         // What these fill is kept: never read under a pass (§2.3.4).
         const saved_pass = e.pass;
         e.pass = 0;
@@ -1048,12 +1084,15 @@ pub const Eval = struct {
             .shared => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .shared, .atom = a.j, .extra = a.slot })),
             .param, .lent => {
                 if (a.j >= cl.args.len) return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
-                try e.routed(e, cl.args[a.j], words.items, a.deep, if (suffix.len == 0 and a.kind == .param) a.path else none, out);
-                if (out.items.len == start and words.items.len != 0) try FoldRead.read(e, cl.args[a.j], words.items, out);
+                try e.routed(e, cl.args[a.j], words.items, a.deep or a.past, if (suffix.len == 0 and a.kind == .param) a.path else none, out);
+                if (out.items.len == start and words.items.len != 0) {
+                    try FoldRead.read(e, cl.args[a.j], words.items, out);
+                    try e.markPast(out.items[start..]);
+                }
                 if (a.kind == .lent) try e.lend(out, start, null, call);
             },
             .cb => {
-                if (e.known.get(.{ call, a.j })) |vc| try e.knownAnswer(vc, a.deep, words.items, out) else {
+                if (e.known.get(.{ call, a.j })) |vc| try e.knownAnswer(vc, a.deep or a.past, words.items, out) else {
                     const fl = e.label_map.get(.{ call, a.j }) orelse return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
                     try out.append(e.gpa(), try e.f.leaf(.{ .kind = .answer, .atom = fl, .extra = try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), words.items) }));
                 }
@@ -1145,6 +1184,12 @@ pub const Eval = struct {
     /// A call, supply or known label's leaf as the leaves it comes from,
     /// its tags merged in (never its route set), each with its own set (§2.3.5); one met again while expanded adds nothing.
     pub fn expandRouted(e: *Eval, li: u32, out: *std.ArrayList(u32)) Error!void {
+        const start = out.items.len;
+        try e.expandBody(li, out);
+        if (e.f.leafAt(li).past) try e.markPast(out.items[start..]);
+    }
+
+    fn expandBody(e: *Eval, li: u32, out: *std.ArrayList(u32)) Error!void {
         // What these fill is kept: never read under a pass (§2.3.4).
         const saved_pass = e.pass;
         e.pass = 0;

@@ -1,0 +1,4 @@
+# v2 refuses an answer and a write past a fold (§2.1, #2062)
+48:9 list_still_used List.push
+50:9 list_still_used SanitiserFoldOpen.findL
+52:9 list_still_used SanitiserFoldOpen.via

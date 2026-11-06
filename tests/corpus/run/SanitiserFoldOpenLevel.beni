@@ -1,0 +1,48 @@
+-- A `⟲` hides a fold (`ownership-v2.md` §2.1, *A step past a fold*, #2062): `U`'s
+-- plain recursion puts a level in front of the step past the fold, `π1#1.0⟲#0.0*↓`.
+-- The bit says what no place says: the value is past a `var`, wherever the level lands.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+type U a
+    = UL a
+    | UC (U a)
+    | UW (U (List a))
+
+
+fu : U a, (a → List Int) → List Int
+fu t f =
+    case t of
+        UL x →
+            f x
+
+        UC y →
+            fu y f
+
+        UW r →
+            fu r λl →
+                case l of
+                    [ x, …_ ] →
+                        f x
+
+                    _ →
+                        []
+
+
+main : Program
+main =
+    k = [ 1 ]
+    n = List.push (fu (UC (UW (UL [ k ]))) λl → l) 2
+    m = [ 1 ]
+    o = fu (UC (UW (UL [ m ]))) λl → List.push l 2
+    Node.print (show n ++ "|" ++ show k ++ "|" ++ show o ++ "|" ++ show m)

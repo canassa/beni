@@ -133,9 +133,9 @@ fn arrivalHas(t: *const Table, slots: *const Slots.Table, ids: [2]Id, q: Arrival
         .cb => {
             const lp = t.labelAt(ids[0], p.j);
             const lq = t.labelAt(ids[1], q.j);
-            return lp.j == lq.j and lp.slot == lq.slot and std.mem.eql(u32, &lp.origin, &lq.origin) and Table.continues(slots, q.slot, suffix, p.slot, false);
+            return lp.j == lq.j and lp.slot == lq.slot and std.mem.eql(u32, &lp.origin, &lq.origin) and (!p.past or q.past) and Table.continues(slots, q.slot, if (q.past) &.{} else suffix, p.slot, q.past);
         },
-        .param, .lent => return p.j == q.j and (!p.deep or q.deep) and Table.continues(slots, q.slot, suffix, p.slot, q.deep),
+        .param, .lent => return p.j == q.j and (!p.deep or q.deep) and (!p.past or q.past) and Table.continues(slots, q.slot, if (q.past) &.{} else suffix, p.slot, q.deep),
     }
 }
 

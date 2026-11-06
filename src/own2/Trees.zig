@@ -32,6 +32,9 @@ pub const Arrival = struct {
     /// `param`: the parameter's slot is a type variable's, so the arrival is
     /// every object at and below it at the caller.
     deep: bool = false,
+    /// `param`, `cb`: stepped past a `var`: the value is somewhere below
+    /// `slot`, so open it is that subtree at every slot (§2.1).
+    past: bool = false,
     j: u32 = 0,
     slot: u32 = 0,
     /// `param`: the module's path `slot` names from the parameter's root, when
@@ -40,7 +43,7 @@ pub const Arrival = struct {
     path: u32 = Ids.none_int,
 
     pub fn eql(a: Arrival, b: Arrival) bool {
-        return a.kind == b.kind and a.deep == b.deep and a.j == b.j and a.slot == b.slot and a.path == b.path;
+        return a.kind == b.kind and a.deep == b.deep and a.past == b.past and a.j == b.j and a.slot == b.slot and a.path == b.path;
     }
 };
 
@@ -113,7 +116,7 @@ pub const Table = struct {
         if (run.len == 0) return 0;
         var words: std.ArrayList(u32) = .empty;
         defer words.deinit(gpa);
-        for (run) |a| try words.appendSlice(gpa, &.{ @as(u32, @backingInt(a.kind)) | @as(u32, @intFromBool(a.deep)) << 8, a.j, a.slot, a.path });
+        for (run) |a| try words.appendSlice(gpa, &.{ @as(u32, @backingInt(a.kind)) | @as(u32, @intFromBool(a.deep)) << 8 | @as(u32, @intFromBool(a.past)) << 9, a.j, a.slot, a.path });
         const id = try t.arr_runs.intern(gpa, words.items);
         if (id < t.arr_range.items.len) return id;
         const start: u32 = @intCast(t.arrivals.items.len);

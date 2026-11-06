@@ -178,7 +178,7 @@ pub fn supplyLeaves(ev: *Relation.Eval, q: u32, a: Contract.Arrival, out: *std.A
             var ps: std.ArrayList(Relation.Proj) = .empty;
             defer ps.deinit(ev.gpa());
             try ev.project(call.args[a.j], f.slots.relWords(a.slot), true, 0, 0, &ps);
-            for (ps.items) |p| try out.append(ev.gpa(), p.leaf);
+            for (ps.items) |p| try out.append(ev.gpa(), if (a.past) try ev.pastLeaf(p.leaf) else p.leaf);
         },
         else => try ev.arrivalLeaves(q, call.contract, a, &.{}, out),
     }

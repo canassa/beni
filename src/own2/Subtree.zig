@@ -25,10 +25,11 @@ const empty = Slots.empty;
 /// Arrival `a` read for the objects at caller slot `slot` only (§2.10,
 /// *Read-off*). An open arrival is the parameter's subtree by structure:
 /// its object at `slot`, deep only where no step below `slot` can name
-/// them (a type variable's or an opaque place). A plain one is as it is.
+/// them (a type variable's or an opaque place). One stepped past a `var`
+/// is deep at every slot: no step says how far below. A plain one is as it is.
 pub fn readAt(places: *const Place.Table, a: Trees.Arrival, slot: PathId, open: bool) Trees.Arrival {
     var x = a;
-    if (open) x.deep = switch (places.kind(places.pathPlace(slot))) {
+    if (open) x.deep = a.past or switch (places.kind(places.pathPlace(slot))) {
         .@"var" => true,
         .@"opaque" => a.deep,
         else => false,

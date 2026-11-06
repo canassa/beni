@@ -21,7 +21,7 @@ const BlockNames = @import("BlockNames.zig");
 const BlockCalled = @import("BlockCalled.zig");
 
 pub const magic: u32 = 0x324e574f;
-pub const version: u32 = 26;
+pub const version: u32 = 28;
 pub const Error = Ids.ChargeError || error{BadBlock};
 const Step = Place.Step;
 
@@ -105,7 +105,7 @@ const Writer = struct {
     fn arrivals(w: *Writer, run: []const Contract.Arrival) Allocator.Error!void {
         try w.word(@intCast(run.len));
         for (run) |a| {
-            try w.word(@backingInt(a.kind) | (@as(u32, @intFromBool(a.deep)) << 8));
+            try w.word(@backingInt(a.kind) | (@as(u32, @intFromBool(a.deep)) << 8) | (@as(u32, @intFromBool(a.past)) << 9));
             switch (a.kind) {
                 .param, .cb, .lent => {
                     try w.word(a.j);
@@ -279,8 +279,8 @@ const Reader = struct {
         const out = try r.arena.alloc(Contract.Arrival, try r.count());
         for (out) |*a| {
             const kw = try r.next();
-            if ((kw & 0xff) > @backingInt(Contract.ArrivalKind.lent) or kw >> 9 != 0) return error.BadBlock;
-            a.* = .{ .kind = @fromBackingInt(@intCast(kw & 0xff)), .deep = kw >> 8 != 0 };
+            if ((kw & 0xff) > @backingInt(Contract.ArrivalKind.lent) or kw >> 10 != 0) return error.BadBlock;
+            a.* = .{ .kind = @fromBackingInt(@intCast(kw & 0xff)), .deep = kw >> 8 & 1 != 0, .past = kw >> 9 != 0 };
             switch (a.kind) {
                 .param, .cb, .lent => {
                     a.j = try r.next();

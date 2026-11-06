@@ -146,7 +146,7 @@ fn handsOn(e: *Eval.Evaluation, p: [3]u32, lab: Contract.Label, su: Contract.Sup
     const es = try LabelChain.entriesOf(c, su.res_root);
     var hit: ?u32 = null;
     for (es.items.items) |rs| for (rs.arrivals) |a| {
-        if (a.kind != .param or a.j >= own) return false;
+        if (a.kind != .param or a.past or a.j >= own) return false;
         if (hit) |h| {
             if (h != a.j) return false;
         } else hit = a.j;
@@ -216,7 +216,7 @@ fn oneFamily(e: *Eval.Evaluation, arena: Allocator, sup: *Contract.Draft.DraftSu
     if (arrs.items.len == 0) return false;
     const elem = Place.Step.elem.word();
     for (arrs.items) |a| {
-        if (a.kind != .param or a.j != arrs.items[0].j) return false;
+        if (a.kind != .param or a.past or a.j != arrs.items[0].j) return false;
         if (std.mem.indexOfScalar(u32, f.slots.relWords(a.slot), elem) == null) return false;
     }
     return true;

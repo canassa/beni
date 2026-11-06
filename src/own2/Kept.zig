@@ -405,6 +405,6 @@ pub const Group = struct {
     }
     fn putRes(p: *std.ArrayList(u32), g: Allocator, r: *const Contract.Draft.Res) Error!void {
         try p.appendSlice(g, &.{ r.base, @intCast(r.items.items.len) });
-        for (r.items.items) |e| try p.appendSlice(g, &.{ e.slot, @as(u32, @intFromBool(e.wide)) | @as(u32, @intFromBool(r.isOpen(e))) << 1 | @as(u32, @intFromBool(e.a.deep)) << 2, @backingInt(e.a.kind), e.a.j, e.a.slot, e.node });
+        for (r.items.items) |e| try p.appendSlice(g, &.{ e.slot, @as(u32, @intFromBool(e.wide)) | @as(u32, @intFromBool(r.isOpen(e))) << 1 | @as(u32, @intFromBool(e.a.deep)) << 2 | @as(u32, @intFromBool(e.a.past)) << 3, @backingInt(e.a.kind), e.a.j, e.a.slot, e.node });
     }
 };

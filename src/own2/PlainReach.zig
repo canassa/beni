@@ -65,9 +65,9 @@ pub fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32, i
             if (a.kind != .param) continue;
             // The arrival's slot is its own steps, then what the plain
             // slot takes on below an open one.
-            const aw = try std.mem.concat(e.arena, u32, &.{ &.{a.j}, e.f.slots.relWords(a.slot), words[hit.depth..] });
+            const aw = try std.mem.concat(e.arena, u32, &.{ &.{a.j}, e.f.slots.relWords(a.slot), if (a.past) &.{} else words[hit.depth..] });
             try e.charge(.cond, @intCast(aw.len));
-            try mark(&reach, g, aw, if (a.deep) at_deep else at_slot);
+            try mark(&reach, g, aw, if (a.deep or a.past) at_deep else at_slot);
             for (1..aw.len) |n| try mark(&reach, g, aw[0..n], below);
         };
     }

@@ -1,0 +1,55 @@
+-- An answer across a fold (`ownership-v2.md` §2.1, *A step past a fold*, #2062):
+-- `findL`'s callback at `Wrap` is handed an element of a value at the fold, so its
+-- arrival says `ε… π1#1.0#0.0*↓`: stepped past a `var`, by no step. At a caller's
+-- `List Int` slot that is the subtree below the slot, not the object at it: what
+-- `main`'s callback answers, and what the other one writes, is `k`. `via` hands
+-- its callback on, and the arrival says so to its own caller.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+findL : T a, (a → List Int) → List Int
+findL t f =
+    case t of
+        Leaf x →
+            f x
+
+        Wrap u →
+            findL u λl →
+                case l of
+                    [ x, …_ ] →
+                        f x
+
+                    _ →
+                        []
+
+
+via : T a, (a → List Int) → List Int
+via t f = findL t f
+
+
+main : Program
+main =
+    k = [ 1 ]
+    n = List.push (findL (Wrap (Leaf [ k ])) λl → l) 2
+    m = [ 1 ]
+    o = findL (Wrap (Leaf [ m ])) λl → List.push l 2
+    p = [ 1 ]
+    q = via (Wrap (Leaf [ p ])) λl → List.push l 2
+    Node.print
+        (show n ++ "|" ++ show k ++ "|" ++ show o ++ "|" ++ show m ++ "|" ++ show q ++ "|" ++ show p
+        )

@@ -102,7 +102,7 @@ const Res = struct {
             .param, .lent => {
                 try w.print(" {s}π{d}", .{ if (a.kind == .lent) "lent " else "", a.j + 1 });
                 try relText(r.slots, r.places, r.names, w, a.slot);
-                if (a.deep) try w.writeAll("*");
+                if (a.deep) try w.writeAll(if (a.past) "*↓" else "*");
             },
             .fresh => try w.writeAll(" fresh"),
             .shared => try w.writeAll(" shared"),
@@ -110,7 +110,7 @@ const Res = struct {
                 const l = r.t.labelAt(r.c, a.j);
                 try w.print(" cb(π{d}", .{l.j + 1});
                 try relText(r.slots, r.places, r.names, w, l.slot);
-                try w.print("@{d})", .{l.origin[2] & ~Contract.last_origin});
+                try w.print("@{d}){s}", .{ l.origin[2] & ~Contract.last_origin, if (a.past) "↓" else "" });
             },
             .top => try w.writeAll(" ⊤"),
             .host => try w.writeAll(" host"),

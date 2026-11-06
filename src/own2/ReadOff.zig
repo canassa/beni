@@ -152,6 +152,7 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Err
     const f = e.fr();
     const gpa = e.gpa();
     const l = f.leafAt(li);
+    if (l.past) return describePast(s, li, q, out);
     if (try hosted(s, li, q.int(), l.kind == .ref, out)) if (l.kind == .ref) try Put.arriveWide(s, q, .{ .kind = .host }, out) else try Put.arrive(s, q, .{ .kind = .host }, out);
     switch (l.kind) {
         .site, .fresh => {
@@ -228,6 +229,42 @@ fn describeLeaf(s: *Sink, li: u32, q: PathId, whole: bool, out: Put.ResList) Err
             }
         },
     }
+}
+
+/// Leaf `li`, read past a `var`, at result slot `q`: no step says how far below
+/// its slots the value is, so it arrives open and says so (§2.1, *A step past a fold*).
+fn describePast(s: *Sink, li: u32, q: PathId, out: Put.ResList) Error!void {
+    const e = s.e;
+    const f = e.fr();
+    const gpa = e.gpa();
+    const l = f.leafAt(li);
+    if (try hosted(s, li, q.int(), true, out)) try Put.arriveWide(s, q, .{ .kind = .host }, out);
+    if ((try s.described.getOrPut(gpa, try Put.describedKey(s, li, q, out))).found_existing) return;
+    if (l.kind == .answer) return Put.arriveWide(s, q, try pastAnswer(s, l.atom, l.extra), out);
+    const r = f.roots.items[l.root];
+    if (r.kind == .call or r.kind == .supply) {
+        var ls: std.ArrayList(u32) = .empty;
+        defer ls.deinit(gpa);
+        try expandFor(e, li, .{ .kind = .describe, .a = out.label, .b = q.int(), .c = out.k, .d = 1, .tags = l.tags }, &ls);
+        for (ls.items) |x| try describeLeaf(s, x, q, true, out);
+        return;
+    }
+    for (f.slots.elems(l.slots)) |el| if (!Slots.isNot(el)) try Put.arriveWide(s, q, try pastArrival(s, r, Slots.pathOf(el)), out);
+}
+
+/// What root `r` of a leaf read past a `var` says at slot `sl`.
+fn pastArrival(s: *Sink, r: Value.Root, sl: PathId) Error!Contract.Arrival {
+    const f = s.e.fr();
+    const gpa = s.e.gpa();
+    if (r.kind == .cb) return pastAnswer(s, r.a, (try f.slots.relBelow(gpa, f.account, f.places, r.path, sl)) orelse Slots.root);
+    return .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, sl), .deep = true, .past = true, .path = sl.int() };
+}
+
+fn pastAnswer(s: *Sink, cb: u32, rel: u32) Error!Contract.Arrival {
+    var a = try Made.answer(s, cb, rel);
+    a.deep = a.kind == .param;
+    a.past = true;
+    return a;
 }
 
 /// A call's or a supply's whole subtree `↓x` (§2.3.1) at result slot
@@ -605,6 +642,7 @@ fn describeWide(s: *Sink, li: u32, q: PathId, out: Put.ResList) Error!void {
     const f = e.fr();
     const gpa = e.gpa();
     const l = f.leafAt(li);
+    if (l.past) return describePast(s, li, q, out);
     if (try hosted(s, li, q.int(), true, out)) try Put.arriveWide(s, q, .{ .kind = .host }, out);
     switch (l.kind) {
         .site, .fresh => try Put.arriveWide(s, q, try Made.made(s, l), out),
@@ -812,7 +850,7 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: Put.EffList) Error!void {
                 // A whole subtree (`↓p`, §2.3.1): one deep effect at `p`.
                 for (f.slots.elems(l.slots)) |sl| {
                     if (Slots.isNot(sl)) continue;
-                    var eff: Contract.Effect = .{ .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, Slots.pathOf(sl)), .deep = deep or Slots.isSub(sl) };
+                    var eff: Contract.Effect = .{ .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, Slots.pathOf(sl)), .deep = deep or l.past or Slots.isSub(sl) };
                     // An edit in place of what a cell holds is deep at its `◆`: never a cell operation (§2.13.7).
                     // So is a write below a non-regular type's fold, a `var` place no step can name.
                     eff.deep = eff.deep or (out == .writes and ((!l.at_pos and Cells.endsInContents(f.slots, eff.slot)) or f.places.kind(f.places.pathPlace(Slots.pathOf(sl))) == .@"var"));
@@ -1044,7 +1082,8 @@ fn readsThrough(s: *Sink, v: u32, at: []const u32, n: Contract.Node, pass: u32) 
 /// A leaf delivered to a consumer of the read-off (§2.12 *Deliveries*).
 pub fn deliver(e: *Evaluation, sub: Relation.Sub, x: u32, at: u32) Error!void {
     const f = e.fr();
-    const y = (try f.withTags(x, sub.tags)) orelse return;
+    const t = (try f.withTags(x, sub.tags)) orelse return;
+    const y = if (sub.d != 0 and sub.kind != .describe_below) try e.ev.pastLeaf(t) else t;
     switch (sub.kind) {
         .describe => try describeLeaf(&e.sink, y, .from(sub.b), true, .{ .label = sub.a, .k = sub.c }),
         .describe_below => try describeItem(&e.sink, try readDests(&e.sink, .from(sub.d), .from(sub.b)), y, at, .from(sub.d), .from(sub.b), try Held.atoms(e.fr(), try Put.resList(&e.sink, .{ .label = sub.a, .k = sub.c }), .from(sub.b)), .{ .label = sub.a, .k = sub.c }),
@@ -1071,6 +1110,14 @@ fn supplyArrive(s: *Sink, li: u32, rel: Slots.Rel, out: Put.ResList) Error!void 
     while (stack.pop()) |x| {
         if ((try seen.getOrPut(gpa, .{x})).found_existing) continue;
         const l = f.leafAt(x);
+        if (l.past and !(l.kind == .ref and (f.roots.items[l.root].kind == .call or f.roots.items[l.root].kind == .supply))) {
+            if (l.kind == .answer) {
+                _ = try Contract.Draft.addWide(try Put.resList(s, out), s.arena, rel, try pastAnswer(s, l.atom, l.extra));
+            } else for (f.slots.elems(l.slots)) |el| if (!Slots.isNot(el)) {
+                _ = try Contract.Draft.addWide(try Put.resList(s, out), s.arena, rel, try pastArrival(s, f.roots.items[l.root], Slots.pathOf(el)));
+            };
+            continue;
+        }
         if (try hosted(s, x, none, l.kind == .ref, out)) _ = if (l.kind == .ref) try Contract.Draft.addWide(try Put.resList(s, out), s.arena, rel, .{ .kind = .host }) else try Contract.Draft.addArrival(try Put.resList(s, out), s.arena, rel, .{ .kind = .host });
         const a: Contract.Arrival = switch (l.kind) {
             .site, .fresh => try Made.made(s, l),
@@ -1097,7 +1144,7 @@ fn supplyArrive(s: *Sink, li: u32, rel: Slots.Rel, out: Put.ResList) Error!void 
                     .call, .supply => {
                         var ls: std.ArrayList(u32) = .empty;
                         defer ls.deinit(gpa);
-                        try expandFor(e, x, .{ .kind = .supply, .a = out.label, .b = out.k, .c = rel, .tags = l.tags }, &ls);
+                        try expandFor(e, x, .{ .kind = .supply, .a = out.label, .b = out.k, .c = rel, .d = @intFromBool(l.past), .tags = l.tags }, &ls);
                         try stack.appendSlice(gpa, ls.items);
                     },
                 }

@@ -1,0 +1,22 @@
+-- `findL`'s contract reaches `Main` by its block: the arrival's bit with it
+-- (`ownership-v2.md` §2.1, *A step past a fold*, §3.6, #2062).
+
+pub type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+pub findL : T a, (a → List Int) → List Int
+findL t f =
+    case t of
+        Leaf x →
+            f x
+
+        Wrap u →
+            findL u λl →
+                case l of
+                    [ x, …_ ] →
+                        f x
+
+                    _ →
+                        []

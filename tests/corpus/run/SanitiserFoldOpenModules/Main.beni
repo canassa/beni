@@ -1,0 +1,15 @@
+import List
+import Node exposing (Program)
+import String
+import Walk exposing (T, Leaf, Wrap, findL)
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main =
+    k = [ 1 ]
+    n = List.push (findL (Wrap (Leaf [ k ])) λl → l) 2
+    Node.print (show n ++ "|" ++ show k)

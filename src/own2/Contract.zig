@@ -230,7 +230,7 @@ pub const Draft = struct {
     fn put(r: *Res, arena: Allocator, e: Entry) Ids.IndexError!bool {
         const a = e.a;
         const kind: u32 = if (e.node != 0) 2 else @intFromBool(e.wide);
-        const got = try r.has.getOrPut(arena, .{ e.slot, kind, if (e.node != 0) e.node else @as(u32, @backingInt(a.kind)) | @as(u32, @intFromBool(a.deep)) << 8, a.j, a.slot });
+        const got = try r.has.getOrPut(arena, .{ e.slot, kind, if (e.node != 0) e.node else @as(u32, @backingInt(a.kind)) | @as(u32, @intFromBool(a.deep)) << 8 | @as(u32, @intFromBool(a.past)) << 9, a.j, a.slot });
         if (got.found_existing) return false;
         try r.items.append(arena, e);
         return true;
@@ -787,6 +787,7 @@ fn arrivalLess(slots: *const Slots.Table, a: Arrival, b: Arrival) bool {
     if (a.kind != b.kind) return @backingInt(a.kind) < @backingInt(b.kind);
     if (a.j != b.j) return a.j < b.j;
     if (a.deep != b.deep) return !a.deep;
+    if (a.past != b.past) return !a.past;
     if (a.kind == .param or a.kind == .cb) return slots.relLess(a.slot, b.slot);
     return a.slot < b.slot;
 }

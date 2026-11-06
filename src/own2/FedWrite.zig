@@ -71,9 +71,9 @@ fn asked(e: *Relation.Eval, c: LabelChain.Chain, lab: Contract.Label, su: Contra
     var named = false;
     for (es.items.items) |rs| for (rs.arrivals) |a| {
         if (a.kind != .param or !std.mem.startsWith(u32, words, es.wordsOf(rs))) continue;
-        const at = try std.mem.concat(arena, u32, &.{ f.slots.relWords(a.slot), words[rs.len..] });
+        const at = try std.mem.concat(arena, u32, &.{ f.slots.relWords(a.slot), if (a.past) &.{} else words[rs.len..] });
         const o = Contract.occ(a.j, try f.slots.relOfWords(f.gpa, f.account, f.places, at));
-        try run.append(arena, if (deep) Contract.occDeep(o) else o);
+        try run.append(arena, if (deep or a.past) Contract.occDeep(o) else o);
         named = true;
     };
     if (!named) return null;

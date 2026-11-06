@@ -216,6 +216,7 @@ that a perfect checker accepts: any write through such a step, over fresh data t
 the value at the fold is read whole: a parameter's deep, any other root's as `⊤` (`FoldRead.zig`), and an open arrival at a `var` slot is
 read deep whatever it says (`Subtree.readAt`); a read that runs past a fold is that fold's slot, in each arm of a choice (`FoldRead.prefix`). `f t c = if c then t else Leaf []`, whose result is wide, and `PW (PW _ x) _ → List.concat x`,
 whose own slot runs past the fold, are refused.
+*Amended 2026-11-06 (#2062, #2112):* **an arrival stepped past a `var` says so.** A value at a fold's slot and a value below it name one slot, `π1#1.0#0.0`, and a caller cannot tell them apart: its place says nothing, since a `⟲` can hide the fold, and a type that folds through a longer cycle unfolds once more at the argument. `findL`'s callback at `Wrap` is handed an element of the value at the fold; `shallow t g z = case t of Wrap (Leaf ys) → g ys` hands the value itself. So the callee says it, where it knows: a projection that steps past a `var` (`Relation.project`, or `FoldRead.read` of a value read whole) gives a leaf with the bit **past**, and it arrives open, deep, as `π1#1.0#0.0*↓` (`Arrival.past`, a bit of the block's arrival word, §3.6). Read open, such an arrival is the slot's whole subtree at a caller's slot of any place, and it keeps no rest: no step says how far below the value is, so the caller's steps name nothing there, and on a literal of another form they used to read empty, which says fresh (`findA (Wrap (Leaf [ Wrap (Leaf [ k ]) ])) (λt → findL t λl → l) []`). A leaf read from such an arrival is past too, so the fact crosses every caller (`arrivalLeaves`, `expandRouted`, `describePast`), a callback handed on included; a condition on it is deep at the slot (`FedWrite`, `PlainReach`), and it is no element of a traversal (`Each`, `Traversal`). An arrival without the bit keeps its object: `ys` above reads by structure, and a list `shallow` is handed stays apart from what is written. Refused that a perfect checker accepts: the subtree holds objects the value at run time does not reach, so `fu (UW (UL [ [ [ 7 ] ], [ k ] ])) λl → l` is refused by `k`, which the walk's first element never reaches. A list's element is read so everywhere, and `[ [ k ], [ [ 7 ] ] ]` is the same program with the sharing. Fixtures `run/SanitiserFoldOpen`, `run/SanitiserFoldOpenLevel`, `run/SanitiserFoldOpenCycle`, `run/SanitiserFoldOpenNested`, `run/SanitiserFoldOpenApart`.
 
 **Identity.** Initial construction uses a dense `by_var` memo for structural source nodes and the adapter's
 `(head, argument places)` memo for nominal applications. Each source graph node and outgoing edge is visited
@@ -1588,7 +1589,7 @@ than `claim`'s, and `got` does not return where `claim` does not.
   slot `s` (`instAt`, and `feed` while a group is solved) reads each arrival of the callee's tree that it meets.
   An **open** arrival is the parameter's subtree by structure, so it gives the parameter's object at the
   matching place only (`Subtree.readAt`); it is read deep only where `s` is a type variable's or an opaque place,
-  where no step below can name the objects. A **plain** arrival is read as it is: a deep one (`aliased`'s
+  where no step below can name the objects, or where the arrival was stepped past a `var` (§2.1, *A step past a fold*). A **plain** arrival is read as it is: a deep one (`aliased`'s
   `everySlot` row, a slot the result cannot name) says that any object of the parameter's subtree may be at `s`.
   Before this, an open deep arrival was read deep at every slot, so a key at `s` also held every object below
   `s`. Through a label, `grow g = { g | kids = List.push g.kids "new" }` asks `π1{ε~,.kids}`: the record's own
@@ -4466,6 +4467,8 @@ declarations read the pessimistic contract`.
 *As built (#1979): version 24.* A supply's `k` word carries the `each` mark in its top bit and `walk` in the next (§2.11.3, *a traversal's supply*).
 
 *As built (#1978): version 26.* `res_read` follows `res_cond`.
+
+*As built (#2112): version 28.* An arrival's kind word holds `past` in bit 9 (§2.1, *A step past a fold*).
 
 *As built (#2028): version 23.* After a contract's labels, a count, then per function slot of its result the slot's
 steps and its called contract, written as a contract is, in the canonical order of the slots (§2.11.3).

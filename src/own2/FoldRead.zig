@@ -2,7 +2,8 @@
 //! (`docs/design/ownership-v2.md` §2.1, *A step past a fold*). No step
 //! names them, and an empty reading tells a caller the object is fresh, so
 //! the value at the fold is read whole: a parameter's deep, any other
-//! root's as `⊤`, since no slot of its contract says what is below.
+//! root's as `⊤`, since no slot of its contract says what is below. The
+//! reader marks what it reads past (`Value.Leaf.past`).
 //!
 //! Obligations kept here: none of §2.14's directly.
 

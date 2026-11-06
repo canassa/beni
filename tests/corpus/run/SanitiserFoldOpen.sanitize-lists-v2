@@ -1,0 +1,1 @@
+v2 refuses an answer and a write past a fold (§2.1, #2062): built again under --ownership=v2 and the sanitiser.

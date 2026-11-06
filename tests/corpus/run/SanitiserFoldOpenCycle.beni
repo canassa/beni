@@ -1,0 +1,97 @@
+-- A `var` at the argument is not "past a fold" (`ownership-v2.md` §2.1, *A step past
+-- a fold*, #2062): types that fold through a longer cycle unfold once more at the
+-- argument, so no test of the place can tell. The callee says it: the arrival is
+-- stepped past a `var`, through `W` or through a mutual pair.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+type V a
+    = VL a
+    | VW (W (List a))
+
+
+type W a
+    = WL
+    | WV (V a)
+
+
+fv : V a, (a → List Int) → List Int
+fv t f =
+    case t of
+        VL x →
+            f x
+
+        VW w →
+            case w of
+                WL →
+                    []
+
+                WV u →
+                    fv u λl →
+                        case l of
+                            [ x, …_ ] →
+                                f x
+
+                            _ →
+                                []
+
+
+type M a
+    = ML a
+    | MW (N (List a))
+
+
+type N a
+    = NL a
+    | NW (M (List a))
+
+
+fm : M a, (a → List Int) → List Int
+fm t f =
+    case t of
+        ML x →
+            f x
+
+        MW u →
+            fn u λl →
+                case l of
+                    [ x, …_ ] →
+                        f x
+
+                    _ →
+                        []
+
+
+fn : N a, (a → List Int) → List Int
+fn t f =
+    case t of
+        NL x →
+            f x
+
+        NW u →
+            fm u λl →
+                case l of
+                    [ x, …_ ] →
+                        f x
+
+                    _ →
+                        []
+
+
+main : Program
+main =
+    k = [ 1 ]
+    n = List.push (fv (VW (WV (VL [ k ]))) λl → l) 2
+    m = [ 1 ]
+    o = List.push (fm (MW (NW (ML [ [ m ] ]))) λl → l) 2
+    Node.print (show n ++ "|" ++ show k ++ "|" ++ show o ++ "|" ++ show m)

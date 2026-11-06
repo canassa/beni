@@ -21,7 +21,7 @@ pub fn familyOf(c: anytype, su: Contract.Supply) Error!?struct { j: u32, words: 
     const es = try entriesOf(c, su.res_root);
     var got: ?struct { j: u32, words: []const u32 } = null;
     for (es.items.items) |rs| for (rs.arrivals) |a| {
-        if (a.kind != .param) return null;
+        if (a.kind != .param or a.past) return null;
         const w = c.f.slots.relWords(a.slot);
         if (got) |g| {
             if (g.j != a.j) return null;
@@ -41,7 +41,7 @@ pub fn answersWhole(c: anytype, id: Contract.Id) Error!?u32 {
     var got: ?u32 = null;
     const es = try entriesOf(c, h.res_root);
     for (es.items.items) |rs| for (rs.arrivals) |a| {
-        if (a.kind != .param or (got != null and got.? != a.j)) return null;
+        if (a.kind != .param or a.past or (got != null and got.? != a.j)) return null;
         if (!std.mem.eql(u32, c.f.slots.relWords(a.slot), es.wordsOf(rs))) return null;
         got = a.j;
     };
