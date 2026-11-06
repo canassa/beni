@@ -1348,6 +1348,11 @@ every group of the module has been checked (§14.4).
      into the fixed class (a setter that stores `λ⊤ → k ⊤`). A scheme class that a fixed class
      reaches gets the fixed class's final rung at every use (a reader's own arrow).
    - A fixed class is never sensitive (§16.2), so the value has one body and is evaluated once.
+   - The precision lost is the module's. When one use hands the value a callback that suspends,
+     every use reads the class as one that suspends, and a use in a `sync` position (§15) is
+     refused, although each use had its own copy before (`check/bad/TopLevelFixedClassSync`).
+     The refusal is reported once, where the demand is: a use of a fixed class adds no `sync`
+     source of its own, because the copy is the class itself and reaches the demanded node.
 
    The set of fixed values is read off the evaluation classes that the solve gives, so
    `Effects.run` solves again with that set until the set stops growing. It can only grow, because
