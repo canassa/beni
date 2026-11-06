@@ -1,0 +1,5 @@
+# v2 refuses each edit of a list that went through a shared queue behind a value (§2.3.4, §2.14.5 H6, #2132).
+20:9 list_still_used List.push
+29:9 list_may_be_shared List.push
+38:9 list_still_used List.push
+47:9 list_may_be_shared List.push

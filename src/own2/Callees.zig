@@ -63,6 +63,56 @@ fn noContract(mod: anytype, t: [2]u32, arity: u32) !u32 {
     return mod.pessimisticOf(arity, mod.in.birs[t[0]].decls[t[1]].params == 0);
 }
 
+/// PROTOTYPE: the contract the arms of a value's body join to, when each arm is a capture-free
+/// lambda, constructor, local function or a function declaration.
+pub fn armContracts(mod: anytype, rs: u32, inst: u32, acc: *u32, n: *u32, arena: std.mem.Allocator, account: anytype) !bool {
+    const bir = mod.in.bir;
+    const tag = bir.instTag(@fromBackingInt(inst));
+    const d = bir.instData(@fromBackingInt(inst));
+    var c: u32 = none;
+    switch (tag) {
+        .branch => return armContracts(mod, rs, d.rhs, acc, n, arena, account),
+        .let => {
+            const stmts = bir.extraSlice(bir.subRange(@fromBackingInt(d.lhs)), Bir.Inst.Index);
+            for (stmts) |s| if (bir.instTag(s) != .let_def) return false;
+            return armContracts(mod, rs, d.rhs, acc, n, arena, account);
+        },
+        .case => {
+            const branches = bir.extraSlice(bir.subRange(@fromBackingInt(d.rhs)), Bir.Inst.Index);
+            for (branches) |b| if (!try armContracts(mod, rs, b.int(), acc, n, arena, account)) return false;
+            return true;
+        },
+        .lambda, .ctor, .ext_ctor, .local => {
+            const code = if (tag == .local) (localFunctionAny(mod, rs, inst) orelse return false) else (mod.code_of_inst.get(.{inst}) orelse return false);
+            const k = mod.codes.items[code];
+            if (k.captures.len != 0) return false;
+            c = k.contract;
+        },
+        .top, .ext_value => {
+            const t = mod.aliasTarget(mod.declOf(inst) orelse return false);
+            if (t[0] != mod.in.module) return false;
+            if (t[1] >= mod.body_code.len or mod.body_code[t[1]] == none) return false;
+            if (mod.in.bir.decls[t[1]].params == 0) {
+                const lc = mod.lambdaBody(t[1]) orelse return false;
+                c = mod.codes.items[lc].contract;
+            } else c = mod.codes.items[mod.body_code[t[1]]].contract;
+        },
+        else => return false,
+    }
+    if (c == none) return false;
+    acc.* = if (acc.* == none) c else try mod.contracts.join(mod.gpa, arena, account, &mod.slots, acc.*, c);
+    n.* += 1;
+    return true;
+}
+
+fn localFunctionAny(mod: anytype, base: u32, ref: u32) ?u32 {
+    const bir = mod.in.bir;
+    const l = bir.instData(@fromBackingInt(ref)).lhs;
+    const b = bir.locals[base + l].inst.int();
+    if (bir.instTag(@fromBackingInt(b)) != .let_def) return null;
+    return mod.code_of_inst.get(.{b});
+}
+
 /// The local function a `.local` reference names, as its code.
 fn localFunction(mod: anytype, ref: u32) ?u32 {
     const bir = mod.in.bir;
@@ -109,7 +159,11 @@ pub fn callee(mod: anytype, inst: u32, args: []const u32) !Walk.Callee {
     if (target) |t0| {
         const t = mod.aliasTarget(t0);
         if (t[0] == mod.in.module and t[1] < mod.body_code.len and mod.body_code[t[1]] != none) {
-            if (mod.in.bir.decls[t[1]].params == 0 and args.len != 0) return if (mod.lambdaBody(t[1])) |c| .{ .code = c } else .{ .contract = try noContract(mod, t, @intCast(args.len)) };
+            if (mod.in.bir.decls[t[1]].params == 0 and args.len != 0) {
+                if (mod.lambdaBody(t[1])) |c| return .{ .code = c };
+                if (mod.contracts.calledOf(mod.codes.items[mod.body_code[t[1]]].contract, Slots.root)) |l| if (mod.contracts.head(l).arity == args.len) return .{ .contract = l };
+                return .{ .contract = try noContract(mod, t, @intCast(args.len)) };
+            }
             // A container's comparison in core is its components'.
             if (!(mod.in.isCore(t[0]) and bir.instTag(@fromBackingInt(inst)) == .method_call and composedOrigin(bir, inst))) return .{ .code = mod.body_code[t[1]] };
         }
@@ -168,7 +222,10 @@ pub fn funcRef(mod: anytype, inst: u32) !?u32 {
                 return mod.body_code[t[1]];
             }
             if (t[0] == mod.in.module and t[1] < mod.body_code.len and mod.body_code[t[1]] != none) if (mod.lambdaBody(t[1])) |c| return c;
-            contract = (try declContract(mod, t0, t, ps.items, result)) orelse try noContract(mod, t, @intCast(ps.items.len));
+            if (t[0] == mod.in.module and t[1] < mod.body_code.len and mod.body_code[t[1]] != none) if (mod.contracts.calledOf(mod.codes.items[mod.body_code[t[1]]].contract, Slots.root)) |l| {
+                if (mod.contracts.head(l).arity == ps.items.len) contract = l;
+            };
+            if (contract == none) contract = (try declContract(mod, t0, t, ps.items, result)) orelse try noContract(mod, t, @intCast(ps.items.len));
         },
         else => return null,
     }

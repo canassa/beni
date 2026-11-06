@@ -1514,6 +1514,15 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
     for (rs) |r| if (mod.in.bir.decls[r.decl].params == 0) if (mod.lambdaBody(r.decl)) |c| {
         try mod.contracts.putCalled(gpa, mod.codes.items[mod.body_code[r.decl]].contract, Slots.root, mod.codes.items[c].contract);
     };
+    for (rs) |*r| if (mod.in.bir.decls[r.decl].params == 0 and mod.lambdaBody(r.decl) == null) {
+        const b = mod.in.bir.decls[r.decl].body.unwrap() orelse continue;
+        var acc: u32 = none;
+        var n: u32 = 0;
+        var pa: std.heap.ArenaAllocator = .init(gpa);
+        defer pa.deinit();
+        if (!try Callees.armContracts(mod, mod.in.bir.decls[r.decl].locals_start, b.int(), &acc, &n, pa.allocator(), &r.account) or acc == none or n == 0) continue;
+        try mod.contracts.putCalled(gpa, mod.codes.items[mod.body_code[r.decl]].contract, Slots.root, acc);
+    };
     for (rs, lines.items) |*r, *l| {
         r.rounds = round + 1;
         r.contract = mod.codes.items[mod.body_code[r.decl]].contract;

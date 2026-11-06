@@ -63,7 +63,8 @@ pub const Signature = struct {
 pub const Env = RowEnv.Env;
 
 /// The pessimistic contract (§2.10): every argument read and escaped deep,
-/// the result `⊤` (a `foreign`'s `host`, §2.10), not separated.
+/// the result `⊤`, or `host` for a `foreign` (§2.10) or a called top-level
+/// value (§2.11.1), not separated.
 pub fn pessimistic(env: Env, arity: u32, host: bool) Error!Contract.Id {
     var d: Draft = .{ .arity = arity, .flags = .{ .returns = true, .pessimistic = true } };
     for (0..arity) |j| {
