@@ -173,9 +173,12 @@ core/Task.beni                Task.halt           8b19e9b307160e2904fc4c740b7fe9
 core/Task.beni                Task.waitAll        cfd62c0c96be1c4d6412b45718d27620b00f486519ef3f72e913aa5430b5ab93
 core/Task.beni                Task.cancelEvery    fa8e0cb49cb878f19983611f613bf69ea63925a9db31077e12e9ed48ee7294cb
 core/Task.beni                Task.finish         cd5217a383f07486e37fb5aa9e219c12c5b7a84866c79d7ccb22392cfe6d403d
-core/Task.beni                Task.finished       e77cf9e5d0f4cab4f43b5a369615f14e18d8703f66aa062b99c03e9a0192da60
+core/Task.beni                Task.finished       c552dfcb08ababd8e984c222f850b7ee04af9c1332f5c6fdf30bfa890842428a
 core/Task.beni                Task.unwind         6be38a2d73ff53aea5d7cc0a6d773f782afe1c70f9d7535f51267d7616ca8780
-core/Task.beni                Task.cleanups       b2da6b0339df4c63a1ca664d411deebae7b7807988708d9be4d48869045907dc
+core/Task.beni                Task.cleanups       8c896ed6161c0de80ecccdb12ce3119225868f08c41d1934638f7dae02f5a843
+core/Task.beni                Task.withStranded   f3601c2521f75395316a4498d931dd29ea9d437c603adb52541f909837e2fce2
+core/Task.beni                Task.stranded       86da128f92e2f260898b935e243c6e797163bfc4da09c3467555c146d91d0628
+core/Task.beni                Task.stranding      b2356dff0219d3c8a1f6619239a7eae60b20b0087c25357d117953ebd8fba983
 core/Task.beni                Task.cleaning       5ccb30a07dc655e986d51215637da88816447f81e35cf335649cddbf8908e144
 core/Task.beni                Task.cleaningSet    ff66f5378dffc9dda5d0df5cd10f4b86e958eed6ad5fe94060cac498414c1bf4
 core/Task.beni                Task.inCleanup      ead80c738e4c68223479c15ee38d88e60fcad0a757a6fe2640ce4f862a6c8eef
@@ -207,7 +210,7 @@ core/Task.beni                Task.swept          18f2668b5fbc75c52ecbab2ca01c76
 core/Task.beni                Task.torn           dfaec19994dc780075f0d4fad9f8b536b2a933a51d69bcddd6ce2ed78bd38872
 core/Task.beni                Task.stopping       df36d8526122a31e02615cd6f2ee1e651194e376eed81e58ededc7de8bb669a0
 core/Task.beni                Task.arm            b9120d38c772ff4f3b188db5ff29c4accc0a5fe70ab14e26be8188be7ac85fdd
-core/Task.beni                Task.teardown       9813385bd5b9f41c734ec34bd0d1ab4d8ddcdba279b8fefce6c6e1e5fc10be36
+core/Task.beni                Task.teardown       dbcaf4058d8fc7cec18a7a2286b9888ef1ed1008b619c88f6020cabd043d6275
 core/Task.beni                Task.withSlotsOf    4a1b1318c905a8b6fbfe22a526502686b09be7a4463a1fc397fd71f68304e12a
 core/Task.beni                Task.sweep          5ef425ee5bc15c7d6b95f6a124d4105508dabf6decaaacd1e3b8b4f59408a0f2
 core/Task.beni                Task.recover        cf29995984c9a8997f22b22a974f0d5fde0795d573f902cb7053836b83bb7ee0
