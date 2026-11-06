@@ -180,11 +180,9 @@ fn pathText(f: Frame, a: Allocator, w: *std.Io.Writer, root: Ids.PathId) (Alloca
     }
 }
 
-/// The nominal head a `⟲` is of: the type whose levels it folds. The level
-/// stays at the place it follows, which may be a record or a list inside the
-/// constructor (`#Tree.0⟨Tree⟩`), and such a place has no type of its
-/// own to name, so it is the nearest constructor place above on the same
-/// cycle (#1371).
+/// The nominal head a `⟲` is of: the type whose levels it folds. The level stays at the place it follows, which may
+/// be a record or a list inside the constructor (`#Tree.0⟨Tree⟩`), and such a place has no type of its own to name, so
+/// it is the nearest constructor place above on the same cycle (#1371).
 fn levelHead(places: *const Place.Table, p: Ids.PathId) u32 {
     const here = places.pathPlace(p);
     var at = p;
@@ -224,6 +222,7 @@ pub fn line(f: Frame, a: Allocator, l: Resolve.Line, op_name: []const u8) Alloca
         .once => "once",
         // A closure's cell operation on a capture, at its creation.
         .writer => if (d.cell and d.call == none) "cell" else op_name,
+        .callsite => if (d.need) "value" else op_name,
         else => op_name,
     };
     var detail: []const u8 = "";
@@ -249,6 +248,7 @@ pub fn line(f: Frame, a: Allocator, l: Resolve.Line, op_name: []const u8) Alloca
             },
             .captured => w.print("{s}, a closure holding it, is used at {d}:{d}", .{ localName(f, l.holder.?.who), up.line, up.col }),
             .once => w.writeAll("it is written by a closure that may run more than once"),
+            .need => if (d.kept) w.print("{s} runs a function that edits what another returns, and nothing checks that yet", .{op_name}) else w.print("{s} edits what it returns, which may be a list it does not own", .{if (op_name.len != 0) op_name else "a closure that leaves"}),
             .call => w.print("{s} still holds it when it runs the function", .{op_name}),
             .held_operand => blk: {
                 const pp = f.names.position(f.names.ctx, f.module, l.holder.?.token);

@@ -32,6 +32,7 @@ const CallGraft = @import("CallGraft.zig");
 const Canon = @import("Canon.zig");
 const AtomGraft = @import("AtomGraft.zig");
 const Put = @import("Put.zig");
+const Needs = @import("Needs.zig");
 const Made = @import("Made.zig");
 const Host = @import("Host.zig");
 const Cells = @import("Cells.zig");
@@ -802,6 +803,7 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: Put.EffList) Error!void {
         if ((try seen.getOrPut(gpa, .{x})).found_existing) continue;
         if ((try s.effected.getOrPut(gpa, .{ x, @intFromBool(deep), @backingInt(out) })).found_existing) continue;
         const l = f.leafAt(x);
+        if (l.kind == .answer and out == .writes) _ = try Needs.publish(s, l.atom, l.extra, deep);
         if (l.kind == .answer and out == .escapes) _ = try Contract.Draft.addEffect(Put.effList(s, out), s.arena, .{ .j = f.cbs.items[l.atom].j, .slot = f.cbs.items[l.atom].slot, .deep = true });
         if (out == .escapes and try Made.selfEscape(s, l)) continue;
         if (out == .escapes and l.kind == .top and l.root != Value.none) try Origin.leaves(&e.ev, l, &stack);
@@ -828,6 +830,8 @@ fn paramEffects(s: *Sink, li: u32, deep: bool, out: Put.EffList) Error!void {
             // What the label answers leaves, and the code it runs is not told (#2059).
             .cb => if (out == .escapes) {
                 s.d.labels.items[try s.labelIndex(r.a)].answer_left = true;
+            } else if (out == .writes) for (f.slots.items(try Subtree.writeOut(f.slots, gpa, f.account, f.places, l.slots))) |sl| {
+                _ = try Needs.publish(s, r.a, (try f.slots.relBelow(gpa, f.account, f.places, r.path, .from(sl))) orelse Slots.root, deep);
             },
         }
     }

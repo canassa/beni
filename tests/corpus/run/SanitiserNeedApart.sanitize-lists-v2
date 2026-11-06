@@ -1,0 +1,1 @@
+# Every write lands on an object only the callee can reach (§2.11.3, a need): accepted, and edited in place.

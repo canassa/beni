@@ -1,0 +1,26 @@
+-- The writers `Main` imports: each one's need crosses the module in its block
+-- (`ownership-v2.md` §2.11.3, *Blocks*).
+pub pushOf : (a → List Int), a → List Int
+pushOf f x = List.push (f x) 1
+
+
+pub push1 : (⊤ → List Int) → List Int
+push1 f = List.push (f ⊤) 1
+
+
+pub fwd : (a → List Int), a → List Int
+fwd f x = pushOf (λy → f y) x
+
+
+pub pushOuter : (⊤ → List (List Int)) → List (List Int)
+pushOuter f = List.push (f ⊤) [ 0 ]
+
+
+pub go : List a, (a → List Int), List (List Int) → List (List Int)
+go xs f acc =
+    case xs of
+        [ x, …rest ] →
+            go rest f (List.push acc (List.push (f x) 1))
+
+        _ →
+            acc

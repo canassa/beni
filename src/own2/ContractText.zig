@@ -6,37 +6,14 @@ const Slots = @import("Slots.zig");
 const Contract = @import("Contract.zig");
 const AnsOcc = @import("AnsOcc.zig");
 const Forest = @import("Forest.zig");
+const RelText = @import("RelText.zig");
 
 const Table = Contract.Table;
 const Id = Contract.Id;
 
-/// How a contract's text names a field.
-pub const Names = struct {
-    ctx: *anyopaque,
-    field: *const fn (ctx: *anyopaque, rank: u32) []const u8,
-};
-
-/// `rel`'s text: `.f`, `.0`, `#c.i`, `[*]`, `⟲`, `◆`, `◇`, `⟨n⟩`; `ε` for none.
-pub fn relText(slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, r: Contract.Rel) std.Io.Writer.Error!void {
-    return wordsText(places, names, w, slots.relWords(r));
-}
-
-fn wordsText(places: *const Place.Table, names: Names, w: *std.Io.Writer, words: []const u32) std.Io.Writer.Error!void {
-    if (words.len == 0) return w.writeAll("ε");
-    for (words) |word| {
-        const s = Place.Step.fromWord(word);
-        switch (s.kind) {
-            .field => try w.print(".{s}", .{names.field(names.ctx, s.payload)}),
-            .index => try w.print(".{d}", .{s.payload}),
-            .ctor_arg => try w.print("#{d}.{d}", .{ places.ctorArgOf(s)[0], places.ctorArgOf(s)[1] }),
-            .elem => try w.writeAll("[*]"),
-            .contents => try w.writeAll("◆"),
-            .env => try w.writeAll("◇"),
-            .slot => try w.print("⟨{d}⟩", .{s.payload}),
-            .level => try w.writeAll("⟲"),
-        }
-    }
-}
+pub const Names = RelText.Names;
+pub const relText = RelText.relText;
+const wordsText = RelText.wordsText;
 
 fn condText(t: *const Table, slots: *const Slots.Table, places: *const Place.Table, names: Names, w: *std.Io.Writer, field: []const u8, c: Contract.StoredCond) std.Io.Writer.Error!void {
     try w.writeAll(field);
@@ -147,6 +124,11 @@ pub fn print(t: *const Table, gpa: std.mem.Allocator, c: Id, slots: *const Slots
         try w.print("; label π{d}", .{l.j + 1});
         try relText(slots, places, names, w, l.slot);
         try w.print("@{d} {t}", .{ l.origin[2] & ~Contract.last_origin, l.calls });
+        for (t.effectsOf(l.need)) |n| {
+            try w.writeAll(" need ");
+            try relText(slots, places, names, w, n.slot);
+            if (n.deep) try w.writeAll("*");
+        }
         for (t.suppliesOf(l.supplies)) |s| {
             try w.print(" [{d}{s}:", .{ s.k + 1, if (s.walk) " walk" else if (s.each) " each" else "" });
             try arrivalsText(t, gpa, c, slots, places, names, w, s.res_root, null, true);

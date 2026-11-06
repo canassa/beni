@@ -1,0 +1,98 @@
+-- A need's refusals (`ownership-v2.md` §2.11.3): each callee writes what its
+-- function answers, and each function here answers a list the caller or the
+-- function itself reads again, so each edit would change what the program
+-- prints: a capture, the caller's list handed through, one captured through a
+-- forwarding lambda, a function read back from a cell, a recursive helper that
+-- applies its function each round, and a closure that leaves its maker.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows xss = String.join (List.map xss show) ";"
+
+
+push1 : (⊤ → List Int) → List Int
+push1 f = List.push (f ⊤) 1
+
+
+pushOf : (a → List Int), a → List Int
+pushOf f x = List.push (f x) 1
+
+
+fwd : (a → List Int), a → List Int
+fwd f x = pushOf (λy → f y) x
+
+
+stored : Ref (⊤ → List Int) → List Int
+stored r = List.push ((Ref.get r) ⊤) 1
+
+
+go : List a, (a → List Int), List (List Int) → List (List Int)
+go xs f acc =
+    case xs of
+        [ x, …rest ] →
+            go rest f (List.push acc (List.push (f x) 1))
+
+        _ →
+            acc
+
+
+mk : (⊤ → List Int) → (⊤ → List Int)
+mk f = λ⊤ → List.push (f ⊤) 1
+
+
+capture : ⊤ → String
+capture ⊤ =
+    y = [ 1 ]
+    z = push1 λ⊤ → y
+    show y ++ "|" ++ show z
+
+
+argument : ⊤ → String
+argument ⊤ =
+    x = [ 2 ]
+    z = pushOf (λl → l) x
+    show x ++ "|" ++ show z
+
+
+forwarded : ⊤ → String
+forwarded ⊤ =
+    y = [ 3 ]
+    z = fwd (λ⊤ → y) ⊤
+    show y ++ "|" ++ show z
+
+
+cell : ⊤ → String
+cell ⊤ =
+    y = [ 4 ]
+    r = Ref.make λ⊤ → y
+    z = stored r
+    show y ++ "|" ++ show z
+
+
+recursive : ⊤ → String
+recursive ⊤ =
+    y = [ 5 ]
+    zs = go [ 1, 2 ] (λ_ → y) []
+    show y ++ "|" ++ shows zs
+
+
+returned : ⊤ → String
+returned ⊤ =
+    y = [ 6 ]
+    g = mk λ⊤ → y
+    a = g ⊤
+    show a ++ "|" ++ show (g ⊤) ++ "|" ++ show y
+
+
+main : Program
+main =
+    Node.print
+        (String.join [ capture ⊤, argument ⊤, forwarded ⊤, cell ⊤, recursive ⊤, returned ⊤ ] "\n")

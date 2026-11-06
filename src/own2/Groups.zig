@@ -63,6 +63,8 @@ const Answers = @import("Answers.zig");
 const Contents = @import("Contents.zig");
 const Within = @import("Within.zig");
 const Outward = @import("Outward.zig");
+const Needs = @import("Needs.zig");
+const ComparisonWalks = @import("ComparisonWalks.zig");
 const EntryHeld = @import("EntryHeld.zig");
 const FnRun = @import("FnRun.zig");
 const Codes = @import("Codes.zig");
@@ -1303,7 +1305,7 @@ fn initModule(in: *const Input, mod: *Module) Allocator.Error!void {
     @memset(mod.result_of, none);
     mod.body_code = try in.gpa.alloc(u32, in.bir.decls.len);
     @memset(mod.body_code, none);
-    mod.comparison = try comparisonWalks(in);
+    mod.comparison = try ComparisonWalks.of(in, isComparisonDecl);
 }
 
 /// `mod` charging `account` from here on.
@@ -1597,6 +1599,19 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             try Contents.check(&evals[i], ra, &drafts[i]);
             if (sv) |v| try v.pump();
         }
+        // A need read as the round's facts stand, until nothing is new (§2.11.3).
+        var needs: Needs.State = .{};
+        defer needs.deinit(gpa);
+        var more = true;
+        while (more) {
+            more = false;
+            for (order.items, 0..) |x, i| {
+                charging(mod, &rs[owner.items[x]].account);
+                mod.cur_locals = in.bir.decls[rs[owner.items[x]].decl].locals_start;
+                if (try Needs.pass(&needs, &evals[i], @intCast(i))) more = true;
+                if (sv) |v| try v.pump();
+            }
+        }
         if (!validating and solver.used) try kg.round(gpa, &rs[0].account, &mod.contracts, mod.codes.items, ids, drafts, evals);
         for (order.items, 0..) |x, i| {
             const id = ids[i];
@@ -1608,12 +1623,16 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             const called = mod.codes.items[id].kind == .called;
             if (!called) try EntryHeld.demands(e);
             try Outward.finishDemands(e);
+            try Needs.finish(e);
+            if (!called) try Needs.escaped(e);
+            if (mod.comparison[r.decl]) try Needs.compared(e, &drafts[i]);
             if (!called) for ([_]bool{ false, true }) |w| if (w) try Closures.escapedWrites(e) else try @import("ClosureRuns.zig").labels(e);
             const got = try Resolve.resolve(e, &regions.items[k], ra, if (validating or !solver.used) null else &kg.tables[i]);
-            // R-5.13.1: in a comparison's walk, a write of what arrived is `comparison_changes_value`;
-            // a write of a fresh value stays accepted, and the contract keeps its writes (§2.13.13 item 13).
+            // R-5.13.1: in a comparison's walk, a write of what arrived or of a function's answer is
+            // `comparison_changes_value`; a write of a fresh value stays accepted, and the contract
+            // keeps its writes (§2.13.13 item 13, §2.11.3).
             if (mod.comparison[r.decl]) for (got.lines) |*l| {
-                if (l.outcome.verdict == .accepted and l.outcome.accepted == .param) {
+                if (l.demand.need or (l.outcome.verdict == .accepted and l.outcome.accepted != .fresh and !l.demand.fresh_answer)) {
                     l.outcome.verdict = .refused;
                     l.outcome.cause = .comparison;
                 }
@@ -1642,7 +1661,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
                     moved = true;
                 }
             }
-            if (!called) for (got.lines) |l| try lines.items[k].append(gpa, l);
+            if (!called) for (got.lines) |l| if (!l.demand.quiet or l.outcome.verdict != .accepted) try lines.items[k].append(gpa, l);
         }
         // Settled when every read saw the version that stands now.
         var stale = false;
@@ -1815,23 +1834,6 @@ fn isComparisonDecl(in: *const Input, di: u32) bool {
         },
         .alias => false,
     };
-}
-
-/// Per declaration of the module, whether its walk is a comparison's: a
-/// type's `eq` or `compare`, or the declaration of this module a
-/// comparison names through aliases (`compare = helper`: `helper`'s
-/// writes are the comparison's, refused at the write). A comparison
-/// that names another module's function is walked itself, and stays
-/// unbuilt at the name (`isWalked`).
-fn comparisonWalks(in: *const Input) Allocator.Error![]bool {
-    const out = try in.gpa.alloc(bool, in.bir.decls.len);
-    @memset(out, false);
-    for (0..in.bir.decls.len) |di| {
-        if (!isComparisonDecl(in, @intCast(di))) continue;
-        const t = Prepass.aliasTarget(in.birs, in.provenance, .{ in.module, @intCast(di) });
-        if (t[0] == in.module) out[t[1]] = true;
-    }
-    return out;
 }
 
 /// A v2 word on a place without the kind it reads (#1056 item 4): lowering

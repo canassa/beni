@@ -1,0 +1,74 @@
+-- A write past what a need can name (`ownership-v2.md` §2.11.3): `wr` writes
+-- `#1.0⟲#0.0` of a non-regular type, whose places never repeat, so no slot of
+-- the answer says the write. A list below two `Wrap`s would be edited in place
+-- while the caller still reads it. `ap` is refused where it writes the answer,
+-- and the other callees, which reach the same answer by a helper, by a lambda and
+-- by a supply, and one through a parameter whose own contract runs short, are
+-- refused at each caller.
+import List
+import Node exposing (Program)
+import String
+
+
+type T a
+    = Leaf (List Int) a
+    | Wrap (T (List a))
+
+
+wr : T a → Int
+wr t =
+    case t of
+        Leaf xs _ →
+            List.length (List.push xs 1)
+
+        Wrap u →
+            wr u
+
+
+apply : (⊤ → a) → a
+apply f = f ⊤
+
+
+app1 : a, (a → b) → b
+app1 v f = f v
+
+
+ap : (⊤ → T (List Int)) → Int
+ap h = wr (Wrap (h ⊤))
+
+
+viaHelper : (⊤ → T (List Int)) → Int
+viaHelper h = wr (Wrap (apply h))
+
+
+viaLambda : (⊤ → T (List Int)) → Int
+viaLambda h =
+    g = λ⊤ → h ⊤
+    wr (Wrap (g ⊤))
+
+
+viaSupply : (⊤ → T (List Int)) → Int
+viaSupply h = app1 (h ⊤) λy → wr (Wrap y)
+
+
+short : T (List Int) → Int
+short x = wr (Wrap x)
+
+
+viaParam : (⊤ → T (List Int)) → Int
+viaParam h = short (h ⊤)
+
+
+make : List Int → T (List Int)
+make k = Wrap (Wrap (Leaf k [ [ [ 1 ] ] ]))
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = ap λ⊤ → make k
+    b = viaHelper λ⊤ → make k
+    c = viaLambda λ⊤ → make k
+    d = viaSupply λ⊤ → make k
+    n = viaParam λ⊤ → make k
+    Node.print (String.fromInt (a + b + c + d + n + List.length k))
