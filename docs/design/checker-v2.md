@@ -1513,7 +1513,18 @@ then `Resolve.closeLet` in step 7):
   function of it, which would run its right-hand side at each read and break `language.md` §6
   *Evaluation order*'s "`let` bindings: in the order written", evaluated once where written — so it
   stays monomorphic, and `static-dispatch-spike.md` §6.2's `let t = decodeInto "zz" in label t`
-  is still pinned by its later use. A pattern binding is held for the same reason. Rule 3 and the
+  is still pinned by its later use. A pattern binding is held for the same reason. *Amended
+  2026-11-05 (the owner's D7, `language.md` §13.11, #2077; specified, not built):* `number` is a kind
+  and not a wanted, so `big = M + 2` escaped this rule and served `Int` and `Float` from one
+  evaluation. Each instantiation of a scheme's `number` variable now raises one hidden numeric wanted
+  (`backend.md` §16.3), so **in a `let` this rule holds such a root with no new rule**: it is an
+  ordinary open wanted, including one raised in a lambda or a data structure inside the right side.
+  A value that raises none, `zero = 0`, stays general. **At a top-level frame there is one new rule:**
+  a held `number` root defaults to `Int` in the value's own group, never by a use, because a use must
+  not change a declaration's type. An annotation that quantifies it is `constrained_constant`, with
+  a hint naming a parameter, `big ⊤ = …`. Numeric wanteds do not count towards the 64-constraint cap
+  (`static-dispatch-spike.md` §10.11): a value with 300 `number` fields needs none and is data. Rule 3
+  and the
   value restriction are the two places a `let` is not HM(X), with the cap below; `type_mismatch`'s A.30 hint names
   which one held the binding (`Env.monomorphic` gains the reason). A header
   is a header wherever its `let` stands — inside a lambda or a `case`/`if` branch the generator

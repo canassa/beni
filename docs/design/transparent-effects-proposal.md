@@ -2529,6 +2529,13 @@ context it belongs to — the host refuses I/O "on behalf of a different request
 drain per isolate crosses that line (§9.12 (d), *measured*) — and so that a defect stops only its
 own request or object.
 
+*Amended 2026-11-05 (the owner's D8, `language.md` §13.6; specified, not built, #1994):* **only a
+platform's scheduler contains a defect.** A scheduler made with `schedulerWith` for a request or an
+object stops alone, because the platform defines that unit of failure. A scheduler a program makes
+with `Task.scheduler` contains nothing: a defect under it stops that scheduler, and then the
+program, as a defect in any fiber does. Every sentence of this section about a scheduler's defect,
+and `core/Task.beni`'s doc comment on `Scheduler`, reads so; the comment changes with the fix.
+
 ```elm
 -- core/Task.beni
 pub foreign type Scheduler

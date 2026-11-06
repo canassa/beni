@@ -1813,7 +1813,9 @@ representation and its costs move (`backend.md` §4, *Lists are arrays*). The fi
   Every function is **total**: every result is a 32-bit value, nothing throws, and division by zero
   is `zero` for all three of `div`, `rem` and `mod` — the answer `Basics.idiv`, `remainderBy` and
   `modBy` already give. `minValue / -1` wraps to `minValue`. A shift count is an `Int` and is taken
-  **modulo 32**, which is what JavaScript's shift operators do with it.
+  **modulo 32**, which is what JavaScript's shift operators do with it. *Amended 2026-11-05 (#1988,
+  `language.md` §13.5; specified, not built):* a zero divisor is `zero` under `--release` only, and
+  crashes a checked build. Overflow and the shift count do not change.
 
   | | Signature | |
   |---|---|---|
@@ -1886,6 +1888,8 @@ that is a contract too, not an accident, because a record-keyed `sortBy` depends
   §29.3).
 - `Int` (*2026-10-01*): `mod : Int, Int -> Int` (the sign of the modulus, `0` for a zero modulus)
   and `rem : Int, Int -> Int` (the sign of the dividend, `0` for a zero divisor), beni over `Js`.
+  *Amended 2026-11-05 (#1988, `language.md` §13.5):* that `0` is `--release`'s; a checked build
+  crashes.
 - `Float` (*2026-10-01*): `log : Float, Float -> Float`, the number then the base, beni over `Js`.
 - `List`: `equatable foreign type List a`; `foreign` for `cons` — `foldl` and `foldr` moved into
   beni with the tail-call loop (`backend.md` §8), which is what

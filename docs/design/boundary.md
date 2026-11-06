@@ -152,7 +152,10 @@ same name — already specified in `language.md` §5.4 and load-bearing for §7 
 *Amended 2026-09-30.* A `foreign` value also **declares its rung** — `pure`, `impure` or
 `suspends` — between `foreign` and its name, and the checker infers every beni function's bits
 from those declarations ([`transparent-effects-proposal.md`](transparent-effects-proposal.md)
-§14.1). `pure` means total and non-throwing. The rung is a promise the platform author makes about
+§14.1). `pure` means total and non-throwing. *Amended 2026-11-05 (#1988; specified, not built):*
+of the sibling's own JavaScript; a check a checked build inserts around or after the call, such as a
+scalar `Js.to` test, may still crash, and that failure is not erased by the rung (§4.2's `pure`,
+`backend.md` §16.6). The rung is a promise the platform author makes about
 the sibling, like the arity check 4 counts, and none of the checks below reads the JavaScript to
 test it. The rung describes the declaration's own arrow and its `where` evidence; a beni function
 passed to the sibling is independent of the call until the `sync` step makes such a parameter
@@ -627,7 +630,13 @@ kept by the release optimiser where it is unused (`language.md` §6, *What an op
 assume*). The argument is a function handed to the intrinsic, so it joins nothing
 (`transparent-effects-proposal.md` §14.3, rule 6); unchecked, like every `Js` declaration — the
 caller answers for the promise. Written with a lambda, it is the lambda's body (`backend.md` §4,
-*`Js.pure` is its body*).
+*`Js.pure` is its body*). *Amended 2026-11-05 (#1988, after the second review of #1999; specified,
+not built):* "throws nothing" no longer holds in a checked build. A check the compiler inserts in
+the body (`round`, `sqrt` and `Float.log` are written under `Js.pure`, `language.md` §13.4), or a
+checked `Js.to` (§4.3 (h)), may crash, and that failure **survives `Js.pure`**: it reaches every
+caller, through wrappers, callable aliases and other modules, and an unread call is not dropped.
+`Js.pure` still says "changes nothing an observer can see", so the rung stays `pure`; the failure is
+a separate fact (`backend.md` §16.6, *A checked failure survives `Js.pure`*).
 
 **`suspending : sync (() -> a) -> a`** (suspends, 2026-10-02, `plans/core-in-beni.md` step 2;
 **decided** by the owner the same day) is the body's value, and the opposite promise to `pure`'s:
@@ -644,7 +653,8 @@ lambda, it is the lambda's body (`backend.md` §4, *`Js.suspending` is its body*
 `bitAnd` is `&` — and `typeOf : Value -> Value` and `instanceOf : Value, Value -> Bool`, `typeof v`
 and `v instanceof C`. Each is written in place as its operator. `rem` answers `NaN` for a zero
 divisor and `shiftRightZero` an unsigned number, both of which an `Int` may not hold: the caller
-guards, as `Int32.rem` does.
+guards, as `Int32.rem` does. *Amended 2026-11-05 (#1988):* §4.3 (e): these carry no check in any
+build, and a zero divisor reaching `Int32.rem` crashes a checked build at `Int32.rem`, not here.
 
 **The comparisons, `lt`, `gt`, `le` and `ge`** (pure, specified 2026-10-23, #882; the owner's
 decision of 2026-10-02, `plans/runtime-in-beni.md` step 7) are `a < b`, `a > b`, `a <= b` and
@@ -810,6 +820,129 @@ is not written*). A release build writes no result for a function whose result i
 function a platform receives through `Js.from` — an event handler, a render callback — returns
 `undefined` where a development build returns `null`. A platform's JavaScript never reads what such
 a function returns; a `()` it is handed, and a `()` it returns, may be either.
+
+**`Js.checked`, `Js.cast`, `Js.peek`** (*specified 2026-11-05, not built; #1988, #2079, #2078*), the
+three declarations checked builds add to this module:
+
+| Declaration | Is |
+|---|---|
+| `pub foreign pure checked : ⊤ → bool` | `true` in the development build and under `--release-safe`, `false` under `--release`, written in place as `Js.development` is (§4.3 (f)) |
+| `pub foreign pure cast : returned Value → a` | **`Js.to` to every pass**, with no test in any build (§4.3 (h)) |
+| `pub foreign impure peek : Value, index → Value` | `o[k]` in every build, `undefined` past the end, never bounds-tested: the read that says it may go past the end. `Js.at` is the read that says it does not |
+
+### 4.3 What crosses the wall in a checked build
+
+*Added 2026-11-05 (the owner's #1988, `language.md` §13). Specified, not built. Revised the same day
+after an independent review of #1999, with the owner's decision D2 (`language.md` §13.10).* A
+checked build's guarantee is that every value is true of its type (`language.md` §13.2). Beni's own
+operations can be checked. A value that comes through this wall cannot be, by its type alone:
+`Js.to : Value → a` is an unchecked cast, and §4.2's "the caller answers for the type" was the whole
+of the protection. This section says what "answers for" now means (a)–(g), and what a checked build
+tests on its own (h).
+
+**(a) A read is true, or it is not a read of that type.** A core or platform function that reads a
+host value and hands it to a program at a concrete type states why the value is true of the type:
+the host's specification, or a test in the wrapper. A host read that can answer another shape
+(`undefined`, `null`, a string, a fraction, `NaN`) tests it and answers `Maybe` or a typed error, or
+crashes with a message that names the read. It does not pass the value on. A cast to a type the host
+does not promise is the defect §4.1 describes, and `Html.targetValue` on an element with no `value`
+was one (#1993): `undefined` typed `String` reached a `String` operation, and the page stopped far
+from the cause. *Decided by the owner, 2026-11-05:* **`Html.targetValue : Event → Maybe String`**,
+`Nothing` when the target has no string `value`. A program that knows its target writes the default
+it wants.
+
+**(b) An `Int` read from a host.** A host number read at `Int` is whole and in range by the host's
+specification, or the wrapper tests it with `Number.isSafeInteger`, or the wrapper reads it at
+`Float`. `clientX` is a `Float` for this reason. *Amended 2026-11-05, after the third review of
+#1999:* **a `Float` written to a host as a number** is a use as an operand (`language.md` §13.4): the
+wrapper tests that it is finite and crashes, since a host reads `NaN` as `0` with no complaint.
+`Dom.scrollTo` (`platforms/browser/Dom.beni:106`) is the one such public API found.
+
+**(c) An `Int` written to a host.** Every `Int` is in range in a checked build, but a host may take
+less. A wrapper that passes an `Int` to an API that narrows it owns the narrowing: past `2³¹−1`,
+`setTimeout` fires after 1 ms, and `Task.sleep`'s chain of timers is the model. `history.go` takes a
+WebIDL `long`, which is the value modulo `2³²` read as signed 32 bits: `2³²` is `0`, a reload, and
+`2³² + 1` is `1`. A process exit code is taken modulo 256. The wrapper chains, clamps, or answers a
+typed error, and its documentation says which.
+
+**(d) A host call that throws on a program's argument.** Rule 9 stands: each failure the API
+documents is tested first or caught by name, and becomes a typed error. A program-controlled
+argument that reaches a throw with no typed error is a defect in the wrapper, even though the throw
+does take the defect path. The **reproduced** ones, with their host: a `trailer` response header on
+Node 24.19 (#1995); a non-Latin-1 MIME type in Node 24.19's `Headers`, reached by the browser's
+`Http` (#1995); a file input's non-empty `value` in happy-dom and Chrome 153, from `browser` and
+`browser-inline`, including the property writes the markup lowering generates (#2020). Hosts differ:
+workerd (Miniflare, compatibility date 2026-05-18) accepts a Japanese header value that Node rejects,
+and returns 204 for `Worker.text 204 ""`; it accepted `alarmAt` of `M`, of `-1` and `alarmIn` of
+the longest duration. Those predictions of the first draft are withdrawn. A claim about a host names
+the host, its version or compatibility date, and whether it was run. Predictions not yet reproduced
+are listed in #1995 as predictions.
+
+**(e) The `Js` operators carry no check.** `Js.at`'s bounds check is the one exception
+(`language.md` §13.6). `Js.rem`, `Js.lt`, `Js.same`, the bit operators and `Js.get` compile as
+§4.2 says in every build, so core can write a guard with them, and a `foreign` sibling's JavaScript
+is not checked. An arithmetic operator written in core is an ordinary beni operator and is checked,
+in core as in a program. So core may not write `+` at a type that is false: `core/Basics.beni`'s
+`append` and `core/String.beni`'s `append` read two strings as `Int` "only so that `+` can be
+written", and in a checked build that `+` would crash. They use a named unchecked `Js` operation,
+scoped to those bodies (`language.md` §13.9, `backend.md` §16.4).
+
+**(f) `Js.checked`.** `Js.checked ⊤ : bool` (declared in §4.2) is `true` in the development build and under
+`--release-safe`, and `false` under `--release`, written in place as `Js.development` is, with the
+same dropped arm (`backend.md` §4, *`Js.development` is the build's mode*). `Js.development` keeps
+its meaning, the crash screen's: `true` in the development build only. What every checked build
+needs asks `Js.checked`.
+
+**(g) A crash is not caught.** A crash is an `Error`. A `Js.catchIf` test that holds of every
+`Error` would catch it, so a test names a subclass, a `name` or a `code`, as §4.2 asks. `Js.finally`
+stays allowed. A `catchIf` body that runs program code is reviewed as a catch of that code's crash
+too.
+
+**(h) What a checked build tests at the wall.** *Decided by the owner, 2026-11-05 (D2, #1997).*
+
+- **`Js.to` at a scalar type** is tested in a checked build, with **exact** predicates, and a value
+  that fails is a crash that names the read and the type:
+
+  | Type | The test |
+  |---|---|
+  | `Int` | `Number.isSafeInteger(v)`, which `-0` passes |
+  | `Float` | `typeof v === "number"` |
+  | `Int32` | `typeof v === "number" && (v \| 0) === v`, so a fraction, `NaN` and a number past 32 bits fail (`-0` passes, as `-0 \| 0` is `0`) |
+  | `Char` | a string of exactly one code point, a lone surrogate counting as one (`language.md` §13.2) |
+  | `String` | `typeof v === "string"` |
+  | `Bool` | `v === true \|\| v === false` |
+  | `⊤` | nothing: any value is the unit |
+
+  A test with a weaker predicate is a defect: `typeof v === "number"` does not make an `Int32`, and
+  `typeof v === "string"` does not make a `Char`.
+- **A `case` gets a default arm** in a checked build where it has none, which crashes: "a case met a
+  value its type does not admit". It catches a constructor tag that is not the type's.
+- **Trusted escapes.** Core's intentional representation operations, such as `Int32.toInt`,
+  `Int32.fromInt`, the two `append`s and the list protocol's reads, use a separate unchecked
+  spelling, `Js.cast`, which is never tested. It is for a representation change core makes on a value
+  it holds, never for a read from the host: a host read that the exact test would refuse is fixed,
+  not escaped. `platforms/cloudflare/Worker/Object.beni:1292–1297` is such a read: it casts optional
+  error flags (`overloaded`, `durableObjectReset`, `retryable`) to `Bool` and compares with `True`,
+  and an absent flag is `undefined`, which the `Bool` test would refuse. It compares with
+  `Js.same … (Js.from True)` on the host value instead. It is **not the only one**: *corrected
+  2026-11-05, after the third review of #1999,* a logging prototype found 3 365 failing `Bool` reads
+  in `platforms/browser/Rt.beni` (`bubble`'s `Js.get node "disabled"` is a host read, `undefined` on a
+  `<div>`, so as written a click on any element with a handler would crash), and
+  `platforms/browser-inline/Inline.beni:737` casts `Number(data)` of any comment to `Int` before it
+  tests it. The tests are right and those sites change. The sweep of `backend.md` §16.8 step 2
+  (#2078) finds them all before any test is on.
+- **`Js.cast` is `Js.to` to every pass**: the value restriction (`checker-v2.md` §8.4,
+  `Generalize.transparent`), the wild set (§4.2's amendment of 2026-10-20), and the ownership row
+  all treat it as `Js.to`. It differs only in having no test. Moving a site to it changes no byte of
+  `--release` output. A pass that misses it reopens #488's dropped flows.
+- **Aliases and opaque types.** The test reads the instantiated type through an alias. An opaque type,
+  such as `Duration`, is not read through and stays trusted, as a record's fields do.
+- **What stays trusted**, said plainly: this defence is **partial**. It does not test a record's
+  fields or a constructor's payload at a cast, a `Js.to` instantiated at a type variable or a
+  function type, a list's elements, or a value a match never inspects (an irrefutable pattern, a
+  field read, a value passed on). Those rest on the wrapper's own test under (a). **The host audit
+  continues whatever the checks find**: a check turns a lie into a crash with a name; it does not
+  make the API right.
 
 ## 5. `main`, and what a platform provides
 
@@ -3585,6 +3718,26 @@ has). **A release build adds nothing** — the screen's code is in no release bu
 added for it: `True` in a development build, `False` under `--release`, and an `if` on it keeps only
 the branch the build takes, in reachability and in lowering.
 
+- *Amended 2026-11-05 (#1988, `language.md` §13.6; specified, not built):* **a checked build's
+  crash takes this path.** It is an `Error` that no catch names, thrown at the operation, and this
+  section's "development" and "release" read: the screen is in the development build alone, and
+  `--release-safe`, like `--release`, adds nothing. Two paths miss the guards below today, and
+  each is a defect to fix, not a limit of the rule (#1994): a fiber's throw under a plain
+  `Browser.program`, where no mount gave `Task.onDefect` its hook, leaves the page running; and a
+  throw while a module loads, such as a top-level value, runs before `run` and shows no screen, in
+  `browser-tea` and in `browser-inline` (happy-dom and Chrome 153). *Amended again the same day,
+  after the review of #1999:* the path covers **every** platform that runs a page, `browser-inline`
+  included, and every place a program's code or the code the markup lowering generates runs: module
+  load, `init`, `update`, `view`, a handler, a render's patch and its generated property writes (a
+  file input's `value` throws `InvalidStateError` there today, #2020), after-render work and a fiber.
+  A fiber under a program-made `Task.scheduler` is a third path that misses them today (#1994): it
+  stops that scheduler and leaves the page running. *Decided by the owner, 2026-11-05:* such a
+  scheduler contains nothing, and a defect under it stops the page (`language.md` §13.6).
+  `platforms/browser-inline/Inline.beni`'s `prop` (around `:451–482`) and the Zig lowering's property
+  writes are audited with `Rt.beni`'s host wrappers. The Cloudflare development build of a Worker
+  with a Durable Object does not start today (`ReferenceError: Rt$$cloudflare_workers is not
+  defined`, Miniflare, compatibility date 2026-05-18; #2019): startup and host-import emission are
+  part of this inventory.
 - **Where it is caught.** Four guards, each a `Js.finally` whose body ends by noting that it
   completed and whose cleanup stops the page when it did not: the delegated and own listeners'
   `fire` (a handler and the dispatch it starts), the hosted dispatcher (a send from a fiber), the
@@ -4690,7 +4843,7 @@ road to W51's unmount, which closes one root with the same steps 1–3, and is n
 
 **(j) Development and release.** **The teardown is the same in both builds**: finalisers are the
 program's semantics, and a release build behaves exactly as its development build does
-(`language.md` §6). The differences are only what §9.8.10 (c) already makes them: the crash screen,
+(`language.md` §6; *amended 2026-11-05:* for a run in which no check fires, §13.1). The differences are only what §9.8.10 (c) already makes them: the crash screen,
 with its later-throw list and its abandoned-cleanup line, is in no release build (`Js.development`).
 A release build's log is the host's reports of the throws and the one `console.warn` of (f).
 
@@ -7663,7 +7816,9 @@ pub type ServiceError = Unavailable            -- `retryable` is true: the call 
   a Worker. It is prose here and no declaration, so the module is declared once.
 - **One scheduler and one scope per request.** Each request runs on its own scheduler
   (`Task.withScheduler`, #596) and in its own scope, so a fiber never resumes in another request's
-  I/O context — the measured hazard below cannot arise — and a defect fails only its own request:
+  I/O context — the measured hazard below cannot arise — and a defect fails only its own request
+  (*amended 2026-11-05, `language.md` §13.6:* this is what "stops" means on a Worker, a request or
+  an object, and only a platform's `Task.schedulerWith` scheduler contains a defect):
   the throw leaves the request's drain, the host answers the client with 1101, the request's scope
   is closed (its fibers cancelled, their finalisers run), and no other request is touched. **The
   Worker slice therefore depends on #596** before it can be built.

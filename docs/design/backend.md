@@ -84,6 +84,7 @@ beni build [options] <entry>...      compile to JavaScript
 |---|---|---|
 | `--platform=<name>` | which platform package supplies `main`'s type and the runtime | required |
 | `--release` | dead bindings out, short names, compact printing, joined `const`s (Â§9); **refuses a build that reaches `Debug`**; later chunks (Â§10), integer tags, maps off | off |
+| `--release-safe` | *Specified 2026-11-05, not built (#1988).* The release optimiser with `language.md` §13's checks on (§16); no crash screen; refuses a build that reaches `Debug`. Not accepted until the whole guarantee is built (§16.8, step 5) | off |
 | `--library` | no `main` is required and no entry file is written; every name the root package's modules export is a reachability root (Â§9) | off |
 | `--out=<dir>` | output directory | `out/` |
 | `--source-maps` | a `.mjs.map` beside every emitted module (Â§11.1), or beside every file a release build lowers from beni (Â§11.2); a map embeds the beni source text (`sourcesContent`); `--no-source-maps` writes none | on in dev; off with `--release`, which writes maps only when the flag is given |
@@ -2294,6 +2295,10 @@ calling itself by name in tail position. A call this table writes in place calls
 never a self-call to Â§8's tail-call loop nor a site for the inliner (`Lower.callsOperator`); when it
 was taken for one, `add`'s body was an empty `for (;;) {}`. `run/BasicsOperatorsAsValues`.)*
 
+*Amended 2026-11-05 (#1988; specified, not built):* this section and its table are `--release`'s.
+A checked build reads the type at each site and adds §16.2's checks, and `idiv`, `Int.mod`,
+`Int.rem` and `Int32`'s three crash on a zero divisor instead of answering `0`.
+
 **Evaluation order is the call's**: the operands are evaluated once each, left to right, with the
 same pinning a call's arguments get (`orderedExprs`), which is `language.md` Â§6's *binary
 operator* row, unchanged. `&&` and `||` are keyed the same way, so `Reach` now drops the edge to
@@ -2628,7 +2633,9 @@ what only a developer needs ships in no release build. A use not in an `if` is t
 exports `true` only for check 2. *(Amended 2026-10-02: `Js.development : () -> bool`, called as
 `Js.development ()` â `Js` names no core type (`boundary.md` Â§4.2) and check 1 refuses a
 polymorphic `foreign` value â and a `case` on that call drops an arm as one on the value did;
-`Js.js` exports a function of one parameter.)*
+`Js.js` exports a function of one parameter.)* *(Amended 2026-11-05, #1988; specified, not built:
+`false` under `--release-safe` too, and `Js.checked` is the same kind of intrinsic for what both
+checked builds need: §16.1, `boundary.md` §4.3 (f).)*
 
 **An `if` on it keeps one branch, in both passes.** A `case` whose scrutinee is `Js.development`
 and one of whose arms has the pattern `True` or `False` â every `if Js.development then â¦ else â¦`,
@@ -5527,6 +5534,13 @@ reaches `Debug` is refused.** Three reasons, and the third is the one that close
 With the refusal, **"a release build behaves exactly as the development build does" holds without
 exception**, which is worth more than the one fixture it costs.
 
+*Amended 2026-11-05 (the owner, #1988; specified, not built).* This sentence, here and where it
+stands elsewhere in this document and in `boundary.md` and `browser-direct.md`, now reads: **`--release-safe`
+behaves exactly as the development build does; `--release` behaves the same for every run in which
+no check fires** (`language.md` §13.1, §13.7, and §16 below). "Behaves the same" is §13.1's
+definition: for a program both builds accept, except for documented mode observations and resource
+limits. `--release-safe` refuses `Debug` too (§16.1). The refusal's other reasons stand.
+
 **The rule.** A `--release` build in which any `pub` value of `core/Debug` â `log`, `toString`,
 `todo`, which is the whole module â **survives reachability elimination** is refused: exit `1`,
 nothing written to `--out`, one diagnostic. It applies to an application build and to `--release
@@ -5655,7 +5669,9 @@ day, and it is decided by lowering, not guessed by this pass:
 - **What stays droppable** is everything else: arithmetic, a pure call, a `foreign pure` (so
   `Node.done` still pins nothing), a lambda, and a reference to a value. `Debug.log` and
   `Debug.todo` are `foreign impure` and are kept like any other impure call â one rule, no special
-  case, and `run/ReleaseDeadDebug` no longer needs a `.release-expected`.
+  case, and `run/ReleaseDeadDebug` no longer needs a `.release-expected`. *Amended 2026-11-05
+  (#1988, specified, not built):* under `--release-safe`, an operation that carries a check is not
+  droppable (§16.6, `language.md` §13.8). Under `--release` this bullet stands.
 - **One known gap, recorded rather than closed**: reading a top-level value with a `where` clause
   and no parameters runs its initialiser at the first use that needs it (`language.md` Â§6's table).
   A dropped binding whose right-hand side is only such a read moves that first run to the next
@@ -11785,6 +11801,9 @@ built and run a second time under `--release`**, not a marked subset, because th
 minifier is a wrong answer in a program nobody thought to mark. Measured cost: about 7 seconds of
 wall clock, +11% of `zig build test-blackbox`. Â§9's *Testing* has the fixture list and the number.
 
+*Amended 2026-11-05 (#1988; specified, not built):* the `run/` corpus gets a third pass, under
+`--release-safe` (§16.7).
+
 A bug that changes emitted shape but not behaviour must not fail a `run/` test; a bug that changes
 behaviour must. That is the whole point of preferring it.
 
@@ -13517,3 +13536,332 @@ to choose a live row's patch versus restate protocol. A clock call passed to
 a pure helper inside a helper-owned `For` must therefore update on every
 render on both browser platforms. Enabling grouped rows only on direct must
 not leave the ordinary lowering with an all-false effect table for those rows.
+
+
+## 16. The three builds: what each one emits
+
+*Added 2026-11-05 (the owner's #1988). Specified, not built: today every build emits what the
+`--release` column says. Revised the same day after an independent review of #1999, with the owner's
+decisions of `language.md` §13.10.* `language.md` §13 is the contract for what a program sees; this
+section is what the backend owes for it. No section above is renumbered, and where one of them
+disagrees with this one, this one wins. Performance is a later step (§16.8, step 6): the owner
+accepts the cost in speed and bytes in the two checked builds, so this section has no budget.
+
+### 16.1 The modes
+
+| | development | `--release-safe` | `--release` |
+|---|---|---|---|
+| inserted checks | on | on | none |
+| optimiser (§9), short names, compact printing | no | yes | yes |
+| `Js.development ⊤` | `true` | `false` | `false` |
+| `Js.checked ⊤` (`boundary.md` §4.3 (f)) | `true` | `true` | `false` |
+| crash screen | yes | no | no |
+| a build that reaches `Debug` | accepted | refused, `debug_in_release` | refused, `debug_in_release` |
+| source maps | on by default | with `--source-maps` | with `--source-maps` |
+
+`--release` and `--release-safe` together exit 2. `--release-safe` composes with `--library`,
+`--out` and `--source-maps` as `--release` does. *Decided 2026-11-05 (D4):* it refuses `Debug` for
+§9's reasons, and the hidden, test-only `--allow-debug` serves the corpus's release-safe pass as it
+serves the release pass. **The flag is not accepted until §16.8 step 5**: before then the checks are
+reached only through a hidden flag that the tests use (`language.md` §13.1).
+
+**The mode is not part of the check cache key.** `--release` is not in it today, since no emitted byte
+is cached (`Key.zig`), and the checker always computes the numeric evidence rows; `Lower` drops
+them under `--release` (§16.3). A cache or an artifact that does hold emitted code keys on the
+mode. This is reasoned, not run, and step 3 proves it.
+
+### 16.2 What a checked build emits
+
+The emitted form is free. The semantics are this table's. `M` is `9007199254740991`. "Crash" is
+`language.md` §13.6. Each operand of a comparison is tested **before** the comparison, so the rule
+does not depend on what the comparison answers.
+
+| Source | `--release` | Checked |
+|---|---|---|
+| `a + b`, `a - b`, `a * b` at `Int` | the operator | `r` is the operator's result. Crash unless `r >= -M && r <= M`. That form fails for `NaN`, so one test covers overflow, `NaN` and `±Infinity`. The reverse form, crash if `r < -M \|\| r > M`, passes `NaN` and is wrong |
+| `a + b`, `a - b`, `a * b` at `Float` | the operator | if `r` is finite, `r`. Otherwise crash if `a` or `b` is not finite, else `r`. A non-finite operand of `+`, `-` or `*` always gives a non-finite result (`research/111` §7.2), so the fast path is one test |
+| `a / b` | the operator | crash if `a` or `b` is not finite, else the operator. Input tests are needed: `1 / Infinity` is `0` |
+| `a ^ b` | `a ** b` | the same as `/`: `NaN ** 0` is `1`. Its type is #1985's |
+| `negate`, prefix `-`, `abs` | as today | crash if the operand is not finite (`NaN` **or** `±Infinity`), else as today. A `NaN` test alone is not enough here. The test is right at either type, since a true `Int` passes it, so it needs no discriminator |
+| `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `Float.log` | as today | crash if an argument is not finite, else as today |
+| `round`, `floor`, `ceiling`, `truncate` | the `Math` call | crash unless `r >= -M && r <= M` on the result |
+| `toFloat` | as today | as today: `-0` keeps its sign (D3) |
+| `<`, `≤`, `>`, `≥`, `==`, `≠` on numbers | the operator | crash if either operand is `NaN`, tested before the operator. This covers `≠`, which answers `true` for `NaN`. The test is right at either type, since a true `Int` is never `NaN`, so it needs no discriminator. Removing it where the type is known to be `Int` is step 6 |
+| `compare`, a derived `eq` or `compare` over a `Float`, `List.eq`, `List.compare` | as today | the same operand test at every place a number is compared. Each is a separate lowering path and each needs its test and its fixture: `primitiveOperator` (`src/js/Lower.zig:10131`, `==` and `≠` written in place), `eqPrimDecl` (`$x === $y`, `(==)` as a value and as evidence), `orderOf` (`:9555`, used by `comparePrimDecl` at `:9507` and `compareKeyDecl` at `:9536`), `orderTest` (`:10181`, `≤` and `≥` over an `Order`), the derived comparisons the lowering generates, and `listCompare` in `src/js/derived_runtime.mjs` |
+| an operator passed as a value: `(<)`, `(==)`, `(≠)`, `(+)` | as today | the same check as the operator, in the function value; under a type variable through §16.3's evidence |
+| an `int` literal pattern at `Float` or at a `number` variable (there is no float pattern, `language.md` §3) | `===` | the scrutinee is tested with `x !== x` before the literal arms. That test is right at either type, so no evidence is needed |
+| `a // b`, `Int.mod`, `Int.rem`, `Int32.div`, `Int32.rem`, `Int32.mod` | `0` on a zero divisor | crash on a zero divisor. `//` is `Math.trunc(a / b)`, exact for safe operands (`research/111` §7.3) |
+| an indexed read: `Js.at`, `unsafeGet`, `List.at`, `traverseAt` (`Lower.zig:11467`, an `index_get`), and every other `index_get` the lowering writes for a list | a read | crash unless the index `i` is whole and `0 ≤ i < n`, where `n` is the **logical** length of what is read; for a view, `i` is tested against the view's length before its offset is added. The rule is by meaning: a new lowering of an indexed read owes the same test. It holds for a receiver that is an array or a list view, a view by its logical length. Any other receiver is unchanged. `Js.peek` (`boundary.md` §4.2) is the past-the-end read, and is never tested |
+| `Js.to` at a scalar type, a `case` | an unchecked cast; no default arm | `boundary.md` §4.3 (h) |
+
+`Int32.add`, `sub`, `mul`, `fromInt` and the shifts have no check: they wrap, in every build. A
+well-known `eq` or `compare` stays `sync` (§4): a crash is not a suspension.
+
+**§4's *Arithmetic is an operator* changes in a checked build.** Its table says "no type is read":
+`number` is `Int` or `Float`, and both are a JavaScript number. A checked build reads the type for
+`+`, `-` and `*` alone: at a monomorphic site statically, and under a type variable through §16.3.
+
+### 16.3 Arithmetic under a `number` type variable: compiler-owned numeric evidence
+
+*Decided by the owner, 2026-11-05 (D1, #1996; refined the same day on `research/112`, `language.md`
+§13.10). Specified, not built (#2080).* **D1 itself was not prototyped.** The value hold of `language.md`
+§13.11 was built and run; this ABI was not, so what this section says of `--release` is reasoned, and
+step 3 of §16.8 must prove it. `List.sum`, `List.product` and a program's `twice : number → number`
+have one body today, with no type information: `Main$twice = (x) => x + x`. At run time a whole
+double does not say whether it is an `Int` or a `Float`, so `twice 9007199254740991` (must crash) and
+`twice 1.0e308` (must not) are told apart only by what the compiler knows.
+
+**The rule.** `number` stays a closed kind, and `+` stays `Basics.add`, not a public method. Each
+instantiation of a scheme's `number` variable raises **one hidden wanted**, on the checker's existing
+wanted and evidence path (`Evidence.requirements`), not a parallel mechanism, so group calls, `let`
+promotion, `Convention`, sub-wanteds and `$s` carry it as they carry a `where` requirement. Its
+answer is a **discriminator** saying `Int` or `Float`. The evidence is the kind elaborated by the
+compiler: it is not a method a program can name, define or override, and it is not an open type class.
+
+**The ABI is read from the scheme.** A declaration takes one discriminator per **independent**
+`number` variable of its scheme, used or not. Two variables are two discriminators: `f : number,
+number2 → …` has four instantiations. Schemes already publish the kind, so an importer counts the
+quantifiers with no change to the interface. *Corrected 2026-11-05, after the third review of #1999:*
+this said "whose body or callees do arithmetic", which made the ABI depend on a body, so adding `x
++ 1` would change what callers emit, defeat the interface firewall, and change a `--library` ABI on
+an internal edit.
+
+**What reads a discriminator: `+`, `-` and `*`,** and so `sum` and `product`. Only those three
+have a different test at `Int` and `Float` (§16.2). Comparisons, `negate`, `abs`, `min`, `max`,
+`clamp`, `round` and its kin and `int` literal patterns need none: a `NaN` or finiteness test is right
+at `Int`, because a true `Int` passes it. So the `Basics` declarations that are those operations take
+no discriminator and raise no wanted. That list is fixed in the operator table, `src/Operator.zig`,
+and reads no body. A program's own function generic over `number` follows its scheme, whatever its
+body does.
+
+- **Monomorphic sites.** The wanted's answer is a constant, so the check is chosen statically and no
+  evidence is passed. A `+` site is an instantiation of `Basics.add`, so its answer is its **per-site
+  numeric class** (§16.8, step 3).
+- **Unresolved.** A `number` nothing settles at a monomorphic site is `Int` (`language.md` §13.3), the
+  rule `static-dispatch-spike.md` §8.6 has for identities.
+- **In a generic body**, `+`, `-` and `*` at the variable choose the `Int` test or the `Float` test from
+  the discriminator.
+- **Calls.** A call of a generic function passes the evidence its instantiation fixes, or, inside
+  another generic body, the evidence it received. Source function types stay n-ary and source calls
+  stay saturated; the evidence is not an argument the program writes.
+- **Function values.** A generic function used as a value, an operator passed as a value (`(+)`),
+  and a partial application with `_` are closed over their evidence where the instantiation is
+  fixed, and receive it where it is not, through an adapter that keeps the order below.
+- **Recursion** passes its own evidence, polymorphic recursion its instantiation's.
+- **`where` methods.** A `where` method generic over `number` compiles today, and sub-wanteds should
+  carry its evidence (reasoned, not run).
+- **Values.** A value has no parameter. One that raises no numeric wanted takes no evidence, and any
+  other is not generic over `number` (`language.md` §13.11, #2077).
+- **Order.** After the `where` evidence in its order (`static-dispatch-spike.md` §8.6) comes one
+  discriminator per `number` variable, in the order the scheme's variables are numbered, which is
+  input-derived and never depends on thread completion or on the cache. **Identity parameters
+  (§8.6) come after all of it**, since that section places them "after its evidence parameters".
+- **The cap.** Numeric wanteds do not count towards the 64-constraint cap (`checker-v2.md` §8.4).
+- **Unused evidence.** Reach or a later specialiser may drop a discriminator nothing reads in a closed
+  build, never in a `--library` export.
+- **Suspension.** A declaration's `name$s` form (`§4`, *`Js.suspending`*) receives the same evidence
+  in the same order. A checked operation can fail, and failing is synchronous: **"may fail" is
+  tracked apart from "may suspend"**, so adding a check changes no inferred effect rung and no
+  `$s` decision.
+- **`foreign`.** Numeric evidence is never passed to a `foreign` sibling, and check 4's arity
+  (`boundary.md` §4) does not count it. No `foreign` in the tree is generic over `number`.
+- **`Js.to` at a `number` variable** raises no wanted, because its `a` has no kind. No such site exists
+  in core or a platform, and it is trusted code (`boundary.md` §4.3 (h)).
+- **Modules and `--library`.** The evidence is part of a declaration's checked ABI, read from its
+  scheme, so a caller in another module passes it without seeing the body. An exported generic
+  function of a `--library` build exposes that ABI, documented with the module, because a future
+  caller cannot be predicted from the build's reachability. The order of evidence and the numbering
+  of any helper or variant are input-derived. For the **same source tree**, output is byte-identical
+  across scheduling, `--jobs` and cache state. *Corrected 2026-11-05, after the second review of
+  #1999:* this said "and declaration order", which no build can keep: reordering declarations changes
+  the input, the emitted order and every source map's `sourcesContent` (§11.1). Declaration order is
+  a guarantee about acceptance and behaviour (`language.md` §6, `ordering_test.zig`), not about bytes.
+- **`--release` passes no evidence, and its emission is unchanged.** The checker computes the rows in
+  every build and `Lower` drops the numeric ones, so the checker's output is the same in every mode
+  (§16.1). `Convention` and `Cycles` must not count them, or acceptance would depend on the mode.
+  *This is reasoned, not run: step 3 must prove it, with `--release` goldens.* What was run is the
+  hold alone: 634 `run/` programs, development and `--release`, 1 268 builds, 1 262 byte-identical,
+  and the other 6 differ only in that `Debug$log` became `Debug$logAs`, a path `--release` refuses
+  (`research/112`).
+
+**Later, and only on proof.** A specialiser may clone a body for a constant evidence value and drop
+the branch it cannot take, under the rule of §16.6: never as a size-capped fallback to unchecked
+arithmetic, and only where the result is identical. Clones and evidence use the same per-site table.
+Whether evidence or clones are faster or smaller is not measured; the owner chose evidence for
+correctness and completeness first.
+
+### 16.4 Core
+
+Core is checked as a program is. `language.md` §13.9 says how a promised answer survives. Core owes,
+before step 4 of §16.8:
+
+- **The lying `Int`s.** `Basics.append` and `String.append` read strings at `Int` to write `+`
+  (`boundary.md` §4.3 (e)). They use a named unchecked `Js` operation, scoped to those two bodies.
+  Every other `Js.to (Js.from x)` between two types is read when this lands.
+- **The reads the exact tests refuse** (#2078), from a logging prototype that covered `Js.at` and
+  `Bool` only: `Rt$reconcile`, `held`, `startPass`, `childrenFrom`, `restate` and `bubble` in
+  `platforms/browser/Rt.beni`; `Inline$entry`, `assignConst` and the comment read at `:737` in
+  `platforms/browser-inline/Inline.beni`. Each gets a length test, `Js.peek`, or a host comparison.
+  `Js.cast` is for a representation change only.
+- **A conversion that owns a check** (`round`, `floor`, `ceiling`, `truncate`) uses `Js.cast` on the
+  `Math` result, so its own check reports it and not the `Js.to` test.
+- **Stable implementations**: `Int.mod` (#1992), `degrees`, `toPolar` and the rest of `Basics`'
+  `Float` functions (#2021), `Duration` (#1992).
+- **Clocks and deadlines** (#2022): `core/Task.beni:2777` and `:2815`, `Task.timeout`, `Schedule`'s
+  `fixedFrom`, `Worker/Object.beni:1076`. Each public API states its answer before it is checked.
+- **`Random.int`** on a range wider than `2³²` (#1992).
+- **A division that relies on `x // 0`**, tested first. The audit found none in `core/` or
+  `platforms/`.
+- **Network input is not trusted at `Int`.** `platforms/node/WebSocket.beni:679` multiplies a
+  peer's high word by `4294967296` before it validates the length, so in a checked build a client
+  could crash the server. The high word is compared first (#1995). In general a platform validates an
+  untrusted number before arithmetic (D5).
+
+### 16.5 `--release` trusts no check
+
+**The rule.** `--release` computes what the unchecked operators compute. **No pass may assume a
+check would have passed**: not that an `Int` is finite, whole, in range or not `NaN`. Dart's
+sdk#43389 is the failure: a compiler folded `n is int` to true over a false invariant
+(`research/110` §2.11). A pass that wants an `Int` fact proves it from the code, under every build.
+
+An audit of 2026-11-05 (read, and in part run in both modes by the review; `research/111` §4) found
+that no pass assumes it. `Spec.Lat` has only bot, lit, top, nonnull and truthiness, with no range and
+no type state. Search-only inspection of the other passes is not proof of absence.
+
+| Looked for | Found |
+|---|---|
+| `x === x` folded to `true` | no such fold. `Spec.identity` returns null for two primitives |
+| truthiness of a number (`n === 0` to `!n`) | no such rewrite. §9's note rests only on the bit operators, whose result is an integer whatever the operands |
+| `!(a < b)` to `a >= b` | no such rewrite. `compactIf` swaps arms and keeps the test |
+| `x + 0`, `x * 1`, removing `\| 0` | none. A fold needs both sides literal |
+| constant folding | `Spec.binary` computes in f64 and `exactInteger` refuses `NaN`, `±Infinity`, `-0`, fractions and past `2⁵³`; it admits `±2⁵³` itself, one past the `Int` range |
+| `case` on an `Int` | a `switch` or `===` chain, and a literal node always has a default |
+
+Two results under `--release` follow from JavaScript and not from an optimiser: `compare` answers
+`EQ` for `NaN` in every unchecked path, because `orderOf` (`src/js/Lower.zig:9555`) reads "not less
+and not greater" as equal; and a tail-call loop on a `NaN` counter does not end, where its recursive
+form would overflow the stack. `language.md` §13.7 states both. *The note in §4, *Ordered
+dictionaries*, that SameValueZero agrees with key identity describes a `Map` that is specified, not
+built: `core/Dict.beni` is a red-black tree and an `Int` key that is `NaN` compares `EQ` to every
+key.*
+
+### 16.6 `--release-safe` and the optimiser
+
+`language.md` §13.8 is the rule. **A checked operation is a possibly-throwing operation**, and the
+compiler represents it as one before any check is emitted (§16.8, step 3).
+
+**A checked failure survives `Js.pure`.** *Added 2026-11-05, after the second review of #1999.*
+`boundary.md` §4.2's `Js.pure` and §4's `foreign pure` promise that a computation is total and
+throws nothing, and `round`, `floor`, `ceiling`, `truncate` and `sqrt` (`core/Basics.beni`) and
+`Float.log` (`core/Float.beni`) are written under `Js.pure`, yet each must crash in a checked build.
+So the failure fact is computed **apart from the rung** and is never erased by it: a check inside a
+`Js.pure` body, inside a function that only wraps or renames one (a callable alias), or in another
+module, makes every caller "may fail", through interfaces, in the `sync` and the `$s` form alike. The
+rung does not change, and no new effect rung or user restriction follows. A conservative fact is
+enough at first: a call whose callee's failure is unknown may fail. Today's code trusts the rung:
+`src/check/Totality.zig` treats a `foreign pure` callee, `Js.pure` included, as total (`:4`, `:52`)
+and skips an argument lambda (`.lambda => continue`, `:85`, in the walk beside the `.call` arm at `:91`), and the lowering spends that totality when it
+decides that markup work may run eagerly (`src/js/Lower.zig`, `instSafeMode`, `valueSafe`,
+`valuePureTotal`). Changing `Operator.pureTotal` alone does not reach a check inside `Js.pure`'s
+callback. **An unread call that may fail is not dropped** in a checked build, however pure its rung. These passes treat
+arithmetic as droppable and movable today, and each must learn that a checked operation is neither:
+`src/Operator.zig` `pureTotal`, with its consumers in `Lower.zig` and `src/check/Totality.zig`;
+every "cannot throw" claim that reads arithmetic as safe (`Spec.zig:3328`, `Opt.zig:1478`, `Lower.zig`'s `valueSafe` comment and the one above `instSafeMode`, `JsIr.zig:750`); §9's *What stays droppable*; `Spec.binary` and the
+pure-call evaluator, which fold `9007199254740991 + 1` to `2⁵³` today and must not fold a check away;
+specialisation and inlining, which must not duplicate or move one; and §8's tail-call assignment
+order (*In place, when nothing captures*), which may reorder two checked operations only when neither
+can fire. The crash helpers are reachable from every check, even one that only an exceptional edge
+uses (`Reach`). A check whose operands a pass proves in range may be dropped, in `--release-safe`
+only: range analysis and evidence specialisation are step 6.
+
+### 16.7 Testing
+
+- **Three passes.** *Decided 2026-11-05:* `run/` is built and run in the development build, under
+  `--release` and under `--release-safe`. None replaces another: the development build has checks
+  with no optimiser, `--release` the optimiser with no checks, and only the third can show the
+  optimiser dropping a check.
+- **Fixture categories.** A `run/` fixture is one of:
+  - *ordinary*: every pass prints `.expected` and exits 0;
+  - *checked crash*: both checked passes stop with the crash a `.crash` golden pins (`tests/corpus/README.md`,
+    *A program that must crash*), and the `--release` pass prints a `.release-expected` or stops with
+    a `.release-crash` (a host error);
+  - *release hang*: both checked passes crash, and the `--release` pass is asserted not to end within
+    a bounded time, killed by the harness, with what it printed before (`.release-hangs`). The bound
+    is the harness's, well under the 120-second hang guard;
+  - *mode observation*: a documented difference of `language.md` §13.1, pinned per pass.
+- **Cases owed**, each in both checked builds: an unread **local** `round 1e300` and an unread local
+  `Float.log` with a non-finite argument (a top-level declaration nothing reaches is not emitted, and
+  is not a run, `language.md` §13.8), each through a wrapper function, through a callable alias and across a
+  module boundary, in the `sync` and the `$s` form (§16.6, *A checked failure survives `Js.pure`*);
+  unused arithmetic that overflows; an intermediate
+  overflow whose final result fits (`(M + 2) - 5`); constant evaluation of an overflowing literal
+  expression; two failing expressions, where the first written must crash; a tail call whose argument
+  assignments both fail; every operator passed as a value; `≠` with `NaN`; a derived comparison, a
+  list comparison and an `int` literal pattern at `Float` with `NaN`; arithmetic under one and two `number`
+  variables, through a function value, a placeholder, recursion and a module boundary; a `--library`
+  consumer of a generic export; both the `sync` and the `$s` form of a generic function; the schema
+  paths compiled and through the hidden `--schema-library`; JSON text and host-value encoding of
+  `NaN`.
+- **Values** (`language.md` §13.11, #2077): `check/bad/` fixtures from the third review's probes, a
+  computing value used at two types in a block (`LetGen`), holding a lambda (`PolyList`), and
+  annotated (`NumberAnn`, which also pins the hint naming `big ⊤ = …`); the same at top level
+  (`PolyCaf`), where `asFloat` is the `type_mismatch` and `big` defaults in its own group, used from
+  another module too; `run/` fixtures that `zero = 0`, `xs = [ 1, 2 ]` and `-1` stay generic, that
+  `ops ⊤` and `big ⊤` work at both types, and, in the checked-crash category, that an unresolved
+  `number` crashes as `Int` (`NumberDefault`) and a value `big` crashes once, where written.
+- **Order** (`language.md` §6): two failing top-level values, two failing modules, and a tree whose
+  two literal tests both meet a `NaN`, each reporting the same crash in both checked builds.
+- **Pages and workers.** A crash in each path of `language.md` §13.6: module load, a plain
+  `Browser.program` fiber, `Tea`, `browser-inline`, a generated property write, and **a fiber under a
+  program-made `Task.scheduler`, which stops the page** (#1994), in `browser/` under happy-dom and
+  in Chrome (`zig build test-browser`). In `workers/` under Miniflare, a crash stops that request or
+  that object and the next one is answered.
+- **`--release` changes only by the named baseline repairs** (`language.md` §13.7). Each repair's
+  golden changes are reviewed with it; after them, adding a check moves no `emit/release/` golden.
+
+### 16.8 Order of work
+
+*Revised 2026-11-05, the review's order, adopted by the owner.* There is no sound public slice of
+"monomorphic checks now, generic checks later": internal staging is allowed, a silently incomplete
+guarantee is not. #1985 is a dependency of step 4.
+
+1. **This contract.** The findings of the review fixed, and the decisions of `language.md` §13.10
+   taken. Done with this amendment.
+2. **Independent repairs of today's behaviour**, each with its own black-box fixture and its
+   reviewed baseline change: `Int.mod`, wide `Random.int`, `Duration` (#1992); stable core math
+   (#2021); clocks and deadlines (#2022); host reads and arguments (#1993, #1995, #2020); the
+   Cloudflare development import (#2019); the browser startup and fiber stop paths (#1994). The literal
+   refusal and the value hold can land here, as deliberate source-compatibility changes (the hold
+   needs the numeric wanted of step 3, or a syntactic stand-in until then, `language.md` §13.11,
+   #2077). **Run the exact predicates in logging form across the whole corpus
+   and repair every hit before step 4 (#2078)**: a logging prototype found thousands of hits in
+   `Rt.beni` and `Inline.beni` (`language.md` §13.9), so a builder who skips this finds the whole
+   browser corpus red. These repairs are the named repairs of `language.md` §13.7. None of them is
+   called a safe mode.
+3. **The compiler's foundation, internal:** mode plumbing and cache identity; `Js.checked`, `Js.cast`
+   and `Js.peek` (`boundary.md` §4.2); **a per-site numeric class** for each arithmetic
+   call that §16.3 says reads one (`+`, `-`, `*`; it is the answer of that site's wanted), and **the
+   instantiated type at each `Js.to`**, made by the checker and carried in cached and packed module
+   data (#2079), because `src/Operator.zig` and `Dispatch` have no type today; numeric evidence on
+   the existing wanted path (§16.3, #2080), **with the proof that `--release` output stays as it was**,
+   since D1 was not prototyped; a possibly-throwing operation representation, and a failure fact that survives
+   `Js.pure`, `foreign pure`, wrappers, callable aliases and module boundaries (§16.6), with
+   `Totality.zig` and the lowering's eager-markup tests (`instSafeMode`, `valueSafe`,
+   `valuePureTotal`) reading it; totality, dead-binding removal, constant
+   and pure-call evaluation, specialisation, inlining and tail-call ordering taught to keep it
+   (§16.6) **before** any check is emitted; crash helpers, their reach, their source-map positions
+   and their deterministic names. No public flag.
+4. **The whole `Int` invariant, at once:** literals, #1985's `^`, every monomorphic and generic
+   producer, conversions, division, core's promises and host sources, with the scalar checks at the
+   wall it relies on. The third corpus pass and the intermediate-overflow and unused-arithmetic
+   fixtures land here. This may be documented as a complete `Int` check, with that scope; it is not
+   yet `--release-safe`.
+5. **The rest of the checked mode:** `Float` operands and `NaN` comparisons through every lowering
+   path; exact internal bounds; the rest of D2; crash reporting across startup, fibers, handlers and
+   platform-generated code; plain `Browser`, `Tea`, `browser-inline`, Node, workers and objects,
+   schemas compiled and through the library, `--library` consumers. **Only now** is `--release-safe`
+   accepted and the development build checked.
+6. **Optimise proven-safe checks afterwards**: range analysis and evidence specialisation remove a
+   check only on proof, and keep which reachable check fires first. Measure page brotli,
+   representative UI runtime, compiler throughput and generic-heavy code before any claim about
+   budgets.
