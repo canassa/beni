@@ -1,0 +1,9 @@
+## 2026-11-06 15:01 CET — Soundness argument for the slot domain
+
+**What I did.** Rewrote §1.3 and §2.14 of `ownership-v2.md` for the domain that was built (#2143): the concrete semantics, γ per leaf kind, Lemma T (totality), Lemma E (what an empty set claims) and the rule that each empty read carries its reason, Invariant I, Lemma 1 and 2, I-κ, Lemma C, Lemma F, the Theorem, a callback lemma, O1–O15 against the code, and a gap list. Filed #2145–#2149. About 30 probes in `~/.cache/beni-agents/s214/probes/`; none crossed.
+
+**What I learned.** The audit's "79 of 121 say none" and "O5, O7, O8, O13, O15 cited nowhere" are true, and worse: the headers keep the numbers but not the meanings (`Resolve.zig`'s O4 is about `req`, `Relation.zig`'s O1 is O10's rule), and `rules_test` checks only the words. Its rule "empty means `⊤`" is wrong, and so is "33 amendments": §2.11.3 has 15 dated ones. `family` on a value is dead code, and `-Downership-mutation` does not exist, though §7 says it does.
+
+§2.11.3 does not hide a second design problem that I could show. It states as one lemma with four kinds of run and six classes of holder, and each amendment is one row on one route. What it lacks is any way to make a new route answer every row, which is why it keeps growing. Facts the code does not check: `fed` and `each`'s induction, and the answer's least fixed point: `Distinct.overlap` memoises what it computes under a cut, where `instAt` has `min_cut` for that. I could not make that fail: dropping those entries moves nothing over 2,429 roots.
+
+The simple hunting did not pay. Cells, supplies, two labels of one closure, `withDefault`, a schema conversion, literal spreads under one choice: all refused. The checker is much harder to break by hand than the failure counts suggest. What is left lives in folds, rows and the entry.
