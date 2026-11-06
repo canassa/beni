@@ -1,0 +1,11 @@
+--! A time stamp whose method reads the clock.
+
+import Clock
+
+
+pub type Stamp
+    = Stamp Int
+
+
+pub age : Stamp → Int
+age (Stamp at) = Clock.now ⊤ - at
