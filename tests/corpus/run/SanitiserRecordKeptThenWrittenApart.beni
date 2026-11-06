@@ -1,0 +1,49 @@
+-- The accepted twins of `SanitiserRecordKeptThenWritten`: the second callback
+-- only reads, the function keeps nothing while another writes, or nothing is
+-- written after the closure is kept.
+import Debug
+import Node exposing (Program)
+import String
+
+
+type alias R =
+    x : Int
+
+
+type Box a
+    = Box a
+
+
+bump : R → R
+bump v = { v | x = 1 }
+
+
+otherReads : (R → Box R), (R → Int), R → Box R × Int
+otherReads f rd r =
+    b = f r
+    n = rd r
+    ( b, n )
+
+
+keepsNothing : (R → Int), (R → R), R → Int × R
+keepsNothing f up r =
+    n = f r
+    w = up r
+    ( n, w )
+
+
+closureOnly : ((⊤ → R) → Box (⊤ → R)), R → Box (⊤ → R) × Int
+closureOnly f r =
+    b = f λ⊤ → r
+    ( b, r.x )
+
+
+main : Program
+main =
+    ( Box c, n ) = closureOnly Box { x = 0 }
+    lines =
+        [ Debug.toString (otherReads Box (λv → v.x) { x = 0 })
+        , Debug.toString (keepsNothing (λv → v.x) bump { x = 0 })
+        , Debug.toString ( c ⊤, n )
+        ]
+    Node.print (String.join lines "\n")
