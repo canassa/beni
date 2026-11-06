@@ -2,6 +2,7 @@
 --! §9, *Slice 8*, *a function that assigns*): the shape of the browser
 --! runtime's `stop`, in the code only a platform may write.
 
+import HostCapture
 import Js
 
 
@@ -57,7 +58,7 @@ demo ⊤ =
     bump ⊤
     bump ⊤
     bump ⊤
-    Js.set (Js.global "globalThis") "raise" (Js.from raise)
+    HostCapture.retain raise
     raise ⊤
     set 4
     stop ⊤
