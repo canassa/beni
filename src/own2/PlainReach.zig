@@ -56,6 +56,7 @@ pub fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32, i
     defer reach.deinit(g);
     var hits: std.ArrayList(Contract.Hit) = .empty;
     defer hits.deinit(g);
+    var keys: std.ArrayList([]const u32) = .empty;
     for (plain.items) |words| {
         try e.charge(.cond, e.contracts.trees.count(h.res_root));
         hits.clearRetainingCapacity();
@@ -64,23 +65,26 @@ pub fn instCondMixed(e: *Eval, call: u32, ents: []const Ent, idx: []const u32, i
         if (hits.items.len == 0) return instSel(e, full, call);
         for (hits.items) |hit| for (hit.arrivals) |a| {
             if (a.kind != .param) continue;
-            // A row reads by more than its words, and a miss below relaxes the check (§2.1).
-            if (SlotWords.hasRow(e.f.slots.relWords(a.slot))) return instSel(e, full, call);
             // The arrival's slot is its own steps, then what the plain
             // slot takes on below an open one.
             const aw = try std.mem.concat(e.arena, u32, &.{ &.{a.j}, e.f.slots.relWords(a.slot), words[hit.depth..] });
             try e.charge(.cond, @intCast(aw.len));
+            try keys.append(e.arena, aw);
             try mark(&reach, g, aw, if (a.deep) at_deep else at_slot);
             for (1..aw.len) |n| try mark(&reach, g, aw[0..n], below);
         };
     }
-    for (full.sel) |o| if (SlotWords.hasRow(e.f.slots.relWords(Contract.occRel(o)))) return instSel(e, full, call);
-    for (plain.items) |words| if (SlotWords.hasRow(words)) return instSel(e, full, call);
+    const rows = for (keys.items) |w| {
+        if (SlotWords.hasRow(w)) break true;
+    } else false;
     const out = try e.arena.alloc(u64, full.sel.len);
     for (full.sel, 0..) |o, k| {
         out[k] = o;
         if (Contract.isApart(o)) continue;
-        if (!try arrives(e, &reach, o)) out[k] = o | Contract.apart_bit;
+        const row = rows or SlotWords.hasRow(e.f.slots.relWords(Contract.occRel(o)));
+        if (row) try e.charge(.cond, @intCast(keys.items.len));
+        const ws = e.f.slots.relWords(Contract.occRel(o));
+        if (!(if (row) SlotWords.meetsKey(e.places(), keys.items, Contract.occParam(o), ws) else try arrives(e, &reach, o))) out[k] = o | Contract.apart_bit;
     }
     return instSel(e, try Cond.of(e.account(), out), call);
 }

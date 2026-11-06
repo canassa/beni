@@ -92,3 +92,10 @@ pub fn under(places: *const Place.Table, rw: []const u32, words: []const u32) ?u
 pub fn overlaps(places: *const Place.Table, a: []const u32, b: []const u32) bool {
     return meet(places, a, b).how != .apart;
 }
+
+/// Whether one of `keys`, each a parameter then a slot's words, is of parameter `j` and
+/// overlaps `ws`: a reader's hash of words, read where a row is among them.
+pub fn meetsKey(places: *const Place.Table, keys: []const []const u32, j: u32, ws: []const u32) bool {
+    for (keys) |k| if (k[0] == j and overlaps(places, k[1..], ws)) return true;
+    return false;
+}

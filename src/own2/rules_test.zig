@@ -360,7 +360,7 @@ const not_slots = [_]struct { file: []const u8, needle: []const u8 }{
     .{ .file = "Traversal.zig", .needle = "relWords(a.slot), elem" },
     // Two arrivals by their slots' ids: one answer run's, one frame's.
     .{ .file = "Traversal.zig", .needle = "src.?, pass.?" },
-    // The keys have no row: `arrives` falls back to `instSel` when one has (§2.1).
+    // The keys are read only with no row among them: `SlotWords.meetsKey` reads the others (§2.1).
     .{ .file = "PlainReach.zig", .needle = "sliceAsBytes(key" },
 };
 /// Files that read a tree's kid by a step word; `Trees.rowKid` or the reason it is not
