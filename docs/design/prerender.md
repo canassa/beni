@@ -146,8 +146,8 @@ by the causes §3.3 names, none of which is in the program.
      the build machine's clock (`build/bad/prerender/PointFreeInit`, `PointFreeDebug`): a
      defect, not a limit.
 
-   A method call or an operator the checker answers impure is still refused at the call, whatever
-   the type's function does: the walk does not follow a dispatch target yet (#1247). Since the
+   A method call or an operator the checker answers impure was still refused at the call, whatever
+   the type's function does: the walk did not follow a dispatch target (#1247, below). Since the
    walk reads another module's body and not only its interface, the program module's lowering
    depends on that body; the program module is the app's, and an app module is lowered by every
    build, never read from a row (`backend.md` §9, *The join*), so no build answers with a stale
@@ -157,6 +157,35 @@ by the causes §3.3 names, none of which is in the program.
    away, behind a `Debug.log`), `OtherPointFree`, `OtherImpureConstant`, `OtherImpureClosure`,
    `ConstantBehindCall`, `ConstantInLambda`, `ConstantInSchema`,
    `PointFreeInit` and `PointFreeDebug`.
+
+   *Amended 2026-11-06, as built for #1247.* **A method call or an operator is answered by the
+   function its dispatch resolves to**, as a call of that function is. The walk reads the target
+   the checker resolved at the site (the site's callee, `Dispatch.calleeOf`, the same lookup
+   `Totality`'s proof reads for the site). When the target is a top-level function of the module
+   the walk is in, or of an app's or a platform's module, the call is answered by that function's
+   body, walked once in its module, by the rules above: a body whose only effect is `Debug`'s adds
+   `Debug`'s effect, a call in it that may be impure is named where it is, and a function bound
+   point-free, or a body that shows no effect, is the effect at the call. So `<` on a type whose
+   `compare` only logs, and `x.m a` on another module's type whose `m` only logs, build.
+
+   - **The evidence the call passes is not followed.** It is a parameter of the target: a call of
+     it in the target's body (`a < b` under `where a.compare : a, a → Order`) is a call of an
+     evidence parameter, which the checker answers impure when the evidence it may be used with
+     may be impure (`checker-v2.md` §26), and that call is the effect, named there.
+   - **Any other target is the effect at the call, as before**: an evidence parameter of the code
+     the walk is in, a record field's value, a derived function (`==` on a type that declares no
+     `eq`, whose derived row calls a field type's `eq`), another module's derived function, a
+     codec, and a function of core (`List.compare` passed an element type's `compare`), whose code
+     is answered at its calls. Each is a limit of the build, not a rule. One is a defect today:
+     the checker does not answer a derived function's site impure when the row calls a field
+     type's impure `eq`, so the build accepts such a `==` (#2115).
+
+   No program that built before builds differently: the walk only decides whether the build
+   refuses, and a method call it now follows was refused before. The fixtures are
+   `browser/prerender/DispatchDebug` (`<` on a type whose `compare` logs, and a dot-call of
+   another module's method that logs) and `build/bad/prerender/` `DispatchImpure` (another
+   module's method that reads the clock, named in that module) and `DispatchEvidence` (the
+   clock read by the evidence a `compare` is passed, named at its call in that `compare`).
 2. **The input is the same value in both places.** The build passes the route it lists; the page
    carries that route (§6.1), and the client passes what the page carries, never what it reads
    from `location` (§7.3). The address the page was opened at reaches the program only after the
