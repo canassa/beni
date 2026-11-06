@@ -5319,6 +5319,7 @@ L0  Ids  Counters  Scratch
 | `Prepass.zig` | 3 | SCCs, alias chains, read counts, `eq`/`compare`, spreads, `withDefault` shapes, lambdas' frames | Ids, Facts |
 | `Canon.zig` | 5 | a contract's selection in one spelling of a subtree: a small `below(p)` written out (§2.9.1, #1714) | Ids, Place, Slots, Subtree, Conds |
 | `Rows.zig` | 4 | words → contracts; constructors, derived methods, schema members (§2.13.6) | Ids, Place, Slots, Subtree, Contract |
+| `ComparisonWalks.zig` | 5 | which declarations a comparison's walk covers, split from `Groups` (§2.13.6, #2116) | Prepass |
 | `Regions.zig` | 4 | the region tree, compatibility, `rank₂` (§2.5) | Ids, Facts, Prepass |
 | `ContractText.zig` | 4 | a contract's text, the dump's `summary` line (§2.10, §3.5) | Ids, Place, Slots, Contract |
 | `Worded.zig` | 4 | a module's worded contracts by declaration and places, one footprint a callee (§4.1, #1714) | Ids, Runs, Contract |

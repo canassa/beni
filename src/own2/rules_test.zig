@@ -99,6 +99,8 @@ const layers = [_]Entry{
     .{ .file = "MeetRun.zig", .layer = 5, .max_lines = 70 },
     // The environment rows are read in, split from `Rows` (#1752).
     .{ .file = "RowEnv.zig", .layer = 5, .max_lines = 150 },
+    // Which declarations a comparison's walk covers, split from `Groups`.
+    .{ .file = "ComparisonWalks.zig", .layer = 5, .max_lines = 30 },
     .{ .file = "Regions.zig", .layer = 5, .max_lines = 450 },
     .{ .file = "ContractText.zig", .layer = 5, .max_lines = 160 },
     // `within`, split from `Contract` (#1991).
@@ -564,7 +566,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 122), layers.len);
+    try testing.expectEqual(@as(usize, 123), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 
