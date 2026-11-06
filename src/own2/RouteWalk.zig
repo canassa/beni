@@ -222,6 +222,7 @@ fn descend(w: *Walk, it: Item) Error!void {
     const x = e.f.val(it.v);
     const place: Place.PlaceId = @fromBackingInt(@intCast(it.place));
     const origin: Place.PlaceId = @fromBackingInt(@intCast(it.origin));
+    const lw = Step.fromWord(w.reqs[w.runs.items[it.run][0]].words[it.lvl]);
     var on = withKid(it, it.v, it.route);
     on.lvl = none;
     on.at = it.lvl + 1;
@@ -230,7 +231,7 @@ fn descend(w: *Walk, it: Item) Error!void {
     on.below = false;
     switch (x.kind) {
         .built => {
-            if (it.below and place == origin) try w.arrive(on);
+            if (it.below and try LevelCycle.level(pl, g, e.f.gc(), lw.payload, place, origin)) try w.arrive(on);
             for (e.f.kidsOf(x), 0..) |k, n| {
                 const kst: Step = switch (x.form) {
                     .list => Step.elem,
@@ -240,7 +241,7 @@ fn descend(w: *Walk, it: Item) Error!void {
                     .closure, .opaque_ => continue,
                 };
                 const kp = pl.child(place, kst) orelse continue;
-                if (kp != origin and !pl.sameCycle(kp, origin)) continue;
+                if (!try LevelCycle.way(pl, g, e.f.gc(), lw.payload, kp, origin)) continue;
                 var kid = withKid(it, k, try kidRoute(e, it.route, @intCast(n)));
                 kid.place = kp.int();
                 kid.below = true;
@@ -249,12 +250,11 @@ fn descend(w: *Walk, it: Item) Error!void {
         },
         .scalar, .bot => {},
         .ref => if (it.below) {
-            if (place == origin) try w.arrive(on);
-            // A part on the cycle at another place: its next level is the
-            // steps to the cycle's place; its own levels below by its slots.
+            if (try LevelCycle.level(pl, g, e.f.gc(), lw.payload, place, origin)) try w.arrive(on);
+            // On the cycle elsewhere: its next level is the steps to the cycle's place.
             var to: std.ArrayList(u32) = .empty;
             defer to.deinit(g);
-            if (place != origin and x.family == Slots.empty) try e.stepsTo(e.f.pos.items[x.pos].slot, origin, &to);
+            if (!try LevelCycle.level(pl, g, e.f.gc(), lw.payload, place, origin) and x.family == Slots.empty) try e.stepsTo(e.f.pos.items[x.pos].slot, origin, &to);
             var lv: std.ArrayList(u32) = .empty;
             defer lv.deinit(g);
             for (w.runs.items[it.run]) |r| {
@@ -267,7 +267,7 @@ fn descend(w: *Walk, it: Item) Error!void {
                 }
                 lv.clearRetainingCapacity();
                 try lv.appendSlice(g, to.items);
-                try lv.append(g, Step.level.word());
+                try lv.append(g, lw.word());
                 try lv.appendSlice(g, rest);
                 try emitWords(w, r, it, lv.items);
             }

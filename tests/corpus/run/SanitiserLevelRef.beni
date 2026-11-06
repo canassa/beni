@@ -1,0 +1,34 @@
+-- A `⟲` that goes on into a reference at another instantiation (`ownership-v2.md`
+-- §2.1, #2062): no slot of it follows the level, so the subtree is read whole.
+import List
+import Node exposing (Program)
+import String
+
+
+type alias D =
+    List (List (List (List Int)))
+
+
+type T a
+    = Leaf (List Int) a
+    | Wrap (T (List a))
+
+
+wr : T a → Int
+wr t =
+    case t of
+        Leaf xs _ →
+            List.length (List.push xs 1)
+        Wrap u →
+            wr u
+
+
+g : T (List (List Int)) → Int
+g x = wr (Wrap x)
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = g (Wrap (Wrap (Wrap (Leaf k [ [ [ [ [ 1 ] ] ] ] ]))))
+    Node.print (String.fromInt (a + List.length k))

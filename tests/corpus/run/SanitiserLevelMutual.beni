@@ -1,0 +1,45 @@
+-- A fold reached through another type's template (`ownership-v2.md` §2.1, *A level
+-- past a fold*, #2062): `T` folds while `U (List a)` is described, after `T a`'s
+-- place is made, and `wr`'s `⟲` covers both types' steps.
+import List
+import Node exposing (Program)
+import String
+
+
+type T a
+    = Leaf (List Int) (List a)
+    | Wrap (U (List a))
+
+
+type U a
+    = U1 (T a)
+    | U2 (U a) Int
+
+
+wr : T a → Int
+wr t =
+    case t of
+        Leaf xs _ →
+            List.length (List.push xs 1)
+        Wrap v →
+            wrU v
+
+
+wrU : U a → Int
+wrU v =
+    case v of
+        U1 t →
+            wr t
+        U2 w _ →
+            wrU w
+
+
+g : T (List Int) → Int
+g x = wr (Wrap (U1 x))
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = g (Wrap (U1 (Leaf k [])))
+    Node.print (String.fromInt (a + List.length k))

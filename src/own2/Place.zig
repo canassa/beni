@@ -137,6 +137,8 @@ pub const Step = packed struct(u32) {
     kind: StepKind,
 
     pub const level: Step = .{ .kind = .level, .payload = 0 };
+    /// `⟲` written on a fold's cycle: past the fold at a place off it (§2.1, *A level past a fold*).
+    pub const fold_level: Step = .{ .kind = .level, .payload = 1 };
     pub const elem: Step = .{ .kind = .elem, .payload = 0 };
     pub const contents: Step = .{ .kind = .contents, .payload = 0 };
     pub const env: Step = .{ .kind = .env, .payload = 0 };
@@ -182,6 +184,8 @@ pub const Description = struct {
 pub const Source = struct {
     ctx: *anyopaque,
     describe: *const fn (ctx: *anyopaque, v: u32, out: *std.ArrayList(Child)) Allocator.Error!Description,
+    /// Whether a non-regular type folds onto `v` (§2.1, *A level past a fold*); read when a walk is over.
+    folded: ?*const fn (ctx: *anyopaque, v: u32) bool = null,
 };
 
 /// How `encode` writes a head and a field rank: through the block writer's string table, so no session id is written (§3.6).
@@ -220,7 +224,8 @@ pub const below_min: u8 = 16;
 
 /// A place's objects below it, saturating at `below_min + 1`, and whether a
 /// family is below it: one byte, so `Place` stays 24 bytes.
-pub const Below = packed struct(u8) { objects: u5 = 0, family: bool = false, _: u2 = 0 };
+/// `fold`: `Source.folded`, then its whole component's; `leads`: a fold is at or below (`LevelWalk`).
+pub const Below = packed struct(u8) { objects: u5 = 0, family: bool = false, fold: bool = false, leads: bool = false };
 
 pub const StepEntry = struct { step: Step, child: PlaceId };
 
@@ -447,6 +452,9 @@ pub const Table = struct {
             const made = try t.open(memo, gpa, account, source, c.@"var", &scratch, &stack, &added);
             t.step_tab.col.child[slot] = made;
         }
+        if (source.folded) |folded| for (added.items, first_new..) |v, p| {
+            t.places.col.below[p].fold = folded(source.ctx, v);
+        };
         try t.settleHolds(gpa, first_new);
         try t.settleCycles(gpa, first_new);
         return top;
@@ -623,8 +631,12 @@ pub const Table = struct {
                 var below: u32 = if (lone) @intFromBool(!t.places.col.kind[p].own().isEmpty()) else if (t.places.col.holds[p].isEmpty()) 0 else below_min + 1;
                 for (if (lone) kids else kids[0..0]) |c| below = @min(below + t.objectsBelow(c), below_min + 1);
                 var fam = false;
+                var fold = false;
+                var leads = false;
                 for (stack.items[std.mem.lastIndexOfScalar(u32, stack.items, p).?..]) |m| {
                     const rg = ranges[m];
+                    fold = fold or t.places.col.below[m].fold;
+                    for (children[rg.start..][0..rg.len]) |c| leads = leads or t.places.col.below[c.int()].leads;
                     fam = fam or (!lone and (!t.places.col.holds[m].isEmpty() or !t.places.col.kind[m].own().isEmpty()));
                     for (children[rg.start..][0..rg.len], t.step_tab.col.step[rg.start..][0..rg.len]) |c, s| {
                         const held = !t.places.col.holds[c.int()].isEmpty() or !t.places.col.kind[c.int()].own().isEmpty();
@@ -637,7 +649,7 @@ pub const Table = struct {
                     const m = stack.pop().?;
                     on_stack[m - first] = false;
                     sccs[m] = p + 1;
-                    t.places.col.below[m] = .{ .objects = @intCast(below), .family = fam };
+                    t.places.col.below[m] = .{ .objects = @intCast(below), .family = fam, .fold = fold, .leads = fold or leads };
                     if (m == p) break;
                 }
                 var least: u32 = 0; // `lower`
@@ -764,6 +776,10 @@ pub const Table = struct {
         return got;
     }
 
+    fn levelStep(t: *const Table, p: PlaceId) Step {
+        return if (t.places.col.below[p.int()].fold) Step.fold_level else Step.level;
+    }
+
     fn extendFill(t: *Table, gpa: Allocator, charge: Charge, path: PathId, step: Step) Error!?PathId {
         const here = t.pathPlace(path);
         const target = t.child(here, step) orelse return null;
@@ -805,14 +821,14 @@ pub const Table = struct {
                     }
                     // `deepest` is the first return: fold onto it.
                     if (deepest != .none) {
-                        out = try t.node(gpa, charge.account, deepest, Step.level, target);
+                        out = try t.node(gpa, charge.account, deepest, t.levelStep(target), target);
                         break;
                     }
                     deepest = at;
                 } else if (!t.sameCycle(there, target)) break;
             }
         }
-        const result = out orelse try t.node(gpa, charge.account, path, step, target);
+        const result = out orelse try t.node(gpa, charge.account, path, if (step.kind == .level) t.levelStep(target) else step, target);
         // A first return: a plain step back onto a place of the path.
         if (out == null and deepest != .none) t.paths.col.info[result.int()].ret = true;
         return result;

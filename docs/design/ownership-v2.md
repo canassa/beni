@@ -183,6 +183,17 @@ name it. The `⊤` a step past a fold gives keeps the value at the fold, its **o
 `run/SanitiserFoldFunction`, `run/SanitiserFoldFunctionApart`, `run/SanitiserTopOrigin`, `run/SanitiserTopOriginApart`.
 
 **A record alias's constructor** (#2056). `type alias Pt = { xs : List Int, n : Int }` declares a constructor of its fields, argument `i` being field `i` in declaration order, and `Pt k 1` is the record, at a `record` place, which has field steps and no `C#i`. So the walk builds a record of the fields those arguments name, a pattern `Pt ys _` takes the field's step, and a constructor used as a function hands each argument to its field by declaration, not by the order of the place's steps, which is the text's. Before this `(Pt k 1).xs` named no step, read as a scalar, and `k` was edited under it. Fixtures `run/SanitiserRecordCtor`, `run/SanitiserRecordCtorApart`.
+**A level past a fold** (#2062). A fold joins every instantiation of a non-regular type below the first into one place, so a contract's `⟲`, written on the fold's cycle, can land on an
+instantiation off that cycle. `T (List Int)`, where `T a = Leaf (List Int) a | Wrap (T (List a)) | Pair (T a) Int`, has a cycle of its own through `Pair`, and `Wrap` leaves it for the fold,
+the place of `T a`; `wr`'s `π1#1.0⟲#0.0` covers both steps. So a `⟲` written at a place on a fold's cycle has a word of its own (`Step.fold_level`), and read at any other place it means every
+path to a level, by that place's own cycle and past the fold. A level of a place is the place, or another instantiation of its head that is or leads to the head's fold: a place of that head on a
+cycle with the place the adapter folded onto, a mark that is read when the walk is over, since a type can fold through another's template after the place exists. Nothing but that mark tells `T`'s
+`Wrap` from `Tree (Tree Int)`'s element, which reaches another `Tree` by its argument and is no level. A walk goes on into a kid on the place's cycle or on the way to the fold (`LevelWalk`), and
+stops at a level on the fold's cycle, whose own `⟲` names the rest, so the paths are as many as the routes to the fold. A reference's slots (`Slots.replay`) and a literal's kids
+(`projectLevels`, `RouteWalk.descend`) read by this one rule, and each reads the rest of the path at every level, so a write of `Leaf.1` is no use of `Leaf.0`. A `⟲` written anywhere else
+stays on its place's cycle: `g : T Int → …`'s contract already names what `wr`'s `⟲` became at `T Int`, by the paths past `Wrap`, and read wide its `#2.0⟲#0.0` would reach them twice. Without this
+`g x = wr (Wrap x)` said `writes π1#2.0⟲#0.0` and nothing past `x`'s `Wrap`: a write there was nobody's (`run/SanitiserLevelRef`, `run/SanitiserLevelMix`, `run/SanitiserLevelMixApart`).
+Refused that a perfect checker accepts: a non-regular `T` whose element is a `T` too reads that element as a level, since the route through an argument is not told from the template's.
 
 **A step no place names** (#2043). A fold is not the only such step. `Q { r | a : List Int }` in a template drops its row, so `Q { b : List Int }` has a
 record place with no `.b`, and a schema member inside a nominal type is read through a template that cannot name its fields. A step a place

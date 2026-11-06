@@ -11,6 +11,9 @@ const Place = @import("Place.zig");
 
 const PlaceId = Ids.PlaceId;
 
+pub const level = @import("LevelWalk.zig").level;
+pub const way = @import("LevelWalk.zig").way;
+
 /// The place a value of frame `f` stands for: a choice's, its first arm's.
 pub fn rootOf(f: anytype, v0: u32) PlaceId {
     var x = f.val(v0);

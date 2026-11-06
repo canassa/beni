@@ -1,0 +1,51 @@
+-- A `⟲` on a fold's cycle lands on an instantiation with a cycle of its own
+-- (`ownership-v2.md` §2.1, *A level past a fold*, #2062): `Pair` stays at the
+-- argument's place, `Wrap` leaves it, and the level past `Wrap` is the callee's too.
+import List
+import Node exposing (Program)
+import String
+
+
+type alias D =
+    List (List (List (List Int)))
+
+
+type T a
+    = Leaf (List Int) a
+    | Wrap (T (List a))
+    | Pair (T a) Int
+
+
+wr : T a → Int
+wr t =
+    case t of
+        Leaf xs _ →
+            List.length (List.push xs 1)
+        Wrap u →
+            wr u
+        Pair u _ →
+            wr u
+
+
+pick : T a → List Int
+pick t =
+    case t of
+        Leaf xs _ →
+            xs
+        Wrap u →
+            pick u
+        Pair u _ →
+            pick u
+
+
+g : T (List (List Int)) → Int
+g x = wr (Wrap x)
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = g (Wrap (Wrap (Wrap (Leaf k [ [ [ [ [ 1 ] ] ] ] ]))))
+    m = [ 2 ]
+    b = List.push (pick (Pair (Wrap (Pair (Wrap (Leaf m [ [ 1 ] ])) 0)) 0)) 1
+    Node.print (String.fromInt (a + List.length k + List.length b + List.length m))

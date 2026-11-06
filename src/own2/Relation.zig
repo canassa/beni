@@ -460,7 +460,7 @@ pub const Eval = struct {
                             // A closure's environment: its captures, whole.
                             for (ks, 0..) |k, n| try stack.append(e.gpa(), .{ .v = k, .at = @intCast(words.len), .tags = it.tags, .route = try e.routeStep(it.route, @intCast(n)) });
                         },
-                        .level => try e.projectLevels(it.v, LevelCycle.of(e.places(), if (given != .none) given else LevelCycle.rootOf(e.f, v), words[0..it.at], x.place), words[it.at + 1 ..], deep, it.tags, it.route, out),
+                        .level => try e.projectLevels(it.v, LevelCycle.of(e.places(), if (given != .none) given else LevelCycle.rootOf(e.f, v), words[0..it.at], x.place), st.payload, words[it.at + 1 ..], deep, it.tags, it.route, out),
                         else => {
                             // A step the literal cannot follow: every object of it.
                             try e.readAt(it.v, true, it.tags, try e.routeStep(it.route, none), out);
@@ -546,7 +546,7 @@ pub const Eval = struct {
     /// same place, through the parts that stay on its cycle; then `rest`
     /// from each (the experiment's fourth requirement). A part not built
     /// here gives its levels by its own slots, never its own storage.
-    fn projectLevels(e: *Eval, v: u32, place: PlaceId, rest: []const u32, deep: bool, tags: u32, route: u32, out: *std.ArrayList(Proj)) Error!void {
+    fn projectLevels(e: *Eval, v: u32, place: PlaceId, w: u32, rest: []const u32, deep: bool, tags: u32, route: u32, out: *std.ArrayList(Proj)) Error!void {
         if (place == .none) {
             try e.readAt(v, true, tags, route, out);
             return;
@@ -564,7 +564,7 @@ pub const Eval = struct {
             const x = e.f.val(it.v);
             switch (x.kind) {
                 .built => {
-                    if (it.below and it.place == place) try e.project(it.v, rest, deep, tags, it.route, out);
+                    if (it.below and try LevelCycle.level(pl, e.gpa(), e.f.gc(), w, it.place, place)) try e.project(it.v, rest, deep, tags, it.route, out);
                     for (e.f.kidsOf(x), 0..) |k, n| {
                         const kst: Step = switch (x.form) {
                             .list => Step.elem,
@@ -574,18 +574,18 @@ pub const Eval = struct {
                             .closure, .opaque_ => continue,
                         };
                         const kp = pl.child(it.place, kst) orelse continue;
-                        if (kp != place and !pl.sameCycle(kp, place)) continue;
+                        if (!try LevelCycle.way(pl, e.gpa(), e.f.gc(), w, kp, place)) continue;
                         try stack.append(e.gpa(), .{ .v = k, .place = kp, .route = try e.routeStep(it.route, @intCast(n)), .below = true });
                     }
                 },
                 .scalar, .bot => {},
                 .ref => if (it.below) {
-                    if (it.place == place) try e.project(it.v, rest, deep, tags, it.route, out);
+                    if (try LevelCycle.level(pl, e.gpa(), e.f.gc(), w, it.place, place)) try e.project(it.v, rest, deep, tags, it.route, out);
                     // A part on the cycle at another place (a `List T` below a
                     // `T`): its next level is the steps to the cycle's place.
                     var to: std.ArrayList(u32) = .empty;
                     defer to.deinit(e.gpa());
-                    if (it.place != place and x.family == Slots.empty) try e.stepsTo(e.f.pos.items[x.pos].slot, place, &to);
+                    if (!try LevelCycle.level(pl, e.gpa(), e.f.gc(), w, it.place, place) and x.family == Slots.empty) try e.stepsTo(e.f.pos.items[x.pos].slot, place, &to);
                     // Its own levels below, by its slots (never its own storage).
                     var lv: std.ArrayList(u32) = .empty;
                     defer lv.deinit(e.gpa());
@@ -596,7 +596,7 @@ pub const Eval = struct {
                         lv.clearRetainingCapacity();
                         try lv.appendSlice(e.gpa(), to.items);
                     }
-                    try lv.append(e.gpa(), Step.level.word());
+                    try lv.append(e.gpa(), (Step{ .kind = .level, .payload = @intCast(w) }).word());
                     try lv.appendSlice(e.gpa(), rest);
                     try e.project(it.v, lv.items, deep, tags, it.route, out);
                 },

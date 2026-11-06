@@ -133,6 +133,8 @@ const Node = struct {
     /// `nominal`: the nominal node whose payloads first named it, `none` for
     /// one read off a store variable: the chain a non-regular type folds on.
     origin: u32 = none,
+    /// `nominal`: a non-regular type folded onto this node (`applied`).
+    fold: bool = false,
 };
 
 const Kid = struct { step: Step, id: u32 };
@@ -448,7 +450,9 @@ pub const Adapter = struct {
             const vars = try a.gpa.alloc(u32, args.len);
             defer a.gpa.free(vars);
             @memset(vars, try a.leaf(&a.var_id, .@"var"));
-            return a.nominal(t, vars, within);
+            const id = try a.nominal(t, vars, within);
+            a.nodes.items[id].fold = true;
+            return id;
         }
         return a.nominal(t, args, within);
     }
@@ -463,6 +467,12 @@ pub const Adapter = struct {
     fn crossingWord(bir: *const Bir, d: Bir.Decl) bool {
         for (bir.ownSlotsV2(d)) |s| if (s[0] == Bir.own_type and s[1] & Ast.OwnWord.crossing.bit() != 0) return true;
         return false;
+    }
+
+    /// Read once a walk is over: a type folds onto a node after the node's place is made.
+    fn folded(ctx: *anyopaque, id: u32) bool {
+        const a: *Adapter = @ptrCast(@alignCast(ctx));
+        return a.nodes.items[id].fold;
     }
 
     fn describe(ctx: *anyopaque, id: u32, out: *std.ArrayList(Place.Child)) Allocator.Error!Place.Description {
@@ -524,7 +534,7 @@ pub const Adapter = struct {
     }
 
     pub fn source(a: *Adapter) Place.Source {
-        return .{ .ctx = a, .describe = describe };
+        return .{ .ctx = a, .describe = describe, .folded = folded };
     }
 
     pub fn placeOfVar(a: *Adapter, v: Var.Optional) Error!PlaceId {

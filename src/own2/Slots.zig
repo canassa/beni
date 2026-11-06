@@ -17,6 +17,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
+const LevelWalk = @import("LevelWalk.zig");
 const Runs = @import("Runs.zig").Runs;
 const ByPath = @import("Runs.zig").ByPath;
 
@@ -414,6 +415,7 @@ pub fn replay(gpa: Allocator, account: *Ids.Account, places: *Place.Table, from:
         for (cur.items) |a| {
             const at: PathId = .from(a);
             try account.reserve(.path, 1);
+            if (st.eql(Step.fold_level)) try LevelWalk.walk(places, gpa, .growth(account), at, &next);
             if (st.kind == .level and !folds(places, at)) {
                 const r = try places.levelsOf(gpa, .growth(account), at);
                 var k: u32 = 0;
