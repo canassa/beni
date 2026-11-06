@@ -3,14 +3,21 @@
 //! of an equation per pair: a pair's value is made from the values of the
 //! pairs it reaches, and those can reach it back (a fold's supply and its
 //! answer). This is the solver of that system, a depth-first walk that finds
-//! its strongly connected components as it goes (Tarjan's lowest depth read).
-//! A pair read while it is open gives the value it has so far; the shallowest
-//! pair so read is its component's head, and the head walks the component
-//! again until no value moves.
+//! its strongly connected components as it goes (Tarjan's: rows are numbered
+//! in the order they are entered, and each tracks the lowest number it read).
+//! A pair read while it is open gives the value it has so far; a row that read
+//! no number below its own is its component's head, and the head walks the
+//! component again until no value moves. Numbers, not depths: a closed
+//! member's low is a depth a later sibling can stand at, and by depth that
+//! sibling would pass for a head with a value made under a cut.
 //!
-//! `solved` is the relation, as much of it as has been asked: a row enters it
-//! when its component is solved and never before, so it holds no value made
-//! under a cut. A walk's own rows hold everything else and go with the query.
+//! `solved` is a retained table of the answers so far, kept for an evaluation
+//! and dropped when a key grows: the owner's decision, an exception for this
+//! table only (§2.9.2, *What is kept*). A row enters it when its head has
+//! solved its component. A walk's own rows hold everything else and go with
+//! the query. Equations that are not joins (`AnswerKeep.kept`) are not monotone
+//! and have no least fixed point: there the walk accumulates, and order can
+//! pick another post-fixed point (#2160).
 //!
 //! Obligations kept here: none of §2.14's directly (the relation's half of
 //! O3 is `Distinct`'s; this is what makes its answer the least fixed point
@@ -48,9 +55,9 @@ pub const Ov = struct {
 const State = enum(u8) {
     /// Not walked, or to be walked again; `value` is what it had.
     unread,
-    /// On the walk's stack; `at` is its depth.
+    /// On the walk's stack; `at` is its number.
     open,
-    /// Walked, in a component whose head is open at depth `at`.
+    /// Walked, in a component whose head is open; `at` is its low.
     member,
 };
 
@@ -61,15 +68,16 @@ const Walk = struct {
     rows: std.ArrayList(Row) = .empty,
     /// The rows of components whose heads are still open, oldest first.
     members: std.ArrayList(u32) = .empty,
-    depth: u32 = 0,
-    /// The shallowest open row read since the current frame began.
+    /// The next row's number.
+    next: u32 = 0,
+    /// The lowest number read since the current frame began.
     low: u32 = unread_low,
     /// A member's value moved since the current component's pass began.
     moved: bool = false,
 };
 
 /// A pair being walked. Its equation runs under it until `leave` says done.
-pub const Frame = struct { row: u32, depth: u32, low: u32, moved: bool, members: u32 };
+pub const Frame = struct { row: u32, number: u32, low: u32, moved: bool, members: u32 };
 
 pub const Entered = union(enum) { value: Ov, frame: Frame };
 
@@ -109,7 +117,7 @@ pub const Queries = struct {
         w.keys.clear();
         w.rows.clearRetainingCapacity();
         w.members.clearRetainingCapacity();
-        w.depth = 0;
+        w.next = 0;
         w.low = unread_low;
         w.moved = false;
         q.open += 1;
@@ -144,10 +152,10 @@ pub const Queries = struct {
             },
             .unread => {},
         }
-        const fr: Frame = .{ .row = got.index, .depth = w.depth, .low = w.low, .moved = w.moved, .members = @intCast(w.members.items.len) };
+        const fr: Frame = .{ .row = got.index, .number = w.next, .low = w.low, .moved = w.moved, .members = @intCast(w.members.items.len) };
         r.state = .open;
-        r.at = w.depth;
-        w.depth += 1;
+        r.at = w.next;
+        w.next += 1;
         w.low = unread_low;
         w.moved = false;
         return .{ .frame = fr };
@@ -160,17 +168,16 @@ pub const Queries = struct {
         const value = try Ov.join(arena, account, before, got);
         const moved = !value.eql(before);
         w.rows.items[fr.row].value = value;
-        if (w.low < fr.depth) {
+        if (w.low < fr.number) {
             // Its component's head is further down: not final yet.
             w.rows.items[fr.row].state = .member;
             w.rows.items[fr.row].at = w.low;
             try w.members.append(gpa, fr.row);
             w.moved = w.moved or moved or fr.moved;
             w.low = @min(w.low, fr.low);
-            w.depth -= 1;
             return value;
         }
-        const head = w.low == fr.depth;
+        const head = w.low == fr.number;
         if (head and value.kind != .may and (moved or w.moved)) {
             // Again, from the values this pass reached.
             for (w.members.items[fr.members..]) |m| w.rows.items[m].state = .unread;
@@ -189,12 +196,13 @@ pub const Queries = struct {
         try q.solve(gpa, w, fr.row);
         w.low = fr.low;
         w.moved = fr.moved;
-        w.depth -= 1;
         return value;
     }
 };
 
 const testing = std.testing;
+
+const random_systems = 700;
 
 /// An equation system over `Queries`: `edges[p]` are the pairs `p` reads,
 /// `base[p]` its own value, `lift[p]` a pair whose reads are `may` → `under`.
@@ -239,6 +247,75 @@ test "a pair read after the query that cut it has its fixed point, whichever was
         defer q.deinit(testing.allocator);
         const s: System = .{ .q = &q, .arena = arena_state.allocator(), .account = &account, .edges = edges, .base = base };
         for (order) |p| try testing.expect((try s.ask(p)).eql(under));
+    }
+}
+
+test "a cross edge to a closed member is no head" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var account: Ids.Account = .{};
+    defer account.deinit(testing.allocator);
+    // `H → [ A, C, t ]`, `A → [ H, B ]`, `B → [ A ]`, `C → [ B ]`. `A` is closed
+    // when `C` reads `B`, whose low is `A`'s depth, and `C` stands at that
+    // depth: by depth, `C` looks like a head, and is solved with `no`.
+    const under: Ov = .{ .kind = .under, .cond = .{ .sel = &.{7} } };
+    const edges: []const []const u32 = &.{ &.{ 1, 3, 4 }, &.{ 0, 2 }, &.{1}, &.{2}, &.{} };
+    const base: []const Ov = &.{ .no, .no, .no, .no, under };
+    for ([_][2]u32{ .{ 0, 3 }, .{ 3, 0 } }) |order| {
+        var q: Queries = .{};
+        defer q.deinit(testing.allocator);
+        const s: System = .{ .q = &q, .arena = arena_state.allocator(), .account = &account, .edges = edges, .base = base };
+        for (order) |p| try testing.expect((try s.ask(p)).eql(under));
+        try testing.expect((try s.ask(2)).eql(under));
+    }
+}
+
+test "random systems of joins have one answer, their least fixed point, in any order" {
+    var prng = std.Random.DefaultPrng.init(2146);
+    const r = prng.random();
+    const us: [3]Ov = .{ .{ .kind = .under, .cond = .{ .sel = &.{1} } }, .{ .kind = .under, .cond = .{ .sel = &.{2} } }, .{ .kind = .under, .cond = .{ .sel = &.{3} } } };
+    for (0..random_systems) |_| {
+        var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+        defer arena_state.deinit();
+        const arena = arena_state.allocator();
+        var account: Ids.Account = .{};
+        defer account.deinit(testing.allocator);
+        const n = r.intRangeAtMost(u32, 2, 8);
+        const edges = try arena.alloc([]u32, n);
+        const base = try arena.alloc(Ov, n);
+        for (edges, base) |*e, *b| {
+            e.* = try arena.alloc(u32, r.uintLessThan(u32, 4));
+            for (e.*) |*x| x.* = r.uintLessThan(u32, n);
+            b.* = switch (r.uintLessThan(u32, 6)) {
+                0 => us[r.uintLessThan(u32, 3)],
+                1 => .may,
+                else => .{},
+            };
+        }
+        // The truth: Kleene's iteration from the bottom.
+        const truth = try arena.alloc(Ov, n);
+        @memset(truth, .{});
+        var moved = true;
+        while (moved) {
+            moved = false;
+            for (truth, edges, base) |*v, e, b| {
+                var acc = b;
+                for (e) |x| acc = try Ov.join(arena, &account, acc, truth[x]);
+                if (!acc.eql(v.*)) {
+                    v.* = acc;
+                    moved = true;
+                }
+            }
+        }
+        const perm = try arena.alloc(u32, n);
+        for (perm, 0..) |*x, i| x.* = @intCast(i);
+        for (0..4) |_| {
+            r.shuffle(u32, perm);
+            var q: Queries = .{};
+            defer q.deinit(testing.allocator);
+            const s: System = .{ .q = &q, .arena = arena, .account = &account, .edges = @ptrCast(edges), .base = base };
+            for (perm) |p| try testing.expect((try s.ask(p)).eql(truth[p]));
+        }
     }
 }
 
