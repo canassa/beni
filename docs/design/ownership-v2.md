@@ -2628,9 +2628,9 @@ one as a capture write (`once`) would add nothing a program needs and a hole: th
 
 **Join and fixpoint.** `need` is a set that only grows, so it joins by union, `⊥` is empty, and `leq` is inclusion (`Within`). In a group a member's new need is delivered with its writes (§2.12 *Deliveries*, `Deliver`'s `need` item) and a member `K`'s new result arrival to each discharge that reads it (`need_watch`). Each slot is delivered once per reader, and slots are finite, so the group ends with the rest. A label a member's draft has and the contract a round read does not is read next round; the validation walk reads the settled candidates, so nothing is left out.
 
-**Blocks.** `need` is one run of `(slot, deep)` after a label's supplies, in the canonical slot order (version 27); so a cached callee and a live one read alike (`run/NeedAcrossModules`).
+**Blocks.** `need` is one run of `(slot, deep)` after a label's supplies, in the canonical slot order (version 27). An importer reads it from the block in the interface, and the callers of the callee's own module from the tables, and they say the same (`run/NeedAcrossModules`, `ownership/NeedAcrossModules`). v2 writes no cache entry yet (§3.6): the block is what S6's entry will hold, so a need has no cached path to test until then.
 
-**What it does not touch.** `below`, `sep`, `kept` and `each` are the callee's claims about what it hands; a need is a claim about what it gets back, so a supply is derived as before. `res_read` and `fed` say which objects an answer may be, and a write moves no object. `AnswerRead` looks at result, supplies, escapes and stores, and a need is none of these; a code it calls read-only is known, so it discharges as any code. An `entry` argument has no caller, as a write of its parameter has none (#2004, §2.11.3 *As built*): S7 owes both.
+**What it does not touch.** `below`, `sep`, `kept` and `each` are the callee's claims about what it hands; a need is a claim about what it gets back, so a supply is derived as before: an answer in a supply stays unknown code's to `Supplied.judge` (`Demand.supplied`), and §2.11.3 *An answer handed on* holds. `res_read` and `fed` say which objects an answer may be, and a write moves no object. `AnswerRead` looks at result, supplies, escapes and stores, and a need is none of these; a code it calls read-only is known, so it discharges as any code. An `entry` argument has no caller, as a write of its parameter has none (#2004, §2.11.3 *As built*): S7 owes both.
 
 **Sound.** Take a run of the callee in which a write `W` reaches an object `o` through the answer of a run `r` of function value `v`, at slot `s`. `L.need ∋ s` by the read-off. Follow `v` outward by §2.11.3's case split, which is exhaustive: `v` passes on (then the frame's caller has the need, and the frame has only finitely many levels above it), or it is a known code, a fixed row or unknown, and the last two are refused unless `s` is fresh.
 
@@ -2642,7 +2642,7 @@ So some caller applies a code `K`. `K`'s result at `s` contains `o`, by the read
 - Anything else is refused.
 
 A second write of `o` by another run needs two runs to answer `o`. A fresh object has one run; a `K` argument is apart between runs under the supply's condition, as a write of `K` is. A need never accepted a capture. Below the root, one object at two slots of an answer is the result separation's. Refused that a perfect checker accepts: a capture nobody reads again, a write of `[*]` of an answer whose every step asks `sep`, since an answer's family is any object to the distinct check, and a label's supply kept only by the local holding the answer (`y = f x; List.push y 1` with `f` an identity).
-Fixtures: `ownership/NeedOuterOnly`, `ownership/NeedLabels`, `ownership/NeedUnknown`, `run/SanitiserNeed` (a capture, a list answered through a forwarding lambda, a stored callback, a recursive helper, a returned closure: each refused, each traps without its rule), `run/SanitiserNeedApart` (accepted in place), `run/NeedAcrossModules`.
+Fixtures: `ownership/NeedOuterOnly`, `ownership/NeedLabels`, `ownership/NeedUnknown`, `run/SanitiserNeed` (a capture, the caller's list handed through, a list answered through a forwarding lambda, a stored callback, a recursive helper, a returned closure: each refused, each traps without its rule), `run/SanitiserNeedApart` (accepted in place), `run/NeedAcrossModules` and `ownership/NeedAcrossModules` (the same through a block).
 
 #### 2.11.4 Closures
 
@@ -5312,6 +5312,7 @@ L0  Ids  Counters  Scratch
 | `PlaceIdentity.zig` | 2 | a place graph's structural identity: `encode`, `decode`, `equals` (§2.1, §3.1), split from `Place` (#1714) | Ids, Place |
 | `Slots.zig` | 2 | slot sets, `below`, canonical names, relative steps (§2.3.1, §3.2) | Ids, Place, Runs |
 | `Trees.zig` | 2 | a contract's result trees, nodes hash-consed by content (§2.10, §3.5, #1714) | Ids, Runs |
+| `RelText.zig` | 3 | a relative slot's text, split from `ContractText` (§2.10, #2116) | Place, Slots |
 | `Dests.zig` | 3 | a read's result slots as a column, an entry per slot met made once from its nearest ancestor in it (§2.10 *Read-off*, #1714) | Ids, Place, Slots |
 | `Contract.zig` | 3 | the contract table, join, `within`, canonical order (§2.10, §3.5) | Ids, Place, Slots |
 | `Subtree.zig` | 3 | a whole subtree held as a symbol: `below`, `belowAll`, anchors, meet by prefix (§2.3.1, #1706) | Ids, Place, Slots |
@@ -5343,6 +5344,7 @@ L0  Ids  Counters  Scratch
 | `FedCall.zig` | 8 | a callee's `fed` occurrence at a call, renamed or decided, and the label argument a callee's parameter arrives at whole (§2.11.3, #1713, #1721); below `Distinct` | Ids, Slots, Forest, Contract, Relation |
 | `WalkContext.zig` | 8 | the module's services a walk reads; `Groups` implements them (§2.6, §2.11.3) | Ids, Contract, Relation, Value |
 | `LabelChain.zig` | 8 | the labels a virtual call's supply comes through, outward (§2.11.3, #1758, #1760, #1721) | Ids, Forest, Contract, RowEnv, Value |
+| `Needs.zig` | 11 | a label's need published and discharged at each call (§2.11.3, *a need*, #2116) | Ids, Slots, Forest, Contract, Distinct, LabelChain, Graft, Value, Eval, Walk |
 | `Outward.zig` | 11 | what the outward labels add: a demand's instantiated `req` and outer conditions, a passed-on label's outer supplies (§2.11.2 item 4, §2.11.3) | Ids, Contract, RowEnv, LabelChain, Graft, Distinct, Eval |
 | `Captures.zig` | 8 | a closure's captures in what holds it: a parameter arrival at an argument closure takes them, deep (§2.10, #1772) | Ids, Place, Value, Relation |
 | `Across.zig` | 9 | what a callee holds across a run of a known code it is handed: a capture write's operands at every label outward (§2.11.3, #1955) | Ids, Value, LabelChain |
@@ -8362,7 +8364,7 @@ a finding to report with a witness, not authority to merge labels, silently copy
 |---|---|---|
 | DeepTupleDag (269) | R-7.2 | S3a |
 | MutualListField (279), WriteOneLevel (280), AliasWriterCall (284) | R-4.7.4, R-4.7.8, R-5.5.6 | S3b (all three moved to `tests/corpus/ownership/`: MutualListField by 5c, WriteOneLevel by 4a, AliasWriterCall by 5e) |
-| PatternStoredBack (278), ExclusiveFreshHelper (275), UpdateReturnsHeld (277), AppliedLambdaRecursion (311), CyclicFold (296), NeedOuterOnly (294), EditAnsweredList (295), OnceOtherHolder (297), CalledTwicePusher (298), JoinedFunctionValue (301) | R-4.6.9, R-4.6.7, R-4.6.10, R-7.12, R-5.3.7, R-5.2.8, R-5.2.9, R-5.4.3, R-5.4.4, R-5.5.5 | S4 |
+| PatternStoredBack (278), ExclusiveFreshHelper (275), UpdateReturnsHeld (277), AppliedLambdaRecursion (311), CyclicFold (296), NeedOuterOnly (294; moved to `tests/corpus/ownership/` by #2116), EditAnsweredList (295), OnceOtherHolder (297), CalledTwicePusher (298), JoinedFunctionValue (301) | R-4.6.9, R-4.6.7, R-4.6.10, R-7.12, R-5.3.7, R-5.2.8, R-5.2.9, R-5.4.3, R-5.4.4, R-5.5.5 | S4 |
 | RecordSplitPushBack (264), RecordWriteBeforeKeep (272), RecordKeptInLiteral (273), RecordInnerKept (274), RecordWrapperRead (290), RecordProvenanceCallbackResult (291), RecordCopyOpen (309), RecordIndexExchange (283), ReturnedLambdaWrite (300), OnceLaterArgument (299), PrependFreshRecord (282) | R-4.6.9, R-4.8.11, R-4.8.12, R-4.8.14, R-4.10.4, R-4.8.17, R-5.4.9, R-5.4.5, R-4.4.3 | S5 |
 | ConduitEntryRecords (—), SendRecordObjects (305), ListenTopLevelStart (306), PushTagger (—), RecordForItem (262), RecordSchemaRun (271), RecordVariantMove (292), RecordProvenanceCtorValue (291), RecordProvenanceEntryPage (291), RecordProvenanceSameVariant (291), RecordProvenanceTopLevelOk (291), SchemaIssuesFresh (307), SchemaIssuesExclusive (293) | R-5.8.9, R-5.9.3, R-5.9.9, R-5.5.12, R-5.8.6, R-5.11.3, R-4.8.15, R-4.8.14, R-5.11.5, R-4.10.8 | S7 |
 | DictFocusGrow (267), DictHelperAlias (270), DictRecordAlias (270), DictTupleAlias (270), CopyApart (276), RefOwnsContents (286), LogAnnotateUpdate (308) | R-4.10.12, R-4.10.13, R-4.6.8, R-5.12.3, R-5.12.2 | S8 |
