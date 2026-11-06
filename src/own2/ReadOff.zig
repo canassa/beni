@@ -355,7 +355,7 @@ fn callNode(s: *Sink, call: u32, which: u32, prefix: PathId, tags: u32, q: PathI
     try f.charge(.inspection, @intCast(1 + pw.len));
     for (pw) |w| {
         if (e.contracts.trees.open(n).len != 0) return false;
-        n = e.contracts.trees.kidAt(n, w) orelse return e.contracts.trees.rowKid(n, w) == null;
+        n = e.contracts.trees.kidAt(n, w) orelse return e.contracts.trees.rowKid(f.places, n, w) == null;
     }
     const got = (try callNodeAt(s, call, which, c, n, prefix, tags, q, false, out)) orelse return false;
     try Put.emitPart(s, q, got, out);

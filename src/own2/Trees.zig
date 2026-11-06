@@ -76,13 +76,20 @@ pub const Table = struct {
         t.arrivals.deinit(gpa);
     }
 
-    /// The kid of `n` at its row step, when `word` may be read from a row (§2.1): a field's
-    /// step or a row step `n` has no kid at. A node's kids sort by word, so it is the last.
-    pub fn rowKid(t: *const Table, n: Node, word: u32) ?Node {
-        if (!Place.Step.fromWord(word).inRow()) return null;
+    /// The kid of `n` at its row step, when that row holds `word` (§2.1): the one way a
+    /// reader of a callee's tree takes a caller's step `n` has no kid at. A node's kids sort
+    /// by word, so the row's is the last.
+    pub fn rowKid(t: *const Table, places: *const Place.Table, n: Node, word: u32) ?Node {
         const ks = t.kids(n);
-        if (ks.len == 0 or !Place.Step.fromWord(ks[ks.len - 1][0]).isRow()) return null;
+        if (ks.len == 0) return null;
+        const row = Place.Step.fromWord(ks[ks.len - 1][0]);
+        if (!row.isRow() or !places.rowHolds(row, Place.Step.fromWord(word))) return null;
         return ks[ks.len - 1][1];
+    }
+
+    /// Whether `n`'s row, read at `word`, holds an entry.
+    pub fn rowReaches(t: *const Table, places: *const Place.Table, n: Node, word: u32) bool {
+        return t.count(t.rowKid(places, n, word) orelse return false) != 0;
     }
 
     /// The node of these arrivals and kids (sorted here), by content.

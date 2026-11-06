@@ -26,7 +26,7 @@ const Node = Trees.Node;
 /// record a node on the way to a deeper slot.
 pub fn atomsAt(f: *Value.Frame, t: *const Trees.Table, root: Node, words: []const u32, hits: *std.ArrayList(Trees.Hit)) Error!?Node {
     if (words.len == 0 and !t.atomsOnly(root)) return null;
-    try f.charge(.inspection, try Forest.atSlot(t, f.gpa, root, words, hits));
+    try f.charge(.inspection, try Forest.atSlot(t, f.places, f.gpa, root, words, hits));
     for (hits.items) |h| for (h.arrivals) |a| if (a.kind == .param or a.kind == .cb) return null;
     const n = Forest.at(t, root, words) orelse return 0;
     return if (t.atomsOnly(n)) n else null;

@@ -9,6 +9,7 @@
 //! holds what the closure can reach).
 
 const std = @import("std");
+const Replay = @import("Replay.zig");
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Value = @import("Value.zig");
@@ -44,8 +45,8 @@ fn builtClosures(e: *Relation.Eval, v: u32, words: []const u32, out: *std.ArrayL
     switch (x.form) {
         .tuple => if (st.kind == .index and st.payload < ks.len) try builtClosures(e, ks[st.payload], words[1..], out),
         .ctor => if (st.kind == .ctor_arg and ca[0] == x.head and ca[1] < ks.len) try builtClosures(e, ks[ca[1]], words[1..], out),
-        .record => for (f.wordsOf(x.extra), 0..) |r, n| {
-            if (st.kind == .field and r == st.payload) try builtClosures(e, ks[n], words[1..], out);
+        .record => if (Replay.overRow(f.places, words)) |rest| try builtClosures(e, v, rest, out) else for (f.wordsOf(x.extra), 0..) |r, n| {
+            if (try Value.RecordKid.holds(f, st, r)) try builtClosures(e, ks[n], words[1..], out);
         },
         .list => if (st.kind == .elem) for (ks) |k| try builtClosures(e, k, words[1..], out),
         else => {},

@@ -34,8 +34,7 @@ pub fn replay(gpa: Allocator, account: *Ids.Account, places: *Place.Table, from:
     try cur.append(gpa, from.int());
     for (words, 0..) |w, i| {
         const st = Step.fromWord(w);
-        // A row step followed by a field's or a wider row's is that step (§2.1).
-        if (st.isRow() and i + 1 < words.len and Step.fromWord(words[i + 1]).inRow()) {
+        if (rowThen(words[i..])) {
             if (!places.rowHolds(st, Step.fromWord(words[i + 1]))) return;
             continue;
         }
@@ -65,30 +64,55 @@ pub fn replay(gpa: Allocator, account: *Ids.Account, places: *Place.Table, from:
 }
 
 /// The paths row step `st` names from `at` (§2.1, *The row of a record*): each field
-/// its names do not hold and the place's own row. None at a place of no steps of a record.
+/// its names do not hold and the place's own row. At any other place, a `var`'s or an
+/// `opaque`'s, the place's own object: what no step of it can name is all of it.
 fn rowPaths(gpa: Allocator, account: *Ids.Account, places: *Place.Table, at: PathId, st: Step, out: *std.ArrayList(u32)) Error!void {
     const p = places.pathPlace(at);
-    if (places.kind(p) != .record) return;
+    if (places.kind(p) != .record) return out.append(gpa, at.int());
     for (places.steps(p).steps) |s| {
         if (!places.rowHolds(st, s)) continue;
         if (try places.extend(gpa, .growth(account), at, s)) |nx| try out.append(gpa, nx.int());
     }
 }
 
-/// Whether a caller's slot `words` is read from the entry `rw`, a row: past the row's
-/// parent `words` take a step of their own that a row may hold (§2.1).
-pub fn inRowOf(rw: []const u32, words: []const u32) bool {
+/// Whether `words` start with a row step and go on by a field's or a wider row's: that
+/// step is then the row's (§2.1).
+pub fn rowThen(words: []const u32) bool {
+    return words.len > 1 and Step.fromWord(words[0]).isRow() and Step.fromWord(words[1]).inRow();
+}
+
+/// `words` past a leading row step that the next step stands for; the words themselves
+/// when no such step leads; null when the row excludes the next step, a true nothing.
+pub fn collapse(places: *const Place.Table, words: []const u32) ?[]const u32 {
+    if (!rowThen(words)) return words;
+    return if (places.rowHolds(Step.fromWord(words[0]), Step.fromWord(words[1]))) words[1..] else null;
+}
+
+/// `words` to go on from when a leading row step collapses (empty words for an excluded
+/// field, which name nothing); null when no row step collapses here.
+pub fn overRow(places: *const Place.Table, words: []const u32) ?[]const u32 {
+    return if (rowThen(words)) collapse(places, words) orelse words[words.len..] else null;
+}
+
+/// How many of a caller's `words` the callee's entry `rw` covers: all of `rw` when it is a
+/// prefix of them; its parent's when `rw` is a row that holds the next step of `words`,
+/// which the row step then stands for (§2.1). Null when `rw` is no entry of them.
+pub fn under(places: *const Place.Table, rw: []const u32, words: []const u32) ?usize {
+    if (std.mem.startsWith(u32, words, rw)) return rw.len;
+    return if (inRowOf(places, rw, words)) rw.len - 1 else null;
+}
+
+/// Whether a caller's slot `words` is read from the entry `rw`, a row that holds it: past
+/// the row's parent `words` take a step of their own (§2.1).
+pub fn inRowOf(places: *const Place.Table, rw: []const u32, words: []const u32) bool {
     if (!endsInRow(rw) or rw.len > words.len) return false;
     const up = rw.len - 1;
-    return words[up] != rw[up] and Step.fromWord(words[up]).inRow() and std.mem.eql(u32, rw[0..up], words[0..up]);
+    return words[up] != rw[up] and places.rowHolds(Step.fromWord(rw[up]), Step.fromWord(words[up])) and std.mem.eql(u32, rw[0..up], words[0..up]);
 }
 
 /// Whether `words` read a field out of a row that excludes it: a true nothing, no fold.
 pub fn excluded(places: *const Place.Table, words: []const u32) bool {
-    for (words[0..words.len -| 1], 1..) |w, i| {
-        const st = Step.fromWord(w);
-        if (st.isRow() and !places.rowHolds(st, Step.fromWord(words[i]))) return true;
-    }
+    for (0..words.len) |i| if (collapse(places, words[i..]) == null) return true;
     return false;
 }
 

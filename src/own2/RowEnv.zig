@@ -117,17 +117,16 @@ pub const Env = struct {
 /// A write at `words` of a `taken` label's supply `su` (§2.13.6): its
 /// container stays, so what is written occurs once in it, and apart from
 /// everything else it holds. As the label's caller's occurrences: every
-/// parameter slot of the supply (the element) deep and apart, the written
-/// slot plain from the deepest entry at a prefix of `words`, or an open
-/// one; a supply passed on by structure names a tuple's parts at its root,
-/// or nothing. A written slot no parameter's was judged at the pass.
+/// parameter slot of the supply (the element) deep and apart, the written slot plain
+/// from the deepest entry at a prefix of `words`, or an open one; a supply passed on by
+/// structure names a tuple's parts at its root. A slot no parameter's was judged at the pass.
 pub fn takenOccs(contracts: *const Contract.Table, places: *const Place.Table, slots: *Slots.Table, account: *Ids.Account, gpa: Allocator, arena: Allocator, su: Contract.Supply, words: []const u32, deep: bool) Error!?[]u64 {
     var es: Forest.Entries = .{};
     defer es.deinit(gpa);
     try es.of(&contracts.trees, gpa, places, su.res_root, &.{});
     var best: ?u32 = null;
     for (es.items.items) |rs| for (rs.arrivals) |a| {
-        if (a.kind == .param and std.mem.startsWith(u32, words, es.wordsOf(rs))) best = @max(best orelse 0, rs.len);
+        if (a.kind == .param) best = @max(best orelse 0, @as(u32, @intCast(Replay.under(places, es.wordsOf(rs), words) orelse continue)));
     };
     const at_best = best orelse return null;
     var out: std.ArrayList(u64) = .empty;
@@ -141,8 +140,9 @@ pub fn takenOccs(contracts: *const Contract.Table, places: *const Place.Table, s
             break :blk false;
         };
         if (!covered) try out.append(arena, Contract.occDeep(Contract.occApart(a.j, a.slot)));
-        if (!std.mem.startsWith(u32, words, es.wordsOf(rs)) or (rs.len != at_best and !rs.open)) continue;
-        const at = try std.mem.concat(arena, u32, &.{ slots.relWords(a.slot), words[rs.len..] });
+        const n = Replay.under(places, es.wordsOf(rs), words) orelse continue;
+        if (n != at_best and !rs.open) continue;
+        const at = try std.mem.concat(arena, u32, &.{ slots.relWords(a.slot), words[n..] });
         const o = Contract.occ(a.j, try slots.relOfWords(gpa, account, places, at));
         try out.append(arena, if (deep or a.deep) Contract.occDeep(o) else o);
     };

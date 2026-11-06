@@ -1,0 +1,48 @@
+-- A callee's row, moved into a frame that names more fields than the callee
+-- (`ownership-v2.md` §2.1, *The row of a record*): the frame has no child at
+-- the callee's row step, and its occurrences were dropped from what the frame
+-- asks, so `mid3` asked its callers nothing and a write edited a list a field
+-- still held. Each edit here is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+up : { r | a : L } → { r | a : L }
+up rec = { rec | a = List.push rec.a 9 }
+
+
+mid3 : { a : L, b : L, c : L } → { a : L, b : L, c : L }
+mid3 rec = up rec
+
+
+-- Written from a lambda, at the lambda's own wider record.
+inLambda : { a : L, b : L, c : L }, Bool → { a : L, b : L, c : L }
+inLambda rec c =
+    h = λr → { r | a = List.push r.a 9 }
+    if c then
+        h rec
+    else
+        rec
+
+
+main : Program
+main =
+    k1 = [ 1 ]
+    r1 = mid3 { a = k1, b = [], c = k1 }
+    k2 = [ 1 ]
+    r2 = inLambda { a = k2, b = [], c = k2 } True
+    k3 = [ 1 ]
+    x3 = { a = k3, b = k3 }
+    h3 = λ⊤ → up x3
+    r3 = h3 ⊤
+    Node.print
+        (show r1.a ++ show r1.c ++ "/" ++ show r2.a ++ show r2.c ++ "/" ++ show r3.a ++ show r3.b)

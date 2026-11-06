@@ -5701,3 +5701,8 @@ tests/corpus/run/SanitiserRow.beni SanitiserRow 70:10 #0 :: List.push <call>.b :
 tests/corpus/run/SanitiserRow.beni SanitiserRow 72:10 #0 :: List.push <call>.b :: absent :: rejected  one demand, named two ways: v1 calls a call's field <expression>, v2 names it
 tests/corpus/run/SanitiserRow.beni SanitiserRow 76:10 #0 :: SanitiserRow.run k7 :: absent :: rejected  v2 refuses the call that hands the argument to a closure the row carries; v1 has no such demand (§2.1, The row of a record)
 tests/corpus/run/SanitiserTopOrigin.beni SanitiserTopOrigin 115:10 #0 :: SanitiserTopOrigin.inRow c :: absent :: rejected  v2 reads the closure a row carries as the code it is, and the write reaches the argument (§2.1, The row of a record)
+tests/corpus/run/SanitiserRowSetter.beni SanitiserRowSetter 24:15 #0 :: List.push x.a :: rejected :: accepted  v1 reads the base's named field at the update; v2 reads the row, which excludes it (§2.1, The row of a record)
+tests/corpus/run/SanitiserRowWide.beni SanitiserRowWide 32:9 #0 :: <lambda> rec.a :: accepted :: absent  one demand, named two ways: v1 calls the local function <lambda>, v2 by its name
+tests/corpus/run/SanitiserRowWide.beni SanitiserRowWide 32:9 #0 :: h rec.a :: absent :: accepted  one demand, named two ways: v1 calls the local function <lambda>, v2 by its name
+tests/corpus/run/SanitiserRowWide.beni SanitiserRowWide 45:10 #0 :: once x3.a :: absent :: accepted  v2's demand that a closure writing its capture runs once (§2.11.4)
+tests/corpus/run/SanitiserRowWide.beni SanitiserRowWide 46:10 #0 :: h3 <call> :: absent :: rejected  v2 asks the capture's fields apart at the call of the closure that writes it; v1 has no such demand

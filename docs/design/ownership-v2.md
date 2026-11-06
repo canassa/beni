@@ -244,8 +244,11 @@ step for those, the **row step** `…`, whenever its row is open: its child is a
 - *A callback.* A supply is a tree as `res` is, read by the same reader: `appR { a = x, b = k } λr → List.push r.b 1` delivers `π1…` at the lambda's `.b` and a write reaches the actual's `.b`. A closure in a row is a function's slot in a caller's frame, where the type names it.
 - *What a contract says.* `idr rec = rec` is `res ε π1ε, .a π1.a, … π1…*`. A reader of `.status` still reads `π1.status` and nothing else; a whole read of `rec` reads `…` too.
 
+- *One rule per reader.* Four readers take a callee's row, and each has one way in, so none can fall past a row silently. A reader that walks a caller's words down a callee's tree takes `Trees.rowKid`, which holds the row's names, so a read of the row is no read of a field it excludes: `Forest.atSlot`, `effectReaches`, `Later.writeMeets`, `Descent`, `instBelow`, `callNode`, `Deliver`. A reader that compares a caller's words with an entry takes `Replay.under`: `FedWrite`, `RowEnv`, `LabelChain`. A reader of a row step and the step after it takes `Replay.collapse`. A reader of a built record's kids takes `RecordKid.holds`: `project`, `Captures`, `recordKid`. A step a frame's place has no child at in `Graft`'s fold keeps its occurrences, which are read at the caller; `Graft`'s other readers of steps refuse a row step and take the general path. A slot's draft holds arrivals, never a node, at a row (`Put.emitPart`).
+- *Its limit.* A row read at a wide record is every field it leaves, each read through a contract, so a call at a record of about 2 000 fields passes a declaration's allowance and fails with `ownership_limit`, loud and named (§4.4).
+
 *Why it is sound.* Take a record `o` at a place `P` of a callee, called with `o` at the caller's place `P'`, whose names hold `P`'s by typing. Any object below `o` is below a field `f`. If `P` names `f`, the callee's slot `.f` reads it at the caller, as before. Otherwise it is in `γ(π…)`, which the caller's reading makes `.f` of `P'` deep. A write the callee makes through `…`, an escape, a read, an arrival and an occurrence all instantiate by that reading, so each reaches every object the row can hold (O1: a holder is added, never removed). The narrowing of a caller's `.b` to `π1.b` removes only objects of other fields, and it rests on parametricity: a function of type `{ r | a } → { r | a }` holds no operation that moves one field of `r` to another; a callback, a `foreign` and a worded row have their own arrivals at the result, which are read as they are. Refused that a perfect checker accepts: any two objects of one row asked apart from a named field when only one of them is written or held, as the row is one slot; and a write of a row's object reached by a fold's `var` (§2.1). *Rejected:* reading an open row as a `var` place. It refused 17 positions v1 accepts, and because an update copies kept fields from the place's steps, it lost what the update kept (`RecordUpdateEscapes`). The row is a step, so the named fields keep their slots.
-A closure that captures a copy `s = { rec | a = [ 1 ] }` and reads `s.a` holds `s`, row and all, exactly as it holds a closed record's other fields, so `k` in the row is refused a write while the closure lives. Fixtures: `run/SanitiserRow`, `run/SanitiserRowApart`, `run/SanitiserRowAcrossModules`.
+Four whole reads that a closed record meets reach the row too, and are refused where a perfect checker accepts: a closure holds what it captures whole (#2136); a `case` reads its whole scrutinee (https://github.com/canassa/beni/issues/2140); a callback's answers condition asks the whole element (https://github.com/canassa/beni/issues/2141); a function a lambda reads from a supplied record is unknown (https://github.com/canassa/beni/issues/2142). Fixtures: `run/SanitiserRow`, `run/SanitiserRowApart`, `run/SanitiserRowAcrossModules`, `run/SanitiserRowWide`, `run/SanitiserRowWideApart`, `run/SanitiserRowClosure`, `run/SanitiserRowClosureApart`, `run/SanitiserRowSetter`.
 
 **Identity.** Initial construction uses a dense `by_var` memo for structural source nodes and the adapter's
 `(head, argument places)` memo for nominal applications. Each source graph node and outgoing edge is visited
@@ -5566,8 +5569,8 @@ L0  Ids  Counters  Scratch
 | `Runs.zig` | 1 | runs of words interned by content, a column by path id (§3.2) | Ids |
 | `RowSets.zig` | 0 | a row step's sets of excluded names (§2.1, *The row of a record*) | — |
 | `StepWord.zig` | 0 | a step of a canonical path, one word (§2.1, §3.1), from `Place` | — |
-| `RecordRow.zig` | 3 | a row in values: a step of a built record, a row step of a reference, a row's arrivals fed below it (§2.1) | Place, Trees |
-| `StepsTo.zig` | 3 | the shortest steps between two places (§2.1), from `Relation` | Ids |
+| `StepsTo.zig` | 3 | the shortest steps between two places (§2.1), from `Relation` | Ids, Place |
+| `ValueTypes.zig` | 5 | the records of a walk's value tables (§2.3, §3.3), from `Value` | Ids, Place, Slots, Steps |
 | `BlockStep.zig` | 13 | one step of a relative slot in a block (§3.6), from `Block` | Place, RowSets |
 | `Routes.zig` | 1 | tag lists with shared tails and jump pointers, route sets (§2.3.5, §2.9.3, #1714) | Ids |
 | `Facts.zig` | 2 | the records that cross layers: uses, demand kinds, verdicts, causes, the pre-pass's facts, report lines | Ids |
@@ -5578,7 +5581,7 @@ L0  Ids  Counters  Scratch
 | `PlaceIdentity.zig` | 2 | a place graph's structural identity: `encode`, `decode`, `equals` (§2.1, §3.1), split from `Place` (#1714) | Ids, Place |
 | `Slots.zig` | 2 | slot sets, `below`, canonical names, relative steps (§2.3.1, §3.2) | Ids, Place, Runs |
 | `Replay.zig` | 2 | relative steps replayed at a path; a record's row read at a caller (§2.1, §2.11.2), from `Slots` | Ids, Place |
-| `Trees.zig` | 2 | a contract's result trees, nodes hash-consed by content (§2.10, §3.5, #1714) | Ids, Runs |
+| `Trees.zig` | 2 | a contract's result trees, nodes hash-consed by content (§2.10, §3.5, #1714) | Ids, Place, Runs |
 | `Dests.zig` | 3 | a read's result slots as a column, an entry per slot met made once from its nearest ancestor in it (§2.10 *Read-off*, #1714) | Ids, Place, Slots |
 | `Contract.zig` | 3 | the contract table, join, `within`, canonical order (§2.10, §3.5) | Ids, Place, Slots |
 | `Subtree.zig` | 3 | a whole subtree held as a symbol: `below`, `belowAll`, anchors, meet by prefix (§2.3.1, #1706) | Ids, Place, Slots |
@@ -5589,7 +5592,7 @@ L0  Ids  Counters  Scratch
 | `ContractText.zig` | 4 | a contract's text, the dump's `summary` line (§2.10, §3.5) | Ids, Place, Slots, Contract |
 | `Worded.zig` | 4 | a module's worded contracts by declaration and places, one footprint a callee (§4.1, #1714) | Ids, Runs, Contract |
 | `Leaves.zig` | 4 | a value's leaf set: the persistent Patricia set, its coexisting and choice joins, a plain subtree under a route set, its pass reader (§2.3.4, §2.3.5, §2.11.2, #1714) | Ids, Routes |
-| `Value.zig` | 5 | a walk's roots, positions, values, leaves and tags; each value's leaf set made with it (§2.3, §3.3) | Ids, Place, Slots, Subtree, Contract, Leaves |
+| `Value.zig` | 5 | a walk's roots, positions, values, leaves and tags; each value's leaf set made with it (§2.3, §3.3) | Ids, Place, Slots, Replay, ValueTypes, Subtree, Contract, Leaves |
 | `Liveness.zig` | 5 | the use index and its queries (§2.7, §3.4a) | Ids, Facts, Place, Regions |
 | `Ancestry.zig` | 6 | compatibility for one pair of points: binary lifting over the region tree (§2.5, §4.1) | Ids, Regions |
 | `Relation.zig` | 6 | a value's leaves, projection, a call's instantiation and expansion (§2.11.2) | Ids, Place, Slots, Subtree, Contract, Value |

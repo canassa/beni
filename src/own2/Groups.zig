@@ -40,7 +40,6 @@ const Ids = @import("Ids.zig");
 const Facts = @import("Facts.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
-const RecordRow = @import("RecordRow.zig");
 const Contract = @import("Contract.zig");
 const Rows = @import("Rows.zig");
 const Worded = @import("Worded.zig");
@@ -172,7 +171,7 @@ pub const Adapter = struct {
         return id;
     }
 
-    pub fn leaf(a: *Adapter, slot: *u32, k: Place.Kind) Allocator.Error!u32 {
+    fn leaf(a: *Adapter, slot: *u32, k: Place.Kind) Allocator.Error!u32 {
         // `⊤`'s head is no type's, so it is told from a crossing type's.
         if (slot.* == none) slot.* = try a.add(.{ .kind = .structural, .place_kind = k, .head = if (k == .cross) none else 0, .a = 0, .b = 0 });
         return slot.*;
@@ -325,7 +324,6 @@ pub const Adapter = struct {
                     var local: std.ArrayList(Kid) = .empty;
                     defer local.deinit(a.gpa);
                     var at = rec;
-                    var open = false;
                     while (true) {
                         for (store.fields(at.fields)) |fld| try local.append(a.gpa, .{ .step = try Step.field(a.account, a.rank(fld.name)), .id = try a.childId(fld.value) });
                         switch (store.resolvedContent(at.ext)) {
@@ -333,14 +331,11 @@ pub const Adapter = struct {
                                 .record => |next| at = next,
                                 else => break,
                             },
-                            else => {
-                                open = true;
-                                break;
-                            },
+                            else => break,
                         }
                     }
                     sortKids(local.items);
-                    if (open) try RecordRow.addRow(a, &local);
+                    if (store.resolvedContent(at.ext) != .structure) try local.append(a.gpa, .{ .step = try a.places.rowOf(a.gpa, a.account, local.items), .id = try a.leaf(&a.var_id, .@"var") });
                     return a.structural(.record, 0, local.items);
                 },
                 .app => |ap| {
@@ -350,6 +345,12 @@ pub const Adapter = struct {
                 },
             },
         }
+    }
+
+    /// The kids of node `ext` when it is a record, a template's row argument; else null.
+    fn recordKids(a: *Adapter, ext: ?u32) ?[]const Kid {
+        const n = a.nodes.items[ext orelse return null];
+        return if (n.kind == .structural and n.place_kind == .record) a.kids.items[n.a..][0..n.b] else null;
     }
 
     fn sortKids(kids: []Kid) void {
@@ -414,9 +415,10 @@ pub const Adapter = struct {
                 defer kids.deinit(a.gpa);
                 const r = if (tag == .type_record) Bir.inlineRange(d) else bir.subRange(@fromBackingInt(d.rhs));
                 for (bir.extraSlice(r, Bir.Field)) |fld| try kids.append(a.gpa, .{ .step = try Step.field(a.account, a.rank(bir.symbol(fld.name))), .id = done.get(fld.value.int()).? });
-                const open = tag == .type_record_ext and try RecordRow.substitute(a, done.get(d.lhs), &kids);
+                const ext = if (tag == .type_record_ext) a.recordKids(done.get(d.lhs)) else @as(?[]const Kid, &.{});
+                for (ext orelse &.{}) |ek| if (ek.step.kind == .field) try kids.append(a.gpa, ek);
                 sortKids(kids.items);
-                if (open) try RecordRow.addRow(a, &kids);
+                if (ext == null or (ext.?.len != 0 and ext.?[ext.?.len - 1].step.isRow())) try kids.append(a.gpa, .{ .step = try a.places.rowOf(a.gpa, a.account, kids.items), .id = try a.leaf(&a.var_id, .@"var") });
                 return a.structural(.record, 0, kids.items);
             },
             .type_app => {

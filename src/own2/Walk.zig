@@ -18,7 +18,6 @@ const Ids = @import("Ids.zig");
 const Facts = @import("Facts.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
-const RecordRow = @import("RecordRow.zig");
 const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
@@ -451,13 +450,14 @@ const Walker = struct {
                                 const ca = fr.places.ctorArgOf(st);
                                 if (x.form == .ctor and ca[0] == x.head and ca[1] < ks.len) return ks[ca[1]];
                             },
+                            .row => return fr.mk(.{ .kind = .top, .site = v }),
                             else => {},
                         }
                         return fr.scalar();
                     },
                     .record => {
                         if (kind != .plain) return fr.scalar();
-                        return RecordRow.kid(fr, v, Step.fromWord(a));
+                        return fr.recordKid(v, Step.fromWord(a));
                     },
                     .list => switch (kind) {
                         .front, .back => {

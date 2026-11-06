@@ -255,7 +255,7 @@ fn descend(w: *Walk, it: Item) Error!void {
             // steps to the cycle's place; its own levels below by its slots.
             var to: std.ArrayList(u32) = .empty;
             defer to.deinit(g);
-            if (place != origin and x.family == Slots.empty) try StepsTo.of(e, e.f.pos.items[x.pos].slot, origin, &to);
+            if (place != origin and x.family == Slots.empty) try StepsTo.of(e.gpa(), e.account(), e.places(), e.f.pos.items[x.pos].slot, origin, &to);
             var lv: std.ArrayList(u32) = .empty;
             defer lv.deinit(g);
             for (w.runs.items[it.run]) |r| {

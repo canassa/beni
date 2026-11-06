@@ -1,0 +1,2 @@
+# v2 refuses an edit of what a closure in a row holds (§2.1, The row of a record).
+25:9 list_still_used List.push
