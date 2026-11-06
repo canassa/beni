@@ -71,10 +71,10 @@ platforms/browser-tea/Tea.beni               Tea.sandbox              8e3b27e500
 platforms/browser-tea/Tea.beni               Tea.element              b4024695983c46b54e8cf3822573fbefcf65bc38cb76e55468e728e2bac6f523
 platforms/browser-tea/Tea.beni               Tea.document             1f37469ef95b2ebf4b679547bdc80d9432c4ea5b6169438bd44bb70b6aa58c29
 platforms/browser-tea/Tea.beni               Tea.application          e6200815da17feee44ee77949affb7e41153e018774051e8de9d9ef354b57311
-platforms/browser-inline/Tea.beni            Tea.sandbox              96d472d7f21eb30fba50355254735462bc88f18cef67aa0fc09492a26e6a832f
-platforms/browser-inline/Tea.beni            Tea.element              72619a0d0ef63f937d3f0f68e6412f3c60080726e7147812d277a075103fa579
-platforms/browser-inline/Tea.beni            Tea.document             592e29441537eab629dc45d2a107d82295dfc4eaf264bb836484de0c639d7293
-platforms/browser-inline/Tea.beni            Tea.application          4cd473372280c8571ec6cad16cf378da2ced9ceb5756437141f44a3d26c413b0
+platforms/browser-inline/Tea.beni            Tea.sandbox              a3a2d18901fd25edfe410a3df3ec3c45d8be0b7e0cd9fe54b9f23f292af59443
+platforms/browser-inline/Tea.beni            Tea.element              f89e6be7548770d0b369d157d385943c322cecd8f4c0518541690d78ede63dac
+platforms/browser-inline/Tea.beni            Tea.document             a10025fbe5ce431fa2520f8e50fcca1e57ead7e305e3695cefae384e7b13be7f
+platforms/browser-inline/Tea.beni            Tea.application          34131e7bb868f29f36b268193693fb48a83cf45ffec85250d9cc725e5651dc69
 tests/platforms/page/Page.js                 Page.sandbox             c72696a375ce50996c18cb35783240a89cec50b82254864acd5a2c4832a9df9e
 tests/platforms/page/runtime.js              Page.renderAttributes    b9978143277b8790644dc173f2eb7f1d3cb38da590ecf7fa790a86321ab30b1a
 tests/platforms/page/runtime.js              Page.create              4bfd151d7726aa70d50f176fc43e97f00cd3c775c0a32133e5ad84082ee0b9e6
