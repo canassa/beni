@@ -1,0 +1,10 @@
+-- check/bad: the same hidden `Dict` key as `AliasSharedHiddenKeyArgument`,
+-- with the alias in another module: its key kinds come from `Lib`, and the
+-- function key is refused at the application that follows a clean one
+-- (checker-v2.md §7.4, amended 2026-11-06). The golden is the one the read
+-- printed before the change.
+import Lib
+
+
+pair : Lib.X Int × Lib.X (Int → Int)
+pair = ( Lib.ok, 2 )

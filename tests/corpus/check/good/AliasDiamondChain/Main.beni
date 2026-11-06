@@ -1,0 +1,30 @@
+-- check/good: a diamond of aliases is read in time linear in its depth
+-- (checker-v2.md §7.4, amended 2026-11-06; #1475). `A{i} a = A{i-1} (A{i-1}
+-- a)` gives the outer application a new argument at every level, and the
+-- read keyed an alias by all its arguments' roots, so `A64 Int` expanded
+-- 2^64 bodies and the check never ended. An alias is now keyed by the
+-- arguments its type shows: the identity diamond forwards its argument,
+-- `K` shows none, `P` shows `a` only. Chain.beni reads each in its own
+-- module; this module reads them through Chain's interface (the
+-- constructor, `unhide`, `name`, `boxed`) and through Chain's declarations
+-- (the annotation of `six`). The golden is the interface, whose types keep
+-- the names the program wrote. It is not a `run/` fixture: the gates check
+-- every `run/` program with ownership v2 too, and v2 costs 4^depth on a
+-- value of such a type (#2121).
+import Chain exposing (Hidden)
+
+
+pub hidden : Hidden
+hidden = Hidden 5
+
+
+pub six : Chain.A64 Int
+six = Chain.unhide hidden + 1
+
+
+pub label : String
+label = Chain.name
+
+
+pub fortyTwo : Int
+fortyTwo = Chain.boxed.value + 1

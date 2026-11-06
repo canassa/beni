@@ -111,15 +111,11 @@ pub fn run(e: *Effects, in: Input) std.mem.Allocator.Error!void {
                     continue;
                 },
                 .method_call, .type_dispatch => {
-                    const site = in.dispatch.siteOf(at) orelse {
+                    const callee = in.dispatch.calleeOf(at) orelse {
                         eligible[d] = false;
                         continue;
                     };
-                    const callee = site.callee.unwrap() orelse {
-                        eligible[d] = false;
-                        continue;
-                    };
-                    if (!try termTarget(&reads, d, in.dispatch.term(callee), &edges)) eligible[d] = false;
+                    if (!try termTarget(&reads, d, callee, &edges)) eligible[d] = false;
                 },
                 // Reading an ordinary constant can evaluate an evidence thunk.
                 .top => {

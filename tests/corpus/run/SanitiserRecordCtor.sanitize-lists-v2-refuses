@@ -1,0 +1,4 @@
+# v2 refuses edits under a record built by its alias constructor (§2.1, #2056)
+34:9 list_still_used List.push
+37:9 list_still_used List.push
+40:9 list_still_used List.push

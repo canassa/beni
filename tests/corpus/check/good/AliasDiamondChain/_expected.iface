@@ -1,0 +1,12 @@
+module Chain
+  alias A64 a
+  type Hidden
+    Hidden/1
+  value boxed : P64 Int (A64 String)
+  value name : K64 Bool
+  value unhide : Hidden → A64 Int
+module Main
+  value fortyTwo : Int
+  value hidden : Hidden
+  value label : String
+  value six : A64 Int

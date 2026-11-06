@@ -86,7 +86,7 @@ pub fn comparison(env: Env, arity: u32) Error!Contract.Id {
 
 /// A constructor used as a function (§2.13.1): the result's `C#k` is
 /// argument `k`, slot for slot; a constructor duplicates nothing.
-pub fn ctor(env: Env, sig: Signature, ordinal: u32) Error!Contract.Id {
+pub fn ctor(env: Env, sig: Signature, ordinal: u32, ranks: []const u32) Error!Contract.Id {
     var d: Draft = .{ .arity = @intCast(sig.params.len), .flags = .{ .returns = true } };
     const r = try env.root(sig.result);
     d.flags.cross = !Slots.holdsAny(env.places, r);
@@ -94,10 +94,10 @@ pub fn ctor(env: Env, sig: Signature, ordinal: u32) Error!Contract.Id {
     for (sig.params, 0..) |p, k| {
         const from = try env.root(p.place);
         _ = try Draft.addEffect(&d.reads, env.arena, .{ .j = @intCast(k), .slot = Slots.root, .deep = true });
-        const st: Place.Step = if (env.places.kind(sig.result) == .record) blk: {
-            const steps = env.places.steps(sig.result).steps;
-            break :blk if (k < steps.len) steps[k] else continue;
-        } else try env.places.ctorStep(env.gpa, env.account, ordinal, @intCast(k));
+        const st: Place.Step = if (env.places.kind(sig.result) == .record)
+            (if (k < ranks.len) try Place.Step.field(env.account, ranks[k]) else continue)
+        else
+            try env.places.ctorStep(env.gpa, env.account, ordinal, @intCast(k));
         const at = (try env.places.extend(env.gpa, .growth(env.account), r, st)) orelse continue;
         try env.identity(&d, at, @intCast(k), from);
         for (env.slots.items(try Subtree.belowAll(env.slots, env.gpa, env.account, env.places, from))) |s| {

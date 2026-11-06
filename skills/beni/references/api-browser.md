@@ -20,7 +20,7 @@ module Browser
   value hosted : { init : Host msg → model, settle : Host msg, model → model, update : Host msg, msg, model → model, view : model → Html msg } → Program  -- impure
   value installRendered : Value → ⊤  -- impure
   value mountAt : Program, String → Program  -- impure
-  value onRendered : Resume ⊤ → (⊤ → ⊤)  -- impure
+  value onRendered : Resume ⊤ → ⊤ → ⊤  -- impure
   value prerender : Program, List String → Program
   value program : { init : ⊤ → model, update : msg, model → model, view : model → Html msg } → Program  -- impure
   value programs : List Program → Program  -- impure
@@ -221,17 +221,17 @@ module Cmd
     Queue
     Concurrent
   alias Send a
-  value afterRender : ((Send msg) → ⊤) → Cmd msg  -- impure
+  value afterRender : (Send msg → ⊤) → Cmd msg  -- impure
   value batch : List (Cmd msg) → Cmd msg
   value cancel : k → Cmd msg where k.compare : k, k → Order
   value cancelAll : Cmd msg
   value do : (⊤ → ⊤) → Cmd msg  -- impure
   value items : Cmd msg → List (Item msg)
-  value keyed : k, Policy, ((Send msg) → ⊤) → Cmd msg where k.compare : k, k → Order  -- impure
+  value keyed : k, Policy, (Send msg → ⊤) → Cmd msg where k.compare : k, k → Order  -- impure
   value log : Level, String → Cmd msg  -- impure
   value map : Cmd a, k, (a → msg) → Cmd msg where k.compare : k, k → Order  -- impure
   value none : Cmd msg
-  value perform : ((Send msg) → ⊤) → Cmd msg  -- impure
+  value perform : (Send msg → ⊤) → Cmd msg  -- impure
   value task : (⊤ → a), (a → msg) → Cmd msg  -- impure
 module Dom
   type Align
@@ -289,10 +289,10 @@ module Hosted
   value eq : Key, Key → Bool
   value fibered : ⊤ → Bool  -- impure
   value hear : Relay msg → ⊤  -- impure
-  value hook : ((a → ⊤) → (⊤ → ⊤)), (a → msg) → Tap msg  -- impure
-  value job : ((Send msg) → ⊤) → Job msg  -- impure
+  value hook : ((a → ⊤) → ⊤ → ⊤), (a → msg) → Tap msg  -- impure
+  value job : (Send msg → ⊤) → Job msg  -- impure
   value key : k → Key where k.compare : k, k → Order
-  value later : ((Send msg) → ⊤) → Later msg  -- impure
+  value later : (Send msg → ⊤) → Later msg  -- impure
   value mapJob : Job a, (a → b) → Job b
   value mapLater : Later a, (a → b) → Later b  -- impure
   value mapTap : Tap a, (a → b) → Tap b  -- impure
@@ -302,7 +302,7 @@ module Hosted
   value run : Relay msg → ⊤  -- suspends
   value runHeard : Relay msg → ⊤  -- suspends
   value runJob : Job msg, Send msg → ⊤  -- suspends
-  value tap : ((Send a) → ⊤), (a → msg) → Tap msg  -- impure
+  value tap : (Send a → ⊤), (a → msg) → Tap msg  -- impure
   value title : String → ⊤  -- impure
   value unhear : Relay msg → ⊤  -- impure
 module Http
@@ -339,7 +339,7 @@ module Http
     GoodStatus_
   value emptyBody : Body
   value expectJson : Expect Error a where a.codec : ⊤ → Codec a  -- impure
-  value expectSchema : Schema e a → (Expect Error a)
+  value expectSchema : Schema e a → Expect Error a
   value expectString : Expect Error String
   value expectStringResponse : (Response String → Result x a) → Expect x a
   value expectWhatever : Expect Error ⊤
@@ -358,30 +358,30 @@ module Http
   value stringPart : String, String → Part
   value track : String, (Progress → msg) → Sub msg  -- impure
 module Listen
-  value each : ((a → ⊤) → (⊤ → ⊤)), (a → ⊤) → ⊤  -- suspends
-  value on : String, String, (Value → a), (a → ⊤) → (⊤ → ⊤)  -- impure
-  value on2 : String, String, String, (Value → a), (a → ⊤) → (⊤ → ⊤)  -- impure
+  value each : ((a → ⊤) → ⊤ → ⊤), (a → ⊤) → ⊤  -- suspends
+  value on : String, String, (Value → a), (a → ⊤) → ⊤ → ⊤  -- impure
+  value on2 : String, String, String, (Value → a), (a → ⊤) → ⊤ → ⊤  -- impure
 module Random
   alias Generator a
   alias Seed
-  value andThen : (Generator a), (a → (Generator b)) → (Generator b)
+  value andThen : Generator a, (a → Generator b) → Generator b
   value constant : a → Generator a
   value float : Float, Float → Generator Float
   value generate : Generator a, (a → msg) → Cmd msg  -- impure
   value independentSeed : Generator Seed
   value initialSeed : Int → Seed
   value int : Int, Int → Generator Int
-  value lazy : (⊤ → (Generator a)) → (Generator a)
-  value list : (Generator a), Int → (Generator (List a))
-  value map : (Generator a), (a → b) → (Generator b)
-  value map2 : (Generator a), (Generator b), (a, b → c) → (Generator c)
-  value map3 : (Generator a), (Generator b), (Generator c), (a, b, c → d) → (Generator d)
+  value lazy : (⊤ → Generator a) → Generator a
+  value list : Generator a, Int → Generator (List a)
+  value map : Generator a, (a → b) → Generator b
+  value map2 : Generator a, Generator b, (a, b → c) → Generator c
+  value map3 : Generator a, Generator b, Generator c, (a, b, c → d) → Generator d
   value maxInt : Int
   value minInt : Int
-  value pair : (Generator a), (Generator b) → (Generator (a × b))
-  value step : (Generator a), Seed → a × Seed
+  value pair : Generator a, Generator b → Generator (a × b)
+  value step : Generator a, Seed → a × Seed
   value uniform : a, List a → Generator a
-  value value : (Generator a) → a  -- impure
+  value value : Generator a → a  -- impure
   value weighted : Float × a, List (Float × a) → Generator a
 module Rt
   value attr : V, V, V → ⊤  -- impure
@@ -440,10 +440,10 @@ module Sub
     None
     Listen
   value batch : List (Sub msg) → Sub msg
-  value listen : k, ((Send a) → ⊤), (a → msg) → Sub msg where k.compare : k, k → Order  -- impure
+  value listen : k, (Send a → ⊤), (a → msg) → Sub msg where k.compare : k, k → Order  -- impure
   value map : Sub a, (a → msg) → Sub msg  -- impure
   value none : Sub msg
-  value on : k, ((a → ⊤) → (⊤ → ⊤)), (a → msg) → Sub msg where k.compare : k, k → Order  -- impure
+  value on : k, ((a → ⊤) → ⊤ → ⊤), (a → msg) → Sub msg where k.compare : k, k → Order  -- impure
   value taps : Sub msg → List (Key × Kind × Tap msg)
 module Time
   alias Duration

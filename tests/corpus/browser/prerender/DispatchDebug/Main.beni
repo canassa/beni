@@ -1,0 +1,58 @@
+-- A prerendered `view` that calls methods whose only effect is `Debug.log`
+-- (docs/design/prerender.md §3.1, amended for #1247): `<` on `Box` calls
+-- this module's `compare`, and `model.trip.label` calls `Meter.label`, a
+-- function of another module. The checker answers both calls impure, and
+-- the build follows each to the function the dispatch resolves to, where
+-- the one call with an effect is `Debug.log`'s, whose value is its
+-- argument. So the program prerenders. The build refused both calls
+-- before: it did not follow a dispatch target.
+import Browser
+import Html exposing (Html)
+import Meter exposing (Meter)
+import Tea
+
+
+type Box
+    = Box Int
+
+
+pub compare : Box, Box → Order
+compare (Box a) (Box b) =
+    if a < 0 then Debug.log "negative" LT else if a < b then LT else if a > b then GT else EQ
+
+
+type alias Model =
+    count : Int
+    trip : Meter
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1, trip = Meter.Meter (model.count + 1) }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>{if Box model.count < Box 1 then "low" else "high"}</output>
+        <p>{model.trip.label}</p>
+        <button data-role="inc" onClick={Inc}>+</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt
+            (Tea.sandbox
+                { init = λ⊤ → { count = 0, trip = Meter.Meter 0 }, update = update, view = view }
+            )
+            "root"
+        )
+        [ "/" ]

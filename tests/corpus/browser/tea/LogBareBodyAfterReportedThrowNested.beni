@@ -1,0 +1,54 @@
+-- `LogBareBodyAfterReportedThrow` with two scopes in `Boom`'s `update`:
+-- an `annotate`, a `bracket` in it, and a second `annotate` in the
+-- `bracket`, where it throws. The DOM reports the throw, and the body,
+-- which has no fiber and no context, goes on (#859). After `update`,
+-- `send` puts back the defaults (boundary.md §9.8.16 (b), amended
+-- 2026-11-06, #1153), so the rest of the body has no context. At the
+-- teardown, `Boom`'s release has the context of the scope it was opened
+-- in, `update=u`.
+import Cmd exposing (Cmd)
+import Dom
+import Html exposing (Html)
+import Log
+import Sub
+import Task
+import Tea
+
+
+type Msg
+    = Go
+    | Boom
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Go →
+            ( n + 1
+            , Cmd.perform λ_ →
+                _ = Dom.focus "target"
+                Log.info "the body, after the focus"
+            )
+
+        Boom →
+            Log.annotate "update" "u" λ⊤ →
+                Log.info "Boom's update"
+                Task.bracket (λ⊤ → ⊤) (λ_ _ → Log.info "Boom's release") λ_ →
+                    Log.annotate "step" "s" λ⊤ →
+                        Log.info "Boom's step"
+                        Debug.todo "Boom's update threw"
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <p id="n">{String.fromInt n}</p>
+        <button id="go" onClick={Go}>go</button>
+        <input id="target" onFocus={Boom} />
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

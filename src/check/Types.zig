@@ -60,6 +60,7 @@ const reads = @import("reads.zig");
 const InterfaceTerms = @import("InterfaceTerms.zig");
 const SchemaPlan = @import("SchemaPlan.zig");
 const Injective = @import("Injective.zig");
+const AliasShape = @import("AliasShape.zig");
 const TypeFacts = @import("TypeFacts.zig");
 const KeyKinds = @import("KeyKinds.zig");
 
@@ -133,6 +134,12 @@ pub const Entry = struct {
     /// alias, and for a schema endpoint, whose body this table does not
     /// read — false is always sound, it only costs the fast path.
     injective: bool = false,
+    /// Which parameter the expansion's chain ends at, and which ones the
+    /// type at its end shows (`AliasShape`, settled by `Injective.settle`):
+    /// what `Builder.apply` keys a later application by (checker-v2.md
+    /// §7.4, amended 2026-11-06). Unknown for anything that is not a plain
+    /// alias, which keys by every argument.
+    shape: AliasShape = .{},
 };
 
 /// Owned. One per declared type, in topological module order.
@@ -844,6 +851,12 @@ pub const Builder = struct {
     /// argument roots)`. Without it an alias body such as `( A a, A (List a)
     /// )` builds a new `List a` at every read of the body, the alias over it
     /// never meets the same root twice, and the DAG is a tree again.
+    ///
+    /// And an alias's finished expansion is kept by `(alias, SHOWN argument
+    /// roots)` (`AliasShape.key`, tagged so it never meets an exact key):
+    /// its chain end. In `A{i} a = A{i-1} (A{i-1} a)` the outer argument is
+    /// a new root at every level, so the exact key never matched and `A64
+    /// Int` was 2^64 bodies (checker-v2.md §7.4, amended 2026-11-06).
     aliases: AliasMemo = .empty,
     shared: ?*AliasMemo = null,
     /// Leave every alias this read meets unexpanded: an `alias` variable
@@ -1217,10 +1230,40 @@ pub const Builder = struct {
                 return b.store.freshErr(b.varRank());
             }
         }
+        // Expanded already in this read with the same SHOWN arguments
+        // (`AliasShape`, checker-v2.md §7.4 as amended 2026-11-06): one
+        // type, which prints the same expansion. A variable of its own
+        // arguments, whose `actual` is its forwarded argument or the first
+        // expansion's chain end; nothing is expanded again. Not while a
+        // key observer collects every application (`KeyKinds.Preparation`).
+        const shape: AliasShape = if (!b.shallow and args.len != 0 and b.key_observer == null and e.shape.fits(args.len)) e.shape else .{};
+        const shape_key: ?[]u32 = if (shape.known) try shape.key(b.store, @backingInt(id), args, b.scratch) else null;
+        // Ours until the memo takes it.
+        var owned = shape_key;
+        defer if (owned) |k| b.scratch.free(k);
+        if (shape_key) |k| if (b.memo().get(k)) |end| {
+            const v = try b.store.fresh(.{ .alias = .{ .type = id, .args = try b.store.addVars(args), .actual = shape.actualOf(args, end) } }, b.varRank());
+            try b.memo().put(b.scratch, key, v);
+            return v;
+        };
+        const issues_before = if (b.key_errors) |list| list.items.len else 0;
         const range = try b.store.addVars(args);
         const actual = if (b.shallow) try b.store.freshErr(b.varRank()) else try b.aliasBody(e, id, args);
         const v = try b.store.fresh(.{ .alias = .{ .type = id, .args = range, .actual = actual } }, b.varRank());
-        try b.memo().put(b.scratch, key, v);
+        // Both entries or neither: nothing can fail between them.
+        try b.memo().ensureUnusedCapacity(b.scratch, 2);
+        b.memo().putAssumeCapacity(key, v);
+        // Only a clean expansion is shared: one that ran out of depth or met
+        // a key-kind issue is read again at every application, as before, so
+        // each gets what it got.
+        const issues_after = if (b.key_errors) |list| list.items.len else 0;
+        if (shape_key) |k| if (!b.too_deep and issues_after == issues_before) {
+            const slot = b.memo().getOrPutAssumeCapacity(k);
+            if (!slot.found_existing) {
+                slot.value_ptr.* = shape.endOf(b.store, actual);
+                owned = null;
+            }
+        };
         return v;
     }
 

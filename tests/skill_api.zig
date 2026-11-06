@@ -10,7 +10,8 @@
 //! to read a type, and the dump in a `text` fence — rewritten into beni's
 //! own notation (§12.1): an agent copies a signature from this file, so it
 //! holds nothing a program cannot write. Every effect class (`!e1`,
-//! `!(impure | e1)`, `!sync`), the words `foreign` and `markup`, the mark
+//! `!(impure | e1)`, `!sync`) and the parentheses that held only one, the
+//! words `foreign` and `markup`, the mark
 //! `(equatable)` and a constructor's `/n` arity go; `Never` is written `⊥`;
 //! a value whose own result is `impure` or `suspends` keeps that one fact
 //! as a trailing comment. The black-box gate (`tests/blackbox/skill_test.zig`)
@@ -197,26 +198,95 @@ fn tailClass(s: []const u8) ?[]const u8 {
     return class;
 }
 
-/// `s` without any ` !<class>`: a name, or a parenthesised join.
+/// `s` without any ` !<class>` — a name, or a parenthesised join — and
+/// without the parentheses the dump writes only to hold one
+/// (`src/check/Render.zig`'s `write`): the type then reads as a
+/// diagnostic prints it.
 fn stripClasses(arena: Allocator, s: []const u8) ![]const u8 {
-    var out: std.ArrayList(u8) = .empty;
+    const drop = try arena.alloc(bool, s.len);
+    @memset(drop, false);
     var i: usize = 0;
     while (i < s.len) {
-        if (s[i] == ' ' and i + 1 < s.len and s[i + 1] == '!') {
-            var j = i + 2;
-            if (j < s.len and s[j] == '(') {
-                while (j < s.len and s[j] != ')') j += 1;
-                if (j < s.len) j += 1;
-            } else {
-                while (j < s.len and std.ascii.isAlphanumeric(s[j])) j += 1;
-            }
-            i = j;
+        if (!(s[i] == ' ' and i + 1 < s.len and s[i + 1] == '!')) {
+            i += 1;
             continue;
         }
-        try out.append(arena, s[i]);
-        i += 1;
+        var end = i + 2;
+        if (end < s.len and s[end] == '(') {
+            while (end < s.len and s[end] != ')') end += 1;
+            if (end < s.len) end += 1;
+        } else {
+            while (end < s.len and std.ascii.isAlphanumeric(s[end])) end += 1;
+        }
+        @memset(drop[i..end], true);
+        // The group this class closes, `(Cmd msg !e1)`, and the group it
+        // follows, `→ (⊤ → ⊤) !impure`.
+        if (end < s.len and s[end] == ')') dropGroup(s, drop, end, i);
+        if (i > 0 and s[i - 1] == ')') dropGroup(s, drop, i - 1, null);
+        i = end;
+    }
+    var out: std.ArrayList(u8) = .empty;
+    for (s, drop) |c, d| {
+        if (!d) try out.append(arena, c);
     }
     return out.items;
+}
+
+/// Drop the parentheses of the group that closes at `close` when they held
+/// only a class. `class` is where the class inside the group starts, or
+/// null when the class follows the group.
+fn dropGroup(s: []const u8, drop: []bool, close: usize, class: ?usize) void {
+    var depth: usize = 0;
+    var at = close;
+    const open = while (at > 0) {
+        at -= 1;
+        switch (s[at]) {
+            ')' => depth += 1,
+            '(' => if (depth == 0) break at else {
+                depth -= 1;
+            },
+            else => {},
+        }
+    } else return;
+    const body = s[open + 1 .. class orelse close];
+    const needed = if (topLevel(body, " → "))
+        // A function needs them everywhere but as a result, where `→` is
+        // right-associative (language.md §3): the dump writes them there
+        // only to keep the result's class apart from the arrow's.
+        !std.mem.endsWith(u8, s[0..open], "→ ")
+    else if (class != null)
+        // A nominal type needs them only as an argument of an application,
+        // and only with arguments of its own: `List (Cmd msg)`.
+        topLevel(body, " ") and isArgument(s, open)
+    else
+        true;
+    if (!needed) {
+        drop[open] = true;
+        drop[close] = true;
+    }
+}
+
+/// Whether `needle` occurs in `s` outside every bracket.
+fn topLevel(s: []const u8, needle: []const u8) bool {
+    var depth: usize = 0;
+    for (s, 0..) |c, i| {
+        switch (c) {
+            '(', '{', '[' => depth += 1,
+            ')', '}', ']' => depth -|= 1,
+            else => if (depth == 0 and std.mem.startsWith(u8, s[i..], needle)) return true,
+        }
+    }
+    return false;
+}
+
+/// Whether the group that opens at `open` is an argument of a type
+/// application: a space after the end of an atom comes before it.
+fn isArgument(s: []const u8, open: usize) bool {
+    if (open < 2 or s[open - 1] != ' ') return false;
+    const before = s[0 .. open - 1];
+    if (std.mem.endsWith(u8, before, "⊤") or std.mem.endsWith(u8, before, "⊥")) return true;
+    const c = before[before.len - 1];
+    return std.ascii.isAlphanumeric(c) or c == '_' or c == ')' or c == '}' or c == ']';
 }
 
 /// The word `Never` as beni writes it, `⊥`.
@@ -244,9 +314,22 @@ test "a dump line becomes beni's notation" {
     const arena = arena_state.allocator();
     const cases = [_][2][]const u8{
         .{ "  value map : List a, (a → b !e1) → List b !e1", "  value map : List a, (a → b) → List b" },
-        .{ "  value back : Key, Int, (Error → msg !(e1 | sync)) → (Cmd msg !(impure | e1))", "  value back : Key, Int, (Error → msg) → (Cmd msg)" },
-        .{ "  value reload : ⊤ → (Cmd msg !impure)", "  value reload : ⊤ → (Cmd msg)" },
-        .{ "  value makeAndLog : ⊤ → (Cmd msg !impure) !impure", "  value makeAndLog : ⊤ → (Cmd msg)  -- impure" },
+        .{ "  value back : Key, Int, (Error → msg !(e1 | sync)) → (Cmd msg !(impure | e1))", "  value back : Key, Int, (Error → msg) → Cmd msg" },
+        .{ "  value reload : ⊤ → (Cmd msg !impure)", "  value reload : ⊤ → Cmd msg" },
+        .{ "  value makeAndLog : ⊤ → (Cmd msg !impure) !impure", "  value makeAndLog : ⊤ → Cmd msg  -- impure" },
+        // Parentheses that held only a class go with it; the ones a type
+        // needs stay.
+        .{ "  value andThen : (Generator a !e1), (a → (Generator b !(e1 | e2)) !e2) → (Generator b !(e1 | e2))", "  value andThen : Generator a, (a → Generator b) → Generator b" },
+        .{ "  value list : (Generator a !e1), Int → (Generator (List a) !e1)", "  value list : Generator a, Int → Generator (List a)" },
+        .{ "  value batch : List (Sub msg !e1) → (Sub msg !e1)", "  value batch : List (Sub msg) → Sub msg" },
+        .{ "  value all : List (Program !e1), Result ⊤ (Cmd msg !e1) → ⊤", "  value all : List Program, Result ⊤ (Cmd msg) → ⊤" },
+        .{ "  value pair : (Cmd msg !e1) × Int, { cmd : (Cmd msg !e1) } → ⊤", "  value pair : Cmd msg × Int, { cmd : Cmd msg } → ⊤" },
+        .{ "  value afterRender : ((Send msg !impure) → ⊤ !sync) → Cmd msg !impure", "  value afterRender : (Send msg → ⊤) → Cmd msg  -- impure" },
+        .{ "  value onRendered : Resume ⊤ → (⊤ → ⊤ !impure) !impure", "  value onRendered : Resume ⊤ → ⊤ → ⊤  -- impure" },
+        .{ "  value callback : (Resume a → (⊤ → ⊤) !(e1 | sync)) → a !suspends", "  value callback : (Resume a → ⊤ → ⊤) → a  -- suspends" },
+        .{ "  value hook : ((a → ⊤ !impure) → (⊤ → ⊤) !sync), (a → msg !sync) → Tap msg !impure", "  value hook : ((a → ⊤) → ⊤ → ⊤), (a → msg) → Tap msg  -- impure" },
+        .{ "  value upgraded : Value, Int → Maybe (Socket × (⊤ → ⊤ !impure)) !impure", "  value upgraded : Value, Int → Maybe (Socket × (⊤ → ⊤))  -- impure" },
+        .{ "  value int : Parser (Int → a !e1) a !e1", "  value int : Parser (Int → a) a" },
         .{ "  value sleep : Duration → ⊤ !suspends", "  value sleep : Duration → ⊤  -- suspends" },
         .{ "  value get : Ref a → a !impure", "  value get : Ref a → a  -- impure" },
         .{ "  value compare : List a, List a → Order !e1 where a.compare : a, a → Order !(e1 | sync)", "  value compare : List a, List a → Order where a.compare : a, a → Order" },
@@ -260,7 +343,7 @@ test "a dump line becomes beni's notation" {
         .{ "    Nothing", "    Nothing" },
         .{ "  type NeverKind", "  type NeverKind" },
         .{ "  value expectJson : Expect Error a !(impure | e1) where a.codec : ⊤ → Codec a !e1", "  value expectJson : Expect Error a where a.codec : ⊤ → Codec a  -- impure" },
-        .{ "  value value : (Generator a !e1) → a !(impure | e1)", "  value value : (Generator a) → a  -- impure" },
+        .{ "  value value : (Generator a !e1) → a !(impure | e1)", "  value value : Generator a → a  -- impure" },
         .{ "  value never : ⊥ → a", "  value never : ⊥ → a" },
         .{ "module Maybe", "module Maybe" },
     };

@@ -1067,6 +1067,59 @@ depth 32 checks at the process floor. Sharing an application is sound for the re
 alias is: one type written twice is one type, and unification would merge the two anyway. A type
 applied to nothing is a leaf and is not memoised. `perf_test.zig` holds the scenario.
 
+*Amended 2026-11-06: an alias is keyed by the arguments its type shows (#1475).* The memo above
+keys an alias by ALL its arguments' roots. In `A{i} a = A{i-1} (A{i-1} a)` the outer
+application's argument is the inner alias variable, which is a new root at every level, so no
+entry ever matched: `type Hidden = Hidden (A64 Int)`, a private constructor nothing calls, expanded
+2^64 bodies though its type is `Int`. Depth 20 cost 7.1 G instructions (ReleaseFast) and depth 24
+did not end in 15 s. An imported chain did the same in `InterfaceTerms`. But an alias's expansion
+is seen only through the end of its chain: `TypeStore.resolved` compresses every chain to its end
+(§7.1, *amended 2026-09-28*), and `Render` prints an alias by its name and arguments. The links of
+the chain, and the arguments only they hold, are part of no type. So `Injective.settle` also
+settles each plain alias's **shape** (`Types.Entry.shape`, `AliasShape`), over the nested aliases'
+shapes. Each parameter is one of three things:
+
+- **forwarded**: the expansion's chain ends at that argument's chain (`type alias Id a = a`, and
+  each `A{i}` above). At most one parameter is, and then none is shown;
+- **shown**: the argument is part of the type that the chain ends at. A printed alias there shows
+  every argument it has;
+- **hidden**: everything else. The argument reaches only links of the chain, or positions that a
+  nested alias drops (`type alias K a = String`).
+
+A read keeps a second entry per finished expansion: the alias and the roots of its SHOWN
+arguments, mapped to the expansion's chain end. A later application with the same shown roots,
+whatever its other arguments are, is a new `alias` variable with its own arguments and no new
+expansion. Its `actual` is its forwarded argument, or the first expansion's chain end. That is
+sound: the two applications are one type, and they print the same expansion, because the type at
+the chain's end is built from the shown arguments alone. A read then costs its distinct shown
+applications, and `A64 Int` costs 64 expansions. The exact entry above still answers first.
+Three things keep the old key, so that nothing changes there:
+
+- **An expansion that is not clean** — one that ran out of depth (`Builder.too_deep`) or met a
+  key-kind issue (§37) — is not entered. Each later application is read again and gets what it
+  got before.
+- **A shape that is not known** keys by every argument: an alias with more than 64 parameters, a
+  recursive one, and one whose expansion names a schema endpoint, a variable that is not a
+  parameter, a type that did not resolve, or a type with the wrong number of arguments (an `err`
+  in a read); and an application with fewer arguments than its shape names, which only an
+  interface record that does not describe itself can hold (`AliasShape.fits`). A schema endpoint
+  is read through the schema state (§11.5), and that read is left as it is.
+- **The key-kind preparation** (`KeyKinds.Preparation`, which notes every application its reads
+  make) does not use the entry.
+
+A hidden argument is still checked at each application. The preparation lifts every key-kind
+requirement in an alias's body, a hidden position's included, to the alias's own parameter, and
+`Builder.apply` checks those before it looks at either entry. So `X (Int → Int)`, with `X a = Y
+(Dict a Int)` and `Y z = Int`, is refused after a clean `X Int` as before
+(`check/bad/AliasSharedHiddenKeyArgument`, and its `Imported` twin across modules).
+
+An application found this way costs one level of the reader's depth, as a hit of the memo above
+does. The interface reader applies the same rule to an alias row, with the row's shape settled
+from its terms (`AliasShape.Rows`), once per reader. `run/AliasDiamondChain` reads three diamonds
+64 deep, in their module and through its interface. `check/bad/AliasSharedByShownArguments` holds
+messages over shared applications, with the golden that the read printed before the change.
+`perf_test.zig` holds the scenario. No corpus output changed.
+
 ### 7.5 Speculation (I14)
 
 `TypeStore.Snapshot` is `{ journal_len, vars, extra, want_links, obl_links, wanteds, obligations,

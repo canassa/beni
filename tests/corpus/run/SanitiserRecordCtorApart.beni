@@ -1,0 +1,27 @@
+-- A field of a record alias's constructor is that field and no other
+-- (`ownership-v2.md` §2.1, *A record alias's constructor*, #2056): writing `.xs` and
+-- holding `.a` touches two lists, by a pattern too.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias Pt =
+    xs : List Int
+    a : List Int
+
+
+main : Program
+main =
+    p = Pt [ 1 ] [ 2 ]
+    h = p.a
+    n = List.push p.xs 2
+    r =
+        case Pt [ 3 ] [ 4 ] of
+            Pt ys zs →
+                List.push ys (List.length zs)
+    Node.print (show n ++ "|" ++ show h ++ "|" ++ show r)

@@ -2099,42 +2099,70 @@ inLogContext context work =
     putSlots fiber old (work (pushFinalizer ⊤ λ⊤ → Js.set fiber "slots" old))
 
 
---| Whether the calling fiber has a log context of its own: one that
---| `withLogContext` set, and not the default. For `browser`'s `send`, which
---| runs a message's `update` with the program's context only when the
---| caller has another (`boundary.md` §9.8.16 (b), amended 2026-10-23). It
---| reads `slotted` first, so in a build in which nothing sets a slot it is
---| `False`, and a release build keeps no call of it.
-pub hasLogContext : ⊤ → Bool
-hasLogContext ⊤ = Js.read slotted && not (Js.isUndefined (currentLogContext ⊤))
-
-
---| Run `work`, which cannot wait, with the default log context, the
---| program's. Put the calling fiber's back at once when `work` returns or
---| throws. When `work` throws and leaves finalisers, the teardown runs
---| them first, with `work`'s context, then puts the fiber's back again.
-pub withoutLogContext : sync (⊤ → a) → a
-withoutLogContext work =
-    -- The record that holds the context, found as `slotRecord` finds it:
+--| Before a message's `update`: set the calling fiber's log-context slot
+--| to the default, the program's, and answer what `endUpdate` needs to
+--| put the caller's slots back. For `browser`'s `send`, which runs `update`
+--| between the two, in a `Js.finally` (`boundary.md` §9.8.16 (b), amended
+--| 2026-10-23 and 2026-11-06). It reads `slotted` first, so in a build in
+--| which nothing sets a slot it is undefined, and a release build keeps no
+--| call of it. The other slots stay the caller's.
+pub beginUpdate : ⊤ → Js.Value
+beginUpdate ⊤ =
+    -- The record that holds the slots, found as `slotRecord` finds it:
     -- `here ⊤` would make one, and `pushFinalizer` writes `finalising`.
     -- Each of those writes, even unreached, keeps a cell that a build with
-    -- no fiber folds away (`newFiber`'s `fibered`). `work` cannot wait, so
-    -- a `Js.finally` puts the old slots back, and no finaliser is needed;
-    -- nor is a write of `slotted`, which was set already.
-    c = Js.read current
-    holder = if Js.isNull c then Js.read outside else c
-    if Js.isNull holder then
-        work ⊤
+    -- no fiber folds away (`newFiber`'s `fibered`). `update` cannot wait,
+    -- so `send`'s `Js.finally` puts the old slots back, and no finaliser is
+    -- needed; nor is a write of `slotted`, which was set already.
+    if Js.read slotted then
+        c = Js.read current
+        holder = if Js.isNull c then Js.read outside else c
+        if Js.isNull holder then
+            Js.undefined
+        else
+            old = Js.get holder "slots"
+            below = finalizerCount holder
+            if Js.isNullish old || Js.isUndefined (Js.get old "logContext") then
+                ⊤
+            else
+                next = Js.call (Js.global "Object") "assign" [ Js.from {}, old ]
+                Js.set next "logContext" Js.undefined
+                Js.set holder "slots" next
+            Js.from λ⊤ → restoreSlots holder old below
     else
-        old = Js.get holder "slots"
-        below = finalizerCount holder
-        next = Js.call (Js.global "Object") "assign" [ Js.from {}, old ]
-        Js.set next "logContext" Js.undefined
-        Js.set holder "slots" next
-        Js.finally (λ⊤ → work ⊤) λ⊤ → restoreSlots holder old below
+        Js.undefined
 
 
--- Put `old` back as `holder`'s slots when `withoutLogContext`'s work ends.
+--| After a message's `update`, returned or thrown: put back the slots of
+--| the caller of `send` at once. When `update` throws and leaves
+--| finalisers, the teardown runs them first, with `update`'s slots. `mark`
+--| is what `beginUpdate` answered. It reads `slotted` first, so in a build
+--| in which nothing sets a slot a release build keeps no call of it.
+pub endUpdate : Js.Value → ⊤
+endUpdate mark =
+    if Js.read slotted then
+        if Js.isUndefined mark then
+            -- No record held a slot as `update` began, so every slot of the
+            -- caller was at its default: `update` set the first one, or
+            -- made the record outside any fiber. One that returned put back
+            -- every slot it set. One that threw may leave its slots on the
+            -- record, with the finalisers that put them back: the defaults
+            -- go back at once, under an entry that sets `update`'s slots
+            -- again for the teardown. Under that entry, the caller's own
+            -- finalisers and the restores of `update`'s scopes all have the
+            -- defaults, so where the restore of the defaults goes in the
+            -- list changes nothing.
+            c = Js.read current
+            holder = if Js.isNull c then Js.read outside else c
+            if Js.isNull holder || Js.isUndefined (Js.get holder "slots") then
+                ⊤
+            else
+                restoreSlots holder Js.undefined 0
+        else
+            Js.to (Js.apply mark [ Js.null ])
+
+
+-- Put `old` back as `holder`'s slots when a message's `update` ends.
 -- A `work` that returned took off every finaliser it put on. One that
 -- threw may leave some, an `annotate`'s restore or a `bracket`'s release,
 -- and the teardown runs them, last first, with the slots as they are at
