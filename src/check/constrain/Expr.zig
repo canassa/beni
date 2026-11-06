@@ -422,8 +422,13 @@ fn call(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var,
     }
     try open.append(scratch, try OpenCall.begin(g, inst, data, expected, category));
     while (true) {
+        // A copy, not a pointer: `ensureUnusedCapacity` below can move
+        // `open.items`. Only read.
         const top = open.items[open.items.len - 1];
         if (top.args.len == 0) break;
+        // A first argument a `Js` call may write in place is left to
+        // `finish`, which tries the in-place forms first, as before.
+        if (top.in_place & 1 != 0) break;
         const first = top.args[0];
         // `expr`'s own entry, for a call; past the limit, `expr` refuses it.
         if (bir.instTag(first) != .call or g.depth >= Generator.max_depth) break;
@@ -505,8 +510,8 @@ const OpenCall = struct {
     }
 
     /// The arguments from `from` on, then the conjunction of every part.
-    /// A first argument that is a call never takes the in-place path:
-    /// `objectFields` and `inPlaceLiteral` read only lists and strings.
+    /// `call` begins a first argument itself only when its position is not
+    /// one a `Js` call writes in place, so `from` 1 skips no in-place form.
     fn finish(c: *OpenCall, g: *Generator, from: usize) Error!Constraint {
         for (c.args[from..], c.arg_vars[from..], from..) |arg, v, i| {
             if (i < 8 and c.in_place & (@as(u8, 1) << @intCast(i)) != 0) {
