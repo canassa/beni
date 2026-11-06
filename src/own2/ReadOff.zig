@@ -12,6 +12,7 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const Replay = @import("Replay.zig");
 const Subtree = @import("Subtree.zig");
 const BelowSize = @import("BelowSize.zig");
 const Forest = @import("Forest.zig");
@@ -112,7 +113,7 @@ fn valueBody(s: *Sink, v: u32, q: PathId, out: Put.ResList, stack: ?*std.ArrayLi
                     .tuple => try Step.index(f.account, @intCast(n)),
                     .ctor => try f.places.ctorStep(gpa, f.account, x.head, @intCast(n)),
                     .list => Step.elem,
-                    .record => try Step.field(f.account, f.wordsOf(x.extra)[n]),
+                    .record => try Step.ofRank(f.account, f.wordsOf(x.extra)[n]),
                     .closure => Step.env,
                     .opaque_ => null,
                 };
@@ -354,7 +355,7 @@ fn callNode(s: *Sink, call: u32, which: u32, prefix: PathId, tags: u32, q: PathI
     try f.charge(.inspection, @intCast(1 + pw.len));
     for (pw) |w| {
         if (e.contracts.trees.open(n).len != 0) return false;
-        n = e.contracts.trees.kidAt(n, w) orelse return true;
+        n = e.contracts.trees.kidAt(n, w) orelse return e.contracts.trees.rowKid(n, w) == null;
     }
     const got = (try callNodeAt(s, call, which, c, n, prefix, tags, q, false, out)) orelse return false;
     try Put.emitPart(s, q, got, out);
@@ -653,7 +654,7 @@ fn describeWide(s: *Sink, li: u32, q: PathId, out: Put.ResList) Error!void {
                 k -= 1;
                 var ps: std.ArrayList(u32) = .empty;
                 defer ps.deinit(gpa);
-                try Slots.replay(gpa, f.account, f.places, r.path, first[0..k], &ps);
+                try Replay.replay(gpa, f.account, f.places, r.path, first[0..k], &ps);
                 if (ps.items.len == 0) continue;
                 if (f.places.pathPlace(.from(ps.items[0])) == f.places.pathPlace(q)) {
                     base = k;
@@ -717,7 +718,7 @@ fn describeWide(s: *Sink, li: u32, q: PathId, out: Put.ResList) Error!void {
                 }
                 var ps: std.ArrayList(u32) = .empty;
                 defer ps.deinit(gpa);
-                try Slots.replay(gpa, f.account, f.places, q, w[b..], &ps);
+                try Replay.replay(gpa, f.account, f.places, q, w[b..], &ps);
                 if (ps.items.len == 0) try ps.append(gpa, q.int());
                 for (ps.items) |dest| switch (r.kind) {
                     .param => {
@@ -979,7 +980,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
                     const v = try e.ev.valueAt(call.args[a.j], f.slots.relWords(a.slot));
                     var ps: std.ArrayList(u32) = .empty;
                     defer ps.deinit(gpa);
-                    try Slots.replay(gpa, f.account, f.places, try f.places.rootPath(gpa, site.items[su.k]), es.wordsOf(rs), &ps);
+                    try Replay.replay(gpa, f.account, f.places, try f.places.rootPath(gpa, site.items[su.k]), es.wordsOf(rs), &ps);
                     for (ps.items) |p2| try describe(s, v, .from(p2), .{ .label = at, .k = su.k });
                 }
             };

@@ -23,6 +23,9 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const Replay = @import("Replay.zig");
+const RecordRow = @import("RecordRow.zig");
+const StepsTo = @import("StepsTo.zig");
 const LevelCycle = @import("LevelCycle.zig");
 const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
@@ -372,7 +375,9 @@ pub const Eval = struct {
 
     /// The objects of value `v` at relative steps `words`: what an arrival
     /// at those steps names in this frame. `deep`: every object below too.
-    pub fn project(e: *Eval, v: u32, words: []const u32, deep: bool, tags: u32, route: u32, out: *std.ArrayList(Proj)) Error!void {
+    pub fn project(e: *Eval, v: u32, words: []const u32, deep0: bool, tags: u32, route: u32, out: *std.ArrayList(Proj)) Error!void {
+        // A row's objects are read whole: no step below it names one (§2.1).
+        const deep = deep0 or Replay.endsInRow(words);
         const given = e.tail_place;
         e.tail_place = .none;
         const Item = struct { v: u32, at: u32, tags: u32, route: u32 };
@@ -383,6 +388,12 @@ pub const Eval = struct {
             try e.charge(.inspection, 1);
             const x = e.f.val(it.v);
             const rest = words[it.at..];
+            // A row step followed by a field's or a wider row's is that step (§2.1).
+            if (rest.len > 1 and Step.fromWord(rest[0]).isRow() and Step.fromWord(rest[1]).inRow()) {
+                if (!e.places().rowHolds(Step.fromWord(rest[0]), Step.fromWord(rest[1]))) continue;
+                try stack.append(e.gpa(), .{ .v = it.v, .at = it.at + 1, .tags = it.tags, .route = it.route });
+                continue;
+            }
             switch (x.kind) {
                 .scalar, .bot => {},
                 .top, .host => try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = if (x.kind == .host) .host else .top, .root = if (x.kind == .top) x.site else none, .tags = it.tags }), .route = it.route }),
@@ -411,7 +422,7 @@ pub const Eval = struct {
                     defer inside.deinit(e.gpa());
                     for (tops) |t| {
                         const before = all.items.len;
-                        try Slots.replay(e.gpa(), e.account(), e.places(), .from(t), rest, &all);
+                        try Replay.replay(e.gpa(), e.account(), e.places(), .from(t), rest, &all);
                         if (all.items.len == before and rest.len != 0) {
                             const k = e.places().kind(e.places().pathPlace(.from(t)));
                             if (k == .@"opaque" or k == .@"var") {
@@ -453,9 +464,12 @@ pub const Eval = struct {
                         .elem => if (x.form == .list) {
                             for (ks, 0..) |k, n| try stack.append(e.gpa(), .{ .v = k, .at = it.at + 1, .tags = it.tags, .route = try e.routeStep(it.route, @intCast(n)) });
                         },
-                        .field => if (x.form == .record) {
-                            for (e.f.wordsOf(x.extra), 0..) |r, k| if (r == st.payload) try stack.append(e.gpa(), .{ .v = ks[k], .at = it.at + 1, .tags = it.tags, .route = try e.routeStep(it.route, @intCast(k)) });
-                        },
+                        .field, .row => if (x.form == .record) {
+                            for (e.f.wordsOf(x.extra), 0..) |r, k| {
+                                const hit = r == st.kidWord() or (st.isRow() and e.places().rowHolds(st, try Step.ofRank(e.account(), r)));
+                                if (hit) try stack.append(e.gpa(), .{ .v = ks[k], .at = it.at + 1, .tags = it.tags, .route = try e.routeStep(it.route, @intCast(k)) });
+                            }
+                        } else if (st.isRow()) try e.readAt(it.v, true, it.tags, try e.routeStep(it.route, none), out),
                         .env => if (x.form == .closure) {
                             // A closure's environment: its captures, whole.
                             for (ks, 0..) |k, n| try stack.append(e.gpa(), .{ .v = k, .at = @intCast(words.len), .tags = it.tags, .route = try e.routeStep(it.route, @intCast(n)) });
@@ -512,36 +526,6 @@ pub const Eval = struct {
         return true;
     }
 
-    /// The shortest steps from path `from` to a path at place `target`,
-    /// into `out` (nothing when there is none).
-    pub fn stepsTo(e: *Eval, from: PathId, target: PlaceId, out: *std.ArrayList(u32)) Error!void {
-        const pl = e.places();
-        const Item = struct { p: PathId, back: u32, word: u32 };
-        var queue: std.ArrayList(Item) = .empty;
-        defer queue.deinit(e.gpa());
-        var seen: Ids.FixedDict(1) = .{};
-        defer seen.deinit(e.gpa());
-        try queue.append(e.gpa(), .{ .p = from, .back = none, .word = 0 });
-        _ = try seen.getOrPut(e.gpa(), .{from.int()});
-        var qi: usize = 0;
-        while (qi < queue.items.len) : (qi += 1) {
-            const it = queue.items[qi];
-            try e.charge(.path, 1);
-            if (qi != 0 and pl.pathPlace(it.p) == target) {
-                var k: u32 = @intCast(qi);
-                while (k != 0 and queue.items[k].back != none) : (k = queue.items[k].back) try out.append(e.gpa(), queue.items[k].word);
-                std.mem.reverse(u32, out.items);
-                return;
-            }
-            for (pl.steps(pl.pathPlace(it.p)).steps) |st| {
-                if (st.kind == .level) continue;
-                const nx = (try pl.extend(e.gpa(), e.f.gc(), it.p, st)) orelse continue;
-                if ((try seen.getOrPut(e.gpa(), .{nx.int()})).found_existing) continue;
-                try queue.append(e.gpa(), .{ .p = nx, .back = @intCast(qi), .word = st.word() });
-            }
-        }
-    }
-
     /// `⟲` into a built value, at `place` (`LevelCycle`): the values one or more levels below, at the
     /// same place, through the parts that stay on its cycle; then `rest`
     /// from each (the experiment's fourth requirement). A part not built
@@ -585,7 +569,7 @@ pub const Eval = struct {
                     // `T`): its next level is the steps to the cycle's place.
                     var to: std.ArrayList(u32) = .empty;
                     defer to.deinit(e.gpa());
-                    if (it.place != place and x.family == Slots.empty) try e.stepsTo(e.f.pos.items[x.pos].slot, place, &to);
+                    if (it.place != place and x.family == Slots.empty) try StepsTo.of(e, e.f.pos.items[x.pos].slot, place, &to);
                     // Its own levels below, by its slots (never its own storage).
                     var lv: std.ArrayList(u32) = .empty;
                     defer lv.deinit(e.gpa());
@@ -708,6 +692,11 @@ pub const Eval = struct {
             while (si < list.items.items.len) : (si += 1) {
                 const rs = list.items.items[si];
                 const rw = e.f.slots.relWords(rs.slot);
+                // A member's row is read by the caller's own step (§2.1).
+                if (Replay.inRowOf(rw, words)) {
+                    if (rs.node == 0) try e.feedDraft(ki, rs.a, @intCast(rw.len - 1), true);
+                    continue;
+                }
                 if (rw.len > words.len or !std.mem.eql(u32, rw, words[0..rw.len])) continue;
                 if (rs.node == 0) {
                     if (rw.len == words.len or list.isOpen(rs)) try e.feedDraft(ki, rs.a, @intCast(rw.len), list.isOpen(rs));
@@ -790,7 +779,11 @@ pub const Eval = struct {
                     const rel = e.f.slots.rels.find(pw[0..d]) orelse try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), pw[0..d]);
                     for (opens) |a| try e.feedBelow(ki, rel, true, a);
                 }
-                n = e.contracts.trees.kidAt(n, pw[d]) orelse break;
+                n = e.contracts.trees.kidAt(n, pw[d]) orelse {
+                    // Below a row: its arrivals, by the prefix's own steps.
+                    if (e.contracts.trees.rowKid(n, pw[d])) |r| try RecordRow.feed(e, ki, r, pw[0..d]);
+                    break;
+                };
             }
         } else try e.addBelow(ki, try e.f.leaf(.{ .kind = .top }), prefix.int() | open_bit);
         e.inst_depth -= 1;
@@ -846,10 +839,12 @@ pub const Eval = struct {
             defer paths.deinit(e.gpa());
             try paths.appendSlice(e.gpa(), col.at(rel).?);
             if (paths.items.len == 0) try paths.append(e.gpa(), k.slot.int());
-            for (paths.items) |at0| try e.feedAt(ki, .from(at0), @intCast(rw.len), open, a);
+            // A row's arrival is read by each caller slot it names, from that slot's own step (§2.1).
+            const n = if (Replay.endsInRow(rw)) rw.len - 1 else rw.len;
+            for (paths.items) |at0| try e.feedAt(ki, .from(at0), @intCast(n), open, a);
         } else if (open and rw.len < pw.len and std.mem.eql(u32, rw, pw[0..rw.len])) {
             try e.feedAt(ki, k.slot, @intCast(rw.len), true, a);
-        }
+        } else if (Replay.inRowOf(rw, pw)) try e.feedAt(ki, k.slot, @intCast(rw.len - 1), true, a);
     }
 
     /// Arrival `a` of an entry `n` steps from the call's root, read at the
@@ -860,7 +855,9 @@ pub const Eval = struct {
     /// once, and at each slot below through that slot's own key (`instAt`),
     /// which every reader of the slot shares. A plain entry's atom is itself
     /// at `base`; any other plain arrival is read through `base`'s key.
-    fn feedAt(e: *Eval, ki: u32, base: PathId, n: u32, open: bool, a: Contract.Arrival) Error!void {
+    fn feedAt(e: *Eval, ki: u32, base: PathId, n: u32, open: bool, a0: Contract.Arrival) Error!void {
+        var a = a0;
+        if ((a.kind == .param or a.kind == .cb or a.kind == .lent) and Replay.endsInRow(e.f.slots.relWords(a.slot))) a.deep = false;
         const k = e.keys.items[ki];
         const saved = e.cur_sub;
         defer e.cur_sub = saved;
@@ -1127,7 +1124,7 @@ pub const Eval = struct {
     }
 
     /// An arrival of call `call`'s contract `c`, as leaves of this frame.
-    pub fn arrivalLeaves(e: *Eval, call: u32, _: Contract.Id, a: Contract.Arrival, suffix: []const u32, out: *std.ArrayList(u32)) Error!void {
+    pub fn arrivalLeaves(e: *Eval, call: u32, _: Contract.Id, a0: Contract.Arrival, suffix: []const u32, out: *std.ArrayList(u32)) Error!void {
         // What these fill is kept: never read under a pass (§2.3.4).
         const saved_pass = e.pass;
         e.pass = 0;
@@ -1136,6 +1133,9 @@ pub const Eval = struct {
         const cl = e.f.calls.items[call];
         var words: std.ArrayList(u32) = .empty;
         defer words.deinit(e.gpa());
+        var a = a0;
+        // A caller's slot in a row is that slot of the argument, by structure (§2.1).
+        if (suffix.len != 0 and a.kind != .fresh and a.kind != .top and a.kind != .host and a.kind != .shared and Replay.endsInRow(e.f.slots.relWords(a.slot))) a.deep = false;
         if (a.kind == .param or a.kind == .cb or a.kind == .lent) try words.appendSlice(e.gpa(), e.f.slots.relWords(a.slot));
         try words.appendSlice(e.gpa(), suffix);
         const start = out.items.len;
@@ -1146,7 +1146,7 @@ pub const Eval = struct {
             .param, .lent => {
                 if (a.j >= cl.args.len) return out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
                 try e.routed(e, cl.args[a.j], words.items, a.deep, if (suffix.len == 0 and a.kind == .param) a.path else none, out);
-                if (out.items.len == start and words.items.len != 0) try FoldRead.read(e, cl.args[a.j], words.items, out);
+                if (out.items.len == start and words.items.len != 0 and !Replay.excluded(e.places(), words.items)) try FoldRead.read(e, cl.args[a.j], words.items, out);
                 if (a.kind == .lent) try e.lend(out, start, null, call);
             },
             .cb => {
@@ -1177,7 +1177,7 @@ pub const Eval = struct {
         const r = e.f.roots.items[e.f.calls.items[vc].root];
         var all: std.ArrayList(u32) = .empty;
         defer all.deinit(e.gpa());
-        try Slots.replay(e.gpa(), e.account(), e.places(), r.path, words, &all);
+        try Replay.replay(e.gpa(), e.account(), e.places(), r.path, words, &all);
         if (all.items.len == 0) {
             // A slot the answer's place cannot name (a type
             // variable's, `a → a` answering at `.values`): the

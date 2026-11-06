@@ -45,6 +45,8 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const stamped = @import("../stamped.zig");
+const RowSets = @import("RowSets.zig").RowSets;
+const StepWord = @import("StepWord.zig");
 
 pub const PlaceId = Ids.PlaceId;
 pub const PathId = Ids.PathId;
@@ -111,61 +113,9 @@ pub const Holds = packed struct(u8) {
     }
 };
 
-pub const StepKind = enum(u4) {
-    /// `.f`: the payload is the field name's text rank.
-    field,
-    /// `.i`: a tuple index.
-    index,
-    /// `C#i`: the payload indexes the table's interned `(constructor,
-    /// argument)` pairs; canonical order among them is by the pair.
-    ctor_arg,
-    /// `[*]`.
-    elem,
-    /// `◆`.
-    contents,
-    /// `◇`.
-    env,
-    /// `⟨n⟩`: an opaque type's published slot.
-    slot,
-    /// `⟲`: one or more levels below a recursive place. Payload 0.
-    level,
-};
-
-/// A step, one word: `kind` in the top four bits (§3.1).
-pub const Step = packed struct(u32) {
-    payload: u28,
-    kind: StepKind,
-
-    pub const level: Step = .{ .kind = .level, .payload = 0 };
-    pub const elem: Step = .{ .kind = .elem, .payload = 0 };
-    pub const contents: Step = .{ .kind = .contents, .payload = 0 };
-    pub const env: Step = .{ .kind = .env, .payload = 0 };
-
-    /// A payload past 28 bits is the named format limit `step_payload`, never a truncation.
-    fn checked(account: *Account, kind: StepKind, payload: u32) Ids.AccountError!Step {
-        try account.limit(.step_payload, @as(u64, payload) + 1);
-        return .{ .kind = kind, .payload = @intCast(payload) };
-    }
-
-    pub fn field(account: *Account, rank: u32) Ids.AccountError!Step {
-        return checked(account, .field, rank);
-    }
-    pub fn index(account: *Account, i: u32) Ids.AccountError!Step {
-        return checked(account, .index, i);
-    }
-    pub fn slot(account: *Account, n: u32) Ids.AccountError!Step {
-        return checked(account, .slot, n);
-    }
-    pub fn word(s: Step) u32 {
-        return @bitCast(s);
-    }
-    pub fn fromWord(w: u32) Step {
-        return @bitCast(w);
-    }
-    pub fn eql(a: Step, b: Step) bool {
-        return a.word() == b.word();
-    }
-};
+pub const StepKind = StepWord.StepKind;
+pub const Step = StepWord.Step;
+pub const row_rank = StepWord.row_rank;
 
 /// One child of a type node, as a `Source` describes it.
 pub const Child = struct { step: Step, @"var": u32 };
@@ -280,6 +230,8 @@ pub const Table = struct {
     /// their index, so a module has 2²⁸ of them (`ctor_steps`); the
     /// canonical order among them is by the pair (`stepLess`).
     ctor_args: Ids.FixedDict(2) = .{},
+    /// Row steps: the sets of field ranks each excludes, the payload their index.
+    rows: RowSets = .{},
     /// `hits` and `up`'s memos, path → a run of `fold_runs` into
     /// `fold_paths` (§2.7, *A read that leaves its path on a cycle*).
     hit_memo: Ids.IdColumn(PathId) = .{},
@@ -305,6 +257,7 @@ pub const Table = struct {
         t.path_index.deinit(gpa);
         t.extend_memo.deinit(gpa);
         t.ctor_args.deinit(gpa);
+        t.rows.deinit(gpa);
         t.hit_memo.deinit(gpa);
         t.up_memo.deinit(gpa);
         t.level_memo.deinit(gpa);
@@ -383,6 +336,24 @@ pub const Table = struct {
         const got = try t.ctor_args.getOrPut(gpa, .{ c, i });
         if (!got.found_existing) got.value_ptr.* = got.index;
         return .{ .kind = .ctor_arg, .payload = @intCast(got.value_ptr.*) };
+    }
+
+    /// The row step that excludes `ranks`, sorted (§2.1, *The row of a record*).
+    pub fn rowStep(t: *Table, gpa: Allocator, account: *Account, ranks: []const u32) Error!Step {
+        try account.reserve(.path, @intCast(ranks.len + 1));
+        return .{ .kind = .row, .payload = @intCast(try t.rows.intern(gpa, ranks)) };
+    }
+
+    /// The field ranks row step `step` excludes, sorted.
+    pub fn rowNames(t: *const Table, step: Step) []const u32 {
+        std.debug.assert(step.kind == .row);
+        return t.rows.names(step.payload);
+    }
+
+    /// Whether row step `row` may stand for step `s`: a wider row, or a field it does not exclude.
+    pub fn rowHolds(t: *const Table, row: Step, s: Step) bool {
+        if (s.kind == .row) return true;
+        return s.kind == .field and std.mem.indexOfScalar(u32, t.rowNames(row), s.payload) == null;
     }
 
     /// The `(constructor, argument)` a `ctor_arg` step stands for.
@@ -1221,7 +1192,7 @@ const TestGraph = struct {
                 .contents => Step.contents,
                 .env => Step.env,
                 .slot => Step.slot(g.account, c.payload) catch unreachable,
-                .level => unreachable,
+                .level, .row => unreachable,
             };
             try out.append(g.gpa, .{ .step = step, .@"var" = c.@"var" });
         }

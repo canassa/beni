@@ -16,6 +16,7 @@
 //! Obligations kept here: none of §2.14's directly (tables only).
 
 const std = @import("std");
+const Place = @import("Place.zig");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Runs = @import("Runs.zig").Runs;
@@ -73,6 +74,15 @@ pub const Table = struct {
         t.arr_runs.deinit(gpa);
         t.arr_range.deinit(gpa);
         t.arrivals.deinit(gpa);
+    }
+
+    /// The kid of `n` at its row step, when `word` may be read from a row (§2.1): a field's
+    /// step or a row step `n` has no kid at. A node's kids sort by word, so it is the last.
+    pub fn rowKid(t: *const Table, n: Node, word: u32) ?Node {
+        if (!Place.Step.fromWord(word).inRow()) return null;
+        const ks = t.kids(n);
+        if (ks.len == 0 or !Place.Step.fromWord(ks[ks.len - 1][0]).isRow()) return null;
+        return ks[ks.len - 1][1];
     }
 
     /// The node of these arrivals and kids (sorted here), by content.

@@ -15,6 +15,7 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const Replay = @import("Replay.zig");
 const BelowSize = @import("BelowSize.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
@@ -555,7 +556,7 @@ pub fn pathAt(e: *Evaluation, at: Place.PlaceId, words: []const u32) Error!PathI
     const f = e.fr();
     var ps: std.ArrayList(u32) = .empty;
     defer ps.deinit(e.gpa());
-    try Slots.replay(e.gpa(), f.account, f.places, try f.places.rootPath(e.gpa(), at), words, &ps);
+    try Replay.replay(e.gpa(), f.account, f.places, try f.places.rootPath(e.gpa(), at), words, &ps);
     return if (ps.items.len != 0) .from(ps.items[0]) else .none;
 }
 

@@ -161,6 +161,9 @@ pub const Table = struct {
             if (s.kind == .ctor_arg) {
                 const ca = places.ctorArgOf(s);
                 try key.appendSlice(gpa, &.{ @backingInt(s.kind), ca[0], ca[1] });
+            } else if (s.isRow()) {
+                // One row step leaves a place, so its names order nothing.
+                try key.appendSlice(gpa, &.{ @backingInt(s.kind), 0, 0 });
             } else try key.appendSlice(gpa, &.{ @backingInt(s.kind), s.payload, 0 });
         }
         t.key_of.items[r] = try t.keys.intern(gpa, key.items);
@@ -388,47 +391,6 @@ pub fn isObject(places: *const Place.Table, p: PathId) bool {
 pub fn holdsAny(places: *const Place.Table, p: PathId) bool {
     const at = places.pathPlace(p);
     return !places.holds(at).isEmpty() or !Place.Kind.own(places.kind(at)).isEmpty();
-}
-
-/// Whether a `⟲` replayed at `at` folds onto it (a level or a return
-/// node), so `extend` names the levels; elsewhere a `⟲` is every level
-/// below at the same place (`Place.levelsOf`), never a path no type has
-/// (the experiment's fourth requirement).
-fn folds(places: *const Place.Table, at: PathId) bool {
-    if (places.pathParent(at) == .none) return false;
-    return places.pathStep(at).kind == .level or places.isReturn(at);
-}
-
-/// `from · words` as canonical paths, appended to `out` (each once): a
-/// `⟲` where `from`'s path does not fold is every level below at its own
-/// place, then the rest of the steps from each.
-pub fn replay(gpa: Allocator, account: *Ids.Account, places: *Place.Table, from: PathId, words: []const u32, out: *std.ArrayList(u32)) Error!void {
-    var cur: std.ArrayList(u32) = .empty;
-    defer cur.deinit(gpa);
-    var next: std.ArrayList(u32) = .empty;
-    defer next.deinit(gpa);
-    try cur.append(gpa, from.int());
-    for (words) |w| {
-        const st = Step.fromWord(w);
-        next.clearRetainingCapacity();
-        for (cur.items) |a| {
-            const at: PathId = .from(a);
-            try account.reserve(.path, 1);
-            if (st.kind == .level and !folds(places, at)) {
-                const r = try places.levelsOf(gpa, .growth(account), at);
-                var k: u32 = 0;
-                while (k < r.len) : (k += 1) try next.append(gpa, places.foldPath(r.start + k).int());
-                continue;
-            }
-            const nx = (try places.extend(gpa, .growth(account), at, st)) orelse continue;
-            try next.append(gpa, nx.int());
-        }
-        std.mem.sort(u32, next.items, {}, std.sort.asc(u32));
-        cur.clearRetainingCapacity();
-        for (next.items) |x| if (cur.items.len == 0 or cur.items[cur.items.len - 1] != x) try cur.append(gpa, x);
-        if (cur.items.len == 0) return;
-    }
-    try out.appendSlice(gpa, cur.items);
 }
 
 const testing = std.testing;

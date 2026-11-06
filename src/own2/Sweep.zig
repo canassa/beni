@@ -144,7 +144,7 @@ fn walkHolds(ev: *Relation.Eval, value: u32, root: PathId, out: *std.ArrayList(H
                         .tuple => try Place.Step.index(fr.account, @intCast(n)),
                         .ctor => try fr.places.ctorStep(g, fr.account, x.head, @intCast(n)),
                         .list => Place.Step.elem,
-                        .record => try Place.Step.field(fr.account, fr.wordsOf(x.extra)[n]),
+                        .record => try Place.Step.ofRank(fr.account, fr.wordsOf(x.extra)[n]),
                         .closure, .opaque_ => null,
                     };
                     const nq = if (st) |s| (try fr.places.extend(g, fr.gc(), it.q, s)) orelse it.q else it.q;

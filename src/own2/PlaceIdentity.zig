@@ -10,6 +10,7 @@
 //! Obligations kept here: none of §2.14's (an identity).
 
 const std = @import("std");
+const RowSets = @import("RowSets.zig");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
@@ -56,12 +57,13 @@ pub fn encode(t: *const Table, gpa: Allocator, root: PlaceId, names: Names, out:
             // A field's rank and a `C#i`'s intern index are this table's: the
             // word carries the kind alone and the name or pair follows, so
             // two tables write one type identically.
-            const w = if (s.kind == .field or s.kind == .ctor_arg) (Step{ .kind = s.kind, .payload = 0 }).word() else s.word();
+            const w = if (s.kind == .field or s.kind == .ctor_arg or s.kind == .row) (Step{ .kind = s.kind, .payload = 0 }).word() else s.word();
             try out.appendSlice(gpa, &.{ w, ordinal.get(c).? });
             // A field's name follows its step, through the string table.
             if (s.kind == .field) try out.append(gpa, names.field(names.ctx, s.payload));
             // A `C#i` payload is this table's intern index: the pair follows.
             if (s.kind == .ctor_arg) try out.appendSlice(gpa, &t.ctorArgOf(s));
+            if (s.kind == .row) try RowSets.write(gpa, out, t.rowNames(s), names.ctx, names.field);
         }
     }
 }
@@ -122,6 +124,13 @@ fn decodeInto(t: *Table, gpa: Allocator, account: *Account, words: []const u32, 
                 s = try t.ctorStep(gpa, account, words[at], words[at + 1]);
                 at += 2;
             }
+            if (s.kind == .row) {
+                if (at + 1 > words.len or words[at] > words.len - at - 1) return error.Malformed;
+                const ranks = try RowSets.mapped(gpa, words[at + 1 ..][0..words[at]], remap.ctx, remap.field);
+                defer gpa.free(ranks);
+                at += words[at] + 1;
+                s = try t.rowStep(gpa, account, ranks);
+            }
             if (j > 0 and !t.stepLess(Step.fromWord(@intCast(last)), s)) return error.Malformed;
             last = s.word();
             try t.step_tab.append(gpa, .{ .step = s, .child = .from(c) });
@@ -165,6 +174,8 @@ pub fn equals(ta: *const Table, a: PlaceId, tb: *const Table, b: PlaceId, gpa: A
             if (sx.kind != sy.kind) break false;
             if (sx.kind == .ctor_arg) {
                 if (!std.mem.eql(u32, &ta.ctorArgOf(sx), &tb.ctorArgOf(sy))) break false;
+            } else if (sx.kind == .row) {
+                if (!std.mem.eql(u32, ta.rowNames(sx), tb.rowNames(sy))) break false;
             } else if (!sx.eql(sy)) break false;
             try stack.append(gpa, .{ ta.step_tab.col.child[rx.start + i], tb.step_tab.col.child[ry.start + i] });
         } else true;
@@ -206,7 +217,7 @@ const TestGraph = struct {
                 .contents => Step.contents,
                 .env => Step.env,
                 .slot => Step.slot(g.account, c.payload) catch unreachable,
-                .level => unreachable,
+                .level, .row => unreachable,
             };
             try out.append(g.gpa, .{ .step = step, .@"var" = c.@"var" });
         }

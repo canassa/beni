@@ -9,6 +9,7 @@
 const std = @import("std");
 const Ids = @import("Ids.zig");
 const Slots = @import("Slots.zig");
+const Replay = @import("Replay.zig");
 
 /// The `var` slot, below a root, that `words` from `t` run past, into `out`:
 /// no step of a fold names the rest. False: `words` run past none.
@@ -19,7 +20,7 @@ pub fn prefix(e: anytype, t: Ids.PathId, words: []const u32, out: *std.ArrayList
     while (n > 1) {
         n -= 1;
         ps.clearRetainingCapacity();
-        try Slots.replay(e.gpa(), e.account(), e.places(), t, words[0..n], &ps);
+        try Replay.replay(e.gpa(), e.account(), e.places(), t, words[0..n], &ps);
         for (ps.items) |p| if (e.places().kind(e.places().pathPlace(.from(p))) == .@"var") {
             try out.append(e.gpa(), p);
             return true;

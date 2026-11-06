@@ -43,7 +43,7 @@ pub fn of(e: *Eval, v0: u32, at0: []const u32, out: *std.ArrayList(Part)) Error!
                         .tuple => try Step.index(f.account, @intCast(n)),
                         .ctor => try f.places.ctorStep(g, f.account, x.head, @intCast(n)),
                         .list => Step.elem,
-                        .record => try Step.field(f.account, f.wordsOf(x.extra)[n]),
+                        .record => try Step.ofRank(f.account, f.wordsOf(x.extra)[n]),
                         .closure, .opaque_ => null,
                     };
                     const at = if (st) |stp| try std.mem.concat(e.arena, u32, &.{ it.at, &.{stp.word()} }) else it.at;

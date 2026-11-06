@@ -11,6 +11,7 @@
 //! what it meant at the writer: validated by re-encoding).
 
 const std = @import("std");
+const BlockStep = @import("BlockStep.zig");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
@@ -21,7 +22,7 @@ const BlockNames = @import("BlockNames.zig");
 const BlockCalled = @import("BlockCalled.zig");
 
 pub const magic: u32 = 0x324e574f;
-pub const version: u32 = 26;
+pub const version: u32 = 27;
 pub const Error = Ids.ChargeError || error{BadBlock};
 const Step = Place.Step;
 
@@ -45,20 +46,7 @@ const Writer = struct {
 
     pub fn rel(w: *Writer, r: Slots.Rel) Allocator.Error!void {
         try w.word(@intCast(w.slots.relWords(r).len));
-        for (w.slots.relWords(r)) |wd| try w.step(wd);
-    }
-
-    /// One step as `(kind, a, b)`.
-    fn step(w: *Writer, wd: u32) Allocator.Error!void {
-        const s = Step.fromWord(wd);
-        switch (s.kind) {
-            .field => try w.out.appendSlice(w.gpa, &.{ @backingInt(s.kind), w.names.field(w.names.ctx, s.payload), 0 }),
-            .ctor_arg => {
-                const ca = w.places.ctorArgOf(s);
-                try w.out.appendSlice(w.gpa, &.{ @backingInt(s.kind), ca[0], ca[1] });
-            },
-            else => try w.out.appendSlice(w.gpa, &.{ @backingInt(s.kind), s.payload, 0 }),
-        }
+        for (w.slots.relWords(r)) |wd| try BlockStep.write(w, wd);
     }
 
     fn cond(w: *Writer, c: Contract.StoredCond) Allocator.Error!void {
@@ -95,7 +83,7 @@ const Writer = struct {
             try Forest.sortedKids(&w.t.trees, w.gpa, w.places, n, &ks);
             try w.word(@intCast(ks.items.len));
             for (ks.items) |k| {
-                try w.step(k[0]);
+                try BlockStep.write(w, k[0]);
                 try w.word(nodeIndex(index, k[1]));
             }
             try index.put(w.gpa, n, @intCast(at));
@@ -197,7 +185,7 @@ const Reader = struct {
     field_string: Ids.FixedDict(1) = .{},
     decl_string: Ids.FixedDict(2) = .{},
 
-    fn next(r: *Reader) Error!u32 {
+    pub fn next(r: *Reader) Error!u32 {
         if (r.at >= r.words.len) return error.BadBlock;
         r.at += 1;
         return r.words[r.at - 1];
@@ -205,27 +193,8 @@ const Reader = struct {
 
     pub fn rel(r: *Reader) Error!Slots.Rel {
         const out = try r.arena.alloc(u32, try r.count());
-        for (out) |*o| o.* = try r.step();
+        for (out) |*o| o.* = try BlockStep.read(r);
         return r.slots.relOfWords(r.gpa, r.account, r.places, out);
-    }
-
-    /// One step `(kind, a, b)` as this module's step word.
-    fn step(r: *Reader) Error!u32 {
-        const kind = try r.next();
-        const a = try r.next();
-        const b = try r.next();
-        if (kind > @backingInt(Place.StepKind.level)) return error.BadBlock;
-        const k: Place.StepKind = @fromBackingInt(@intCast(kind));
-        const s: Step = switch (k) {
-            .field => blk: {
-                const rank = r.remap.field(r.remap.ctx, a) orelse return error.BadBlock;
-                (try r.field_string.getOrPut(r.gpa, .{rank})).value_ptr.* = a;
-                break :blk try Step.field(r.account, rank);
-            },
-            .ctor_arg => try r.places.ctorStep(r.gpa, r.account, a, b),
-            else => .{ .kind = k, .payload = @intCast(a & 0x0fff_ffff) },
-        };
-        return s.word();
     }
 
     fn decl(r: *Reader) Error![2]u32 {
@@ -264,7 +233,7 @@ const Reader = struct {
             const plain = try r.arrivals();
             const open = try r.arrivals();
             const kids = try r.arena.alloc([2]u32, try r.count());
-            for (kids) |*k| k.* = .{ try r.step(), try node(out.items, try r.next()) };
+            for (kids) |*k| k.* = .{ try BlockStep.read(r), try node(out.items, try r.next()) };
             try out.append(r.arena, try t.trees.node(r.gpa, plain, open, kids));
         }
     }

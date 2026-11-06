@@ -5688,3 +5688,16 @@ tests/corpus/run/SanitiserRecordKeptThenWritten.beni SanitiserRecordKeptThenWrit
 tests/corpus/run/SanitiserRecordKeptThenWritten.beni SanitiserRecordKeptThenWritten 69:48 #0 :: value Box :: rejected :: absent  #1000, #1001: v1 refuses at the function value; v2 has no record demand yet and spreads this write
 tests/corpus/run/SanitiserRecordKeptThenWritten.beni SanitiserRecordKeptThenWritten 70:48 #0 :: value Box :: rejected :: absent  #1000, #1001: v1 refuses at the function value; v2 has no record demand yet and spreads this write
 tests/corpus/run/SanitiserRecordForwardedInList.beni SanitiserRecordForwardedInList 33:80 #0 :: value <lambda> :: rejected :: absent  v1 refuses at the function value; v2 has no record demand yet and spreads this write
+tests/corpus/run/SanitiserRowApart.beni SanitiserRowApart 46:10 #0 :: List.push r4.a :: rejected :: accepted  v1 reads an updated field from the base; v2 has it fresh beside the row (§2.1, The row of a record)
+tests/corpus/run/SanitiserRowAcrossModules Main 20:9 #0 :: List.push <expression> :: rejected :: absent  one demand, named two ways: v1 calls a call's field <expression>, v2 names it
+tests/corpus/run/SanitiserRowAcrossModules Main 20:9 #0 :: List.push <call>.b :: absent :: rejected  one demand, named two ways: v1 calls a call's field <expression>, v2 names it
+tests/corpus/run/SanitiserRow.beni SanitiserRow 64:10 #0 :: List.push <expression> :: rejected :: absent  one demand, named two ways: v1 calls a call's field <expression>, v2 names it
+tests/corpus/run/SanitiserRow.beni SanitiserRow 68:10 #0 :: List.push <expression> :: rejected :: absent  one demand, named two ways: v1 calls a call's field <expression>, v2 names it
+tests/corpus/run/SanitiserRow.beni SanitiserRow 70:10 #0 :: List.push <expression> :: rejected :: absent  one demand, named two ways: v1 calls a call's field <expression>, v2 names it
+tests/corpus/run/SanitiserRow.beni SanitiserRow 72:10 #0 :: List.push <expression> :: rejected :: absent  one demand, named two ways: v1 calls a call's field <expression>, v2 names it
+tests/corpus/run/SanitiserRow.beni SanitiserRow 76:37 #0 :: List.push l :: pending :: accepted  v1 leaves a closure in a record pending at its call; v2 checks the write inside it through the label (§2.11.3)
+tests/corpus/run/SanitiserRow.beni SanitiserRow 64:10 #0 :: List.push <call>.b :: absent :: rejected  one demand, named two ways: v1 calls a call's field <expression>, v2 names it
+tests/corpus/run/SanitiserRow.beni SanitiserRow 68:10 #0 :: List.push <call>.c :: absent :: rejected  one demand, named two ways: v1 calls a call's field <expression>, v2 names it
+tests/corpus/run/SanitiserRow.beni SanitiserRow 70:10 #0 :: List.push <call>.b :: absent :: rejected  one demand, named two ways: v1 calls a call's field <expression>, v2 names it
+tests/corpus/run/SanitiserRow.beni SanitiserRow 72:10 #0 :: List.push <call>.b :: absent :: rejected  one demand, named two ways: v1 calls a call's field <expression>, v2 names it
+tests/corpus/run/SanitiserRow.beni SanitiserRow 76:10 #0 :: SanitiserRow.run k7 :: absent :: rejected  v2 refuses the call that hands the argument to a closure the row carries; v1 has no such demand (§2.1, The row of a record)

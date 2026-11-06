@@ -13,6 +13,7 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const RecordRow = @import("RecordRow.zig");
 const Subtree = @import("Subtree.zig");
 const Leaves = @import("Leaves.zig");
 
@@ -321,17 +322,15 @@ pub const Frame = struct {
             const x = f.val(v);
             const st = Step.fromWord(wd);
             v = switch (x.kind) {
-                .ref => if (x.family != Slots.empty) try f.top() else if (try f.child(x.pos, .plain, wd, 0)) |p| try f.mk(.{ .kind = .ref, .root = x.root, .pos = p }) else try f.top(),
+                .ref => if (x.family != Slots.empty) try f.top() else if (st.isRow()) try RecordRow.ofRef(f, v, st) else if (try f.child(x.pos, .plain, wd, 0)) |p| try f.mk(.{ .kind = .ref, .root = x.root, .pos = p }) else try f.top(),
                 .built => blk: {
+                    if (x.form == .record and st.inRow()) break :blk try RecordRow.kid(f, v, st);
                     const ks = f.kidsOf(x);
                     switch (x.form) {
                         .tuple => if (st.kind == .index and st.payload < ks.len) break :blk ks[st.payload],
                         .ctor => if (st.kind == .ctor_arg) {
                             const ca = f.places.ctorArgOf(st);
                             if (ca[0] == x.head and ca[1] < ks.len) break :blk ks[ca[1]];
-                        },
-                        .record => if (st.kind == .field) for (f.wordsOf(x.extra), 0..) |r, n| {
-                            if (r == st.payload) break :blk ks[n];
                         },
                         .list => if (st.kind == .elem and ks.len == 1) break :blk ks[0],
                         else => {},

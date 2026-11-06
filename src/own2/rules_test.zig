@@ -47,6 +47,8 @@ const layers = [_]Entry{
     // the chunks, the task queue and their ids, which nothing used, cut.
     .{ .file = "Ids.zig", .layer = 0, .max_lines = 1120 },
     .{ .file = "Counters.zig", .layer = 0, .max_lines = 580 },
+    .{ .file = "RowSets.zig", .layer = 0, .max_lines = 60 },
+    .{ .file = "StepWord.zig", .layer = 0, .max_lines = 90 },
     // §5 says 1 100 since #1345: the fold targets and levels of a read on a
     // cycle, memoised per path.
     // 1 200 since #1253: one position, one name (`levelPaths`, `expandLevels`).
@@ -71,11 +73,14 @@ const layers = [_]Entry{
     // A place graph's encoding and equality, split from `Place` (#1714).
     .{ .file = "PlaceIdentity.zig", .layer = 2, .max_lines = 190 },
     .{ .file = "Slots.zig", .layer = 2, .max_lines = 440 },
+    .{ .file = "Replay.zig", .layer = 2, .max_lines = 90 },
     // A contract's result trees, hash-consed by node (#1714, §2.10).
     .{ .file = "Trees.zig", .layer = 2, .max_lines = 200 },
     // The readers and the union of result trees, below the contracts (#1714).
     // A read's result slots as a column, for `ReadOff` and `Relation` (#1714).
     .{ .file = "FoldRead.zig", .layer = 3, .max_lines = 50 },
+    .{ .file = "RecordRow.zig", .layer = 3, .max_lines = 90 },
+    .{ .file = "StepsTo.zig", .layer = 3, .max_lines = 45 },
     .{ .file = "Origin.zig", .layer = 3, .max_lines = 20 },
     .{ .file = "Dests.zig", .layer = 3, .max_lines = 200 },
     // The identity tree's one normal form, below `Contract` (#1714).
@@ -267,6 +272,7 @@ const layers = [_]Entry{
     .{ .file = "BlockNames.zig", .layer = 13, .max_lines = 30 },
     // A contract's called contracts in a block (#2028).
     .{ .file = "BlockCalled.zig", .layer = 13, .max_lines = 35 },
+    .{ .file = "BlockStep.zig", .layer = 13, .max_lines = 60 },
     .{ .file = "Block.zig", .layer = 14, .max_lines = 380 },
     .{ .file = "Message.zig", .layer = 14, .max_lines = 280 },
     .{ .file = "Report.zig", .layer = 14, .max_lines = 150 },
@@ -560,7 +566,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 120), layers.len);
+    try testing.expectEqual(@as(usize, 126), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

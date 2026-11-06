@@ -14,6 +14,7 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const Replay = @import("Replay.zig");
 const Subtree = @import("Subtree.zig");
 const BelowSize = @import("BelowSize.zig");
 const Conds = @import("Conds.zig");
@@ -54,7 +55,7 @@ pub fn canonical(x: Ctx, c: Cond) Error!Cond {
         const w = x.slots.relWords(Conds.occRel(o));
         try x.account.reserve(.cond, @intCast(1 + w.len));
         paths.clearRetainingCapacity();
-        try Slots.replay(g, x.account, x.places, x.roots[j], w, &paths);
+        try Replay.replay(g, x.account, x.places, x.roots[j], w, &paths);
         if (paths.items.len != 1 or wild(x, .from(paths.items[0])) or
             x.places.slotsAtLeast(x.places.pathPlace(.from(paths.items[0]))) > Slots.below_min or
             try BelowSize.moreBelow(x.slots, g, x.account, x.places, .from(paths.items[0]), Slots.below_min))

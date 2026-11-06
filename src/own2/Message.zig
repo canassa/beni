@@ -209,7 +209,7 @@ fn stepText(f: Frame, w: *std.Io.Writer, p: Ids.PathId) std.Io.Writer.Error!void
         },
         .level => try w.print("⟨{s}⟩", .{f.names.type_name(f.names.ctx, levelHead(places, p))}),
         .contents => try w.writeAll("◆"),
-        .env => try w.writeAll("◇"),
+        .env, .row => try w.writeAll(if (s.kind == .row) ".…" else "◇"),
         .slot => try w.print("⟨{d}⟩", .{s.payload}),
     }
 }

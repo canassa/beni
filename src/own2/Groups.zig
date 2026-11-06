@@ -324,6 +324,7 @@ pub const Adapter = struct {
                     var local: std.ArrayList(Kid) = .empty;
                     defer local.deinit(a.gpa);
                     var at = rec;
+                    var open = false;
                     while (true) {
                         for (store.fields(at.fields)) |fld| try local.append(a.gpa, .{ .step = try Step.field(a.account, a.rank(fld.name)), .id = try a.childId(fld.value) });
                         switch (store.resolvedContent(at.ext)) {
@@ -331,10 +332,14 @@ pub const Adapter = struct {
                                 .record => |next| at = next,
                                 else => break,
                             },
-                            else => break,
+                            else => {
+                                open = true;
+                                break;
+                            },
                         }
                     }
                     sortKids(local.items);
+                    if (open) try a.addRow(&local);
                     return a.structural(.record, 0, local.items);
                 },
                 .app => |ap| {
@@ -344,6 +349,15 @@ pub const Adapter = struct {
                 },
             },
         }
+    }
+
+    /// The row step of a record whose fields are `kids`, sorted: at a type
+    /// variable's place, past every field (§2.1, *The row of a record*).
+    fn addRow(a: *Adapter, kids: *std.ArrayList(Kid)) Error!void {
+        var ranks: std.ArrayList(u32) = .empty;
+        defer ranks.deinit(a.gpa);
+        for (kids.items) |k| try ranks.append(a.gpa, k.step.payload);
+        try kids.append(a.gpa, .{ .step = try a.places.rowStep(a.gpa, a.account, ranks.items), .id = try a.leaf(&a.var_id, .@"var") });
     }
 
     fn sortKids(kids: []Kid) void {
@@ -408,7 +422,19 @@ pub const Adapter = struct {
                 defer kids.deinit(a.gpa);
                 const r = if (tag == .type_record) Bir.inlineRange(d) else bir.subRange(@fromBackingInt(d.rhs));
                 for (bir.extraSlice(r, Bir.Field)) |fld| try kids.append(a.gpa, .{ .step = try Step.field(a.account, a.rank(bir.symbol(fld.name))), .id = done.get(fld.value.int()).? });
+                // A row is a parameter, substituted as any: the argument's fields and its row.
+                var open = tag == .type_record_ext;
+                if (open) if (done.get(d.lhs)) |ext| {
+                    const en = a.nodes.items[ext];
+                    if (en.kind == .structural and en.place_kind == .record) {
+                        open = false;
+                        for (a.kids.items[en.a..][0..en.b]) |ek| if (ek.step.kind == .field) try kids.append(a.gpa, ek) else {
+                            open = true;
+                        };
+                    }
+                };
                 sortKids(kids.items);
+                if (open) try a.addRow(&kids);
                 return a.structural(.record, 0, kids.items);
             },
             .type_app => {

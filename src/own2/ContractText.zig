@@ -33,7 +33,7 @@ fn wordsText(places: *const Place.Table, names: Names, w: *std.Io.Writer, words:
             .contents => try w.writeAll("◆"),
             .env => try w.writeAll("◇"),
             .slot => try w.print("⟨{d}⟩", .{s.payload}),
-            .level => try w.writeAll("⟲"),
+            .level, .row => try w.writeAll(if (s.kind == .row) "…" else "⟲"),
         }
     }
 }

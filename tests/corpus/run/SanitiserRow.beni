@@ -1,0 +1,86 @@
+-- A record's row (`ownership-v2.md` §2.1, *The row of a record*): the fields an
+-- open record type does not name. They had no slot, so a caller read what a
+-- row carries as fresh, a write of a named field was asked apart from nothing,
+-- and the sanitised run trapped. Each edit here is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+type Q r
+    = Q { r | a : List Int }
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+idr : { r | a : List Int } → { r | a : List Int }
+idr rec = rec
+
+
+-- A row kept through an update, and a write of a named field beside it.
+up : { r | a : List Int } → { r | a : List Int }
+up rec = { rec | a = List.push rec.a 9 }
+
+
+-- The row handed on, at a caller that names more fields.
+outer : { r | a : List Int, b : List Int } → { r | a : List Int, b : List Int }
+outer rec = idr rec
+
+
+-- Through a recursive group.
+loop : Int, { r | a : List Int } → { r | a : List Int }
+loop n rec =
+    if n ≤ 0 then
+        rec
+    else
+        loop (n - 1) rec
+
+
+un : Q r → { r | a : List Int }
+un q =
+    case q of
+        Q rec →
+            rec
+
+
+-- A callback handed the record, which writes a field the callee cannot name.
+appR : { r | a : List Int }, ({ r | a : List Int } → x) → x
+appR rec f = f rec
+
+
+-- A closure a row carries, read at the type that names it.
+run : Q { go : List Int → List Int }, List Int → List Int
+run q l =
+    case q of
+        Q rec →
+            rec.go l
+
+
+main : Program
+main =
+    k1 = [ 1 ]
+    n1 = List.push (idr { a = [], b = k1 }).b 2
+    k2 = [ 1 ]
+    n2 = up { a = k2, b = k2 }
+    k3 = [ 1 ]
+    n3 = List.push (outer { a = [], b = [], c = k3 }).c 2
+    k4 = [ 1 ]
+    n4 = List.push (loop 2 { a = [], b = k4 }).b 2
+    k5 = [ 1 ]
+    n5 = List.push (un (Q { a = [], b = k5 })).b 2
+    k6 = [ 1 ]
+    n6 = appR { a = [], b = k6 } λr → List.push r.b 2
+    k7 = [ 1 ]
+    n7 = run (Q { a = [], go = λl → List.push l 2 }) k7
+    lines =
+        [ show n1 ++ show k1
+        , show n2.a ++ show n2.b
+        , show n3 ++ show k3
+        , show n4 ++ show k4
+        , show n5 ++ show k5
+        , show n6 ++ show k6
+        , show n7 ++ show k7
+        ]
+    Node.print (String.join lines "\n")

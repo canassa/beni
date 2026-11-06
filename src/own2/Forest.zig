@@ -35,7 +35,14 @@ pub fn atSlot(t: *const Trees.Table, gpa: Allocator, root: Node, words: []const 
             return @intCast(d + 1);
         }
         if (t.open(n).len != 0) try out.append(gpa, .{ .depth = @intCast(d), .open = true, .arrivals = t.open(n) });
-        n = t.kidAt(n, words[d]) orelse return @intCast(d + 1);
+        n = t.kidAt(n, words[d]) orelse {
+            // A step the node names no kid for, read from its row: the words go on from here.
+            if (t.rowKid(n, words[d])) |r| {
+                if (t.here(r).len != 0) try out.append(gpa, .{ .depth = @intCast(d), .open = true, .arrivals = t.here(r) });
+                if (t.open(r).len != 0) try out.append(gpa, .{ .depth = @intCast(d), .open = true, .arrivals = t.open(r) });
+            }
+            return @intCast(d + 1);
+        };
     }
 }
 
@@ -54,6 +61,7 @@ pub fn stepKey(places: *const Place.Table, word: u32) [3]u32 {
         const ca = places.ctorArgOf(s);
         return .{ @backingInt(s.kind), ca[0], ca[1] };
     }
+    if (s.isRow()) return .{ @backingInt(s.kind), 0, 0 };
     return .{ @backingInt(s.kind), s.payload, 0 };
 }
 
@@ -339,7 +347,7 @@ pub fn effectReaches(t: *const Trees.Table, n0: Node, words: []const u32) bool {
     var n = n0;
     for (words) |w| {
         if (t.open(n).len != 0) return true;
-        n = t.kidAt(n, w) orelse return false;
+        n = t.kidAt(n, w) orelse return if (t.rowKid(n, w)) |r| t.count(r) != 0 else false;
     }
     return t.count(n) != 0;
 }

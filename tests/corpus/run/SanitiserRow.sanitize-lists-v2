@@ -1,0 +1,2 @@
+A record row (ownership-v2.md §2.1, The row of a record): built again under --ownership=v2 and the list stale-read sanitiser.
+v2 refuses each edit; with the row read as nothing, the sanitised run traps on a stale read.
