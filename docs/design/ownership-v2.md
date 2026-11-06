@@ -245,7 +245,7 @@ step for those, the **row step** `…`, whenever its row is open: its child is a
 - *What a contract says.* `idr rec = rec` is `res ε π1ε, .a π1.a, … π1…*`. A reader of `.status` still reads `π1.status` and nothing else; a whole read of `rec` reads `…` too.
 
 *Why it is sound.* Take a record `o` at a place `P` of a callee, called with `o` at the caller's place `P'`, whose names hold `P`'s by typing. Any object below `o` is below a field `f`. If `P` names `f`, the callee's slot `.f` reads it at the caller, as before. Otherwise it is in `γ(π…)`, which the caller's reading makes `.f` of `P'` deep. A write the callee makes through `…`, an escape, a read, an arrival and an occurrence all instantiate by that reading, so each reaches every object the row can hold (O1: a holder is added, never removed). The narrowing of a caller's `.b` to `π1.b` removes only objects of other fields, and it rests on parametricity: a function of type `{ r | a } → { r | a }` holds no operation that moves one field of `r` to another; a callback, a `foreign` and a worded row have their own arrivals at the result, which are read as they are. Refused that a perfect checker accepts: any two objects of one row asked apart from a named field when only one of them is written or held, as the row is one slot; and a write of a row's object reached by a fold's `var` (§2.1). *Rejected:* reading an open row as a `var` place. It refused 17 positions v1 accepts, and because an update copies kept fields from the place's steps, it lost what the update kept (`RecordUpdateEscapes`). The row is a step, so the named fields keep their slots.
-Fixtures: `run/SanitiserRow`…
+A closure that captures a copy `s = { rec | a = [ 1 ] }` and reads `s.a` holds `s`, row and all, exactly as it holds a closed record's other fields, so `k` in the row is refused a write while the closure lives. Fixtures: `run/SanitiserRow`, `run/SanitiserRowApart`, `run/SanitiserRowAcrossModules`.
 
 **Identity.** Initial construction uses a dense `by_var` memo for structural source nodes and the adapter's
 `(head, argument places)` memo for nominal applications. Each source graph node and outgoing edge is visited
@@ -5564,6 +5564,11 @@ L0  Ids  Counters  Scratch
 | `Scratch.zig` | 0 | a walk's sparse sets and maps | Counters |
 | `Place.zig` | 1 | place graphs, steps, canonical paths, levels and their expansion | Ids |
 | `Runs.zig` | 1 | runs of words interned by content, a column by path id (§3.2) | Ids |
+| `RowSets.zig` | 0 | a row step's sets of excluded names (§2.1, *The row of a record*) | — |
+| `StepWord.zig` | 0 | a step of a canonical path, one word (§2.1, §3.1), from `Place` | — |
+| `RecordRow.zig` | 3 | a row in values: a step of a built record, a row step of a reference, a row's arrivals fed below it (§2.1) | Place, Trees |
+| `StepsTo.zig` | 3 | the shortest steps between two places (§2.1), from `Relation` | Ids |
+| `BlockStep.zig` | 13 | one step of a relative slot in a block (§3.6), from `Block` | Place, RowSets |
 | `Routes.zig` | 1 | tag lists with shared tails and jump pointers, route sets (§2.3.5, §2.9.3, #1714) | Ids |
 | `Facts.zig` | 2 | the records that cross layers: uses, demand kinds, verdicts, causes, the pre-pass's facts, report lines | Ids |
 | `TagTree.zig` | 2 | a run of tag lists as the tree of their shared tails; the members a list may hold with (§2.8, #1714) | Ids, Routes |
@@ -5572,6 +5577,7 @@ L0  Ids  Counters  Scratch
 | `Steps.zig` | 2 | one step of a position, §2.3.2's relation of two steps of one parent, and the protocol by which every index of positions files and asks (#1963) | Ids, Place |
 | `PlaceIdentity.zig` | 2 | a place graph's structural identity: `encode`, `decode`, `equals` (§2.1, §3.1), split from `Place` (#1714) | Ids, Place |
 | `Slots.zig` | 2 | slot sets, `below`, canonical names, relative steps (§2.3.1, §3.2) | Ids, Place, Runs |
+| `Replay.zig` | 2 | relative steps replayed at a path; a record's row read at a caller (§2.1, §2.11.2), from `Slots` | Ids, Place |
 | `Trees.zig` | 2 | a contract's result trees, nodes hash-consed by content (§2.10, §3.5, #1714) | Ids, Runs |
 | `Dests.zig` | 3 | a read's result slots as a column, an entry per slot met made once from its nearest ancestor in it (§2.10 *Read-off*, #1714) | Ids, Place, Slots |
 | `Contract.zig` | 3 | the contract table, join, `within`, canonical order (§2.10, §3.5) | Ids, Place, Slots |

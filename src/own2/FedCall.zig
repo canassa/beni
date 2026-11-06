@@ -10,6 +10,7 @@
 const std = @import("std");
 const Ids = @import("Ids.zig");
 const Slots = @import("Slots.zig");
+const Replay = @import("Replay.zig");
 const Forest = @import("Forest.zig");
 const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
@@ -94,7 +95,7 @@ pub fn at(e: *Eval, call: u32, o: u64, written: anytype) Error!Got {
 pub fn holdsAt(e: *Eval, root: Ids.PathId, words: []const u32) Error!bool {
     var ps: std.ArrayList(u32) = .empty;
     defer ps.deinit(e.gpa());
-    try Slots.replay(e.gpa(), e.account(), e.places(), root, words, &ps);
+    try Replay.replay(e.gpa(), e.account(), e.places(), root, words, &ps);
     if (ps.items.len == 0) return true;
     for (ps.items) |p| if (Slots.holdsAny(e.places(), .from(p))) return true;
     return false;

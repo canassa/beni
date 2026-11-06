@@ -1,0 +1,53 @@
+-- The twin of `SanitiserRow` (`ownership-v2.md` §2.1, *The row of a record*).
+-- A row reads per field: a caller's `.b` is the argument's `.b` and holds
+-- nothing of its `.c`, a reader of `.a` asks nothing of the row, and a fresh
+-- field beside a row is fresh. v2 accepts each; the sanitised run prints what
+-- the plain run prints.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+idr : { r | a : List Int } → { r | a : List Int }
+idr rec = rec
+
+
+-- A write of a named field, with the row kept: apart at the call.
+up : { r | a : List Int } → { r | a : List Int }
+up rec = { rec | a = List.push rec.a 9 }
+
+
+-- A named field fresh beside the row.
+reset : { r | a : List Int } → { r | a : List Int }
+reset rec = { rec | a = [] }
+
+
+size : { r | a : List Int } → Int
+size rec = List.length rec.a
+
+
+main : Program
+main =
+    k1 = [ 1 ]
+    k2 = [ 2 ]
+    -- `.b` holds nothing of `.c`.
+    r1 = idr { a = [], b = [ 5 ], c = k1 }
+    n1 = List.push r1.b 2
+    -- An edit of the named field: the row holds another list.
+    r2 = up { a = [ 7 ], b = k2 }
+    -- Reading through the row is a read.
+    n2 = List.length (reset { a = k1, b = k2 }).b
+    n3 = size { a = k1, b = k1 }
+    r4 = reset { a = k1, b = [ 8 ] }
+    n4 = List.push r4.a 1
+    lines =
+        [ show n1 ++ show r1.c
+        , show r2.a ++ show r2.b
+        , String.fromInt (n2 + n3)
+        , show n4 ++ show r4.b ++ show k1
+        ]
+    Node.print (String.join lines "\n")

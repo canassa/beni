@@ -19,6 +19,7 @@ const std = @import("std");
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const StepsTo = @import("StepsTo.zig");
 const LevelCycle = @import("LevelCycle.zig");
 const Relation = @import("Relation.zig");
 const Coexist = @import("Coexist.zig");
@@ -234,7 +235,7 @@ fn descend(w: *Walk, it: Item) Error!void {
             for (e.f.kidsOf(x), 0..) |k, n| {
                 const kst: Step = switch (x.form) {
                     .list => Step.elem,
-                    .record => try Step.field(e.account(), e.f.wordsOf(x.extra)[n]),
+                    .record => try Step.ofRank(e.account(), e.f.wordsOf(x.extra)[n]),
                     .tuple => try Step.index(e.account(), @intCast(n)),
                     .ctor => try pl.ctorStep(g, e.account(), x.head, @intCast(n)),
                     .closure, .opaque_ => continue,
@@ -254,7 +255,7 @@ fn descend(w: *Walk, it: Item) Error!void {
             // steps to the cycle's place; its own levels below by its slots.
             var to: std.ArrayList(u32) = .empty;
             defer to.deinit(g);
-            if (place != origin and x.family == Slots.empty) try e.stepsTo(e.f.pos.items[x.pos].slot, origin, &to);
+            if (place != origin and x.family == Slots.empty) try StepsTo.of(e, e.f.pos.items[x.pos].slot, origin, &to);
             var lv: std.ArrayList(u32) = .empty;
             defer lv.deinit(g);
             for (w.runs.items[it.run]) |r| {

@@ -10,6 +10,7 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const Replay = @import("Replay.zig");
 const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
@@ -82,7 +83,7 @@ pub const Env = struct {
             const below = (try env.slots.relBelow(env.gpa, env.account, env.places, from, .from(s))) orelse continue;
             var at: std.ArrayList(u32) = .empty;
             defer at.deinit(env.gpa);
-            try Slots.replay(env.gpa, env.account, env.places, prefix, env.slots.relWords(below), &at);
+            try Replay.replay(env.gpa, env.account, env.places, prefix, env.slots.relWords(below), &at);
             // An opaque or a type variable's slot holds anything (a cast's
             // inner, §2.13.9): every object of it, at every result slot
             // below where it lands.

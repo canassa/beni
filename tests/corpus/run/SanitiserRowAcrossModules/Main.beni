@@ -1,0 +1,28 @@
+-- The row of `Store`'s records, read from its block: a row's field is the
+-- argument's, read per field. `.b` holds nothing of `.c`; `up` asks `.a` apart
+-- from the row, which `b` is not.
+import List
+import Node exposing (Program)
+import Store
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main =
+    k = [ 1 ]
+    r = Store.idr { a = [], b = [ 5 ], c = k }
+    n = List.push r.b 2
+    h = [ 2 ]
+    m = List.push (Store.idr { a = [], b = h }).b 2
+    j = [ 3 ]
+    o = Store.up { a = j, b = j }
+    lines =
+        [ show n ++ show r.c
+        , show m ++ show h
+        , show o.a ++ show o.b
+        ]
+    Node.print (String.join lines "\n")

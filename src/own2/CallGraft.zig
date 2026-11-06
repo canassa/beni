@@ -18,6 +18,7 @@ const std = @import("std");
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const Replay = @import("Replay.zig");
 const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
 
@@ -141,6 +142,6 @@ pub fn textPath(places: *Place.Table, slots: *const Slots.Table, gpa: std.mem.Al
     defer account.deinit(gpa);
     var ps: std.ArrayList(u32) = .empty;
     defer ps.deinit(gpa);
-    Slots.replay(gpa, &account, places, root, slots.relWords(rel), &ps) catch |err| return if (err == error.OutOfMemory) error.OutOfMemory else .none;
+    Replay.replay(gpa, &account, places, root, slots.relWords(rel), &ps) catch |err| return if (err == error.OutOfMemory) error.OutOfMemory else .none;
     return if (ps.items.len != 0) .from(ps.items[0]) else .none;
 }

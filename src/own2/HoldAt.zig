@@ -8,6 +8,7 @@
 const std = @import("std");
 const Ids = @import("Ids.zig");
 const Slots = @import("Slots.zig");
+const Replay = @import("Replay.zig");
 const Subtree = @import("Subtree.zig");
 const MeetRun = @import("MeetRun.zig");
 const Value = @import("Value.zig");
@@ -63,7 +64,7 @@ pub fn holdsAt(ev: *Relation.Eval, hd: Hold, target: u32, out: *std.ArrayList(He
             const rel = (try fr.slots.relBelow(g, fr.account, fr.places, pslot, .from(ts))) orelse continue;
             var ps: std.ArrayList(u32) = .empty;
             defer ps.deinit(g);
-            try Slots.replay(g, fr.account, fr.places, hd.q, fr.slots.relWords(rel), &ps);
+            try Replay.replay(g, fr.account, fr.places, hd.q, fr.slots.relWords(rel), &ps);
             for (ps.items) |p| {
                 try out.append(g, .{ .from(p), o });
                 any = true;

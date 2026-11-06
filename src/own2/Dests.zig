@@ -15,6 +15,7 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const Replay = @import("Replay.zig");
 
 const Error = Ids.ChargeError;
 const PathId = Ids.PathId;
@@ -156,7 +157,7 @@ fn stepOn(env: Env, base: *std.ArrayList(u32), words: []const u32) Error!void {
     for (words) |w| {
         if (base.items.len == 0) return;
         next.clearRetainingCapacity();
-        for (base.items) |x| try Slots.replay(env.gpa, env.account, env.places, .from(x), &.{w}, &next);
+        for (base.items) |x| try Replay.replay(env.gpa, env.account, env.places, .from(x), &.{w}, &next);
         std.mem.sort(u32, next.items, {}, std.sort.asc(u32));
         base.clearRetainingCapacity();
         for (next.items) |x| if (base.items.len == 0 or base.items[base.items.len - 1] != x) try base.append(env.gpa, x);
@@ -177,6 +178,6 @@ pub fn replay(env: Env, from: PathId, slot: PathId, q: PathId, out: *std.ArrayLi
     }
     if (out.items.len == start) {
         const rel = (try env.slots.relBelow(env.gpa, env.account, env.places, from, slot)) orelse Slots.root;
-        try Slots.replay(env.gpa, env.account, env.places, q, env.slots.relWords(rel), out);
+        try Replay.replay(env.gpa, env.account, env.places, q, env.slots.relWords(rel), out);
     }
 }

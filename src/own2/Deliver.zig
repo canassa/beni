@@ -12,6 +12,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Slots = @import("Slots.zig");
+const Replay = @import("Replay.zig");
 const Forest = @import("Forest.zig");
 const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
@@ -228,13 +229,14 @@ pub const Solver = struct {
                 if (!std.mem.eql(u32, rw, pw[0..rw.len])) continue;
                 // Down to the prefix: an open node on the way holds below it.
                 while (d < pw.len and sub != 0) : (d += 1) {
-                    if (t.open(sub).len != 0) {
+                    const on = t.kidAt(sub, pw[d]);
+                    for ([_]Forest.Node{ sub, if (on == null) t.rowKid(sub, pw[d]) orelse 0 else 0 }) |o| if (o != 0) {
                         const at = sl.rels.find(pw[0..d]) orelse try sl.relOfWords(s.gpa, e0.ev.f.account, e0.ev.f.places, pw[0..d]);
-                        const opens = try s.gpa.dupe(Contract.Arrival, t.open(sub));
+                        const opens = try s.gpa.dupe(Contract.Arrival, t.open(o));
                         defer s.gpa.free(opens);
                         for (opens) |a| try e.ev.feedBelowDraft(kw[1], at, true, a);
-                    }
-                    sub = t.kidAt(sub, pw[d]) orelse 0;
+                    };
+                    sub = on orelse 0;
                 }
             } else if (!std.mem.eql(u32, pw, rw[0..pw.len])) continue;
             var es: Forest.Entries = .{};
@@ -283,8 +285,9 @@ pub const Solver = struct {
                 const e = &s.evals[kw[0]];
                 try e.ev.f.charge(.edge, 1);
                 const words = e.ev.f.slots.relWords(kw[2]);
-                if (words.len < rw.len or !std.mem.eql(u32, rw, words[0..rw.len])) continue;
-                try e.ev.feedDraft(kw[1], arrival, @intCast(rw.len), true);
+                const row = Replay.inRowOf(rw, words);
+                if (!row and (words.len < rw.len or !std.mem.eql(u32, rw, words[0..rw.len]))) continue;
+                try e.ev.feedDraft(kw[1], arrival, @intCast(if (row) rw.len - 1 else rw.len), true);
             }
         } else if (s.res_watch.get(.{ x, rel })) |li| {
             var i: usize = 0;

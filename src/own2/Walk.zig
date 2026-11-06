@@ -18,6 +18,7 @@ const Ids = @import("Ids.zig");
 const Facts = @import("Facts.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const RecordRow = @import("RecordRow.zig");
 const Contract = @import("Contract.zig");
 const Value = @import("Value.zig");
 const Relation = @import("Relation.zig");
@@ -324,8 +325,8 @@ const Walker = struct {
             if (c != none and k.bir.instTag(@fromBackingInt(c)) == .record_update and k.bir.instData(@fromBackingInt(c)).lhs == i) {
                 const fields = k.bir.extraSlice(k.bir.subRange(@fromBackingInt(k.bir.instData(@fromBackingInt(c)).rhs)), Bir.Field);
                 for (k.f().places.steps(try k.placeOf(c)).steps) |st| {
-                    if (st.kind != .field) continue;
-                    const updated = for (fields) |fl| {
+                    if (!st.inRow()) continue;
+                    const updated = st.kind == .field and for (fields) |fl| {
                         if (k.ctx.fieldRank(k.ctx.ctx, fl.name) == st.payload) break true;
                     } else false;
                     if (updated) continue;
@@ -456,9 +457,7 @@ const Walker = struct {
                     },
                     .record => {
                         if (kind != .plain) return fr.scalar();
-                        const st = Step.fromWord(a);
-                        for (fr.wordsOf(x.extra), 0..) |r, n| if (st.kind == .field and r == st.payload) return ks[n];
-                        return fr.scalar();
+                        return RecordRow.kid(fr, v, Step.fromWord(a));
                     },
                     .list => switch (kind) {
                         .front, .back => {
@@ -744,9 +743,9 @@ const Walker = struct {
             const at = try k.placeOf(i);
             const pr = fr.places.steps(at);
             for (pr.steps) |st| {
-                if (st.kind != .field) continue;
-                if (std.mem.indexOfScalar(u32, ranks.items, st.payload) != null) continue;
-                try ranks.append(k.gpa, st.payload);
+                if (!st.inRow()) continue;
+                if (std.mem.indexOfScalar(u32, ranks.items, st.kidWord()) != null) continue;
+                try ranks.append(k.gpa, st.kidWord());
                 try ks.append(k.gpa, try k.project(bv, .plain, st.word(), 0));
                 const r = k.res[k.rel(b)];
                 if (r.local != none) if (try fr.places.extend(k.gpa, fr.gc(), r.path, st)) |p| {

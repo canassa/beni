@@ -1,0 +1,11 @@
+-- A record's row in this module's block (`ownership-v2.md` §3.6): the importer
+-- reads the row step and the names it excludes.
+import List
+
+
+pub idr : { r | a : List Int } → { r | a : List Int }
+idr rec = rec
+
+
+pub up : { r | a : List Int } → { r | a : List Int }
+up rec = { rec | a = List.push rec.a 9 }

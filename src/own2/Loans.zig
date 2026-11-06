@@ -12,6 +12,7 @@ const std = @import("std");
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const Replay = @import("Replay.zig");
 const Value = @import("Value.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
@@ -116,7 +117,7 @@ fn allFresh(arrivals: []const Contract.Arrival) bool {
 fn holds(f: *Value.Frame, from: Ids.PathId, words: []const u32) Error!bool {
     var ps: std.ArrayList(u32) = .empty;
     defer ps.deinit(f.gpa);
-    try Slots.replay(f.gpa, f.account, f.places, from, words, &ps);
+    try Replay.replay(f.gpa, f.account, f.places, from, words, &ps);
     for (ps.items) |p| if (Slots.holdsAny(f.places, .from(p))) return true;
     return ps.items.len == 0;
 }

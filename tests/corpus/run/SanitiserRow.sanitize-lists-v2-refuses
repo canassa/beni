@@ -1,0 +1,8 @@
+# v2 refuses what a row carries (§2.1, The row of a record).
+64:10 list_still_used List.push
+66:10 list_may_be_shared SanitiserRow.up
+68:10 list_still_used List.push
+70:10 list_still_used List.push
+72:10 list_still_used List.push
+74:10 list_still_used SanitiserRow.appR
+76:10 list_still_used SanitiserRow.run
