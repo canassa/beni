@@ -1,0 +1,13 @@
+--! A time stamp ordered by its age, which reads the clock.
+
+import Clock
+
+
+pub type Stamp
+    = Stamp Int
+
+
+pub compare : Stamp, Stamp → Order
+compare (Stamp a) (Stamp b) =
+    now = Clock.now ⊤
+    if now - a > now - b then LT else if now - a < now - b then GT else EQ

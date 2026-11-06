@@ -1,0 +1,41 @@
+-- An impure method reached through a dispatch (docs/design/prerender.md
+-- §3.1, amended for #1247): `model.since.age` calls `Stamp.age`, a function
+-- of another module. The build follows the dispatch to it, and names the
+-- call in its body that reads the clock, in `Stamp.beni`.
+import Browser
+import Html exposing (Html)
+import Stamp exposing (Stamp)
+import Tea
+
+
+type alias Model =
+    since : Stamp
+
+
+type Msg
+    = Reset
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Reset →
+            { model | since = Stamp.Stamp 0 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model.since.age}</output>
+        <button onClick={Reset}>Reset</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt
+            (Tea.sandbox { init = λ⊤ → { since = Stamp.Stamp 0 }, update = update, view = view })
+            "root"
+        )
+        [ "/" ]

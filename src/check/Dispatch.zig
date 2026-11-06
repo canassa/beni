@@ -591,6 +591,19 @@ pub fn siteOf(d: *const Dispatch, inst: Bir.Inst.Index) ?*const Site {
     return &d.sites[r.start];
 }
 
+/// The function a `method_call` or a `type_dispatch` at `inst` runs: its
+/// site's callee, the target the checker resolved the dispatch to (`top`
+/// or `ext` for a declaration, else evidence, a field, a derived function,
+/// a codec or a primitive). Null when the instruction has no site or the
+/// site no callee. The one lookup of a dispatch target that `Totality`'s
+/// proof and the prerender purity walk (`prerender.md` §3.1, amended for
+/// #1247) both read.
+pub fn calleeOf(d: *const Dispatch, inst: Bir.Inst.Index) ?Term {
+    const site = d.siteOf(inst) orelse return null;
+    const callee = site.callee.unwrap() orelse return null;
+    return d.term(callee);
+}
+
 /// The sites of the instructions `[start, end)`. A declaration's
 /// instructions are contiguous, so its sites are one slice.
 pub fn sitesIn(d: *const Dispatch, start: u32, end: u32) []const Site {

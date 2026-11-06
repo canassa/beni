@@ -15277,6 +15277,31 @@ pub const Lowerer = struct {
         };
     }
 
+    /// `calleeEffect` of value `value` of module `m`, when the walk follows
+    /// `m`'s code (`followed`); else the call at `at` is the effect.
+    fn extCalleeEffect(l: *Lowerer, m: Graph.Index, value: u32, at: At, verdicts: *Verdicts) Allocator.Error!Effect {
+        const other = l.followed(m) orelse return .{ .site = at };
+        const decl = l.in.provenance[m.int()].valueDecl(value) orelse return .{ .site = at };
+        return l.calleeEffect(other, decl.int(), at, verdicts);
+    }
+
+    /// The `Effect` of the method call or operator at `at` that the checker
+    /// says may be impure (§3.1, amended for #1247): the function the
+    /// dispatch resolves to (`Dispatch.calleeOf`) answers it, as a call of
+    /// it does (`calleeEffect`), when that is a top-level function of the
+    /// module of `at` or of an app's or a platform's module. The evidence
+    /// the call passes is a parameter of that function, and a call of it
+    /// there is a `param` term, the effect at that call. Any other target —
+    /// evidence of the code `at` is in, a field, a derived function, a
+    /// codec, a function of core — is the effect at the call.
+    fn dispatchEffect(l: *Lowerer, f: CodeFrame, at: At, verdicts: *Verdicts) Allocator.Error!Effect {
+        return switch (f.dispatch.calleeOf(at.inst) orelse return .{ .site = at }) {
+            .top => |t| l.calleeEffect(f, t.decl.int(), at, verdicts),
+            .ext => |t| l.extCalleeEffect(t.module, @backingInt(t.value), at, verdicts),
+            else => .{ .site = at },
+        };
+    }
+
     /// The `Effect` of calling the top-level function `d` of `f`'s module
     /// that a program's field names, where no call site holds the
     /// checker's answer (§3.1, amended for #1170): none when the checker
@@ -15292,8 +15317,9 @@ pub const Lowerer = struct {
     /// The `Effect` of evaluating `root`, of `f`'s module: the checker's
     /// answer at each call that may be impure, except that a call of
     /// `Debug`'s is `Debug`'s and a call of a function of the app's or a
-    /// platform's modules is answered by that function's body, in its own
-    /// module (`calleeEffect`). A top-level constant of those modules is
+    /// platform's modules, or a method call or an operator dispatched to
+    /// one (`dispatchEffect`), is answered by that function's body, in its
+    /// own module (`calleeEffect`). A top-level constant of those modules is
     /// evaluated where its module loads, in the build as in the browser:
     /// its body's effect is the read's. The body of a function a value
     /// makes is not evaluated where it is made — a lambda, a `let` of a
@@ -15332,13 +15358,10 @@ pub const Lowerer = struct {
                         const callee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
                         const cd = b.instData(callee);
                         const e: Effect = switch (b.instTag(callee)) {
-                            .ext_value => blk: {
-                                if (debug != null and cd.lhs == debug.?.int()) break :blk .debug;
-                                const m: Graph.Index = @fromBackingInt(@intCast(cd.lhs));
-                                const other = l.followed(m) orelse break :blk .{ .site = here_at };
-                                const decl = l.in.provenance[m.int()].valueDecl(cd.rhs) orelse break :blk .{ .site = here_at };
-                                break :blk try l.calleeEffect(other, decl.int(), here_at, verdicts);
-                            },
+                            .ext_value => if (debug != null and cd.lhs == debug.?.int())
+                                .debug
+                            else
+                                try l.extCalleeEffect(@fromBackingInt(@intCast(cd.lhs)), cd.rhs, here_at, verdicts),
                             .top => try l.calleeEffect(f, cd.lhs, here_at, verdicts),
                             else => .{ .site = here_at },
                         };
@@ -15349,9 +15372,19 @@ pub const Lowerer = struct {
                         }
                     }
                 },
+                // A method call or an operator: the function the dispatch
+                // resolves to answers it, as a call of it (§3.1, amended
+                // for #1247).
                 .method_call, .type_dispatch => {
                     const site = f.dispatch.effectAt(at);
-                    if (site.impure or site.own != .no) return .{ .site = here_at };
+                    if (site.impure or site.own != .no) {
+                        if (site.own != .no) return .{ .site = here_at };
+                        switch (try l.dispatchEffect(f, here_at, verdicts)) {
+                            .none => {},
+                            .debug => saw_debug = true,
+                            else => |e| return e,
+                        }
+                    }
                 },
                 // A constant read: evaluated where the module loads, in the
                 // build as in the browser, so its effect is this read's.
