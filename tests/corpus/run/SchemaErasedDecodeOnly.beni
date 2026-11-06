@@ -1,0 +1,22 @@
+-- Erased decode selects the declaration read worker without any Schema.read call.
+import Node
+import Schema
+
+
+schema Point =
+    x : Int
+
+
+main : Node.Program
+main =
+    case Schema.parse Schema.value "{\"x\":1}" of
+        Ok raw →
+            case Schema.decode (Schema.erased (Point.schema ⊤)) raw of
+                Ok p →
+                    Node.print "decoded ${String.fromInt p.x}"
+
+                Err _ →
+                    Node.print "refused"
+
+        Err _ →
+            Node.print "not JSON"

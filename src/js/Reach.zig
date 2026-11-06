@@ -1468,6 +1468,24 @@ pub const Builder = struct {
                 try out.append(b.scratch, .{ .node = target, .chain = chain });
             }
         }
+        // An erased declaration selects a host-input/output worker when its
+        // typed decode/encode worker is requested (schema.md §12.10). Keep
+        // that dependency only when both the operation and erasure survive.
+        if (!b.in.schema_library) {
+            const host_member: ?SchemaGraph.Member = switch (member) {
+                .decode => .read_value,
+                .encode => .write_value,
+                else => null,
+            };
+            if (host_member) |host| if (b.coreSchemaDecl("erased")) |guard| {
+                if (guards.chains.items.len == 0) try guards.chains.append(b.scratch, .{ .parent = 0, .start = 0, .end = 0 });
+                const first: u32 = @intCast(guards.chain_ctors.items.len);
+                try guards.chain_ctors.append(b.scratch, guard);
+                const chain: u32 = @intCast(guards.chains.items.len);
+                try guards.chains.append(b.scratch, .{ .parent = 0, .start = first, .end = first + 1 });
+                try out.append(b.scratch, .{ .node = schemaNode(ref, host), .chain = chain });
+            };
+        }
         // The `via`s: what the description and every worker set call, and
         // under `--schema-library`, where no worker is written, only the
         // description.
