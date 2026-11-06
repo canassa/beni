@@ -168,6 +168,7 @@ fn discharge(st: *State, e: *Evaluation, x: u32, q: u32, l: Contract.Label, v: u
                 try e.w.leaf_runs.appendSlice(e.gpa(), ls.items);
                 var d = try base(e, q, l);
                 d.targets = .{ .start = t_start, .len = @intCast(ls.items.len) };
+                d.fresh_answer = true;
                 try Eval.addDemand(e, d);
             },
             .param => if (a.j < own) try Eval.callWrite(e, v, .{ .j = a.j, .slot = rel, .deep = n.deep or a.deep }) else try refuse(e, q, l),
@@ -185,14 +186,20 @@ fn discharge(st: *State, e: *Evaluation, x: u32, q: u32, l: Contract.Label, v: u
     return new;
 }
 
-/// A comparison has no caller to discharge what it passes on (§2.13.13 item 13):
-/// each label it hands a callee with a need is refused at that call.
-pub fn compared(e: *Evaluation) Error!void {
+/// A comparison has no caller to discharge a need (§2.13.13 item 13): with one
+/// on a label of its draft, after the fixed point, each call that makes it is
+/// refused. A write of the answer itself has a line of its own.
+pub fn compared(e: *Evaluation, d: *const Contract.Draft) Error!void {
+    for (d.labels.items) |l| {
+        if (l.need.items.len != 0) break;
+    } else return;
     const f = e.fr();
-    for (e.passes.items) |p| {
-        const c = f.calls.items[p[1]].contract;
-        const l = e.contracts.labelsOf(e.contracts.head(c).labels)[p[2]];
-        if (l.need.len != 0) try refuse(e, p[1], l);
+    for (f.calls.items, 0..) |call, q| {
+        if (call.contract == none or call.virtual) continue;
+        for (e.contracts.labelsOf(e.contracts.head(call.contract).labels)) |l| if (l.need.len != 0) {
+            try refuse(e, @intCast(q), l);
+            break;
+        };
     }
 }
 

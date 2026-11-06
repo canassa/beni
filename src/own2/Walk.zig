@@ -117,6 +117,8 @@ pub const Demand = struct {
     need: bool = false,
     /// A fresh answer's need: judged, with no line of its own.
     quiet: bool = false,
+    /// A need met by a fresh answer: a comparison may write it (§2.11.3).
+    fresh_answer: bool = false,
     /// A need below the root: the virtual call whose result separation it asks.
     res_of: u32 = none,
     /// A cell operation on a `◆` slot (`Eval.cellWrite`): never `once`.

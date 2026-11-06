@@ -1,3 +1,6 @@
-# A comparison has no caller to discharge a need: a write of its function's answer, here or in a helper, is refused (§2.11.3, A comparison).
-26:26 comparison_changes_value List.push
-26:61 comparison_changes_value value
+# A comparison has no caller to discharge a need: each write of a function's answer, by any road, is refused (§2.11.3, A comparison).
+31:32 comparison_changes_value List.push
+31:66 comparison_changes_value value
+32:32 comparison_changes_value value
+32:63 comparison_changes_value value
+32:63 comparison_changes_value SanitiserNeedComparison.pushOf

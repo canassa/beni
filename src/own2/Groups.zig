@@ -1625,14 +1625,14 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             try Outward.finishDemands(e);
             try Needs.finish(e);
             if (!called) try Needs.escaped(e);
-            if (mod.comparison[r.decl]) try Needs.compared(e);
+            if (mod.comparison[r.decl]) try Needs.compared(e, &drafts[i]);
             if (!called) for ([_]bool{ false, true }) |w| if (w) try Closures.escapedWrites(e) else try @import("ClosureRuns.zig").labels(e);
             const got = try Resolve.resolve(e, &regions.items[k], ra, if (validating or !solver.used) null else &kg.tables[i]);
             // R-5.13.1: in a comparison's walk, a write of what arrived or of a function's answer is
             // `comparison_changes_value`; a write of a fresh value stays accepted, and the contract
             // keeps its writes (§2.13.13 item 13, §2.11.3).
             if (mod.comparison[r.decl]) for (got.lines) |*l| {
-                if (l.demand.need or (l.outcome.verdict == .accepted and (l.outcome.accepted == .param or l.outcome.accepted == .call))) {
+                if (l.demand.need or (l.outcome.verdict == .accepted and l.outcome.accepted != .fresh and !l.demand.fresh_answer)) {
                     l.outcome.verdict = .refused;
                     l.outcome.cause = .comparison;
                 }

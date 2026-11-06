@@ -2,8 +2,9 @@
 -- an object only the callee can reach, each accepted and edited in place. A
 -- fresh answer, a fresh argument handed back by an identity, a fresh answer
 -- through a forwarding lambda and a recursive helper, a named
--- function, and a fresh outer list whose items are one list the
--- caller reads again, since only the outer list is written.
+-- function, a fresh outer list whose items are one list the
+-- caller reads again, since only the outer list is written, and a comparison
+-- that hands a helper a function with a fresh answer.
 import List
 import Node exposing (Program)
 import String
@@ -47,6 +48,14 @@ mapPush : List a, (a → List Int) → List (List Int)
 mapPush xs f = List.map xs λx → List.push (f x) 1
 
 
+type Box
+    = Box (List Int)
+
+
+pub eq : Box, Box → Bool
+eq a b = List.length (push1 λ⊤ → [ 1 ]) == 2
+
+
 fresh : ⊤ → List Int
 fresh ⊤ = [ 7 ]
 
@@ -69,6 +78,7 @@ main =
             , shows (mapPush [ 6 ] λn → [ n ])
             , show (push1 fresh)
             , outerOnly ⊤
+            , if Box [ 1 ] == Box [ 1 ] then "same" else "other"
             ]
             "\n"
         )

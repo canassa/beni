@@ -1,6 +1,7 @@
 -- A comparison has no caller to discharge a need (`ownership-v2.md` §2.11.3,
--- §2.13.13 item 13): whatever its function answers, a write of it, here or in
--- a helper it hands the function to, is `comparison_changes_value`. `[ q ] == [ q ]`
+-- §2.13.13 item 13): whatever its function answers, a write of it, here, in a
+-- helper it hands the function to, through a lambda that forwards it, or of a
+-- parameter an identity hands back, is `comparison_changes_value`. `[ q ] == [ q ]`
 -- runs each `eq` with no need read, so the edit would change what `show y` prints.
 import List
 import Node exposing (Program)
@@ -15,19 +16,25 @@ push1 : (⊤ → List Int) → List Int
 push1 f = List.push (f ⊤) 1
 
 
+pushOf : (a → List Int), a → List Int
+pushOf f x = List.push (f x) 1
+
+
 type Box
-    = Box (⊤ → List Int) (⊤ → List Int)
+    = Box (⊤ → List Int) (⊤ → List Int) (⊤ → List Int) (List Int)
 
 
 pub eq : Box, Box → Bool
 eq a b =
     case a of
-        Box f g →
-            List.length (List.push (f ⊤) 1) == List.length (push1 g)
+        Box f g h xs →
+            one = List.length (List.push (f ⊤) 1) + List.length (push1 g)
+            two = List.length (push1 λ⊤ → h ⊤) + List.length (pushOf (λl → l) xs)
+            one == two
 
 
 main : Program
 main =
     y = [ 1 ]
-    q = Box (λ⊤ → y) λ⊤ → y
+    q = Box (λ⊤ → y) (λ⊤ → y) (λ⊤ → y) y
     Node.print ((if [ q ] == [ q ] then "t" else "f") ++ show y)
