@@ -1,0 +1,6 @@
+import Node
+import Probe
+
+
+main : Node.Program
+main = Node.printLines [ Probe.run ⊤, Probe.literal ⊤ ]

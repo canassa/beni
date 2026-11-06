@@ -10,4 +10,4 @@ pageBase _ =
 
 
 pub language : ⊤ → String
-language _ = Js.to (Js.get (Js.global "navigator") "language")
+language _ = Js.to (Js.get (Js.get (Js.get (Js.global "globalThis") "self") "navigator") "language")

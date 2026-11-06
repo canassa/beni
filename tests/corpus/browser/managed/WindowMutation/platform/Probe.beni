@@ -7,5 +7,8 @@ pageBase _ = ⊤
 
 pub observe : ⊤ → String
 observe _ =
-    Js.set (Js.global "globalThis") "window" (Js.from True)
+    installWindow ⊤
     if Js.isUndefined (Js.global "window") then "missing" else "present"
+
+
+foreign impure installWindow : ⊤ → ⊤

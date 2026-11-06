@@ -109,7 +109,7 @@ pub const Which = enum {
 
 /// No concrete realm is available to library output or embedded packs.
 pub fn entryWindow(realm: @import("../entry/Plan.zig").Realm, library: bool) ?bool {
-    return if (library) null else realm == .window;
+    return if (library or realm == .unknown) null else realm == .window;
 }
 
 pub fn hasEntryWindow(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, interner: anytype) bool {

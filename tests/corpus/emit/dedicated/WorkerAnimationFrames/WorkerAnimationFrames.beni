@@ -1,0 +1,23 @@
+-- Dedicated workers expose the frame APIs; shared/service siblings refuse them.
+import Frames
+import Page
+import Worker
+
+
+worker : Worker.Program String String ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle =
+            λmessage _ _ →
+                Frames.run ⊤
+                message
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+main : Page.Program
+main = Page.program λ_ →
+    _ = Worker.open worker
+    ⊤

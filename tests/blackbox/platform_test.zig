@@ -2171,7 +2171,7 @@ test "worker kept-code globals refuse raw page access through indirect routes" {
                 .severity = .@"error",
                 .span = .{ .file = "Main.beni", .start = .{ .line = 5, .col = 1 }, .end = .{ .line = 5, .col = 7 } },
                 .title = "WORKER REALM VIOLATION",
-                .message = try std.fmt.allocPrint(w.arena.allocator(), "`{s}` uses the page-only JavaScript global `{s}`, which entry realm `dedicatedWorker` does not have.", .{ scenario.owner, scenario.global }),
+                .message = try std.fmt.allocPrint(w.arena.allocator(), "`{s}` uses JavaScript access `{s}`, which is not proved available in entry realm `dedicatedWorker`.", .{ scenario.owner, scenario.global }),
             }, actual);
             try testing.expect(!w.exists("out"));
         }

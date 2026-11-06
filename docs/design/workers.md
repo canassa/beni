@@ -896,3 +896,9 @@ work. `runDefinition` registers the worker control-frame listeners: these mutate
 transport state, enqueue requests or start/resume owned fibers; handlers run
 through those fibers. The bodies retain transport callbacks and peer state,
 so these pins assert no borrowed or pure ownership shortcut.
+
+The `runDefinition` pin was reread for the 2026-11-06 receiver amendment:
+only the stored global-self endpoint was removed. Its owned root, boot call,
+control listeners, queue, cancellation and final close retain their previous
+behavior and custody. Posting resolves the worker global directly instead.
+The existing retention justification remains; no borrowed/pure claim is added.

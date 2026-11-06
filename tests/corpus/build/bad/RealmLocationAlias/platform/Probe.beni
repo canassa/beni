@@ -1,0 +1,7 @@
+-- Kept receiver use must be proved without following aliases (#2120).
+import Js
+
+
+pub run _ =
+    loc = Js.global "location"
+    Js.to (Js.call loc "reload" [])

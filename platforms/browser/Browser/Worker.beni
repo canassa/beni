@@ -279,7 +279,15 @@ post : V, V → Result SendError ⊤
 post target outgoing =
     Js.catchIf
         (λ⊤ →
-            _ = Js.call target "postMessage" [ outgoing ]
+            if Js.entryWindow ⊤ then
+                _ = Js.call target "postMessage" [ outgoing ]
+                ⊤
+            else if Js.isUndefined target then
+                _ = Js.call (Js.global "self") "postMessage" [ outgoing ]
+                ⊤
+            else
+                _ = Js.call target "postMessage" [ outgoing ]
+                ⊤
             Ok ⊤
         )
         (λcaught → nativeFailure caught "DataCloneError")
@@ -970,8 +978,7 @@ runDefinition : V → ⊤
 runDefinition definition =
     peer =
         Js.from
-            { native = Js.global "self"
-            , entry = Js.null
+            { entry = Js.null
             , fingerprint = Js.global "__beniWorkerFingerprint"
             , wire = Js.get definition "$wire"
             , generation = Js.null

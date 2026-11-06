@@ -46,3 +46,11 @@ are allowed. This adds no runtime guard.
 
 `Http` and `WebSocket` resolve relative URLs against the worker entry's URL.
 Pages keep document-base semantics, including a `<base>` element. Entry-specific compilation removes the unused URL-base branch before emission.
+
+Kept `globalThis`, `self`, `location` and `navigator` handles must be direct
+receivers of literal members available in that worker realm. Aliasing,
+storing/passing the handle, computed members and receiver writes are refused.
+Literal root/member chains obey the same rule. WorkerLocation is read-only;
+WorkerNavigator uses its worker-exposed IDL members. Animation frame APIs are
+available in dedicated workers, not shared/service workers. The diagnostic
+names the JavaScript access that is not proved available in the entry realm.

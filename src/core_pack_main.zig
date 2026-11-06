@@ -428,7 +428,9 @@ const Maker = struct {
         var recorder: Funnel.Recorder = .{};
         var overlay: InternPool.Overlay = .init(&session.interner);
         defer overlay.deinit(mk.gpa);
-        var lowered = Lower.lower(mk.gpa, mk.scratch, &overlay, .{
+        // Canonical pack rows have no entry realm. Emit skips these rows for
+        // selector users in a concrete entry; freezing an answer here is invalid.
+        const input: Lower.Input = .{
             .bir = bir,
             .birs = mk.birs,
             .provenance = session.resolution.provenance,
@@ -444,7 +446,9 @@ const Maker = struct {
             .schemas = &mk.schemas,
             .core_private = mk.core_private,
             .record = &recorder,
-        }) catch |err| switch (err) {
+        };
+        std.debug.assert(input.entry_window == null);
+        var lowered = Lower.lower(mk.gpa, mk.scratch, &overlay, input) catch |err| switch (err) {
             // A record with a hole in it: a defect in the funnel's bound,
             // not a module to ship (`Funnel.Recorder.reserve`).
             error.UnitRecordOverflow => {

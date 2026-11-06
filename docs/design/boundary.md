@@ -756,6 +756,11 @@ reference, never a page's or worker's answer. The backend subsection specifies
 per-entry emission and cache reuse. This compiler-only foreign has no sibling
 export: lowering supplies both the concrete answer and the library fallback.
 A nonliteral unit argument is still evaluated for its effects.
+A kept selector use in an entry whose realm is unknown is
+`worker_realm_violation`; it never defaults to false or uses the library
+fallback. The core pack leaves the entry fact unresolved, guarded by a debug
+assert; concrete entry emitters skip such unresolved rows as specified above.
+
 
 **`object : fields → Value`** (pure, 2026-10-02, the owner's decision on research 50 §7) is an
 object literal: `Js.object [ ( "k1", v1 ), ( "k2", v2 ) ]` is `{k1: v1, k2: v2}`. The argument is a
@@ -880,11 +885,6 @@ Anything the platform manages is handed to `init` as a value **no other code can
 unforgeable-capability trick. A user cannot fabricate a database handle or a socket; they can only
 use the one they were given, which is what makes a capability grantable and revocable rather than
 ambient.
-
-A kept selector use in an entry whose realm is unknown is
-`worker_realm_violation`; it never defaults to false or uses the library
-fallback. The core pack leaves the entry fact unresolved, guarded by a debug
-assert; concrete entry emitters skip such unresolved rows as specified above.
 
 ### 5.1 Many runtimes, few platforms
 

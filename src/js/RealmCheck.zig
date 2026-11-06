@@ -11,9 +11,9 @@ const Dispatch = @import("../check/Dispatch.zig");
 const JsIntrinsic = @import("JsIntrinsic.zig");
 const none = std.math.maxInt(u32);
 
-/// Window-only globals used by the privileged platform surface. Shared
-/// location/navigator names are not banned; direct Location navigation is
-/// checked separately below. This adds no native-object shape analysis.
+/// Globals unavailable to browser workers, except the dedicated-worker frame
+/// provider handled by pageName. Restricted receivers are checked syntactically
+/// below, without adding a native-object shape analysis.
 const page_only = std.StaticStringMap(void).initComptime(.{
     .{"document"},             .{"window"},
     .{"history"},              .{"localStorage"},
@@ -24,16 +24,69 @@ const page_only = std.StaticStringMap(void).initComptime(.{
     .{"Text"},
 });
 
-/// The page-only global the body of a declaration names, or `(computed)` when
-/// it names a global this check cannot read: a name that is not a literal, or
-/// `Js.global` passed as a value. A body kept for this entry may run in it,
-/// which is the whole argument: no call graph or value flow is followed here.
+/// A kept body's first unproved access. Unknown names and escaping receiver
+/// handles are refused rather than followed through an alias or value graph.
 fn globalName(e: anytype, b: *const Bir, inst: Bir.Inst.Index) ?[]const u8 {
     if (b.instTag(inst) != .call) return null;
     const d = b.instData(inst);
     if (JsIntrinsic.of(e.graph(), e.session.resolution.interfaces, b, @fromBackingInt(@intCast(d.lhs)), &e.session.interner) != .global) return null;
     const args = b.extraSlice(b.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Inst.Index);
     return if (args.len == 1 and b.instTag(args[0]) == .string) b.bytes(args[0]) else null;
+}
+
+const Receiver = enum { globalThis, self, location, navigator };
+
+/// Only literal root/member chains; aliases are deliberately not followed.
+fn receiver(e: anytype, b: *const Bir, at: Bir.Inst.Index) ?Receiver {
+    var current = at;
+    var result: ?Receiver = null;
+    while (current.int() < b.insts.len and b.instTag(current) == .call) {
+        if (globalName(e, b, current)) |name| {
+            const root = std.meta.stringToEnum(Receiver, name) orelse return null;
+            return if (result) |r| if (root == .globalThis or root == .self) r else null else root;
+        }
+        const d = b.instData(current);
+        if (JsIntrinsic.of(e.graph(), e.session.resolution.interfaces, b, @fromBackingInt(@intCast(d.lhs)), &e.session.interner) != .get) return null;
+        const args = b.extraSlice(b.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Inst.Index);
+        if (args.len != 2 or b.instTag(args[1]) != .string) return null;
+        const member = std.meta.stringToEnum(Receiver, b.bytes(args[1])) orelse return null;
+        if (result == null) result = member else if (member != .globalThis and member != .self) return null;
+        current = args[0];
+    }
+    return null;
+}
+
+fn pageName(name: []const u8, realm: @import("../entry/Plan.zig").Realm) bool {
+    if (realm == .dedicatedWorker and (std.mem.eql(u8, name, "requestAnimationFrame") or std.mem.eql(u8, name, "cancelAnimationFrame"))) return false;
+    return page_only.has(name);
+}
+
+// WorkerLocation and WorkerNavigator/mixin members from the pinned Webref IDL.
+const location_reads = std.StaticStringMap(void).initComptime(.{
+    .{"href"}, .{"origin"},   .{"protocol"}, .{"host"}, .{"hostname"},
+    .{"port"}, .{"pathname"}, .{"search"},   .{"hash"}, .{"toString"},
+});
+const navigator_reads = std.StaticStringMap(void).initComptime(.{
+    .{"appCodeName"},        .{"appName"},              .{"appVersion"},    .{"platform"},
+    .{"product"},            .{"userAgent"},            .{"language"},      .{"languages"},
+    .{"onLine"},             .{"hardwareConcurrency"},  .{"connection"},    .{"mediaCapabilities"},
+    .{"permissions"},        .{"serviceWorker"},        .{"storage"},       .{"storageBuckets"},
+    .{"crossOriginStorage"}, .{"globalPrivacyControl"}, .{"userAgentData"}, .{"usb"},
+    .{"locks"},              .{"gpu"},                  .{"ml"},
+});
+
+fn memberAllowed(kind: Receiver, member: []const u8, call: bool, realm: @import("../entry/Plan.zig").Realm) bool {
+    return switch (kind) {
+        .globalThis, .self => !pageName(member, realm) and (!call or std.meta.stringToEnum(Receiver, member) == null),
+        .location => if (call) std.mem.eql(u8, member, "toString") else location_reads.has(member),
+        .navigator => blk: {
+            if (std.mem.eql(u8, member, "setAppBadge") or std.mem.eql(u8, member, "clearAppBadge")) break :blk true;
+            if (call) break :blk false;
+            if (std.mem.eql(u8, member, "serial")) break :blk realm == .dedicatedWorker;
+            if (std.mem.eql(u8, member, "hid")) break :blk realm != .sharedWorker;
+            break :blk navigator_reads.has(member);
+        },
+    };
 }
 
 fn pageGlobal(e: anytype, m: Graph.Index, index: u32, seen: *std.DynamicBitSetUnmanaged) std.mem.Allocator.Error!?[]const u8 {
@@ -56,27 +109,37 @@ fn pageGlobal(e: anytype, m: Graph.Index, index: u32, seen: *std.DynamicBitSetUn
                 continue;
             }
         }
+        if (e.options.platform.entry_host == .unknown) {
+            if (JsIntrinsic.of(e.graph(), interfaces, b, inst, interner) == .entryWindow) return "entryWindow";
+            try b.operands(e.scratch, inst, &todo);
+            continue;
+        }
         if (b.instTag(inst) == .ext_value and JsIntrinsic.of(e.graph(), interfaces, b, inst, interner) == .global) return "(computed)";
         if (b.instTag(inst) == .call) {
             const which = JsIntrinsic.of(e.graph(), interfaces, b, @fromBackingInt(@intCast(data.lhs)), interner);
             const args = b.extraSlice(b.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index);
             if (which == .global) {
                 const name = globalName(e, b, inst) orelse return "(computed)";
-                if (page_only.has(name)) return name;
+                if (std.meta.stringToEnum(Receiver, name) != null) return try std.fmt.allocPrint(e.scratch, "{s} (escaping receiver)", .{name});
+                if (pageName(name, e.options.platform.entry_host)) return name;
                 continue;
             }
-            // Testing a missing global for undefined does not use a page capability.
-            if (which == .isUndefined and args.len == 1 and globalName(e, b, args[0]) != null) continue;
+            // Existing direct probes of absent globals remain runtime probes;
+            // the four restricted receivers cannot be passed even to a probe.
+            if (which == .isUndefined and args.len == 1) if (globalName(e, b, args[0])) |name| {
+                if (std.meta.stringToEnum(Receiver, name) == null) continue;
+            };
             if ((which == .get or which == .call or which == .set) and args.len >= 2) {
-                if (globalName(e, b, args[0])) |name| {
-                    if (std.mem.eql(u8, name, "location")) {
-                        if (which == .set) return "location.write";
-                        if (b.instTag(args[1]) != .string) return "(computed)";
-                        const member = b.bytes(args[1]);
-                        if (std.mem.eql(u8, member, "reload")) return "location.reload";
-                        if (std.mem.eql(u8, member, "assign")) return "location.assign";
-                        if (std.mem.eql(u8, member, "replace")) return "location.replace";
-                    }
+                if (receiver(e, b, args[0])) |kind| {
+                    if (which == .set) return try std.fmt.allocPrint(e.scratch, "{s} (receiver write)", .{@tagName(kind)});
+                    if (b.instTag(args[1]) != .string) return "(computed member)";
+                    const member = b.bytes(args[1]);
+                    if (!memberAllowed(kind, member, which == .call, e.options.platform.entry_host)) return try std.fmt.allocPrint(e.scratch, "{s}.{s}", .{ @tagName(kind), member });
+                    if (receiver(e, b, inst)) |escaping| return try std.fmt.allocPrint(e.scratch, "{s} (escaping receiver)", .{@tagName(escaping)});
+                    // The checked receiver chain consists only of literal reads.
+                    // Do not revisit its global as an escaping standalone value.
+                    for (args[2..]) |arg| try todo.append(e.scratch, arg);
+                    continue;
                 }
             }
         }
@@ -85,9 +148,8 @@ fn pageGlobal(e: anytype, m: Graph.Index, index: u32, seen: *std.DynamicBitSetUn
     return null;
 }
 
-/// Refuse a worker whose kept code names a page-only global, as `refuseDebug`
-/// refuses a release build that keeps `Debug`. Checks nothing else, writes
-/// nothing, and never runs for a page.
+/// Check retained access in worker entries, or a retained selector in an
+/// unknown entry. Window/node entries and libraries have no raw-global check.
 fn refusePageGlobals(e: anytype, module: Graph.Index, decl: u32) std.mem.Allocator.Error!bool {
     for (0..e.graph().count()) |mi| {
         const m: Graph.Index = @fromBackingInt(@intCast(mi));
@@ -98,7 +160,11 @@ fn refusePageGlobals(e: anytype, module: Graph.Index, decl: u32) std.mem.Allocat
             const global = try pageGlobal(e, m, @intCast(di), &seen) orelse continue;
             const b = e.bir(m);
             const realm = @tagName(e.options.platform.entry_host);
-            try e.report(.worker_realm_violation, e.graph().moduleFile(module), e.bir(module).decls[decl].name_token, "`{s}.{s}` uses the page-only JavaScript global `{s}`, which entry realm `{s}` does not have.", .{ e.session.interner.slice(e.graph().moduleName(m)), e.session.interner.slice(b.symbol(b.decls[di].name)), global, realm });
+            if (e.options.platform.entry_host == .unknown) {
+                try e.report(.worker_realm_violation, e.graph().moduleFile(module), e.bir(module).decls[decl].name_token, "`Js.entryWindow` needs a known entry realm. Declare `entryHost` for this platform; an entry cannot use the library fallback.", .{});
+                return true;
+            }
+            try e.report(.worker_realm_violation, e.graph().moduleFile(module), e.bir(module).decls[decl].name_token, "`{s}.{s}` uses JavaScript access `{s}`, which is not proved available in entry realm `{s}`.", .{ e.session.interner.slice(e.graph().moduleName(m)), e.session.interner.slice(b.symbol(b.decls[di].name)), global, realm });
             return true;
         }
     }
@@ -108,7 +174,7 @@ fn refusePageGlobals(e: anytype, module: Graph.Index, decl: u32) std.mem.Allocat
 pub fn check(e: anytype, module: Graph.Index, decl: u32) std.mem.Allocator.Error!void {
     if (e.options.library) return;
     const realm = e.options.platform.entry_host;
-    if ((realm == .dedicatedWorker or realm == .sharedWorker or realm == .serviceWorker) and try refusePageGlobals(e, module, decl)) return;
+    if ((realm == .dedicatedWorker or realm == .sharedWorker or realm == .serviceWorker or realm == .unknown) and try refusePageGlobals(e, module, decl)) return;
     if (!e.graph().has_native_bindings) return;
     const forbidden = Operations.bit(realm);
     const root_mask = e.session.checked.dispatch[module.int()].effectDecl(decl);
