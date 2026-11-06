@@ -11,6 +11,27 @@ const Trees = @import("Trees.zig");
 const Step = Place.Step;
 const Node = Trees.Node;
 
+/// The row step of a record whose fields are `kids`, sorted: at a type variable's place,
+/// past every field.
+pub fn addRow(a: anytype, kids: anytype) !void {
+    var ranks: std.ArrayList(u32) = .empty;
+    defer ranks.deinit(a.gpa);
+    for (kids.items) |k| try ranks.append(a.gpa, k.step.payload);
+    try kids.append(a.gpa, .{ .step = try a.places.rowStep(a.gpa, a.account, ranks.items), .id = try a.leaf(&a.var_id, .@"var") });
+}
+
+/// A template's row, a parameter substituted as any: the fields of `ext`, the adapter's node
+/// of the argument, join `kids`. Whether the record's row stays open.
+pub fn substitute(a: anytype, ext: ?u32, kids: anytype) !bool {
+    const n = a.nodes.items[ext orelse return true];
+    if (n.kind != .structural or n.place_kind != .record) return true;
+    var open = false;
+    for (a.kids.items[n.a..][0..n.b]) |k| if (k.step.kind == .field) try kids.append(a.gpa, k) else {
+        open = true;
+    };
+    return open;
+}
+
 /// Step `st` of a built record `v`: the field's kid, read from the row's
 /// kid when none names it. A row step that is not the record's own is the kids its names do
 /// not hold, a view with no storage of its own (§2.1, *The row of a record*).
