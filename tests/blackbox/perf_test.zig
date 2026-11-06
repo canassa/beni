@@ -401,6 +401,77 @@ test "an annotation over an alias DAG whose uses differ in their arguments is no
     try s.finish("an annotation over an alias DAG with arguments", try s.ratio("D16.beni", "D32.beni", 16));
 }
 
+// Three diamonds of aliases, each `depth` deep: `A{i} a = A{i-1} (A{i-1}
+// a)` over `A0 a = a`, the same over `K0 a = String`, and `P{i} a b =
+// P{i-1} a (P{i-1} a b)` over `P0 a b = { value : a }` (#1475). Each names
+// 2^depth applications, and its type is `Int`, `String` or `{ value : a }`.
+// The outer application's argument is the inner alias variable, a new root
+// at every level, so a read that keys an alias by all its arguments' roots
+// expanded 2^depth bodies. It keys one by the arguments its type shows
+// (checker-v2.md §7.4, amended 2026-11-06), so each level costs one
+// expansion. `Chain` reads them in its own module, in a private constructor
+// nothing calls (the issue's form) and in public declarations; `Main` reads
+// them through `Chain`'s interface and through its declarations.
+// Calibration (ReleaseFast): see `diamondChain`.
+test "checking a diamond of aliases is linear in its depth" {
+    var s = try Perf.init(.concurrent);
+    defer s.deinit();
+    for ([_]usize{ 100, 200 }) |depth| {
+        try s.w.write(try std.fmt.allocPrint(s.arena(), "D{d}/Chain.beni", .{depth}), try diamondChain(s.arena(), depth));
+        try s.w.write(try std.fmt.allocPrint(s.arena(), "D{d}/Main.beni", .{depth}), try diamondMain(s.arena(), depth));
+    }
+    try s.finish("a diamond of aliases", try s.ratio("D100", "D200", 100));
+}
+
+/// The three diamonds of the scenario above, `depth` deep, and the
+/// declarations that read them.
+fn diamondChain(arena: std.mem.Allocator, depth: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "type alias A0 a =\n    a\n\n\ntype alias K0 a =\n    String\n\n\ntype alias P0 a b =\n    value : a\n\n\n");
+    for (1..depth + 1) |i| {
+        try out.print(arena, "type alias A{d} a =\n    A{d} (A{d} a)\n\n\n", .{ i, i - 1, i - 1 });
+        try out.print(arena, "type alias K{d} a =\n    K{d} (K{d} a)\n\n\n", .{ i, i - 1, i - 1 });
+        try out.print(arena, "type alias P{d} a b =\n    P{d} a (P{d} a b)\n\n\n", .{ i, i - 1, i - 1 });
+    }
+    try out.print(arena,
+        \\pub type alias Deep a =
+        \\    A{d} a
+        \\
+        \\
+        \\type Unused
+        \\    = Unused (A{d} Int)
+        \\
+        \\
+        \\pub type Hidden
+        \\    = Hidden (A{d} Int)
+        \\
+        \\
+        \\pub name : K{d} Bool
+        \\name = "K"
+        \\
+        \\
+        \\pub boxed : P{d} Int (A{d} String)
+        \\boxed = {{ value = 41 }}
+        \\
+    , .{ depth, depth, depth, depth, depth, depth });
+    return out.items;
+}
+
+fn diamondMain(arena: std.mem.Allocator, depth: usize) ![]const u8 {
+    _ = depth;
+    return try arena.dupe(u8,
+        \\import Chain exposing (Hidden)
+        \\
+        \\
+        \\pub six : Chain.Deep Int
+        \\six =
+        \\    case Hidden 5 of
+        \\        Hidden n →
+        \\            n + Chain.boxed.value
+        \\
+    );
+}
+
 /// `type alias A0 a = Maybe a`, `type alias A{i} a = ( A{i-1} a, A{i-1}
 /// (List a) )` up to `depth`, and `f : A{depth} Int -> Int`.
 fn argumentDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {

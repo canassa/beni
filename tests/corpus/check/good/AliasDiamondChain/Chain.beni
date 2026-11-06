@@ -1,0 +1,804 @@
+-- See Main.beni. Three diamonds of aliases, each 64 deep: `A{i} a` is
+-- `A{i-1} (A{i-1} a)`, so `A64 Int` names 2^64 applications and is `Int`;
+-- `K64 a` is the same diamond over an alias that drops its argument, and is
+-- `String`; `P64 a b` hands `a` to the record at the bottom and `b` to the
+-- next level only, and is `{ value : a }`. `Unused` is #1475's form: a
+-- private constructor nothing calls.
+type alias A0 a =
+    a
+
+
+type alias A1 a =
+    A0 (A0 a)
+
+
+type alias A2 a =
+    A1 (A1 a)
+
+
+type alias A3 a =
+    A2 (A2 a)
+
+
+type alias A4 a =
+    A3 (A3 a)
+
+
+type alias A5 a =
+    A4 (A4 a)
+
+
+type alias A6 a =
+    A5 (A5 a)
+
+
+type alias A7 a =
+    A6 (A6 a)
+
+
+type alias A8 a =
+    A7 (A7 a)
+
+
+type alias A9 a =
+    A8 (A8 a)
+
+
+type alias A10 a =
+    A9 (A9 a)
+
+
+type alias A11 a =
+    A10 (A10 a)
+
+
+type alias A12 a =
+    A11 (A11 a)
+
+
+type alias A13 a =
+    A12 (A12 a)
+
+
+type alias A14 a =
+    A13 (A13 a)
+
+
+type alias A15 a =
+    A14 (A14 a)
+
+
+type alias A16 a =
+    A15 (A15 a)
+
+
+type alias A17 a =
+    A16 (A16 a)
+
+
+type alias A18 a =
+    A17 (A17 a)
+
+
+type alias A19 a =
+    A18 (A18 a)
+
+
+type alias A20 a =
+    A19 (A19 a)
+
+
+type alias A21 a =
+    A20 (A20 a)
+
+
+type alias A22 a =
+    A21 (A21 a)
+
+
+type alias A23 a =
+    A22 (A22 a)
+
+
+type alias A24 a =
+    A23 (A23 a)
+
+
+type alias A25 a =
+    A24 (A24 a)
+
+
+type alias A26 a =
+    A25 (A25 a)
+
+
+type alias A27 a =
+    A26 (A26 a)
+
+
+type alias A28 a =
+    A27 (A27 a)
+
+
+type alias A29 a =
+    A28 (A28 a)
+
+
+type alias A30 a =
+    A29 (A29 a)
+
+
+type alias A31 a =
+    A30 (A30 a)
+
+
+type alias A32 a =
+    A31 (A31 a)
+
+
+type alias A33 a =
+    A32 (A32 a)
+
+
+type alias A34 a =
+    A33 (A33 a)
+
+
+type alias A35 a =
+    A34 (A34 a)
+
+
+type alias A36 a =
+    A35 (A35 a)
+
+
+type alias A37 a =
+    A36 (A36 a)
+
+
+type alias A38 a =
+    A37 (A37 a)
+
+
+type alias A39 a =
+    A38 (A38 a)
+
+
+type alias A40 a =
+    A39 (A39 a)
+
+
+type alias A41 a =
+    A40 (A40 a)
+
+
+type alias A42 a =
+    A41 (A41 a)
+
+
+type alias A43 a =
+    A42 (A42 a)
+
+
+type alias A44 a =
+    A43 (A43 a)
+
+
+type alias A45 a =
+    A44 (A44 a)
+
+
+type alias A46 a =
+    A45 (A45 a)
+
+
+type alias A47 a =
+    A46 (A46 a)
+
+
+type alias A48 a =
+    A47 (A47 a)
+
+
+type alias A49 a =
+    A48 (A48 a)
+
+
+type alias A50 a =
+    A49 (A49 a)
+
+
+type alias A51 a =
+    A50 (A50 a)
+
+
+type alias A52 a =
+    A51 (A51 a)
+
+
+type alias A53 a =
+    A52 (A52 a)
+
+
+type alias A54 a =
+    A53 (A53 a)
+
+
+type alias A55 a =
+    A54 (A54 a)
+
+
+type alias A56 a =
+    A55 (A55 a)
+
+
+type alias A57 a =
+    A56 (A56 a)
+
+
+type alias A58 a =
+    A57 (A57 a)
+
+
+type alias A59 a =
+    A58 (A58 a)
+
+
+type alias A60 a =
+    A59 (A59 a)
+
+
+type alias A61 a =
+    A60 (A60 a)
+
+
+type alias A62 a =
+    A61 (A61 a)
+
+
+type alias A63 a =
+    A62 (A62 a)
+
+
+pub type alias A64 a =
+    A63 (A63 a)
+
+
+type alias K0 a =
+    String
+
+
+type alias K1 a =
+    K0 (K0 a)
+
+
+type alias K2 a =
+    K1 (K1 a)
+
+
+type alias K3 a =
+    K2 (K2 a)
+
+
+type alias K4 a =
+    K3 (K3 a)
+
+
+type alias K5 a =
+    K4 (K4 a)
+
+
+type alias K6 a =
+    K5 (K5 a)
+
+
+type alias K7 a =
+    K6 (K6 a)
+
+
+type alias K8 a =
+    K7 (K7 a)
+
+
+type alias K9 a =
+    K8 (K8 a)
+
+
+type alias K10 a =
+    K9 (K9 a)
+
+
+type alias K11 a =
+    K10 (K10 a)
+
+
+type alias K12 a =
+    K11 (K11 a)
+
+
+type alias K13 a =
+    K12 (K12 a)
+
+
+type alias K14 a =
+    K13 (K13 a)
+
+
+type alias K15 a =
+    K14 (K14 a)
+
+
+type alias K16 a =
+    K15 (K15 a)
+
+
+type alias K17 a =
+    K16 (K16 a)
+
+
+type alias K18 a =
+    K17 (K17 a)
+
+
+type alias K19 a =
+    K18 (K18 a)
+
+
+type alias K20 a =
+    K19 (K19 a)
+
+
+type alias K21 a =
+    K20 (K20 a)
+
+
+type alias K22 a =
+    K21 (K21 a)
+
+
+type alias K23 a =
+    K22 (K22 a)
+
+
+type alias K24 a =
+    K23 (K23 a)
+
+
+type alias K25 a =
+    K24 (K24 a)
+
+
+type alias K26 a =
+    K25 (K25 a)
+
+
+type alias K27 a =
+    K26 (K26 a)
+
+
+type alias K28 a =
+    K27 (K27 a)
+
+
+type alias K29 a =
+    K28 (K28 a)
+
+
+type alias K30 a =
+    K29 (K29 a)
+
+
+type alias K31 a =
+    K30 (K30 a)
+
+
+type alias K32 a =
+    K31 (K31 a)
+
+
+type alias K33 a =
+    K32 (K32 a)
+
+
+type alias K34 a =
+    K33 (K33 a)
+
+
+type alias K35 a =
+    K34 (K34 a)
+
+
+type alias K36 a =
+    K35 (K35 a)
+
+
+type alias K37 a =
+    K36 (K36 a)
+
+
+type alias K38 a =
+    K37 (K37 a)
+
+
+type alias K39 a =
+    K38 (K38 a)
+
+
+type alias K40 a =
+    K39 (K39 a)
+
+
+type alias K41 a =
+    K40 (K40 a)
+
+
+type alias K42 a =
+    K41 (K41 a)
+
+
+type alias K43 a =
+    K42 (K42 a)
+
+
+type alias K44 a =
+    K43 (K43 a)
+
+
+type alias K45 a =
+    K44 (K44 a)
+
+
+type alias K46 a =
+    K45 (K45 a)
+
+
+type alias K47 a =
+    K46 (K46 a)
+
+
+type alias K48 a =
+    K47 (K47 a)
+
+
+type alias K49 a =
+    K48 (K48 a)
+
+
+type alias K50 a =
+    K49 (K49 a)
+
+
+type alias K51 a =
+    K50 (K50 a)
+
+
+type alias K52 a =
+    K51 (K51 a)
+
+
+type alias K53 a =
+    K52 (K52 a)
+
+
+type alias K54 a =
+    K53 (K53 a)
+
+
+type alias K55 a =
+    K54 (K54 a)
+
+
+type alias K56 a =
+    K55 (K55 a)
+
+
+type alias K57 a =
+    K56 (K56 a)
+
+
+type alias K58 a =
+    K57 (K57 a)
+
+
+type alias K59 a =
+    K58 (K58 a)
+
+
+type alias K60 a =
+    K59 (K59 a)
+
+
+type alias K61 a =
+    K60 (K60 a)
+
+
+type alias K62 a =
+    K61 (K61 a)
+
+
+type alias K63 a =
+    K62 (K62 a)
+
+
+type alias K64 a =
+    K63 (K63 a)
+
+
+type alias P0 a b =
+    value : a
+
+
+type alias P1 a b =
+    P0 a (P0 a b)
+
+
+type alias P2 a b =
+    P1 a (P1 a b)
+
+
+type alias P3 a b =
+    P2 a (P2 a b)
+
+
+type alias P4 a b =
+    P3 a (P3 a b)
+
+
+type alias P5 a b =
+    P4 a (P4 a b)
+
+
+type alias P6 a b =
+    P5 a (P5 a b)
+
+
+type alias P7 a b =
+    P6 a (P6 a b)
+
+
+type alias P8 a b =
+    P7 a (P7 a b)
+
+
+type alias P9 a b =
+    P8 a (P8 a b)
+
+
+type alias P10 a b =
+    P9 a (P9 a b)
+
+
+type alias P11 a b =
+    P10 a (P10 a b)
+
+
+type alias P12 a b =
+    P11 a (P11 a b)
+
+
+type alias P13 a b =
+    P12 a (P12 a b)
+
+
+type alias P14 a b =
+    P13 a (P13 a b)
+
+
+type alias P15 a b =
+    P14 a (P14 a b)
+
+
+type alias P16 a b =
+    P15 a (P15 a b)
+
+
+type alias P17 a b =
+    P16 a (P16 a b)
+
+
+type alias P18 a b =
+    P17 a (P17 a b)
+
+
+type alias P19 a b =
+    P18 a (P18 a b)
+
+
+type alias P20 a b =
+    P19 a (P19 a b)
+
+
+type alias P21 a b =
+    P20 a (P20 a b)
+
+
+type alias P22 a b =
+    P21 a (P21 a b)
+
+
+type alias P23 a b =
+    P22 a (P22 a b)
+
+
+type alias P24 a b =
+    P23 a (P23 a b)
+
+
+type alias P25 a b =
+    P24 a (P24 a b)
+
+
+type alias P26 a b =
+    P25 a (P25 a b)
+
+
+type alias P27 a b =
+    P26 a (P26 a b)
+
+
+type alias P28 a b =
+    P27 a (P27 a b)
+
+
+type alias P29 a b =
+    P28 a (P28 a b)
+
+
+type alias P30 a b =
+    P29 a (P29 a b)
+
+
+type alias P31 a b =
+    P30 a (P30 a b)
+
+
+type alias P32 a b =
+    P31 a (P31 a b)
+
+
+type alias P33 a b =
+    P32 a (P32 a b)
+
+
+type alias P34 a b =
+    P33 a (P33 a b)
+
+
+type alias P35 a b =
+    P34 a (P34 a b)
+
+
+type alias P36 a b =
+    P35 a (P35 a b)
+
+
+type alias P37 a b =
+    P36 a (P36 a b)
+
+
+type alias P38 a b =
+    P37 a (P37 a b)
+
+
+type alias P39 a b =
+    P38 a (P38 a b)
+
+
+type alias P40 a b =
+    P39 a (P39 a b)
+
+
+type alias P41 a b =
+    P40 a (P40 a b)
+
+
+type alias P42 a b =
+    P41 a (P41 a b)
+
+
+type alias P43 a b =
+    P42 a (P42 a b)
+
+
+type alias P44 a b =
+    P43 a (P43 a b)
+
+
+type alias P45 a b =
+    P44 a (P44 a b)
+
+
+type alias P46 a b =
+    P45 a (P45 a b)
+
+
+type alias P47 a b =
+    P46 a (P46 a b)
+
+
+type alias P48 a b =
+    P47 a (P47 a b)
+
+
+type alias P49 a b =
+    P48 a (P48 a b)
+
+
+type alias P50 a b =
+    P49 a (P49 a b)
+
+
+type alias P51 a b =
+    P50 a (P50 a b)
+
+
+type alias P52 a b =
+    P51 a (P51 a b)
+
+
+type alias P53 a b =
+    P52 a (P52 a b)
+
+
+type alias P54 a b =
+    P53 a (P53 a b)
+
+
+type alias P55 a b =
+    P54 a (P54 a b)
+
+
+type alias P56 a b =
+    P55 a (P55 a b)
+
+
+type alias P57 a b =
+    P56 a (P56 a b)
+
+
+type alias P58 a b =
+    P57 a (P57 a b)
+
+
+type alias P59 a b =
+    P58 a (P58 a b)
+
+
+type alias P60 a b =
+    P59 a (P59 a b)
+
+
+type alias P61 a b =
+    P60 a (P60 a b)
+
+
+type alias P62 a b =
+    P61 a (P61 a b)
+
+
+type alias P63 a b =
+    P62 a (P62 a b)
+
+
+type alias P64 a b =
+    P63 a (P63 a b)
+
+
+type Unused
+    = Unused (A64 Int)
+
+
+pub type Hidden
+    = Hidden (A64 Int)
+
+
+pub unhide : Hidden → A64 Int
+unhide (Hidden n) = n
+
+
+pub name : K64 Bool
+name = "K64"
+
+
+pub boxed : P64 Int (A64 String)
+boxed = { value = 41 }
