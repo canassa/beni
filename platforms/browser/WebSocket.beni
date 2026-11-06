@@ -73,7 +73,7 @@ pub type CloseError
 
 --| Why a connection did not open.
 --|
---| - `BadUrl`: the URL does not parse relative to the page, its scheme is
+--| - `BadUrl`: the URL does not parse relative to the entry base, its scheme is
 --|   not `ws`, `wss`, `http` or `https`, or it has a fragment.
 --| - `BadProtocol`: a subprotocol that is not a token, or one given twice.
 --| - `Blocked`: the host refused the connection at once, with a
@@ -271,13 +271,17 @@ start url protocols listened =
                                     Ok (attach w url listened)
 
 
--- The URL resolved against the page, or null: `URL.parse` answers null for
+-- The URL resolved against the entry base, or null: `URL.parse` answers null for
 -- what does not parse, and an engine without it has `new URL`, whose one
 -- documented failure is a `TypeError`.
 resolve : String → V
 resolve url =
     constructor = Js.global "URL"
-    base = Js.get (Js.global "document") "baseURI"
+    base =
+        if Js.entryWindow ⊤ then
+            Js.get (Js.global "document") "baseURI"
+        else
+            Js.get (Js.global "location") "href"
     if Js.isUndefined (Js.get constructor "parse") then
         Js.catchIf
             (λ⊤ → Js.construct constructor [ Js.from url, base ])

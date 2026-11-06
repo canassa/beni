@@ -1,0 +1,1 @@
+{"platform":true,"name":"layered-worker","program":"Page.Program","platforms":["browser"],"reexports":["Browser","Browser.Worker","Hosted","Html"],"entryKinds":[{"programType":"Page.Program","realm":"window","runtime":"Page","constructors":[],"launches":[],"parameters":[]}]}

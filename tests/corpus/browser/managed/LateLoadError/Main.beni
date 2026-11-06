@@ -1,0 +1,54 @@
+import Browser
+import Browser.Worker as Worker
+import Duration
+import Hosted
+import Probe
+import Task
+
+
+worker : Worker.Program ⊤ ⊤ (Worker.Protocol ⊤ ⊤ ⊥ String ⊥ ⊥)
+worker =
+    Worker.program
+        { init = λ_ _ → Ok ⊤, start = λ_ _ → ⊤, handle = λ_ _ _ → Ok ⊤, stream = Worker.noStream }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+exercise : Hosted.Outlet Msg → String
+exercise outlet = Task.scope λowned →
+    Probe.install ⊤
+    case Worker.open owned worker ⊤ { Worker.options | cleanupWithin = Duration.millis 10 } of
+        Err { reason } →
+            Probe.late ⊤
+            case reason of
+                Worker.WorkerLoadFailed →
+                    "load failed"
+                _ →
+                    "wrong failure"
+        Ok _ →
+            "unexpected ready"
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise outlet))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel →
+                <main>
+                    <button id="launch" onClick={Launch}>launch</button><output>{model}</output><p id="stage">waiting</p>
+                </main>
+        }

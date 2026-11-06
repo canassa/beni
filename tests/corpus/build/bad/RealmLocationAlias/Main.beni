@@ -1,0 +1,6 @@
+import Probe
+import Start
+
+
+main : Start.Program
+main = Start.program (Probe.run ⊤)

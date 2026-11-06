@@ -1080,7 +1080,12 @@ fn bodyOf(arena: std.mem.Allocator, source: []const u8, file: []const u8, name: 
         var in = false;
         while (lines.next()) |line| {
             if (!in) {
-                if (std.mem.startsWith(u8, line, sig_pub) or std.mem.startsWith(u8, line, sig)) in = true else continue;
+                // Compiler-only primitives pin their foreign signature here
+                // and their actual implementation separately in the generator.
+                const foreign_head = if (std.mem.startsWith(u8, line, "pub foreign ")) line["pub foreign ".len..] else if (std.mem.startsWith(u8, line, "foreign ")) line["foreign ".len..] else "";
+                const rung = std.mem.indexOfScalar(u8, foreign_head, ' ');
+                const foreign_sig = if (rung) |at| foreign_head[at + 1 ..] else "";
+                if (std.mem.startsWith(u8, line, sig_pub) or std.mem.startsWith(u8, line, sig) or std.mem.startsWith(u8, foreign_sig, sig)) in = true else continue;
             } else if (line.len != 0 and line[0] != ' ' and !std.mem.startsWith(u8, line, def)) break;
             try out.appendSlice(arena, line);
             try out.append(arena, '\n');

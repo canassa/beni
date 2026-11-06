@@ -149,6 +149,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         return platform.reportLoad(stderr, requested, err);
 
     const items = Emit.checkContract(gpa, arena, &session, .{
+        .allow_unchecked_workers = check.allow_unchecked_workers,
         .out_dir = &.{}, // nothing is written; the field is `run`'s
         .platform = loaded.platform,
         .embedded = loaded.embedded,

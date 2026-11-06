@@ -1,0 +1,1 @@
+{"platform": true, "name": "realmframesservice", "program": "Start.Program", "entryKinds": [{"programType": "Start.Program", "realm": "serviceWorker", "runtime": "Start", "constructors": [], "launches": [], "parameters": []}]}

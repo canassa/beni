@@ -273,6 +273,7 @@ pub const Result = struct {
 
 /// The whole-program input. Every slice is indexed by `Graph.Index`.
 pub const Input = struct {
+    entry_window: ?bool = null,
     graph: *const Graph,
     store: *const SourceStore,
     birs: []const *const Bir,
@@ -301,6 +302,10 @@ pub const Input = struct {
     /// hand-written runtime or the entry file reads, or that a lowering
     /// imports (`backend.md` §15.1, *The runtime module*).
     extra_roots: []const Node = &.{},
+    // Wire values arrive from another entry, outside this entry's builders.
+    wire_types: []const Types.TypeId = &.{},
+    // Deferred Program bodies belong only to their selected entry.
+    deferred: []const Node = &.{},
     /// The schema plans, one per module: what a schema member's edges are
     /// read from (`schema.md` §6).
     plans: []const SchemaPlan = &.{},
@@ -538,6 +543,12 @@ pub fn walk(scratch: Allocator, in: Input, edges: []const ModuleEdges) Allocator
         if (mark(modules, root)) try stack.append(scratch, root);
     }
     while (stack.pop()) |node| {
+        if (node.kind == .decl and (in.entry == null or !std.meta.eql(node, in.entry.?))) {
+            const deferred = for (in.deferred) |d| {
+                if (std.meta.eql(node, d)) break true;
+            } else false;
+            if (deferred) continue;
+        }
         const module = node.module;
         const out = if (node.kind == .lift) (if (node.index < in.lift_targets.len) in.lift_targets[node.index] else &.{}) else edges[module.int()].targets(node);
         for (out) |next| {
@@ -620,6 +631,10 @@ fn exempt(in: Input, scratch: Allocator, modules: []Live) Allocator.Error!void {
     const seen = try scratch.alloc(std.DynamicBitSetUnmanaged, count);
     for (seen, 0..) |*s, i| s.* = try .initEmpty(scratch, in.birOf(@fromBackingInt(@intCast(@as(u32, @intCast(i))))).decls.len);
     var work: std.ArrayList(TypeDecl) = .empty;
+    for (in.wire_types) |id| {
+        const entry = in.types.entry(id);
+        try work.append(scratch, .{ .module = entry.module, .decl = entry.decl.int() });
+    }
     for (0..count) |i| {
         const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         for (in.birOf(m).decls, 0..) |d, index| switch (d.kind) {
@@ -882,7 +897,7 @@ pub const ModuleEdges = struct {
     chains: []const Chain = &.{},
     chain_ctors: []const Node = &.{},
 
-    fn targets(e: ModuleEdges, node: Node) []const Target {
+    pub fn targets(e: ModuleEdges, node: Node) []const Target {
         const at, const list = switch (node.kind) {
             .decl => .{ e.decl_at, e.decl_targets },
             .derived => .{ e.derived_at, e.derived_targets },
@@ -1229,7 +1244,8 @@ pub const Builder = struct {
                 // its `Basics.append` is no reference.
                 if (dispatch.isListAppend(@fromBackingInt(@intCast(i)))) {
                     marks[d.lhs] = true;
-                } else if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @fromBackingInt(@intCast(d.lhs)), interner) != null) {
+                } else if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @fromBackingInt(@intCast(d.lhs)), interner)) |which| {
+                    _ = which;
                     marks[d.lhs] = true;
                 } else if (SchemaGraph.jsonCall(b.in.graph, b.in.interfaces, bir, dispatch, interner, @fromBackingInt(@intCast(i))) != null) {
                     // A derived codec's own `parse` or `print` (schema.md
@@ -1243,7 +1259,7 @@ pub const Builder = struct {
                 }
             },
             .ext_value => if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @fromBackingInt(@intCast(i)), interner)) |which| {
-                if (which == .null or which == .undefined or which == .development or which == .testHooks) marks[i] = true;
+                if (which == .null or which == .undefined or which == .development or which == .testHooks or which == .entryWindow) marks[i] = true;
             },
             else => {},
         };
@@ -1647,7 +1663,7 @@ pub const Builder = struct {
                 .case => if (g.b.in.interner) |interner| {
                     const case_inst: Bir.Inst.Index = @fromBackingInt(@intCast(@as(u32, @intCast(p))));
                     const never: Node = .{ .module = g.m, .kind = .ctor, .index = never_ctor };
-                    if (JsIntrinsic.droppedArm(g.b.in.graph, g.b.in.interfaces, bir, case_inst, interner, g.b.in.release, g.b.in.test_hooks)) |branch| {
+                    if (JsIntrinsic.droppedArm(g.b.in.graph, g.b.in.interfaces, bir, case_inst, interner, g.b.in.release, g.b.in.test_hooks, g.b.in.entry_window)) |branch| {
                         try g.guardArm(branch, never, start, @intCast(p));
                         continue;
                     }

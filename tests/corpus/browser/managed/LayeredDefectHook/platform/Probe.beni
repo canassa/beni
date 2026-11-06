@@ -1,0 +1,4 @@
+pub foreign impure defect : ⊤ → a
+
+
+pub foreign impure stopped : ⊤ → ⊤

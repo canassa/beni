@@ -1,0 +1,9 @@
+-- The synchronous entry starts a root fiber; init resumes after a yield.
+import Start
+import Task
+
+
+main : Start.Program
+main = Start.make λ⊤ →
+    Task.yieldNow ⊤
+    Start.log "after yield"

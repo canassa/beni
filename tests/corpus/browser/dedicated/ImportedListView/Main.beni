@@ -1,0 +1,28 @@
+-- Opening an imported Program must normalize List rest views before cloning.
+import Page
+import String
+import Sub
+import Worker
+
+
+rest : List Int → List Int
+rest values =
+    case values of
+        [ _, …tail ] →
+            tail
+        _ →
+            []
+
+
+launch : ⊤ → ⊤
+launch _ =
+    case Worker.open Sub.sub of
+        Ok handle →
+            Worker.receive handle λsum → Page.text (String.fromInt sum)
+            Worker.send handle (rest [ 1, 2, 3, 4 ])
+        Err _ →
+            Page.text "open failed"
+
+
+main : Page.Program
+main = Page.program λ_ → Page.button launch

@@ -1,0 +1,4 @@
+click-wait #launch #stage "ready withheld"
+advance 20
+advance 20
+click #release

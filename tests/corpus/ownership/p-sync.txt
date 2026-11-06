@@ -34,3 +34,6 @@ node              platforms/node/Http/Server.beni                 Http.Server.re
 node              platforms/node/Http/Server.beni                 Http.Server.takeUpgrade
 node              platforms/node/Io.beni                          Io.run
 node              platforms/node/WebSocket.beni                   WebSocket.fromUpgrade
+browser           platforms/browser/Browser/Worker.beni Browser.Worker.listen
+browser           platforms/browser/Browser/Worker.beni Browser.Worker.installFatal
+browser           platforms/browser/Browser/Worker.beni Browser.Worker.runDefinition

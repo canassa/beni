@@ -1,0 +1,6 @@
+import Forward
+import Page
+
+
+main : Page.Program
+main = Page.program λ_ → Forward.forward λ_ → ⊤

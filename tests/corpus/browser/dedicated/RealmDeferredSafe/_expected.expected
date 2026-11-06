@@ -1,0 +1,10 @@
+-- load
+<body>
+  <output>"ready"</output>
+  <button>"launch"</button>
+</body>
+-- click-wait button output "safe"
+<body>
+  <output>"safe"</output>
+  <button>"launch"</button>
+</body>

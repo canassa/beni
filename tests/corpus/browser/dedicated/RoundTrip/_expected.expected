@@ -1,0 +1,10 @@
+-- load
+<body data-page="page-only">
+  <output>"page-only"</output>
+  <button>"launch"</button>
+</body>
+-- click-wait button output "reply:ping"
+<body data-page="page-only">
+  <output>"reply:ping"</output>
+  <button>"launch"</button>
+</body>

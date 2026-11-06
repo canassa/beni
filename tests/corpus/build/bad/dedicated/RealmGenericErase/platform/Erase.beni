@@ -1,0 +1,5 @@
+import Js
+
+
+pub erase : a → Js.Value
+erase x = Js.from x

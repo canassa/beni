@@ -1,0 +1,65 @@
+-- A one-element view is admitted by its normalized bytes, not its 200000-item base.
+import Browser
+import Browser.Worker as Worker
+import Hosted
+import Html exposing (Html)
+import List
+import Task
+
+
+type alias Protocol =
+    Worker.Protocol (List Int) Int ⊥ ⊥ ⊥ ⊥
+
+
+worker : Worker.Program ⊤ ⊤ Protocol
+worker =
+    Worker.program
+        { init = λ_ _ → Ok ⊤
+        , start = λ_ _ → ⊤
+        , handle = λ_ _ values → Ok (List.sum values)
+        , stream = Worker.noStream
+        }
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+exercise : ⊤ → String
+exercise _ = Task.scope λowner →
+    case Worker.open owner worker ⊤ { Worker.options | queuedBytes = 64 } of
+        Err _ →
+            "open failed"
+        Ok handle →
+            result = Worker.call handle (List.drop (List.range 1 200000) 199999)
+            _ = Worker.close handle
+            case result of
+                Ok value →
+                    "accepted " ++ String.fromInt value
+                Err (Worker.Transport (Worker.SendFailed Worker.QueueFull)) →
+                    "QueueFull"
+                Err _ →
+                    "call failed"
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → "idle"
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        model
+                    Finished text →
+                        text
+        , settle = λ_ model → model
+        , view =
+            λmodel →
+                <main>
+                    <button onClick={Launch}>launch</button><output>{if model == "idle" then "idle" else "done"}</output><p>{model}</p>
+                </main>
+        }

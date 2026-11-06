@@ -1,0 +1,13 @@
+pub type Cmd
+    = Stop
+    | Go Int
+
+
+pub type Answer
+    = Dark { count : Int, values : List String }
+    | Light
+
+
+pub type alias Reply =
+    answerText : Maybe Answer
+    rank : Int

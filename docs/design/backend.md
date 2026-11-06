@@ -148,6 +148,20 @@ exported and still a root, because Â§5's export list has the entry declaration
 library at its export list; Â§9's "Roots" says why at length. It is not a second output mode; a
 library build emits the same `.mjs` per module as any other.
 
+**A generic entry runtime is selected by the platform's `entryKinds` row.**
+The top-level `program` names the nominal type; `main` may have an applied type
+such as `Start.Program String`, or an alias of it. The selected runtime is a
+beni module with a public, synchronous `run` taking that Program and returning
+unit. The entry imports it and calls `run(main)`; release output makes the same
+call in its hoisted scope. No markup lowering or legacy runtime file is required.
+A chain with an `entryKinds` row may omit `runtime`. Check and build report
+`invalid_entry_kind` for invalid metadata or runtime signatures, and
+`entry_runtime_suspends` when `run` itself may suspend. Initialization may suspend
+inside a root fiber started by `run`. A library validates rows but does not
+require a runtime for the top Program or write an entry. The contract is
+`boundary.md` §5.2 and
+[`workers-entry-implementation.md`](workers-entry-implementation.md).
+
 Development output is **one ESM file per source module**, mirroring the source tree, with readable
 names â but not with everything the source declared. Release output is **reachability chunks**. Both
 read one declaration graph (Â§9.1 of the design doc) and **both eliminate against it**: a dev build
@@ -2649,6 +2663,38 @@ both of whose branches are kept. Fixtures: `run/JsDevelopment` (a platform modul
 JsDevelopment` and `emit/release/core/JsDevelopment` (the two shapes, each without the other
 build's declaration).
 
+
+### `Js.entryWindow` is the private entry realm (2026-11-06)
+
+Part of #2120. `boundary.md` §4.2's private selector is
+`pub foreign pure entryWindow : ⊤ → fresh bool`, used as `Js.entryWindow ⊤`.
+It has no data inputs or writes. A concrete Window entry lowers it to true;
+all other concrete entries lower it to false. Both reachability and lowering
+drop the unused arm of a direct test, as for `Js.development`. Ordinary global
+lookups are not compile-time facts and are unchanged.
+
+Workers already emit an independent `_workers/<id>/` module tree. A shared
+source module therefore gets a separate lowering for the page and worker,
+without a new output copy or loader. Http and WebSocket retain precisely the
+page's `document.baseURI` expression, and use the worker's `location.href`.
+There is no runtime selector, fallback or selector call in entry output.
+
+Frontend, interface and unknown-entry cache facts keep the reference symbolic.
+Modules referring to this intrinsic do not reuse unknown-realm packed edge or
+emit rows when emitting a concrete entry; other modules retain existing reuse.
+A library has no concrete realm and may retain an inline fallback,
+`typeof globalThis.document !== "undefined"`, exclusively in `--library` output. This is a compiler-only intrinsic: its foreign export is discharged by
+lowering, with no `Js.js` export or dependency, so even development library
+builds that copy the whole sibling remain unchanged. Branch elimination
+requires the literal unit argument; an effectful unit expression is evaluated
+normally before the constant answer. Tests
+compare all artifacts of one page-plus-worker build cold and warm, at jobs 1
+and 8, and check both modes for absence of the fallback and selector calls.
+
+A kept selector use in an entry whose realm is unknown is
+`worker_realm_violation`; it never defaults to false or uses the library
+fallback. The core pack leaves the entry fact unresolved, guarded by a debug
+assert; concrete entry emitters skip such unresolved rows as specified above.
 
 ### `Js.testHooks` is the build's test hooks
 
@@ -10775,7 +10821,7 @@ the whole `run/` and `browser/` corpus's release pass is their differential test
    no longer. Fixture: `emit/release/core/StatementShapes`.
 
    *Amended 2026-10-24 (the owner, #936).* `window` is bare only in a build for a chain that
-   says it always runs in a page (`"host": "page"`, `boundary.md` §5.2): it is
+   has a proven Window EntryHost (`"entryHost": "window"`, `boundary.md` §5.2): it is
    `Rename.page_globals`, apart from the list above. Where there is no window, a bare `window`
    throws `ReferenceError` and `globalThis.window` reads `undefined`, so a build for any other
    chain keeps `globalThis.window`; the rule writes a bare name only where both read the same

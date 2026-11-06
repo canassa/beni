@@ -1,0 +1,48 @@
+-- Manifest roles are reordered. Their normalization plans describe payload,
+-- while native structured clone receives the entire message record.
+import List
+import Page
+import String
+import Worker
+
+
+pub type alias Message =
+    payload :
+        values : List Int
+
+
+rest : List Int → List Int
+rest values =
+    case values of
+        [ _, …tail ] →
+            tail
+        _ →
+            []
+
+
+worker : Worker.Program Message Message ⊤
+worker =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start = λ_ _ → ⊤
+        , handle =
+            λmessage _ _ →
+                { message | payload = { values = rest [ 0, List.sum message.payload.values, 4 ] } }
+        , stream = λ_ _ _ _ → ⊤
+        }
+
+
+launch : ⊤ → ⊤
+launch _ =
+    case Worker.open worker of
+        Ok handle →
+            Worker.receive handle λmessage →
+                private = { a = "private" }
+                Page.text ("sum:" ++ String.fromInt (List.sum message.payload.values) ++ private.a)
+            Worker.send handle { payload = { values = rest [ 0, 1, 2 ] } }
+        Err _ →
+            Page.text "open failed"
+
+
+main : Page.Program
+main = Page.program λ_ → Page.button launch

@@ -3593,3 +3593,17 @@ takeOn stack ks i =
     else
         _ = Js.call stack "push" [ Js.at ks i ]
         takeOn stack ks (i - 1)
+
+
+-- Chain private worker cleanup before the installed defect handler.
+pub chainDefect : sync (⊤ → ⊤) → ⊤
+chainDefect hook =
+    previous = Js.read defect
+    Js.write defect
+        (Js.from λ⊤ →
+            hook ⊤
+            if Js.isNull previous then
+                ⊤
+            else
+                Js.to (Js.apply previous [ Js.null ])
+        )

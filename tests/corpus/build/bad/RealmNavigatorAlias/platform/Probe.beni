@@ -1,0 +1,7 @@
+-- Kept receiver use must be proved without following aliases (#2120).
+import Js
+
+
+pub run _ =
+    nav = Js.global "navigator"
+    Js.to (Js.get nav "language")

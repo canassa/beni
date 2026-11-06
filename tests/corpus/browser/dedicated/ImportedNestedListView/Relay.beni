@@ -1,0 +1,28 @@
+import Sub
+import Worker
+
+
+rest : List Int → List Int
+rest values =
+    case values of
+        [ _, …tail ] →
+            tail
+        _ →
+            []
+
+
+pub relay : Worker.Program ⊤ Int ⊤
+relay =
+    Worker.program
+        { init = λ_ _ → ⊤
+        , start =
+            λ_ _ →
+                case Worker.open Sub.sub of
+                    Ok handle →
+                        Worker.receive handle Worker.reply
+                        Worker.send handle (rest [ 1, 2, 3, 4 ])
+                    Err _ →
+                        Worker.reply (0 - 1)
+        , handle = λ_ _ _ → 0
+        , stream = λ_ _ _ _ → ⊤
+        }

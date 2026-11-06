@@ -1,0 +1,6 @@
+-- The runtime is a manifest root; the application never imports it.
+import Start
+
+
+main : Start.Program
+main = Start.make "generic runtime"

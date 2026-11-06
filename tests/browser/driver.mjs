@@ -1105,6 +1105,24 @@ async function load({ url, runtime }) {
 // Run one step. Returns null, or why the step could not run — or, for
 // `advance`, a promise of one.
 function step(s) {
+  // One action and one observable completion, guarded by a real deadline.
+  // Native workers are outside the scheduler tracked by settle().
+  if (s.command === "click-wait") {
+    const clicked = step({ ...s, command: "click" });
+    if (clicked !== null) return clicked;
+    const now = globalThis.performance.now();
+    return new Promise((resolve) => {
+      const poll = () => {
+        if (globalThis.__beniHarness.errors.length !== 0) return resolve(null);
+        const target = document.querySelector(s.target);
+        if (target !== null && target.textContent === s.text) return resolve(null);
+        if (globalThis.performance.now() - now >= 5000) return resolve(`click-wait: ${s.target} did not become ${JSON.stringify(s.text)}`);
+        globalThis.__beniHarness.clock.real(poll, 5);
+      };
+      poll();
+    });
+  }
+
   // An `early` step acts on a prerendered page before its program loads; a
   // page with no prerendered unit has nothing to act on.
   if (s.early && document.querySelector("[data-beni]") === null) return null;
@@ -2346,6 +2364,11 @@ function parseStep(written, where) {
           else usage(`${where}: \`socket <n> wait\` takes a number of messages, \`open\` or \`closed\``);
         } else if (rest !== undefined) usage(`${where}: \`socket <n> ${s.action}\` takes nothing more`);
       }
+    } else if (command === "click-wait") {
+      const match = (argument ?? "").match(/^(\S+)\s+("(?:[^"\\]|\\.)*")$/);
+      if (match === null) usage(`${where}: \`click-wait\` takes a click selector, a target selector and JSON text`);
+      s.target = match[1];
+      s.text = JSON.parse(match[2]);
     } else if (command === "flush") {
       s.more = argument === undefined ? [] : argument.split(/\s+/);
     } else if (command === "click" || command === "dblclick" || command === "focus" || command === "blur" || command === "press") {
@@ -2434,9 +2457,15 @@ const blank = "<!DOCTYPE html><html><head></head><body></body></html>";
 
 async function serve() {
   const { createServer } = await import("node:http");
+  const { createHash } = await import("node:crypto");
   const types = { ".mjs": "text/javascript", ".js": "text/javascript", ".html": "text/html", ".css": "text/css", ".json": "application/json" };
   const server = createServer((request, response) => {
     const path = decodeURIComponent(new URL(request.url, "http://127.0.0.1").pathname);
+    // The worker-network fixture resolves both transports relative to its entry.
+    if (path.includes("/_workers/") && path.endsWith("/worker-network")) {
+      response.writeHead(200, { "content-type": "text/plain" });
+      return void response.end("worker-http");
+    }
     if (path === "/_page.html") {
       response.writeHead(200, { "content-type": "text/html" });
       return void response.end(blank);
@@ -2460,6 +2489,30 @@ async function serve() {
     const cors = fromFile ? { "access-control-allow-origin": "*" } : {};
     response.writeHead(200, { "content-type": types[dot === -1 ? "" : file.slice(dot)] ?? "application/octet-stream", ...cors });
     response.end(bytes);
+  });
+  // A bounded, short-text WebSocket echo for the real-worker network fixture.
+  server.on("upgrade", (request, socket, head) => {
+    const path = new URL(request.url, "http://127.0.0.1").pathname;
+    if (!path.includes("/_workers/") || !path.endsWith("/worker-network")) return socket.destroy();
+    const accept = createHash("sha1").update(request.headers["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest("base64");
+    socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + accept + "\r\n\r\n");
+    let pending = head;
+    const receive = (chunk) => {
+      pending = Buffer.concat([pending, chunk]);
+      while (pending.length >= 2) {
+        const opcode = pending[0] & 15, size = pending[1] & 127;
+        if (!(pending[1] & 128) || size > 125) return socket.destroy();
+        if (pending.length < size + 6) return;
+        const payload = Buffer.from(pending.subarray(6, size + 6));
+        for (let i = 0; i < size; i++) payload[i] ^= pending[2 + i % 4];
+        pending = pending.subarray(size + 6);
+        if (opcode === 8) return socket.end(Buffer.concat([Buffer.from([136, size]), payload]));
+        if (opcode !== 1) return socket.destroy();
+        socket.write(Buffer.concat([Buffer.from([129, size]), payload]));
+      }
+    };
+    socket.on("data", receive);
+    if (head.length) receive(Buffer.alloc(0));
   });
   await new Promise((listening) => server.listen(0, "127.0.0.1", listening));
   const origin = `http://127.0.0.1:${server.address().port}`;

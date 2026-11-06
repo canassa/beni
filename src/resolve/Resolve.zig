@@ -789,6 +789,19 @@ const Pass = struct {
     }
 
     fn resolveImported(p: *Pass, m: Graph.Index, target: Graph.Index, name: Symbol, namespace: Namespace, token: u32, module_symbol: Symbol) Allocator.Error!Resolved {
+        // Worker entry helpers are private to the owning platform modules.
+        if (p.graph.modulePackage(target) == .core or p.graph.modulePackage(target) == .platform) {
+            const owner = p.interner.slice(p.graph.moduleName(target));
+            const text = p.interner.slice(name);
+            const caller_worker = @import("CorePrivate.zig").workerCaller(p.graph.modulePackage(m) == .platform, p.interner.slice(p.graph.moduleName(m)));
+            const access = @import("CorePrivate.zig").access(owner, text, namespace == .value);
+            if (if (access) |required| switch (required) {
+                .worker => !caller_worker,
+            } else false) {
+                try p.report(.{ .code = .private_name, .module = m, .token = token, .name = name.toOptional(), .module_name = module_symbol.toOptional() });
+                return .poison(.private_name);
+            }
+        }
         const iface = &p.interfaces[target.int()];
         switch (namespace) {
             .value => if (iface.findValue(p.interner, name)) |v| {

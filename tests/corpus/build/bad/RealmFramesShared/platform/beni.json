@@ -1,0 +1,1 @@
+{"platform": true, "name": "realmframesshared", "program": "Start.Program", "entryKinds": [{"programType": "Start.Program", "realm": "sharedWorker", "runtime": "Start", "constructors": [], "launches": [], "parameters": []}]}

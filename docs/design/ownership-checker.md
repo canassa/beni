@@ -4272,6 +4272,8 @@ names the fixture that pins each (§24.6).
 |---|---|---|
 | `Js.from`, `Js.to` | `returned a → Value`, `returned Value → a` | `Js.js`: `(v) => v`, compiled to nothing |
 | `Js.same`, `isNull`, `isUndefined`, `isNullish` | `unused` arguments, `fresh` result | `a === b`, `v === null`, `v == null`: a reference compared, nothing dereferenced, a boolean made |
+| `Js.entryWindow` (private, 2026-11-06; Part of #2120) | no data inputs or writes, `fresh` Boolean result | `Lower.entryWindowValue` returns a Boolean literal per entry, or a library-only `typeof` comparison: no argument or reference is retained. The foreign signature and the generator body are both pinned; there is no sibling export. `browser/managed/Network` exercises the row through Http; no unsafe flip applies to a fresh primitive Boolean. |
+| `Browser.Worker.runDefinition` (P-sync helper pin, 2026-11-06 review) | retains transport listeners and peer state; no borrowed/pure shortcut | Removed only the stored global-self endpoint. Root lifetime, boot, queue/control listeners, cancellation and final close were reread and remain unchanged; `workers.md` records the retention justification. |
 | `Js.lt`, `gt`, `le`, `ge` (2026-10-23, #882) | `unused` arguments, `fresh` result | `a < b` and its three siblings: two values compared, neither kept, a boolean made |
 | `Js.typeOf`, `Js.typeIs` | `unused Value` (`borrowed name`), `fresh` | `typeof v` reads the value's tag, not its contents |
 | `Js.fingerprint` | `unused k, unused order → fresh name` | the compiler writes the type's identity in place; `x` is evaluated and not read (its doc comment) |

@@ -1,0 +1,1 @@
+{"platform":true,"name":"review-probe","platforms":["browser"],"reexports":["Browser","Browser.Worker","Browser.WorkerStream","Hosted"]}

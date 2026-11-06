@@ -281,6 +281,11 @@ pub const Node = struct {
         /// `globalThis`, which only the `Js.global` intrinsic writes (research
         /// 47). A literal and not an `ident`, so no pass renames it.
         global_this,
+        // Compiler-produced descriptor URLs resolve against this module.
+        import_meta_url,
+        // Worker target relative to the output root (string_bytes payload).
+        // Resolved only when Print knows the final referring artifact.
+        worker_path,
         /// `this`: the receiver of an `arrow_method` (`Js.method`, `backend.md`
         /// §4, *`Js.method` is a `function`*).
         this_lit,
@@ -460,12 +465,15 @@ pub const UnaryOp = enum(u8) {
     /// assignment, so the printer brackets it everywhere but a `const`'s
     /// value, a `return` and an argument (`Print.precedence`).
     yield,
+    /// `typeof` only for the compiler-emitted worker metadata guard.
+    /// Separate from source `typeof`: allocation facts may refine this site.
+    worker_definition_type,
 
     pub fn text(op: UnaryOp) []const u8 {
         return switch (op) {
             .neg => "-",
             .not => "!",
-            .type_of => "typeof ",
+            .type_of, .worker_definition_type => "typeof ",
             .yield => "yield ",
         };
     }
@@ -474,7 +482,7 @@ pub const UnaryOp = enum(u8) {
     /// the adjacency guard puts back only where the next token needs it.
     pub fn compactText(op: UnaryOp) []const u8 {
         return switch (op) {
-            .type_of => "typeof",
+            .type_of, .worker_definition_type => "typeof",
             .yield => "yield",
             else => op.text(),
         };
@@ -887,7 +895,7 @@ pub inline fn pushOperands(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayLis
         // Leaves; an `arrow`, whose body each caller walks itself; and the
         // statements, which are no expression's operand. Listed, not `else`,
         // so a new tag is a compile error here and in both printers.
-        .ident, .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .arrow => {},
+        .ident, .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit, .arrow => {},
         .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .gen_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .for_of, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt, .try_stmt => {},
     }
 }
@@ -1162,7 +1170,7 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
         },
 
         .ident, .field_name => try ir.verifyName(@fromBackingInt(@intCast(d.lhs)), false),
-        .number, .string, .template_chunk, .regex => try ir.verifyBytes(d),
+        .number, .string, .worker_path, .template_chunk, .regex => try ir.verifyBytes(d),
         .template => {
             const parts = inlineRange(d);
             if (@backingInt(parts.start) > @backingInt(parts.end) or @backingInt(parts.end) > ir.extra.len) {
@@ -1170,7 +1178,7 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
             }
             for (ir.extraSlice(parts, Node.Index)) |part| try ir.verifyChild(part, .expression);
         },
-        .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
+        .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .this_lit => {},
         .call, .new_call => {
             try ir.verifyChild(@fromBackingInt(@intCast(d.lhs)), .expression);
             try ir.verifyRange(try ir.verifyExtra(@fromBackingInt(@intCast(d.rhs)), SubRange), .expression);
@@ -1644,7 +1652,7 @@ pub const Builder = struct {
                 }
             };
             switch (tags[at.node]) {
-                .ident, .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
+                .ident, .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit => {},
                 .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
                 .const_decl => try Push.one(&stack, gpa, at, d.rhs, w.statement, 0),
                 .assign_stmt => {
@@ -1759,7 +1767,7 @@ pub const Builder = struct {
                 .ident => if (read != .none and d.lhs == read.int()) {
                     out.reads = true;
                 },
-                .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
+                .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit => {},
                 .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
                 .const_decl, .property => try stack.append(gpa, d.rhs),
                 .assign_stmt, .index_get => try stack.appendSlice(gpa, &.{ d.lhs, d.rhs }),

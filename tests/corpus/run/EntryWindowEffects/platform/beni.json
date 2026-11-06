@@ -1,0 +1,1 @@
+{"platform": true, "name": "entry-window-effects", "platforms": ["node"], "reexports": ["Node"], "entryHost": "node"}

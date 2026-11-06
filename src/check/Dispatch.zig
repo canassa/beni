@@ -318,6 +318,8 @@ pub const EffectSite = struct {
 /// no answer): its own arrow's answer, and whether it has a second,
 /// suspendable body.
 pub const EffectDecl = struct {
+    realms: u8 = 0,
+    eval_realms: u8 = 0,
     own: Suspend = .no,
     twin: bool = false,
     total: bool = false,

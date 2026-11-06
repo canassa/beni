@@ -1,0 +1,1 @@
+{"platform":true,"name":"worker-network-probe","platforms":["browser"],"reexports":["Browser","Browser.Worker","Hosted","Html","Http","WebSocket","Browser.Navigation"]}

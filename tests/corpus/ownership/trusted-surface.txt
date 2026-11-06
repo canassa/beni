@@ -20,6 +20,7 @@ core       Debug.toString        ownership/JsPure.beni           -
 core       Js.from               ownership/core/JsWords.beni     1:returned>-+res:->fresh
 core       Js.to                 ownership/core/JsWords.beni     1:returned>-+res:->fresh
 # unused is the bottom of the order: no word claims less
+core       Js.entryWindow        browser/managed/Network/Main.beni - Http.get
 core       Js.same               ownership/core/JsWords.beni     -
 core       Js.isNull             ownership/core/JsWords.beni     -
 core       Js.isUndefined        ownership/core/JsWords.beni     -

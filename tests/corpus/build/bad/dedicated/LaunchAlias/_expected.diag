@@ -1,0 +1,1 @@
+[{"code":"worker_entry_not_static","severity":"error","span":{"file":"Main.beni","start":{"line":17,"col":10},"end":{"line":17,"col":21}},"title":"WORKER ENTRY NOT STATIC","message":"Use this worker launch as a direct call. Passing or aliasing the launch function\nhides its worker entry."}]

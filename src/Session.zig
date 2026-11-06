@@ -88,6 +88,7 @@ const Enforce = @import("own/Enforce.zig");
 const Enforce2 = @import("own2/Enforce.zig");
 const Own2Report = @import("own2/Report.zig");
 const stamped = @import("stamped.zig");
+const EntryPlan = @import("entry/Plan.zig");
 
 const Session = @This();
 
@@ -117,6 +118,8 @@ resolution: Resolve = .empty,
 /// The type-check of the last run (checker.md §6). Empty unless the phases
 /// included the check step.
 checked: Check = .empty,
+/// Resolved entry facts refer only to the current checked store.
+entry_plan: EntryPlan = .{},
 /// One persistent-cache key per module (`fast-compiler.md` §8), computed
 /// serially between resolution and the check. Empty unless the phases
 /// included the check step.
@@ -651,6 +654,7 @@ pub fn deinit(session: *Session) void {
     gpa.free(session.compare_keys);
     session.freeOwnershipBlocks();
     session.keys.deinit(gpa);
+    session.entry_plan.deinit(gpa);
     session.checked.deinit(gpa);
     session.resolution.deinit(gpa);
     session.graph.deinit(gpa);
@@ -677,6 +681,8 @@ pub const RunError = error{
 /// Enumerate `paths`, run `phases.per_file` over every file on
 /// `options.jobs` workers, merge, sort, and render diagnostics to `stderr`.
 pub fn run(session: *Session, paths: []const []const u8, phases: Phases, stderr: *Io.Writer) RunError!Summary {
+    // Even an early input failure must not leave facts from an older store.
+    session.entry_plan.reset();
     // Drop borrowed messages before releasing the previous worker wave.
     session.diagnostics.clearRetainingCapacity();
     for (session.workers) |*worker| worker.truncateDiagnostics(session.gpa, 0);
@@ -921,6 +927,18 @@ fn isPlatformRoot(session: *const Session, name: []const u8) bool {
     const chain = session.options.chain orelse return true;
     for (chain.layers) |layer| {
         const m = layer.manifest;
+        for (m.entryKinds) |kind| {
+            if (m.program) |program| if (std.mem.eql(u8, program, kind.programType) and
+                (std.mem.eql(u8, kind.runtime, name) or std.mem.eql(u8, moduleOf(kind.programType), name))) return true;
+            if (std.mem.eql(u8, kind.runtime, name)) {
+                // nextWave reached the runtime together with an imported
+                // Program module; retain that implicit edge in Graph's prune.
+                for (session.lowered, 0..) |lowered, fi| {
+                    const file: SourceStore.Index = @fromBackingInt(@intCast(fi));
+                    if (lowered and session.store.package(file) == .platform and std.mem.eql(u8, session.store.moduleName(file), moduleOf(kind.programType))) return true;
+                }
+            }
+        }
         if (m.program) |qualified| if (std.mem.eql(u8, moduleOf(qualified), name)) return true;
         if (m.module) |module| if (std.mem.eql(u8, module, name)) return true;
         if (m.markup.type) |qualified| if (std.mem.eql(u8, moduleOf(qualified), name)) return true;
@@ -970,6 +988,14 @@ fn nextWave(session: *Session, done: []const SourceStore.Index, out: *std.ArrayL
                 !referencesModule(bir, bir.symbol(imp.module)))) continue;
             try session.lowerNext(waiting.items, local.slice(bir.symbol(imp.module)), out);
         }
+        // An imported worker Program reaches its entry runtime. Merely
+        // declaring a worker kind in the platform must not load that runtime
+        // (or perturb an ordinary build's module order and short names).
+        if (session.options.chain) |chain| for (chain.layers) |layer| for (layer.manifest.entryKinds) |kind| {
+            if (session.store.package(file) == .platform and std.mem.eql(u8, session.store.moduleName(file), moduleOf(kind.programType))) {
+                try session.lowerNext(waiting.items, kind.runtime, out);
+            }
+        };
         // A minted type is an edge with no import (`Graph.mintedNames`).
         var buffer: [Graph.minted_count]InternPool.WellKnown = undefined;
         for (Graph.mintedNames(bir, &buffer)) |w| try session.lowerNext(waiting.items, @tagName(w), out);
@@ -2468,6 +2494,9 @@ fn computeKeys(session: *Session, reported: []const bool) RunError!void {
         &session.interner,
         .{
             .build_id = session.build_id_bytes,
+            .entry_constructors = try session.entryConstructors(worker.arena.allocator()),
+            .entry_roles = try session.entryWireKey(worker.arena.allocator()),
+
             .informational = session.options.informational,
             .explain = session.options.explain,
             .pattern_budget = session.options.pattern_budget,
@@ -2518,6 +2547,68 @@ fn compilerBuildId(override: ?[]const u8) [16]u8 {
 /// every spawn: `std.Thread.SpawnConfig`'s default is nowhere near it.
 pub const check_stack_size = Check.stack_size;
 
+/// Raw constructor selectors are only an early cycle-analysis input. Their
+/// checked identities and signatures are validated by Emit's entry contract.
+/// Metadata roots alone do not activate Wire. An application's dependency
+/// graph must actually reach a kind's Program module before any module runs
+/// the Wire pass or hashes its additional representation ABI.
+fn wireKindUsed(session: *const Session, a: Allocator, kind: @import("js/Manifest.zig").EntryKind) Allocator.Error!bool {
+    if (kind.launches.len == 0) return false;
+    const has_wire = for (kind.parameters) |role| {
+        if (std.mem.eql(u8, role.role, "wire")) break true;
+    } else false;
+    if (!has_wire) return false;
+    return session.entryKindUsed(a, kind);
+}
+
+fn entryKindUsed(session: *const Session, a: Allocator, kind: @import("js/Manifest.zig").EntryKind) Allocator.Error!bool {
+    if (kind.launches.len == 0) return false;
+    const dot = std.mem.lastIndexOfScalar(u8, kind.programType, '.') orelse return false;
+    const name = session.interner.find(kind.programType[0..dot]) orelse return false;
+    const target = session.graph.lookup(.platform, name) orelse return false;
+    const seen = try a.alloc(bool, session.graph.count());
+    defer a.free(seen);
+    @memset(seen, false);
+    var queue: std.ArrayList(Graph.Index) = .empty;
+    defer queue.deinit(a);
+    for (0..session.graph.count()) |mi| {
+        const module: Graph.Index = @fromBackingInt(@intCast(mi));
+        if (session.graph.modulePackage(module) == .app) {
+            seen[mi] = true;
+            try queue.append(a, module);
+        }
+    }
+    while (queue.pop()) |module| {
+        if (module == target) return true;
+        for (session.graph.dependencies(module)) |dependency| {
+            if (seen[dependency.int()] or session.graph.modulePackage(dependency) == .core) continue;
+            seen[dependency.int()] = true;
+            try queue.append(a, dependency);
+        }
+    }
+    return false;
+}
+
+fn entryWireKey(session: *const Session, a: Allocator) Allocator.Error![]const u8 {
+    const chain = session.options.chain orelse return "";
+    var kinds: std.ArrayList(@import("js/Manifest.zig").EntryKind) = .empty;
+    for (chain.layers) |layer| for (layer.manifest.entryKinds) |kind| {
+        if (try session.wireKindUsed(a, kind)) try kinds.append(a, kind);
+    };
+    if (kinds.items.len == 0) return "";
+    return std.json.Stringify.valueAlloc(a, kinds.items, .{});
+}
+
+fn entryConstructors(session: *const Session, a: Allocator) Allocator.Error![]const []const u8 {
+    const chain = session.options.chain orelse return &.{};
+    var out: std.ArrayList([]const u8) = .empty;
+    for (chain.layers) |layer| for (layer.manifest.entryKinds) |kind| {
+        if (!try session.entryKindUsed(a, kind)) continue;
+        for (kind.constructors) |c| try out.append(a, c.name);
+    };
+    return out.toOwnedSlice(a);
+}
+
 fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEntry.Loaded, cutoff: *Check.Cutoff) RunError!Check {
     var ins = try Enforce.inputs(session.gpa, session, cached);
     defer ins.deinit(session.gpa);
@@ -2544,6 +2635,8 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
         cutoff: *Check.Cutoff,
         ownership: *const Enforce.Context,
         ownership2: *const Enforce2.Context,
+        entry_constructors: []const []const u8,
+        entry_kinds: []const @import("js/Manifest.zig").EntryKind,
         result: Check.Error!Check = undefined,
 
         fn go(r: *@This()) void {
@@ -2560,6 +2653,8 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                     .ownership = if (r.session.options.ownership_v2) null else r.ownership,
                     .ownership2 = if (r.session.options.ownership_v2) r.ownership2 else null,
                     .profile = &r.session.profile,
+                    .entry_constructors = r.entry_constructors,
+                    .entry_kinds = r.entry_kinds,
                     .keep_stores = r.session.options.keep_type_stores,
                     .informational = r.session.options.informational,
                     .explain = r.session.options.explain,
@@ -2576,7 +2671,19 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
             );
         }
     };
-    var runner: Runner = .{ .session = session, .quiet = quiet, .cached = cached, .cutoff = cutoff, .ownership = &ownership, .ownership2 = &ownership2 };
+    const entry_constructors = try session.entryConstructors(session.gpa);
+    defer session.gpa.free(entry_constructors);
+    var kinds: std.ArrayList(@import("js/Manifest.zig").EntryKind) = .empty;
+    defer kinds.deinit(session.gpa);
+    if (session.options.chain) |chain| for (chain.layers) |layer| for (layer.manifest.entryKinds) |kind| {
+        if (try session.wireKindUsed(session.gpa, kind)) {
+            for (kind.parameters) |role| for (role.path) |field| {
+                _ = try session.interner.getOrPut(session.gpa, field);
+            };
+            try kinds.append(session.gpa, kind);
+        }
+    };
+    var runner: Runner = .{ .session = session, .entry_kinds = kinds.items, .entry_constructors = entry_constructors, .quiet = quiet, .cached = cached, .cutoff = cutoff, .ownership = &ownership, .ownership2 = &ownership2 };
     // A build with no threads checks here: its main stack is sized for it
     // (fast-compiler.md §10, *A build with no threads*).
     if (builtin.single_threaded) {

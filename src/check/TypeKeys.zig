@@ -108,6 +108,7 @@ pub const Record = struct { fields: Range, open: bool };
 /// One module's artifact, owned by `gpa`. Empty for embedded core,
 /// platforms and modules checked silently or with an error.
 pub const Artifact = struct {
+    wire: @import("Wire.zig").Artifact = .{},
     records: []const Record = &.{},
     record_labels: []const InternPool.Symbol = &.{},
 
@@ -130,6 +131,7 @@ pub const Artifact = struct {
     pub const empty: Artifact = .{};
 
     pub fn deinit(a: *Artifact, gpa: Allocator) void {
+        a.wire.deinit(gpa);
         gpa.free(a.records);
         gpa.free(a.record_labels);
         gpa.free(a.nodes);
@@ -207,6 +209,7 @@ pub const Input = struct {
     /// Whether to make the keys: an app module (§36). The crossing bits are
     /// made for every module.
     keyed: bool,
+    report: ?*@import("Report.zig") = null,
 };
 
 pub const Output = struct {
@@ -276,6 +279,20 @@ fn sortedBySymbol(row: []const InternPool.Symbol) bool {
     if (row.len < 2) return true;
     for (row[0 .. row.len - 1], row[1..]) |a, b| if (@backingInt(a) > @backingInt(b)) return false;
     return true;
+}
+
+/// The scheme quantifiers an annotated body's rigid variables stand for.
+/// Wire uses the same mapping as JavaScript crossing, without running another
+/// analysis for programs that have no entry-role obligations.
+pub fn schemeVariables(in: Input) Error![]?[]const Var {
+    var b: Builder = .{ .gpa = in.scratch, .scratch = in.scratch, .store = in.store, .types = in.types, .interner = in.interner, .memo = &.{}, .named0 = &.{}, .alias0 = &.{} };
+    defer b.deinit();
+    var c: Crossing = .{ .in = in, .b = &b };
+    defer c.deinit();
+    c.crossing = try in.scratch.alloc(bool, in.store.count());
+    @memset(c.crossing, false);
+    for (in.bir.decls, 0..) |_, di| _ = try c.ownedBy(@intCast(di));
+    return c.owned;
 }
 
 pub fn build(in: Input) Error!Output {
@@ -891,6 +908,7 @@ const Builder = struct {
 /// of it, so the fixpoint is a worklist over those records and never a second
 /// walk of the module.
 const Crossing = struct {
+    source_inst: ?Bir.Inst.Index = null,
     in: Input,
     b: *Builder,
     wild: std.ArrayList(TypeKey) = .empty,
@@ -925,6 +943,7 @@ const Crossing = struct {
         @memset(c.crossing, false);
         // The seeds: every `Js.from`, every imported crossing quantifier.
         for (in.casts) |cast| {
+            c.source_inst = cast.inst;
             const func = Walk.function(in.store, cast.copy) orelse continue;
             switch (cast.which) {
                 .from => if (func.params.len == 1) try c.cross(func.params[0], cast.decl, true),
@@ -933,7 +952,11 @@ const Crossing = struct {
                 .to => if (in.keyed) try c.cross(func.result, cast.decl, false),
             }
         }
-        for (in.uses) |u| try c.cross(u.v, u.decl orelse declOf(bir, u.inst) orelse continue, true);
+        for (in.uses) |u| {
+            c.source_inst = u.inst;
+            try c.cross(u.v, u.decl orelse declOf(bir, u.inst) orelse continue, true);
+        }
+        c.source_inst = null;
         if (c.queue.items.len == 0) return;
         // Passes over the copies until none wakes: a copy is read once its
         // quantifier crosses, and a pass is a test per copy.
@@ -994,6 +1017,7 @@ const Crossing = struct {
         const store = c.in.store;
         const s = c.in.scratch;
         const seen = store.nextMark();
+
         // `quantifier` walks a scheme with a list of its own, so `todo` is
         // this walk'"'"'s.
         const todo = &c.todo;
@@ -1119,6 +1143,7 @@ const Crossing = struct {
         const store = c.in.store;
         const s = c.in.scratch;
         const seen = store.nextMark();
+
         var todo: std.ArrayList(Var) = .empty;
         defer todo.deinit(s);
         try todo.append(s, v);

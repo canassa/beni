@@ -1048,7 +1048,7 @@ const Opt = struct {
             const d = o.ir.data(n);
             switch (o.ir.tag(n)) {
                 .ident => return @fromBackingInt(@intCast(d.lhs)),
-                .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => return .none,
+                .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .import_meta_url, .worker_path, .this_lit => return .none,
                 .member => n = @fromBackingInt(@intCast(d.lhs)),
                 else => return null,
             }
@@ -1377,7 +1377,7 @@ const Opt = struct {
                 const r = o.readsTo(@fromBackingInt(@intCast(d.lhs)), site, depth + 1);
                 if (r != .clean) return r;
                 return switch (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs)))) {
-                    .not, .type_of => .clean,
+                    .not, .type_of, .worker_definition_type => .clean,
                     else => .bad,
                 };
             },
@@ -1520,7 +1520,7 @@ const Opt = struct {
             .unary => {
                 const shape = o.pureValue(@fromBackingInt(@intCast(d.lhs)), depth + 1) orelse return null;
                 return switch (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs)))) {
-                    .not, .type_of => .primitive,
+                    .not, .type_of, .worker_definition_type => .primitive,
                     .neg => if (shape == .primitive) .primitive else null,
                     .yield => null,
                 };

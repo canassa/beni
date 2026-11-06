@@ -738,6 +738,30 @@ is the build's mode*). *(Amended 2026-10-02: it is `development : () -> bool`, w
 function may not be polymorphic (§4, check 1). The call is written in place as the literal, as the
 value was.)*
 
+### Private entry realm selector (2026-11-06, Part of #2120)
+
+`Js.entryWindow : ⊤ → fresh bool` is pure and has no data inputs. Only core
+and platform packages may import it, through the existing `Js` privilege wall;
+it is not an application API. The result is a fresh Boolean: true for a Window
+entry and false for any other concrete entry. It describes the compilation
+entry, not the mutable JavaScript globals. `Js.global` and existing runtime
+realm probes retain their semantics.
+
+Concrete entry builds write the Boolean in place and eliminate the untaken arm
+of an `if` on the selector before checking kept worker code. No selector call,
+fallback, or runtime realm test is emitted in a page or worker entry, in either
+mode. Only `--library` output may retain an inline `typeof globalThis.document !==
+"undefined"` fallback. Unknown-entry internal cache rows preserve the symbolic
+reference, never a page's or worker's answer. The backend subsection specifies
+per-entry emission and cache reuse. This compiler-only foreign has no sibling
+export: lowering supplies both the concrete answer and the library fallback.
+A nonliteral unit argument is still evaluated for its effects.
+A kept selector use in an entry whose realm is unknown is
+`worker_realm_violation`; it never defaults to false or uses the library
+fallback. The core pack leaves the entry fact unresolved, guarded by a debug
+assert; concrete entry emitters skip such unresolved rows as specified above.
+
+
 **`object : fields → Value`** (pure, 2026-10-02, the owner's decision on research 50 §7) is an
 object literal: `Js.object [ ( "k1", v1 ), ( "k2", v2 ) ]` is `{k1: v1, k2: v2}`. The argument is a
 list literal of pair literals written in place, each key a string literal that is a JavaScript
@@ -959,8 +983,8 @@ module supplies `run` and every export of §9.4.5's union, and each one it does 
 `pub` value with a body is `foreign_export_mismatch`, reported against the manifest that named the
 module at `1:1` (a markup primitive at its declaration, as with a file) — there is no file to hold
 it instead. A build writes no runtime file, and the entry file imports `run` (and `start`) from the
-module's output. A chain that names neither is refused before a source is read, as before. A chain
-with no `"program"` asks the module for no `run`. `browser` is such a platform since this
+module's output. A chain with neither runtime form nor an `"entryKinds"` row is refused
+before a source is read. A chain with no `"program"` asks the module for no `run`. `browser` is such a platform since this
 amendment: its `runtime.js` exported nothing once `safeUrl` moved to `Rt.beni`, and is deleted.
 
 **A runtime module without markup** (*specified 2026-11-03, built 2026-11-04*; #1812,
@@ -986,6 +1010,23 @@ The `run/` fixture `ProgramModule`, a program over a platform of its own that de
 `"program"` and `"module"` and nothing else, proves the shape in both builds; the two refusals
 are tested beside `markup_split`'s (`tests/blackbox/platform_test.zig`); `cloudflare` takes it
 when its `runtime.js` moves (#1813).
+**A platform may select a beni entry runtime with `"entryKinds"`** (added 2026-11-01).
+Each row names a nominal `programType`, `realm`, runtime module in `runtime`, and
+explicit `constructors`, `launches` and `parameters` arrays. Rows combine across
+the platform chain. The top-level `"program"` selects its row by nominal identity;
+`main` may apply that type, for example `main : Start.Program String`, including
+through an alias. `"runtime"` is optional when the chain has an entry-kind row.
+Check and build validate all rows; a program build with no legacy runtime and no
+row for its top Program reports `invalid_entry_kind`. A `--library` build does
+not require a runtime for that top Program and writes no entry file.
+
+The selected module supplies a public beni `run : Program a → ⊤` (with the
+Program's declared type parameters), independent of markup. The entry calls
+`run(main)` synchronously. An invalid row or runtime signature is
+`invalid_entry_kind`; a `run` whose own arrow may suspend is
+`entry_runtime_suspends`. It may start a root fiber whose initialization suspends,
+then return. The full metadata and runtime contract is
+[`workers-entry-implementation.md`](workers-entry-implementation.md).
 
 **Whether the platform edits lists in place is part of that shape, and it is `"lists"`** (*added
 2026-10-13*, [`ownership-checker.md`](ownership-checker.md) §28.2). `"lists": "in-place"` says that the
@@ -1025,17 +1066,16 @@ a list on a chain that declares no `"exports"` is the warning `exports_ignored`.
 does not declare it reads no list, and `run`'s result is not read, as before. §9.12 (c) has the
 contract whole.
 
-**Whether the chain always runs in a page is part of that shape, and it is `"host"`** (*added
-2026-10-24*, the owner's decision on #936). `"host": "page"` says that every program built for
-the chain runs in a page, where `window` is a global, so a release build writes `Js.global
-"window"` as plain `window` (`backend.md` §9, item 8, amended the same day). No other value is
-accepted, and a chain that does not say it gets `globalThis.window`, because a bare `window`
-throws `ReferenceError` where there is no window — under Node, in Workers, in a Web Worker.
-Inherited first-found down the chain like every field (§9.1). `browser` and `browser-inline`
-declare it, so a platform layered on either does as well; `node`, `cloudflare`, `html` and the
-test platforms `page`, `toy`, `entry` and `entry-shape` do not. It is a promise about the host,
-which nothing checks: a chain that declares it and is loaded where there is no window fails at
-the first such read.
+**Each entry has an execution realm, checked by EntryHost** (`workers.md` §4).
+A platform declares its top entry with `"entryHost": "window"` for a page,
+or another realm from the native universe. Each `entryKinds` row supplies its
+own realm. The compiler checks native availability in each entry's execution
+projection before output. A proven Window entry permits a release build to
+write `Js.global "window"` as bare `window`; other entries keep
+`globalThis.window`. A worker projection never inherits the page's proof.
+The old `"host": "page"` promise reports `obsolete_host_promise` and names the
+replacement. The first declared `entryHost` is inherited down the platform
+chain like the other output fields (§9.1).
 
 ### 5.3 One project, several platforms
 

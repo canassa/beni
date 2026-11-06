@@ -1,0 +1,12 @@
+-- A unit expression still runs; only a literal unit may discard an if arm.
+import Js
+
+
+effect : ⊤ → ⊤
+effect _ = Js.to (Js.call (Js.global "console") "log" [ Js.from "effect" ])
+
+
+pub run _ = if Js.entryWindow (effect ⊤) then "window" else "node"
+
+
+pub literal _ = if Js.entryWindow ⊤ then "window" else "node"
