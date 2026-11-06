@@ -6610,14 +6610,20 @@ pub const Lowerer = struct {
         return l.object(properties.items, p);
     }
 
-    fn expr(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!Node.Index {
-        if (l.in.worker_descriptors.len != 0) {
-            if (l.declTarget(l.in.module.int(), inst)) |ref| {
-                for (l.in.worker_descriptors) |descriptor| {
-                    if (descriptor.module.int() == ref[0] and descriptor.decl == ref[1]) return l.workerDescriptor(descriptor, l.pos(inst));
-                }
+    // Descriptor copies must not grow the stack of every recursive expression.
+    noinline fn workerReference(l: *Lowerer, inst: Inst.Index) Allocator.Error!?Node.Index {
+        if (l.declTarget(l.in.module.int(), inst)) |ref| {
+            for (l.in.worker_descriptors) |descriptor| {
+                if (descriptor.module.int() == ref[0] and descriptor.decl == ref[1])
+                    return try l.workerDescriptor(descriptor, l.pos(inst));
             }
         }
+        return null;
+    }
+
+    fn expr(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!Node.Index {
+        if (l.in.worker_descriptors.len != 0)
+            if (try l.workerReference(inst)) |value| return value;
         const saved = l.evidence_out;
         l.evidence_out = out;
         defer l.evidence_out = saved;
