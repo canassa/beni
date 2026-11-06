@@ -2,10 +2,10 @@
 //! (`docs/design/ownership-v2.md` §2.9, §2.11.2). An `Eval` is one
 //! evaluation of a walk's frame under the contracts its calls read: the
 //! instantiation of each call (built once per call and caller slot), each
-//! call's separation, and the relation of each pair of leaves met, all
-//! kept for the evaluation and dropped with it (§2.12: an evaluation per
-//! candidate generation; the walk itself is never redone). The relation and
-//! the distinct check that read them are `Distinct`'s.
+//! call's separation, kept for the evaluation and dropped with it (§2.12: an
+//! evaluation per candidate generation; the walk itself is never redone).
+//! The relation and the distinct check that read them are `Distinct`'s; the
+//! relation is solved, and kept with them, by `Pairs`.
 //!
 //! **Expansion.** A leaf of a call's root names the objects the callee's
 //! contract says arrive at its slots: each arrival projected onto the
@@ -33,6 +33,7 @@ const Forest = @import("Forest.zig");
 const KeySets = @import("KeySets.zig");
 const Value = @import("Value.zig");
 const FoldRead = @import("FoldRead.zig");
+const Pairs = @import("Pairs.zig");
 pub const Dests = @import("Dests.zig");
 
 pub const Error = Ids.ChargeError;
@@ -44,22 +45,7 @@ const PathId = Ids.PathId;
 const PlaceId = Ids.PlaceId;
 const none: u32 = Ids.none_int;
 
-/// The relation of two leaves (§2.9.2).
-pub const Ov = struct {
-    kind: enum(u8) { no, under, may } = .no,
-    cond: Cond = .{},
-
-    pub const no: Ov = .{};
-    pub const may: Ov = .{ .kind = .may };
-
-    pub fn join(arena: Allocator, account: *Ids.Account, a: Ov, b: Ov) Error!Ov {
-        if (a.kind == .may or b.kind == .may) return may;
-        if (a.kind == .no) return b;
-        if (b.kind == .no) return a;
-        const c = try Cond.conj(arena, account, a.cond, b.cond);
-        return if (c.no) may else .{ .kind = .under, .cond = c };
-    }
-};
+pub const Ov = Pairs.Ov;
 
 /// What consumes a growing instantiation (§2.12 *Deliveries*): a key's
 /// leaves reach it once each, the ones it saw when it subscribed and every
@@ -105,6 +91,8 @@ const Key = struct {
     slot: PathId,
     which: u32,
     below: bool = false,
+    /// Being filled (`instBelow`).
+    filling: bool = false,
     leaves: std.ArrayList(u32) = .empty,
     at: std.ArrayList(u32) = .empty,
     subs: std.ArrayList(SubAt) = .empty,
@@ -141,9 +129,8 @@ pub const Eval = struct {
     /// A holder is judged against a label's answer (§2.11.3, *An answer handed on*).
     keeping: bool = false,
     read_mode: enum { ask, strict, hope, reading } = .ask,
-    /// `(leaf, leaf, target)` → `ovs` index; `none` while in progress.
-    ov_memo: Ids.FixedDict(3) = .{},
-    ovs: std.ArrayList(Ov) = .empty,
+    /// The relation solved, and its queries in progress (`Distinct.overlap`).
+    pairs: Pairs.Queries = .{},
     /// Per `(call, callee label)`: the frame label a label passes on to (`cbs`).
     label_map: Ids.FixedDict(2) = .{},
     /// Per `(call, callee label)`: the virtual call that applies a known code.
@@ -208,8 +195,7 @@ pub const Eval = struct {
         e.inst_leaves.deinit(g);
         e.cond_state.deinit(g);
         e.cond_of.deinit(g);
-        e.ov_memo.deinit(g);
-        e.ovs.deinit(g);
+        e.pairs.deinit(g);
         e.label_map.deinit(g);
         e.known.deinit(g);
         e.lent.deinit(g);
@@ -740,13 +726,16 @@ pub const Eval = struct {
         const sub = e.cur_sub;
         const keyv: [3]u32 = .{ call, prefix.int(), which };
         if (e.below_memo.get(keyv)) |ki| {
+            // Outside a group no fill meets its own key (`expandRouted`):
+            // a reader here would keep a key part filled.
+            if (std.debug.runtime_safety and e.live == null and e.keys.items[ki].filling) @panic("a below key read while it fills");
             if (sub) |s| if (e.live != null) {
                 _ = try e.subscribe(ki, s);
             };
             return ki;
         }
         const ki: u32 = @intCast(e.keys.items.len);
-        try e.keys.append(e.gpa(), .{ .call = call, .slot = prefix, .which = which, .below = true });
+        try e.keys.append(e.gpa(), .{ .call = call, .slot = prefix, .which = which, .below = true, .filling = true });
         try e.below_memo.put(e.gpa(), keyv, ki);
         e.inst_depth += 1;
         const code = e.f.calls.items[call].code;
@@ -785,6 +774,7 @@ pub const Eval = struct {
                 n = on orelse break;
             }
         } else try e.addBelow(ki, try e.f.leaf(.{ .kind = .top }), prefix.int() | open_bit);
+        e.keys.items[ki].filling = false;
         e.inst_depth -= 1;
         if (e.inst_depth == 0) if (e.live) |lv| try lv.pump(lv.ctx);
         if (sub) |s| if (e.live != null) {
@@ -1279,7 +1269,13 @@ pub const Eval = struct {
             return;
         }
         const got = try e.expanding.getOrPut(e.gpa(), .{li});
-        if (got.found_existing and got.value_ptr.* == 1) return;
+        // A fill expands only in `mayRecons`, an item older than its list,
+        // so outside a group points fall and no leaf is met while it
+        // expands. Reaching one would keep a key that read nothing of it.
+        if (got.found_existing and got.value_ptr.* == 1) {
+            if (std.debug.runtime_safety) @panic("a leaf expanded while it expands");
+            return;
+        }
         got.value_ptr.* = 1;
         defer {
             if (e.expanding.get(.{li}) != null) (e.expanding.getOrPut(e.gpa(), .{li}) catch unreachable).value_ptr.* = 0;

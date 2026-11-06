@@ -1,0 +1,23 @@
+-- The relation is the least fixed point of its pairs (`ownership-v2.md` §2.9.2,
+-- *The fixed point of the pairs*, #2146). A fold's two-field accumulator swaps its
+-- fields, so its supply and its answer reach each other. `r.0` holds `q` through
+-- `r.1`: read in this order, a pair read while its partner was still open kept a
+-- `no`, and `push` wrote `q` under `w`. The twin with `w = ( r.1, r.0 )` was refused.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main =
+    q = [ 1 ]
+    k1 = λv → v
+    k2 = λv → if List.length v > 5 then v else q
+    r = List.foldl [ 1, 2, 3 ] ( [], [] ) λi acc → ( k1 acc.1, k2 acc.0 )
+    w = ( r.0, r.1 )
+    z = List.push q 2
+    Node.print (show z ++ "|" ++ show w.0)

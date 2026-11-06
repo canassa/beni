@@ -1,0 +1,34 @@
+-- The accepted twin of `SanitiserPairCycleParam`: `r` is read before the
+-- write and never after it, so `q` is written in place although the cycle holds
+-- it (§2.9.2, *The fixed point of the pairs*, #2146).
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+loop : (List Int → List Int), (List Int → List Int), List Int, Int → List Int × List Int
+loop k1 k2 acc n =
+    a = k1 acc
+    b = k2 a
+    if n == 0 then
+        ( a, acc )
+    else
+        loop k1 k2 b (n - 1)
+
+
+g : List Int → List Int × List Int
+g q =
+    r = loop (λx → x) (λy → if List.length y > 5 then y else q) [] 3
+    n = List.length r.0 + List.length r.1
+    z = List.push q 2
+    ( z, [ n ] )
+
+
+main : Program
+main =
+    p = g [ 1 ]
+    Node.print (show p.0 ++ "|" ++ show p.1)

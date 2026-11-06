@@ -1,0 +1,1 @@
+v2 refuses a write a cycle of pairs reaches, whichever pair is read first (§2.9.2, #2146): built again under --ownership=v2 and the sanitiser.

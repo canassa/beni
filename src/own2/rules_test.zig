@@ -122,6 +122,7 @@ const layers = [_]Entry{
     .{ .file = "Liveness.zig", .layer = 6, .max_lines = 750 },
     // Compatibility for one pair of points, split from `Liveness` (#1685).
     .{ .file = "Ancestry.zig", .layer = 6, .max_lines = 130 },
+    .{ .file = "Pairs.zig", .layer = 6, .max_lines = 215 },
     .{ .file = "Relation.zig", .layer = 7, .max_lines = 1300 },
     .{ .file = "Taken.zig", .layer = 7, .max_lines = 75 },
     .{ .file = "AnswerKeep.zig", .layer = 7, .max_lines = 90 },
@@ -680,7 +681,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 131), layers.len);
+    try testing.expectEqual(@as(usize, 132), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

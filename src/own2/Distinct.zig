@@ -3,7 +3,7 @@
 //! (its callee's `res_cond` on its arguments), the distinct check over the
 //! objects a value reaches, and the relation of two leaves. It reads a
 //! value's leaves and a call's instantiation through `Relation.Eval`, which
-//! keeps every memo of one evaluation.
+//! keeps the instantiations and separations of one evaluation.
 //!
 //! Obligations kept here: the relation's half of O3 (two positions of one
 //! root are apart only under the root's separation).
@@ -306,7 +306,8 @@ fn answerMeets(f: *Value.Frame, ents: []const Ent, alive: []const bool, fresh: u
     return false;
 }
 
-/// The memos' mode: what a condition met in one must not answer another.
+/// A mode of a call's kept condition and of a pair's row: what a condition
+/// met in one must not answer another.
 fn modeOf(e: *const Eval) u32 {
     return switch (e.read_mode) {
         .ask => 0,
@@ -542,27 +543,33 @@ fn check(e: *Eval, ps: []const Proj, routed: bool, read: ?*Answers.Reader) Error
 // ---- the one relation (§2.9.2) -------------------------------------------
 
 /// The relation of holder leaf `x` (deep) and target leaf `t`;
-/// `target`: `t` is a shallow write target.
+/// `target`: `t` is a shallow write target. Its answer is the least fixed
+/// point over the pairs it reaches (`Pairs`), whatever else is being asked.
 pub fn overlap(e: *Eval, x: u32, t: u32, target: bool) Error!Ov {
+    try e.pairs.begin(e.gpa(), e.grown);
+    defer e.pairs.end();
+    return pair(e, x, t, target);
+}
+
+/// A pair the current query reaches: solved, or its equation (`overlapRaw`).
+fn pair(e: *Eval, x: u32, t: u32, target: bool) Error!Ov {
     try e.charge(.cond, 1);
     const key: [3]u32 = .{ x, t, @as(u32, @intFromBool(target)) | @as(u32, @intFromBool(e.keeping)) << 1 | modeOf(e) << 2 };
-    const got = try e.ov_memo.getOrPut(e.gpa(), key);
-    if (got.found_existing) {
-        return if (got.value_ptr.* == none) Ov.no else e.ovs.items[got.value_ptr.*];
+    const fr = switch (try e.pairs.enter(e.gpa(), key)) {
+        .value => |v| return v,
+        .frame => |fr| fr,
+    };
+    while (true) {
+        const got = try overlapRaw(e, x, t, target);
+        if (try e.pairs.leave(e.gpa(), e.arena, e.account(), fr, got)) |v| return v;
     }
-    got.value_ptr.* = none;
-    const r = try overlapRaw(e, x, t, target);
-    const at: u32 = @intCast(e.ovs.items.len);
-    try e.ovs.append(e.gpa(), r);
-    (try e.ov_memo.getOrPut(e.gpa(), key)).value_ptr.* = at;
-    return r;
 }
 
 fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
     const x = e.f.leafAt(xi);
     const t = e.f.leafAt(ti);
     // A loan holds what it lends (§2.13.7); written, it is unknown.
-    if (x.kind == .loan and t.kind != .loan) return overlap(e, x.atom, ti, target);
+    if (x.kind == .loan and t.kind != .loan) return pair(e, x.atom, ti, target);
     if (x.routes == 0 and t.routes == 0) {
         if (!try e.f.sets.tags.meet(e.f.account, x.tags, t.tags)) return .no;
     } else if (!try Coexist.setsMeet(&e.f.sets.tags, e.gpa(), e.account(), x.tags, x.routes, t.tags, t.routes)) return .no;
@@ -578,10 +585,10 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
     if (x.kind == .host or t.kind == .host) return if (x.kind == t.kind) .may else .no;
     const xr = x.kind == .ref;
     const tr = t.kind == .ref;
-    if (Taken.side(e.f, e.contracts, x, t)) |w| return Taken.apartFromOthers(Ov, e, xi, ti, w, target, apartOf, overlap);
+    if (Taken.side(e.f, e.contracts, x, t)) |w| return Taken.apartFromOthers(Ov, e, xi, ti, w, target, apartIn, pair);
     // An unknown label's answer, written: anything; holding the target,
     // what it was supplied or its label's function slot holds.
-    if (t.kind == .answer or (tr and e.f.roots.items[t.root].kind == .cb)) return if (e.keeping) AnswerKeep.kept(Ov, e, xi, ti, overlap, answerHolds) else .may;
+    if (t.kind == .answer or (tr and e.f.roots.items[t.root].kind == .cb)) return if (e.keeping) AnswerKeep.kept(Ov, e, xi, ti, pair, answerHolds) else .may;
     if (x.kind == .answer or (xr and e.f.roots.items[x.root].kind == .cb)) return answerHolds(e, x, ti, target);
     if (xr and tr and x.root == t.root) return positional(e, xi, ti, target);
     if (xr or tr) {
@@ -598,7 +605,7 @@ fn overlapRaw(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
             try e.expand(if (expand_x) xi else ti, &list);
             var acc: Ov = .no;
             for (list.items) |l| {
-                const o = if (expand_x) try overlap(e, l, ti, target) else try overlap(e, xi, l, target);
+                const o = if (expand_x) try pair(e, l, ti, target) else try pair(e, xi, l, target);
                 acc = try Ov.join(e.arena, e.account(), acc, o);
                 if (acc.kind == .may) return acc;
             }
@@ -630,7 +637,7 @@ fn answerHolds(e: *Eval, x: Leaf, ti: u32, target: bool) Error!Ov {
     for (cb.args) |sv| try e.leavesOf(sv, 0, &sl);
     var acc: Ov = .no;
     for (sl.items) |l| {
-        acc = try Ov.join(e.arena, e.account(), acc, try overlap(e, l, ti, target));
+        acc = try Ov.join(e.arena, e.account(), acc, try pair(e, l, ti, target));
         if (acc.kind == .may) return acc;
     }
     return Ov.join(e.arena, e.account(), acc, try HeldBy.of(Ov, e, cb.j, cb.slot, ti, sel));
@@ -645,18 +652,24 @@ fn positional(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
         // A write of a position's own storage never meets what lies
         // inside it: no value holds itself.
         if (target and t.at_pos and r.second_prefix and x.pos != t.pos) {
-            if (!(try Subtree.meetIn(e.f.slots, e.gpa(), e.account(), e.places(), x.slots, t.slots))) return apartOf(e, xi, ti, target);
+            if (!(try Subtree.meetIn(e.f.slots, e.gpa(), e.account(), e.places(), x.slots, t.slots))) return apartIn(e, xi, ti, target);
             // The holder below the written position holds the slot only
             // where a level folds back onto it.
         }
         if (try Subtree.meetIn(e.f.slots, e.gpa(), e.account(), e.places(), x.slots, t.slots)) return .may;
     }
-    return apartOf(e, xi, ti, target);
+    return apartIn(e, xi, ti, target);
 }
 
 /// Two leaves of one root at distinct places: apart under the root's
-/// separation.
+/// separation. A query, as `overlap`.
 pub fn apartOf(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
+    try e.pairs.begin(e.gpa(), e.grown);
+    defer e.pairs.end();
+    return apartIn(e, xi, ti, target);
+}
+
+fn apartIn(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
     const x = e.f.leafAt(xi);
     const t = e.f.leafAt(ti);
     const r0 = e.f.roots.items[x.root];
@@ -677,7 +690,7 @@ pub fn apartOf(e: *Eval, xi: u32, ti: u32, target: bool) Error!Ov {
     try e.expand(ti, &lt);
     var acc: Ov = .no;
     for (lx.items) |a| for (lt.items) |b| {
-        acc = try Ov.join(e.arena, e.account(), acc, try overlap(e, a, b, target));
+        acc = try Ov.join(e.arena, e.account(), acc, try pair(e, a, b, target));
         if (acc.kind == .may) return acc;
     };
     return acc;

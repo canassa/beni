@@ -10165,6 +10165,33 @@ test "the checker v2's call costs are flat per call through chains of calls and 
     try testing.expect(cost[1][2] * 10 <= cost[0][2] * 22);
 }
 
+test "the checker v2 solves each pair once through a chain of diamonds" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `ownership-v2.md` §2.9.2, *The fixed point of the pairs*: each level
+    // reaches the one below by two calls, so the relation of `x_n` and `p`, an
+    // `under` that walks them all, has 2ⁿ paths and 3n pairs. A walk that cut
+    // only the pairs on its path passes its account by n = 20.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = testing.allocator;
+    var cost: [2]u64 = undefined;
+    for ([_]u32{ 20, 80 }, 0..) |n, run| {
+        var src: std.ArrayList(u8) = .empty;
+        defer src.deinit(a);
+        try src.appendSlice(a, "pick : List Int, List Int → List Int\npick a b =\n    if List.length a > List.length b then a else b\n\n\nid1 : List Int → List Int\nid1 a = a\n\n\nid2 : List Int → List Int\nid2 a = a\n\n\npub dag : List Int, List Int → List Int\ndag p r =\n    x0 = r\n");
+        for (1..n + 1) |k| try src.print(a, "    y{d} = id1 x{d}\n    u{d} = id2 x{d}\n    x{d} = pick y{d} u{d}\n", .{ k, k - 1, k, k - 1, k, k, k });
+        try src.print(a, "    z = List.push p 2\n    pick z x{d}\n", .{n});
+        cost[run] = try continuationFor(&w, src.items, "dag");
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expect(cost[1] * 10 <= cost[0] * 44);
+}
+
 /// `chain`'s total in a v2 dump of #1146's chain of knots through calls,
 /// `n` deep: `x_k = knot c x_{k-1} e`, where `knot c x t = if c then T
 /// [ x ] else t` and `e` is `x_{k-1}` again or, `params`, the parameter `t`
