@@ -5140,6 +5140,40 @@ bullet "Open: the context of a message that a body sends" of the amendment of 20
   message a body sends there is queued, and its `update` runs after the body has returned, outside
   the body's context, with the program's.
 
+*Amended 2026-11-06 (#1153): after each `update`, `send` puts back the slots of its caller, also of a
+caller that has no log context of its own.* The amendment of 2026-10-24 names this case "Not
+covered". A body with no log context did not get `withoutLogContext`. So `update`'s `annotate` wrote
+the body's slots, and after a throw that the DOM reports, the rest of the body had `update`'s
+context. The issue's first possible fix (`withoutLogContext` whenever a slot is set) does not fix
+the issue's own probe: there `update` sets the first slot of the page, so when `send` runs, no slot
+is set and no record holds the slots.
+
+- **Where.** `send` runs every `update` in a `Js.finally`. Before the call, `Task.beginUpdate` finds
+  the record that holds the slots: the calling fiber, or the record outside any fiber. When a slot
+  is set and the record exists, it keeps the record, its slots and the number of its finalisers.
+  When the caller also has a log context, it sets the slot to the default, as `withoutLogContext`
+  did. After the call, returned or thrown, `Task.endUpdate` puts the kept slots back at once, and
+  after a throw it edits the list as the amendment of 2026-10-24 says. When no slot was set, or no
+  record existed, as `update` began, every slot of the caller was at its default. Then `endUpdate`
+  sets the record's slots to the defaults, and when `update` threw and left finalisers, it puts one
+  entry on top of them, which sets `update`'s slots of the throw again for the teardown. No restore
+  of the old slots is needed under them, because the old slots are the defaults. `Task.beginUpdate`
+  and `Task.endUpdate` replace `Task.hasLogContext` and `Task.withoutLogContext`.
+- **What a program sees.** A program that has no defect sees no change: an `update` that returns
+  has put back every slot that it set. After a throw that the DOM reports, the rest of the body has
+  its own context, also when it has none (`browser/tea/LogBareBodyAfterReportedThrow` and its
+  three siblings).
+- **Cost.** Both functions read `slotted` first. In a build in which nothing sets a slot, they fold
+  away, and the `finally` is then empty. The specialiser writes a `try` that has no `catch` and an
+  empty `finally` as its guarded statements (`backend.md` §9, amended 2026-11-06). So the release
+  build of a page that sets no slot is byte for byte the build of before. Where a slot is set, each
+  message reads the record, counts its finalisers and makes one small record, and a message sent
+  inside a context copies the slot record once, as before. A development build folds nothing, so
+  each page ships both functions.
+- **Not covered**, as before: a scope that the body closes after the throw takes the wrong entry
+  off the list (#921), and a body in a fiber that ends after the throw drops `update`'s finalisers
+  (#1154).
+
 *Amended 2026-10-14 (§9.8.19; `plans/queue.md` row 82):* `send`'s record has elm/http 2.0's
 `tracker : Maybe String`, and `Http.track` is the subscription that hears it. `riskySend` is `send`
 with `credentials: "include"`. A program that tracks progress or sends cookies to another origin no
