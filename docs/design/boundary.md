@@ -2453,7 +2453,11 @@ of the same date own selection and verification.
 **Version 1.14** (*amended 2026-10-17*, additive, gated on nothing; `browser-inline.md`): what a
 program lowering needs to compile a program's effects and its placement away.
 - `Lowering.constructs`: a program constructor's call is compiled as the mount alone, for a
-  platform whose `Program` is the mount.
+  platform whose `Program` is the mount. *Amended 2026-11-06 (#1232):* the constructor's own body
+  is then never called, and a call that reaches it is a call the lowering did not compile — a bug
+  in beni, not a value (`CLAUDE.md` rule 9). Such a platform writes the body as a throw of an
+  `Error` that names the constructor and says so, never as a value of its `Program` type;
+  `browser-inline`'s four do (`browser-inline.md` §10.5).
 - `Program.Code.program_shape`: a `programReport` refusal by a language rule (`browser-inline.md` §5, class 3), reported as the `program_shape` code, whose title says no "yet".
 - `Lowering.places`: a call of a `first` placement whose first argument is a program constructor's
   call and whose second a string literal is compiled as the program call alone, and the hook is

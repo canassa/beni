@@ -4331,6 +4331,12 @@ The constructor bodies and the browser and page runtime helpers are pinned in
 word-bodies.txt. Entry declarations print an entry line marked (words), separate
 from their inferred summaries. Removing entry in a flip exposes the callback
 writers as pending; the hosted and ordinary-program fixtures pin that boundary.
+*Amended 2026-11-06 (#1232):* browser-inline's four constructors are beni declarations, not
+`foreign` ones (since 2026-10-29, `plans/runtime-in-beni.md` step 9), and each body now reads
+nothing of its record and throws a named defect (`browser-inline.md` §10.5). No call reaches a
+body, since the `inline` lowering compiles each call as the program's mount. The bodies were read
+again: a body that keeps and writes nothing of its record meets the entry protocol, so the `entry`
+words stand, and word-bodies.txt pins the new bodies.
 
 ### 24.9 The decoder in `Expect`
 
