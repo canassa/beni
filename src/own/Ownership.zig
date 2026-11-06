@@ -16471,11 +16471,6 @@ const Walker = struct {
         }
     }
 
-    /// Whether the callee hands `πᵢ` of supply `e` (index `ei`) to another
-    /// callback too, whose actual writes it: a class that writes the part
-    /// supplied, one with no class, or the caller's own function parameter,
-    /// whose writes are decided outside (#281). Those symbolic writers
-    /// are collected as guards instead of forcing an unconditional need.
     /// §31.5: whether another function the callee hands the record to may
     /// write it, or answer it for the callee to write: the keep edge's
     /// `rwritten` through a callback.
@@ -16498,6 +16493,11 @@ const Walker = struct {
         return false;
     }
 
+    /// Whether the callee hands `πᵢ` of supply `e` (index `ei`) to another
+    /// callback too, whose actual writes it: a class that writes the part
+    /// supplied, one with no class, or the caller's own function parameter,
+    /// whose writes are decided outside (#281). Those symbolic writers
+    /// are collected as guards instead of forcing an unconditional need.
     fn writtenByCallback(w: *Walker, s: *const Summary, avs: []const AV, e: SupplyEntry, ei: usize, writers: *std.ArrayList(u32)) Allocator.Error!bool {
         for (s.supply, 0..) |x, xi| {
             if (xi == ei or x.prov.kind != .param or x.prov.a != e.prov.a or !w.o.overlap(x.prov.path, e.prov.path)) continue;
