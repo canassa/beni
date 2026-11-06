@@ -4753,7 +4753,9 @@ split took `Exhaustive.zig` past the line again, and its lookup table moved to `
 included. `rules_test.zig` fences I2 (with the kept files that own, serialise or print a type
 listed), the type table's structural bits' readers (the capability fence, its capability half
 deleted with the API), and the 1 500-line cap; the fence against importing v1's files went with
-v1.
+v1. *2026-11-06:* the fixed classes (§26, amended the same day) took `Effects.zig` over the cap;
+reading a summary off the graph moved to `EffectsSummary.zig` (284 lines: `summarise` and its
+walks), called by `Effects.zig` alone, and `Effects.zig` is 1 385.
 
 ```
 check2/
@@ -5659,6 +5661,14 @@ section says only where it sits in this checker.
   its summary and unified with the wanted's type.
 - **Versions** (§14.3): `iface_bytes.format_version` 8 → 9, `entry_bytes.format_version` 6 → 7,
   the frontend artifact 8 → 9.
+- *Amended 2026-11-06 (#1662).* **Fixed classes** (P2 §14.3 rule 3, amended the same day): the
+  classes of a top-level value whose evaluation class is not `pure` are not generalised.
+  `Effects.run` solves once, takes those values from the evaluation classes, and solves again with
+  them fixed (`fixClasses`, before the classes are flattened), until the set stops growing. A
+  summary class carries the fixed classes it reaches (`Class.outs`), and a record makes its copy
+  flow into them; `refresh` raises the copies of a class whose rung rose after its summary was
+  applied. `EffectPlan` never makes a fixed class sensitive. No format moves: an importer reads a
+  fixed class as any other class (#2126).
 
 ### 26.1 Declaration totality (owner, 2026-10-21; #618)
 
