@@ -14313,3 +14313,21 @@ test "planned lifecycle fixtures use the single-node renderer" {
     }
     try testing.expect(all_planned);
 }
+
+test "statement assignment functions keep a host-retained callback and direct call" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTree("tests/corpus/emit/release/app/SpecStatements", "_expected.");
+    try w.write("host-call.mjs",
+        \\await import("./out/_main.mjs");
+        \\globalThis.raise(null);
+        \\console.log("host called");
+    );
+    for ([_][]const []const u8{
+        &.{ "build", "--platform=platform", "SpecStatements.beni" },
+        &.{ "build", "--platform=platform", "--release", "SpecStatements.beni" },
+    }) |args| {
+        try expectBuilt(try w.run(args));
+        try w.expectProgram("host-call.mjs", .{ .stdout = "dead\n4\nnoisy\nraised\nhost called\n" });
+    }
+}

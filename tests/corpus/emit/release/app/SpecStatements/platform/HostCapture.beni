@@ -1,0 +1,3 @@
+-- Keep the callback visible to the host through a typed synchronous boundary.
+-- The emitter must retain both its callable value and its direct statement call.
+pub foreign impure retain : sync (⊤ → ⊤) → ⊤
