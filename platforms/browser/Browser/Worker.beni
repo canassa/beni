@@ -337,9 +337,7 @@ newPeer native descriptor opts =
 sendFrame : V, String, Int, V → Result SendError ⊤
 sendFrame peer kind requestId payload =
     encoded =
-        if kind == "Request" then
-            Wire.normalize (Js.get peer "wire") 2 "call" payload
-        else if kind == "Success" then
+        if kind == "Success" then
             Wire.normalize (Js.get peer "wire") 2 "reply" payload
         else if kind == "Failure" || kind == "InitializationFailed" then
             Wire.normalize (Js.get peer "wire") 2 "error" payload
@@ -766,7 +764,8 @@ send handle prepared =
         else
             opts : Options
             opts = guest (Js.get peer "options")
-            bytes = wireBytes (Js.get reservation "payload") opts.queuedBytes
+            payload = Wire.normalize (Js.get peer "wire") 2 "call" (Js.get reservation "payload")
+            bytes = wireBytes payload opts.queuedBytes
             if
                 bytes + Js.to (Js.get peer "queuedBytes") > opts.queuedBytes
                     || Js.to (Js.get (Js.get peer "requests") "size") ≥ opts.queuedRequests
@@ -786,7 +785,7 @@ send handle prepared =
                         }
                 _ = Js.call (Js.get peer "requests") "set" [ host requestId, slot ]
                 Js.set peer "queuedBytes" (host (Js.to (Js.get peer "queuedBytes") + bytes))
-                case sendFrame peer "Request" requestId (Js.get reservation "payload") of
+                case sendFrame peer "Request" requestId payload of
                     Ok _ →
                         Ok (guest slot)
                     Err problem →

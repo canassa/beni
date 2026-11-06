@@ -46,8 +46,9 @@ Moving that lookup into a non-inlined helper reduces it to 464 B. Both unchanged
 4095-term plus-chain tests fail before this factoring and pass afterwards in
 development and release; no depth, stack or fixture cap changed.
 
-The existing exact-demand parity inventory records 33 differences across 17
-worker realm fixtures under #2127. A nine-line non-worker reduction reproduces
+The existing exact-demand parity inventory adds 50 rows across the worker realm
+fixtures: 17 absent-to-accepted rows under #1079 and 33 rows across 17 fixtures
+under #2127. A nine-line non-worker reduction reproduces
 the storage-demand gap on master: v1 reports no demand and opt-in v2 rejects
 the top-level Ref cell. No new exemption mechanism or checker work is included.
 The stale copied unchecked summaries are removed only where the actual dump

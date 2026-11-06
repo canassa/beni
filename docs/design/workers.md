@@ -1,6 +1,6 @@
 # Web Workers in the browser platform
 
-**Normative design, specified 2026-10-30; not implemented.** Tracking:
+**Normative contract, specified 2026-10-30; dedicated-worker support is implemented and gated during landing.** Tracking:
 [#1290](https://github.com/canassa/beni/issues/1290). The owner decisions of 2026-10-30 below are the implementation contract.
 The [research and inventory](research/workers-api-research.md) establish the
 baseline. This document owns the compiler/runtime contract, not a claim that

@@ -299,7 +299,6 @@ pub const Options = struct {
     /// been extracted (§5), and keeping them costs memory proportional to
     /// the whole project rather than to one module.
     keep_type_stores: bool = false,
-    /// Internal rollout option. No CLI flag; typed Task storage must land first.
     /// `--roundtrip-interfaces` (`Cli.Common`, `fast-compiler.md` §8):
     /// replace every module's interface record with serialize → bytes →
     /// deserialize of itself the moment its check finishes, before any

@@ -110,7 +110,6 @@ pub const Input = struct {
     roundtrip_dispatch: bool = false,
     /// Compute the crossing bits (checker-v2.md §36).
     crossing: bool = true,
-    /// Internal rollout option; enable after typed Task storage lands.
     /// `ambiguous_method_receiver` is emitted (static-dispatch-spike.md §10.9).
     informational: bool = false,
     /// `unit_discarded` is emitted (checker-v2.md §34).

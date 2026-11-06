@@ -82,8 +82,8 @@ pub const Chain = struct {
         return false;
     }
 
-    /// Whether the chain always runs in a page (`boundary.md` §5.2, added
-    /// 2026-10-24): its first `"host"`, down the chain.
+    /// Whether the entry runs in a window: the first explicit `entryHost`
+    /// down the platform chain (`boundary.md` §5.2).
     pub fn inPage(chain: *const Chain) bool {
         for (chain.layers) |layer| {
             if (layer.manifest.entryHost) |h| return h == .window;

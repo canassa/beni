@@ -1820,7 +1820,7 @@ const Emitter = struct {
                             if (callee.module != launch.value.module or callee.index != launch.value.decl) continue;
                             allowed[mi][data.lhs] = true;
                             if (!e.options.allow_unchecked_workers) {
-                                try e.report(.invalid_entry_kind, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "Worker launches are unavailable until realm and Wire checks are implemented.", .{});
+                                try e.report(.invalid_entry_kind, e.graph().moduleFile(m), b.insts.items(.main_token)[ii], "Worker launches are gated during the workers landing; validation builds require --allow-unchecked-workers.", .{});
                                 continue;
                             }
                             if (e.options.library) {
