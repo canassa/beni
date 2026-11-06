@@ -149,7 +149,7 @@ recommendation 5, a soundness argument per rule over the slot carrier, was not t
 ## 2. The semantic core
 
 Notation: `ε` the empty path; steps `.f`, `.i`, `C#i`, `[*]` (list/dictionary position), `◇` (closure
-environment), `◆` (`Ref` contents), `⟨n⟩` (opaque slot), `⟲` (one or more levels below a recursive place).
+environment), `◆` (`Ref` contents), `⟨n⟩` (opaque slot), `⟲` (one or more levels below a recursive place), `…` (a record's row, §2.1).
 `A(e)` the value of `e` (§2.3.3); `Σ` the frame state (§2.4); `γ` concretisation (§2.14.2). BIR = `src/bir/Bir.zig`: a declaration
 is a contiguous instruction range in evaluation order, every binding a distinct local index (`Lower.bindLocal`
 appends; nothing rebinds).
@@ -177,7 +177,7 @@ the `Enforce`/`Groups` boundary (§8, S3a) and is the one piece of `own2/` that 
 
 | Place kind | Steps | Holds a cell of kind | Notes |
 |---|---|---|---|
-| `record` | `.f` per field | `record` | every record type (R-4.8.1) |
+| `record` | `.f` per field, and `…` when the row is open | `record` | every record type (R-4.8.1); `…`: *The row of a record*, below |
 | `tuple` | `.i` | none | never written |
 | `ctor` | `C#i` per constructor and argument | none | **a sum**: paths through different constructors are alternatives (§2.2); a record-alias constructor is a `record` |
 | `list` | `[*]` | `list` | `[*]` is a *summary* place (positions merged); supplied for List and Builder by `sequence` metadata (§2.13.6) |
@@ -185,7 +185,7 @@ the `Enforce`/`Groups` boundary (§8, S3a) and is the one piece of `own2/` that 
 | `ref` | `◆` | `ref` | types carrying `cell` metadata, including Ref/Deferred; `◆` is a barrier (§2.13.7) |
 | `closure` | `◇` | `closure` | the environment; children are the captured paths; carries a class slot (§2.10) |
 | `opaque` | `⟨n⟩` per published slot | `opaque` | `Js.Value`, `Html`, a program (R-4.6.5) |
-| `var` | none | any | a type variable may hold anything (R-5.5.11) |
+| `var` | none | any | a type variable may hold anything (R-5.5.11); a record's row is one |
 | `cross` | none | none | primitives, `⊤`, `⊥`, a nominal type reaching no tracked place, a crossing foreign type |
 
 **A step past a fold** (#1957). A `var` place a non-regular type folded to has no steps, yet its value has structure: `Wrap
@@ -216,13 +216,36 @@ name it. The `⊤` a step past a fold gives keeps the value at the fold, its **o
 
 **A step no place names** (#2043). A fold is not the only such step. `Q { r | a : List Int }` in a template drops its row, so `Q { b : List Int }` has a
 record place with no `.b`, and a schema member inside a nominal type is read through a template that cannot name its fields. A step a place
-cannot name is `⊤` at any place but `cross`, which holds no object, and a schema member in a template is a `var` place, as a fold is. Refused
+cannot name is `⊤` at any place but `cross`, which holds no object, and a schema member in a template is a `var` place, as a fold is. *Amended 2026-11-06 (#2057): a template no longer drops its row (*The row of a record*, below), so this is what remains: a schema member, and an argument the template's walk cannot read as a record, such as a knot of a cyclic type.* Refused
 that a perfect checker accepts: any write through such a step, over fresh data too (#2038). Fixtures `run/SanitiserUnnamedStep`,
 `run/SanitiserUnnamedStepApart`.
 *Amended 2026-11-05 (#2047):* an arrival read past an argument's fold reads empty, and an empty reading tells a caller the object is fresh, so
 the value at the fold is read whole: a parameter's deep, any other root's as `⊤` (`FoldRead.zig`), and an open arrival at a `var` slot is
 read deep whatever it says (`Subtree.readAt`); a read that runs past a fold is that fold's slot, in each arm of a choice (`FoldRead.prefix`). `f t c = if c then t else Leaf []`, whose result is wide, and `PW (PW _ x) _ → List.concat x`,
 whose own slot runs past the fold, are refused.
+
+**The row of a record** (#2057). `{ r | a : List Int }` is a record with a field the type names and fields it does not. A record place has one more
+step for those, the **row step** `…`, whenever its row is open: its child is a `var` place, and its slot, the **row slot**, is an ordinary object slot.
+
+- *What it means at run time.* A record value at such a place is a JavaScript object with the named fields and any others. The row slot stands for every object held by a
+  field the place does not name, at any depth: a slot no step below can name, so deep (§2.9.1). **Every object in a record is at exactly one of them**: a field the
+  place names is reached by that field's step, and any other field's objects are at `…`. So no object of a record is unnamed, and the argument is total.
+- *What it is related to.* `.a` and `…` are two steps of one place, so two distinct positions (§2.3.2): their objects are apart only where a selection says so. `up rec = { rec | a = List.push rec.a 9 }` keeps
+  `…` as an update's base holds it, so the write of `.a` asks `π1{.a,…*~}`, and `up { a = k, b = k }` is refused at the call.
+- *The step carries the names it excludes.* A contract's slot is relative steps, read at another record (§2.11.2), and the caller's record may name more. So a row step's payload is the **set of field names its place names**,
+  interned per module, by name in a block (§3.6). `…{a}` is printed `…`. At most one row step leaves a place, so nothing orders two of them, and it sorts after every field step.
+- *Reading a row at a caller.* `…` from a record place is each field step its names do not hold, and the place's own `…` if it has one; each read deep. So `π1…{a}` at `{ a, b, c }` is `.b*`, `.c*`; at `{ s | a, b }` it is `.b*`, `…{a,b}*`;
+  at a closed `{ a }` it is nothing, which is true: the record has no other field. At a `var` or `opaque` place it is that place's object, as any step a place cannot follow (§2.13.9). A built value reads the same way over its kids.
+- *A caller's step into a callee's row.* A row is parametric: `r` is one type, and a callee cannot move an object between fields of it. So a caller slot `.b` of a result whose callee says `… π1…` is `π1.b`, not all of `π1…`. **A row step followed by a field or row step is that step** when the names admit it, and names nothing when they do not (`π1…{a}.a`).
+  Reading a slot of a result tree (`Forest.atSlot`), a caller's `.f` the tree has no kid for, or a caller's row step, meets the node's `…` kid as an open entry at the kid's parent. So `idr { a = k, b = j }`'s `.b` is `j`, and `.b` of `idr { a = x, b = j, c = k }` holds nothing of `k`.
+- *A template.* `type Q r = Q { r | a : List Int }` substitutes the row as it does any parameter: the argument's fields join `a`, its row is the record's. An argument that is no record leaves the row open.
+- *An update.* `{ rec | a = x }` of a base at an open place keeps `…` as it keeps every field it does not write: a `record` value's kids are by step, and one is the row's, the base projected by `…`. So a whole read of the copy, a holder of it or a return of it reaches the row, and a read of `.a` does not.
+- *A pattern.* A record pattern names fields, so it takes field steps. A variable pattern takes the record whole, at a place with its row.
+- *A callback.* A supply is a tree as `res` is, read by the same reader: `appR { a = x, b = k } λr → List.push r.b 1` delivers `π1…` at the lambda's `.b` and a write reaches the actual's `.b`. A closure in a row is a function's slot in a caller's frame, where the type names it.
+- *What a contract says.* `idr rec = rec` is `res ε π1ε, .a π1.a, … π1…*`. A reader of `.status` still reads `π1.status` and nothing else; a whole read of `rec` reads `…` too.
+
+*Why it is sound.* Take a record `o` at a place `P` of a callee, called with `o` at the caller's place `P'`, whose names hold `P`'s by typing. Any object below `o` is below a field `f`. If `P` names `f`, the callee's slot `.f` reads it at the caller, as before. Otherwise it is in `γ(π…)`, which the caller's reading makes `.f` of `P'` deep. A write the callee makes through `…`, an escape, a read, an arrival and an occurrence all instantiate by that reading, so each reaches every object the row can hold (O1: a holder is added, never removed). The narrowing of a caller's `.b` to `π1.b` removes only objects of other fields, and it rests on parametricity: a function of type `{ r | a } → { r | a }` holds no operation that moves one field of `r` to another; a callback, a `foreign` and a worded row have their own arrivals at the result, which are read as they are. Refused that a perfect checker accepts: any two objects of one row asked apart from a named field when only one of them is written or held, as the row is one slot; and a write of a row's object reached by a fold's `var` (§2.1). *Rejected:* reading an open row as a `var` place. It refused 17 positions v1 accepts, and because an update copies kept fields from the place's steps, it lost what the update kept (`RecordUpdateEscapes`). The row is a step, so the named fields keep their slots.
+Fixtures: `run/SanitiserRow`…
 
 **Identity.** Initial construction uses a dense `by_var` memo for structural source nodes and the adapter's
 `(head, argument places)` memo for nominal applications. Each source graph node and outgoing edge is visited
@@ -375,6 +398,7 @@ place holds none; its object slots are below it.
   steps. It is one module table, filled once per path when first asked, and charged to every account
   that reads it, at the entry's stored fill cost on that account's own first read (§4.1, *A module table's
   entries*). A slot that holds a `var` place stands for anything below it.
+- **The row slot** (§2.1, *The row of a record*) is an object slot at a `var` place, so `below` holds it and every reader of `below` needs nothing more.
 - **Relative steps.** A contract (§2.10) names a parameter's or a result's slot by its step words from the
   root, `π2#Node.0⟲#Node.1`. Constructor steps are `(ordinal, argument)` pairs and field steps are field
   names, so the words mean the same in every module (§3.6).
@@ -4679,7 +4703,7 @@ It is a serialization of each contract's words, with every module-local id made 
   head string, ordinal·argument)`, a field is `(field, name string, 0)`, an index, `[*]`, `⟲`, `◆`, `◇` their
   kind and payload. Heads and field names are entries of the block's string table (§3.6's envelope, as
   before). The reader re-interns each step in its own place table (`Place.ctorStep`, `Step.field` by the
-  field's rank in the reader's module).
+  field's rank in the reader's module). *Version 27 (#2057):* a row step is `(row, n, 0)`, then `n` name strings, the names it excludes, sorted by rank; the reader interns the set (`Place.rowStep`).
 - **A contract** is its arity and flags, then each field in the order of §3.5, each list in its canonical
   order (§2.10 *Determinism*). A label's origin is `(declaration name string, instruction offset, module
   name string)`. A `shared d` arrival is the declaration's qualified name string.
@@ -4727,6 +4751,8 @@ import as unknown (no block, or one that does not decode) says so in its report:
 declarations read the pessimistic contract`.
 
 *As built (#1979): version 24.* A supply's `k` word carries the `each` mark in its top bit and `walk` in the next (§2.11.3, *a traversal's supply*).
+
+*As built (#2057): version 27.* A row step, above.
 
 *As built (#1978): version 26.* `res_read` follows `res_cond`.
 
