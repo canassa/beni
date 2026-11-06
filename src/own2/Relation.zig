@@ -24,6 +24,7 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const LevelCycle = @import("LevelCycle.zig");
+const FoldOpen = @import("FoldOpen.zig");
 const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
@@ -660,7 +661,7 @@ pub const Eval = struct {
             var hits: std.ArrayList(Contract.Hit) = .empty;
             defer hits.deinit(e.gpa());
             try e.hitsAt(e.resRoot(c, which), words, &hits);
-            for (hits.items) |hit| for (hit.arrivals) |a| try e.arrivalLeaves(call, c, Subtree.readAt(e.places(), a, slot, hit.open), words[hit.depth..], &acc);
+            for (hits.items) |hit| for (hit.arrivals) |a| try e.arrivalLeaves(call, c, FoldOpen.read(e, call, a, slot, hit.open), words[hit.depth..], &acc);
         } else {
             // The pessimistic contract: whatever arrives is unknown.
             try acc.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
@@ -1053,7 +1054,7 @@ pub const Eval = struct {
         const saved = e.cur_sub;
         e.cur_sub = .{ .kind = .forward, .a = ki };
         defer e.cur_sub = saved;
-        try e.arrivalLeaves(k.call, none, Subtree.readAt(e.places(), a, k.slot, open), suffix, &acc);
+        try e.arrivalLeaves(k.call, none, FoldOpen.read(e, k.call, a, k.slot, open), suffix, &acc);
         for (acc.items) |x| try e.addLeaf(ki, x);
     }
 

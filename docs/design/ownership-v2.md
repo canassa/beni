@@ -186,6 +186,7 @@ that a perfect checker accepts: any write through such a step, over fresh data t
 the value at the fold is read whole: a parameter's deep, any other root's as `⊤` (`FoldRead.zig`), and an open arrival at a `var` slot is
 read deep whatever it says (`Subtree.readAt`); a read that runs past a fold is that fold's slot, in each arm of a choice (`FoldRead.prefix`). `f t c = if c then t else Leaf []`, whose result is wide, and `PW (PW _ x) _ → List.concat x`,
 whose own slot runs past the fold, are refused.
+An open arrival whose own slot is past a fold is that slot's subtree at a caller's slot of any place: `ε… π1#1.0#0.0*` says the value lies somewhere below a `var`, so the object at `#1.0#0.0` is not all of it, and reading it alone told `findL (Wrap (Leaf [ k ])) λl → l` that its answer was fresh (`FoldOpen`, `run/SanitiserFoldOpen`). The arrival's own slot is the place its steps reach from the argument, so one that no fold is above, `findL (Leaf [ k ]) …`, keeps its object (`run/SanitiserFoldOpenApart`).
 
 **Identity.** Initial construction uses a dense `by_var` memo for structural source nodes and the adapter's
 `(head, argument places)` memo for nominal applications. Each source graph node and outgoing edge is visited

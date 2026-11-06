@@ -105,6 +105,7 @@ const layers = [_]Entry{
     // Worded contracts by declaration and places, one footprint a callee (#1714).
     .{ .file = "Worded.zig", .layer = 5, .max_lines = 60 },
     .{ .file = "Rows.zig", .layer = 6, .max_lines = 320 },
+    .{ .file = "FoldOpen.zig", .layer = 6, .max_lines = 30 },
     .{ .file = "Value.zig", .layer = 6, .max_lines = 480 },
     // A code's summary lines, its called contracts' after it (#2028).
     .{ .file = "SummaryText.zig", .layer = 6, .max_lines = 35 },
@@ -557,7 +558,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 118), layers.len);
+    try testing.expectEqual(@as(usize, 119), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

@@ -1,0 +1,39 @@
+-- An arrival at a slot no fold is above keeps its object (`ownership-v2.md` §2.1,
+-- *A step past a fold*, #2062): the element `[ k ]`'s `Leaf` holds is edited, `k` is not,
+-- and a callback that only reads past the fold makes no demand.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+findL : T a, (a → List Int) → List Int
+findL t f =
+    case t of
+        Leaf x →
+            f x
+
+        Wrap u →
+            findL u λl →
+                case l of
+                    [ x, …_ ] →
+                        f x
+
+                    _ →
+                        []
+
+
+main : Program
+main =
+    k = [ 1 ]
+    n = findL (Leaf [ k ]) λl → [ List.length (List.push l []) ]
+    m = findL (Wrap (Leaf [ k ])) λl → [ List.length l ]
+    Node.print (show n ++ "|" ++ show m ++ "|" ++ show k)

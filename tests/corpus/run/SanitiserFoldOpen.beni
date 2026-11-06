@@ -1,0 +1,41 @@
+-- An answer across a fold (`ownership-v2.md` §2.1, *A step past a fold*, #2062):
+-- `findL`'s callback at `Wrap` is handed an element past the fold, `ε… π1#1.0#0.0*`.
+-- At a caller's `List Int` slot that is the subtree below `#1.0#0.0`, not its object:
+-- what `main`'s callback answers, and what the other one writes, is `k`.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+findL : T a, (a → List Int) → List Int
+findL t f =
+    case t of
+        Leaf x →
+            f x
+
+        Wrap u →
+            findL u λl →
+                case l of
+                    [ x, …_ ] →
+                        f x
+
+                    _ →
+                        []
+
+
+main : Program
+main =
+    k = [ 1 ]
+    n = List.push (findL (Wrap (Leaf [ k ])) λl → l) 2
+    m = [ 1 ]
+    o = findL (Wrap (Leaf [ m ])) λl → List.push l 2
+    Node.print (show n ++ "|" ++ show k ++ "|" ++ show o ++ "|" ++ show m)
