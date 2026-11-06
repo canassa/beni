@@ -2512,7 +2512,6 @@ tests/corpus/ownership/UnitListHeld.beni [node+everywhere] UnitListHeld 113:10 #
 tests/corpus/ownership/UnknownCallee.beni [browser-inline] UnknownCallee 38:10 #0 :: List.push <call> :: accepted :: rejected  #1704: under v2 core's and the platforms' contracts read as pessimistic, so a value through them is unknown or escapes
 tests/corpus/ownership/UnknownCallee.beni [browser-inline] UnknownCallee 53:13 #0 :: List.push <call> :: accepted :: rejected  #1704: under v2 core's and the platforms' contracts read as pessimistic, so a value through them is unknown or escapes
 tests/corpus/ownership/UnknownCallee.beni [browser-inline] UnknownCallee 67:13 #0 :: List.push <call> :: accepted :: rejected  #1704: under v2 core's and the platforms' contracts read as pessimistic, so a value through them is unknown or escapes
-tests/corpus/ownership/UnknownCalleeForms.beni [browser-inline] UnknownCalleeForms 83:13 #0 :: List.push xs :: accepted :: rejected  #1704: under v2 core's and the platforms' contracts read as pessimistic, so a value through them is unknown or escapes
 tests/corpus/ownership/Words.beni [node] Words 112:27 #0 :: construction xs :: accepted :: rejected  #1704: under v2 core's and the platforms' contracts read as pessimistic, so a value through them is unknown or escapes
 tests/corpus/ownership/Words.beni [node] Words 77:27 #0 :: construction xs :: accepted :: rejected  #1704: under v2 core's and the platforms' contracts read as pessimistic, so a value through them is unknown or escapes
 tests/corpus/ownership/WriteExtents.beni [browser-inline] WriteExtents 9:7 #0 :: List.swap xs :: accepted :: rejected  #1704: under v2 core's and the platforms' contracts read as pessimistic, so a value through them is unknown or escapes
@@ -2525,8 +2524,6 @@ tests/corpus/ownership/core/SchemaCastSlot.beni [node] SchemaCastSlot 37:7 #0 ::
 tests/corpus/ownership/core/SchemaCastSlot.beni [node] SchemaCastSlot 48:15 #0 :: List.push row.values :: accepted :: rejected  #1704: under v2 core's and the platforms' contracts read as pessimistic, so a value through them is unknown or escapes
 tests/corpus/ownership/core/SchemaCastSlot.beni [node] SchemaCastSlot 85:15 #0 :: List.push row.values :: accepted :: rejected  #1704: under v2 core's and the platforms' contracts read as pessimistic, so a value through them is unknown or escapes
 tests/corpus/run/BorrowedPermutation.beni BorrowedPermutation 12:7 #0 :: List.swap xs :: accepted :: rejected  #1704: under v2 core's and the platforms' contracts read as pessimistic, so a value through them is unknown or escapes
-tests/corpus/run/LetValuePolymorphism.beni LetValuePolymorphism 49:37 #0 :: ++ back :: accepted :: rejected  #1704: under v2 core's and the platforms' contracts read as pessimistic, so a value through them is unknown or escapes
-tests/corpus/run/LetValuePolymorphism.beni LetValuePolymorphism 50:38 #0 :: ++ front :: accepted :: rejected  #1704: under v2 core's and the platforms' contracts read as pessimistic, so a value through them is unknown or escapes
 tests/corpus/run/OwnershipFoldElementPaths.beni OwnershipFoldElementPaths 23:16 #0 :: OwnershipFoldElementPaths.put first :: accepted :: rejected  #1704: under v2 core's and the platforms' contracts read as pessimistic, so a value through them is unknown or escapes
 #
 # ref-held: 21
@@ -5733,3 +5730,22 @@ tests/corpus/run/SanitiserValueCallImported Main 71:9 #0 :: List.push k :: accep
 tests/corpus/run/SanitiserValueCallImported Main 87:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
 tests/corpus/run/SanitiserValueCallImported Main 96:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
 tests/corpus/run/SanitiserValueCallImported Main 104:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
+||||||| parent of d0a7eb9505 (🐛 read what a value's call does, across modules and routes)
+tests/corpus/run/SanitiserValueCallImported Main 23:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
+tests/corpus/run/SanitiserValueCallImported Main 55:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
+tests/corpus/run/SanitiserValueCallImported Main 63:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
+tests/corpus/run/SanitiserValueCallImported Main 71:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
+tests/corpus/run/SanitiserValueCallImported Main 87:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
+tests/corpus/run/SanitiserValueCallImported Main 96:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
+tests/corpus/run/SanitiserValueCallImported Main 104:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 reads no value's own contract as a call of it; v1 has its own rule for a function value
+tests/corpus/run/SanitiserValueCallImported Main 32:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
+tests/corpus/run/SanitiserValueCallImported Main 64:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
+tests/corpus/run/SanitiserValueCallImported Main 72:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
+tests/corpus/run/SanitiserValueCallImported Main 80:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
+tests/corpus/run/SanitiserValueCallImported Main 96:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
+tests/corpus/run/SanitiserValueCallImported Main 105:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
+tests/corpus/run/SanitiserValueCallImported Main 113:9 #0 :: List.push k :: accepted :: rejected  #2132: v2 refuses; v1 reads an imported value as its call and traps, #2158
+tests/corpus/run/SanitiserValueCallImported Main 136:9 #0 :: Main.apply1 k :: absent :: rejected  #2132: v2 refuses a writer a value reaches through its alias; v1 reports no such demand, #2158
+tests/corpus/run/SanitiserValueCallImported Main 143:9 #0 :: Main.grown <call> :: absent :: rejected  #2132: v2 refuses a writer evidence reaches through its alias; v1 reports no such demand, #2158
+tests/corpus/run/SanitiserValueCallImported Lib 97:10 #0 :: value Lib.grow :: pending :: absent  v2 makes no value demand of a writer handed as a value (§7.3)
+tests/corpus/run/SanitiserValueCallImported Lib 101:9 #0 :: value Lib.growing :: pending :: absent  v2 makes no value demand of a writer handed as a value (§7.3)
