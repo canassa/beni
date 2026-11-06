@@ -46,7 +46,7 @@ pub fn kid(f: anytype, v: u32, st: Step) !u32 {
         defer kids.deinit(f.gpa);
         var ranks: std.ArrayList(u32) = .empty;
         defer ranks.deinit(f.gpa);
-        for (rs, ks) |r, k| if (!f.places.rowHolds(st, try Step.ofRank(f.account, r))) continue else {
+        for (rs, ks) |r, k| if (f.places.rowHolds(st, try Step.ofRank(f.account, r))) {
             try kids.append(f.gpa, k);
             try ranks.append(f.gpa, r);
         };
