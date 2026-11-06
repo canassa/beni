@@ -1,0 +1,61 @@
+-- No runtime record builder may incidentally retain the discriminator reader.
+-- A runtime tag wraps a generated payload worker, including under Reject.
+import Node
+import Schema
+import Show
+
+
+schema Nested =
+    value : Int
+
+
+schema Payload =
+    x : Int
+    nested : Nested
+
+
+type Message
+    = Wrapped { x : Int, nested : { value : Int } }
+
+
+inject : Schema.Injection { x : Int, nested : { value : Int } } Message
+inject = Schema.injection Wrapped λ(Wrapped payload) → Just payload
+
+
+codec : Schema.Schema Message Message
+codec =
+    Schema.tagged "kind"
+        [ Schema.variant "Wrapped" "wrap" (Payload.schema ⊤) inject inject ]
+
+
+options : Schema.Options
+options =
+    { errors = Schema.AllErrors, unknownKeys = Schema.Reject, maxDepth = 512, reportInput = False }
+
+
+show : Message → String
+show (Wrapped payload) = "${String.fromInt payload.x}/${String.fromInt payload.nested.value}"
+
+
+main : Node.Program
+main =
+    Node.print
+        (String.join
+            [ Show.result
+                (Schema.parseWith
+                    codec
+                    options
+                    "{\"kind\":\"wrap\",\"x\":1,\"nested\":{\"value\":2}}"
+                )
+                show
+            , Show.result
+                (Schema.parseWith
+                    codec
+                    options
+                    "{\"kind\":\"wrap\",\"x\":1,\"nested\":{\"value\":2,\"kind\":\"extra\"}}"
+                )
+                show
+            , Show.result (Schema.print codec (Wrapped { x = 3, nested = { value = 4 } })) identity
+            ]
+            "\n"
+        )

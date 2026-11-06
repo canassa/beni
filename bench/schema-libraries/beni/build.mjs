@@ -1,12 +1,5 @@
-// Build `Bench.beni` for the beni rows: `out-compiled/` (the specialised
-// `parse` and `print`) and `out-library/` (`--schema-library`: the same
-// declarations through the library interpreter), both `--library
-// --release`. Run from anywhere:
-//
-//     node bench/schema-libraries/beni/build.mjs [--beni=./zig-out/bin/beni]
-//
-// The adapters (`adapters/beni.mjs`, `adapters/beni-library.mjs`) import
-// what this writes; `BENI_SCHEMA_OUT` moves it.
+// Build the compiled beni benchmark, in release and development form.
+// The adapter reads both outputs to match the exported short names.
 import { spawnSync } from "node:child_process";
 import { mkdirSync, copyFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -18,7 +11,7 @@ for (const arg of process.argv.slice(2)) {
   if (arg.startsWith("--beni=")) beni = resolve(arg.slice("--beni=".length));
 }
 const root = process.env.BENI_SCHEMA_OUT ?? here;
-for (const [name, flags] of [["compiled", []], ["library", ["--schema-library"]]]) {
+for (const [name, flags] of [["compiled", []]]) {
   const project = join(root, `project-${name}`);
   mkdirSync(project, { recursive: true });
   copyFileSync(join(here, "Bench.beni"), join(project, "Bench.beni"));

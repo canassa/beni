@@ -5,8 +5,8 @@
 -- defaults, §11, are not built) and a required field is refused; a field
 -- named like a key `Object.prototype` has is never taken from the
 -- prototype; and a key a page set on `Object.prototype` is read through it
--- by compiled and library runs alike (the last line, which pollutes it). The corpus builds this four ways, each with and
--- without every root through the library, against this one golden.
+-- by compiled workers (the last line pollutes it). Both output modes
+-- must match this independent golden.
 import Hosts
 import Node
 import Schema exposing (Missing, Present, Value)
@@ -60,5 +60,81 @@ main =
         , point "undefined x" (Hosts.undefinedX ⊤)
         , named "inherited toString" (Hosts.plain ⊤)
         , named "own toString" (Hosts.ownToString ⊤)
+        , runtimePoint (Hosts.getters ⊤)
+        , runtimeTag (Hosts.getters ⊤)
+        , compiledPayload
+            "compiled payload"
+            "{\"kind\":\"own\",\"value\":7,\"nested\":{\"count\":3}}"
+        , compiledPayload
+            "compiled nested extra"
+            "{\"kind\":\"own\",\"value\":7,\"nested\":{\"count\":3,\"kind\":\"own\"}}"
         , point "polluted prototype" (Hosts.polluted ⊤)
         ]
+
+
+toPoint ( ( ⊤, x ), y ) = { x = x, y = y }
+
+
+fromPoint p = ( ( ⊤, p.x ), p.y )
+
+
+runtimePoint : Value → String
+runtimePoint input =
+    schema =
+        Schema.record
+            (Schema.fields ▷ Schema.field "x" Schema.int ▷ Schema.optional "y" Schema.int)
+            (Schema.mapping toPoint fromPoint)
+            (Schema.mapping toPoint fromPoint)
+    case Schema.read schema input of
+        Ok p →
+            "runtime getters: " ++ String.fromInt p.x ++ ", " ++ shown p.y
+        Err _ →
+            "runtime getters: failed"
+
+
+type Tag
+    = Own
+
+
+runtimeTag : Value → String
+runtimeTag input =
+    inject = Schema.injection (λ⊤ → Own) λ_ → Just ⊤
+    schema = Schema.tagged "kind" [ Schema.nullary "Own" "own" inject inject ]
+    case Schema.read schema input of
+        Ok Own →
+            "runtime tag getter: own"
+        Err _ →
+            "runtime tag getter: failed"
+
+
+schema CompiledPayload =
+    value : Int
+    nested :
+        count : Int
+
+
+type CompiledTag
+    = CompiledTag CompiledPayload.Type
+
+
+compiledTag : Schema.Schema CompiledTag CompiledTag
+compiledTag =
+    inject = Schema.injection CompiledTag λ(CompiledTag p) → Just p
+    Schema.tagged "kind"
+        [ Schema.variant "CompiledTag" "own" (CompiledPayload.schema ⊤) inject inject ]
+
+
+compiledPayload : String, String → String
+compiledPayload label text =
+    opts = { (Schema.defaultOptions ⊤) | unknownKeys = Schema.Reject }
+    case Schema.parseWith compiledTag opts text of
+        Ok (CompiledTag p) →
+            label ++ ": " ++ String.fromInt p.value ++ "/" ++ String.fromInt p.nested.count
+        Err [ issue ] →
+            case issue.path of
+                [ Schema.Field "nested", Schema.Field "kind" ] →
+                    label ++ ": /nested/kind"
+                _ →
+                    label ++ ": wrong path"
+        Err _ →
+            label ++ ": failed"

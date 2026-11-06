@@ -4118,9 +4118,9 @@ fn schemaRunRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
 }
 
 /// §30.10: what `core/Schema`'s makers put in the slots of the schema they
-/// return, added to the summary read off the body. `box` makes every
-/// schema an interpreting builder answers, whose functions the checker
-/// does not follow: both its slots hold `⊤`. `list`, `nullable` and
+/// return, added to the summary read off the body. `composed` replaces the
+/// removed `box`: runtime adapters are still not followed, so both outcome
+/// slots retain `⊤` even though their workers are compiled. `list`, `nullable` and
 /// `erased` answer what their schema answers, and `converted` that and what
 /// its conversion's functions answer (the conversion's slots, which a call
 /// of `conversion` fills, `conversionSlots`).
@@ -4136,7 +4136,7 @@ fn schemaMakerRow(o: *Ownership, m: u32, d: u32, s: Summary) Allocator.Error!Sum
     var arguments_only = false;
     // `derived` and `structural` answer what their evidence answers, which
     // only a call knows (`codecRunRow`): from the body, anything.
-    if (eqlAny(name, &.{ "box", "derived", "structural" })) {
+    if (eqlAny(name, &.{ "composed", "derived", "structural" })) {
         for (slots) |p| try extra.append(keep, .{ .path = p, .prov = .{ .kind = .top, .a = unfollowed } });
     } else if (std.mem.eql(u8, name, "value") and bir.decls[d].params == 0) {
         // A `Value` is answered as it was handed: the run's input.
@@ -4153,9 +4153,8 @@ fn schemaMakerRow(o: *Ownership, m: u32, d: u32, s: Summary) Allocator.Error!Sum
     var res: std.ArrayList(ResEntry) = .empty;
     for (s.res) |r| {
         // `list`, `nullable`, `erased` and `converted` branch on their
-        // argument's engine: the interpreting arm, whose `box` answers `⊤`,
-        // runs only for a schema whose slots hold `⊤` already. Their slots
-        // are their arguments', and nothing else.
+        // argument's workers. Their outcome slots are the child/conversion
+        // slots, including any unfollowed composed adapter, and nothing else.
         if (arguments_only) if (o.firstStep(r.path)) |st| {
             if (st.kind == .schema_decoded or st.kind == .schema_encoded) continue;
         };

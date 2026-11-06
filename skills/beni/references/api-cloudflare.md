@@ -109,7 +109,7 @@ module Worker.Object
   value none : Handlers state msg
   value post : Ref msg, msg → ⊤  -- impure
   value reply : Reply a, a → ⊤  -- impure
-  value replySchema : Schema e a → Schema String (Reply a)  -- impure
+  value replySchema : Schema e a → Schema String (Reply a)
   value self : Context msg → Ref msg  -- impure
   value sockets : Context msg → List Socket  -- impure
   value socketsTagged : Context msg, String → List Socket  -- impure

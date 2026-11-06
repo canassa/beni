@@ -1,0 +1,21 @@
+-- Compiling a runtime record does not make a mapping's shared result fresh.
+import Schema
+
+
+shared : List String
+shared = [ "kept" ]
+
+
+pub append : String → List String
+append input =
+    runtime =
+        Schema.record
+            (Schema.field Schema.fields "tags" (Schema.list Schema.string))
+            (Schema.mapping (λ( ⊤, tags ) → { tags = tags }) λr → ( ⊤, r.tags ))
+            (Schema.mapping (λ_ → shared) λtags → ( ⊤, tags ))
+    case Schema.parse runtime input of
+        Ok result →
+            List.push result "x"
+
+        Err _ →
+            []

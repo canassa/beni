@@ -309,9 +309,6 @@ pub const Input = struct {
     /// The schema plans, one per module: what a schema member's edges are
     /// read from (`schema.md` §6).
     plans: []const SchemaPlan = &.{},
-    /// `--schema-library`: a schema's directions run its description
-    /// through the library and call no worker.
-    schema_library: bool = false,
     /// `--test-hooks`: what `Js.testHooks` is (`JsIntrinsic.droppedArm`).
     test_hooks: bool = false,
     /// Whether the program's shape runs take their shapes (`SchemaValid`,
@@ -380,16 +377,9 @@ pub const Input = struct {
         return null;
     }
 
-    /// `core/Schema`'s two core-private types whose constructors no core
-    /// exemption covers (`schema.md` §6, *A statically known schema runs
-    /// compiled*; `backend.md` §9, amended 2026-10-15): `Engine`, whose
-    /// `Interpreted` only `box` builds — every interpreting builder calls
-    /// it — and whose `Compiled` only the compiled makers do; and `Made`,
-    /// what a compiled schema was made of. The compiler writes none of
-    /// them, no sibling or `foreign` names either type, and no schema's
-    /// endpoint can, so an arm on one survives only where `core/Schema`'s
-    /// own code that builds it does. Null without an interner or a
-    /// `core/Schema`, and then they are exempt like the rest of core.
+    /// Preserve master's constructor pruning for Schema's private Engine and
+    /// Made. Only core's makers construct them; no foreign signature or schema
+    /// endpoint names them. Runtime-composed workers use this same raw ABI.
     pub fn schemaGuarded(in: Input) ?SchemaGuarded {
         const interner = in.interner orelse return null;
         const m = in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) orelse return null;
@@ -1043,7 +1033,7 @@ pub const Builder = struct {
         // its instruction adds no edge and the sibling is not imported.
         const in_place = try b.jsInPlace(bir, m);
         const sg_now = b.schemaGraph();
-        const valid: SchemaValid.Sites = if (b.in.interner) |it| try SchemaValid.sites(b.scratch, b.in.graph, b.in.interfaces, b.in.provenance, it, bir, dispatch, m, if (sg_now) |*g| g else null, b.in.schema_library, b.in.schema_shapes) else .{};
+        const valid: SchemaValid.Sites = if (b.in.interner) |it| try SchemaValid.sites(b.scratch, b.in.graph, b.in.interfaces, b.in.provenance, it, bir, dispatch, m, if (sg_now) |*g| g else null, b.in.schema_shapes) else .{};
 
         const decl_at = try b.scratch.alloc(u32, bir.decls.len + 1);
         var decl_targets: std.ArrayList(Target) = .empty;
@@ -1436,10 +1426,7 @@ pub const Builder = struct {
     fn memberEdges(b: *Builder, m: Graph.Index, decl: u32, member: SchemaGraph.Member, guards: *Guards, out: *std.ArrayList(Target)) Allocator.Error!void {
         const sg = b.schemaGraph() orelse return;
         const ref: SchemaGraph.Ref = .{ .module = m, .decl = decl };
-        if (member == .root and b.in.schema_library) {
-            // Under `--schema-library` `S.schema` is its description.
-            try out.append(b.scratch, .{ .node = schemaNode(ref, .description) });
-        } else if (member == .root) {
+        if (member == .root) {
             // `S.schema`'s compiled value (`schema.md` §6, *A statically
             // known schema runs compiled*): each other member behind the
             // `core/Schema` declarations that run it, one edge per guard,
@@ -1471,7 +1458,7 @@ pub const Builder = struct {
         // An erased declaration selects a host-input/output worker when its
         // typed decode/encode worker is requested (schema.md §12.10). Keep
         // that dependency only when both the operation and erasure survive.
-        if (!b.in.schema_library) {
+        {
             const host_member: ?SchemaGraph.Member = switch (member) {
                 .decode => .read_value,
                 .encode => .write_value,
@@ -1486,22 +1473,20 @@ pub const Builder = struct {
                 try out.append(b.scratch, .{ .node = schemaNode(ref, host), .chain = chain });
             };
         }
-        // The `via`s: what the description and every worker set call, and
-        // under `--schema-library`, where no worker is written, only the
-        // description.
-        const calls_vias = member == .description or (member.op() != null and !b.in.schema_library);
+        // The `via`s of the description and every worker set.
+        const calls_vias = member == .description or (member.op() != null);
         if (calls_vias and try sg.hasVia(b.scratch, ref)) {
             try out.append(b.scratch, .{ .node = .{ .module = m, .kind = .decl, .index = decl } });
         }
         var targets: std.ArrayList(struct { SchemaGraph.Ref, SchemaGraph.Member }) = .empty;
-        try sg.memberTargets(b.scratch, ref, member, b.in.schema_library, &targets);
+        try sg.memberTargets(b.scratch, ref, member, &targets);
         for (targets.items) |t| try out.append(b.scratch, .{ .node = schemaNode(t[0], t[1]) });
         // A derived codec's (schema.md §12.10): the constructors its
         // decoding worker and its description build, so a `case` on them
         // keeps its arms, and the module `codec` values it runs.
         if (member != .root) try b.codecEdges(m, ref, member, out);
         var names: std.ArrayList([]const u8) = .empty;
-        try sg.coreNeeds(b.scratch, ref, member, b.in.schema_library, &names);
+        try sg.coreNeeds(b.scratch, ref, member, &names);
         const core = b.in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) orelse return;
         const core_bir = b.in.birOf(core);
         for (names.items) |name| {
@@ -1533,9 +1518,7 @@ pub const Builder = struct {
         try SchemaGraph.subtree(plan, b.scratch, d.root, &nodes);
         for (nodes.items) |n| switch (SchemaGraph.tag(plan, n)) {
             .constructors => {
-                // Under `--schema-library` the directions run the
-                // description, whose injections build them.
-                if (!b.in.schema_library) if (member.op()) |op| if (!op.decoding()) continue;
+                if (member.op()) |op| if (!op.decoding()) continue;
                 const target = plan.type_targets[SchemaGraph.lhs(plan, n)];
                 for (SchemaGraph.ctors(plan, n)) |c| {
                     if (try b.codecCtorNode(sg, plan, target, plan.codec_ctors[c].order)) |node| try out.append(b.scratch, .{ .node = node });

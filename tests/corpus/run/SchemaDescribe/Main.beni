@@ -1,8 +1,8 @@
 -- `describe` answers a schema's whole graph as plain data, both endpoints
 -- (`schema.md` §5): a field's declared name beside its external key, a
 -- tagged union's discriminator and each variant's name, tag and payload, a
--- conversion's source with its target left opaque, and a flip or a
--- projection as the node it is — a double flip is the schema it began as.
+-- conversion's source with its target left opaque. Projection makers are
+-- covered as missing public names in check/bad; this graph stays inspectable.
 -- A recursive schema is one definition, named by a reference wherever it
 -- is used, its own body included; one nested in another is a definition of
 -- its own, met once, so every reference resolves exactly once; and two
@@ -291,10 +291,6 @@ main : Node.Program
 main =
     Node.printLines
         [ describe flat
-        , describe (Schema.flip flat)
-        , describe (Schema.flip (Schema.flip flat))
-        , describe (Schema.typeOnly flat)
-        , describe (Schema.encodedOnly (Schema.list Schema.bool))
         , describe (Schema.nullable Schema.null)
         , describe Schema.value
         , describe shape2

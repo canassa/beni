@@ -1,12 +1,4 @@
--- The schema-libraries workloads as beni `schema` declarations
--- (`docs/design/schema.md` §6, S4). `build.mjs` builds this module twice
--- with `--library --release`: as written, where `parse` and `print` are
--- the specialised code, and with `--schema-library`, where they run the
--- same declarations through `core/Schema`'s library interpreter. The
--- options are strict and have no defaults, as every other row's are: the
--- first error, unknown keys rejected. `tree` is a recursive record, which a
--- v1 declaration cannot write (recursion goes through a tagged union,
--- §2), so it has no row.
+-- The compiled benchmark schema declarations.
 import Schema
 
 

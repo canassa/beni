@@ -1153,19 +1153,19 @@ test "unknown flag exits 2 with the exact message and does nothing" {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.runWith(&.{ "check", "--frob", "--self-profile=trace.json", "src" }, .{ .raw_diagnostics = true });
+    for ([_][2][]const u8{ .{ "check", "--frob" }, .{ "build", "--schema-library" } }) |case| {
+        const r = try w.runWith(&.{ case[0], case[1], "--self-profile=trace.json", "src" }, .{ .raw_diagnostics = true });
 
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u8, 2), r.exit_code);
-    try testing.expectEqualStrings("", r.stdout);
-    try testing.expectEqualStrings("beni: unknown option '--frob'; run 'beni help' for usage\n", r.stderr);
+        // VERIFY OUTPUT: the removed schema option is an ordinary unknown flag.
+        try testing.expectEqual(@as(u8, 2), r.exit_code);
+        try testing.expectEqualStrings("", r.stdout);
+        const message = try std.fmt.allocPrint(w.arena.allocator(), "beni: unknown option '{s}'; run 'beni help' for usage\n", .{case[1]});
+        try testing.expectEqualStrings(message, r.stderr);
 
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY SIDE EFFECTS                     │
-    // └─────────────────────────────────────────┘
-    try testing.expect(!w.exists("trace.json"));
+        // VERIFY SIDE EFFECTS
+        try testing.expect(!w.exists("trace.json"));
+        try testing.expect(!w.exists("out"));
+    }
 }
 
 test "check on a missing path exits 2" {

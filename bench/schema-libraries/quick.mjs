@@ -10,7 +10,7 @@
 // minutes at the defaults (about half a minute on the recorded machine).
 //
 //     node bench/schema-libraries/beni/build.mjs
-//     node bench/schema-libraries/quick.mjs [--rows=beni,beni-library,effect,…]
+//     node bench/schema-libraries/quick.mjs [--rows=beni,effect,…]
 //         [--workloads=flat,list,…] [--samples=9] [--batch-ms=2] [--rounds=2] [--json]
 //
 // Caveats, which the report repeats: one machine, warmed code, registry
@@ -26,7 +26,7 @@ import { auditAdapter } from "./correctness.mjs";
 import { adapterPath, consume, rotate } from "./measure-common.mjs";
 
 const options = {
-  rows: ["json-floor", "handwritten", "typia", "valibot", "zod", "effect", "beni-library", "beni"],
+  rows: ["json-floor", "handwritten", "typia", "valibot", "zod", "effect", "beni"],
   workloads: ["flat", "list", "union", "typeahead"],
   samples: 9,
   batchMs: 2,

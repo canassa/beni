@@ -42,6 +42,27 @@ This is a delta on the existing contracts. §2 extends `language.md` §3/§5 and
 here; the detail lives here once. Settled schema rules here prevail over the
 older research.
 
+*Amended 2026-11-03 (A.14, owner decision).* Every schema runs compiled. The library
+interpreter, the forced-library flag and differential engine passes are removed from the
+contract. Record, tagged and recursive builders remain, composed from compiled workers. Endpoint
+projections are withdrawn for now; their future compiled implementation is tracked in #1790.
+A.14 supersedes every earlier requirement in this document to retain, implement or test an
+interpreter, including Q9 and the historical *As built* accounts.
+
+*Ported to master 2026-11-06 (#1789).* The existing private raw-worker ABI and
+foreign Schema handles stay in place; this does not introduce typed storage.
+Runtime makers capture their child workers in the existing declared-worker group;
+its description thunk consumes no data (an ignored unit argument is permitted).
+Construction checks travel as private raw callbacks alongside the workers; generated
+root wrappers flatten schema arguments before running those checks. Construction preflight retains its
+structural metadata checks only for composed runtime schemas. Tagged payload
+workers inherit a discriminator claim restricted to their own record depth,
+preserving unknown-key checking in nested records. Recursive workers share one
+lazy body and reject re-entry without consuming a structural level. The guard uses
+this root's issues identity and the current depth; depth cannot decrease within
+one root. A nested public root has another identity, and a finally step restores
+the previous guard. Backward-reporting and discriminator-claim facts are separate.
+
 ## 1. What a schema is, and the guarantees
 
 A schema describes two typed endpoints and a fallible conversion in each
@@ -78,19 +99,17 @@ typed Encoded and typed Type. `Value` is an opaque boundary handle over the
 host value, not a recursively marshalled Beni ADT. JSON.parse supplies the
 host value directly. Compiled validation reads it in one pass, constructing
 the typed result without first constructing a Value tree or a whole Encoded
-intermediate. The library uses privileged core primitives over the same host
-representation; neither path pays an eager marshalling pass.
+intermediate. Worker composition uses the same host representation and privileged core
+primitives; it does not pay an eager marshalling pass.
 
 A declaration produces an inspectable description value **and** specialised
 ordinary top-level parse/print functions. Both success and failure paths are
 compiled. The description is the plain form that remains available, under
-[report 28 §0](research/28-jsx-in-beni.md); runtime composition uses the library
-path. Both obey §5, including the same errors. Specialisation is not a second
-schema language and is not reserved for `--release`.
-*Amended 2026-10-15 (A.11):* runtime composition of statically known schemas is compiled too. A
-composition of declarations by `list`, `nullable`, `converted` and generic arguments carries
-compiled workers. The library path is the test oracle, and it runs only schemas whose shape is
-built at run time (§6, *A statically known schema runs compiled*).
+[report 28 §0](research/28-jsx-in-beni.md). Every runtime composition carries compiled
+workers too, including records, tagged variants and recursion (A.14).
+All obey §5, including the same errors. Specialisation is not a second schema language and
+is not reserved for `--release`. A description can be inspected; it is never executed as a
+validator. Independent, hand-checked expected results specify the workers' behavior.
 
 ## 2. The declaration
 
@@ -433,15 +452,15 @@ through a tagged one.
 ## 5. The description and `core/Schema`
 
 **Context contract:** the schema engine owns and threads direction, full path,
-root options, depth and unknown-key policy through every compiled or library
+root options, depth and unknown-key policy through every generated or composed worker
 step; user transformations receive values and return relative failures, never
 replace or reset that context.
 
 This is the closure of report 33 §4's fifth finding, not advice to endpoint
 authors. Public construction cannot accept raw `(Context, Value) -> …`
 readers/writers or a transparent record of endpoints. Ordinary combinators
-construct the engine's nodes; structural traversal and final Issue construction
-belong to the engine. Typed conversion callbacks can fail, but cannot report
+compose compiled workers and retain separate inspection metadata; structural traversal and
+final Issue construction belong to the engine. Validation never dispatches on description nodes. Construction preflight may inspect structural metadata without reading a validation input. Typed conversion callbacks can fail, but cannot report
 an absolute path that discards their parent's path, change options, claim that
 a child consumed no depth, or supply their own key walker. A callback may
 start an independent public parse, but that is a new root operation, not a
@@ -483,9 +502,6 @@ The following core/Schema operations are required. `Failure` below abbreviates
 ```text
 decode      : Schema e a, e -> Result Failure a
 encode      : Schema e a, a -> Result Failure e
-flip        : Schema e a -> Schema a e
-typeOnly    : Schema e a -> Schema a a
-encodedOnly : Schema e a -> Schema e e
 describe    : Schema e a -> Description
 read        : Schema e a, Value -> Result Failure a
 write       : Schema e a, a -> Result Failure Value
@@ -493,21 +509,11 @@ parse       : Schema e a, String -> Result Failure a
 print       : Schema e a, a -> Result Failure String
 ```
 
-`flip` swaps endpoints **and** the two fallible directions. A double flip
-restores their values, failures and checks. `typeOnly` and `encodedOnly` select
-an actual endpoint and its checks, remove the cross-endpoint transformation,
-and validate that endpoint in both directions. For an opaque conversion target,
-typed projections run its optional checks, or are identity when none exist.
-They do not rerun the conversion or invent structural checks. An opaque target
-is reachable only through its conversion; constructing read/write operations
-for any schema whose Type endpoint contains an opaque target without a
-structural description fails at construction, not at runtime. For structurally
-described endpoints, Encoded's external record shape
-uses `as` keys; Type's endpoint uses declared Beni keys. Both tagged endpoint
-representations retain the declared discriminator and literal tags, but map to
-their own nominal constructor family. Thus flipping also selects the other
-endpoint's external reader/writer; it does not pretend raw JSON has type e.
-Projections cannot be implemented by reusing the other endpoint's reader. Composition decodes forward and encodes
+Endpoint projections are withdrawn for now (A.14); future compiled support is tracked in
+[#1790](https://github.com/canassa/beni/issues/1790). The retained runners distinguish typed
+Encoded values from external host values and retain declared names, external keys and each
+endpoint identity. No projection invokes an interpreter or invents an opaque structural form.
+Composition decodes forward and encodes
 backward, stopping a dependent chain at failure. Checks belong to an endpoint,
 not to whichever function happened to be called first. Typed encode still
 validates refinements: a Beni Int can be unsafe even though it is well typed.
@@ -541,7 +547,7 @@ fail as invalid options at the root. The proposed default is 512 and candidate
 ceiling 4,096; these numeric choices require the library and specialisation proof below, not an
 assumption that JavaScript guarantees that many frames.
 
-The ceiling must cover both interpreters and emitted workers, including helper
+The ceiling must cover composed and emitted workers, including helper
 frames, conversion nesting and JSON output, across supported browser engines
 and Node. `List.map5` already overflowed near 3,700 calls, a different
 function. The library and specialisation work must establish a conservative ceiling and the boundary handling
@@ -637,8 +643,9 @@ question is needed where this pinned implementation already supplies the rule.
 
 *Added 2026-10-01, before the library was written* (§16, S3; the "concrete builder API" the
 paragraph above asks for). This is `core/Schema`'s surface for building and running a schema
-at run time. A declaration (§2) means exactly what the builders below build from it, and S4's
-specialised code must agree with them (§10).
+at run time. A declaration (§2) and these builders obey the same context and issue rules.
+Every maker composes compiled workers (A.14); building a schema at run time does not license
+an interpreter. Description metadata is retained separately for inspection.
 
 **Types.** `Schema e a` and `Conversion b a` stay `pub foreign type`s (A.6). Four builder types
 are added, all `pub opaque type`s:
@@ -679,7 +686,7 @@ issue      : String -> Issue
 issueAt    : List PathSegment, String -> Issue
 
 recursive  : String, sync (Schema e a -> Schema e a) -> Schema e a
-flip, typeOnly, encodedOnly, describe   -- as listed above
+describe                              -- as listed above
 defaultOptions : ⊤ -> Options         maxDepthCeiling : Int
 decodeWith : Schema e a, Options, e -> Result (List Issue) a       -- and encodeWith, readWith,
                                                                     -- writeWith, parseWith, printWith
@@ -1081,71 +1088,84 @@ checked, as the library never looks at it. A static argument inside a declaratio
 written in a field — is a compiled worker, so a declaration reaches the library engine only through
 a schema value the program supplies at run time.
 
-**The forced library path** (Q9). A hidden `--schema-library` build flag — absent from `usage`, as
-`--allow-debug` is — makes every root wrapper of every declaration the library's:
-`M$S$$parseWith = (o, t) => Schema.parseWith(M$S$$schema(…), o, t)`, the whole root through the
-interpreter, and emits no worker. It changes no answer; that is what the differential corpus
-asserts (§10). The corpus builds every `run/` fixture that declares a `schema` four times —
-development and `--release`, each compiled and forced — against the one `.expected`, which is
-written by hand: the two paths agreeing with each other is not evidence on its own.
+**The compiled corpus** (A.14). The hidden `--schema-library` flag and its forced
+execution path are removed. Every schema semantic fixture runs compiled in development and
+release against its hand-written expected values and complete ordered Issue lists. Tests
+whose only assertion compared the two engines are removed; behavior and reachability
+assertions remain.
 
 ### A statically known schema runs compiled
 
-*Added 2026-10-15 (A.11, the owner's design); normative from this date.* This amends §1's "runtime
-composition uses the library path" and *The static/dynamic line* above, whose "future recogniser"
-it replaces. Parity with Effect means **what** a schema validates and does: the shapes, the
-issues, the options, the order. It does not mean **how** Effect runs one. Every schema whose
-shape the program fixes at compile time compiles to specialised JavaScript, for speed and for
-size. The library interpreter of §5 is not how such a schema runs. It stays as the test oracle,
-through the forced path below and the differential corpus. It ships only in a program that builds
-a schema whose shape is decided at run time.
+*Added 2026-10-15 (A.11); amended 2026-11-03 (A.14).* Every schema runs compiled,
+including a schema assembled from runtime values. Parity with Effect means the accepted
+shapes, issues, options and evaluation order. There is no description interpreter or engine
+choice. A schema value carries its workers through variables, records, generic arguments,
+helpers and platform APIs.
 
-**What is statically known.** A schema value is *compiled* when it is made by one of these
-makers, each applied to compiled schemas:
-
-| Maker | Its parse and print |
+| Maker | Compiled execution |
 |---|---|
-| `S.schema ⊤`, a declaration's value | the declaration's own workers (§6, *The specialised path*) |
-| `S.schema a₁ … aₙ`, a generic one | the declaration's workers, with each argument's workers as its slots |
-| `Schema.string`, `bool`, `int`, `float`, `finiteFloat`, `null`, `value` | core's primitive workers |
-| `Schema.list s`, `Schema.nullable s` | core's list and `nullable` workers, around `s`'s |
-| `Schema.converted s c` | `s`'s workers, then `c`'s directions through `compiledForward` and `compiledBackward` |
+| declarations, generic declarations, derived and structural codecs | generated workers, with child workers passed as slots |
+| primitive schemas | core's primitive workers |
+| `list`, `nullable`, `converted`, `erased` | closures around the child's workers, retaining the engine-owned context |
+| `fields`, `field`, `optional`, `key`, `mapping`, `record` | composed field-product workers and the endpoint mappings; ordered field and key metadata for reporting and inspection |
+| `variant`, `nullary`, `injection`, `tagged` | compiled payload workers captured by variant closures and selected by tag or typed projection |
+| `recursive` | a closed reference to compiled workers, with depth and nonproductive-cycle checks; a separate description reference |
+| `flip`, `typeOnly`, `encodedOnly` | withdrawn for now; future compiled work is tracked by [#1790](https://github.com/canassa/beni/issues/1790) |
 
-The set is closed under these makers, so `Schema.list (Item.schema ⊤)`,
-`Page.schema (Schema.list (User.schema ⊤))`, a recursive declaration and a list of lists are all
-compiled. A schema is *dynamic* when an interpreting builder made it, or made a part of it. The
-interpreting builders are the ones whose shape arrives as run-time values: `record` with `fields`,
-`field`, `optional`, `key` and `mapping`; `tagged` with `variant`, `nullary` and `injection`;
-`recursive`; `flip`, `typeOnly` and `encodedOnly`. A compiled maker given a dynamic schema makes a
-dynamic one, except a generic declaration. That keeps its compiled outer shape and runs the
-dynamic argument through the library on the parent's context, as before.
+The retained public builder type signatures stay unchanged. The generated API report reflects the retained raw-ABI bodies: private allocation does
+not execute user work, while metadata inspection and runners retain their inferred effects.
+No effect or ownership exemption is added.
+Runtime field names, tags and recursive
+composition do not require value interpretation: makers capture child workers once, and
+runners call those workers. They never dispatch on a description node, rebuild an executable
+plan per input, or reset a child traversal's context. Invalid runtime construction retains its
+explicit construction failure; there is no silent failure or generic execution fallback.
 
-**How it is decided.** It is decided when the value is made, and the value carries the answer.
-`core/Schema`'s private `Engine` type has two constructors:
-- `Interpreted`, a node the interpreter walks. Only `box` builds it, and every interpreting
-  builder calls `box`.
-- `Compiled`, the value's compiled parse and print workers, how to build its node if one is
-  asked for, and the dynamic schemas its workers run, if any.
+Endpoint projections `flip`, `typeOnly` and `encodedOnly` are removed for now,
+including their runtime and description behavior. Their future compiled implementation is
+tracked by [#1790](https://github.com/canassa/beni/issues/1790); it will need generated
+endpoint-local check workers. This removal does not add those workers or a new generator.
 
-`parse`, `parseWith`, `print` and `printWith` branch on the engine. A compiled schema runs its
-workers under `compiledParse` and `compiledPrint`, the same root code a declaration's `S.parse`
-runs. So a compiled schema stays compiled wherever it goes: through a variable, a record field, a
-helper of the program, or `Http.jsonBody`. Nothing has to see it at the call. The compiler decides
-the rest when it builds. The constructors of `Engine` and of `Made` are the only constructors of
-`core` that reachability does not exempt (`backend.md` §9, *A `case` arm on a constructor nothing
-builds*, amended). `Made` records what a compiled schema was made of. Every arm that runs the
-interpreter is an `Interpreted` arm, so it survives only in a build that reaches a builder that
-calls `box`. A compiled maker's worker is made by `parserOf`/`printerOf` when a root or a slot
-runs it, in that maker's `Made` arm. So a build ships the list worker only if it makes a compiled
-`list`, and a build that composes and describes schemas without running one ships no worker.
+Field-product and variant workers retain their real endpoint types. They pass typed values
+straight to child workers. There is no per-value Any box or lazy input reporter on the success
+path. Inspection metadata is separate from those workers. A discriminator claim is scoped to
+the variant payload depth; a nested record still checks all of its unknown keys. Paths are
+immutable parent links, and each Issue gets a fresh path list. Immutable construction facts
+are checked by compiled Argument closures and cached once per schema; that preflight never
+executes description nodes. The private traversal state preserves both conversion phase and
+payload discriminator claims in every combination; updating one never resets the other.
+With projections withdrawn, Direction determines both endpoints. No independent endpoint-swapping
+state or opaque-target construction analysis remains.
 
-**The guarantee.** A program whose schemas are all statically known ships no library
-interpreter, whichever of `parse`, `print`, `decode`, `encode`, `read`, `write`, their `With` forms
-and `describe` it calls. It ships no `core/Schema.run` and no `box`. Each of its runs is compiled
-workers, and `describe` reads the declarations' descriptions, which are nodes no builder boxed. The
-corpus checks this on Conduit and on the schema fixtures (§16, *As built — slice A*; *As built —
-every runner*). A program that builds a dynamic schema ships the interpreter, and only its dynamic
-schemas use it. *(Amended 2026-10-15, #175: the guarantee covered `parse` and `print` only.)*
+Descriptions retain only inspection metadata and their stable references. `describe` may
+walk that metadata to build its result; no validation operation executes it. There is no
+`Interpreted` engine arm, `run`, `box` or fallback slot.
+
+**Checked endpoint identities** (2026-11-03). The engine-owned source builders
+`scalarSchema`, `primitiveWith` and `compiledBoxWith` carry the same hidden
+identity demands as `Any.pack`. Their private `endpointIdentity` witness
+asks for its checked element type, never inspects a value, and emits only the
+compiler-supplied identity. It has no public operation or JavaScript sibling.
+Generated producers derive the same identity grammar from checked endpoint plans;
+both paths feed the ordinary typed engine constructors. Neither packs a dummy
+value to discover a type nor reads or slices identity text at runtime.
+
+Identity demands and operand roots are persisted in checked dispatch and covered
+by its cache key. Development identities may be readable. Before release
+specialisation, the linker numbers identity atoms in lexical order across the
+build, replacing only compiler-marked identity literals. The private alphabet is
+injective, including nominal arguments, function types and record fields. This
+numbering runs after cached lowering, so cached checked evidence cannot retain a
+build-specific ordinal. Source builders, generated workers and markup operands
+therefore agree across imports, job counts and warm caches. No identity module or
+type names appear in release output. Stored compiled workers use the shared typed
+Opt protocol directly, without a per-call Maybe adapter.
+
+**The guarantee.** Every program ships no library interpreter, whichever schema makers,
+runners, `With` forms and `describe` it uses. Every schema run calls generated or composed
+compiled workers. Inspection never invokes validation. Corpus fixtures retain hand-checked
+answers for every existing public maker, including dynamic composition; emitted-output
+assertions cover the absence of the interpreter and independently eliminated capabilities.
 
 **Every runner of a statically known schema is compiled** *(added 2026-10-15, #175; it replaces
 this slice's paragraph "What still reaches the description in this slice", which listed `decode`,
@@ -1168,9 +1188,8 @@ key is a key whose read is not `undefined`, and a list of primitives may keep th
 `undefined`, and still be written by the host. *(Amended 2026-10-17: keys are now read alike, as the
 host-value amendment of §5 says; what still keeps `read` apart is the array, which the host may
 write after the run, and values `JSON.parse` never makes.)* And they write what `JSON.stringify` takes, refusing
-a non-finite `Float`, where `write`'s output is not JSON text. Every worker answers exactly what
-`run` answers on the same context, as the parse and print workers do (*The specialised path*), so
-the differential corpus holds each to the library. Core's own makers (`list`, `nullable`,
+a non-finite `Float`, where `write`'s output is not JSON text. Every worker follows the same context and failure rules as the parse and print workers
+(*The specialised path*). Independent expected answers hold every runner to those rules. Core's own makers (`list`, `nullable`,
 `converted`, the primitives) need no new code: their workers read the operation's ends from the
 context and serve every operation. `parserIn`/`printerIn` make a worker of the other four
 operations as `parserOf`/`printerOf` make `parse`'s and `print`'s, from the operation's number
@@ -1195,9 +1214,9 @@ composition must still walk a compiled maker's children, and reference identity 
 definitions, so a constant would have to reproduce cell identity per use for no change in what
 ships beside it.
 
-**What still interprets.** `flip`, `typeOnly` and `encodedOnly` are interpreting builders (the
-table of makers above): a schema they make is dynamic, so its runs, and the program, use the
-interpreter. They take a compiled schema's node from its description, as `describe` does.
+**Endpoint makers** (A.14). `flip`, `typeOnly` and `encodedOnly` are not public API
+for now. Calls to these removed names are compile errors; no interpreter serves them.
+Future compiled projection support is tracked in [#1790](https://github.com/canassa/beni/issues/1790).
 
 **What `S.schema` emits.** It is a reachability member of the declaration, *root*, besides
 the description, the worker sets and the root wrappers. Its value is
@@ -1226,20 +1245,15 @@ its `schema`, and a generic description takes its arguments' nodes (`describedOf
 its worker set. Only a use of them reaches them, so a program that runs `S.schema` alone ships
 neither.
 
-**Issues are unchanged.** A compiled schema's root checks are `compiledProblem`'s. The options come
-first, then each dynamic argument's construction failure and opaque Encoded end, in the order the
-value reaches them. Its issues are the workers', which §6 already holds to the library's answer. A
-compiled maker cannot make a construction failure. A compiled schema's Encoded end never holds a
-conversion's target, because `converted` changes only the Type end, and `flip`, the one way to
-move it, is interpreting.
+**Issues are unchanged** (A.14). Root checks validate options first, then construction
+failures in the order the schema reaches its children. The withdrawn projections no longer
+introduce an encoded-opaque construction case.
+Compiled composition preserves runtime construction failures from dynamic builders. A maker does not become valid merely because it
+carries workers. Independent expected goldens retain the exact ordered issues.
 
-**The forced library path.** Under `--schema-library` a declaration's `S.schema` is its
-description again, boxed (*amended 2026-10-15, #175*: the description is a node, so `box` makes it
-the `Interpreted` schema it was; a nongeneric declaration's is one constant, and its root wrappers
-run `S.schema`). So every composition over declarations, and every run of one, runs
-through the interpreter, and the differential corpus still compares the two paths. The primitive
-makers are core code, compiled in both builds. A composition of primitives alone is therefore
-compiled under the flag too, and its fixture's hand-written golden is what tests it.
+**No forced library path** (A.14). `--schema-library` is removed, including its
+alternate descriptions, worker suppression and differential corpus passes. All existing
+schema behavior remains covered by independent expected answers under compiled execution.
 
 **`Http` takes the schema value, unchanged** (`boundary.md` §9.8.12, amended). `jsonBody : Schema
 e a, a → Body` and `expectJson : Schema e a → Expect Error a` keep their signatures. Both call
@@ -1271,8 +1285,8 @@ every schema: a run's answer is fresh — the workers build every array and reco
 or adopt the array `JSON.parse` made — except where a conversion's function returns something it
 did not build from what it was handed (what it captured, a top-level value), where a `Value` or a
 conversion's `backward` hands back part of the program's own value (decoding a host value with
-`read`, and the encode direction), and wherever the schema was built by an interpreting builder,
-whose functions the checker does not follow. The derivation reads the declaration's plan: its
+`read`, and the encode direction), and wherever the schema was built by a runtime builder
+whose functions the checker does not follow. All such builders compose compiled workers (A.14). The derivation reads the declaration's plan: its
 `via`s, its `value` primitives, the declarations and derived codecs it names. A `via` that is a
 top-level value contributes what that value's conversion returns; any other `via` expression,
 which the declaration evaluates once, is unknown in each direction whose end holds a list.
@@ -1369,10 +1383,9 @@ and nothing of `core/Schema`'s issue makers ships for it.
   decoder, whose `Notify` arm, and at N = 1 its `Tick` arm, give `model` as a failure does — about
   60 B of the N = 1 page. `run/SchemaDeadTags`, `run/SchemaDeadTagsShapes` (the shapes),
   `emit/release/app/SchemaDeadTags` and `emit/release/app/SchemaDeadTagsShapes`.
-- **Where it is not taken.** A dynamic schema runs the library interpreter as before. The forced
-  library path (`--schema-library`) runs every schema through the interpreter, which makes issues.
-  The differential corpus is unchanged: a program that reads its `Err` keeps the issues, and the
-  full comparison with them.
+- **Where it is not taken.** Runtime-composed schemas call their compiled workers with the
+  ordinary issue contract. A program that reads its `Err` keeps the issues. The forced library
+  path is removed (A.14); independent expected answers cover full ordered issues.
 - **Which runs** *(amended 2026-10-18)*. Four, each at an unread call:
   - `Schema.read s v`, as the status below says;
   - `Schema.parse (S.schema ⊤) text` of a nongeneric declaration: `JSON.parse` with only its
@@ -1568,11 +1581,10 @@ each widget's reader cost about 118 B brotli and the cap leaves about 15 B per w
   (The library engine reads a present key twice, to test it and to take it; the reads are the
   same keys in the same order.) The validator makes no issue, builds no path and holds no
   message.
-- **One golden, three paths.** A shape-run fixture reads each input twice, once in a shape run and
-  once in a run that reads the error, which keeps the specialised path and its issues. It prints
-  both answers against one hand-written `.expected`. The corpus also builds it with
-  `--schema-library`, under which `SchemaValid` makes no shape run and every run is the library's.
-  So one golden holds the shared validator, the specialised path and the interpreter to one answer.
+- **Independent expected answers.** A shape-run fixture reads each input twice, once in a
+  shape run and once in a run that reads the error, which keeps the specialised path and its
+  issues. Both answers match one hand-written expected result. A.14 removes the forced
+  interpreter pass.
 - **What `--release` keeps.** `validShape`, `validParse` and the readers are core values. Each
   kind's reader is reached only from a shape that holds it, so a build ships the readers of the
   kinds its shapes use and no other. A build with no shape run ships none of them, and a shape run
@@ -1628,7 +1640,7 @@ does. The rule is never an estimate of bytes.
   runs `SchemaValid` finds there (`shapeRunCount`). It counts call sites in the program's text,
   so a run that reachability later drops still counts. A module whose edges come from the
   embedded pack keeps its workers, because its packed edges are made with no shape run, and it
-  does not count. Under `--schema-library` the count is 0. The choice therefore depends on the
+  does not count. The choice therefore depends on the
   sources alone, never on threads or timing (CLAUDE.md rule 5): `Reach.Input.schema_shapes` for
   every edge list, and each module's `Lower.Input.schema_shapes`, carry the one answer.
 - **T is 29** *(2026-10-19, the owner's authorized follow-up after #465)*. Calling validator
@@ -1843,9 +1855,11 @@ an author can construct an unchecked value of the same structural type.
 
 ## 10. Testing and slices
 
-*Amended 2026-10-02: §16 re-cuts the slices after S2 for the whole milestone. The rules of this
-section (red first, both paths, independent expected answers, and differential execution inside
-`test-blackbox`, which Q9 settled) apply to every one of them.*
+*Amended 2026-10-02: §16 re-cuts the slices after S2 for the whole milestone.*
+*Amended 2026-11-03 (A.14):* red-first fixtures and independent expected answers apply to
+every slice. Forced-library and differential engine execution requirements below are historical
+and withdrawn. Generated and composed workers run against hand-checked expected answers in
+`test-blackbox`, in development and release.
 
 The frontend, including §2/A.5’s brace-equivalent layout spelling, has landed,
 and so has the independent checker fix for numeric literals through primitive aliases
@@ -1866,21 +1880,13 @@ for this boundary. Follow the write-tests skill when implementation starts.
 | S4 — specialisation | §6 and this section; settle Q9; prove the native-recursion ceiling | `run/` differential twins; `emit/`, `emit/release/`, `emit/app/`: direct checks, compiled failure branches, loops, recursive workers, parse-only/print-only/description-only DCE; cached cross-module callback dependencies | Both paths yield identical expected values and complete Issue lists; all three gates pass; add **beni** to `bench/schema-libraries` with strict/no-default options, publish per-operation medians, faults, startup, sizes and caveats; measure many-schema growth and browser behavior before a parity claim |
 | S5 — effects after P2 | §7; resolve Q11 in the effects specification first | All seven EFFECTS.md cases: `run/`, cross-module `.iface`, `check/bad` sync/extraction diagnostics, cancellation/finalisers and both directions | Directional bits and context survive abstraction/import/suspension in compiled and library paths, no conversion after cancellation, exact effect order and ordinary failures, unchanged sync behavior |
 
-The differential corpus runs **every schema semantic fixture** via the emitted
-path and an explicitly forced library path, with the same input, options and
-schema, comparing complete success values or full ordered Issue lists. It also
-asserts independent expected answers: two identical bugs do not pass. Include
-AllErrors with a structural failure in one field and a conversion failure in
-a later sibling, a dynamic child below a specialised parent, encode-only
-failure after flip, and recursive failures with renamed external keys. Exercise
-typed decode/encode and text/Value boundaries, not just valid JSON parsing.
-
-A test-only way to force library interpretation must be specified with Q9;
-it must not become a production flag changing semantics. Description-only
-execution must not silently call a cached compiled validator. `emit/` asserts
-shape, `run/` asserts behavior, and DCE fixtures assert absent files/declarations
-as well as values. Jobs 1/8 twice byte-compare dumps, diagnostics and complete
-output trees; interface/cache round trips are part of checking's and specialisation's acceptance.
+Every schema semantic fixture runs compiled in development and release, comparing complete
+success values or full ordered Issue lists with independent expected answers. Cover AllErrors
+with sibling structural and conversion failures, composed children below generated parents,
+and recursive failures with renamed external keys. Exercise typed decode/encode and text/Value
+boundaries. Emitted shapes and direction reachability remain separate assertions. Jobs 1/8 twice
+byte-compare diagnostics and complete output trees; interface/cache round trips remain required.
+A.14 removes the forced-library flag and the interpreter differential passes.
 
 The three existing gates remain `zig build test`, `zig build test-blackbox`,
 `zig build fmt-check`. Q9 recommends putting differential execution in the
@@ -2020,6 +2026,9 @@ without `eq` reports the existing `not_equatable` or `unknown_method`. `null` an
 are decoding-only: encoding never writes `null` because a default exists.
 
 ### 11.5 Projections and flip
+
+*Withdrawn for now by A.14. The semantics below describe future compiled work under #1790;
+these operations are not currently public API.*
 
 - **`flip`** swaps the directions (§5), so a flipped schema's *encoding* fills defaults, and a
   double flip restores them.
@@ -2556,9 +2565,7 @@ three primitive kinds.
 runs compiled*. A definition has the four members of a declaration: description, decoding,
 encoding and root. Its value is `Schema.declared`'s, and its bindings are named
 `<Module>$$codec<k>$$<member>`, where *k* is its place among the module's definitions in key
-order. The use's evidence is a function of `⊤` answering that value. Under `--schema-library` the
-value is the description, so the differential corpus runs a derived schema through the
-interpreter as it runs a declared one. **A call of `Json.decode`, `encode`, `decodeWith` or
+order. The use's evidence is a function of `⊤` answering that compiled value (A.14). **A call of `Json.decode`, `encode`, `decodeWith` or
 `encodeWith` whose evidence is a definition is the definition's own `parse`, `print`,
 `parseWith` or `printWith`**, written where the call is, so a derived schema ships what a
 declaration's `S.parse` ships and no more. `decodeValue` and `encodeValue` run `Schema.read` and
@@ -2825,13 +2832,11 @@ shrink  : Schema e a, a → List a
 
 - `Schema.descriptionCodec : () -> Codec Description` persists and transmits a description, which
   is Effect's `toJson`/`fromJson`.
-- `fromDescription : Description, (String -> Maybe (Check Value)) -> Result (List Issue) (Schema
-  Value Value)` rebuilds an **untyped** validator. Typed rebuilding would compute a type from a
-  value (§9). Opaque checks are resolved by id through the supplied function. An unresolved one is
-  an `Err` naming it, never a silently weaker validator.
-- `fromJsonSchema : Value -> Result (List Issue) (Schema Value Value)` imports a JSON Schema the
-  same way, at runtime. **Typed** import is tooling: a `beni schema import` command that writes
-  `schema` declarations. It is a generator of source, not a language feature (report 32 row 146).
+- Runtime imports `fromDescription` and `fromJsonSchema` are withdrawn (A.14). Neither
+  was implemented. Deserializing an inspection description does not create an executable schema.
+- A future build-time import from JSON Schema to generated `schema` declarations would be
+  compatible with compiled execution. No import command is specified or implemented by this
+  decision; opaque checks must never be silently weakened.
 - `toSource : Description -> String` prints the `schema` declaration a description came from, or
   the nearest one when the description is derived.
 
@@ -2918,8 +2923,8 @@ rows are scheduled in §16.
 | Equivalence (L5727) | now §14.4 | `==` (derived `eq`); `encodedEquivalence` |
 | Optics (L5779) | proposed §14.6 | generated `User.at.field` lenses, after a checked field reference |
 | Differ / JSON Patch (L5839) | now §14.6 | `diff`, `applyPatch` |
-| Representation, persistence, rebuild (L5920–L6217) | spec'd §5 / now §14.5 | `describe`, `descriptionCodec`, untyped `fromDescription` |
-| JSON Schema import (L6259) | now §14.5 | an untyped runtime validator; typed import as a source generator |
+| Representation, persistence, rebuild (L5920–L6217) | spec'd §5 / now §14.5 | `describe`, `descriptionCodec`; runtime rebuild withdrawn by A.14 |
+| JSON Schema import (L6259) | runtime import withdrawn by A.14 | future build-time source generation would be compatible; not specified here |
 | Code generation (L6324) | now §14.5 | `toSource` |
 | Concurrent product parsing (L6342) | proposed | `Options.concurrency = Sequential \| Bounded Int \| Unbounded` over the fiber runtime's `spawn`. Completion-order effects and the first-error interruption follow Effect, while issues stay in traversal order. Sequential stays the default. |
 | `reportInput` (L6384) | spec'd A.6 | `Options.reportInput`, off by default |
@@ -2941,13 +2946,16 @@ S2 (checker) have landed, and §10's S3–S5 are re-cut below. Sizes are relativ
 - **M**: about two;
 - **L**: three or more, or a slice that may need splitting when its spec is read against the code.
 
-Every slice is red-first under §10's rules, through both paths where it has runtime behaviour,
-and lands with all three gates green.
+Every slice is red-first under §10's rules and lands with all three gates green.
+A.14 removes the interpreter and forced-engine comparison requirements. Runtime behavior is
+covered by hand-checked expected values and complete Issue lists for generated and composed
+workers, in development and release. Historical *As built* entries below record the engines
+that existed at their dates, not a requirement to retain them.
 
 | # | Slice | Contract | Depends on | Size | Done means |
 |---|---|---|---|---|---|
-| S3 | Engine and library interpreter (**built**, 2026-10-01; *As built* below) | §1, §4–§5, A.6; the concrete builder API is specified first, in this document | S2 | L | `Issue`/`Options` semantics; records, lists, tagged, primitives, `via`, `optional`/`nullable`, recursion; the native-recursion ceiling measured and recorded in §5; §10's S3 fixture list |
-| S4 | Specialisation, `build` unwalled, differential harness (**built**, 2026-10-02; *As built* below) | §6, §10, Q9 | S3 | L | parse/print workers; the forced-library switch, test-only; every schema fixture runs both paths in `test-blackbox`; DCE per direction; `bench/schema-libraries` gains a beni row |
+| S3 | Engine and builders (**built**, 2026-10-01; interpreter withdrawn by A.14) | §1, §4–§5, A.6; the concrete builder API is specified first, in this document | S2 | L | `Issue`/`Options` semantics; records, lists, tagged, primitives, `via`, `optional`/`nullable`, recursion; the native-recursion ceiling measured and recorded in §5; §10's S3 fixture list |
+| S4 | Specialisation and `build` unwalled (**built**, 2026-10-02; forced path withdrawn by A.14) | §6, §10, Q9 | S3 | L | parse/print workers; every schema fixture runs compiled against independent expected answers in `test-blackbox`; DCE per direction; `bench/schema-libraries` gains a beni row |
 | S5 | Defaults and `make` | §11 | S4 | M | §11.10 |
 | S6 | Checks, annotations, check metadata | §14.1, §15 rows *filters*, *annotations* | S4 | M | the `check` and `annotate` modifiers; `KnownCheck`; opaque ids; messages |
 | S7 | Derived codecs and `core/Json` | §12 | S4 (S5 is not needed) | L | §12.9; `Codec`, `erased`, `derived`; the closing rule; the interface property |
@@ -2955,7 +2963,7 @@ and lands with all three gates green.
 | S9 | Suspending schemas | §13 | S4, effects runtime (landed) | L | §13.6 and §7's seven cases through both paths |
 | S10 | JSON Schema output | §14.2 | S6 | M | both dialects; the opaque list; defaults; recursion; a validator cross-check of samples (S11) once S11 lands |
 | S11 | Generators | §14.3 | S6 | M | core `Random`, re-exported by the browser platform; `sample`/`samples`/`shrink`; `SampleFailed`; depth; overrides; every sample decodes |
-| S12 | Pretty, equivalence, formatting, representation, diff | §14.4–§14.6 | S6, S7 | M | `pretty`, `encodedEquivalence`, `formatIssues`, `issueCodec`, `descriptionCodec`, `fromDescription`, `fromJsonSchema`, `toSource`, `diff`/`applyPatch` |
+| S12 | Pretty, equivalence, formatting, representation, diff | §14.4–§14.6 | S6, S7 | M | `pretty`, `encodedEquivalence`, `formatIssues`, `issueCodec`, `descriptionCodec`, `toSource`, `diff`/`applyPatch` |
 | S13 | Declaration derivation | §15 row *pick/omit/partial* | S8 | M | `partial`, `pick`, `omit`, `extend`, `derive … keys …`, specified first |
 | S14 | Adapters and conversions | §15 rows *Base64*, *FormData*, *Dates*, *template*, *concurrency* | S8, S9 | M | the core conversions; the browser adapters; the template builder; the concurrency option over `spawn` |
 | S15 | Optics | §14.6 | S13; a checked field-reference spec | M | specified, then built; until then §15 marks it *proposed* |
@@ -3766,3 +3774,38 @@ another value for the same program. This amendment replaces the wording of §5's
   must read the text, not the engine's wording.
 - **The `catch` stays narrow (rule 9).** It tests `instanceof SyntaxError` and re-throws all else;
   the caught error's message is dropped, not parsed.
+
+### A.14 — Every schema runs compiled; no library interpreter (2026-11-03)
+
+Owner decision, issue #1789: **"No library interpreter. That's scope creep."** This supersedes
+A.11's retention of an interpreter for runtime-built schemas and as the test oracle, and every
+earlier clause requiring a forced-library path or differential execution against it.
+
+- Remove the private interpreter, its `run` and `box` entry points, the `Interpreted` engine
+  arm and every slot fallback. Remove the hidden `--schema-library` flag and forced corpus passes.
+  A generic validator dispatching on description nodes remains an interpreter regardless of its
+  name and does not satisfy this decision.
+- Preserve the runtime builders `record`, `tagged` and `recursive`, which
+  compose compiled child workers, as `list` and `nullable` already do. Runtime composition
+  does not reset options, direction, depth, paths, unknown-key policy or cycle detection.
+- The owner's subsequent decision on the same date removes `flip`, `typeOnly` and
+  `encodedOnly` for now. Their future compiled implementation is tracked by
+  [#1790](https://github.com/canassa/beni/issues/1790). Do not build an endpoint generator as
+  part of interpreter removal. Remove the projection fixtures; retain other behavior coverage.
+  Each removed name had corpus users: add `check/bad` fixtures showing that the public name
+  is unavailable, with the normal missing-member diagnostic, rather than a runtime failure.
+- Preserve `describe` and its graph identities as inspection. Description nodes are never
+  executable validators. Remove the unused typed value adapters from these nodes and their
+  generator hooks: descriptions retain structure, never per-value boxes or conversion callbacks. Keep independent expected goldens for every compiled behavior fixture;
+  remove only comparisons whose sole purpose was agreement between engines.
+- Withdraw the unimplemented `fromJsonSchema` and `fromDescription` runtime-import promises
+  in §14.5/S12. A future build-time JSON Schema import that generates declarations would be
+  compatible. No such tool is required or built here.
+- A construct that cannot be served by compiled workers must be refused at compile time with a
+  clear diagnostic and a `check/bad` fixture. Never silently substitute runtime interpretation
+  or defer an unsupported construct to a silent runtime failure. Existing typed construction
+  and boundary errors remain part of their API contracts.
+
+The maker/API inventory for this decision was reviewed before deletion. Retained public
+signatures remain; only the three named projections are removed from the implemented API. Measure release bundle sizes for schema fixtures, `bench/corpus` and a
+dynamic-composition case before and after; compiled speed must not regress.

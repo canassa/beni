@@ -227,8 +227,8 @@ const Kind = enum {
             .check_good, .check_bad, .check_args, .check_depth, .dispatch, .typekeys, .writes, .ownership => .check,
             .build_bad, .build_bad_release, .emit, .repkeys => .build,
             .run => switch (pass) {
-                .dev, .dev_library, .dev_fiber => .run_dev,
-                .release, .release_library => .run_release,
+                .dev, .dev_fiber => .run_dev,
+                .release => .run_release,
             },
             .browser => .browser,
             .workers => .workers,
@@ -238,11 +238,8 @@ const Kind = enum {
 
 /// `run/`'s two builds of one fixture. Every other kind has one pass,
 /// which `partOf` is asked about as `.dev`.
-/// A fixture that declares a `schema` gets two more: each build again with
-/// `--schema-library`, every schema root forced through the library
-/// interpreter, against the same golden (`schema.md` §10's differential
-/// corpus).
-const RunPass = enum { dev, release, dev_library, release_library, dev_fiber };
+/// Independent development, release and fiber-schedule runs.
+const RunPass = enum { dev, release, dev_fiber };
 
 test "corpus: parse/good" {
     try walk(.parse_good);
@@ -1835,13 +1832,9 @@ const Case = struct {
         }
     }
 
-    /// `schema.md` §6, *A statically known schema runs compiled*: a fixture
-    /// with a `.compiled-schemas` file (`_expected.compiled-schemas` in a
-    /// project) builds only schemas the program fixes at compile time, so
-    /// its development build `out_dir` must ship no library interpreter —
-    /// no `core/Schema` `run`, which every interpreting runner calls, and no
-    /// `box`, the one maker of an `Interpreted` schema. The file's text says
-    /// why the fixture qualifies; it is never blessed.
+    /// Every schema runs compiled (schema.md A.14). The marker also checks
+    /// runtime-composed builders: descriptions are metadata, never validators.
+    /// Its explanatory text is not a golden and is never blessed.
     fn checkCompiledSchemas(c: Case, out_dir: []const u8) !void {
         if (!c.goldenExists("compiled-schemas")) return;
         const path = try std.fmt.allocPrint(c.arena, "{s}/_core/Schema.mjs", .{out_dir});
@@ -1854,7 +1847,7 @@ const Case = struct {
         const banned = [_][]const u8{ "const Schema$run = ", "const Schema$box = " };
         for (banned) |b| {
             if (std.mem.indexOf(u8, text, b) == null) continue;
-            detail("{s} [{s}]: the program's schemas are all statically known, but its build ships the library interpreter: `{s}` is in _core/Schema.mjs\n", .{ c.fixture.name, out_dir, b });
+            detail("{s} [{s}]: the build must compile every schema, but ships the interpreter: `{s}` is in _core/Schema.mjs\n", .{ c.fixture.name, out_dir, b });
             because("[{s}] ships the schema interpreter ({s})", .{ out_dir, b });
             return error.ShipsSchemaInterpreter;
         }
@@ -2643,10 +2636,6 @@ const Case = struct {
         // red fixture is red (`classify`); the corpus keeps the rendered form.
         if (c.cfg.mode == .pending) try dev.append(c.arena, "--diagnostics=json");
         try dev.appendSlice(c.arena, try buildPaths(c.arena, sources));
-        // A fixture that declares a schema is built again with every schema
-        // root forced through the library (`schema.md` §10): the two paths
-        // must print the one golden, which is written by hand.
-        const differential = try declaresSchema(c, sources);
 
         // Each pass runs in the process of its part (`corpus_parts.zig`):
         // the two build to different `--out` directories and compare with
@@ -2741,13 +2730,7 @@ const Case = struct {
                 try c.checkSanitisedSites(platform_arg, lp.flags, sources, lp.out, lp.checker);
             };
         }
-        if (differential and c.cfg.runs(Kind.run.partOf(.dev_library))) {
-            var forced: std.ArrayList([]const u8) = .empty;
-            try forced.appendSlice(c.arena, &.{ "build", platform_arg, "--schema-library", "--out=out-library" });
-            if (c.cfg.mode == .pending) try forced.append(c.arena, "--diagnostics=json");
-            try forced.appendSlice(c.arena, try buildPaths(c.arena, sources));
-            try c.runOnce("out-library", .dev_library, forced.items, "expected", false);
-        }
+
         if (c.cfg.runs(Kind.run.partOf(.release))) {
             // The release pass never blesses `expected`: it is the DEV pass's
             // golden and a release build that disagrees with it is the finding
@@ -2766,37 +2749,6 @@ const Case = struct {
                 c.bless and separate,
             );
         }
-        if (differential and c.cfg.runs(Kind.run.partOf(.release_library))) {
-            const separate = c.goldenExists("release-expected");
-            var forced: std.ArrayList([]const u8) = .empty;
-            try forced.appendSlice(c.arena, &.{ "build", platform_arg, "--release", "--allow-debug", "--check-call-graph", "--schema-library", "--out=release-library" });
-            if (c.cfg.mode == .pending) try forced.append(c.arena, "--diagnostics=json");
-            try forced.appendSlice(c.arena, try buildPaths(c.arena, sources));
-            try c.runOnce(
-                "release-library",
-                .release_library,
-                forced.items,
-                if (separate) "release-expected" else "expected",
-                false,
-            );
-        }
-    }
-
-    /// Whether a fixture's sources declare a `schema`: a line that begins
-    /// one, at column 1 where every top-level declaration begins.
-    fn declaresSchema(c: Case, sources: []const []const u8) !bool {
-        for (sources) |name| {
-            const text = try c.w.read(name);
-            var lines = std.mem.splitScalar(u8, text, '\n');
-            while (lines.next()) |line| {
-                if (std.mem.startsWith(u8, line, "schema ") or std.mem.startsWith(u8, line, "pub schema ")) return true;
-                // A schema derived from a type (`schema.md` §12.8): its
-                // fixtures run both paths, as a declaration's do.
-                if (std.mem.startsWith(u8, line, "import Json")) return true;
-                if (std.mem.indexOf(u8, line, "Schema.derived") != null or std.mem.indexOf(u8, line, "Schema.structural") != null) return true;
-            }
-        }
-        return false;
     }
 
     fn hasPlatformDir(dir_path: []const u8) bool {

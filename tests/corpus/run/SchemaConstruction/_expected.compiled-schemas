@@ -1,0 +1,1 @@
+Runtime-built records, tagged variants and recursive bodies compose compiled child workers. No interpreter or box may be emitted.
