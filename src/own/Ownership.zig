@@ -20172,8 +20172,9 @@ const Walker = struct {
         });
     }
 
-    /// §31.5: whether the records of `av` are the caller's to hand over at
-    /// this point — a probe on their objects, every field written.
+    /// §31.5: whether the records of `av`, at every path, are the caller's
+    /// to hand over at this point — a probe on their objects, every field
+    /// written.
     fn recordProbe(w: *Walker, inst: Inst.Index, av: AV, others: []const AV) Allocator.Error!u32 {
         const idx: u32 = @intCast(w.probe_ok.items.len);
         try w.probe_ok.append(w.a, false);
@@ -20182,7 +20183,6 @@ const Walker = struct {
         try w.probe_info.append(w.a, null);
         var base: std.ArrayList(Entry) = .empty;
         for (try w.expand(av)) |e| {
-            if (e.path != eps) continue;
             const k = w.cells.items[e.cell].kind;
             if (k == .closure or k == .func) continue;
             if (w.isSend(w.cells.items[e.cell])) continue;
@@ -21359,6 +21359,12 @@ const Walker = struct {
                     }
                 };
                 for (cells.items) |c| {
+                    // §31.5: what is handed on holds what this local holds
+                    // of it, which a callback may keep or write.
+                    if (spec.kind == .probe) if (try w.coversAt(c.cell, e.cell)) |inside| if (inside.rest != eps) {
+                        try holders.append(w.a, .{ .local = @intCast(l), .path = e.path, .approx = e.approx });
+                        continue;
+                    };
                     var split = false;
                     const cv = (try w.coversAt(e.cell, c.cell)) orelse blk: {
                         const b = (try w.splitBase(c.cell, @intCast(l))) orelse continue;
@@ -21999,7 +22005,9 @@ const Walker = struct {
                     // §31.4 item 4: after a once closure's creation, the write
                     // happens at a call the lowering cannot place before the
                     // read, so a read of a written field is a whole use.
-                    .hoist => if (rec.kind != .creation) {
+                    // After a probe, the write is the callback's: nothing
+                    // places a read before it, or stops the read keeping it.
+                    .hoist => if (rec.kind != .creation and rec.kind != .probe) {
                         try hoisted.append(w.a, ui);
                         const prefix: u32 = @intCast(w.o.steps(h.path).len + 1);
                         try w.hoist_uses.append(w.a, .{ .use = u, .prefix = prefix });

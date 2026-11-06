@@ -1,0 +1,28 @@
+-- `ownership-checker.md` §16.4's keep edge, §31.4 item 5, §31.5 (#1001). `split`
+-- hands `f` the record `o`, then writes the record at `o.inner` in place through
+-- a local: `BoxO` keeps `o`, so the box would see the write. The call is refused
+-- `supply`, as the whole-path form `{ o | inner = { i | x = 1 } }` is. The running
+-- twins are `run/SanitiserRecordInnerKept` and its `Apart`.
+type alias R =
+    x : Int
+
+
+type alias O =
+    inner : R
+    y : Int
+
+
+type BoxO
+    = BoxO O
+
+
+split : (O → BoxO), O → BoxO × R
+split f o =
+    b = f o
+    i = o.inner
+    i2 = { i | x = 1 }
+    ( b, i2 )
+
+
+pub use : ⊤ → BoxO × R
+use ⊤ = split BoxO { inner = { x = 0 }, y = 2 }

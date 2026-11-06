@@ -1,0 +1,93 @@
+-- A record inside one handed to a function, written or read through a local
+-- (`ownership-checker.md` §31.5, #1001). `Box` keeps its parent, so a write of
+-- `o.inner` must not reach the box. A callback that writes what it is handed
+-- must not reach a read after the call or a local bound before it. Each line
+-- prints what the box or the callback left, then the other value.
+import Debug
+import Node exposing (Program)
+import String
+
+
+type alias R =
+    x : Int
+
+
+type alias O =
+    inner : R
+    y : Int
+
+
+type alias G =
+    o : O
+
+
+type Box a
+    = Box a
+
+
+after : (O → Box O), O → Box O × R
+after f o =
+    b = f o
+    i = o.inner
+    i2 = { i | x = 1 }
+    ( b, i2 )
+
+
+before : (O → Box O), O → Box O × R
+before f o =
+    i = o.inner
+    b = f o
+    i2 = { i | x = 1 }
+    ( b, i2 )
+
+
+grandparent : (G → Box G), G → Box G × R
+grandparent f g =
+    b = f g
+    p = g.o
+    i = p.inner
+    i2 = { i | x = 1 }
+    ( b, i2 )
+
+
+pattern : (O → Box O), O → Box O × R
+pattern f o =
+    b = f o
+    { inner } = o
+    i2 = { inner | x = 1 }
+    ( b, i2 )
+
+
+writerThenRead : (R → R), R → R × Int
+writerThenRead f r =
+    b = f r
+    ( b, r.x )
+
+
+writerBelowHeld : (O → O), O → O × Int
+writerBelowHeld f o =
+    i = o.inner
+    b = f o
+    ( b, i.x )
+
+
+setX : R → R
+setX r = { r | x = 1 }
+
+
+writeBelow : O → O
+writeBelow q = { q | inner = setX q.inner }
+
+
+main : Program
+main =
+    o0 ⊤ = { inner = { x = 0 }, y = 2 }
+    lines =
+        [ Debug.toString (after Box (o0 ⊤))
+        , Debug.toString (before Box (o0 ⊤))
+        , Debug.toString (grandparent Box { o = o0 ⊤ })
+        , Debug.toString (pattern Box (o0 ⊤))
+        , Debug.toString (writerThenRead setX { x = 0 })
+        , Debug.toString (writerBelowHeld writeBelow (o0 ⊤))
+        ]
+    Node.print (String.join lines "\n")

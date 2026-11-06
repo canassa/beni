@@ -1,0 +1,41 @@
+-- `ownership-checker.md` §16.4's keep edge, §31.5 (#1000). `split` hands `f` a
+-- fresh list (or record) that holds `r`, and then writes `r` in place: `BoxL`
+-- keeps the list, so the box would see the write. Each call is refused
+-- `supply`, as the tuple form is. The running twins are
+-- `run/SanitiserRecordKeptInLiteral` and its `Apart`.
+type alias R =
+    x : Int
+
+
+type BoxL
+    = BoxL (List R)
+
+
+type alias W =
+    w : R
+
+
+type BoxW
+    = BoxW W
+
+
+inList : (List R → BoxL), R → BoxL × R
+inList f r =
+    b = f [ r ]
+    r2 = { r | x = 1 }
+    ( b, r2 )
+
+
+inRecord : (W → BoxW), R → BoxW × R
+inRecord f r =
+    b = f { w = r }
+    r2 = { r | x = 1 }
+    ( b, r2 )
+
+
+pub useList : ⊤ → BoxL × R
+useList ⊤ = inList BoxL { x = 0 }
+
+
+pub useRecord : ⊤ → BoxW × R
+useRecord ⊤ = inRecord BoxW { x = 0 }

@@ -1,0 +1,27 @@
+-- A list inside a record handed to a function, written through a local bound
+-- before the call (`ownership-checker.md` §31.5, #1001). `Box` keeps the record,
+-- so the push must not reach the box. The list twin of
+-- `SanitiserRecordInnerKept`'s `before`.
+import Debug
+import List
+import Node exposing (Program)
+
+
+type alias L =
+    items : List Int
+
+
+type Box a
+    = Box a
+
+
+split : (L → Box L), L → List Int × Box L
+split f l =
+    i = l.items
+    b = f l
+    r = List.push i 1
+    ( r, b )
+
+
+main : Program
+main = Node.print (Debug.toString (split Box { items = [ 0 ] }))

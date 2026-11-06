@@ -6381,12 +6381,18 @@ miscompiled: 11 for 1. The supply's ownership is judged for the literal at its r
 reads ε only), so the record inside it, used after the call, is never asked about. A tuple wrapper is
 refused.
 
+**Fixed 2026-11-06:** `ownership-checker.md` §31.5, *A record handed to a function, and what it holds*.
+Fixtures: `tests/corpus/ownership/RecordKeptInLiteral.beni`, `tests/corpus/run/SanitiserRecordKeptInLiteral.beni`.
+
 ## CK-274 — a nested record written through a local after its parent was kept is written in place (2026-10-25)
 
 **Issue:** #1001. **Fixture:** `tests/pending/ownership/RecordInnerKept.beni`. `b = f o; i = o.inner;
 { i | x = 1 }`, with `f = BoxO` keeping `o`, is accepted on master and miscompiled: 11 for 1. The probe
 at the supply of `o` sees no later use of `o`, because `i` is no holder of `o`. The whole-path form is
 refused, and so is the local form with no callback.
+
+**Fixed 2026-11-06:** the same section. Fixtures: `tests/corpus/ownership/RecordInnerKept.beni`,
+`tests/corpus/run/SanitiserRecordInnerKept.beni`.
 
 ## The ownership checker v2's acceptance gaps (2026-10-25)
 

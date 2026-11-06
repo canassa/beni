@@ -356,8 +356,8 @@ requirement or section number.
   list, `k.mk r`, `List.map fs λf → f r`) and then writes it is refused `supply (a)` at the function value supplied
   (`record_may_be_shared`). (oc §16.4, §31.5 revised #982; bbi/RecordCallbackKeeps)
   - Also when the record is wrapped in a fresh literal handed to the keeper (`b = f [ r ]`, `{ w = r }`) or written
-    through a local bound to a field of the kept parent (`i = o.inner`). [G #1000, #1001: miscompiled today]
-    (p/RecordKeptInLiteral, p/RecordInnerKept)
+    through a local bound to a field of the kept parent (`i = o.inner`).
+    (o/RecordKeptInLiteral, o/RecordInnerKept, run/SanitiserRecordKeptInLiteral, run/SanitiserRecordInnerKept)
   - A record written *before* it is handed to a keeper and returned beside the keeper's answer: accept.
     [G #999] (p/RecordWriteBeforeKeep)
 - R-4.8.12 A read of an old field through a wrapper (`w = Just p` or `t = ( p, 1 )`, then a pattern) is a field read,
@@ -1135,8 +1135,7 @@ requirement or section number.
 - R-8.2 **The known gaps are acceptance.** Every [G] item turns green, with the verdict this document gives, not
   v1's; a gap moves from `tests/pending/` to the corpus as it closes. [O 2026-10-25] (mem `ownership-v1-frozen`)
   - Pinned already: p/DeepTupleDag, p/DictFocusGrow, p/DictHelperAlias, p/DictRecordAlias, p/DictTupleAlias,
-    p/RecordForItem, p/RecordSchemaRun, p/RecordSplitPushBack, p/RecordWriteBeforeKeep, p/RecordKeptInLiteral,
-    p/RecordInnerKept.
+    p/RecordForItem, p/RecordSchemaRun, p/RecordSplitPushBack, p/RecordWriteBeforeKeep.
   - Without a pinning fixture (a red fixture is to be written for each before design starts):
 
   | Req | Program | Required verdict |
