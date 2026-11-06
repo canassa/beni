@@ -7,6 +7,7 @@
 
 const std = @import("std");
 const Place = @import("Place.zig");
+const SlotWords = @import("SlotWords.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
 const RowEnv = @import("RowEnv.zig");
@@ -42,7 +43,7 @@ pub fn answersWhole(c: anytype, id: Contract.Id) Error!?u32 {
     const es = try entriesOf(c, h.res_root);
     for (es.items.items) |rs| for (rs.arrivals) |a| {
         if (a.kind != .param or (got != null and got.? != a.j)) return null;
-        if (!std.mem.eql(u32, c.f.slots.relWords(a.slot), es.wordsOf(rs))) return null;
+        if (!SlotWords.same(c.f.slots.relWords(a.slot), es.wordsOf(rs))) return null;
         got = a.j;
     };
     const j = got orelse return null;
@@ -78,7 +79,7 @@ fn relaxed(c: anytype, arena: Allocator, su: Contract.Supply, cond: Contract.Con
     const out = try arena.dupe(u64, cond.sel);
     for (out) |*o| {
         if (Contract.isFed(o.*) or Contract.occParam(o.*) != fam.j) continue;
-        if (std.mem.startsWith(u32, c.f.slots.relWords(Contract.occRel(o.*)), fam.words)) o.* |= Contract.apart_bit;
+        if (SlotWords.under(c.f.places, fam.words, c.f.slots.relWords(Contract.occRel(o.*))) != null) o.* |= Contract.apart_bit;
     }
     return Contract.Cond.of(c.f.account, out);
 }

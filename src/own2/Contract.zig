@@ -10,6 +10,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
+const SlotWords = @import("SlotWords.zig");
 const Slots = @import("Slots.zig");
 const Trees = @import("Trees.zig");
 const Normal = @import("Normal.zig");
@@ -443,7 +444,7 @@ pub const Table = struct {
             for (c.sel) |y| {
                 if (y == x or !isDeep(y) or occParam(y) != occParam(x) or (isApart(y) and !isApart(x))) continue;
                 const yw = slots.relWords(occRel(y));
-                if (xw.len < yw.len or !std.mem.eql(u32, yw, xw[0..yw.len])) continue;
+                if (!SlotWords.startsAt(xw, yw)) continue;
                 if (xw.len == yw.len and isDeep(x) and (isApart(x) == isApart(y))) continue;
                 continue :outer;
             }
@@ -768,9 +769,9 @@ pub const Table = struct {
     pub fn continues(slots: *const Slots.Table, q: Rel, suffix: []const u32, p: Rel, deep: bool) bool {
         const qw = slots.relWords(q);
         const pw = slots.relWords(p);
-        if (pw.len < qw.len or !std.mem.eql(u32, qw, pw[0..qw.len])) return false;
+        if (!SlotWords.startsAt(pw, qw)) return false;
         if (deep) return true;
-        return std.mem.eql(u32, pw[qw.len..], suffix);
+        return SlotWords.same(pw[qw.len..], suffix);
     }
 };
 

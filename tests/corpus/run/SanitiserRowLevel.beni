@@ -1,0 +1,42 @@
+-- A `⟲` on a built value read through a row (`ownership-v2.md` §2.1, *The row of a
+-- record*; *A step past a fold*): a row step has no child, so the level was read at the
+-- value's own place, which came back empty, and a non-regular value's write of `k` was
+-- no write. The sanitised run trapped; refused.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+idr : { r | a : L } → { r | a : L }
+idr rec = rec
+
+
+type T a
+    = Leaf (List Int) a
+    | Wrap (T (List a))
+
+
+wr : T a → Int
+wr t =
+    case t of
+        Leaf xs _ →
+            List.length (List.push xs 1)
+
+        Wrap u →
+            wr u
+
+
+main : Program
+main =
+    k = [ 1 ]
+    r = idr { a = [], t = Wrap (Wrap (Wrap (Leaf k [ [ [ 1 ] ] ]))) }
+    n = wr r.t
+    Node.print (String.fromInt n ++ show k)

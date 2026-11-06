@@ -80,5 +80,11 @@ pub const Step = packed struct(u32) {
     }
 };
 
+/// Whether `words` start with a row step and go on by a field's or a wider row's: that
+/// step is then the row's (§2.1).
+pub fn rowThen(words: []const u32) bool {
+    return words.len > 1 and Step.fromWord(words[0]).isRow() and Step.fromWord(words[1]).inRow();
+}
+
 /// `Step.rank`'s mark of a row's kid: past every field rank (28 bits), so it sorts last.
 pub const row_rank: u32 = 1 << 31;

@@ -1,0 +1,62 @@
+-- A callee's row read at a record that names more (`ownership-v2.md` §2.1, *The row of a
+-- record*): `mid` moved `rf`'s `…*` onto its own parameter as it was, beside the `.b` it
+-- names, so one object was asked apart from itself. And a result whose one entry is a
+-- row is counted by expansion: `rf`'s callback answers it. Accepted, as a closed record is.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+type alias R =
+    a : L
+    z : L
+    b : L
+    c : L
+
+
+app : { r | a : L, z : L }, ({ r | a : L, z : L } → x) → x
+app rec f = f rec
+
+
+rf : { r | a : L, z : L } → { r | a : L, z : L }
+rf rec = app rec λs → { s | a = List.push s.a 9 }
+
+
+appK : { s | a : L, z : L, b : L }, ({ s | a : L, z : L, b : L } → x) → x
+appK rec f = f rec
+
+
+mid : R → R
+mid x = appK (rf x) λy → { y | b = List.push y.b 1 }
+
+
+runf : (⊤ → x) → x
+runf f = f ⊤
+
+
+rc : { r | a : L, z : L } → { r | a : L, z : L }
+rc rec = runf λ⊤ → rec
+
+
+main : Program
+main =
+    k = [ 1 ]
+    res = mid { a = [], z = [], b = k, c = [] }
+    n = List.push res.b 2
+    held =
+        case List.head (List.map [ { a = [], z = [], b = [ 7 ], c = [ 8 ] } ] rc) of
+            Just x →
+                x
+
+            Nothing →
+                { a = [], z = [], b = [], c = [] }
+    h2 = { held | b = List.push held.b 2 }
+    Node.print (show n ++ "|" ++ show h2.b ++ "|" ++ show h2.c)

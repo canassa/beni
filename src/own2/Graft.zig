@@ -17,6 +17,7 @@ const std = @import("std");
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const SlotWords = @import("SlotWords.zig");
 const Subtree = @import("Subtree.zig");
 const Trees = @import("Trees.zig");
 const Forest = @import("Forest.zig");
@@ -420,8 +421,8 @@ fn exactSteps(ev: *Relation.Eval, n: Node) Error!bool {
 /// an exact slot: the parameter, the slot's steps (in `ev.arena`) and its
 /// place. A slot below a place on a cycle is not one: its canonical name
 /// may fold (§2.1).
-const Base = struct { j: u32, words: []const u32, place: PlaceId };
-fn baseOf(ev: *Relation.Eval, call: Value.Call, j: u32) Error!?Base {
+pub const Base = struct { j: u32, words: []const u32, place: PlaceId, path: Ids.PathId };
+pub fn baseOf(ev: *Relation.Eval, call: Value.Call, j: u32) Error!?Base {
     const f = ev.f;
     if (call.virtual or j >= call.args.len) return null;
     const v = f.val(call.args[j]);
@@ -436,43 +437,7 @@ fn baseOf(ev: *Relation.Eval, call: Value.Call, j: u32) Error!?Base {
         if (ev.places().cyclic(p)) return null;
         p = ev.places().child(p, Place.Step.fromWord(s)) orelse return null;
     }
-    return .{ .j = f.roots.items[v.root].a, .words = try ev.arena.dupe(u32, ws), .place = p };
-}
-
-/// Call `call`'s callee's `req` moved onto the frame's parameters (§2.11.2,
-/// *The caller's contract*): when every parameter it asks is handed an exact
-/// slot of a parameter of the frame, no two of those slots one at or below
-/// the other, an instantiation is the occurrences moved there, and the
-/// distinct check finds no pair the callee's own selection did not have.
-/// Null otherwise.
-pub fn movedReq(ev: *Relation.Eval, call: Value.Call, c: Contract.Cond) Error!?Contract.Cond {
-    if (c.no or c.sel.len == 0) return null;
-    for (c.sel) |o| if (Contract.isFed(o)) return null;
-    const g = ev.gpa();
-    var js: std.ArrayList(u32) = .empty;
-    defer js.deinit(g);
-    var bs: std.ArrayList(Base) = .empty;
-    defer bs.deinit(g);
-    for (c.sel) |o| if (std.mem.indexOfScalar(u32, js.items, Contract.occParam(o)) == null) {
-        const b = (try baseOf(ev, call, Contract.occParam(o))) orelse return null;
-        for (bs.items) |y| if (y.j == b.j and (std.mem.startsWith(u32, y.words, b.words) or std.mem.startsWith(u32, b.words, y.words))) return null;
-        try js.append(g, Contract.occParam(o));
-        try bs.append(g, b);
-    };
-    const out = try ev.arena.alloc(u64, c.sel.len);
-    var ws: std.ArrayList(u32) = .empty;
-    defer ws.deinit(g);
-    for (c.sel, out) |o, *y| {
-        const b = bs.items[std.mem.indexOfScalar(u32, js.items, Contract.occParam(o)).?];
-        const ow = ev.f.slots.relWords(Contract.occRel(o));
-        if (b.words.len != 0) for (ow) |s| if (Place.Step.fromWord(s).kind == .level) return null;
-        try ev.charge(.inspection, 1);
-        ws.clearRetainingCapacity();
-        try ws.appendSlice(g, b.words);
-        try ws.appendSlice(g, ow);
-        y.* = Contract.occ(b.j, try ev.f.slots.relOfWords(g, ev.account(), ev.places(), ws.items)) | (o & (Contract.apart_bit | Contract.deep_bit));
-    }
-    return try Contract.Cond.of(ev.account(), out);
+    return .{ .j = f.roots.items[v.root].a, .words = try ev.arena.dupe(u32, ws), .place = p, .path = f.pos.items[v.pos].slot };
 }
 
 /// Call `call`'s write `x` (`x.node` the callee's tree below `x.slot`) as

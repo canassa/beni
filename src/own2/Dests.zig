@@ -14,6 +14,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
+const SlotWords = @import("SlotWords.zig");
 const Slots = @import("Slots.zig");
 const Replay = @import("Replay.zig");
 
@@ -174,7 +175,7 @@ pub fn replay(env: Env, from: PathId, slot: PathId, q: PathId, out: *std.ArrayLi
     if (from == q) {
         const qw = env.slots.relWords(try env.slots.relOf(env.gpa, env.account, env.places, q));
         const sw = env.slots.relWords(try env.slots.relOf(env.gpa, env.account, env.places, slot));
-        if (std.mem.startsWith(u32, sw, qw)) try out.append(env.gpa, slot.int());
+        if (SlotWords.startsAt(sw, qw)) try out.append(env.gpa, slot.int());
     }
     if (out.items.len == start) {
         const rel = (try env.slots.relBelow(env.gpa, env.account, env.places, from, slot)) orelse Slots.root;

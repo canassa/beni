@@ -12,6 +12,7 @@
 
 const std = @import("std");
 const BlockStep = @import("BlockStep.zig");
+const BlockWords = @import("BlockWords.zig");
 const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
@@ -23,11 +24,11 @@ const BlockCalled = @import("BlockCalled.zig");
 
 pub const magic: u32 = 0x324e574f;
 pub const version: u32 = 27;
-pub const Error = Ids.ChargeError || error{BadBlock};
+pub const Error = BlockWords.Error;
 const Step = Place.Step;
 
-pub const Names = BlockNames.Names;
-pub const Remap = BlockNames.Remap;
+pub const Names = BlockWords.Names;
+pub const Remap = BlockWords.Remap;
 
 /// A writer's node to its index in the node table (from 1).
 const Index = std.AutoHashMapUnmanaged(Contract.Node, u32);
@@ -44,9 +45,13 @@ const Writer = struct {
         try w.out.append(w.gpa, x);
     }
 
+    fn step(w: *Writer) BlockWords.Out {
+        return .{ .gpa = w.gpa, .out = w.out, .places = w.places, .names = w.names };
+    }
+
     pub fn rel(w: *Writer, r: Slots.Rel) Allocator.Error!void {
         try w.word(@intCast(w.slots.relWords(r).len));
-        for (w.slots.relWords(r)) |wd| try BlockStep.write(w, wd);
+        for (w.slots.relWords(r)) |wd| try BlockStep.write(w.step(), wd);
     }
 
     fn cond(w: *Writer, c: Contract.StoredCond) Allocator.Error!void {
@@ -83,7 +88,7 @@ const Writer = struct {
             try Forest.sortedKids(&w.t.trees, w.gpa, w.places, n, &ks);
             try w.word(@intCast(ks.items.len));
             for (ks.items) |k| {
-                try BlockStep.write(w, k[0]);
+                try BlockStep.write(w.step(), k[0]);
                 try w.word(nodeIndex(index, k[1]));
             }
             try index.put(w.gpa, n, @intCast(at));
@@ -173,8 +178,7 @@ pub fn write(gpa: Allocator, t: *const Contract.Table, slots: *const Slots.Table
 }
 
 const Reader = struct {
-    words: []const u32,
-    at: usize = 0,
+    cur: BlockWords.Cursor,
     gpa: Allocator,
     arena: Allocator,
     account: *Ids.Account,
@@ -185,15 +189,17 @@ const Reader = struct {
     field_string: Ids.FixedDict(1) = .{},
     decl_string: Ids.FixedDict(2) = .{},
 
-    pub fn next(r: *Reader) Error!u32 {
-        if (r.at >= r.words.len) return error.BadBlock;
-        r.at += 1;
-        return r.words[r.at - 1];
+    fn next(r: *Reader) Error!u32 {
+        return r.cur.next();
+    }
+
+    fn step(r: *Reader) BlockWords.In {
+        return .{ .cur = &r.cur, .gpa = r.gpa, .arena = r.arena, .account = r.account, .places = r.places, .remap = r.remap, .field_string = &r.field_string };
     }
 
     pub fn rel(r: *Reader) Error!Slots.Rel {
         const out = try r.arena.alloc(u32, try r.count());
-        for (out) |*o| o.* = try BlockStep.read(r);
+        for (out) |*o| o.* = try BlockStep.read(r.step());
         return r.slots.relOfWords(r.gpa, r.account, r.places, out);
     }
 
@@ -233,15 +239,13 @@ const Reader = struct {
             const plain = try r.arrivals();
             const open = try r.arrivals();
             const kids = try r.arena.alloc([2]u32, try r.count());
-            for (kids) |*k| k.* = .{ try BlockStep.read(r), try node(out.items, try r.next()) };
+            for (kids) |*k| k.* = .{ try BlockStep.read(r.step()), try node(out.items, try r.next()) };
             try out.append(r.arena, try t.trees.node(r.gpa, plain, open, kids));
         }
     }
 
-    /// A count, no more than the block's words.
     pub fn count(r: *Reader) Error!u32 {
-        const n = try r.next();
-        return if (n > r.words.len) error.BadBlock else n;
+        return r.cur.count();
     }
 
     fn arrivals(r: *Reader) Error![]Contract.Arrival {
@@ -324,7 +328,7 @@ const Reader = struct {
 pub fn read(gpa: Allocator, words: []const u32, t: *Contract.Table, slots: *Slots.Table, places: *Place.Table, account: *Ids.Account, remap: Remap, out: *std.ArrayList(Contract.Id)) Error!void {
     var arena_state: std.heap.ArenaAllocator = .init(gpa);
     defer arena_state.deinit();
-    var r: Reader = .{ .words = words, .gpa = gpa, .arena = arena_state.allocator(), .account = account, .places = places, .slots = slots, .remap = remap };
+    var r: Reader = .{ .cur = .{ .words = words }, .gpa = gpa, .arena = arena_state.allocator(), .account = account, .places = places, .slots = slots, .remap = remap };
     defer r.field_string.deinit(gpa);
     defer r.decl_string.deinit(gpa);
     if (try r.next() != magic or try r.next() != version) return error.BadBlock;
@@ -335,10 +339,10 @@ pub fn read(gpa: Allocator, words: []const u32, t: *Contract.Table, slots: *Slot
     defer again.deinit(gpa);
     for (0..n) |_| {
         const len = try r.next();
-        const start = r.at;
+        const start = r.cur.at;
         if (start + len > words.len) return error.BadBlock;
         const c = try r.contract(t);
-        if (r.at != start + len) return error.BadBlock;
+        if (r.cur.at != start + len) return error.BadBlock;
         // The round trip: encoded again in this module's terms, the same words.
         again.clearRetainingCapacity();
         var w: Writer = .{ .t = t, .slots = slots, .places = places, .names = .{ .ctx = &r, .field = Reader.fieldString, .decl = Reader.declString }, .out = &again, .gpa = gpa };

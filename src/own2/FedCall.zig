@@ -66,7 +66,7 @@ pub fn at(e: *Eval, call: u32, o: u64, written: anytype) Error!Got {
         var through: ?u64 = null;
         for (es.items.items) |rs| {
             if (!try holdsAt(e, root, es.wordsOf(rs))) continue;
-            if (@TypeOf(written) != @TypeOf(null) and !written.reaches(es.wordsOf(rs))) continue;
+            if (@TypeOf(written) != @TypeOf(null) and !written.reaches(e.places(), es.wordsOf(rs))) continue;
             for (rs.arrivals) |a| switch (a.kind) {
                 .param => if (a.j != k) {
                     const x = if (a.j < e.f.calls.items[vi].args.len) e.f.val(e.f.calls.items[vi].args[a.j]) else return .no;

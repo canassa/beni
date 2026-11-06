@@ -10,6 +10,7 @@
 
 const std = @import("std");
 const Slots = @import("Slots.zig");
+const SlotWords = @import("SlotWords.zig");
 
 /// Whether entry `x`'s arrival `π_j·(s·r)` at slot `p·r` is an open,
 /// non-deep `π_j·s` at `p` among `all` (entries with `slot`, `open`, `a`).
@@ -18,8 +19,8 @@ pub fn saidAbove(slots: *const Slots.Table, all: anytype, x: anytype) bool {
     const wq, const ws = .{ slots.relWords(x.slot), slots.relWords(x.a.slot) };
     for (all) |o| if (o.open and o.a.kind == .param and !o.a.deep and o.a.j == x.a.j) {
         const wp, const wo = .{ slots.relWords(o.slot), slots.relWords(o.a.slot) };
-        if (wp.len >= wq.len or !std.mem.startsWith(u32, wq, wp) or ws.len != wo.len + wq.len - wp.len) continue;
-        if (std.mem.startsWith(u32, ws, wo) and std.mem.eql(u32, ws[wo.len..], wq[wp.len..])) return true;
+        if (wp.len >= wq.len or !SlotWords.startsAt(wq, wp) or ws.len != wo.len + wq.len - wp.len) continue;
+        if (SlotWords.startsAt(ws, wo) and SlotWords.same(ws[wo.len..], wq[wp.len..])) return true;
     };
     return false;
 }
