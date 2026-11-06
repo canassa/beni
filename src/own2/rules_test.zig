@@ -78,6 +78,8 @@ const layers = [_]Entry{
     .{ .file = "FoldRead.zig", .layer = 3, .max_lines = 50 },
     .{ .file = "Origin.zig", .layer = 3, .max_lines = 20 },
     .{ .file = "Dests.zig", .layer = 3, .max_lines = 200 },
+    // A relative slot's text, below the contracts: `Needs` errors name it too (§2.10).
+    .{ .file = "RelText.zig", .layer = 3, .max_lines = 50 },
     // The identity tree's one normal form, below `Contract` (#1714).
     .{ .file = "Normal.zig", .layer = 3, .max_lines = 40 },
     .{ .file = "Forest.zig", .layer = 3, .max_lines = 380 },
@@ -235,6 +237,8 @@ const layers = [_]Entry{
     // What the labels outward of a virtual call add to its demands and to
     // a passed-on label's supplies, from `Eval` and `ReadOff` (#1758, #1721).
     .{ .file = "Outward.zig", .layer = 11, .max_lines = 90 },
+    // A label's need published and discharged (§2.11.3).
+    .{ .file = "Needs.zig", .layer = 11, .max_lines = 260 },
     .{ .file = "EntryHeld.zig", .layer = 11, .max_lines = 70 },
     // What a closure's creation asks of its writes, split from `Eval` (#2028).
     .{ .file = "Once.zig", .layer = 11, .max_lines = 60 },
@@ -560,7 +564,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 120), layers.len);
+    try testing.expectEqual(@as(usize, 122), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

@@ -63,6 +63,7 @@ const Answers = @import("Answers.zig");
 const Contents = @import("Contents.zig");
 const Within = @import("Within.zig");
 const Outward = @import("Outward.zig");
+const Needs = @import("Needs.zig");
 const EntryHeld = @import("EntryHeld.zig");
 const FnRun = @import("FnRun.zig");
 const Codes = @import("Codes.zig");
@@ -1597,6 +1598,19 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             try Contents.check(&evals[i], ra, &drafts[i]);
             if (sv) |v| try v.pump();
         }
+        // A need read as the round's facts stand, until nothing is new (§2.11.3).
+        var needs: Needs.State = .{};
+        defer needs.deinit(gpa);
+        var more = true;
+        while (more) {
+            more = false;
+            for (order.items, 0..) |x, i| {
+                charging(mod, &rs[owner.items[x]].account);
+                mod.cur_locals = in.bir.decls[rs[owner.items[x]].decl].locals_start;
+                if (try Needs.pass(&needs, &evals[i], @intCast(i))) more = true;
+                if (sv) |v| try v.pump();
+            }
+        }
         if (!validating and solver.used) try kg.round(gpa, &rs[0].account, &mod.contracts, mod.codes.items, ids, drafts, evals);
         for (order.items, 0..) |x, i| {
             const id = ids[i];
@@ -1608,6 +1622,8 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
             const called = mod.codes.items[id].kind == .called;
             if (!called) try EntryHeld.demands(e);
             try Outward.finishDemands(e);
+            try Needs.finish(e);
+            if (!called) try Needs.escaped(e);
             if (!called) for ([_]bool{ false, true }) |w| if (w) try Closures.escapedWrites(e) else try @import("ClosureRuns.zig").labels(e);
             const got = try Resolve.resolve(e, &regions.items[k], ra, if (validating or !solver.used) null else &kg.tables[i]);
             // R-5.13.1: in a comparison's walk, a write of what arrived is `comparison_changes_value`;
@@ -1642,7 +1658,7 @@ fn solveGroup(mod: *Module, rs: []DeclResult) Error!void {
                     moved = true;
                 }
             }
-            if (!called) for (got.lines) |l| try lines.items[k].append(gpa, l);
+            if (!called) for (got.lines) |l| if (!l.demand.quiet or l.outcome.verdict != .accepted) try lines.items[k].append(gpa, l);
         }
         // Settled when every read saw the version that stands now.
         var stale = false;

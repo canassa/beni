@@ -352,15 +352,15 @@ const Resolver = struct {
             fx.join(try r.keys.factsOf(r.ev(), t));
         }
         // A host object escaped, or JavaScript made it (§2.10, *host objects*).
-        if ((fx.unknown and !r.ev().keeping) or fx.host or targets.len == 0) {
-            refuse(o, if (fx.loan != none) .loan else if (fx.unknown or targets.len == 0) .unknown else .escaped);
+        if ((fx.top and !r.ev().keeping) or fx.host or targets.len == 0) {
+            refuse(o, if (d.need) .need else if (fx.loan != none) .loan else if (fx.unknown or targets.len == 0) .unknown else .escaped);
             if (fx.loan != none) o.loan = Holders.calleeAndCell(fr, fx.loan) else if (targets.len != 0) o.exactness = .approximate;
             return line;
         }
         // The ground is what the targets come from (R-7.15): a parameter's
         // object relies on the callers, anything this activation allocated
         // (here or in a callee) is fresh.
-        const ground: Facts.Verdict.Accepted = if (fx.param) .param else .fresh;
+        const ground: Facts.Verdict.Accepted = if (fx.param) .param else if (fx.unknown) .call else .fresh;
         if (fx.shared[0] != none) {
             refuse(o, .top_level);
             o.exactness = .position;

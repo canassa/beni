@@ -1,11 +1,9 @@
-//! L11: contracts as words (`docs/design/ownership-v2.md` §3.6, format
-//! v-next): what a module publishes for its importers. Every module-local
-//! id is written canonically: a relative slot as its steps, a field by its
-//! name (a string of the block's table), a constructor argument by
-//! `(ordinal, argument)`, a top-level value and a label's origin by their
-//! qualified names. The reader re-interns each step in its own tables and
-//! encodes what it decoded again: the words must be the block's, or the
-//! block is unknown (its codes are pessimistic at every importer).
+//! L11: contracts as words (`docs/design/ownership-v2.md` §3.6, format v-next): what a module
+//! publishes for its importers. Every module-local id is written canonically: a relative slot as its
+//! steps, a field by its name (a string of the block's table), a constructor argument by `(ordinal,
+//! argument)`, a top-level value and a label's origin by their qualified names. The reader re-interns
+//! each step in its own tables and encodes what it decoded again: the words must be the block's, or
+//! the block is unknown (its codes are pessimistic at every importer).
 //!
 //! Obligations kept here: O10 (a block's contract means at the importer
 //! what it meant at the writer: validated by re-encoding).
@@ -21,7 +19,7 @@ const BlockNames = @import("BlockNames.zig");
 const BlockCalled = @import("BlockCalled.zig");
 
 pub const magic: u32 = 0x324e574f;
-pub const version: u32 = 26;
+pub const version: u32 = 27;
 pub const Error = Ids.ChargeError || error{BadBlock};
 const Step = Place.Step;
 
@@ -157,6 +155,7 @@ const Writer = struct {
             try w.word(w.names.decl(w.names.ctx, .{ l.origin[0], l.origin[1] }));
             try w.word(l.origin[2]);
             try w.word(@backingInt(l.calls) | @as(u32, @intFromBool(l.answer_left)) << 2);
+            try w.effects(l.need);
             try w.word(l.supplies.len);
             for (w.t.suppliesOf(l.supplies)) |s| {
                 try w.word(s.k | @as(u32, @intFromBool(s.each)) << 31 | @as(u32, @intFromBool(s.walk)) << 30);
@@ -329,6 +328,7 @@ const Reader = struct {
             const li = try d.labelOf(r.arena, j, slot, .{ md[0], md[1], off });
             d.labels.items[li].calls = @fromBackingInt(@intCast(calls & 3));
             d.labels.items[li].answer_left = calls >> 2 != 0;
+            try r.effects(&d.labels.items[li].need);
             for (0..try r.count()) |_| {
                 const s = try BlockNames.supply(&d.labels.items[li], r.arena, try r.next());
                 s.res.base = try node(nodes.items, try r.next());

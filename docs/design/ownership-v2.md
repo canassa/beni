@@ -2595,6 +2595,55 @@ fixtures), and 3 accepted → refused, all `run/SanitiserRowCallbackHolds`, whos
 (`Tea.startAfter`, one body walked twice), and `ClosureTower` flat at 939 records a level at depths 1, 8, 16 and 24 (503
 before), growth 0.
 
+*Amended 2026-11-06 (#2116): **a need.*** A write of a label's answer was refused in the callee, `unknown`, so `pushOuter f = List.push (f ⊤) [ 0 ]`
+was refused whatever `f` was. The callee cannot judge that write: only a caller knows the function. So the write moves outward, and the rest of this
+amendment says how far and with what.
+
+**What the callee publishes.** A label's contract carries `need`, a set of slots of its answer, each `deep` or not (`Contract.Label.need`, `L.need`, printed
+`need ε`, `need [*]*`). A demand whose target is the label's answer at slot `s` is judged in the callee as every target is (§2.8) and adds `s` to `need`,
+whatever its verdict, as a parameter's write is published (`ReadOff.paramEffects`). Judging it, the answer is a known object with one difference from the others:
+
+- it has no base key, so it stays in the unknown bucket, and the holders that can meet it are the holders of an answer;
+- the relation (§2.9.2) says it `may` be another leaf of its own root by position, and `may` be what another label's answer holds as that step 7 says: a holder `w = g a` of an answer `g` was handed
+  holds `a`. Against anything else it says `no`, since the discharge below judges the rest.
+
+The verdict's ground is `call`. A target that also reaches `⊤` is refused `unknown` as before.
+
+**What a caller does with it.** At a call whose callee's label `L` has a need `s` (`Needs.zig`, in `callEffects`, so that it reads a member of the group as a call's writes do):
+
+1. **`L` passes on** to a label `F` of the frame: `s` joins `F.need`. So a forwarding parameter, a recursive call and a lambda that hands its capture on all keep the need, outward, with `F`'s origin.
+2. **`L` is applied** to a known code `K`, the virtual call `v`: each arrival of `K`'s result at `s` is discharged by kind, an arrival at or above `s` by the words that remain, and for a deep need each below it too:
+   - `fresh`: a demand on that leaf, so that an escape of it or a holder at the caller is judged. A fresh answer is a new object each run, so `many` asks nothing.
+   - `K`'s own parameter `k` at `p`: exactly the write `K` would make of `π_k p`, `callWrite` at `v`: the kept slots, the supply's `sep` and `below`, `each`, `FedWrite` and the entry marks all hold it. The verdict is what that write's would be.
+   - `K`'s label `m`: the same rule at `(v, m)`, one level in. That is how a forwarding lambda (`λy → f y`) reaches its capture `f`.
+   - anything else, a capture, `self`, `⊤`, a loan, a host object, a top-level value: refused **`need`**.
+   A need below the root (`s ≠ ε`) also asks `K`'s result separation, instantiated at `v`: `λ_ → ( a = [ 1 ]; [ a, a ] )` answers one object at two positions.
+3. **`L`'s function is a fixed contract** (a worded row, an import's value): its result at `s` must be all `fresh`, else `need`.
+4. **`L`'s function is unknown** (`⊤`, a value read from a cell, a choice of codes): refused `need`, approximately. Nothing vouches for what it answers.
+
+**Why a capture is refused outright.** It is what v1 does, and it is cheap and it is enough: `R-5.2.8` makes the answer *owned*, and a closure holds its capture for its next run, so a capture is never owned by the run that answers it. Treating
+one as a capture write (`once`) would add nothing a program needs and a hole: the closure may be left in the callee's result, `pushThen f = ( y = f ⊤; List.push y 1; λ⊤ → f ⊤ )`, and a capture write of a returned closure is only seen where the closure is.
+
+**A closure that leaves.** A closure with a need on one of its labels is `Closures`' case: where it escapes, is returned or is handed back, no caller reads its contract, so the demand on the need is refused `need` at the escape. `mk f = λx → List.push (f x) 1` is refused, as a returned writer is.
+
+**Join and fixpoint.** `need` is a set that only grows, so it joins by union, `⊥` is empty, and `leq` is inclusion (`Within`). In a group a member's new need is delivered with its writes (§2.12 *Deliveries*, `Deliver`'s `need` item) and a member `K`'s new result arrival to each discharge that reads it (`need_watch`). Each slot is delivered once per reader, and slots are finite, so the group ends with the rest. A label a member's draft has and the contract a round read does not is read next round; the validation walk reads the settled candidates, so nothing is left out.
+
+**Blocks.** `need` is one run of `(slot, deep)` after a label's supplies, in the canonical slot order (version 27); so a cached callee and a live one read alike (`run/NeedAcrossModules`).
+
+**What it does not touch.** `below`, `sep`, `kept` and `each` are the callee's claims about what it hands; a need is a claim about what it gets back, so a supply is derived as before. `res_read` and `fed` say which objects an answer may be, and a write moves no object. `AnswerRead` looks at result, supplies, escapes and stores, and a need is none of these; a code it calls read-only is known, so it discharges as any code. An `entry` argument has no caller, as a write of its parameter has none (#2004, §2.11.3 *As built*): S7 owes both.
+
+**Sound.** Take a run of the callee in which a write `W` reaches an object `o` through the answer of a run `r` of function value `v`, at slot `s`. `L.need ∋ s` by the read-off. Follow `v` outward by §2.11.3's case split, which is exhaustive: `v` passes on (then the frame's caller has the need, and the frame has only finitely many levels above it), or it is a known code, a fixed row or unknown, and the last two are refused unless `s` is fresh.
+
+So some caller applies a code `K`. `K`'s result at `s` contains `o`, by the read-off of `K`. There are the cases of the discharge.
+
+- `o` is fresh in `r`: nothing existed before `r` that holds it, so what can see it is what `r`'s result went to, all in the callee. Those holders are judged against the target in the callee, and §2.9.2's two clauses are every way a holder of the answer can arise: the answer itself, by position, and a later answer of a code handed it. An escape is judged at the caller's demand on the leaf.
+- `o` is `K`'s argument: the wrapper `K′ = λa → (x = K a; write x; x)` writes exactly `o`, earlier than `W` does. Between the two instants the callee can only observe `o` through a holder of the answer (the first case) or through what it handed `K` (the supply). The second keeps the supply, by `Supplied.judge`: a holder of the supplied part or of the answer after the call is `kept`, so the wrapper's write is refused `call`. Otherwise the callee holds none of `o` from `r` to `W`, so moving the write forward changes nothing it can see, and the wrapper's write is judged as any known code's: at the caller, under the supply's conditions.
+- `o` is what `K`'s label answers: by induction on the depth of the known codes.
+- Anything else is refused.
+
+A second write of `o` by another run needs two runs to answer `o`. A fresh object has one run; a `K` argument is apart between runs under the supply's condition, as a write of `K` is. A need never accepted a capture. Below the root, one object at two slots of an answer is the result separation's. Refused that a perfect checker accepts: a capture nobody reads again, a write of `[*]` of an answer whose every step asks `sep`, since an answer's family is any object to the distinct check, and a label's supply kept only by the local holding the answer (`y = f x; List.push y 1` with `f` an identity).
+Fixtures: `ownership/NeedOuterOnly`, `ownership/NeedLabels`, `ownership/NeedUnknown`, `run/SanitiserNeed` (a capture, a list answered through a forwarding lambda, a stored callback, a recursive helper, a returned closure: each refused, each traps without its rule), `run/SanitiserNeedApart` (accepted in place), `run/NeedAcrossModules`.
+
 #### 2.11.4 Closures
 
 A `lambda` (also `f a _`, which `Lower` makes a lambda) and a local function (`let_def` with parameters) are
@@ -4439,6 +4488,8 @@ v2 publishes no block for (a limit) has no row and is not a reason to refuse the
 checker a build runs; a v2 word error in core or a platform is not carried either. An importer that reads an
 import as unknown (no block, or one that does not decode) says so in its report: `unknown block <Module>: its
 declarations read the pessimistic contract`.
+
+*As built (#2116): version 27.* A label writes its `need` run after its supplies: a count, then each slot's steps and its `deep` bit (§2.11.3, *a need*).
 
 *As built (#1979): version 24.* A supply's `k` word carries the `each` mark in its top bit and `walk` in the next (§2.11.3, *a traversal's supply*).
 
