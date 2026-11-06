@@ -2664,6 +2664,29 @@ JsDevelopment` and `emit/release/core/JsDevelopment` (the two shapes, each witho
 build's declaration).
 
 
+### `Js.entryWindow` is the private entry realm (2026-11-06)
+
+Part of #2120. `boundary.md` §4.2's private selector is
+`pub foreign pure entryWindow : ⊤ → fresh bool`, used as `Js.entryWindow ⊤`.
+It has no data inputs or writes. A concrete Window entry lowers it to true;
+all other concrete entries lower it to false. Both reachability and lowering
+drop the unused arm of a direct test, as for `Js.development`. Ordinary global
+lookups are not compile-time facts and are unchanged.
+
+Workers already emit an independent `_workers/<id>/` module tree. A shared
+source module therefore gets a separate lowering for the page and worker,
+without a new output copy or loader. Http and WebSocket retain precisely the
+page's `document.baseURI` expression, and use the worker's `location.href`.
+There is no runtime selector, fallback or selector call in entry output.
+
+Frontend, interface and unknown-entry cache facts keep the reference symbolic.
+Modules referring to this intrinsic do not reuse unknown-realm packed edge or
+emit rows when emitting a concrete entry; other modules retain existing reuse.
+A library has no concrete realm and may retain the sibling implementation,
+`typeof document !== "undefined"`, exclusively in `--library` output. Tests
+compare all artifacts of one page-plus-worker build cold and warm, at jobs 1
+and 8, and check both modes for absence of the fallback and selector calls.
+
 ### `Js.testHooks` is the build's test hooks
 
 *Added 2026-10-22* (`boundary.md` Â§9.12 (k): the hidden flag the owner chose for the corpus to

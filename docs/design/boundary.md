@@ -738,6 +738,23 @@ is the build's mode*). *(Amended 2026-10-02: it is `development : () -> bool`, w
 function may not be polymorphic (§4, check 1). The call is written in place as the literal, as the
 value was.)*
 
+### Private entry realm selector (2026-11-06, Part of #2120)
+
+`Js.entryWindow : ⊤ → fresh bool` is pure and has no data inputs. Only core
+and platform packages may import it, through the existing `Js` privilege wall;
+it is not an application API. The result is a fresh Boolean: true for a Window
+entry and false for any other concrete entry. It describes the compilation
+entry, not the mutable JavaScript globals. `Js.global` and existing runtime
+realm probes retain their semantics.
+
+Concrete entry builds write the Boolean in place and eliminate the untaken arm
+of an `if` on the selector before checking kept worker code. No selector call,
+fallback, or runtime realm test is emitted in a page or worker entry, in either
+mode. Only `--library` output may retain the sibling's `typeof document !==
+"undefined"` fallback. Unknown-entry internal cache rows preserve the symbolic
+reference, never a page's or worker's answer. The backend subsection specifies
+per-entry emission and cache reuse.
+
 **`object : fields → Value`** (pure, 2026-10-02, the owner's decision on research 50 §7) is an
 object literal: `Js.object [ ( "k1", v1 ), ( "k2", v2 ) ]` is `{k1: v1, k2: v2}`. The argument is a
 list literal of pair literals written in place, each key a string literal that is a JavaScript

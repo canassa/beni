@@ -250,19 +250,47 @@ representation facts, not performance of the future multi-entry implementation.
 
 ## 4. A realm check that covers beni over Js
 
+### Landing amendment, 2026-11-06 — Part of #2120
+
+The owner selected a kept-code check for this landing. After entry reachability
+elimination, worker builds refuse retained privileged code that names a page-only
+JavaScript global, with `worker_realm_violation`. A computed global name or a
+first-class `Js.global` is unproved and refused. Functions reached through
+callbacks, records, fibers, erased values and evaluated constants receive the
+same check. Dead declarations are not roots. This adds no runtime code and
+changes no page output. Generated native bindings remain available; migrating
+Task, List or renderer storage is not a prerequisite for this check.
+
+`location` and `navigator` are shared global names, so neither is banned.
+A worker's `location.href` and `navigator.language` reads are valid. Direct
+navigation-only `location.reload`, `assign` and `replace` calls and writes to
+Location are refused; native-member typing is otherwise the existing binding
+contract, not a new raw-value shape analysis. Safe global-existence probes do
+not constitute page-only access.
+
+The private `Js.entryWindow ⊤` selector is true for Window entries and false
+for other concrete entries (`boundary.md` §4.2; `backend.md` §4). It has no
+data inputs and is pure. Its unused branch is eliminated in reachability and
+lowering; no runtime selector or fallback remains in any entry output.
+Http and WebSocket retain `document.baseURI` in a page (including base-element
+semantics) and use `location.href` in a worker. Shared sources already have
+separate per-entry output copies. Unknown-entry cache facts stay symbolic;
+only `--library` output may retain a `typeof document` fallback. Existing
+`Js.global` semantics and runtime realm probes are unchanged.
+
 ### Evidence and decision
 
-The owner selected **C: generated real beni native types with inferred realm
+The earlier typed-binding contract selected **C: generated real beni native types with inferred realm
 summaries**, [2026-10-30, #1315](https://github.com/canassa/beni/issues/1315#issuecomment-6525030806).
 The [census](research/workers-host-and-wire.md) records 556 native sites, 2,130
 portable receiver operations and 170 caller-dependent sites. A and B are retained
 only in [the comparison](research/workers-realm-options.md). No hidden native-shape
 graph or manually trusted wrapper boundary replaces the selected mechanism.
 
-First measure the callback-typing migration: 130 erased-callable use sites,
+The historical callback-typing census counted 130 erased-callable use sites,
 including 41 in core/Task.beni, 11 in the inline renderer and 12 in browser/Rt.
-These are use counts, not storage rewrite sizes. #1295 must audit producers and
-queues before claiming that migration measured. The inline projection requires
+These are historical use counts, not storage rewrite sizes or a landing
+requirement to migrate the platform surface. The dated amendment governs raw Js. The inline projection requires
 upcasts at 32 native sites. The full pinned IDL input has 346 files, 2,782 blocks
 and 11,621 member rows; generated output size still needs measurement.
 
@@ -327,8 +355,8 @@ storage wrappers, cold and warm. It changes neither purity nor suspension.
 Platform-private raw host intake follows the existing precise-error adapter contract.
 Native identities and callback realm dependencies are preserved by typed bindings
 and the inferred realm summaries. This landing does not require a new raw-value
-type or a rewrite of Task, List or renderer storage. Remaining page-global and
-raw-native provenance gaps are tracked separately by #2120.
+type or a rewrite of Task, List or renderer storage. The landing amendment above
+adds the kept-code global check to this optional typed-native mechanism.
 
 Dynamic native selection uses cases over typed operations or a generated typed
 selector. An arbitrary String cannot become a native member capability. Dynamic
