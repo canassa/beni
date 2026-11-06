@@ -881,6 +881,11 @@ unforgeable-capability trick. A user cannot fabricate a database handle or a soc
 use the one they were given, which is what makes a capability grantable and revocable rather than
 ambient.
 
+A kept selector use in an entry whose realm is unknown is
+`worker_realm_violation`; it never defaults to false or uses the library
+fallback. The core pack leaves the entry fact unresolved, guarded by a debug
+assert; concrete entry emitters skip such unresolved rows as specified above.
+
 ### 5.1 Many runtimes, few platforms
 
 **The compiler knows nothing about runtimes.** It knows about platform packages, so supporting Bun,

@@ -2691,6 +2691,11 @@ normally before the constant answer. Tests
 compare all artifacts of one page-plus-worker build cold and warm, at jobs 1
 and 8, and check both modes for absence of the fallback and selector calls.
 
+A kept selector use in an entry whose realm is unknown is
+`worker_realm_violation`; it never defaults to false or uses the library
+fallback. The core pack leaves the entry fact unresolved, guarded by a debug
+assert; concrete entry emitters skip such unresolved rows as specified above.
+
 ### `Js.testHooks` is the build's test hooks
 
 *Added 2026-10-22* (`boundary.md` Â§9.12 (k): the hidden flag the owner chose for the corpus to

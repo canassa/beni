@@ -261,17 +261,32 @@ same check. Dead declarations are not roots. This adds no runtime code and
 changes no page output. Generated native bindings remain available; migrating
 Task, List or renderer storage is not a prerequisite for this check.
 
-`location` and `navigator` are shared global names, so neither is banned.
-A worker's `location.href` and `navigator.language` reads are valid. Direct
-navigation-only `location.reload`, `assign` and `replace` calls and writes to
-Location are refused; native-member typing is otherwise the existing binding
-contract, not a new raw-value shape analysis. Safe global-existence probes do
-not constitute page-only access.
+In a worker, a kept `Js.global` of `globalThis`, `self`, `location` or
+`navigator` is allowed only as the direct receiver of a literal member read
+or call whose member is available in that realm. Other uses are refused:
+aliasing, passing the receiver as an argument, storing it, a computed member,
+or writing through it. Literal `globalThis`/`self` member chains are checked
+by the same rule, including receiver-valued `self`, `globalThis`, `location`
+and `navigator` members; returning those handles does not bypass the rule.
+For globalThis/self, page-only names are refused. Animation frame request
+and cancellation are allowed in dedicated workers, but not shared or service
+workers. WorkerLocation permits its readonly URL components and stringifier,
+not navigation methods or writes. WorkerNavigator members follow the worker
+exposures in the pinned Webref IDL, including its included mixins; Window-only
+members and unknown/computed members are refused. Existing direct
+`Js.isUndefined (Js.global "window")` existence probes remain runtime probes.
+The check introduces no runtime guard or alias/provenance analysis.
+
+The worker runtime does not store its global self as a peer endpoint. Its
+child peer has no native field; posting to that missing endpoint calls
+self.postMessage directly. Native Worker endpoints retain their existing
+postMessage call. No checker exemption is made for the runtime.
 
 The private `Js.entryWindow ⊤` selector is true for Window entries and false
 for other concrete entries (`boundary.md` §4.2; `backend.md` §4). It has no
-data inputs and is pure. Its unused branch is eliminated in reachability and
-lowering; no runtime selector or fallback remains in any entry output.
+data inputs and is pure. An `if` with the literal `⊤` argument drops its unused branch in
+reachability and lowering; a nonliteral unit expression is evaluated normally
+for its effects. Unknown entry realms refuse a kept use of this selector; no runtime selector or fallback remains in any entry output.
 Http and WebSocket retain `document.baseURI` in a page (including base-element
 semantics) and use `location.href` in a worker. Shared sources already have
 separate per-entry output copies. Unknown-entry cache facts stay symbolic;
