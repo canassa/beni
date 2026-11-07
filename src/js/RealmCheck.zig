@@ -293,12 +293,13 @@ fn refusePageGlobals(e: anytype, module: Graph.Index, decl: u32) std.mem.Allocat
 }
 
 /// What a worker build reads of a kept `foreign`'s sibling: the same rule as
-/// kept beni code, applied to the names the file's surviving code may read
-/// unbound (`Minify.globalReads`). Check 3 (`boundary.md` §4) already refuses
-/// a name the file neither binds nor finds among the standard globals, so
-/// what is left to prove is a read through `globalThis`, a host's name the
-/// file also binds somewhere, `Function`, and a reference inside a template
-/// substitution, which check 3's scanner does not see.
+/// kept beni code, applied to the names the file's surviving code reads
+/// that no scope around the read binds (`Minify.globalReads`). Check 3
+/// (`boundary.md` §4) already refuses a name the file binds nowhere and
+/// finds among no standard globals; this reading has scopes, so it also
+/// sees a host's name read free in one function and bound in another, a
+/// read through `globalThis`, `Function`, a reference inside a template
+/// substitution, and a timer that may be handed a string of code.
 fn refuseSiblings(e: anytype) std.mem.Allocator.Error!bool {
     const realm = e.options.platform.entry_host;
     for (0..e.graph().count()) |mi| {
@@ -317,8 +318,7 @@ fn refuseSiblings(e: anytype) std.mem.Allocator.Error!bool {
         const path = try e.siblingPath(e.session.store.path(e.graph().moduleFile(m)));
         // A missing sibling is check 2's to report.
         const bytes = e.readAsset(path) orelse continue;
-        const scan = try @import("Sibling.zig").scan(e.scratch, bytes);
-        const found = try Minify.globalReads(e.scratch, bytes, keep.items, &scan.bound) orelse {
+        const found = try Minify.globalReads(e.scratch, bytes, keep.items) orelse {
             try e.reportInFile(.worker_realm_violation, @TypeOf(e.*).inSibling(path, bytes, 0, 0), "This file is kept in entry realm `{s}`, and I cannot read exactly which globals it uses, so its access is not proved available there.", .{@tagName(realm)});
             return true;
         };
@@ -327,6 +327,11 @@ fn refuseSiblings(e: anytype) std.mem.Allocator.Error!bool {
             return true;
         }
         for (found.reads) |read| {
+            if (read.code_string) {
+                const timer = if (read.member) |member| try std.fmt.allocPrint(e.scratch, "{s}.{s}", .{ read.name, member }) else read.name;
+                try e.reportInFile(.worker_realm_violation, @TypeOf(e.*).inSibling(path, bytes, read.offset, read.len), "This file is kept in entry realm `{s}`, and it uses `{s}` without a first argument that is provably a function. A string there runs code the realm check cannot see. Dynamic code is refused there.", .{ @tagName(realm), timer });
+                return true;
+            }
             var verdict: Verdict = .absent;
             const access: ?[]const u8 = access: {
                 if (std.meta.stringToEnum(Receiver, read.name)) |kind| {
