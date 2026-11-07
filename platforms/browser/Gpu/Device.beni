@@ -1,0 +1,38 @@
+--! Checked native device operations.
+
+import Gpu.Engine as Engine
+import Gpu.Error as Error
+import Gpu.Handle as Handle
+import Gpu.Types as Types
+
+
+pub type alias Device =
+    Handle.Device
+
+
+pub features : Handle.Device → List String
+features device = Engine.deviceFeatures device
+
+
+pub adapterInfo : Handle.Device → Result Error.Error Types.AdapterInfo
+adapterInfo device = Engine.deviceAdapterInfo device
+
+
+pub limits : Handle.Device → Result Error.Error Types.SupportedLimits
+limits device = Engine.deviceLimits device
+
+
+pub queue : Handle.Device → Handle.Queue
+queue device = Engine.deviceQueue device
+
+
+pub loss : Handle.Device → Maybe Error.DeviceLoss
+loss device = Engine.deviceLoss device
+
+
+pub awaitLost : Handle.Device → Error.DeviceLoss
+awaitLost device = Engine.awaitDeviceLost device
+
+
+pub destroy : Handle.Device → ⊤
+destroy device = Engine.destroyDevice device

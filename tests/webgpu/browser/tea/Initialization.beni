@@ -1,0 +1,109 @@
+-- Real native adapter/device negotiation and loss; no mocked GPU objects.
+import Cmd
+import Gpu
+import Gpu.Adapter as Adapter
+import Gpu.Device as Device
+import Gpu.Error as Error
+import Gpu.Scalar as Scalar
+import Gpu.Types as Types
+import Html exposing (Html)
+import List
+import Sub
+import Tea
+
+
+probe : ⊤ → String
+probe ⊤ =
+    case Scalar.size64 4294967295 of
+        Err _ →
+            "scalar construction failed"
+        Ok largeLimit →
+            probeWithLimit largeLimit
+
+
+probeWithLimit : Scalar.Size64 → String
+probeWithLimit largeLimit =
+    case Gpu.requestAdapter (Types.requestAdapterOptions ⊤) of
+        Err problem →
+            "adapter failed: " ++ Debug.toString problem
+        Ok adapter →
+            invalidDescriptor = Types.deviceDescriptor ⊤
+            rejectedUnknown =
+                case
+                    Adapter.requestDevice adapter
+                        { invalidDescriptor
+                            | requiredLimits =
+                                Types.Value [ ( "__proto__", Types.Value largeLimit ) ]
+                        }
+                of
+                    Err (Error.UnsupportedLimits [ mismatch ]) →
+                        mismatch
+                            == { name = "__proto__", requested = 4294967295, supported = Nothing }
+                    _ →
+                        False
+            -- This final record ignores the earlier excessive limit and
+            -- the unknown undefined member, exactly like native Web IDL.
+            descriptor =
+                { invalidDescriptor
+                    | requiredLimits =
+                        Types.Value
+                            [ ( "maxBindGroups", Types.Value largeLimit )
+                            , ( "maxBindGroups", Types.Default )
+                            , ( "__proto__", Types.Default )
+                            ]
+                }
+            case Adapter.requestDevice adapter descriptor of
+                Err problem →
+                    "device failed: " ++ Debug.toString problem
+                Ok device →
+                    sameInfo =
+                        case ( Adapter.info adapter, Device.adapterInfo device ) of
+                            ( Ok adapterInfo, Ok deviceInfo ) →
+                                adapterInfo == deviceInfo
+                            _ →
+                                False
+                    limitsMatch =
+                        case ( Adapter.limits adapter, Device.limits device ) of
+                            ( Ok adapterLimits, Ok deviceLimits ) →
+                                deviceLimits.maxBufferSize ≤ adapterLimits.maxBufferSize
+                                    && deviceLimits.minUniformBufferOffsetAlignment
+                                        ≥ adapterLimits.minUniformBufferOffsetAlignment
+                            _ →
+                                False
+                    negotiated = Device.features device
+                    supported = Adapter.features adapter
+                    subsets = List.all negotiated λfeature → List.member supported feature
+                    consumed =
+                        case Adapter.requestDevice adapter (Types.deviceDescriptor ⊤) of
+                            Err Error.AdapterConsumed →
+                                True
+                            _ →
+                                False
+                    Device.destroy device
+                    loss = Device.awaitLost device
+                    latched = Device.loss device == Just loss
+                    if
+                        subsets
+                            && consumed
+                            && latched
+                            && loss.reason == Error.Destroyed
+                            && sameInfo
+                            && limitsMatch
+                    then
+                        "initialization passed"
+                    else
+                        "initialization invariant failed"
+
+
+view : String → Html String
+view result = <p id="result">{result}</p>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( "initializing", Cmd.task probe identity )
+        , update = λmessage _ → ( message, Cmd.none )
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

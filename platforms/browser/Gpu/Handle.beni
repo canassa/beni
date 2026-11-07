@@ -1,0 +1,67 @@
+--! Opaque native GPU identities. Operations live in their qualified modules.
+--! Applications cannot construct or inspect these platform-owned handles.
+
+pub foreign type Adapter
+
+
+pub foreign type Device
+
+
+pub foreign type Queue
+
+
+pub foreign type Buffer
+
+
+pub foreign type Texture
+
+
+pub foreign type TextureView
+
+
+pub foreign type Sampler
+
+
+pub foreign type ExternalTexture
+
+
+pub foreign type BindGroupLayout
+
+
+pub foreign type PipelineLayout
+
+
+pub foreign type BindGroup
+
+
+pub foreign type Shader
+
+
+pub foreign type ComputePipeline
+
+
+pub foreign type RenderPipeline
+
+
+pub foreign type CommandEncoder
+
+
+pub foreign type CommandBuffer
+
+
+pub foreign type ComputePass
+
+
+pub foreign type RenderPass
+
+
+pub foreign type RenderBundleEncoder
+
+
+pub foreign type RenderBundle
+
+
+pub foreign type QuerySet
+
+
+pub foreign type Surface

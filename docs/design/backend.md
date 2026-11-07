@@ -2265,13 +2265,19 @@ computes**, written by `Lower` in both builds, with no call, no import, and no e
 | `Basics.pow a b` (`^`) | `a ** b` | the sibling's body. `**` is right-associative, like `^`, and its left operand may not be a unary expression, so the printer brackets it on its own rule (`JsIr.BinaryOp.leftPrecedence`) |
 | `Basics.lt`, `gt`, `le`, `ge` called by name | `a < b`, â¦ | the sibling's body. The comparison OPERATORS were already `<` on a number, through `compare`'s `primitive` answer |
 | `Basics.not b` | `!b` | a `Bool` is `true`/`false` (correction 1) |
-| `Basics.negate n` (prefix `-`) | `0 - n` | `negate`'s own body. Not `-n`: the two differ at zero, where `-0` is another number (`1 / -0` is `-Infinity`) |
+| `Basics.negate n` (prefix `-`) | `-n` | IEEE-754 sign inversion, including positive/negative zero. The first-class beni body multiplies by `(0 - 1)` to avoid recursively calling the prefix desugaring. Subtraction from zero loses the sign |
 | `Int32.fromInt n` | `n \| 0` | the sibling's body, ToInt32 |
 | `Int32.toInt x` | `x` | the identity (the table's `Int32` row) |
 | `Int32.toUnsignedInt x` | `x >>> 0` | the sibling's body |
 | `Int32.add`, `sub` | `(a + b) \| 0`, `(a - b) \| 0` | the sibling's body |
 | `Int32.and`, `or`, `xor`, `shiftLeft`, `shiftRight` | `a & b`, `a \| b`, `a ^ b`, `a << n`, `a >> n` | the sibling's body |
 | `Int32.shiftRightZero x n` | `(x >>> n) \| 0` | the sibling's body |
+
+*Corrected 2026-10-30 (#1282):* direct and first-class negation preserve
+negative zero, including an underflowing literal and a value read from native
+binary storage. The previous `0 - n` contract incorrectly canonicalized it.
+`run/FloatNegation` checks exact f64 words, ordinary values, infinities, NaN and
+one evaluation of an impure operand in development and release.
 
 **What stays a call, and why.** `idiv` (`//`), `modBy`, `remainderBy` and `Int32`'s `div`, `rem`
 and `mod` answer `0` for a zero divisor where `/` and `%` answer `Infinity` or `NaN`, and a guard

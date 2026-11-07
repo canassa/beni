@@ -580,6 +580,7 @@ fn walk(kind: Kind) !void {
     // build runner print `failed command` next to a step that succeeded,
     // which reads as a broken suite to everyone who sees it.
     if (failures != 0) {
+        if (chrome) |*c| std.debug.print("Chrome log:\n{s}\n", .{c.profile.read("chrome.log") catch |err| @errorName(err)});
         std.debug.print("corpus {s}: {d} cases, {d} failures\n", .{ kind_dir, fixtures.len, failures });
         return error.CorpusFailures;
     }

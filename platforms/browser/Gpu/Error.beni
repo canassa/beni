@@ -1,0 +1,76 @@
+--! Observable WebGPU failures. Unknown host failures remain program defects.
+
+import Gpu.Scalar
+
+
+pub type InputError
+    = Numeric Gpu.Scalar.Error
+    | Alignment String Int Int
+    | Range String Int Int Int
+    | WrongDevice String
+    | DestroyedResource String
+    | ResourcePending String
+    | ResourceRejected String
+    | InvalidState String
+    | DiagnosticAuthorityRequired
+    | SessionStopped
+
+
+pub type LossReason
+    = UnknownLoss
+    | Destroyed
+
+
+pub type alias DeviceLoss =
+    reason : LossReason
+    message : String
+
+
+pub type InitError
+    = InsecureContext
+    | ApiUnavailable
+    | AdapterUnavailable
+    | AdapterConsumed
+    | UnsupportedFeatures (List String)
+    | UnsupportedLimits (List LimitMismatch)
+    | FeatureRequestRejected String
+    | DeviceRequestRejected String
+    | InitializationInput InputError
+    | InitializationLost DeviceLoss
+
+
+pub type alias LimitMismatch =
+    name : String
+    requested : Int
+    supported : Maybe Int
+
+
+pub type Capability
+    = MissingNativeMember String
+    | RequiredFeature String
+    | OptionalHostConstructor String
+
+
+pub type Error
+    = InvalidInput InputError
+    | UnsupportedCapability Capability
+    | Validation FailureDetail
+    | OutOfMemory FailureDetail
+    | Internal FailureDetail
+    | PipelineValidation FailureDetail
+    | PipelineInternal FailureDetail
+    | DeviceLost DeviceLoss
+    | RelatedFailures Failure (List Failure)
+
+
+pub type Failure
+    = ValidationFailure FailureDetail
+    | OutOfMemoryFailure FailureDetail
+    | InternalFailure FailureDetail
+    | LossFailure DeviceLoss
+
+
+pub type alias FailureDetail =
+    deviceId : Int
+    operation : String
+    message : String

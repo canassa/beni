@@ -1,0 +1,126 @@
+--! Checked Web IDL numeric domains. Conversion never loses integer bits.
+--! `Size64` accepts every representable integer below 2⁶⁴, including values
+--! above 2⁵³. Exact arbitrary u64 payloads belong to `Binary.Word64`.
+
+import Js
+
+
+pub type Domain
+    = Unsigned32
+    | Signed32
+    | Unsigned64
+    | Finite32
+    | Finite64
+
+
+pub type Error
+    = OutsideDomain Domain Float
+
+
+pub opaque type U32
+    = U32 Int
+
+
+pub opaque type I32
+    = I32 Int
+
+
+pub opaque type Size64
+    = Size64 Int
+
+
+pub opaque type FiniteF32
+    = FiniteF32 Float
+
+
+pub opaque type FiniteF64
+    = FiniteF64 Float
+
+
+pub u32 : Int → Result Error U32
+u32 n =
+    if integral n && n ≥ 0 && n ≤ 4294967295 then
+        Ok (U32 n)
+    else
+        Err (OutsideDomain Unsigned32 (toFloat n))
+
+
+pub i32 : Int → Result Error I32
+i32 n =
+    if integral n && n ≥ -2147483648 && n ≤ 2147483647 then
+        Ok (I32 n)
+    else
+        Err (OutsideDomain Signed32 (toFloat n))
+
+
+pub size64 : Int → Result Error Size64
+size64 n =
+    if integral n && n ≥ 0 && n < 18446744073709551616 then
+        Ok (Size64 n)
+    else
+        Err (OutsideDomain Unsigned64 (toFloat n))
+
+
+-- The integer predicates accept a Number, not a safe-integer subset.
+integral : Int → Bool
+integral n = Js.pure λ⊤ → Js.to (Js.call (Js.global "Number") "isInteger" [ Js.from n ])
+
+
+--| Explicit Web IDL truncation toward zero, followed by range checking.
+pub truncateU32 : Float → Result Error U32
+truncateU32 n = u32 (truncated n)
+
+
+pub truncateI32 : Float → Result Error I32
+truncateI32 n = i32 (truncated n)
+
+
+pub truncateSize64 : Float → Result Error Size64
+truncateSize64 n = size64 (truncated n)
+
+
+truncated : Float → Int
+truncated n = Js.pure λ⊤ → Js.to (Js.call (Js.global "Math") "trunc" [ Js.from n ])
+
+
+pub finiteF32 : Float → Result Error FiniteF32
+finiteF32 n =
+    rounded : Float
+    rounded = Js.pure λ⊤ → Js.to (Js.call (Js.global "Math") "fround" [ Js.from n ])
+    if isNaN rounded || isInfinite rounded then
+        Err (OutsideDomain Finite32 n)
+    else
+        Ok (FiniteF32 rounded)
+
+
+pub finiteF64 : Float → Result Error FiniteF64
+finiteF64 n =
+    if isNaN n || isInfinite n then
+        Err (OutsideDomain Finite64 n)
+    else
+        Ok (FiniteF64 n)
+
+
+pub u32Value : U32 → Int
+u32Value (U32 n) = n
+
+
+pub i32Value : I32 → Int
+i32Value (I32 n) = n
+
+
+pub size64Value : Size64 → Int
+size64Value (Size64 n) = n
+
+
+pub f32Value : FiniteF32 → Float
+f32Value (FiniteF32 n) = n
+
+
+pub f64Value : FiniteF64 → Float
+f64Value (FiniteF64 n) = n
+
+
+--| The entire byte interval fits. Subtraction avoids rounded offset+size.
+pub contains : Size64, Size64, Size64 → Bool
+contains (Size64 total) (Size64 offset) (Size64 size) = offset ≤ total && size ≤ total - offset

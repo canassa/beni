@@ -157,6 +157,695 @@ module Dom
   value scrollIntoView : String → Result Error ⊤  -- impure
   value scrollTo : String, Float, Float → Result Error ⊤  -- impure
   value viewport : ⊤ → Viewport  -- impure
+module Gpu.Error
+  alias DeviceLoss
+    DeviceLoss
+  type Error
+    InvalidInput
+    UnsupportedCapability
+    Validation
+    OutOfMemory
+    Internal
+    PipelineValidation
+    PipelineInternal
+    DeviceLost
+    RelatedFailures
+  type Failure
+    ValidationFailure
+    OutOfMemoryFailure
+    InternalFailure
+    LossFailure
+  alias FailureDetail
+    FailureDetail
+  type InitError
+    InsecureContext
+    ApiUnavailable
+    AdapterUnavailable
+    AdapterConsumed
+    UnsupportedFeatures
+    UnsupportedLimits
+    FeatureRequestRejected
+    DeviceRequestRejected
+    InitializationInput
+    InitializationLost
+  type InputError
+    Numeric
+    Alignment
+    Range
+    WrongDevice
+    DestroyedResource
+    ResourcePending
+    ResourceRejected
+    InvalidState
+    DiagnosticAuthorityRequired
+    SessionStopped
+  alias LimitMismatch
+    LimitMismatch
+  type LossReason
+    UnknownLoss
+    Destroyed
+module Gpu.Flags
+  type BufferUsageBit
+    BufferUsageMapRead
+    BufferUsageMapWrite
+    BufferUsageCopySrc
+    BufferUsageCopyDst
+    BufferUsageIndex
+    BufferUsageVertex
+    BufferUsageUniform
+    BufferUsageStorage
+    BufferUsageIndirect
+    BufferUsageQueryResolve
+  opaque type BufferUsages
+  type ColorWriteBit
+    ColorWriteRed
+    ColorWriteGreen
+    ColorWriteBlue
+    ColorWriteAlpha
+    ColorWriteAll
+  opaque type ColorWrites
+  type Error
+    UnknownBits
+  type MapModeBit
+    MapModeRead
+    MapModeWrite
+  opaque type MapModes
+  type ShaderStageBit
+    ShaderStageVertex
+    ShaderStageFragment
+    ShaderStageCompute
+  opaque type ShaderStages
+  type TextureUsageBit
+    TextureUsageCopySrc
+    TextureUsageCopyDst
+    TextureUsageTextureBinding
+    TextureUsageStorageBinding
+    TextureUsageRenderAttachment
+    TextureUsageTransientAttachment
+  opaque type TextureUsages
+  value bufferUsage : List BufferUsageBit → BufferUsages
+  value bufferUsageFromBits : U32 → Result Error BufferUsages
+  value bufferUsageValue : BufferUsages → Int
+  value colorWrite : List ColorWriteBit → ColorWrites
+  value colorWriteFromBits : U32 → Result Error ColorWrites
+  value colorWriteValue : ColorWrites → Int
+  value mapMode : List MapModeBit → MapModes
+  value mapModeFromBits : U32 → Result Error MapModes
+  value mapModeValue : MapModes → Int
+  value shaderStage : List ShaderStageBit → ShaderStages
+  value shaderStageFromBits : U32 → Result Error ShaderStages
+  value shaderStageValue : ShaderStages → Int
+  value textureUsage : List TextureUsageBit → TextureUsages
+  value textureUsageFromBits : U32 → Result Error TextureUsages
+  value textureUsageValue : TextureUsages → Int
+module Gpu.Handle
+  type Adapter
+  type BindGroup
+  type BindGroupLayout
+  type Buffer
+  type CommandBuffer
+  type CommandEncoder
+  type ComputePass
+  type ComputePipeline
+  type Device
+  type ExternalTexture
+  type PipelineLayout
+  type QuerySet
+  type Queue
+  type RenderBundle
+  type RenderBundleEncoder
+  type RenderPass
+  type RenderPipeline
+  type Sampler
+  type Shader
+  type Surface
+  type Texture
+  type TextureView
+module Gpu.Scalar
+  type Domain
+    Unsigned32
+    Signed32
+    Unsigned64
+    Finite32
+    Finite64
+  type Error
+    OutsideDomain
+  opaque type FiniteF32
+  opaque type FiniteF64
+  opaque type I32
+  opaque type Size64
+  opaque type U32
+  value contains : Size64, Size64, Size64 → Bool
+  value f32Value : FiniteF32 → Float
+  value f64Value : FiniteF64 → Float
+  value finiteF32 : Float → Result Error FiniteF32
+  value finiteF64 : Float → Result Error FiniteF64
+  value i32 : Int → Result Error I32
+  value i32Value : I32 → Int
+  value size64 : Int → Result Error Size64
+  value size64Value : Size64 → Int
+  value truncateI32 : Float → Result Error I32
+  value truncateSize64 : Float → Result Error Size64
+  value truncateU32 : Float → Result Error U32
+  value u32 : Int → Result Error U32
+  value u32Value : U32 → Int
+module Gpu.Types
+  type AddressMode
+    AddressModeClampToEdge
+    AddressModeRepeat
+    AddressModeMirrorRepeat
+  type AutoLayoutMode
+    AutoLayoutModeAuto
+  alias BindGroupDescriptor
+    BindGroupDescriptor
+  alias BindGroupEntry
+    BindGroupEntry
+  alias BindGroupLayoutDescriptor
+    BindGroupLayoutDescriptor
+  alias BindGroupLayoutEntry
+    BindGroupLayoutEntry
+  type BindingResource
+    BindingSampler
+    BindingTexture
+    BindingView
+    BindingBuffer
+    BindingRange
+    BindingExternal
+  alias BlendComponent
+    BlendComponent
+  type BlendFactor
+    BlendFactorZero
+    BlendFactorOne
+    BlendFactorSrc
+    BlendFactorOneMinusSrc
+    BlendFactorSrcAlpha
+    BlendFactorOneMinusSrcAlpha
+    BlendFactorDst
+    BlendFactorOneMinusDst
+    BlendFactorDstAlpha
+    BlendFactorOneMinusDstAlpha
+    BlendFactorSrcAlphaSaturated
+    BlendFactorConstant
+    BlendFactorOneMinusConstant
+    BlendFactorSrc1
+    BlendFactorOneMinusSrc1
+    BlendFactorSrc1Alpha
+    BlendFactorOneMinusSrc1Alpha
+  type BlendOperation
+    BlendOperationAdd
+    BlendOperationSubtract
+    BlendOperationReverseSubtract
+    BlendOperationMin
+    BlendOperationMax
+  alias BlendState
+    BlendState
+  alias BufferBinding
+    BufferBinding
+  alias BufferBindingLayout
+    BufferBindingLayout
+  type BufferBindingType
+    BufferBindingTypeUniform
+    BufferBindingTypeStorage
+    BufferBindingTypeReadOnlyStorage
+  alias BufferDescriptor
+    BufferDescriptor
+  type BufferMapState
+    BufferMapStateUnmapped
+    BufferMapStatePending
+    BufferMapStateMapped
+  type CanvasAlphaMode
+    CanvasAlphaModeOpaque
+    CanvasAlphaModePremultiplied
+  alias CanvasConfiguration
+    CanvasConfiguration
+  alias CanvasToneMapping
+    CanvasToneMapping
+  type CanvasToneMappingMode
+    CanvasToneMappingModeStandard
+    CanvasToneMappingModeExtended
+  type Color
+    ColorRecord
+    ColorSequence
+  alias ColorDict
+    ColorDict
+  type ColorSpace
+    Srgb
+    DisplayP3
+  alias ColorTargetState
+    ColorTargetState
+  alias CommandBufferDescriptor
+    CommandBufferDescriptor
+  alias CommandEncoderDescriptor
+    CommandEncoderDescriptor
+  type CompareFunction
+    CompareFunctionNever
+    CompareFunctionLess
+    CompareFunctionEqual
+    CompareFunctionLessEqual
+    CompareFunctionGreater
+    CompareFunctionNotEqual
+    CompareFunctionGreaterEqual
+    CompareFunctionAlways
+  type CompilationMessageType
+    CompilationMessageTypeError
+    CompilationMessageTypeWarning
+    CompilationMessageTypeInfo
+  alias ComputePassDescriptor
+    ComputePassDescriptor
+  alias ComputePassTimestampWrites
+    ComputePassTimestampWrites
+  alias ComputePipelineDescriptor
+    ComputePipelineDescriptor
+  alias CopyExternalImageDestInfo
+    CopyExternalImageDestInfo
+  alias CopyExternalImageSourceInfo
+    CopyExternalImageSourceInfo
+  type CullMode
+    CullModeNone
+    CullModeFront
+    CullModeBack
+  alias DepthStencilState
+    DepthStencilState
+  alias DeviceDescriptor
+    DeviceDescriptor
+  type DeviceLostReason
+    DeviceLostReasonUnknown
+    DeviceLostReasonDestroyed
+  type ErrorFilter
+    ErrorFilterValidation
+    ErrorFilterOutOfMemory
+    ErrorFilterInternal
+  type Extent3D
+    Extent3DRecord
+    Extent3DSequence
+  alias Extent3DDict
+    Extent3DDict
+  alias ExternalTextureBindingLayout
+  alias ExternalTextureDescriptor
+    ExternalTextureDescriptor
+  type ExternalTextureSource
+    ExternalVideo
+    ExternalFrame
+  type FeatureName
+    FeatureNameCoreFeaturesAndLimits
+    FeatureNameDepthClipControl
+    FeatureNameDepth32floatStencil8
+    FeatureNameTextureCompressionBc
+    FeatureNameTextureCompressionBcSliced3d
+    FeatureNameTextureCompressionEtc2
+    FeatureNameTextureCompressionAstc
+    FeatureNameTextureCompressionAstcSliced3d
+    FeatureNameTimestampQuery
+    FeatureNameIndirectFirstInstance
+    FeatureNameShaderF16
+    FeatureNameRg11b10ufloatRenderable
+    FeatureNameBgra8unormStorage
+    FeatureNameFloat32Filterable
+    FeatureNameFloat32Blendable
+    FeatureNameClipDistances
+    FeatureNameDualSourceBlending
+    FeatureNameSubgroups
+    FeatureNameTextureFormatsTier1
+    FeatureNameTextureFormatsTier2
+    FeatureNamePrimitiveIndex
+    FeatureNameTextureComponentSwizzle
+    FeatureNameSubgroupSizeControl
+    FeatureNameTextureCompressionUnaligned
+    FeatureNameAtomicVec2uMinMax
+  type FilterMode
+    FilterModeNearest
+    FilterModeLinear
+  alias FragmentState
+    FragmentState
+  type FrontFace
+    FrontFaceCcw
+    FrontFaceCw
+  type GpuError
+    ValidationError
+    OutOfMemoryError
+    InternalError
+  type IndexFormat
+    IndexFormatUint16
+    IndexFormatUint32
+  type LoadOp
+    LoadOpLoad
+    LoadOpClear
+  type MipmapFilterMode
+    MipmapFilterModeNearest
+    MipmapFilterModeLinear
+  alias MultisampleState
+    MultisampleState
+  alias ObjectDescriptorBase
+    ObjectDescriptorBase
+  type Option a
+    Default
+    Value
+  type Origin2D
+    Origin2DRecord
+    Origin2DSequence
+  alias Origin2DDict
+    Origin2DDict
+  type Origin3D
+    Origin3DRecord
+    Origin3DSequence
+  alias Origin3DDict
+    Origin3DDict
+  alias PipelineDescriptorBase
+    PipelineDescriptorBase
+  alias PipelineErrorInit
+    PipelineErrorInit
+  type PipelineErrorReason
+    PipelineErrorReasonValidation
+    PipelineErrorReasonInternal
+  alias PipelineLayoutDescriptor
+    PipelineLayoutDescriptor
+  type PipelineLayoutMode
+    ExplicitLayout
+    AutomaticLayout
+  type PowerPreference
+    PowerPreferenceLowPower
+    PowerPreferenceHighPerformance
+  alias PrimitiveState
+    PrimitiveState
+  type PrimitiveTopology
+    PrimitiveTopologyPointList
+    PrimitiveTopologyLineList
+    PrimitiveTopologyLineStrip
+    PrimitiveTopologyTriangleList
+    PrimitiveTopologyTriangleStrip
+  alias ProgrammableStage
+    ProgrammableStage
+  alias QuerySetDescriptor
+    QuerySetDescriptor
+  type QueryType
+    QueryTypeOcclusion
+    QueryTypeTimestamp
+  alias QueueDescriptor
+    QueueDescriptor
+  alias RenderBundleDescriptor
+    RenderBundleDescriptor
+  alias RenderBundleEncoderDescriptor
+    RenderBundleEncoderDescriptor
+  alias RenderPassColorAttachment
+    RenderPassColorAttachment
+  alias RenderPassDepthStencilAttachment
+    RenderPassDepthStencilAttachment
+  alias RenderPassDescriptor
+    RenderPassDescriptor
+  alias RenderPassLayout
+    RenderPassLayout
+  alias RenderPassTimestampWrites
+    RenderPassTimestampWrites
+  alias RenderPipelineDescriptor
+    RenderPipelineDescriptor
+  alias RequestAdapterOptions
+    RequestAdapterOptions
+  alias SamplerBindingLayout
+    SamplerBindingLayout
+  type SamplerBindingType
+    SamplerBindingTypeFiltering
+    SamplerBindingTypeNonFiltering
+    SamplerBindingTypeComparison
+  alias SamplerDescriptor
+    SamplerDescriptor
+  alias ShaderModuleCompilationHint
+    ShaderModuleCompilationHint
+  alias ShaderModuleDescriptor
+    ShaderModuleDescriptor
+  alias StencilFaceState
+    StencilFaceState
+  type StencilOperation
+    StencilOperationKeep
+    StencilOperationZero
+    StencilOperationReplace
+    StencilOperationInvert
+    StencilOperationIncrementClamp
+    StencilOperationDecrementClamp
+    StencilOperationIncrementWrap
+    StencilOperationDecrementWrap
+  type StorageTextureAccess
+    StorageTextureAccessWriteOnly
+    StorageTextureAccessReadOnly
+    StorageTextureAccessReadWrite
+  alias StorageTextureBindingLayout
+    StorageTextureBindingLayout
+  type StoreOp
+    StoreOpStore
+    StoreOpDiscard
+  alias TexelCopyBufferInfo
+    TexelCopyBufferInfo
+  alias TexelCopyBufferLayout
+    TexelCopyBufferLayout
+  alias TexelCopyTextureInfo
+    TexelCopyTextureInfo
+  type TextureAspect
+    TextureAspectAll
+    TextureAspectStencilOnly
+    TextureAspectDepthOnly
+  alias TextureBindingLayout
+    TextureBindingLayout
+  alias TextureDescriptor
+    TextureDescriptor
+  type TextureDimension
+    TextureDimension1d
+    TextureDimension2d
+    TextureDimension3d
+  type TextureFormat
+    TextureFormatR8unorm
+    TextureFormatR8snorm
+    TextureFormatR8uint
+    TextureFormatR8sint
+    TextureFormatR16unorm
+    TextureFormatR16snorm
+    TextureFormatR16uint
+    TextureFormatR16sint
+    TextureFormatR16float
+    TextureFormatRg8unorm
+    TextureFormatRg8snorm
+    TextureFormatRg8uint
+    TextureFormatRg8sint
+    TextureFormatR32uint
+    TextureFormatR32sint
+    TextureFormatR32float
+    TextureFormatRg16unorm
+    TextureFormatRg16snorm
+    TextureFormatRg16uint
+    TextureFormatRg16sint
+    TextureFormatRg16float
+    TextureFormatRgba8unorm
+    TextureFormatRgba8unormSrgb
+    TextureFormatRgba8snorm
+    TextureFormatRgba8uint
+    TextureFormatRgba8sint
+    TextureFormatBgra8unorm
+    TextureFormatBgra8unormSrgb
+    TextureFormatRgb9e5ufloat
+    TextureFormatRgb10a2uint
+    TextureFormatRgb10a2unorm
+    TextureFormatRg11b10ufloat
+    TextureFormatRg32uint
+    TextureFormatRg32sint
+    TextureFormatRg32float
+    TextureFormatRgba16unorm
+    TextureFormatRgba16snorm
+    TextureFormatRgba16uint
+    TextureFormatRgba16sint
+    TextureFormatRgba16float
+    TextureFormatRgba32uint
+    TextureFormatRgba32sint
+    TextureFormatRgba32float
+    TextureFormatStencil8
+    TextureFormatDepth16unorm
+    TextureFormatDepth24plus
+    TextureFormatDepth24plusStencil8
+    TextureFormatDepth32float
+    TextureFormatDepth32floatStencil8
+    TextureFormatBc1RgbaUnorm
+    TextureFormatBc1RgbaUnormSrgb
+    TextureFormatBc2RgbaUnorm
+    TextureFormatBc2RgbaUnormSrgb
+    TextureFormatBc3RgbaUnorm
+    TextureFormatBc3RgbaUnormSrgb
+    TextureFormatBc4RUnorm
+    TextureFormatBc4RSnorm
+    TextureFormatBc5RgUnorm
+    TextureFormatBc5RgSnorm
+    TextureFormatBc6hRgbUfloat
+    TextureFormatBc6hRgbFloat
+    TextureFormatBc7RgbaUnorm
+    TextureFormatBc7RgbaUnormSrgb
+    TextureFormatEtc2Rgb8unorm
+    TextureFormatEtc2Rgb8unormSrgb
+    TextureFormatEtc2Rgb8a1unorm
+    TextureFormatEtc2Rgb8a1unormSrgb
+    TextureFormatEtc2Rgba8unorm
+    TextureFormatEtc2Rgba8unormSrgb
+    TextureFormatEacR11unorm
+    TextureFormatEacR11snorm
+    TextureFormatEacRg11unorm
+    TextureFormatEacRg11snorm
+    TextureFormatAstc4x4Unorm
+    TextureFormatAstc4x4UnormSrgb
+    TextureFormatAstc5x4Unorm
+    TextureFormatAstc5x4UnormSrgb
+    TextureFormatAstc5x5Unorm
+    TextureFormatAstc5x5UnormSrgb
+    TextureFormatAstc6x5Unorm
+    TextureFormatAstc6x5UnormSrgb
+    TextureFormatAstc6x6Unorm
+    TextureFormatAstc6x6UnormSrgb
+    TextureFormatAstc8x5Unorm
+    TextureFormatAstc8x5UnormSrgb
+    TextureFormatAstc8x6Unorm
+    TextureFormatAstc8x6UnormSrgb
+    TextureFormatAstc8x8Unorm
+    TextureFormatAstc8x8UnormSrgb
+    TextureFormatAstc10x5Unorm
+    TextureFormatAstc10x5UnormSrgb
+    TextureFormatAstc10x6Unorm
+    TextureFormatAstc10x6UnormSrgb
+    TextureFormatAstc10x8Unorm
+    TextureFormatAstc10x8UnormSrgb
+    TextureFormatAstc10x10Unorm
+    TextureFormatAstc10x10UnormSrgb
+    TextureFormatAstc12x10Unorm
+    TextureFormatAstc12x10UnormSrgb
+    TextureFormatAstc12x12Unorm
+    TextureFormatAstc12x12UnormSrgb
+  type TextureOrView
+    WholeTexture
+    TextureView
+  type TextureSampleType
+    TextureSampleTypeFloat
+    TextureSampleTypeUnfilterableFloat
+    TextureSampleTypeDepth
+    TextureSampleTypeSint
+    TextureSampleTypeUint
+  alias TextureViewDescriptor
+    TextureViewDescriptor
+  type TextureViewDimension
+    TextureViewDimension1d
+    TextureViewDimension2d
+    TextureViewDimension2dArray
+    TextureViewDimensionCube
+    TextureViewDimensionCubeArray
+    TextureViewDimension3d
+  alias UncapturedErrorEventInit
+    UncapturedErrorEventInit
+  alias VertexAttribute
+    VertexAttribute
+  alias VertexBufferLayout
+    VertexBufferLayout
+  type VertexFormat
+    VertexFormatUint8
+    VertexFormatUint8x2
+    VertexFormatUint8x4
+    VertexFormatSint8
+    VertexFormatSint8x2
+    VertexFormatSint8x4
+    VertexFormatUnorm8
+    VertexFormatUnorm8x2
+    VertexFormatUnorm8x4
+    VertexFormatSnorm8
+    VertexFormatSnorm8x2
+    VertexFormatSnorm8x4
+    VertexFormatUint16
+    VertexFormatUint16x2
+    VertexFormatUint16x4
+    VertexFormatSint16
+    VertexFormatSint16x2
+    VertexFormatSint16x4
+    VertexFormatUnorm16
+    VertexFormatUnorm16x2
+    VertexFormatUnorm16x4
+    VertexFormatSnorm16
+    VertexFormatSnorm16x2
+    VertexFormatSnorm16x4
+    VertexFormatFloat16
+    VertexFormatFloat16x2
+    VertexFormatFloat16x4
+    VertexFormatFloat32
+    VertexFormatFloat32x2
+    VertexFormatFloat32x3
+    VertexFormatFloat32x4
+    VertexFormatUint32
+    VertexFormatUint32x2
+    VertexFormatUint32x3
+    VertexFormatUint32x4
+    VertexFormatSint32
+    VertexFormatSint32x2
+    VertexFormatSint32x3
+    VertexFormatSint32x4
+    VertexFormatUnorm1010102
+    VertexFormatUnorm8x4Bgra
+    VertexFormatSnorm1010102
+  alias VertexState
+    VertexState
+  type VertexStepMode
+    VertexStepModeVertex
+    VertexStepModeInstance
+  value bindGroupDescriptor : BindGroupLayout, List BindGroupEntry → BindGroupDescriptor
+  value bindGroupEntry : U32, BindingResource → BindGroupEntry
+  value bindGroupLayoutDescriptor : List BindGroupLayoutEntry → BindGroupLayoutDescriptor
+  value bindGroupLayoutEntry : U32, ShaderStages → BindGroupLayoutEntry
+  value blendComponent : ⊤ → BlendComponent
+  value blendState : BlendComponent, BlendComponent → BlendState
+  value bufferBinding : Buffer → BufferBinding
+  value bufferBindingLayout : ⊤ → BufferBindingLayout
+  value bufferDescriptor : Size64, BufferUsages → BufferDescriptor
+  value canvasConfiguration : Device, TextureFormat → CanvasConfiguration
+  value canvasToneMapping : ⊤ → CanvasToneMapping
+  value colorDict : FiniteF64, FiniteF64, FiniteF64, FiniteF64 → ColorDict
+  value colorTargetState : TextureFormat → ColorTargetState
+  value commandBufferDescriptor : ⊤ → CommandBufferDescriptor
+  value commandEncoderDescriptor : ⊤ → CommandEncoderDescriptor
+  value computePassDescriptor : ⊤ → ComputePassDescriptor
+  value computePassTimestampWrites : QuerySet → ComputePassTimestampWrites
+  value computePipelineDescriptor : PipelineLayoutMode, ProgrammableStage → ComputePipelineDescriptor
+  value copyExternalImageDestInfo : Texture → CopyExternalImageDestInfo
+  value copyExternalImageSourceInfo : Input → CopyExternalImageSourceInfo
+  value depthStencilState : TextureFormat → DepthStencilState
+  value deviceDescriptor : ⊤ → DeviceDescriptor
+  value extent3DDict : U32 → Extent3DDict
+  value externalTextureBindingLayout : ⊤ → ExternalTextureBindingLayout
+  value externalTextureDescriptor : ExternalTextureSource → ExternalTextureDescriptor
+  value fragmentState : Shader, List (Maybe ColorTargetState) → FragmentState
+  value multisampleState : ⊤ → MultisampleState
+  value objectDescriptorBase : ⊤ → ObjectDescriptorBase
+  value origin2DDict : ⊤ → Origin2DDict
+  value origin3DDict : ⊤ → Origin3DDict
+  value pipelineDescriptorBase : PipelineLayoutMode → PipelineDescriptorBase
+  value pipelineErrorInit : PipelineErrorReason → PipelineErrorInit
+  value pipelineLayoutDescriptor : List (Maybe BindGroupLayout) → PipelineLayoutDescriptor
+  value primitiveState : ⊤ → PrimitiveState
+  value programmableStage : Shader → ProgrammableStage
+  value querySetDescriptor : QueryType, U32 → QuerySetDescriptor
+  value queueDescriptor : ⊤ → QueueDescriptor
+  value renderBundleDescriptor : ⊤ → RenderBundleDescriptor
+  value renderBundleEncoderDescriptor : List (Maybe TextureFormat) → RenderBundleEncoderDescriptor
+  value renderPassColorAttachment : TextureOrView, LoadOp, StoreOp → RenderPassColorAttachment
+  value renderPassDepthStencilAttachment : TextureOrView → RenderPassDepthStencilAttachment
+  value renderPassDescriptor : List (Maybe RenderPassColorAttachment) → RenderPassDescriptor
+  value renderPassLayout : List (Maybe TextureFormat) → RenderPassLayout
+  value renderPassTimestampWrites : QuerySet → RenderPassTimestampWrites
+  value renderPipelineDescriptor : PipelineLayoutMode, VertexState → RenderPipelineDescriptor
+  value requestAdapterOptions : ⊤ → RequestAdapterOptions
+  value samplerBindingLayout : ⊤ → SamplerBindingLayout
+  value samplerDescriptor : ⊤ → SamplerDescriptor
+  value shaderModuleCompilationHint : String → ShaderModuleCompilationHint
+  value shaderModuleDescriptor : String → ShaderModuleDescriptor
+  value stencilFaceState : ⊤ → StencilFaceState
+  value storageTextureBindingLayout : TextureFormat → StorageTextureBindingLayout
+  value texelCopyBufferInfo : Buffer → TexelCopyBufferInfo
+  value texelCopyBufferLayout : ⊤ → TexelCopyBufferLayout
+  value texelCopyTextureInfo : Texture → TexelCopyTextureInfo
+  value textureBindingLayout : ⊤ → TextureBindingLayout
+  value textureDescriptor : Extent3D, TextureFormat, TextureUsages → TextureDescriptor
+  value textureViewDescriptor : ⊤ → TextureViewDescriptor
+  value uncapturedErrorEventInit : GpuError → UncapturedErrorEventInit
+  value vertexAttribute : VertexFormat, Size64, U32 → VertexAttribute
+  value vertexBufferLayout : Size64, List VertexAttribute → VertexBufferLayout
+  value vertexState : Shader → VertexState
 module Hosted
   type Job a
   type Key

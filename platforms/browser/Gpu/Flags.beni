@@ -1,0 +1,261 @@
+--! Distinct typed bit domains for every pinned WebGPU flags namespace.
+
+import Gpu.Scalar exposing (U32)
+import Js
+import List
+
+
+pub type Error
+    = UnknownBits String Int
+
+
+pub opaque type BufferUsages
+    = BufferUsages Int
+
+
+pub type BufferUsageBit
+    = BufferUsageMapRead
+    | BufferUsageMapWrite
+    | BufferUsageCopySrc
+    | BufferUsageCopyDst
+    | BufferUsageIndex
+    | BufferUsageVertex
+    | BufferUsageUniform
+    | BufferUsageStorage
+    | BufferUsageIndirect
+    | BufferUsageQueryResolve
+
+
+pub bufferUsage : List BufferUsageBit → BufferUsages
+bufferUsage bits =
+    BufferUsages (List.foldl bits 0 λpart total → Js.bitOr total (bufferUsageBit part))
+
+
+bufferUsageBit : BufferUsageBit → Int
+bufferUsageBit part =
+    case part of
+        BufferUsageMapRead →
+            1
+
+        BufferUsageMapWrite →
+            2
+
+        BufferUsageCopySrc →
+            4
+
+        BufferUsageCopyDst →
+            8
+
+        BufferUsageIndex →
+            16
+
+        BufferUsageVertex →
+            32
+
+        BufferUsageUniform →
+            64
+
+        BufferUsageStorage →
+            128
+
+        BufferUsageIndirect →
+            256
+
+        BufferUsageQueryResolve →
+            512
+
+
+pub bufferUsageValue : BufferUsages → Int
+bufferUsageValue (BufferUsages bits) = bits
+
+
+pub bufferUsageFromBits : U32 → Result Error BufferUsages
+bufferUsageFromBits value =
+    bits = Gpu.Scalar.u32Value value
+
+    if bits ≤ 1023 && Js.bitAnd bits 1023 == bits then
+        Ok (BufferUsages bits)
+    else
+        Err (UnknownBits "BufferUsage" bits)
+
+
+pub opaque type MapModes
+    = MapModes Int
+
+
+pub type MapModeBit
+    = MapModeRead
+    | MapModeWrite
+
+
+pub mapMode : List MapModeBit → MapModes
+mapMode bits = MapModes (List.foldl bits 0 λpart total → Js.bitOr total (mapModeBit part))
+
+
+mapModeBit : MapModeBit → Int
+mapModeBit part =
+    case part of
+        MapModeRead →
+            1
+
+        MapModeWrite →
+            2
+
+
+pub mapModeValue : MapModes → Int
+mapModeValue (MapModes bits) = bits
+
+
+pub mapModeFromBits : U32 → Result Error MapModes
+mapModeFromBits value =
+    bits = Gpu.Scalar.u32Value value
+
+    if bits ≤ 3 && Js.bitAnd bits 3 == bits then
+        Ok (MapModes bits)
+    else
+        Err (UnknownBits "MapMode" bits)
+
+
+pub opaque type TextureUsages
+    = TextureUsages Int
+
+
+pub type TextureUsageBit
+    = TextureUsageCopySrc
+    | TextureUsageCopyDst
+    | TextureUsageTextureBinding
+    | TextureUsageStorageBinding
+    | TextureUsageRenderAttachment
+    | TextureUsageTransientAttachment
+
+
+pub textureUsage : List TextureUsageBit → TextureUsages
+textureUsage bits =
+    TextureUsages (List.foldl bits 0 λpart total → Js.bitOr total (textureUsageBit part))
+
+
+textureUsageBit : TextureUsageBit → Int
+textureUsageBit part =
+    case part of
+        TextureUsageCopySrc →
+            1
+
+        TextureUsageCopyDst →
+            2
+
+        TextureUsageTextureBinding →
+            4
+
+        TextureUsageStorageBinding →
+            8
+
+        TextureUsageRenderAttachment →
+            16
+
+        TextureUsageTransientAttachment →
+            32
+
+
+pub textureUsageValue : TextureUsages → Int
+textureUsageValue (TextureUsages bits) = bits
+
+
+pub textureUsageFromBits : U32 → Result Error TextureUsages
+textureUsageFromBits value =
+    bits = Gpu.Scalar.u32Value value
+
+    if bits ≤ 63 && Js.bitAnd bits 63 == bits then
+        Ok (TextureUsages bits)
+    else
+        Err (UnknownBits "TextureUsage" bits)
+
+
+pub opaque type ShaderStages
+    = ShaderStages Int
+
+
+pub type ShaderStageBit
+    = ShaderStageVertex
+    | ShaderStageFragment
+    | ShaderStageCompute
+
+
+pub shaderStage : List ShaderStageBit → ShaderStages
+shaderStage bits =
+    ShaderStages (List.foldl bits 0 λpart total → Js.bitOr total (shaderStageBit part))
+
+
+shaderStageBit : ShaderStageBit → Int
+shaderStageBit part =
+    case part of
+        ShaderStageVertex →
+            1
+
+        ShaderStageFragment →
+            2
+
+        ShaderStageCompute →
+            4
+
+
+pub shaderStageValue : ShaderStages → Int
+shaderStageValue (ShaderStages bits) = bits
+
+
+pub shaderStageFromBits : U32 → Result Error ShaderStages
+shaderStageFromBits value =
+    bits = Gpu.Scalar.u32Value value
+
+    if bits ≤ 7 && Js.bitAnd bits 7 == bits then
+        Ok (ShaderStages bits)
+    else
+        Err (UnknownBits "ShaderStage" bits)
+
+
+pub opaque type ColorWrites
+    = ColorWrites Int
+
+
+pub type ColorWriteBit
+    = ColorWriteRed
+    | ColorWriteGreen
+    | ColorWriteBlue
+    | ColorWriteAlpha
+    | ColorWriteAll
+
+
+pub colorWrite : List ColorWriteBit → ColorWrites
+colorWrite bits = ColorWrites (List.foldl bits 0 λpart total → Js.bitOr total (colorWriteBit part))
+
+
+colorWriteBit : ColorWriteBit → Int
+colorWriteBit part =
+    case part of
+        ColorWriteRed →
+            1
+
+        ColorWriteGreen →
+            2
+
+        ColorWriteBlue →
+            4
+
+        ColorWriteAlpha →
+            8
+
+        ColorWriteAll →
+            15
+
+
+pub colorWriteValue : ColorWrites → Int
+colorWriteValue (ColorWrites bits) = bits
+
+
+pub colorWriteFromBits : U32 → Result Error ColorWrites
+colorWriteFromBits value =
+    bits = Gpu.Scalar.u32Value value
+
+    if bits ≤ 15 && Js.bitAnd bits 15 == bits then
+        Ok (ColorWrites bits)
+    else
+        Err (UnknownBits "ColorWrite" bits)

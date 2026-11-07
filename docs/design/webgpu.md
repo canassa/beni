@@ -1,9 +1,11 @@
 # WebGPU for beni
 
-**Status: proposal for owner review, 2026-10-29; not adopted or implemented.**
+**Status: adopted for implementation, 2026-10-30; implementation in progress.**
 [Issue #1257](https://github.com/canassa/beni/issues/1257) requests research and
-API design only. This document proposes the contract; existing browser APIs
-and compiler behavior do not change. Evidence: [research](research/webgpu-api-research.md),
+API design. The owner subsequently authorized implementation in
+[issue #1277](https://github.com/canassa/beni/issues/1277). This document owns
+the implementation contract; individual capabilities are usable only when
+recorded as implemented and tested. Evidence: [research](research/webgpu-api-research.md),
 [failure ledger](research/webgpu-errors.md), [source pins](research/webgpu/sources.json)
 and [complete coverage inventory](research/webgpu/coverage.md).
 
@@ -86,7 +88,12 @@ metadata; synthetic values cannot fabricate GPU failure dispatch.
 For each member the translation is deterministic:
 
 1. The receiver is the first argument; remaining arguments stay in native order.
-   Functions use saturated n-ary beni types and subject-first dot-call support.
+   Functions use saturated n-ary beni types. Native handles are nominal types
+   declared by `Gpu.Handle`; operation modules expose aliases and qualified
+   functions such as `Gpu.Buffer.map`. A transparent alias does not change
+   static-dispatch ownership. Descriptors in `Gpu.Types` import the handle
+   declarations, while operation modules import both: this dependency direction
+   avoids descriptor/operation import cycles (issue #1281).
 2. Every descriptor has a typed `Gpu.Types` record with all inherited fields.
    Required fields remain required. Optional fields use `Option a = Default |
    Value a`. `Default` means **omit the property**, preserving the native
@@ -106,12 +113,20 @@ For each member the translation is deterministic:
 5. Web IDL sequences become lists or typed binary views as appropriate.
    Nullable slots stay nullable: color targets/attachments, vertex layouts,
    unbound vertex buffers and bind groups must all be expressible. Records of
-   override constants preserve names/IDs and numeric values. A union becomes
+   override constants preserve names/IDs and numeric values. Record inputs
+   represented as entry lists use native record semantics: the last entry for
+   a key wins, including an explicit `undefined` limit. Preflight inspects that
+   same converted record, and keys such as `__proto__` are ordinary own keys.
+   A union becomes
    a typed sum; no union arm is dropped for convenience.
 6. `undefined` becomes `⊤`, promises become direct functions with an inferred
    suspend effect, and expected failures become `Result Error a`. A native
    non-promise operation can still suspend while checking its GPU scopes.
-   Native immutable attributes become total snapshot getters; mutable state
+   Native immutable attributes become checked snapshot getters: if a member of
+   the pinned baseline is absent on an older host, return
+   `UnsupportedCapability (MissingNativeMember member)` instead of casting
+   `undefined` into a typed record. A present value outside its specified
+   returned domain is a defect. Mutable state
    getters read authoritative shared wrapper/host state without caching lies.
 7. Shared mixin methods are available on each including encoder/pipeline type.
    The `setBindGroup` slice overload gets the distinct beni name
@@ -167,7 +182,10 @@ overflow; range checks use subtraction or exact arithmetic, not rounded sums.
 
 The supporting `Binary` module offers ArrayBuffer, DataView and every standard
 typed-array view admitted by BufferSource, including shared backing where
-allowed. All operations have bounds/detachment/resizing checks. Byte-specific
+allowed. All operations have bounds/detachment/resizing checks. GPU source conversion
+rejects resizable ArrayBuffers and growable SharedArrayBuffers even when the
+current view is in bounds: the native BufferSource conversion has no
+`AllowResizable` annotation. Source state is checked again at native use. Byte-specific
 helpers eliminate element/byte ambiguity; faithful source-view overloads keep
 native element offsets. Shared memory obeys host isolation and cannot be made
 safe by pretending it is immutable. Provide explicit atomic/shared access
@@ -230,13 +248,13 @@ Gpu.preferredCanvasFormat : ⊤ → Result InitError TextureFormat
 Gpu.wgslLanguageFeatures : ⊤ → Result InitError WgslFeatures
 
 Gpu.Adapter.features : Adapter → Features
-Gpu.Adapter.limits : Adapter → Limits
-Gpu.Adapter.info : Adapter → AdapterInfo
+Gpu.Adapter.limits : Adapter → Result Error Limits
+Gpu.Adapter.info : Adapter → Result Error AdapterInfo
 Gpu.Adapter.requestDevice : Adapter, DeviceDescriptor → Result InitError Device
 
 Gpu.Device.features : Device → Features
-Gpu.Device.limits : Device → Limits
-Gpu.Device.adapterInfo : Device → AdapterInfo
+Gpu.Device.limits : Device → Result Error Limits
+Gpu.Device.adapterInfo : Device → Result Error AdapterInfo
 Gpu.Device.queue : Device → Queue
 Gpu.Device.destroy : Device → ⊤
 
@@ -525,7 +543,14 @@ Gpu.Diagnostics.popErrorScope : DiagnosticSession → Result DiagnosticError (Ma
 The session acquires an exclusive, cancellation-safe per-device lease **before**
 pushing scopes. Its callback may suspend; only session-associated operations
 may access that device until the lease ends. Other operations wait before
-entering their native stack section. A sync frame callback never waits for
+entering their native stack section. Ordinary same-device calls from the lease
+owner or any structured descendant return `DiagnosticAuthorityRequired` before
+waiting; waiting there could deadlock the callback that must release the lease.
+`Task.Identity` and ancestry checks distinguish these from unrelated fibers.
+Callers must use the explicit session forwarding surface inside that ownership
+tree. Same-owner nested diagnostics reuse the lease and balance only their own
+user scopes; descendant attempts to open a competing diagnostic session are
+rejected as `DiagnosticAuthorityRequired`. A sync frame callback never waits for
 this lease: `Frame.submit` acquires it before the frame starts. Nested diagnostic
 sessions reuse the owner's lease; cross-device lock ordering/cycles must produce
 a typed session-state error or be avoided by explicit acquisition ordering.
@@ -564,6 +589,7 @@ scope/bracket helpers release owned buffers, textures and query sets. Objects
 without native destroy methods drop references when no longer needed.
 
 ```text
+Gpu.Buffer.currentMapping : Buffer → Result InputError (Maybe Mapping)
 Gpu.Buffer.map : Buffer, MapRequest → Result Error Mapping
 Gpu.Buffer.getMappedRange : Mapping, Range → Result Error MappedRange
 Gpu.Buffer.withMapped :
@@ -583,7 +609,12 @@ Mapped ranges access native mapped storage directly through typed reads/writes;
 `readBytes` explicitly copies into persistent bytes. Include all numeric views,
 bulk copies and exact bit access, not only the representative methods above.
 Expose read/write modes, size and mapState. `mappedAtCreation` produces a mapping
-handle without pretending `MAP_WRITE` was required. Ranges track overlap,
+handle through `currentMapping` without pretending `MAP_WRITE` was required.
+The accessor is available in Batch and Diagnostics too; it returns the same
+active generation after either mapped creation or a successful `map`. Unmapped
+buffers return `Nothing`; destroyed/rejected/pending state returns its precise
+input error. Repeated access cannot mint independent overlapping generations.
+Ranges track overlap,
 alignment, mapping generation and read/write permission. Every access validates
 the generation, including one saved outside `withMapped`. `unmap`/destroy
 detaches all native ranges and invalidates every alias before any subsequent use.
@@ -615,7 +646,8 @@ Gpu.Surface.canvas : Surface → CanvasSource
 
 Gpu.Frame.submit :
     Surface, String, sync (Frame → Result InputError a)
-    → Result Error { value : a, submission : Submission }
+    → Result Error { value : a, submissions : List Submission }
+Gpu.Frame.batch : Frame → Result InputError Batch
 Gpu.Frame.getCurrentTexture : Frame → Result InputError Texture
 Gpu.Frame.importExternalTexture : Frame, ExternalTextureDescriptor → Result InputError ExternalTexture
 Gpu.Frame.encode : Frame, CommandEncoderDescriptor, sync (CommandEncoder → Result InputError a)
@@ -638,12 +670,22 @@ the runtime must provide a non-yielding host-turn section. The implementation
 must prove this in a real browser. If that primitive is missing, add it rather
 than promise frame safety based on microtask timing assumptions.
 
+`Frame.batch` exposes the frame's active synchronous batch authority, including
+resource creation and bind-group construction from imported external textures.
+It becomes invalid when the callback returns; aliases cannot extend the turn.
+
 Explicit submission inside the frame supports multiple command buffers and
 submit groups, intervening writes, external textures and query work. `submit`
 does not silently issue a second submission. An empty frame is legal; nothing
-is fabricated. The outer success confirms validation observations, not display
+is fabricated: its `submissions` list is empty. Each actual submit creates one
+receipt, in issue order, so multiple groups return multiple receipts. The outer
+success confirms validation observations, not display
 completion. `Submission` identifies the queue submission boundary and supports
 waiting for work done when required, without an unconditional per-frame stall.
+Immediately after each native submit, the wrapper calls `onSubmittedWorkDone`
+in the same non-suspending section and observes its promise. Waiting on that
+receipt later observes that captured boundary, not later unrelated submissions.
+The promise is drained even if no caller waits or the waiter is cancelled.
 
 All standard canvas formats/usages/viewFormats/colorSpace/toneMapping/alphaMode
 are exposed, with `getConfiguration` readback for specified support detection.
@@ -711,7 +753,9 @@ The section number is retained for existing references.
 
 ## 10. Verification and delivery plan
 
-No implementation lands before the owner accepts the contract and resolves §11.
+The owner accepted implementation on 2026-10-30. Review findings #1266–#1271
+are incorporated above; their implementations and adversarial tests remain
+required before the affected coverage can be marked complete.
 Implementation is staged for review, but completeness is claimed only when
 the entire inventory and supporting adapters are delivered. Each implementation
 slice gets its own issue, checked public API docs, and skill API regeneration
@@ -758,7 +802,7 @@ it may not disable error handling in release. Existing projects that do not
 import Gpu must ship zero GPU runtime, and compute-only projects must not ship
 canvas/media helpers. No performance claim is made before those measurements.
 
-## 11. Proposed decisions for owner review
+## 11. Adoption and remaining implementation evidence
 
 1. Adopt full pinned standard coverage, with the explicit observability limit
    in §1. Literal capture of undetectable WGSL faults cannot be guaranteed by
@@ -778,6 +822,8 @@ canvas/media helpers. No performance claim is made before those measurements.
    freeze. The lease-based explicit scope adapter is more complex than only
    automatic scopes but preserves native diagnostic functionality safely.
 
-These are recommendations, not recorded owner decisions. This research PR
-closes the research task only; it neither authorizes implementation nor claims
-that any of the proposed WebGPU API is already usable.
+The owner merged the research proposal in `cea5d5734` and explicitly requested
+full implementation on 2026-10-30 (#1277), including source prerequisites
+(#1278). Text assets (#1275) are independent of runtime WGSL source support.
+Built-in offline WGSL validation/minification remains follow-up #1276. Adoption
+is authorization to implement the contract, not a claim of shipped coverage.

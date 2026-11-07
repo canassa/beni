@@ -1,0 +1,36 @@
+--! Direct checked WebGPU entry points. WGSL is supplied as ordinary String
+--! source, including text assets. GPU methods live in qualified Gpu modules.
+
+import Gpu.Engine as Engine
+import Gpu.Error as Error
+import Gpu.Handle as Handle
+import Gpu.Types as Types
+
+
+pub type Availability
+    = Available
+    | InsecureContext
+    | ApiUnavailable
+
+
+pub available : ⊤ → Availability
+available ⊤ =
+    case Engine.availability ⊤ of
+        Ok _ →
+            Available
+        Err Engine.Insecure →
+            InsecureContext
+        Err Engine.Missing →
+            ApiUnavailable
+
+
+pub requestAdapter : Types.RequestAdapterOptions → Result Error.InitError Handle.Adapter
+requestAdapter options = Engine.requestAdapter options
+
+
+pub preferredCanvasFormat : ⊤ → Result Error.InitError Types.TextureFormat
+preferredCanvasFormat ⊤ = Engine.preferredCanvasFormat ⊤
+
+
+pub wgslLanguageFeatures : ⊤ → Result Error.InitError (List String)
+wgslLanguageFeatures ⊤ = Engine.wgslLanguageFeatures ⊤

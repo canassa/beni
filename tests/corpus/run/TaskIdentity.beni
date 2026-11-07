@@ -1,0 +1,66 @@
+-- Stable, opaque ownership across yields, structured children and cleanup.
+import Io
+import Node exposing (Program)
+import Ref
+import Task
+
+
+outsideOwner : Task.Identity
+outsideOwner = Task.identity ⊤
+
+
+outsideStable : Bool
+outsideStable = Task.isWithin outsideOwner
+
+
+main : Program
+main = Io.run λ⊤ →
+    _ = Debug.log "outside stable" outsideStable
+    _ = Debug.log "root excludes outside" (Task.isWithin outsideOwner)
+    owner = Task.identity ⊤
+    _ = Debug.log "same owner" (Task.isWithin owner)
+    Task.yieldNow ⊤
+    _ = Debug.log "after yield" (Task.isWithin owner)
+    ownScheduler = Task.scheduler λ⊤ → ⊤
+    Task.withScheduler ownScheduler λ⊤ →
+        _ = Debug.log "scheduler retains owner" (Task.isWithin owner)
+        ⊤
+    independent = Task.spawnDetached λ⊤ →
+        _ = Debug.log "independent root" (Task.isWithin owner)
+        ⊤
+    Task.join independent
+    sibling = Ref.make Nothing
+    first = Task.spawn λ⊤ → Ref.set sibling (Just (Task.identity ⊤))
+    Task.join first
+    Task.scope λscope →
+        scopedChild = Task.spawnIn scope λ⊤ →
+            _ = Debug.log "structured child" (Task.isWithin owner)
+            case Ref.get sibling of
+                Just other →
+                    _ = Debug.log "separate sibling" (Task.isWithin other)
+                    ⊤
+                Nothing →
+                    _ = Debug.log "missing sibling" True
+                    ⊤
+        Task.join scopedChild
+    child = Task.spawn λ⊤ →
+        Task.bracket
+            (λ⊤ → Task.identity ⊤)
+            (λleaseOwner _ →
+                _ = Debug.log "cleanup retains owner" (Task.isWithin leaseOwner)
+                _ = Debug.log "cleanup retains ancestry" (Task.isWithin owner)
+                ⊤
+            )
+            λ_ → Io.sleep 100000
+    Task.yieldNow ⊤
+    Task.cancel child
+    _ =
+        Debug.log
+            "parent excludes child"
+            (case Ref.get sibling of
+                Just other →
+                    Task.isWithin other
+                Nothing →
+                    True
+            )
+    Node.done

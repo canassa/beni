@@ -47,6 +47,10 @@
 //
 // The steps file has one step per line; `#` starts a comment line:
 //
+//   await-load <selector> "<text>" before load: wait up to 30 real seconds
+//                               for exact text before recording the load
+//   await-text <selector> "<text>" wait for exact text after a native async
+//                               operation; errors and timeout fail the step
 //   click <selector> [ctrl|shift|alt|meta]… [button:<n>]
 //                               a bubbling, cancelable `click` MouseEvent with
 //                               those modifiers held and that `button`
@@ -1285,6 +1289,20 @@ function step(s) {
     target.dispatchEvent(trust(new MouseEvent("click", { ...init, button: 0, detail: 1 })));
     return null;
   }
+  if (s.command === "await-text" || s.command === "await-load") {
+    const record = globalThis.__beniHarness;
+    return new Promise((done) => {
+      let remaining = 6000;
+      const poll = () => {
+        if (record.errors.length !== 0) return done("the page threw while waiting for native completion");
+        const element = document.querySelector(s.selector);
+        if (element?.textContent === s.text) return done(null);
+        if (--remaining === 0) return done(`timed out waiting for ${s.selector} text ${JSON.stringify(s.text)}; got ${JSON.stringify(element?.textContent)}`);
+        record.clock.real(poll, 5);
+      };
+      poll();
+    });
+  }
   const target = document.querySelector(s.selector);
   if (target === null) return `no element matches \`${s.selector}\``;
   const init = { bubbles: true, cancelable: true, composed: true };
@@ -1847,7 +1865,7 @@ if (pages.length === 0) pages.push({ entry: positional[0], report: null, fiber: 
 const stepsPath = pages[0].report === null ? positional[1] : options.steps;
 
 // The steps that set the page up, before the program loads.
-const setupCommands = ["file", "url", "store", "element", "selection", "fresh", "inject", "retag", "remove", "retext"];
+const setupCommands = ["file", "url", "store", "element", "selection", "fresh", "inject", "retag", "remove", "retext", "await-load"];
 // The steps an `early` step may be: what a user does on the page before its
 // program loads.
 const earlyCommands = ["click", "input", "set", "event"];
@@ -1933,6 +1951,11 @@ function parseStep(written, where) {
         s.text = undefined;
       }
       if (typeof s.text !== "string") usage(`${where}: \`inject\` takes a selector and its HTML as a JSON string`);
+    } else if (command === "await-load" || command === "await-text") {
+      if (command === "await-load" && steps.some((prior) => !setupCommands.includes(prior.command))) usage(`${where}: await-load must precede load`);
+      const parsed = JSON.parse(argument ?? "null");
+      if (typeof parsed !== "string") usage(`${where}: ${command} requires a selector and a JSON string`);
+      s.text = parsed;
     } else if (command === "retext") {
       try {
         s.text = JSON.parse(argument ?? "");
@@ -2475,8 +2498,13 @@ async function runPage(entry, fiber, html = false) {
   // `fresh`: the page the build prerendered is to be mounted fresh, not
   // taken over (`takenOver`).
   let fresh = false;
+  const loadWaits = [];
   for (const s of setup) {
     transcript.push(`-- ${s.line}`);
+    if (s.command === "await-load") {
+      loadWaits.push(s);
+      continue;
+    }
     if (s.command === "fresh") {
       fresh = true;
       continue;
@@ -2497,7 +2525,15 @@ async function runPage(entry, fiber, html = false) {
   const loaded = async () => {
     const why = await page.run(load, { url: entryUrl, runtime });
     if (why !== null && why !== undefined) return why;
-    return html && !loadThrows ? page.run(takenOver, fresh) : null;
+    if (html && !loadThrows) {
+      const why = await page.run(takenOver, fresh);
+      if (why !== null) return why;
+    }
+    for (const wait of loadWaits) {
+      const why = await page.run(step, wait);
+      if (why !== null) return why;
+    }
+    return null;
   };
 
   if (setupFault !== null) await finish(1, setupFault);

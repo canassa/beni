@@ -1,0 +1,26 @@
+--! Checked native adapter operations.
+
+import Gpu.Engine as Engine
+import Gpu.Error as Error
+import Gpu.Handle as Handle
+import Gpu.Types as Types
+
+
+pub type alias Adapter =
+    Handle.Adapter
+
+
+pub features : Handle.Adapter → List String
+features adapter = Engine.adapterFeatures adapter
+
+
+pub info : Handle.Adapter → Result Error.Error Types.AdapterInfo
+info adapter = Engine.adapterInfo adapter
+
+
+pub limits : Handle.Adapter → Result Error.Error Types.SupportedLimits
+limits adapter = Engine.adapterLimits adapter
+
+
+pub requestDevice : Handle.Adapter, Types.DeviceDescriptor → Result Error.InitError Handle.Device
+requestDevice adapter descriptor = Engine.requestDevice adapter descriptor

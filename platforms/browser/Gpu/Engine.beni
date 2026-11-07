@@ -1,0 +1,2908 @@
+--! Checked WebGPU host boundary. No raw conversion/adoption function is public.
+--! Promise reactions only publish data; decoding runs in an owning supervisor
+--! fiber so an unknown rejection still defects after its caller cancels.
+
+import Binary
+import Browser.Source as Source
+import Gpu.Error as Error
+import Gpu.Flags as Flags
+import Gpu.Handle as Handle
+import Gpu.Scalar as Scalar
+import Gpu.Types as Types
+import Js
+import List
+import Task
+
+
+type alias V =
+    Js.Value
+
+
+type HostOutcome
+    = Resolved V
+    | Rejected V
+
+
+type alias Ticket =
+    outcome : Js.Ref (Maybe HostOutcome)
+    waiter : Js.Ref (Maybe (Task.Resume HostOutcome))
+
+
+adapters : V
+adapters = Js.construct (Js.global "WeakMap") []
+
+
+broken : String → a
+broken detail =
+    Js.throw (Js.construct (Js.global "Error") [ Js.from ("WebGPU binding invariant: " ++ detail) ])
+
+
+unexpected : String, V → a
+unexpected operation cause =
+    Js.throw
+        (Js.construct (Js.global "Error")
+            [ Js.from ("Unexpected WebGPU failure in " ++ operation)
+            , Js.object [ ( "cause", cause ) ]
+            ]
+        )
+
+
+ticket : V → Ticket
+ticket promise =
+    observation = { outcome = Js.ref Nothing, waiter = Js.ref Nothing }
+    _ =
+        Js.call promise "then"
+            [ Js.from λvalue → completeTicket observation (Resolved value)
+            , Js.from λcause → completeTicket observation (Rejected cause)
+            ]
+    observation
+
+
+completeTicket : Ticket, HostOutcome → ⊤
+completeTicket observation outcome =
+    Js.write observation.outcome (Just outcome)
+    case Js.read observation.waiter of
+        Nothing →
+            ⊤
+        Just resume →
+            Task.resume resume outcome
+
+
+waitTicket : Ticket → HostOutcome
+waitTicket observation =
+    case Js.read observation.outcome of
+        Just outcome →
+            outcome
+        Nothing →
+            Task.callback λresume →
+                Js.write observation.waiter (Just resume)
+                λ⊤ → Js.write observation.waiter Nothing
+
+
+-- Detached only from the individual waiter, still owned by its program and
+-- scheduler. Every rejection is decoded even when a joining caller cancels.
+follow : Ticket, sync (HostOutcome → a) → Task.Fiber a
+follow observation decode = Task.spawnDetached λ⊤ → decode (waitTicket observation)
+
+
+pub type AvailabilityFailure
+    = Insecure
+    | Missing
+
+
+pub availability : ⊤ → Result AvailabilityFailure ⊤
+availability ⊤ =
+    if Js.same (Js.global "isSecureContext") (Js.from False) then
+        Err Insecure
+    else
+        navigator = Js.global "navigator"
+        if Js.isNullish navigator || Js.isNullish (Js.get navigator "gpu") then
+            Err Missing
+        else
+            Ok ⊤
+
+
+initializationAvailability : AvailabilityFailure → Error.InitError
+initializationAvailability problem =
+    case problem of
+        Insecure →
+            Error.InsecureContext
+        Missing →
+            Error.ApiUnavailable
+
+
+pub requestAdapter : Types.RequestAdapterOptions → Result Error.InitError Handle.Adapter
+requestAdapter options =
+    case availability ⊤ of
+        Err problem →
+            Err (initializationAvailability problem)
+        Ok _ →
+            observation =
+                ticket
+                    (Js.call (Js.get (Js.global "navigator") "gpu") "requestAdapter"
+                        [ encodeRequestAdapterOptions options ]
+                    )
+            supervisor = follow observation λoutcome →
+                case outcome of
+                    Rejected cause →
+                        unexpected "GPU.requestAdapter" cause
+                    Resolved value →
+                        if Js.isNull value then
+                            Err Error.AdapterUnavailable
+                        else if Js.instanceOf value (Js.global "GPUAdapter") then
+                            _ =
+                                Js.call adapters "set"
+                                    [ value, Js.from { consumed = False, reserved = False } ]
+                            Ok (Js.to value)
+                        else
+                            broken "GPU.requestAdapter returned a non-adapter"
+            Task.join supervisor
+
+
+pub preferredCanvasFormat : ⊤ → Result Error.InitError Types.TextureFormat
+preferredCanvasFormat ⊤ =
+    case availability ⊤ of
+        Err problem →
+            Err (initializationAvailability problem)
+        Ok _ →
+            Ok
+                (decodeTextureFormat
+                    (Js.call (Js.get (Js.global "navigator") "gpu") "getPreferredCanvasFormat" [])
+                )
+
+
+pub wgslLanguageFeatures : ⊤ → Result Error.InitError (List String)
+wgslLanguageFeatures ⊤ =
+    case availability ⊤ of
+        Err problem →
+            Err (initializationAvailability problem)
+        Ok _ →
+            Ok (stringSet (Js.get (Js.get (Js.global "navigator") "gpu") "wgslLanguageFeatures"))
+
+
+stringSet : V → List String
+stringSet native =
+    values = Js.ref []
+    Js.each native λvalue →
+        if Js.typeIs value "string" then
+            Js.write values [ …Js.read values, Js.to value ]
+        else
+            broken "feature set contains a non-string"
+    Js.read values
+
+
+nullable : sync (a → V), Maybe a → V
+nullable encode value =
+    case value of
+        Nothing →
+            Js.null
+        Just item →
+            encode item
+
+
+putOption : V, String, Types.Option a, sync (a → V) → ⊤
+putOption object field value encode =
+    case value of
+        Types.Default →
+            ⊤
+        Types.Value item →
+            Js.set object field (encode item)
+
+
+encodeLimits : List (String × Types.Option Scalar.Size64) → V
+encodeLimits entries =
+    object = Js.call (Js.global "Object") "create" [ Js.null ]
+    List.foldl entries ⊤ λ( key, value ) _ →
+        case value of
+            Types.Default →
+                Js.set object key Js.undefined
+            Types.Value n →
+                Js.set object key (Js.from (Scalar.size64Value n))
+    object
+
+
+encodeConstants : List (String × Scalar.FiniteF64) → V
+encodeConstants entries =
+    object = Js.call (Js.global "Object") "create" [ Js.null ]
+    List.foldl entries ⊤ λ( key, value ) _ → Js.set object key (Js.from (Scalar.f64Value value))
+    object
+
+
+encodeColorSpace : Types.ColorSpace → V
+encodeColorSpace value =
+    case value of
+        Types.Srgb →
+            Js.from "srgb"
+        Types.DisplayP3 →
+            Js.from "display-p3"
+
+
+encodeExternalTextureSource : Types.ExternalTextureSource → V
+encodeExternalTextureSource value =
+    case value of
+        Types.ExternalVideo source →
+            Js.from source
+        Types.ExternalFrame source →
+            Js.from source
+
+
+encodeImageSource : Source.Input → V
+encodeImageSource value =
+    case value of
+        Source.FromImage source →
+            Js.from source
+        Source.FromBitmap source →
+            Js.from source
+        Source.FromPixels source →
+            Js.from source
+        Source.FromVideo source →
+            Js.from source
+        Source.FromFrame source →
+            Js.from source
+        Source.FromCanvas source →
+            Js.from source
+        Source.FromOffscreen source →
+            Js.from source
+
+
+encodePipelineLayoutMode : Types.PipelineLayoutMode → V
+encodePipelineLayoutMode value =
+    case value of
+        Types.ExplicitLayout layout →
+            Js.from layout
+        Types.AutomaticLayout mode →
+            encodeAutoLayoutMode mode
+
+
+encodeTextureOrView : Types.TextureOrView → V
+encodeTextureOrView value =
+    case value of
+        Types.WholeTexture texture →
+            Js.from texture
+        Types.TextureView view →
+            Js.from view
+
+
+encodeBindingResource : Types.BindingResource → V
+encodeBindingResource value =
+    case value of
+        Types.BindingSampler sampler →
+            Js.from sampler
+        Types.BindingTexture texture →
+            Js.from texture
+        Types.BindingView view →
+            Js.from view
+        Types.BindingBuffer buffer →
+            Js.from buffer
+        Types.BindingRange binding →
+            encodeBufferBinding binding
+        Types.BindingExternal external →
+            Js.from external
+
+
+encodeColor : Types.Color → V
+encodeColor value =
+    case value of
+        Types.ColorRecord record →
+            encodeColorDict record
+        Types.ColorSequence values →
+            nativeArray values λv → Js.from (Scalar.f64Value v)
+
+
+encodeOrigin2D : Types.Origin2D → V
+encodeOrigin2D value =
+    case value of
+        Types.Origin2DRecord record →
+            encodeOrigin2DDict record
+        Types.Origin2DSequence values →
+            nativeArray values λv → Js.from (Scalar.u32Value v)
+
+
+encodeOrigin3D : Types.Origin3D → V
+encodeOrigin3D value =
+    case value of
+        Types.Origin3DRecord record →
+            encodeOrigin3DDict record
+        Types.Origin3DSequence values →
+            nativeArray values λv → Js.from (Scalar.u32Value v)
+
+
+encodeExtent3D : Types.Extent3D → V
+encodeExtent3D value =
+    case value of
+        Types.Extent3DRecord record →
+            encodeExtent3DDict record
+        Types.Extent3DSequence values →
+            nativeArray values λv → Js.from (Scalar.u32Value v)
+
+
+encodeGpuError : Types.GpuError → V
+encodeGpuError value =
+    case value of
+        Types.ValidationError message →
+            Js.construct (Js.global "GPUValidationError") [ Js.from message ]
+        Types.OutOfMemoryError message →
+            Js.construct (Js.global "GPUOutOfMemoryError") [ Js.from message ]
+        Types.InternalError message →
+            Js.construct (Js.global "GPUInternalError") [ Js.from message ]
+
+
+-- Initialization state is shared by native identity, including callers whose
+-- request waiter was cancelled before its native promise settled.
+devices : V
+devices = Js.construct (Js.global "WeakMap") []
+
+
+nextDeviceId : Js.Ref Int
+nextDeviceId = Js.ref 0
+
+
+optionOr : Types.Option a, a → a
+optionOr value fallback =
+    case value of
+        Types.Default →
+            fallback
+        Types.Value supplied →
+            supplied
+
+
+pub adapterFeatures : Handle.Adapter → List String
+adapterFeatures adapter = stringSet (Js.get (Js.from adapter) "features")
+
+
+pub deviceFeatures : Handle.Device → List String
+deviceFeatures device = stringSet (Js.get (Js.from device) "features")
+
+
+pub adapterInfo : Handle.Adapter → Result Error.Error Types.AdapterInfo
+adapterInfo adapter = readAdapterInfo (Js.get (Js.from adapter) "info")
+
+
+pub deviceAdapterInfo : Handle.Device → Result Error.Error Types.AdapterInfo
+deviceAdapterInfo device = readAdapterInfo (Js.get (Js.from device) "adapterInfo")
+
+
+pub adapterLimits : Handle.Adapter → Result Error.Error Types.SupportedLimits
+adapterLimits adapter = readLimits (Js.get (Js.from adapter) "limits")
+
+
+pub deviceLimits : Handle.Device → Result Error.Error Types.SupportedLimits
+deviceLimits device = readLimits (Js.get (Js.from device) "limits")
+
+
+pub deviceQueue : Handle.Device → Handle.Queue
+deviceQueue device =
+    queue = Js.get (Js.from device) "queue"
+    if Js.instanceOf queue (Js.global "GPUQueue") then
+        Js.to queue
+    else
+        broken "GPUDevice.queue returned a non-queue"
+
+
+pub deviceLoss : Handle.Device → Maybe Error.DeviceLoss
+deviceLoss device = Js.to (Js.get (deviceState device) "loss")
+
+
+pub awaitDeviceLost : Handle.Device → Error.DeviceLoss
+awaitDeviceLost device =
+    state = deviceState device
+    Task.join (Js.to (Js.get state "lossObserver"))
+
+
+pub destroyDevice : Handle.Device → ⊤
+destroyDevice device =
+    state = deviceState device
+    if not (Js.to (Js.get state "destroyed")) then
+        Js.set state "destroyed" (Js.from True)
+        Js.to (Js.call (Js.from device) "destroy" [])
+
+
+deviceState : Handle.Device → V
+deviceState device =
+    state = Js.call devices "get" [ Js.from device ]
+    if Js.isUndefined state then broken "unregistered device identity" else state
+
+
+pub requestDevice : Handle.Adapter, Types.DeviceDescriptor → Result Error.InitError Handle.Device
+requestDevice adapter descriptor =
+    native = Js.from adapter
+    state = Js.call adapters "get" [ native ]
+    if Js.isUndefined state then
+        broken "unregistered adapter identity"
+    else if Js.to (Js.get state "consumed") || Js.to (Js.get state "reserved") then
+        Err Error.AdapterConsumed
+    else
+        requested = optionOr descriptor.requiredFeatures []
+        unsupported = List.filter requested λfeature →
+            not (Js.to (Js.call (Js.get native "features") "has" [ encodeFeatureName feature ]))
+        if not (List.isEmpty unsupported) then
+            Err
+                (Error.UnsupportedFeatures
+                    (List.map unsupported λfeature → Js.to (encodeFeatureName feature))
+                )
+        else
+            mismatches =
+                checkRequiredLimits (Js.get native "limits") (optionOr descriptor.requiredLimits [])
+            if not (List.isEmpty mismatches) then
+                Err (Error.UnsupportedLimits mismatches)
+            else
+                Js.set state "reserved" (Js.from True)
+                abandoned = Js.ref False
+                observation =
+                    ticket (Js.call native "requestDevice" [ encodeDeviceDescriptor descriptor ])
+                supervisor = follow observation λoutcome →
+                    Js.set state "reserved" (Js.from False)
+                    case outcome of
+                        Rejected cause →
+                            if Js.instanceOf cause (Js.global "TypeError") then
+                                Err (Error.FeatureRequestRejected (nativeMessage cause))
+                            else if domError "OperationError" cause then
+                                Err (Error.DeviceRequestRejected (nativeMessage cause))
+                            else
+                                unexpected "GPUAdapter.requestDevice" cause
+                        Resolved value →
+                            if not (Js.instanceOf value (Js.global "GPUDevice")) then
+                                broken "GPUAdapter.requestDevice returned a non-device"
+                            else
+                                Js.set state "consumed" (Js.from True)
+                                device = registerDevice value
+                                if Js.read abandoned then destroyDevice device
+                                Ok device
+                Task.bracket
+                    (λ⊤ → ⊤)
+                    (λ_ exit →
+                        case exit of
+                            Task.Cancelled →
+                                Js.write abandoned True
+                                case Task.poll supervisor of
+                                    Just (Task.Done (Ok device)) →
+                                        destroyDevice device
+                                    _ →
+                                        ⊤
+                            Task.Done _ →
+                                ⊤
+                    )
+                    λ_ →
+                        case Task.join supervisor of
+                            Err problem →
+                                Err problem
+                            Ok device →
+                                -- A resolved lost promise must get its native microtask before
+                                -- publication; Task.yieldNow alone need not leave the drain.
+                                checkpoint =
+                                    ticket
+                                        (Js.call (Js.global "Promise") "resolve" [ Js.undefined ])
+                                case waitTicket checkpoint of
+                                    Resolved _ →
+                                        ⊤
+                                    Rejected cause →
+                                        unexpected "initialization microtask checkpoint" cause
+                                case deviceLoss device of
+                                    Just loss →
+                                        destroyDevice device
+                                        Err (Error.InitializationLost loss)
+                                    Nothing →
+                                        Ok device
+
+
+nativeMessage : V → String
+nativeMessage value =
+    message = Js.get value "message"
+    if Js.typeIs message "string" then
+        Js.to message
+    else
+        broken "native error has a non-string message"
+
+
+domError : String, V → Bool
+domError expected value =
+    constructor = Js.global "DOMException"
+    Js.typeIs constructor "function"
+        && Js.instanceOf value constructor
+        && Js.same (Js.get value "name") (Js.from expected)
+
+
+registerDevice : V → Handle.Device
+registerDevice native =
+    id = Js.read nextDeviceId + 1
+    Js.write nextDeviceId id
+    state = Js.from { destroyed = False, id = id, loss = Nothing, lossObserver = Js.null }
+    _ = Js.call devices "set" [ native, state ]
+    observation = ticket (Js.get native "lost")
+    supervisor = follow observation λoutcome →
+        case outcome of
+            Rejected cause →
+                unexpected "GPUDevice.lost" cause
+            Resolved info →
+                if not (Js.instanceOf info (Js.global "GPUDeviceLostInfo")) then
+                    broken "GPUDevice.lost returned non-loss data"
+                reason = Js.get info "reason"
+                message = nativeMessage info
+                loss =
+                    if Js.same reason (Js.from "unknown") then
+                        { reason = Error.UnknownLoss, message = message }
+                    else if Js.same reason (Js.from "destroyed") then
+                        { reason = Error.Destroyed, message = message }
+                    else
+                        broken "unknown GPUDeviceLostReason"
+                Js.set state "loss" (Js.from (Just loss))
+                loss
+    Js.set state "lossObserver" (Js.from supervisor)
+    Js.to native
+
+
+checkRequiredLimits : V, List (String × Types.Option Scalar.Size64) → List Error.LimitMismatch
+checkRequiredLimits supported entries =
+    -- Inspect the same record conversion the native call receives: later
+    -- duplicate entries replace earlier ones, including explicit undefined.
+    requested = encodeLimits entries
+    mismatches = Js.ref []
+    Js.each (Js.call (Js.global "Object") "keys" [ requested ]) λnativeKey →
+        key : String
+        key = Js.to nativeKey
+        value = Js.get requested key
+        if not (Js.isUndefined value) then
+            n : Int
+            n = Js.to value
+            supportedValue =
+                if List.member limitNames key then
+                    case readUnsigned64 supported key of
+                        Ok bound →
+                            Just bound
+                        Err _ →
+                            Nothing
+                else
+                    Nothing
+            alignment =
+                key == "minUniformBufferOffsetAlignment" || key == "minStorageBufferOffsetAlignment"
+            valid =
+                case supportedValue of
+                    Nothing →
+                        False
+                    Just bound →
+                        (if alignment then n ≥ bound else n ≤ bound)
+                            && (not alignment || n > 0 && n < 4294967296 && Js.bitAnd n (n - 1) == 0
+                               )
+            if not valid then
+                Js.write mismatches
+                    [ …Js.read mismatches
+                    , { name = key, requested = n, supported = supportedValue }
+                    ]
+    Js.read mismatches
+
+
+readAdapterInfo : V → Result Error.Error Types.AdapterInfo
+readAdapterInfo native =
+    vendor = readString native "vendor"?
+    architecture = readString native "architecture"?
+    device = readString native "device"?
+    description = readString native "description"?
+    subgroupMinSize = readUnsigned32 native "subgroupMinSize"?
+    subgroupMaxSize = readUnsigned32 native "subgroupMaxSize"?
+    isFallbackAdapter = readBoolean native "isFallbackAdapter"?
+    Ok
+        { vendor = vendor
+        , architecture = architecture
+        , device = device
+        , description = description
+        , subgroupMinSize = subgroupMinSize
+        , subgroupMaxSize = subgroupMaxSize
+        , isFallbackAdapter = isFallbackAdapter
+        }
+
+
+readLimits : V → Result Error.Error Types.SupportedLimits
+readLimits native =
+    maxTextureDimension1D = readUnsigned32 native "maxTextureDimension1D"?
+    maxTextureDimension2D = readUnsigned32 native "maxTextureDimension2D"?
+    maxTextureDimension3D = readUnsigned32 native "maxTextureDimension3D"?
+    maxTextureArrayLayers = readUnsigned32 native "maxTextureArrayLayers"?
+    maxBindGroups = readUnsigned32 native "maxBindGroups"?
+    maxBindGroupsPlusVertexBuffers = readUnsigned32 native "maxBindGroupsPlusVertexBuffers"?
+    maxImmediateSize = readUnsigned32 native "maxImmediateSize"?
+    maxBindingsPerBindGroup = readUnsigned32 native "maxBindingsPerBindGroup"?
+    maxDynamicUniformBuffersPerPipelineLayout =
+        readUnsigned32 native "maxDynamicUniformBuffersPerPipelineLayout"?
+    maxDynamicStorageBuffersPerPipelineLayout =
+        readUnsigned32 native "maxDynamicStorageBuffersPerPipelineLayout"?
+    maxSampledTexturesPerShaderStage = readUnsigned32 native "maxSampledTexturesPerShaderStage"?
+    maxSamplersPerShaderStage = readUnsigned32 native "maxSamplersPerShaderStage"?
+    maxStorageBuffersPerShaderStage = readUnsigned32 native "maxStorageBuffersPerShaderStage"?
+    maxStorageBuffersInVertexStage = readUnsigned32 native "maxStorageBuffersInVertexStage"?
+    maxStorageBuffersInFragmentStage = readUnsigned32 native "maxStorageBuffersInFragmentStage"?
+    maxStorageTexturesPerShaderStage = readUnsigned32 native "maxStorageTexturesPerShaderStage"?
+    maxStorageTexturesInVertexStage = readUnsigned32 native "maxStorageTexturesInVertexStage"?
+    maxStorageTexturesInFragmentStage = readUnsigned32 native "maxStorageTexturesInFragmentStage"?
+    maxUniformBuffersPerShaderStage = readUnsigned32 native "maxUniformBuffersPerShaderStage"?
+    maxUniformBufferBindingSize = readUnsigned64 native "maxUniformBufferBindingSize"?
+    maxStorageBufferBindingSize = readUnsigned64 native "maxStorageBufferBindingSize"?
+    minUniformBufferOffsetAlignment = readUnsigned32 native "minUniformBufferOffsetAlignment"?
+    minStorageBufferOffsetAlignment = readUnsigned32 native "minStorageBufferOffsetAlignment"?
+    maxVertexBuffers = readUnsigned32 native "maxVertexBuffers"?
+    maxBufferSize = readUnsigned64 native "maxBufferSize"?
+    maxVertexAttributes = readUnsigned32 native "maxVertexAttributes"?
+    maxVertexBufferArrayStride = readUnsigned32 native "maxVertexBufferArrayStride"?
+    maxInterStageShaderVariables = readUnsigned32 native "maxInterStageShaderVariables"?
+    maxColorAttachments = readUnsigned32 native "maxColorAttachments"?
+    maxColorAttachmentBytesPerSample = readUnsigned32 native "maxColorAttachmentBytesPerSample"?
+    maxComputeWorkgroupStorageSize = readUnsigned32 native "maxComputeWorkgroupStorageSize"?
+    maxComputeInvocationsPerWorkgroup = readUnsigned32 native "maxComputeInvocationsPerWorkgroup"?
+    maxComputeWorkgroupSizeX = readUnsigned32 native "maxComputeWorkgroupSizeX"?
+    maxComputeWorkgroupSizeY = readUnsigned32 native "maxComputeWorkgroupSizeY"?
+    maxComputeWorkgroupSizeZ = readUnsigned32 native "maxComputeWorkgroupSizeZ"?
+    maxComputeWorkgroupsPerDimension = readUnsigned32 native "maxComputeWorkgroupsPerDimension"?
+    Ok
+        { maxTextureDimension1D = maxTextureDimension1D
+        , maxTextureDimension2D = maxTextureDimension2D
+        , maxTextureDimension3D = maxTextureDimension3D
+        , maxTextureArrayLayers = maxTextureArrayLayers
+        , maxBindGroups = maxBindGroups
+        , maxBindGroupsPlusVertexBuffers = maxBindGroupsPlusVertexBuffers
+        , maxImmediateSize = maxImmediateSize
+        , maxBindingsPerBindGroup = maxBindingsPerBindGroup
+        , maxDynamicUniformBuffersPerPipelineLayout = maxDynamicUniformBuffersPerPipelineLayout
+        , maxDynamicStorageBuffersPerPipelineLayout = maxDynamicStorageBuffersPerPipelineLayout
+        , maxSampledTexturesPerShaderStage = maxSampledTexturesPerShaderStage
+        , maxSamplersPerShaderStage = maxSamplersPerShaderStage
+        , maxStorageBuffersPerShaderStage = maxStorageBuffersPerShaderStage
+        , maxStorageBuffersInVertexStage = maxStorageBuffersInVertexStage
+        , maxStorageBuffersInFragmentStage = maxStorageBuffersInFragmentStage
+        , maxStorageTexturesPerShaderStage = maxStorageTexturesPerShaderStage
+        , maxStorageTexturesInVertexStage = maxStorageTexturesInVertexStage
+        , maxStorageTexturesInFragmentStage = maxStorageTexturesInFragmentStage
+        , maxUniformBuffersPerShaderStage = maxUniformBuffersPerShaderStage
+        , maxUniformBufferBindingSize = maxUniformBufferBindingSize
+        , maxStorageBufferBindingSize = maxStorageBufferBindingSize
+        , minUniformBufferOffsetAlignment = minUniformBufferOffsetAlignment
+        , minStorageBufferOffsetAlignment = minStorageBufferOffsetAlignment
+        , maxVertexBuffers = maxVertexBuffers
+        , maxBufferSize = maxBufferSize
+        , maxVertexAttributes = maxVertexAttributes
+        , maxVertexBufferArrayStride = maxVertexBufferArrayStride
+        , maxInterStageShaderVariables = maxInterStageShaderVariables
+        , maxColorAttachments = maxColorAttachments
+        , maxColorAttachmentBytesPerSample = maxColorAttachmentBytesPerSample
+        , maxComputeWorkgroupStorageSize = maxComputeWorkgroupStorageSize
+        , maxComputeInvocationsPerWorkgroup = maxComputeInvocationsPerWorkgroup
+        , maxComputeWorkgroupSizeX = maxComputeWorkgroupSizeX
+        , maxComputeWorkgroupSizeY = maxComputeWorkgroupSizeY
+        , maxComputeWorkgroupSizeZ = maxComputeWorkgroupSizeZ
+        , maxComputeWorkgroupsPerDimension = maxComputeWorkgroupsPerDimension
+        }
+
+
+limitNames : List String
+limitNames =
+    [ "maxTextureDimension1D"
+    , "maxTextureDimension2D"
+    , "maxTextureDimension3D"
+    , "maxTextureArrayLayers"
+    , "maxBindGroups"
+    , "maxBindGroupsPlusVertexBuffers"
+    , "maxImmediateSize"
+    , "maxBindingsPerBindGroup"
+    , "maxDynamicUniformBuffersPerPipelineLayout"
+    , "maxDynamicStorageBuffersPerPipelineLayout"
+    , "maxSampledTexturesPerShaderStage"
+    , "maxSamplersPerShaderStage"
+    , "maxStorageBuffersPerShaderStage"
+    , "maxStorageBuffersInVertexStage"
+    , "maxStorageBuffersInFragmentStage"
+    , "maxStorageTexturesPerShaderStage"
+    , "maxStorageTexturesInVertexStage"
+    , "maxStorageTexturesInFragmentStage"
+    , "maxUniformBuffersPerShaderStage"
+    , "maxUniformBufferBindingSize"
+    , "maxStorageBufferBindingSize"
+    , "minUniformBufferOffsetAlignment"
+    , "minStorageBufferOffsetAlignment"
+    , "maxVertexBuffers"
+    , "maxBufferSize"
+    , "maxVertexAttributes"
+    , "maxVertexBufferArrayStride"
+    , "maxInterStageShaderVariables"
+    , "maxColorAttachments"
+    , "maxColorAttachmentBytesPerSample"
+    , "maxComputeWorkgroupStorageSize"
+    , "maxComputeInvocationsPerWorkgroup"
+    , "maxComputeWorkgroupSizeX"
+    , "maxComputeWorkgroupSizeY"
+    , "maxComputeWorkgroupSizeZ"
+    , "maxComputeWorkgroupsPerDimension"
+    ]
+
+
+-- Native Web IDL sequences are fresh plain arrays. Js.array deliberately
+-- accepts literals only; this is the data conversion, in beni, for a list.
+nativeArray : List a, sync (a → V) → V
+nativeArray values encode = List.foldl values (Js.array []) λvalue array →
+    _ = Js.call array "push" [ encode value ]
+    array
+
+
+member : V, String → Result Error.Error V
+member native field =
+    value = Js.get native field
+    if Js.isUndefined value then
+        Err (Error.UnsupportedCapability (Error.MissingNativeMember field))
+    else
+        Ok value
+
+
+readString : V, String → Result Error.Error String
+readString native field =
+    value = member native field?
+    if Js.typeIs value "string" then
+        Ok (Js.to value)
+    else
+        broken ("non-string native member: " ++ field)
+
+
+readBoolean : V, String → Result Error.Error Bool
+readBoolean native field =
+    value = member native field?
+    if Js.typeIs value "boolean" then
+        Ok (Js.to value)
+    else
+        broken ("non-boolean native member: " ++ field)
+
+
+readUnsigned32 : V, String → Result Error.Error Int
+readUnsigned32 native field =
+    value = member native field?
+    if Js.typeIs value "number" then
+        case Scalar.u32 (Js.to value) of
+            Ok n →
+                Ok (Scalar.u32Value n)
+            Err _ →
+                broken ("native member outside unsigned32: " ++ field)
+    else
+        broken ("non-number native member: " ++ field)
+
+
+readUnsigned64 : V, String → Result Error.Error Int
+readUnsigned64 native field =
+    value = member native field?
+    if Js.typeIs value "number" then
+        case Scalar.size64 (Js.to value) of
+            Ok n →
+                Ok (Scalar.size64Value n)
+            Err _ →
+                broken ("native member outside unsigned64: " ++ field)
+    else
+        broken ("non-number native member: " ++ field)
+
+
+-- BEGIN GENERATED WEBGPU CONVERSIONS
+encodeFeatureName : Types.FeatureName → V
+encodeFeatureName value =
+    case value of
+        Types.FeatureNameCoreFeaturesAndLimits →
+            Js.from "core-features-and-limits"
+        Types.FeatureNameDepthClipControl →
+            Js.from "depth-clip-control"
+        Types.FeatureNameDepth32floatStencil8 →
+            Js.from "depth32float-stencil8"
+        Types.FeatureNameTextureCompressionBc →
+            Js.from "texture-compression-bc"
+        Types.FeatureNameTextureCompressionBcSliced3d →
+            Js.from "texture-compression-bc-sliced-3d"
+        Types.FeatureNameTextureCompressionEtc2 →
+            Js.from "texture-compression-etc2"
+        Types.FeatureNameTextureCompressionAstc →
+            Js.from "texture-compression-astc"
+        Types.FeatureNameTextureCompressionAstcSliced3d →
+            Js.from "texture-compression-astc-sliced-3d"
+        Types.FeatureNameTimestampQuery →
+            Js.from "timestamp-query"
+        Types.FeatureNameIndirectFirstInstance →
+            Js.from "indirect-first-instance"
+        Types.FeatureNameShaderF16 →
+            Js.from "shader-f16"
+        Types.FeatureNameRg11b10ufloatRenderable →
+            Js.from "rg11b10ufloat-renderable"
+        Types.FeatureNameBgra8unormStorage →
+            Js.from "bgra8unorm-storage"
+        Types.FeatureNameFloat32Filterable →
+            Js.from "float32-filterable"
+        Types.FeatureNameFloat32Blendable →
+            Js.from "float32-blendable"
+        Types.FeatureNameClipDistances →
+            Js.from "clip-distances"
+        Types.FeatureNameDualSourceBlending →
+            Js.from "dual-source-blending"
+        Types.FeatureNameSubgroups →
+            Js.from "subgroups"
+        Types.FeatureNameTextureFormatsTier1 →
+            Js.from "texture-formats-tier1"
+        Types.FeatureNameTextureFormatsTier2 →
+            Js.from "texture-formats-tier2"
+        Types.FeatureNamePrimitiveIndex →
+            Js.from "primitive-index"
+        Types.FeatureNameTextureComponentSwizzle →
+            Js.from "texture-component-swizzle"
+        Types.FeatureNameSubgroupSizeControl →
+            Js.from "subgroup-size-control"
+        Types.FeatureNameTextureCompressionUnaligned →
+            Js.from "texture-compression-unaligned"
+        Types.FeatureNameAtomicVec2uMinMax →
+            Js.from "atomic-vec2u-min-max"
+
+
+decodeFeatureName : V → Types.FeatureName
+decodeFeatureName value =
+    if Js.same value (Js.from "core-features-and-limits") then
+        Types.FeatureNameCoreFeaturesAndLimits
+    else if Js.same value (Js.from "depth-clip-control") then
+        Types.FeatureNameDepthClipControl
+    else if Js.same value (Js.from "depth32float-stencil8") then
+        Types.FeatureNameDepth32floatStencil8
+    else if Js.same value (Js.from "texture-compression-bc") then
+        Types.FeatureNameTextureCompressionBc
+    else if Js.same value (Js.from "texture-compression-bc-sliced-3d") then
+        Types.FeatureNameTextureCompressionBcSliced3d
+    else if Js.same value (Js.from "texture-compression-etc2") then
+        Types.FeatureNameTextureCompressionEtc2
+    else if Js.same value (Js.from "texture-compression-astc") then
+        Types.FeatureNameTextureCompressionAstc
+    else if Js.same value (Js.from "texture-compression-astc-sliced-3d") then
+        Types.FeatureNameTextureCompressionAstcSliced3d
+    else if Js.same value (Js.from "timestamp-query") then
+        Types.FeatureNameTimestampQuery
+    else if Js.same value (Js.from "indirect-first-instance") then
+        Types.FeatureNameIndirectFirstInstance
+    else if Js.same value (Js.from "shader-f16") then
+        Types.FeatureNameShaderF16
+    else if Js.same value (Js.from "rg11b10ufloat-renderable") then
+        Types.FeatureNameRg11b10ufloatRenderable
+    else if Js.same value (Js.from "bgra8unorm-storage") then
+        Types.FeatureNameBgra8unormStorage
+    else if Js.same value (Js.from "float32-filterable") then
+        Types.FeatureNameFloat32Filterable
+    else if Js.same value (Js.from "float32-blendable") then
+        Types.FeatureNameFloat32Blendable
+    else if Js.same value (Js.from "clip-distances") then
+        Types.FeatureNameClipDistances
+    else if Js.same value (Js.from "dual-source-blending") then
+        Types.FeatureNameDualSourceBlending
+    else if Js.same value (Js.from "subgroups") then
+        Types.FeatureNameSubgroups
+    else if Js.same value (Js.from "texture-formats-tier1") then
+        Types.FeatureNameTextureFormatsTier1
+    else if Js.same value (Js.from "texture-formats-tier2") then
+        Types.FeatureNameTextureFormatsTier2
+    else if Js.same value (Js.from "primitive-index") then
+        Types.FeatureNamePrimitiveIndex
+    else if Js.same value (Js.from "texture-component-swizzle") then
+        Types.FeatureNameTextureComponentSwizzle
+    else if Js.same value (Js.from "subgroup-size-control") then
+        Types.FeatureNameSubgroupSizeControl
+    else if Js.same value (Js.from "texture-compression-unaligned") then
+        Types.FeatureNameTextureCompressionUnaligned
+    else if Js.same value (Js.from "atomic-vec2u-min-max") then
+        Types.FeatureNameAtomicVec2uMinMax
+    else
+        broken "Unexpected FeatureName value"
+
+
+encodePowerPreference : Types.PowerPreference → V
+encodePowerPreference value =
+    case value of
+        Types.PowerPreferenceLowPower →
+            Js.from "low-power"
+        Types.PowerPreferenceHighPerformance →
+            Js.from "high-performance"
+
+
+decodePowerPreference : V → Types.PowerPreference
+decodePowerPreference value =
+    if Js.same value (Js.from "low-power") then
+        Types.PowerPreferenceLowPower
+    else if Js.same value (Js.from "high-performance") then
+        Types.PowerPreferenceHighPerformance
+    else
+        broken "Unexpected PowerPreference value"
+
+
+encodeBufferMapState : Types.BufferMapState → V
+encodeBufferMapState value =
+    case value of
+        Types.BufferMapStateUnmapped →
+            Js.from "unmapped"
+        Types.BufferMapStatePending →
+            Js.from "pending"
+        Types.BufferMapStateMapped →
+            Js.from "mapped"
+
+
+decodeBufferMapState : V → Types.BufferMapState
+decodeBufferMapState value =
+    if Js.same value (Js.from "unmapped") then
+        Types.BufferMapStateUnmapped
+    else if Js.same value (Js.from "pending") then
+        Types.BufferMapStatePending
+    else if Js.same value (Js.from "mapped") then
+        Types.BufferMapStateMapped
+    else
+        broken "Unexpected BufferMapState value"
+
+
+encodeTextureDimension : Types.TextureDimension → V
+encodeTextureDimension value =
+    case value of
+        Types.TextureDimension1d →
+            Js.from "1d"
+        Types.TextureDimension2d →
+            Js.from "2d"
+        Types.TextureDimension3d →
+            Js.from "3d"
+
+
+decodeTextureDimension : V → Types.TextureDimension
+decodeTextureDimension value =
+    if Js.same value (Js.from "1d") then
+        Types.TextureDimension1d
+    else if Js.same value (Js.from "2d") then
+        Types.TextureDimension2d
+    else if Js.same value (Js.from "3d") then
+        Types.TextureDimension3d
+    else
+        broken "Unexpected TextureDimension value"
+
+
+encodeTextureViewDimension : Types.TextureViewDimension → V
+encodeTextureViewDimension value =
+    case value of
+        Types.TextureViewDimension1d →
+            Js.from "1d"
+        Types.TextureViewDimension2d →
+            Js.from "2d"
+        Types.TextureViewDimension2dArray →
+            Js.from "2d-array"
+        Types.TextureViewDimensionCube →
+            Js.from "cube"
+        Types.TextureViewDimensionCubeArray →
+            Js.from "cube-array"
+        Types.TextureViewDimension3d →
+            Js.from "3d"
+
+
+decodeTextureViewDimension : V → Types.TextureViewDimension
+decodeTextureViewDimension value =
+    if Js.same value (Js.from "1d") then
+        Types.TextureViewDimension1d
+    else if Js.same value (Js.from "2d") then
+        Types.TextureViewDimension2d
+    else if Js.same value (Js.from "2d-array") then
+        Types.TextureViewDimension2dArray
+    else if Js.same value (Js.from "cube") then
+        Types.TextureViewDimensionCube
+    else if Js.same value (Js.from "cube-array") then
+        Types.TextureViewDimensionCubeArray
+    else if Js.same value (Js.from "3d") then
+        Types.TextureViewDimension3d
+    else
+        broken "Unexpected TextureViewDimension value"
+
+
+encodeTextureAspect : Types.TextureAspect → V
+encodeTextureAspect value =
+    case value of
+        Types.TextureAspectAll →
+            Js.from "all"
+        Types.TextureAspectStencilOnly →
+            Js.from "stencil-only"
+        Types.TextureAspectDepthOnly →
+            Js.from "depth-only"
+
+
+decodeTextureAspect : V → Types.TextureAspect
+decodeTextureAspect value =
+    if Js.same value (Js.from "all") then
+        Types.TextureAspectAll
+    else if Js.same value (Js.from "stencil-only") then
+        Types.TextureAspectStencilOnly
+    else if Js.same value (Js.from "depth-only") then
+        Types.TextureAspectDepthOnly
+    else
+        broken "Unexpected TextureAspect value"
+
+
+encodeTextureFormat : Types.TextureFormat → V
+encodeTextureFormat value =
+    case value of
+        Types.TextureFormatR8unorm →
+            Js.from "r8unorm"
+        Types.TextureFormatR8snorm →
+            Js.from "r8snorm"
+        Types.TextureFormatR8uint →
+            Js.from "r8uint"
+        Types.TextureFormatR8sint →
+            Js.from "r8sint"
+        Types.TextureFormatR16unorm →
+            Js.from "r16unorm"
+        Types.TextureFormatR16snorm →
+            Js.from "r16snorm"
+        Types.TextureFormatR16uint →
+            Js.from "r16uint"
+        Types.TextureFormatR16sint →
+            Js.from "r16sint"
+        Types.TextureFormatR16float →
+            Js.from "r16float"
+        Types.TextureFormatRg8unorm →
+            Js.from "rg8unorm"
+        Types.TextureFormatRg8snorm →
+            Js.from "rg8snorm"
+        Types.TextureFormatRg8uint →
+            Js.from "rg8uint"
+        Types.TextureFormatRg8sint →
+            Js.from "rg8sint"
+        Types.TextureFormatR32uint →
+            Js.from "r32uint"
+        Types.TextureFormatR32sint →
+            Js.from "r32sint"
+        Types.TextureFormatR32float →
+            Js.from "r32float"
+        Types.TextureFormatRg16unorm →
+            Js.from "rg16unorm"
+        Types.TextureFormatRg16snorm →
+            Js.from "rg16snorm"
+        Types.TextureFormatRg16uint →
+            Js.from "rg16uint"
+        Types.TextureFormatRg16sint →
+            Js.from "rg16sint"
+        Types.TextureFormatRg16float →
+            Js.from "rg16float"
+        Types.TextureFormatRgba8unorm →
+            Js.from "rgba8unorm"
+        Types.TextureFormatRgba8unormSrgb →
+            Js.from "rgba8unorm-srgb"
+        Types.TextureFormatRgba8snorm →
+            Js.from "rgba8snorm"
+        Types.TextureFormatRgba8uint →
+            Js.from "rgba8uint"
+        Types.TextureFormatRgba8sint →
+            Js.from "rgba8sint"
+        Types.TextureFormatBgra8unorm →
+            Js.from "bgra8unorm"
+        Types.TextureFormatBgra8unormSrgb →
+            Js.from "bgra8unorm-srgb"
+        Types.TextureFormatRgb9e5ufloat →
+            Js.from "rgb9e5ufloat"
+        Types.TextureFormatRgb10a2uint →
+            Js.from "rgb10a2uint"
+        Types.TextureFormatRgb10a2unorm →
+            Js.from "rgb10a2unorm"
+        Types.TextureFormatRg11b10ufloat →
+            Js.from "rg11b10ufloat"
+        Types.TextureFormatRg32uint →
+            Js.from "rg32uint"
+        Types.TextureFormatRg32sint →
+            Js.from "rg32sint"
+        Types.TextureFormatRg32float →
+            Js.from "rg32float"
+        Types.TextureFormatRgba16unorm →
+            Js.from "rgba16unorm"
+        Types.TextureFormatRgba16snorm →
+            Js.from "rgba16snorm"
+        Types.TextureFormatRgba16uint →
+            Js.from "rgba16uint"
+        Types.TextureFormatRgba16sint →
+            Js.from "rgba16sint"
+        Types.TextureFormatRgba16float →
+            Js.from "rgba16float"
+        Types.TextureFormatRgba32uint →
+            Js.from "rgba32uint"
+        Types.TextureFormatRgba32sint →
+            Js.from "rgba32sint"
+        Types.TextureFormatRgba32float →
+            Js.from "rgba32float"
+        Types.TextureFormatStencil8 →
+            Js.from "stencil8"
+        Types.TextureFormatDepth16unorm →
+            Js.from "depth16unorm"
+        Types.TextureFormatDepth24plus →
+            Js.from "depth24plus"
+        Types.TextureFormatDepth24plusStencil8 →
+            Js.from "depth24plus-stencil8"
+        Types.TextureFormatDepth32float →
+            Js.from "depth32float"
+        Types.TextureFormatDepth32floatStencil8 →
+            Js.from "depth32float-stencil8"
+        Types.TextureFormatBc1RgbaUnorm →
+            Js.from "bc1-rgba-unorm"
+        Types.TextureFormatBc1RgbaUnormSrgb →
+            Js.from "bc1-rgba-unorm-srgb"
+        Types.TextureFormatBc2RgbaUnorm →
+            Js.from "bc2-rgba-unorm"
+        Types.TextureFormatBc2RgbaUnormSrgb →
+            Js.from "bc2-rgba-unorm-srgb"
+        Types.TextureFormatBc3RgbaUnorm →
+            Js.from "bc3-rgba-unorm"
+        Types.TextureFormatBc3RgbaUnormSrgb →
+            Js.from "bc3-rgba-unorm-srgb"
+        Types.TextureFormatBc4RUnorm →
+            Js.from "bc4-r-unorm"
+        Types.TextureFormatBc4RSnorm →
+            Js.from "bc4-r-snorm"
+        Types.TextureFormatBc5RgUnorm →
+            Js.from "bc5-rg-unorm"
+        Types.TextureFormatBc5RgSnorm →
+            Js.from "bc5-rg-snorm"
+        Types.TextureFormatBc6hRgbUfloat →
+            Js.from "bc6h-rgb-ufloat"
+        Types.TextureFormatBc6hRgbFloat →
+            Js.from "bc6h-rgb-float"
+        Types.TextureFormatBc7RgbaUnorm →
+            Js.from "bc7-rgba-unorm"
+        Types.TextureFormatBc7RgbaUnormSrgb →
+            Js.from "bc7-rgba-unorm-srgb"
+        Types.TextureFormatEtc2Rgb8unorm →
+            Js.from "etc2-rgb8unorm"
+        Types.TextureFormatEtc2Rgb8unormSrgb →
+            Js.from "etc2-rgb8unorm-srgb"
+        Types.TextureFormatEtc2Rgb8a1unorm →
+            Js.from "etc2-rgb8a1unorm"
+        Types.TextureFormatEtc2Rgb8a1unormSrgb →
+            Js.from "etc2-rgb8a1unorm-srgb"
+        Types.TextureFormatEtc2Rgba8unorm →
+            Js.from "etc2-rgba8unorm"
+        Types.TextureFormatEtc2Rgba8unormSrgb →
+            Js.from "etc2-rgba8unorm-srgb"
+        Types.TextureFormatEacR11unorm →
+            Js.from "eac-r11unorm"
+        Types.TextureFormatEacR11snorm →
+            Js.from "eac-r11snorm"
+        Types.TextureFormatEacRg11unorm →
+            Js.from "eac-rg11unorm"
+        Types.TextureFormatEacRg11snorm →
+            Js.from "eac-rg11snorm"
+        Types.TextureFormatAstc4x4Unorm →
+            Js.from "astc-4x4-unorm"
+        Types.TextureFormatAstc4x4UnormSrgb →
+            Js.from "astc-4x4-unorm-srgb"
+        Types.TextureFormatAstc5x4Unorm →
+            Js.from "astc-5x4-unorm"
+        Types.TextureFormatAstc5x4UnormSrgb →
+            Js.from "astc-5x4-unorm-srgb"
+        Types.TextureFormatAstc5x5Unorm →
+            Js.from "astc-5x5-unorm"
+        Types.TextureFormatAstc5x5UnormSrgb →
+            Js.from "astc-5x5-unorm-srgb"
+        Types.TextureFormatAstc6x5Unorm →
+            Js.from "astc-6x5-unorm"
+        Types.TextureFormatAstc6x5UnormSrgb →
+            Js.from "astc-6x5-unorm-srgb"
+        Types.TextureFormatAstc6x6Unorm →
+            Js.from "astc-6x6-unorm"
+        Types.TextureFormatAstc6x6UnormSrgb →
+            Js.from "astc-6x6-unorm-srgb"
+        Types.TextureFormatAstc8x5Unorm →
+            Js.from "astc-8x5-unorm"
+        Types.TextureFormatAstc8x5UnormSrgb →
+            Js.from "astc-8x5-unorm-srgb"
+        Types.TextureFormatAstc8x6Unorm →
+            Js.from "astc-8x6-unorm"
+        Types.TextureFormatAstc8x6UnormSrgb →
+            Js.from "astc-8x6-unorm-srgb"
+        Types.TextureFormatAstc8x8Unorm →
+            Js.from "astc-8x8-unorm"
+        Types.TextureFormatAstc8x8UnormSrgb →
+            Js.from "astc-8x8-unorm-srgb"
+        Types.TextureFormatAstc10x5Unorm →
+            Js.from "astc-10x5-unorm"
+        Types.TextureFormatAstc10x5UnormSrgb →
+            Js.from "astc-10x5-unorm-srgb"
+        Types.TextureFormatAstc10x6Unorm →
+            Js.from "astc-10x6-unorm"
+        Types.TextureFormatAstc10x6UnormSrgb →
+            Js.from "astc-10x6-unorm-srgb"
+        Types.TextureFormatAstc10x8Unorm →
+            Js.from "astc-10x8-unorm"
+        Types.TextureFormatAstc10x8UnormSrgb →
+            Js.from "astc-10x8-unorm-srgb"
+        Types.TextureFormatAstc10x10Unorm →
+            Js.from "astc-10x10-unorm"
+        Types.TextureFormatAstc10x10UnormSrgb →
+            Js.from "astc-10x10-unorm-srgb"
+        Types.TextureFormatAstc12x10Unorm →
+            Js.from "astc-12x10-unorm"
+        Types.TextureFormatAstc12x10UnormSrgb →
+            Js.from "astc-12x10-unorm-srgb"
+        Types.TextureFormatAstc12x12Unorm →
+            Js.from "astc-12x12-unorm"
+        Types.TextureFormatAstc12x12UnormSrgb →
+            Js.from "astc-12x12-unorm-srgb"
+
+
+decodeTextureFormat : V → Types.TextureFormat
+decodeTextureFormat value =
+    if Js.same value (Js.from "r8unorm") then
+        Types.TextureFormatR8unorm
+    else if Js.same value (Js.from "r8snorm") then
+        Types.TextureFormatR8snorm
+    else if Js.same value (Js.from "r8uint") then
+        Types.TextureFormatR8uint
+    else if Js.same value (Js.from "r8sint") then
+        Types.TextureFormatR8sint
+    else if Js.same value (Js.from "r16unorm") then
+        Types.TextureFormatR16unorm
+    else if Js.same value (Js.from "r16snorm") then
+        Types.TextureFormatR16snorm
+    else if Js.same value (Js.from "r16uint") then
+        Types.TextureFormatR16uint
+    else if Js.same value (Js.from "r16sint") then
+        Types.TextureFormatR16sint
+    else if Js.same value (Js.from "r16float") then
+        Types.TextureFormatR16float
+    else if Js.same value (Js.from "rg8unorm") then
+        Types.TextureFormatRg8unorm
+    else if Js.same value (Js.from "rg8snorm") then
+        Types.TextureFormatRg8snorm
+    else if Js.same value (Js.from "rg8uint") then
+        Types.TextureFormatRg8uint
+    else if Js.same value (Js.from "rg8sint") then
+        Types.TextureFormatRg8sint
+    else if Js.same value (Js.from "r32uint") then
+        Types.TextureFormatR32uint
+    else if Js.same value (Js.from "r32sint") then
+        Types.TextureFormatR32sint
+    else if Js.same value (Js.from "r32float") then
+        Types.TextureFormatR32float
+    else if Js.same value (Js.from "rg16unorm") then
+        Types.TextureFormatRg16unorm
+    else if Js.same value (Js.from "rg16snorm") then
+        Types.TextureFormatRg16snorm
+    else if Js.same value (Js.from "rg16uint") then
+        Types.TextureFormatRg16uint
+    else if Js.same value (Js.from "rg16sint") then
+        Types.TextureFormatRg16sint
+    else if Js.same value (Js.from "rg16float") then
+        Types.TextureFormatRg16float
+    else if Js.same value (Js.from "rgba8unorm") then
+        Types.TextureFormatRgba8unorm
+    else if Js.same value (Js.from "rgba8unorm-srgb") then
+        Types.TextureFormatRgba8unormSrgb
+    else if Js.same value (Js.from "rgba8snorm") then
+        Types.TextureFormatRgba8snorm
+    else if Js.same value (Js.from "rgba8uint") then
+        Types.TextureFormatRgba8uint
+    else if Js.same value (Js.from "rgba8sint") then
+        Types.TextureFormatRgba8sint
+    else if Js.same value (Js.from "bgra8unorm") then
+        Types.TextureFormatBgra8unorm
+    else if Js.same value (Js.from "bgra8unorm-srgb") then
+        Types.TextureFormatBgra8unormSrgb
+    else if Js.same value (Js.from "rgb9e5ufloat") then
+        Types.TextureFormatRgb9e5ufloat
+    else if Js.same value (Js.from "rgb10a2uint") then
+        Types.TextureFormatRgb10a2uint
+    else if Js.same value (Js.from "rgb10a2unorm") then
+        Types.TextureFormatRgb10a2unorm
+    else if Js.same value (Js.from "rg11b10ufloat") then
+        Types.TextureFormatRg11b10ufloat
+    else if Js.same value (Js.from "rg32uint") then
+        Types.TextureFormatRg32uint
+    else if Js.same value (Js.from "rg32sint") then
+        Types.TextureFormatRg32sint
+    else if Js.same value (Js.from "rg32float") then
+        Types.TextureFormatRg32float
+    else if Js.same value (Js.from "rgba16unorm") then
+        Types.TextureFormatRgba16unorm
+    else if Js.same value (Js.from "rgba16snorm") then
+        Types.TextureFormatRgba16snorm
+    else if Js.same value (Js.from "rgba16uint") then
+        Types.TextureFormatRgba16uint
+    else if Js.same value (Js.from "rgba16sint") then
+        Types.TextureFormatRgba16sint
+    else if Js.same value (Js.from "rgba16float") then
+        Types.TextureFormatRgba16float
+    else if Js.same value (Js.from "rgba32uint") then
+        Types.TextureFormatRgba32uint
+    else if Js.same value (Js.from "rgba32sint") then
+        Types.TextureFormatRgba32sint
+    else if Js.same value (Js.from "rgba32float") then
+        Types.TextureFormatRgba32float
+    else if Js.same value (Js.from "stencil8") then
+        Types.TextureFormatStencil8
+    else if Js.same value (Js.from "depth16unorm") then
+        Types.TextureFormatDepth16unorm
+    else if Js.same value (Js.from "depth24plus") then
+        Types.TextureFormatDepth24plus
+    else if Js.same value (Js.from "depth24plus-stencil8") then
+        Types.TextureFormatDepth24plusStencil8
+    else if Js.same value (Js.from "depth32float") then
+        Types.TextureFormatDepth32float
+    else if Js.same value (Js.from "depth32float-stencil8") then
+        Types.TextureFormatDepth32floatStencil8
+    else if Js.same value (Js.from "bc1-rgba-unorm") then
+        Types.TextureFormatBc1RgbaUnorm
+    else if Js.same value (Js.from "bc1-rgba-unorm-srgb") then
+        Types.TextureFormatBc1RgbaUnormSrgb
+    else if Js.same value (Js.from "bc2-rgba-unorm") then
+        Types.TextureFormatBc2RgbaUnorm
+    else if Js.same value (Js.from "bc2-rgba-unorm-srgb") then
+        Types.TextureFormatBc2RgbaUnormSrgb
+    else if Js.same value (Js.from "bc3-rgba-unorm") then
+        Types.TextureFormatBc3RgbaUnorm
+    else if Js.same value (Js.from "bc3-rgba-unorm-srgb") then
+        Types.TextureFormatBc3RgbaUnormSrgb
+    else if Js.same value (Js.from "bc4-r-unorm") then
+        Types.TextureFormatBc4RUnorm
+    else if Js.same value (Js.from "bc4-r-snorm") then
+        Types.TextureFormatBc4RSnorm
+    else if Js.same value (Js.from "bc5-rg-unorm") then
+        Types.TextureFormatBc5RgUnorm
+    else if Js.same value (Js.from "bc5-rg-snorm") then
+        Types.TextureFormatBc5RgSnorm
+    else if Js.same value (Js.from "bc6h-rgb-ufloat") then
+        Types.TextureFormatBc6hRgbUfloat
+    else if Js.same value (Js.from "bc6h-rgb-float") then
+        Types.TextureFormatBc6hRgbFloat
+    else if Js.same value (Js.from "bc7-rgba-unorm") then
+        Types.TextureFormatBc7RgbaUnorm
+    else if Js.same value (Js.from "bc7-rgba-unorm-srgb") then
+        Types.TextureFormatBc7RgbaUnormSrgb
+    else if Js.same value (Js.from "etc2-rgb8unorm") then
+        Types.TextureFormatEtc2Rgb8unorm
+    else if Js.same value (Js.from "etc2-rgb8unorm-srgb") then
+        Types.TextureFormatEtc2Rgb8unormSrgb
+    else if Js.same value (Js.from "etc2-rgb8a1unorm") then
+        Types.TextureFormatEtc2Rgb8a1unorm
+    else if Js.same value (Js.from "etc2-rgb8a1unorm-srgb") then
+        Types.TextureFormatEtc2Rgb8a1unormSrgb
+    else if Js.same value (Js.from "etc2-rgba8unorm") then
+        Types.TextureFormatEtc2Rgba8unorm
+    else if Js.same value (Js.from "etc2-rgba8unorm-srgb") then
+        Types.TextureFormatEtc2Rgba8unormSrgb
+    else if Js.same value (Js.from "eac-r11unorm") then
+        Types.TextureFormatEacR11unorm
+    else if Js.same value (Js.from "eac-r11snorm") then
+        Types.TextureFormatEacR11snorm
+    else if Js.same value (Js.from "eac-rg11unorm") then
+        Types.TextureFormatEacRg11unorm
+    else if Js.same value (Js.from "eac-rg11snorm") then
+        Types.TextureFormatEacRg11snorm
+    else if Js.same value (Js.from "astc-4x4-unorm") then
+        Types.TextureFormatAstc4x4Unorm
+    else if Js.same value (Js.from "astc-4x4-unorm-srgb") then
+        Types.TextureFormatAstc4x4UnormSrgb
+    else if Js.same value (Js.from "astc-5x4-unorm") then
+        Types.TextureFormatAstc5x4Unorm
+    else if Js.same value (Js.from "astc-5x4-unorm-srgb") then
+        Types.TextureFormatAstc5x4UnormSrgb
+    else if Js.same value (Js.from "astc-5x5-unorm") then
+        Types.TextureFormatAstc5x5Unorm
+    else if Js.same value (Js.from "astc-5x5-unorm-srgb") then
+        Types.TextureFormatAstc5x5UnormSrgb
+    else if Js.same value (Js.from "astc-6x5-unorm") then
+        Types.TextureFormatAstc6x5Unorm
+    else if Js.same value (Js.from "astc-6x5-unorm-srgb") then
+        Types.TextureFormatAstc6x5UnormSrgb
+    else if Js.same value (Js.from "astc-6x6-unorm") then
+        Types.TextureFormatAstc6x6Unorm
+    else if Js.same value (Js.from "astc-6x6-unorm-srgb") then
+        Types.TextureFormatAstc6x6UnormSrgb
+    else if Js.same value (Js.from "astc-8x5-unorm") then
+        Types.TextureFormatAstc8x5Unorm
+    else if Js.same value (Js.from "astc-8x5-unorm-srgb") then
+        Types.TextureFormatAstc8x5UnormSrgb
+    else if Js.same value (Js.from "astc-8x6-unorm") then
+        Types.TextureFormatAstc8x6Unorm
+    else if Js.same value (Js.from "astc-8x6-unorm-srgb") then
+        Types.TextureFormatAstc8x6UnormSrgb
+    else if Js.same value (Js.from "astc-8x8-unorm") then
+        Types.TextureFormatAstc8x8Unorm
+    else if Js.same value (Js.from "astc-8x8-unorm-srgb") then
+        Types.TextureFormatAstc8x8UnormSrgb
+    else if Js.same value (Js.from "astc-10x5-unorm") then
+        Types.TextureFormatAstc10x5Unorm
+    else if Js.same value (Js.from "astc-10x5-unorm-srgb") then
+        Types.TextureFormatAstc10x5UnormSrgb
+    else if Js.same value (Js.from "astc-10x6-unorm") then
+        Types.TextureFormatAstc10x6Unorm
+    else if Js.same value (Js.from "astc-10x6-unorm-srgb") then
+        Types.TextureFormatAstc10x6UnormSrgb
+    else if Js.same value (Js.from "astc-10x8-unorm") then
+        Types.TextureFormatAstc10x8Unorm
+    else if Js.same value (Js.from "astc-10x8-unorm-srgb") then
+        Types.TextureFormatAstc10x8UnormSrgb
+    else if Js.same value (Js.from "astc-10x10-unorm") then
+        Types.TextureFormatAstc10x10Unorm
+    else if Js.same value (Js.from "astc-10x10-unorm-srgb") then
+        Types.TextureFormatAstc10x10UnormSrgb
+    else if Js.same value (Js.from "astc-12x10-unorm") then
+        Types.TextureFormatAstc12x10Unorm
+    else if Js.same value (Js.from "astc-12x10-unorm-srgb") then
+        Types.TextureFormatAstc12x10UnormSrgb
+    else if Js.same value (Js.from "astc-12x12-unorm") then
+        Types.TextureFormatAstc12x12Unorm
+    else if Js.same value (Js.from "astc-12x12-unorm-srgb") then
+        Types.TextureFormatAstc12x12UnormSrgb
+    else
+        broken "Unexpected TextureFormat value"
+
+
+encodeAddressMode : Types.AddressMode → V
+encodeAddressMode value =
+    case value of
+        Types.AddressModeClampToEdge →
+            Js.from "clamp-to-edge"
+        Types.AddressModeRepeat →
+            Js.from "repeat"
+        Types.AddressModeMirrorRepeat →
+            Js.from "mirror-repeat"
+
+
+decodeAddressMode : V → Types.AddressMode
+decodeAddressMode value =
+    if Js.same value (Js.from "clamp-to-edge") then
+        Types.AddressModeClampToEdge
+    else if Js.same value (Js.from "repeat") then
+        Types.AddressModeRepeat
+    else if Js.same value (Js.from "mirror-repeat") then
+        Types.AddressModeMirrorRepeat
+    else
+        broken "Unexpected AddressMode value"
+
+
+encodeFilterMode : Types.FilterMode → V
+encodeFilterMode value =
+    case value of
+        Types.FilterModeNearest →
+            Js.from "nearest"
+        Types.FilterModeLinear →
+            Js.from "linear"
+
+
+decodeFilterMode : V → Types.FilterMode
+decodeFilterMode value =
+    if Js.same value (Js.from "nearest") then
+        Types.FilterModeNearest
+    else if Js.same value (Js.from "linear") then
+        Types.FilterModeLinear
+    else
+        broken "Unexpected FilterMode value"
+
+
+encodeMipmapFilterMode : Types.MipmapFilterMode → V
+encodeMipmapFilterMode value =
+    case value of
+        Types.MipmapFilterModeNearest →
+            Js.from "nearest"
+        Types.MipmapFilterModeLinear →
+            Js.from "linear"
+
+
+decodeMipmapFilterMode : V → Types.MipmapFilterMode
+decodeMipmapFilterMode value =
+    if Js.same value (Js.from "nearest") then
+        Types.MipmapFilterModeNearest
+    else if Js.same value (Js.from "linear") then
+        Types.MipmapFilterModeLinear
+    else
+        broken "Unexpected MipmapFilterMode value"
+
+
+encodeCompareFunction : Types.CompareFunction → V
+encodeCompareFunction value =
+    case value of
+        Types.CompareFunctionNever →
+            Js.from "never"
+        Types.CompareFunctionLess →
+            Js.from "less"
+        Types.CompareFunctionEqual →
+            Js.from "equal"
+        Types.CompareFunctionLessEqual →
+            Js.from "less-equal"
+        Types.CompareFunctionGreater →
+            Js.from "greater"
+        Types.CompareFunctionNotEqual →
+            Js.from "not-equal"
+        Types.CompareFunctionGreaterEqual →
+            Js.from "greater-equal"
+        Types.CompareFunctionAlways →
+            Js.from "always"
+
+
+decodeCompareFunction : V → Types.CompareFunction
+decodeCompareFunction value =
+    if Js.same value (Js.from "never") then
+        Types.CompareFunctionNever
+    else if Js.same value (Js.from "less") then
+        Types.CompareFunctionLess
+    else if Js.same value (Js.from "equal") then
+        Types.CompareFunctionEqual
+    else if Js.same value (Js.from "less-equal") then
+        Types.CompareFunctionLessEqual
+    else if Js.same value (Js.from "greater") then
+        Types.CompareFunctionGreater
+    else if Js.same value (Js.from "not-equal") then
+        Types.CompareFunctionNotEqual
+    else if Js.same value (Js.from "greater-equal") then
+        Types.CompareFunctionGreaterEqual
+    else if Js.same value (Js.from "always") then
+        Types.CompareFunctionAlways
+    else
+        broken "Unexpected CompareFunction value"
+
+
+encodeBufferBindingType : Types.BufferBindingType → V
+encodeBufferBindingType value =
+    case value of
+        Types.BufferBindingTypeUniform →
+            Js.from "uniform"
+        Types.BufferBindingTypeStorage →
+            Js.from "storage"
+        Types.BufferBindingTypeReadOnlyStorage →
+            Js.from "read-only-storage"
+
+
+decodeBufferBindingType : V → Types.BufferBindingType
+decodeBufferBindingType value =
+    if Js.same value (Js.from "uniform") then
+        Types.BufferBindingTypeUniform
+    else if Js.same value (Js.from "storage") then
+        Types.BufferBindingTypeStorage
+    else if Js.same value (Js.from "read-only-storage") then
+        Types.BufferBindingTypeReadOnlyStorage
+    else
+        broken "Unexpected BufferBindingType value"
+
+
+encodeSamplerBindingType : Types.SamplerBindingType → V
+encodeSamplerBindingType value =
+    case value of
+        Types.SamplerBindingTypeFiltering →
+            Js.from "filtering"
+        Types.SamplerBindingTypeNonFiltering →
+            Js.from "non-filtering"
+        Types.SamplerBindingTypeComparison →
+            Js.from "comparison"
+
+
+decodeSamplerBindingType : V → Types.SamplerBindingType
+decodeSamplerBindingType value =
+    if Js.same value (Js.from "filtering") then
+        Types.SamplerBindingTypeFiltering
+    else if Js.same value (Js.from "non-filtering") then
+        Types.SamplerBindingTypeNonFiltering
+    else if Js.same value (Js.from "comparison") then
+        Types.SamplerBindingTypeComparison
+    else
+        broken "Unexpected SamplerBindingType value"
+
+
+encodeTextureSampleType : Types.TextureSampleType → V
+encodeTextureSampleType value =
+    case value of
+        Types.TextureSampleTypeFloat →
+            Js.from "float"
+        Types.TextureSampleTypeUnfilterableFloat →
+            Js.from "unfilterable-float"
+        Types.TextureSampleTypeDepth →
+            Js.from "depth"
+        Types.TextureSampleTypeSint →
+            Js.from "sint"
+        Types.TextureSampleTypeUint →
+            Js.from "uint"
+
+
+decodeTextureSampleType : V → Types.TextureSampleType
+decodeTextureSampleType value =
+    if Js.same value (Js.from "float") then
+        Types.TextureSampleTypeFloat
+    else if Js.same value (Js.from "unfilterable-float") then
+        Types.TextureSampleTypeUnfilterableFloat
+    else if Js.same value (Js.from "depth") then
+        Types.TextureSampleTypeDepth
+    else if Js.same value (Js.from "sint") then
+        Types.TextureSampleTypeSint
+    else if Js.same value (Js.from "uint") then
+        Types.TextureSampleTypeUint
+    else
+        broken "Unexpected TextureSampleType value"
+
+
+encodeStorageTextureAccess : Types.StorageTextureAccess → V
+encodeStorageTextureAccess value =
+    case value of
+        Types.StorageTextureAccessWriteOnly →
+            Js.from "write-only"
+        Types.StorageTextureAccessReadOnly →
+            Js.from "read-only"
+        Types.StorageTextureAccessReadWrite →
+            Js.from "read-write"
+
+
+decodeStorageTextureAccess : V → Types.StorageTextureAccess
+decodeStorageTextureAccess value =
+    if Js.same value (Js.from "write-only") then
+        Types.StorageTextureAccessWriteOnly
+    else if Js.same value (Js.from "read-only") then
+        Types.StorageTextureAccessReadOnly
+    else if Js.same value (Js.from "read-write") then
+        Types.StorageTextureAccessReadWrite
+    else
+        broken "Unexpected StorageTextureAccess value"
+
+
+encodeCompilationMessageType : Types.CompilationMessageType → V
+encodeCompilationMessageType value =
+    case value of
+        Types.CompilationMessageTypeError →
+            Js.from "error"
+        Types.CompilationMessageTypeWarning →
+            Js.from "warning"
+        Types.CompilationMessageTypeInfo →
+            Js.from "info"
+
+
+decodeCompilationMessageType : V → Types.CompilationMessageType
+decodeCompilationMessageType value =
+    if Js.same value (Js.from "error") then
+        Types.CompilationMessageTypeError
+    else if Js.same value (Js.from "warning") then
+        Types.CompilationMessageTypeWarning
+    else if Js.same value (Js.from "info") then
+        Types.CompilationMessageTypeInfo
+    else
+        broken "Unexpected CompilationMessageType value"
+
+
+encodePipelineErrorReason : Types.PipelineErrorReason → V
+encodePipelineErrorReason value =
+    case value of
+        Types.PipelineErrorReasonValidation →
+            Js.from "validation"
+        Types.PipelineErrorReasonInternal →
+            Js.from "internal"
+
+
+decodePipelineErrorReason : V → Types.PipelineErrorReason
+decodePipelineErrorReason value =
+    if Js.same value (Js.from "validation") then
+        Types.PipelineErrorReasonValidation
+    else if Js.same value (Js.from "internal") then
+        Types.PipelineErrorReasonInternal
+    else
+        broken "Unexpected PipelineErrorReason value"
+
+
+encodeAutoLayoutMode : Types.AutoLayoutMode → V
+encodeAutoLayoutMode value =
+    case value of
+        Types.AutoLayoutModeAuto →
+            Js.from "auto"
+
+
+decodeAutoLayoutMode : V → Types.AutoLayoutMode
+decodeAutoLayoutMode value =
+    if Js.same value (Js.from "auto") then
+        Types.AutoLayoutModeAuto
+    else
+        broken "Unexpected AutoLayoutMode value"
+
+
+encodePrimitiveTopology : Types.PrimitiveTopology → V
+encodePrimitiveTopology value =
+    case value of
+        Types.PrimitiveTopologyPointList →
+            Js.from "point-list"
+        Types.PrimitiveTopologyLineList →
+            Js.from "line-list"
+        Types.PrimitiveTopologyLineStrip →
+            Js.from "line-strip"
+        Types.PrimitiveTopologyTriangleList →
+            Js.from "triangle-list"
+        Types.PrimitiveTopologyTriangleStrip →
+            Js.from "triangle-strip"
+
+
+decodePrimitiveTopology : V → Types.PrimitiveTopology
+decodePrimitiveTopology value =
+    if Js.same value (Js.from "point-list") then
+        Types.PrimitiveTopologyPointList
+    else if Js.same value (Js.from "line-list") then
+        Types.PrimitiveTopologyLineList
+    else if Js.same value (Js.from "line-strip") then
+        Types.PrimitiveTopologyLineStrip
+    else if Js.same value (Js.from "triangle-list") then
+        Types.PrimitiveTopologyTriangleList
+    else if Js.same value (Js.from "triangle-strip") then
+        Types.PrimitiveTopologyTriangleStrip
+    else
+        broken "Unexpected PrimitiveTopology value"
+
+
+encodeFrontFace : Types.FrontFace → V
+encodeFrontFace value =
+    case value of
+        Types.FrontFaceCcw →
+            Js.from "ccw"
+        Types.FrontFaceCw →
+            Js.from "cw"
+
+
+decodeFrontFace : V → Types.FrontFace
+decodeFrontFace value =
+    if Js.same value (Js.from "ccw") then
+        Types.FrontFaceCcw
+    else if Js.same value (Js.from "cw") then
+        Types.FrontFaceCw
+    else
+        broken "Unexpected FrontFace value"
+
+
+encodeCullMode : Types.CullMode → V
+encodeCullMode value =
+    case value of
+        Types.CullModeNone →
+            Js.from "none"
+        Types.CullModeFront →
+            Js.from "front"
+        Types.CullModeBack →
+            Js.from "back"
+
+
+decodeCullMode : V → Types.CullMode
+decodeCullMode value =
+    if Js.same value (Js.from "none") then
+        Types.CullModeNone
+    else if Js.same value (Js.from "front") then
+        Types.CullModeFront
+    else if Js.same value (Js.from "back") then
+        Types.CullModeBack
+    else
+        broken "Unexpected CullMode value"
+
+
+encodeBlendFactor : Types.BlendFactor → V
+encodeBlendFactor value =
+    case value of
+        Types.BlendFactorZero →
+            Js.from "zero"
+        Types.BlendFactorOne →
+            Js.from "one"
+        Types.BlendFactorSrc →
+            Js.from "src"
+        Types.BlendFactorOneMinusSrc →
+            Js.from "one-minus-src"
+        Types.BlendFactorSrcAlpha →
+            Js.from "src-alpha"
+        Types.BlendFactorOneMinusSrcAlpha →
+            Js.from "one-minus-src-alpha"
+        Types.BlendFactorDst →
+            Js.from "dst"
+        Types.BlendFactorOneMinusDst →
+            Js.from "one-minus-dst"
+        Types.BlendFactorDstAlpha →
+            Js.from "dst-alpha"
+        Types.BlendFactorOneMinusDstAlpha →
+            Js.from "one-minus-dst-alpha"
+        Types.BlendFactorSrcAlphaSaturated →
+            Js.from "src-alpha-saturated"
+        Types.BlendFactorConstant →
+            Js.from "constant"
+        Types.BlendFactorOneMinusConstant →
+            Js.from "one-minus-constant"
+        Types.BlendFactorSrc1 →
+            Js.from "src1"
+        Types.BlendFactorOneMinusSrc1 →
+            Js.from "one-minus-src1"
+        Types.BlendFactorSrc1Alpha →
+            Js.from "src1-alpha"
+        Types.BlendFactorOneMinusSrc1Alpha →
+            Js.from "one-minus-src1-alpha"
+
+
+decodeBlendFactor : V → Types.BlendFactor
+decodeBlendFactor value =
+    if Js.same value (Js.from "zero") then
+        Types.BlendFactorZero
+    else if Js.same value (Js.from "one") then
+        Types.BlendFactorOne
+    else if Js.same value (Js.from "src") then
+        Types.BlendFactorSrc
+    else if Js.same value (Js.from "one-minus-src") then
+        Types.BlendFactorOneMinusSrc
+    else if Js.same value (Js.from "src-alpha") then
+        Types.BlendFactorSrcAlpha
+    else if Js.same value (Js.from "one-minus-src-alpha") then
+        Types.BlendFactorOneMinusSrcAlpha
+    else if Js.same value (Js.from "dst") then
+        Types.BlendFactorDst
+    else if Js.same value (Js.from "one-minus-dst") then
+        Types.BlendFactorOneMinusDst
+    else if Js.same value (Js.from "dst-alpha") then
+        Types.BlendFactorDstAlpha
+    else if Js.same value (Js.from "one-minus-dst-alpha") then
+        Types.BlendFactorOneMinusDstAlpha
+    else if Js.same value (Js.from "src-alpha-saturated") then
+        Types.BlendFactorSrcAlphaSaturated
+    else if Js.same value (Js.from "constant") then
+        Types.BlendFactorConstant
+    else if Js.same value (Js.from "one-minus-constant") then
+        Types.BlendFactorOneMinusConstant
+    else if Js.same value (Js.from "src1") then
+        Types.BlendFactorSrc1
+    else if Js.same value (Js.from "one-minus-src1") then
+        Types.BlendFactorOneMinusSrc1
+    else if Js.same value (Js.from "src1-alpha") then
+        Types.BlendFactorSrc1Alpha
+    else if Js.same value (Js.from "one-minus-src1-alpha") then
+        Types.BlendFactorOneMinusSrc1Alpha
+    else
+        broken "Unexpected BlendFactor value"
+
+
+encodeBlendOperation : Types.BlendOperation → V
+encodeBlendOperation value =
+    case value of
+        Types.BlendOperationAdd →
+            Js.from "add"
+        Types.BlendOperationSubtract →
+            Js.from "subtract"
+        Types.BlendOperationReverseSubtract →
+            Js.from "reverse-subtract"
+        Types.BlendOperationMin →
+            Js.from "min"
+        Types.BlendOperationMax →
+            Js.from "max"
+
+
+decodeBlendOperation : V → Types.BlendOperation
+decodeBlendOperation value =
+    if Js.same value (Js.from "add") then
+        Types.BlendOperationAdd
+    else if Js.same value (Js.from "subtract") then
+        Types.BlendOperationSubtract
+    else if Js.same value (Js.from "reverse-subtract") then
+        Types.BlendOperationReverseSubtract
+    else if Js.same value (Js.from "min") then
+        Types.BlendOperationMin
+    else if Js.same value (Js.from "max") then
+        Types.BlendOperationMax
+    else
+        broken "Unexpected BlendOperation value"
+
+
+encodeStencilOperation : Types.StencilOperation → V
+encodeStencilOperation value =
+    case value of
+        Types.StencilOperationKeep →
+            Js.from "keep"
+        Types.StencilOperationZero →
+            Js.from "zero"
+        Types.StencilOperationReplace →
+            Js.from "replace"
+        Types.StencilOperationInvert →
+            Js.from "invert"
+        Types.StencilOperationIncrementClamp →
+            Js.from "increment-clamp"
+        Types.StencilOperationDecrementClamp →
+            Js.from "decrement-clamp"
+        Types.StencilOperationIncrementWrap →
+            Js.from "increment-wrap"
+        Types.StencilOperationDecrementWrap →
+            Js.from "decrement-wrap"
+
+
+decodeStencilOperation : V → Types.StencilOperation
+decodeStencilOperation value =
+    if Js.same value (Js.from "keep") then
+        Types.StencilOperationKeep
+    else if Js.same value (Js.from "zero") then
+        Types.StencilOperationZero
+    else if Js.same value (Js.from "replace") then
+        Types.StencilOperationReplace
+    else if Js.same value (Js.from "invert") then
+        Types.StencilOperationInvert
+    else if Js.same value (Js.from "increment-clamp") then
+        Types.StencilOperationIncrementClamp
+    else if Js.same value (Js.from "decrement-clamp") then
+        Types.StencilOperationDecrementClamp
+    else if Js.same value (Js.from "increment-wrap") then
+        Types.StencilOperationIncrementWrap
+    else if Js.same value (Js.from "decrement-wrap") then
+        Types.StencilOperationDecrementWrap
+    else
+        broken "Unexpected StencilOperation value"
+
+
+encodeIndexFormat : Types.IndexFormat → V
+encodeIndexFormat value =
+    case value of
+        Types.IndexFormatUint16 →
+            Js.from "uint16"
+        Types.IndexFormatUint32 →
+            Js.from "uint32"
+
+
+decodeIndexFormat : V → Types.IndexFormat
+decodeIndexFormat value =
+    if Js.same value (Js.from "uint16") then
+        Types.IndexFormatUint16
+    else if Js.same value (Js.from "uint32") then
+        Types.IndexFormatUint32
+    else
+        broken "Unexpected IndexFormat value"
+
+
+encodeVertexFormat : Types.VertexFormat → V
+encodeVertexFormat value =
+    case value of
+        Types.VertexFormatUint8 →
+            Js.from "uint8"
+        Types.VertexFormatUint8x2 →
+            Js.from "uint8x2"
+        Types.VertexFormatUint8x4 →
+            Js.from "uint8x4"
+        Types.VertexFormatSint8 →
+            Js.from "sint8"
+        Types.VertexFormatSint8x2 →
+            Js.from "sint8x2"
+        Types.VertexFormatSint8x4 →
+            Js.from "sint8x4"
+        Types.VertexFormatUnorm8 →
+            Js.from "unorm8"
+        Types.VertexFormatUnorm8x2 →
+            Js.from "unorm8x2"
+        Types.VertexFormatUnorm8x4 →
+            Js.from "unorm8x4"
+        Types.VertexFormatSnorm8 →
+            Js.from "snorm8"
+        Types.VertexFormatSnorm8x2 →
+            Js.from "snorm8x2"
+        Types.VertexFormatSnorm8x4 →
+            Js.from "snorm8x4"
+        Types.VertexFormatUint16 →
+            Js.from "uint16"
+        Types.VertexFormatUint16x2 →
+            Js.from "uint16x2"
+        Types.VertexFormatUint16x4 →
+            Js.from "uint16x4"
+        Types.VertexFormatSint16 →
+            Js.from "sint16"
+        Types.VertexFormatSint16x2 →
+            Js.from "sint16x2"
+        Types.VertexFormatSint16x4 →
+            Js.from "sint16x4"
+        Types.VertexFormatUnorm16 →
+            Js.from "unorm16"
+        Types.VertexFormatUnorm16x2 →
+            Js.from "unorm16x2"
+        Types.VertexFormatUnorm16x4 →
+            Js.from "unorm16x4"
+        Types.VertexFormatSnorm16 →
+            Js.from "snorm16"
+        Types.VertexFormatSnorm16x2 →
+            Js.from "snorm16x2"
+        Types.VertexFormatSnorm16x4 →
+            Js.from "snorm16x4"
+        Types.VertexFormatFloat16 →
+            Js.from "float16"
+        Types.VertexFormatFloat16x2 →
+            Js.from "float16x2"
+        Types.VertexFormatFloat16x4 →
+            Js.from "float16x4"
+        Types.VertexFormatFloat32 →
+            Js.from "float32"
+        Types.VertexFormatFloat32x2 →
+            Js.from "float32x2"
+        Types.VertexFormatFloat32x3 →
+            Js.from "float32x3"
+        Types.VertexFormatFloat32x4 →
+            Js.from "float32x4"
+        Types.VertexFormatUint32 →
+            Js.from "uint32"
+        Types.VertexFormatUint32x2 →
+            Js.from "uint32x2"
+        Types.VertexFormatUint32x3 →
+            Js.from "uint32x3"
+        Types.VertexFormatUint32x4 →
+            Js.from "uint32x4"
+        Types.VertexFormatSint32 →
+            Js.from "sint32"
+        Types.VertexFormatSint32x2 →
+            Js.from "sint32x2"
+        Types.VertexFormatSint32x3 →
+            Js.from "sint32x3"
+        Types.VertexFormatSint32x4 →
+            Js.from "sint32x4"
+        Types.VertexFormatUnorm1010102 →
+            Js.from "unorm10-10-10-2"
+        Types.VertexFormatUnorm8x4Bgra →
+            Js.from "unorm8x4-bgra"
+        Types.VertexFormatSnorm1010102 →
+            Js.from "snorm10-10-10-2"
+
+
+decodeVertexFormat : V → Types.VertexFormat
+decodeVertexFormat value =
+    if Js.same value (Js.from "uint8") then
+        Types.VertexFormatUint8
+    else if Js.same value (Js.from "uint8x2") then
+        Types.VertexFormatUint8x2
+    else if Js.same value (Js.from "uint8x4") then
+        Types.VertexFormatUint8x4
+    else if Js.same value (Js.from "sint8") then
+        Types.VertexFormatSint8
+    else if Js.same value (Js.from "sint8x2") then
+        Types.VertexFormatSint8x2
+    else if Js.same value (Js.from "sint8x4") then
+        Types.VertexFormatSint8x4
+    else if Js.same value (Js.from "unorm8") then
+        Types.VertexFormatUnorm8
+    else if Js.same value (Js.from "unorm8x2") then
+        Types.VertexFormatUnorm8x2
+    else if Js.same value (Js.from "unorm8x4") then
+        Types.VertexFormatUnorm8x4
+    else if Js.same value (Js.from "snorm8") then
+        Types.VertexFormatSnorm8
+    else if Js.same value (Js.from "snorm8x2") then
+        Types.VertexFormatSnorm8x2
+    else if Js.same value (Js.from "snorm8x4") then
+        Types.VertexFormatSnorm8x4
+    else if Js.same value (Js.from "uint16") then
+        Types.VertexFormatUint16
+    else if Js.same value (Js.from "uint16x2") then
+        Types.VertexFormatUint16x2
+    else if Js.same value (Js.from "uint16x4") then
+        Types.VertexFormatUint16x4
+    else if Js.same value (Js.from "sint16") then
+        Types.VertexFormatSint16
+    else if Js.same value (Js.from "sint16x2") then
+        Types.VertexFormatSint16x2
+    else if Js.same value (Js.from "sint16x4") then
+        Types.VertexFormatSint16x4
+    else if Js.same value (Js.from "unorm16") then
+        Types.VertexFormatUnorm16
+    else if Js.same value (Js.from "unorm16x2") then
+        Types.VertexFormatUnorm16x2
+    else if Js.same value (Js.from "unorm16x4") then
+        Types.VertexFormatUnorm16x4
+    else if Js.same value (Js.from "snorm16") then
+        Types.VertexFormatSnorm16
+    else if Js.same value (Js.from "snorm16x2") then
+        Types.VertexFormatSnorm16x2
+    else if Js.same value (Js.from "snorm16x4") then
+        Types.VertexFormatSnorm16x4
+    else if Js.same value (Js.from "float16") then
+        Types.VertexFormatFloat16
+    else if Js.same value (Js.from "float16x2") then
+        Types.VertexFormatFloat16x2
+    else if Js.same value (Js.from "float16x4") then
+        Types.VertexFormatFloat16x4
+    else if Js.same value (Js.from "float32") then
+        Types.VertexFormatFloat32
+    else if Js.same value (Js.from "float32x2") then
+        Types.VertexFormatFloat32x2
+    else if Js.same value (Js.from "float32x3") then
+        Types.VertexFormatFloat32x3
+    else if Js.same value (Js.from "float32x4") then
+        Types.VertexFormatFloat32x4
+    else if Js.same value (Js.from "uint32") then
+        Types.VertexFormatUint32
+    else if Js.same value (Js.from "uint32x2") then
+        Types.VertexFormatUint32x2
+    else if Js.same value (Js.from "uint32x3") then
+        Types.VertexFormatUint32x3
+    else if Js.same value (Js.from "uint32x4") then
+        Types.VertexFormatUint32x4
+    else if Js.same value (Js.from "sint32") then
+        Types.VertexFormatSint32
+    else if Js.same value (Js.from "sint32x2") then
+        Types.VertexFormatSint32x2
+    else if Js.same value (Js.from "sint32x3") then
+        Types.VertexFormatSint32x3
+    else if Js.same value (Js.from "sint32x4") then
+        Types.VertexFormatSint32x4
+    else if Js.same value (Js.from "unorm10-10-10-2") then
+        Types.VertexFormatUnorm1010102
+    else if Js.same value (Js.from "unorm8x4-bgra") then
+        Types.VertexFormatUnorm8x4Bgra
+    else if Js.same value (Js.from "snorm10-10-10-2") then
+        Types.VertexFormatSnorm1010102
+    else
+        broken "Unexpected VertexFormat value"
+
+
+encodeVertexStepMode : Types.VertexStepMode → V
+encodeVertexStepMode value =
+    case value of
+        Types.VertexStepModeVertex →
+            Js.from "vertex"
+        Types.VertexStepModeInstance →
+            Js.from "instance"
+
+
+decodeVertexStepMode : V → Types.VertexStepMode
+decodeVertexStepMode value =
+    if Js.same value (Js.from "vertex") then
+        Types.VertexStepModeVertex
+    else if Js.same value (Js.from "instance") then
+        Types.VertexStepModeInstance
+    else
+        broken "Unexpected VertexStepMode value"
+
+
+encodeLoadOp : Types.LoadOp → V
+encodeLoadOp value =
+    case value of
+        Types.LoadOpLoad →
+            Js.from "load"
+        Types.LoadOpClear →
+            Js.from "clear"
+
+
+decodeLoadOp : V → Types.LoadOp
+decodeLoadOp value =
+    if Js.same value (Js.from "load") then
+        Types.LoadOpLoad
+    else if Js.same value (Js.from "clear") then
+        Types.LoadOpClear
+    else
+        broken "Unexpected LoadOp value"
+
+
+encodeStoreOp : Types.StoreOp → V
+encodeStoreOp value =
+    case value of
+        Types.StoreOpStore →
+            Js.from "store"
+        Types.StoreOpDiscard →
+            Js.from "discard"
+
+
+decodeStoreOp : V → Types.StoreOp
+decodeStoreOp value =
+    if Js.same value (Js.from "store") then
+        Types.StoreOpStore
+    else if Js.same value (Js.from "discard") then
+        Types.StoreOpDiscard
+    else
+        broken "Unexpected StoreOp value"
+
+
+encodeQueryType : Types.QueryType → V
+encodeQueryType value =
+    case value of
+        Types.QueryTypeOcclusion →
+            Js.from "occlusion"
+        Types.QueryTypeTimestamp →
+            Js.from "timestamp"
+
+
+decodeQueryType : V → Types.QueryType
+decodeQueryType value =
+    if Js.same value (Js.from "occlusion") then
+        Types.QueryTypeOcclusion
+    else if Js.same value (Js.from "timestamp") then
+        Types.QueryTypeTimestamp
+    else
+        broken "Unexpected QueryType value"
+
+
+encodeCanvasAlphaMode : Types.CanvasAlphaMode → V
+encodeCanvasAlphaMode value =
+    case value of
+        Types.CanvasAlphaModeOpaque →
+            Js.from "opaque"
+        Types.CanvasAlphaModePremultiplied →
+            Js.from "premultiplied"
+
+
+decodeCanvasAlphaMode : V → Types.CanvasAlphaMode
+decodeCanvasAlphaMode value =
+    if Js.same value (Js.from "opaque") then
+        Types.CanvasAlphaModeOpaque
+    else if Js.same value (Js.from "premultiplied") then
+        Types.CanvasAlphaModePremultiplied
+    else
+        broken "Unexpected CanvasAlphaMode value"
+
+
+encodeCanvasToneMappingMode : Types.CanvasToneMappingMode → V
+encodeCanvasToneMappingMode value =
+    case value of
+        Types.CanvasToneMappingModeStandard →
+            Js.from "standard"
+        Types.CanvasToneMappingModeExtended →
+            Js.from "extended"
+
+
+decodeCanvasToneMappingMode : V → Types.CanvasToneMappingMode
+decodeCanvasToneMappingMode value =
+    if Js.same value (Js.from "standard") then
+        Types.CanvasToneMappingModeStandard
+    else if Js.same value (Js.from "extended") then
+        Types.CanvasToneMappingModeExtended
+    else
+        broken "Unexpected CanvasToneMappingMode value"
+
+
+encodeDeviceLostReason : Types.DeviceLostReason → V
+encodeDeviceLostReason value =
+    case value of
+        Types.DeviceLostReasonUnknown →
+            Js.from "unknown"
+        Types.DeviceLostReasonDestroyed →
+            Js.from "destroyed"
+
+
+decodeDeviceLostReason : V → Types.DeviceLostReason
+decodeDeviceLostReason value =
+    if Js.same value (Js.from "unknown") then
+        Types.DeviceLostReasonUnknown
+    else if Js.same value (Js.from "destroyed") then
+        Types.DeviceLostReasonDestroyed
+    else
+        broken "Unexpected DeviceLostReason value"
+
+
+encodeErrorFilter : Types.ErrorFilter → V
+encodeErrorFilter value =
+    case value of
+        Types.ErrorFilterValidation →
+            Js.from "validation"
+        Types.ErrorFilterOutOfMemory →
+            Js.from "out-of-memory"
+        Types.ErrorFilterInternal →
+            Js.from "internal"
+
+
+decodeErrorFilter : V → Types.ErrorFilter
+decodeErrorFilter value =
+    if Js.same value (Js.from "validation") then
+        Types.ErrorFilterValidation
+    else if Js.same value (Js.from "out-of-memory") then
+        Types.ErrorFilterOutOfMemory
+    else if Js.same value (Js.from "internal") then
+        Types.ErrorFilterInternal
+    else
+        broken "Unexpected ErrorFilter value"
+
+
+encodeObjectDescriptorBase : Types.ObjectDescriptorBase → V
+encodeObjectDescriptorBase value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    object
+
+
+encodeRequestAdapterOptions : Types.RequestAdapterOptions → V
+encodeRequestAdapterOptions value =
+    object = Js.object []
+    putOption object "featureLevel" value.featureLevel λitem → Js.from item
+    putOption object "powerPreference" value.powerPreference λitem → encodePowerPreference item
+    putOption object "forceFallbackAdapter" value.forceFallbackAdapter λitem → Js.from item
+    putOption object "xrCompatible" value.xrCompatible λitem → Js.from item
+    object
+
+
+encodeDeviceDescriptor : Types.DeviceDescriptor → V
+encodeDeviceDescriptor value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    putOption object "requiredFeatures" value.requiredFeatures λitem →
+        nativeArray item λpart0 → encodeFeatureName part0
+    putOption object "requiredLimits" value.requiredLimits λitem → encodeLimits item
+    putOption object "defaultQueue" value.defaultQueue λitem → encodeQueueDescriptor item
+    object
+
+
+encodeBufferDescriptor : Types.BufferDescriptor → V
+encodeBufferDescriptor value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    Js.set object "size" (Js.from (Scalar.size64Value value.size))
+    Js.set object "usage" (Js.from (Flags.bufferUsageValue value.usage))
+    putOption object "mappedAtCreation" value.mappedAtCreation λitem → Js.from item
+    object
+
+
+encodeTextureDescriptor : Types.TextureDescriptor → V
+encodeTextureDescriptor value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    Js.set object "size" (encodeExtent3D value.size)
+    putOption object "mipLevelCount" value.mipLevelCount λitem → Js.from (Scalar.u32Value item)
+    putOption object "sampleCount" value.sampleCount λitem → Js.from (Scalar.u32Value item)
+    putOption object "dimension" value.dimension λitem → encodeTextureDimension item
+    Js.set object "format" (encodeTextureFormat value.format)
+    Js.set object "usage" (Js.from (Flags.textureUsageValue value.usage))
+    putOption object "viewFormats" value.viewFormats λitem →
+        nativeArray item λpart0 → encodeTextureFormat part0
+    putOption object "textureBindingViewDimension" value.textureBindingViewDimension λitem →
+        encodeTextureViewDimension item
+    object
+
+
+encodeTextureViewDescriptor : Types.TextureViewDescriptor → V
+encodeTextureViewDescriptor value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    putOption object "format" value.format λitem → encodeTextureFormat item
+    putOption object "dimension" value.dimension λitem → encodeTextureViewDimension item
+    putOption object "usage" value.usage λitem → Js.from (Flags.textureUsageValue item)
+    putOption object "aspect" value.aspect λitem → encodeTextureAspect item
+    putOption object "baseMipLevel" value.baseMipLevel λitem → Js.from (Scalar.u32Value item)
+    putOption object "mipLevelCount" value.mipLevelCount λitem → Js.from (Scalar.u32Value item)
+    putOption object "baseArrayLayer" value.baseArrayLayer λitem → Js.from (Scalar.u32Value item)
+    putOption object "arrayLayerCount" value.arrayLayerCount λitem → Js.from (Scalar.u32Value item)
+    putOption object "swizzle" value.swizzle λitem → Js.from item
+    object
+
+
+encodeExternalTextureDescriptor : Types.ExternalTextureDescriptor → V
+encodeExternalTextureDescriptor value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    Js.set object "source" (encodeExternalTextureSource value.source)
+    putOption object "colorSpace" value.colorSpace λitem → encodeColorSpace item
+    object
+
+
+encodeSamplerDescriptor : Types.SamplerDescriptor → V
+encodeSamplerDescriptor value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    putOption object "addressModeU" value.addressModeU λitem → encodeAddressMode item
+    putOption object "addressModeV" value.addressModeV λitem → encodeAddressMode item
+    putOption object "addressModeW" value.addressModeW λitem → encodeAddressMode item
+    putOption object "magFilter" value.magFilter λitem → encodeFilterMode item
+    putOption object "minFilter" value.minFilter λitem → encodeFilterMode item
+    putOption object "mipmapFilter" value.mipmapFilter λitem → encodeMipmapFilterMode item
+    putOption object "lodMinClamp" value.lodMinClamp λitem → Js.from (Scalar.f32Value item)
+    putOption object "lodMaxClamp" value.lodMaxClamp λitem → Js.from (Scalar.f32Value item)
+    putOption object "compare" value.compare λitem → encodeCompareFunction item
+    putOption object "maxAnisotropy" value.maxAnisotropy λitem → Js.from item
+    object
+
+
+encodeBindGroupLayoutDescriptor : Types.BindGroupLayoutDescriptor → V
+encodeBindGroupLayoutDescriptor value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    Js.set object "entries" (nativeArray value.entries λpart0 → encodeBindGroupLayoutEntry part0)
+    object
+
+
+encodeBindGroupLayoutEntry : Types.BindGroupLayoutEntry → V
+encodeBindGroupLayoutEntry value =
+    object = Js.object []
+    Js.set object "binding" (Js.from (Scalar.u32Value value.binding))
+    Js.set object "visibility" (Js.from (Flags.shaderStageValue value.visibility))
+    putOption object "buffer" value.buffer λitem → encodeBufferBindingLayout item
+    putOption object "sampler" value.sampler λitem → encodeSamplerBindingLayout item
+    putOption object "texture" value.texture λitem → encodeTextureBindingLayout item
+    putOption object "storageTexture" value.storageTexture λitem →
+        encodeStorageTextureBindingLayout item
+    putOption object "externalTexture" value.externalTexture λitem →
+        encodeExternalTextureBindingLayout item
+    object
+
+
+encodeBufferBindingLayout : Types.BufferBindingLayout → V
+encodeBufferBindingLayout value =
+    object = Js.object []
+    putOption object "type" value.kind λitem → encodeBufferBindingType item
+    putOption object "hasDynamicOffset" value.hasDynamicOffset λitem → Js.from item
+    putOption object "minBindingSize" value.minBindingSize λitem → Js.from (Scalar.size64Value item)
+    object
+
+
+encodeSamplerBindingLayout : Types.SamplerBindingLayout → V
+encodeSamplerBindingLayout value =
+    object = Js.object []
+    putOption object "type" value.kind λitem → encodeSamplerBindingType item
+    object
+
+
+encodeTextureBindingLayout : Types.TextureBindingLayout → V
+encodeTextureBindingLayout value =
+    object = Js.object []
+    putOption object "sampleType" value.sampleType λitem → encodeTextureSampleType item
+    putOption object "viewDimension" value.viewDimension λitem → encodeTextureViewDimension item
+    putOption object "multisampled" value.multisampled λitem → Js.from item
+    object
+
+
+encodeStorageTextureBindingLayout : Types.StorageTextureBindingLayout → V
+encodeStorageTextureBindingLayout value =
+    object = Js.object []
+    putOption object "access" value.access λitem → encodeStorageTextureAccess item
+    Js.set object "format" (encodeTextureFormat value.format)
+    putOption object "viewDimension" value.viewDimension λitem → encodeTextureViewDimension item
+    object
+
+
+encodeExternalTextureBindingLayout : Types.ExternalTextureBindingLayout → V
+encodeExternalTextureBindingLayout value =
+    object = Js.object []
+    object
+
+
+encodeBindGroupDescriptor : Types.BindGroupDescriptor → V
+encodeBindGroupDescriptor value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    Js.set object "layout" (Js.from value.layout)
+    Js.set object "entries" (nativeArray value.entries λpart0 → encodeBindGroupEntry part0)
+    object
+
+
+encodeBindGroupEntry : Types.BindGroupEntry → V
+encodeBindGroupEntry value =
+    object = Js.object []
+    Js.set object "binding" (Js.from (Scalar.u32Value value.binding))
+    Js.set object "resource" (encodeBindingResource value.resource)
+    object
+
+
+encodeBufferBinding : Types.BufferBinding → V
+encodeBufferBinding value =
+    object = Js.object []
+    Js.set object "buffer" (Js.from value.buffer)
+    putOption object "offset" value.offset λitem → Js.from (Scalar.size64Value item)
+    putOption object "size" value.size λitem → Js.from (Scalar.size64Value item)
+    object
+
+
+encodePipelineLayoutDescriptor : Types.PipelineLayoutDescriptor → V
+encodePipelineLayoutDescriptor value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    Js.set
+        object
+        "bindGroupLayouts"
+        (nativeArray value.bindGroupLayouts λpart0 → nullable (λpart1 → Js.from part1) part0)
+    putOption object "immediateSize" value.immediateSize λitem → Js.from (Scalar.u32Value item)
+    object
+
+
+encodeShaderModuleDescriptor : Types.ShaderModuleDescriptor → V
+encodeShaderModuleDescriptor value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    Js.set object "code" (Js.from value.code)
+    putOption object "compilationHints" value.compilationHints λitem →
+        nativeArray item λpart0 → encodeShaderModuleCompilationHint part0
+    object
+
+
+encodeShaderModuleCompilationHint : Types.ShaderModuleCompilationHint → V
+encodeShaderModuleCompilationHint value =
+    object = Js.object []
+    Js.set object "entryPoint" (Js.from value.entryPoint)
+    putOption object "layout" value.layout λitem → encodePipelineLayoutMode item
+    object
+
+
+encodePipelineErrorInit : Types.PipelineErrorInit → V
+encodePipelineErrorInit value =
+    object = Js.object []
+    Js.set object "reason" (encodePipelineErrorReason value.reason)
+    object
+
+
+encodePipelineDescriptorBase : Types.PipelineDescriptorBase → V
+encodePipelineDescriptorBase value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    Js.set object "layout" (encodePipelineLayoutMode value.layout)
+    object
+
+
+encodeProgrammableStage : Types.ProgrammableStage → V
+encodeProgrammableStage value =
+    object = Js.object []
+    Js.set object "module" (Js.from value.shader)
+    putOption object "entryPoint" value.entryPoint λitem → Js.from item
+    putOption object "constants" value.constants λitem → encodeConstants item
+    object
+
+
+encodeComputePipelineDescriptor : Types.ComputePipelineDescriptor → V
+encodeComputePipelineDescriptor value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    Js.set object "layout" (encodePipelineLayoutMode value.layout)
+    Js.set object "compute" (encodeProgrammableStage value.compute)
+    object
+
+
+encodeRenderPipelineDescriptor : Types.RenderPipelineDescriptor → V
+encodeRenderPipelineDescriptor value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    Js.set object "layout" (encodePipelineLayoutMode value.layout)
+    Js.set object "vertex" (encodeVertexState value.vertex)
+    putOption object "primitive" value.primitive λitem → encodePrimitiveState item
+    putOption object "depthStencil" value.depthStencil λitem → encodeDepthStencilState item
+    putOption object "multisample" value.multisample λitem → encodeMultisampleState item
+    putOption object "fragment" value.fragment λitem → encodeFragmentState item
+    object
+
+
+encodePrimitiveState : Types.PrimitiveState → V
+encodePrimitiveState value =
+    object = Js.object []
+    putOption object "topology" value.topology λitem → encodePrimitiveTopology item
+    putOption object "stripIndexFormat" value.stripIndexFormat λitem → encodeIndexFormat item
+    putOption object "frontFace" value.frontFace λitem → encodeFrontFace item
+    putOption object "cullMode" value.cullMode λitem → encodeCullMode item
+    putOption object "unclippedDepth" value.unclippedDepth λitem → Js.from item
+    object
+
+
+encodeMultisampleState : Types.MultisampleState → V
+encodeMultisampleState value =
+    object = Js.object []
+    putOption object "count" value.count λitem → Js.from (Scalar.u32Value item)
+    putOption object "mask" value.mask λitem → Js.from (Scalar.u32Value item)
+    putOption object "alphaToCoverageEnabled" value.alphaToCoverageEnabled λitem → Js.from item
+    object
+
+
+encodeFragmentState : Types.FragmentState → V
+encodeFragmentState value =
+    object = Js.object []
+    Js.set object "module" (Js.from value.shader)
+    putOption object "entryPoint" value.entryPoint λitem → Js.from item
+    putOption object "constants" value.constants λitem → encodeConstants item
+    Js.set
+        object
+        "targets"
+        (nativeArray value.targets λpart0 → nullable (λpart1 → encodeColorTargetState part1) part0)
+    object
+
+
+encodeColorTargetState : Types.ColorTargetState → V
+encodeColorTargetState value =
+    object = Js.object []
+    Js.set object "format" (encodeTextureFormat value.format)
+    putOption object "blend" value.blend λitem → encodeBlendState item
+    putOption object "writeMask" value.writeMask λitem → Js.from (Flags.colorWriteValue item)
+    object
+
+
+encodeBlendState : Types.BlendState → V
+encodeBlendState value =
+    object = Js.object []
+    Js.set object "color" (encodeBlendComponent value.color)
+    Js.set object "alpha" (encodeBlendComponent value.alpha)
+    object
+
+
+encodeBlendComponent : Types.BlendComponent → V
+encodeBlendComponent value =
+    object = Js.object []
+    putOption object "operation" value.operation λitem → encodeBlendOperation item
+    putOption object "srcFactor" value.srcFactor λitem → encodeBlendFactor item
+    putOption object "dstFactor" value.dstFactor λitem → encodeBlendFactor item
+    object
+
+
+encodeDepthStencilState : Types.DepthStencilState → V
+encodeDepthStencilState value =
+    object = Js.object []
+    Js.set object "format" (encodeTextureFormat value.format)
+    putOption object "depthWriteEnabled" value.depthWriteEnabled λitem → Js.from item
+    putOption object "depthCompare" value.depthCompare λitem → encodeCompareFunction item
+    putOption object "stencilFront" value.stencilFront λitem → encodeStencilFaceState item
+    putOption object "stencilBack" value.stencilBack λitem → encodeStencilFaceState item
+    putOption object "stencilReadMask" value.stencilReadMask λitem → Js.from (Scalar.u32Value item)
+    putOption object "stencilWriteMask" value.stencilWriteMask λitem →
+        Js.from (Scalar.u32Value item)
+    putOption object "depthBias" value.depthBias λitem → Js.from (Scalar.i32Value item)
+    putOption object "depthBiasSlopeScale" value.depthBiasSlopeScale λitem →
+        Js.from (Scalar.f32Value item)
+    putOption object "depthBiasClamp" value.depthBiasClamp λitem → Js.from (Scalar.f32Value item)
+    object
+
+
+encodeStencilFaceState : Types.StencilFaceState → V
+encodeStencilFaceState value =
+    object = Js.object []
+    putOption object "compare" value.compare λitem → encodeCompareFunction item
+    putOption object "failOp" value.failOp λitem → encodeStencilOperation item
+    putOption object "depthFailOp" value.depthFailOp λitem → encodeStencilOperation item
+    putOption object "passOp" value.passOp λitem → encodeStencilOperation item
+    object
+
+
+encodeVertexState : Types.VertexState → V
+encodeVertexState value =
+    object = Js.object []
+    Js.set object "module" (Js.from value.shader)
+    putOption object "entryPoint" value.entryPoint λitem → Js.from item
+    putOption object "constants" value.constants λitem → encodeConstants item
+    putOption object "buffers" value.buffers λitem →
+        nativeArray item λpart0 → nullable (λpart1 → encodeVertexBufferLayout part1) part0
+    object
+
+
+encodeVertexBufferLayout : Types.VertexBufferLayout → V
+encodeVertexBufferLayout value =
+    object = Js.object []
+    Js.set object "arrayStride" (Js.from (Scalar.size64Value value.arrayStride))
+    putOption object "stepMode" value.stepMode λitem → encodeVertexStepMode item
+    Js.set object "attributes" (nativeArray value.attributes λpart0 → encodeVertexAttribute part0)
+    object
+
+
+encodeVertexAttribute : Types.VertexAttribute → V
+encodeVertexAttribute value =
+    object = Js.object []
+    Js.set object "format" (encodeVertexFormat value.format)
+    Js.set object "offset" (Js.from (Scalar.size64Value value.offset))
+    Js.set object "shaderLocation" (Js.from (Scalar.u32Value value.shaderLocation))
+    object
+
+
+encodeTexelCopyBufferLayout : Types.TexelCopyBufferLayout → V
+encodeTexelCopyBufferLayout value =
+    object = Js.object []
+    putOption object "offset" value.offset λitem → Js.from (Scalar.size64Value item)
+    putOption object "bytesPerRow" value.bytesPerRow λitem → Js.from (Scalar.u32Value item)
+    putOption object "rowsPerImage" value.rowsPerImage λitem → Js.from (Scalar.u32Value item)
+    object
+
+
+encodeTexelCopyBufferInfo : Types.TexelCopyBufferInfo → V
+encodeTexelCopyBufferInfo value =
+    object = Js.object []
+    putOption object "offset" value.offset λitem → Js.from (Scalar.size64Value item)
+    putOption object "bytesPerRow" value.bytesPerRow λitem → Js.from (Scalar.u32Value item)
+    putOption object "rowsPerImage" value.rowsPerImage λitem → Js.from (Scalar.u32Value item)
+    Js.set object "buffer" (Js.from value.buffer)
+    object
+
+
+encodeTexelCopyTextureInfo : Types.TexelCopyTextureInfo → V
+encodeTexelCopyTextureInfo value =
+    object = Js.object []
+    Js.set object "texture" (Js.from value.texture)
+    putOption object "mipLevel" value.mipLevel λitem → Js.from (Scalar.u32Value item)
+    putOption object "origin" value.origin λitem → encodeOrigin3D item
+    putOption object "aspect" value.aspect λitem → encodeTextureAspect item
+    object
+
+
+encodeCopyExternalImageDestInfo : Types.CopyExternalImageDestInfo → V
+encodeCopyExternalImageDestInfo value =
+    object = Js.object []
+    Js.set object "texture" (Js.from value.texture)
+    putOption object "mipLevel" value.mipLevel λitem → Js.from (Scalar.u32Value item)
+    putOption object "origin" value.origin λitem → encodeOrigin3D item
+    putOption object "aspect" value.aspect λitem → encodeTextureAspect item
+    putOption object "colorSpace" value.colorSpace λitem → encodeColorSpace item
+    putOption object "premultipliedAlpha" value.premultipliedAlpha λitem → Js.from item
+    object
+
+
+encodeCopyExternalImageSourceInfo : Types.CopyExternalImageSourceInfo → V
+encodeCopyExternalImageSourceInfo value =
+    object = Js.object []
+    Js.set object "source" (encodeImageSource value.source)
+    putOption object "origin" value.origin λitem → encodeOrigin2D item
+    putOption object "flipY" value.flipY λitem → Js.from item
+    object
+
+
+encodeCommandBufferDescriptor : Types.CommandBufferDescriptor → V
+encodeCommandBufferDescriptor value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    object
+
+
+encodeCommandEncoderDescriptor : Types.CommandEncoderDescriptor → V
+encodeCommandEncoderDescriptor value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    object
+
+
+encodeComputePassTimestampWrites : Types.ComputePassTimestampWrites → V
+encodeComputePassTimestampWrites value =
+    object = Js.object []
+    Js.set object "querySet" (Js.from value.querySet)
+    putOption object "beginningOfPassWriteIndex" value.beginningOfPassWriteIndex λitem →
+        Js.from (Scalar.u32Value item)
+    putOption object "endOfPassWriteIndex" value.endOfPassWriteIndex λitem →
+        Js.from (Scalar.u32Value item)
+    object
+
+
+encodeComputePassDescriptor : Types.ComputePassDescriptor → V
+encodeComputePassDescriptor value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    putOption object "timestampWrites" value.timestampWrites λitem →
+        encodeComputePassTimestampWrites item
+    object
+
+
+encodeRenderPassTimestampWrites : Types.RenderPassTimestampWrites → V
+encodeRenderPassTimestampWrites value =
+    object = Js.object []
+    Js.set object "querySet" (Js.from value.querySet)
+    putOption object "beginningOfPassWriteIndex" value.beginningOfPassWriteIndex λitem →
+        Js.from (Scalar.u32Value item)
+    putOption object "endOfPassWriteIndex" value.endOfPassWriteIndex λitem →
+        Js.from (Scalar.u32Value item)
+    object
+
+
+encodeRenderPassDescriptor : Types.RenderPassDescriptor → V
+encodeRenderPassDescriptor value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    Js.set
+        object
+        "colorAttachments"
+        (nativeArray value.colorAttachments λpart0 →
+            nullable (λpart1 → encodeRenderPassColorAttachment part1) part0
+        )
+    putOption object "depthStencilAttachment" value.depthStencilAttachment λitem →
+        encodeRenderPassDepthStencilAttachment item
+    putOption object "occlusionQuerySet" value.occlusionQuerySet λitem → Js.from item
+    putOption object "timestampWrites" value.timestampWrites λitem →
+        encodeRenderPassTimestampWrites item
+    putOption object "maxDrawCount" value.maxDrawCount λitem → Js.from (Scalar.size64Value item)
+    object
+
+
+encodeRenderPassColorAttachment : Types.RenderPassColorAttachment → V
+encodeRenderPassColorAttachment value =
+    object = Js.object []
+    Js.set object "view" (encodeTextureOrView value.view)
+    putOption object "depthSlice" value.depthSlice λitem → Js.from (Scalar.u32Value item)
+    putOption object "resolveTarget" value.resolveTarget λitem → encodeTextureOrView item
+    putOption object "clearValue" value.clearValue λitem → encodeColor item
+    Js.set object "loadOp" (encodeLoadOp value.loadOp)
+    Js.set object "storeOp" (encodeStoreOp value.storeOp)
+    object
+
+
+encodeRenderPassDepthStencilAttachment : Types.RenderPassDepthStencilAttachment → V
+encodeRenderPassDepthStencilAttachment value =
+    object = Js.object []
+    Js.set object "view" (encodeTextureOrView value.view)
+    putOption object "depthClearValue" value.depthClearValue λitem → Js.from (Scalar.f32Value item)
+    putOption object "depthLoadOp" value.depthLoadOp λitem → encodeLoadOp item
+    putOption object "depthStoreOp" value.depthStoreOp λitem → encodeStoreOp item
+    putOption object "depthReadOnly" value.depthReadOnly λitem → Js.from item
+    putOption object "stencilClearValue" value.stencilClearValue λitem →
+        Js.from (Scalar.u32Value item)
+    putOption object "stencilLoadOp" value.stencilLoadOp λitem → encodeLoadOp item
+    putOption object "stencilStoreOp" value.stencilStoreOp λitem → encodeStoreOp item
+    putOption object "stencilReadOnly" value.stencilReadOnly λitem → Js.from item
+    object
+
+
+encodeRenderPassLayout : Types.RenderPassLayout → V
+encodeRenderPassLayout value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    Js.set
+        object
+        "colorFormats"
+        (nativeArray value.colorFormats λpart0 → nullable (λpart1 → encodeTextureFormat part1) part0
+        )
+    putOption object "depthStencilFormat" value.depthStencilFormat λitem → encodeTextureFormat item
+    putOption object "sampleCount" value.sampleCount λitem → Js.from (Scalar.u32Value item)
+    object
+
+
+encodeRenderBundleDescriptor : Types.RenderBundleDescriptor → V
+encodeRenderBundleDescriptor value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    object
+
+
+encodeRenderBundleEncoderDescriptor : Types.RenderBundleEncoderDescriptor → V
+encodeRenderBundleEncoderDescriptor value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    Js.set
+        object
+        "colorFormats"
+        (nativeArray value.colorFormats λpart0 → nullable (λpart1 → encodeTextureFormat part1) part0
+        )
+    putOption object "depthStencilFormat" value.depthStencilFormat λitem → encodeTextureFormat item
+    putOption object "sampleCount" value.sampleCount λitem → Js.from (Scalar.u32Value item)
+    putOption object "depthReadOnly" value.depthReadOnly λitem → Js.from item
+    putOption object "stencilReadOnly" value.stencilReadOnly λitem → Js.from item
+    object
+
+
+encodeQueueDescriptor : Types.QueueDescriptor → V
+encodeQueueDescriptor value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    object
+
+
+encodeQuerySetDescriptor : Types.QuerySetDescriptor → V
+encodeQuerySetDescriptor value =
+    object = Js.object []
+    putOption object "label" value.label λitem → Js.from item
+    Js.set object "type" (encodeQueryType value.kind)
+    Js.set object "count" (Js.from (Scalar.u32Value value.count))
+    object
+
+
+encodeCanvasToneMapping : Types.CanvasToneMapping → V
+encodeCanvasToneMapping value =
+    object = Js.object []
+    putOption object "mode" value.mode λitem → encodeCanvasToneMappingMode item
+    object
+
+
+encodeCanvasConfiguration : Types.CanvasConfiguration → V
+encodeCanvasConfiguration value =
+    object = Js.object []
+    Js.set object "device" (Js.from value.device)
+    Js.set object "format" (encodeTextureFormat value.format)
+    putOption object "usage" value.usage λitem → Js.from (Flags.textureUsageValue item)
+    putOption object "viewFormats" value.viewFormats λitem →
+        nativeArray item λpart0 → encodeTextureFormat part0
+    putOption object "colorSpace" value.colorSpace λitem → encodeColorSpace item
+    putOption object "toneMapping" value.toneMapping λitem → encodeCanvasToneMapping item
+    putOption object "alphaMode" value.alphaMode λitem → encodeCanvasAlphaMode item
+    object
+
+
+encodeUncapturedErrorEventInit : Types.UncapturedErrorEventInit → V
+encodeUncapturedErrorEventInit value =
+    object = Js.object []
+    putOption object "bubbles" value.bubbles λitem → Js.from item
+    putOption object "cancelable" value.cancelable λitem → Js.from item
+    putOption object "composed" value.composed λitem → Js.from item
+    Js.set object "error" (encodeGpuError value.error)
+    object
+
+
+encodeColorDict : Types.ColorDict → V
+encodeColorDict value =
+    object = Js.object []
+    Js.set object "r" (Js.from (Scalar.f64Value value.r))
+    Js.set object "g" (Js.from (Scalar.f64Value value.g))
+    Js.set object "b" (Js.from (Scalar.f64Value value.b))
+    Js.set object "a" (Js.from (Scalar.f64Value value.a))
+    object
+
+
+encodeOrigin2DDict : Types.Origin2DDict → V
+encodeOrigin2DDict value =
+    object = Js.object []
+    putOption object "x" value.x λitem → Js.from (Scalar.u32Value item)
+    putOption object "y" value.y λitem → Js.from (Scalar.u32Value item)
+    object
+
+
+encodeOrigin3DDict : Types.Origin3DDict → V
+encodeOrigin3DDict value =
+    object = Js.object []
+    putOption object "x" value.x λitem → Js.from (Scalar.u32Value item)
+    putOption object "y" value.y λitem → Js.from (Scalar.u32Value item)
+    putOption object "z" value.z λitem → Js.from (Scalar.u32Value item)
+    object
+
+
+encodeExtent3DDict : Types.Extent3DDict → V
+encodeExtent3DDict value =
+    object = Js.object []
+    Js.set object "width" (Js.from (Scalar.u32Value value.width))
+    putOption object "height" value.height λitem → Js.from (Scalar.u32Value item)
+    putOption object "depthOrArrayLayers" value.depthOrArrayLayers λitem →
+        Js.from (Scalar.u32Value item)
+    object
+
+
+-- END GENERATED WEBGPU CONVERSIONS

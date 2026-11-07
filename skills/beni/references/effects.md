@@ -36,6 +36,12 @@ A fiber is one line of execution; many fibers take turns on one thread. `Task` i
 | `Task.retry schedule (λ⊤ → attempt)` | repeats a `Result` attempt as a `Schedule` says |
 | `Task.forever (λ⊤ → work)` | runs `work` again and again; only a cancel stops it. It lets other fibers run after each run, and uses no stack |
 
+`Task.identity ⊤` returns an opaque stable identity; `Task.isWithin owner` checks
+whether the caller is that fiber or one of its structured descendants. Identity survives
+suspension and bracket cleanup. Siblings and separate roots are excluded. Outside fibers,
+identity names the single outside context, which is not an ancestor of new root fibers.
+This supports ownership checks without exposing runtime records or mutable fiber state.
+
 Nothing a fiber starts outlives what started it, unless it is joined first. Cancellation is
 delivered only where a fiber can wait.
 

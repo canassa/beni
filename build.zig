@@ -667,6 +667,11 @@ pub fn build(b: *std.Build) void {
     const browser_step = b.step("test-browser", "Run the browser/ corpus in a headless Chrome instead of happy-dom");
     browser_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "browser", .browser = "chrome" }).step);
 
+    const gpu_backend = b.option([]const u8, "webgpu-backend", "WebGPU test backend: native or swiftshader") orelse "native";
+    if (!std.mem.eql(u8, gpu_backend, "native") and !std.mem.eql(u8, gpu_backend, "swiftshader")) @panic("webgpu-backend must be native or swiftshader");
+    const webgpu_step = b.step("test-webgpu", "Run native WebGPU differential fixtures in a GPU-enabled headless Chrome");
+    webgpu_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/webgpu", .part = "browser", .browser = "chrome", .webgpu = gpu_backend }).step);
+
     // `workers/`: the `cloudflare` platform's fixtures, each build run under
     // Miniflare (docs/design/boundary.md §9.12 (k); tests/blackbox/workers.zig).
     // Miniflare comes from `BENI_MINIFLARE` (`nix develop .#workers`) or
@@ -2319,6 +2324,8 @@ const HarnessEnvironment = struct {
     /// The corpus walker's `BENI_BROWSER`: `chrome` runs the `browser/`
     /// pages in Chrome instead of happy-dom.
     browser: []const u8 = "",
+    /// Explicit real WebGPU test backend; empty keeps GPU disabled.
+    webgpu: []const u8 = "",
     /// The corpus walker's `BENI_FUZZ_SEEDS` and `BENI_FUZZ_STEPS`: a page
     /// fuzz longer than the gates' (`zig build fuzz`).
     fuzz_seeds: []const u8 = "",
@@ -2438,6 +2445,7 @@ const Blackbox = struct {
         r.setEnvironmentVariable("BENI_RUN_HASHES", env.run_hashes);
         r.setEnvironmentVariable("BENI_RUN_HASH_REPORT", env.report_dir);
         r.setEnvironmentVariable("BENI_BROWSER", env.browser);
+        r.setEnvironmentVariable("BENI_WEBGPU", env.webgpu);
         r.setEnvironmentVariable("BENI_CHROME", bb.chrome);
         if (bb.miniflare.len != 0) r.setEnvironmentVariable("BENI_MINIFLARE", bb.miniflare);
         r.setEnvironmentVariable("BENI_FUZZ_SEEDS", env.fuzz_seeds);

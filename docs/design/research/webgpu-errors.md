@@ -71,7 +71,7 @@ and GPU/WGSL features use their own specified checks.
 
 | Native API | Documented observation and policy beyond shared rules |
 |---|---|
-| `createBuffer` | Descriptor preflight plus GPU validation/OOM scopes. With `mappedAtCreation`, native `RangeError` for the CPU-side mapped allocation → `MappedAllocationFailed { bytes, message }`. It is not a `GPUOutOfMemoryError` |
+| `createBuffer` | Descriptor preflight plus GPU validation/OOM scopes. When `mappedAtCreation` is true, reject size not divisible by four as typed alignment input **before allocation**; its specified `RangeError` is not OOM. Only after that exact predicate passes, residual native `RangeError` for the CPU-side mapped allocation → `MappedAllocationFailed { bytes, message }`. It is not a `GPUOutOfMemoryError` |
 | `createTexture`, `Texture.createView` | Validate enum/format feature requirements before native call; GPU validation/OOM as specified. Feature-gated format checks can throw `TypeError`; map only the native format-check path documented for that call, to `FormatFeatureRejected { format, required, message }`. A failure despite fully verified feature conversion with no remaining documented condition is a defect |
 | `createSampler`, `createBindGroupLayout`, `createBindGroup`, `createPipelineLayout`, `createQuerySet` | Typed descriptors, resource/device checks, full relevant GPU scopes. Layout alternatives and binding resource unions are typed. No invented DOM exception paths |
 | `createShaderModule` | GPU validation scope reports invalid WGSL/module requirements. `getCompilationInfo` messages are returned too; no error strings are thrown to the application. Hints and auto/explicit pipeline layouts retain their full descriptor fields |

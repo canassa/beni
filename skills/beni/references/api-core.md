@@ -686,6 +686,7 @@ module Task
     Done
     Cancelled
   type Fiber a
+  type Identity
   type Restore
   type Resume a
   type Scheduler
@@ -707,7 +708,9 @@ module Task
   value forever : (⊤ → a) → b  -- suspends
   value fromHost : (⊤ → ⊤) → ⊤  -- impure
   value hasLogContext : ⊤ → Bool  -- impure
+  value identity : ⊤ → Identity  -- impure
   value isWaiting : a → Bool
+  value isWithin : Identity → Bool  -- impure
   value join : Fiber a → a  -- suspends
   value joinAll : List (Fiber a) → List a  -- suspends
   value keepLogContext : (a → b) → (a → b)  -- impure

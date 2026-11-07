@@ -1,0 +1,5 @@
+-- await-load #result "initialization passed"
+-- load
+<body>
+  <p id="result">"initialization passed"</p>
+</body>

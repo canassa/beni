@@ -1,0 +1,60 @@
+-- Web IDL domain boundaries, exact wide Numbers, f32 rounding and bit domains.
+import Browser
+import Gpu.Flags as Flags
+import Gpu.Scalar as Scalar
+import Html exposing (Html)
+
+
+accepted : Result e a → Bool
+accepted result =
+    case result of
+        Ok _ →
+            True
+        Err _ →
+            False
+
+
+checks : List Bool
+checks =
+    [ accepted (Scalar.u32 4294967295)
+    , not (accepted (Scalar.u32 4294967296))
+    , accepted (Scalar.i32 (-2147483648))
+    , not (accepted (Scalar.i32 (-2147483649)))
+    , accepted (Scalar.size64 9007199254740992)
+    , accepted (Scalar.size64 18446744073709549568)
+    , not (accepted (Scalar.size64 18446744073709551616))
+    , not (accepted (Scalar.finiteF32 1.0e40))
+    , not (accepted (Scalar.finiteF64 (0 / 0)))
+    , (case Scalar.finiteF32 (-0.0) of
+          Ok zero →
+              1 / Scalar.f32Value zero < 0
+          Err _ →
+              False
+      )
+    , (case Scalar.finiteF64 (-0.0) of
+          Ok zero →
+              1 / Scalar.f64Value zero < 0
+          Err _ →
+              False
+      )
+    , (Scalar.truncateU32 3.9 ▷ Result.map Scalar.u32Value) == Ok 3
+    , Flags.bufferUsageValue
+        (Flags.bufferUsage [ Flags.BufferUsageStorage, Flags.BufferUsageCopySrc ])
+        == 132
+    , Flags.colorWriteValue (Flags.colorWrite [ Flags.ColorWriteAll ]) == 15
+    ]
+
+
+view : List Bool → Html ⊤
+view results =
+    <p>
+        {if List.all results identity then
+            "all numeric boundaries passed"
+         else
+            "numeric boundary failed"
+        }
+    </p>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → checks, update = λ_ model → model, view = view }

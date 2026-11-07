@@ -424,28 +424,35 @@ pub const Chrome = struct {
         const dir = try profile.projectPath();
         const log = try profile.tmp.dir.createFile(io, "chrome.log", .{});
         defer log.close(io);
+        const gpu_backend = std.testing.environ.getAlloc(arena, "BENI_WEBGPU") catch "";
+        var argv: std.ArrayList([]const u8) = .empty;
+        if (gpu_backend.len != 0) {
+            if (!std.mem.eql(u8, gpu_backend, "native") and !std.mem.eql(u8, gpu_backend, "swiftshader")) return error.InvalidWebGpuBackend;
+            try argv.appendSlice(arena, &.{ "--enable-unsafe-webgpu", "--use-angle=vulkan", "--enable-features=Vulkan", "--disable-vulkan-surface" });
+            if (std.mem.eql(u8, gpu_backend, "swiftshader")) try argv.appendSlice(arena, &.{ "--use-vulkan=swiftshader", "--use-webgpu-adapter=swiftshader" });
+        } else try argv.append(arena, "--disable-gpu");
+        try argv.insertSlice(arena, 0, &.{
+            exe,
+            "--headless=new",
+            "--remote-debugging-port=0",
+            try std.fmt.allocPrint(arena, "--user-data-dir={s}/profile", .{dir}),
+            "--no-first-run",
+            "--no-default-browser-check",
+            // A page loads the program's modules from the file system.
+            "--allow-file-access-from-files",
+            "--disable-extensions",
+            "--disable-background-networking",
+            "--disable-component-update",
+            "--disable-sync",
+            "--mute-audio",
+            // A target nobody looks at still runs its timers at speed.
+            "--disable-background-timer-throttling",
+            "--disable-renderer-backgrounding",
+            "--disable-backgrounding-occluded-windows",
+        });
+        try argv.append(arena, "about:blank");
         var child = std.process.spawn(io, .{
-            .argv = &.{
-                exe,
-                "--headless=new",
-                "--remote-debugging-port=0",
-                try std.fmt.allocPrint(arena, "--user-data-dir={s}/profile", .{dir}),
-                "--no-first-run",
-                "--no-default-browser-check",
-                "--disable-gpu",
-                // A page loads the program's modules from the file system.
-                "--allow-file-access-from-files",
-                "--disable-extensions",
-                "--disable-background-networking",
-                "--disable-component-update",
-                "--disable-sync",
-                "--mute-audio",
-                // A target nobody looks at still runs its timers at speed.
-                "--disable-background-timer-throttling",
-                "--disable-renderer-backgrounding",
-                "--disable-backgrounding-occluded-windows",
-                "about:blank",
-            },
+            .argv = argv.items,
             .stdin = .ignore,
             .stdout = .ignore,
             .stderr = .{ .file = log },

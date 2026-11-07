@@ -1,6 +1,29 @@
 {
   "platform": true,
   "name": "browser-tea",
-  "platforms": ["browser"],
-  "reexports": ["Html", "Browser", "Cmd", "Sub", "Time", "Dom", "Http", "Browser.Events", "Browser.Navigation", "Random", "Storage", "WebSocket"]
+  "platforms": [
+    "browser"
+  ],
+  "reexports": [
+    "Html",
+    "Browser",
+    "Cmd",
+    "Sub",
+    "Time",
+    "Dom",
+    "Http",
+    "Browser.Events",
+    "Browser.Navigation",
+    "Random",
+    "Storage",
+    "WebSocket",
+    "Gpu",
+    "Gpu.Adapter",
+    "Gpu.Device",
+    "Gpu.Handle",
+    "Gpu.Types",
+    "Gpu.Scalar",
+    "Gpu.Flags",
+    "Gpu.Error"
+  ]
 }

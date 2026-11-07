@@ -3557,3 +3557,21 @@ Each was taken here so the slices can proceed, and each is reversible until its 
   `RateLimiter`, `Ref.Locked`, `Result.combine`/`partition`, `Random.withSeed` — are specified when
   P9 starts; §17.5's seed slot and §17.8's draw are what `Random.withSeed` will write and read.
 - **`Stream`, STM, `Metric`, `Layer`** (P10) are not in v1.
+
+### 17.12 Opaque execution identity (2026-10-30, #1280)
+
+`Task.Identity` identifies one fiber without exposing its runtime record.
+`Task.identity : ⊤ → Identity` returns the calling fiber's stable identity;
+`Task.isWithin : Identity → Bool` tests whether the caller is that owner or a
+structured descendant along its private parent links. Siblings and independent
+roots do not share ownership. Suspension, scheduler changes and bracket cleanup
+preserve identity. Scope finalizers explicitly run in independent cleanup fibers
+where the existing API promises that behavior; they do not impersonate an ended
+fiber. Outside fibers, identity refers to the single outside execution context;
+root fibers started there are independent. Holding an identity does not schedule
+work, expose cancellation or retain a running task beyond its structured lifetime.
+
+A platform uses ancestry to reject a descendant waiting for a lease its owner
+cannot release until that descendant ends. No context-slot reuse or JavaScript
+helper is needed. The API is implemented in `core/Task.beni` and observed across
+suspension, scoped children, siblings and cancellation cleanup by `TaskIdentity`.

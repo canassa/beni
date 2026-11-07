@@ -1,0 +1,11 @@
+outside stable: True
+root excludes outside: False
+same owner: True
+after yield: True
+scheduler retains owner: True
+independent root: False
+structured child: True
+separate sibling: False
+cleanup retains owner: True
+cleanup retains ancestry: True
+parent excludes child: False
