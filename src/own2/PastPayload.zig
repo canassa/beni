@@ -50,7 +50,7 @@ pub fn reaches(pl: *const Place.Table, root: Ids.PlaceId, words: []const u32) bo
 /// The `var` slot, below a root, that `words` from `t` run past, into `out`:
 /// its steps name none of the rest. False: `words` run past none.
 pub fn prefix(e: anytype, t: Ids.PathId, words: []const u32, out: *std.ArrayList(u32)) !bool {
-    if (@import("Mutate.zig").on(.payload_prefix_off)) return false;
+    if (@import("Mutate.zig").on(.payload_prefix_off) or @import("Mutate.zig").on(.payload_read_off)) return false;
     var ps: std.ArrayList(u32) = .empty;
     defer ps.deinit(e.gpa());
     var n = words.len;

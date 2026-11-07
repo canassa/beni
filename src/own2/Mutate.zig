@@ -30,7 +30,7 @@ pub const Name = enum {
     pessimistic_no_escape,
     /// O1 O10: the pessimistic contract's result holds nothing.
     pessimistic_res_empty,
-    /// O10: `PastPayload.read` off: an empty arrival past a payload stays empty.
+    /// O10 F: both arms of `PastPayload` off: a read past a payload stays empty.
     payload_read_off,
     /// O10: `PastPayload.prefix` off: a read past a payload finds no `var`.
     payload_prefix_off,
