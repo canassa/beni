@@ -1,7 +1,9 @@
-//! L7: the keys a supply's parts are described below (`docs/design/ownership-v2.md` §2.1,
+//! L7: the key a supply's part is described below (`docs/design/ownership-v2.md` §2.1,
 //! *An arrival's level*). A value described by its own place has no path from the supply's
-//! root, so a result list carries the key in its `k`, above the supply's index, and a delivery
-//! later in the evaluation writes at the same key.
+//! root, so a result list carries the key in a field of its own (`Put.ResList.key`), and so does
+//! a subscription (`Relation.Sub.key`), so a delivery later in the evaluation writes at the same
+//! key. The key is never packed into another number: no count of supplies or keys can make two
+//! lists one.
 //!
 //! Obligations kept here: none of §2.14's directly.
 
@@ -9,54 +11,29 @@ const std = @import("std");
 const Ids = @import("Ids.zig");
 const Slots = @import("Slots.zig");
 
-const Allocator = std.mem.Allocator;
+/// No key: the list's slots are the path's own.
+pub const none: Slots.Rel = std.math.maxInt(u32);
 
-pub const Keys = struct {
-    keys: std.ArrayList(Slots.Rel) = .empty,
-    at: Ids.FixedDict(1) = .{},
-
-    pub fn deinit(ks: *Keys, gpa: Allocator) void {
-        ks.keys.deinit(gpa);
-        ks.at.deinit(gpa);
-    }
-
-    /// Supply `k`'s index, with its slots written below `key`.
-    pub fn below(ks: *Keys, gpa: Allocator, k: u32, key: Slots.Rel) Ids.IndexError!u32 {
-        const g = try ks.at.getOrPut(gpa, .{key});
-        if (!g.found_existing) {
-            g.value_ptr.* = @intCast(ks.keys.items.len);
-            try ks.keys.append(gpa, key);
-        }
-        return supply(k) | (g.value_ptr.* + 1) << 16;
-    }
-
-    /// The key `k` carries, null when it carries none.
-    pub fn of(ks: *const Keys, k: u32) ?Slots.Rel {
-        return if (k >> 16 == 0) null else ks.keys.items[(k >> 16) - 1];
-    }
-};
-
-/// The slot that path `q` writes in a result list of index `k`, for `s` an `Eval.Sink`.
-pub fn relAt(s: anytype, q: Ids.PathId, k: u32) Slots.Error!Slots.Rel {
+/// The slot that path `q` writes in a list whose key is `key`, for `s` an `Eval.Sink`.
+pub fn relAt(s: anytype, q: Ids.PathId, key: Slots.Rel) Slots.Error!Slots.Rel {
     const f = s.e.fr();
     const r = try f.slots.relOf(s.e.gpa(), f.account, f.places, q);
-    const key = s.keys.of(k) orelse return r;
+    if (key == none) return r;
     return f.slots.relOfWords(s.e.gpa(), f.account, f.places, try std.mem.concat(s.arena, u32, &.{ f.slots.relWords(key), f.slots.relWords(r) }));
 }
 
-/// The supply's own index.
-pub fn supply(k: u32) u32 {
-    return k & 0xffff;
+/// A list's identity, as the read-off's memos key it: its label, supply and key, each whole.
+pub fn ofList(label: u32, k: u32, key: Slots.Rel) [3]u32 {
+    return .{ label, k, key };
 }
 
-test "a list's index carries its key and keeps the supply's" {
+test "lists past the old 16-bit boundary stay apart" {
     const gpa = std.testing.allocator;
-    var ks: Keys = .{};
-    defer ks.deinit(gpa);
-    const a: Slots.Rel = 7;
-    const k = try ks.below(gpa, 3, a);
-    try std.testing.expectEqual(@as(u32, 3), supply(k));
-    try std.testing.expectEqual(a, ks.of(k).?);
-    try std.testing.expectEqual(k, try ks.below(gpa, 3, a));
-    try std.testing.expectEqual(@as(?Slots.Rel, null), ks.of(3));
+    var seen: Ids.FixedDict(3) = .{};
+    defer seen.deinit(gpa);
+    // Packed as `k | (key + 1) << 16`, the first two pairs were one number, and the last two
+    // lost the key's high bits.
+    const lists = [_][2]u32{ .{ 1, none }, .{ 65_537, none }, .{ 0, 65_535 }, .{ 0, 131_071 }, .{ 65_536, 0 }, .{ 0, 0 } };
+    for (lists) |l| try std.testing.expect(!(try seen.getOrPut(gpa, ofList(3, l[0], l[1]))).found_existing);
+    try std.testing.expectEqual(@as(usize, lists.len), seen.count());
 }

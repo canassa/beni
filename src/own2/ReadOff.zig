@@ -248,7 +248,7 @@ fn describeSub(s: *Sink, l: Value.Leaf, col: u32, x: PathId, q: PathId, by_struc
     const sub = try f.leaf(.{ .kind = .ref, .root = l.root, .pos = l.pos, .slots = try f.slots.internSorted(gpa, f.account, &.{x.int() | Slots.sub_bit}), .tags = l.tags });
     var xs: std.ArrayList(u32) = .empty;
     defer xs.deinit(gpa);
-    try expandFor(s.e, sub, .{ .kind = .describe, .a = out.label, .b = q.int(), .c = out.k, .tags = l.tags }, &xs);
+    try expandFor(s.e, sub, .{ .kind = .describe, .a = out.label, .b = q.int(), .c = out.k, .tags = l.tags, .key = out.key }, &xs);
     for (xs.items) |y| try describeLeaf(s, y, q, true, out);
 }
 
@@ -265,14 +265,14 @@ fn describeBelow(s: *Sink, root: u32, prefix: PathId, tags: u32, q: PathId, out:
     };
     if (try canNode(s, q, out) and try callNode(s, call, which, prefix, tags, q, out)) return;
     const saved = e.ev.cur_sub;
-    e.ev.cur_sub = if (e.solver != null) .{ .kind = .describe_below, .a = out.label, .b = q.int(), .c = out.k, .d = prefix.int(), .tags = tags } else null;
+    e.ev.cur_sub = if (e.solver != null) .{ .kind = .describe_below, .a = out.label, .b = q.int(), .c = out.k, .d = prefix.int(), .tags = tags, .key = out.key } else null;
     const ki = e.ev.instBelow(call, prefix, which) catch |err| {
         e.ev.cur_sub = saved;
         return err;
     };
     e.ev.cur_sub = saved;
     if ((try s.described.getOrPut(e.gpa(), try Put.describedKey(s, ki | Relation.open_bit, q, out))).found_existing) return;
-    const held = try Held.atoms(f, try Put.resList(s, out), try SupplyKey.relAt(s, q, out.k));
+    const held = try Held.atoms(f, try Put.resList(s, out), try SupplyKey.relAt(s, q, out.key));
     // The result slots of the key's items: the read's column.
     const col = try readDests(s, prefix, q);
     {
@@ -785,7 +785,7 @@ fn describeOne(s: *Sink, l: Value.Leaf, r: Value.Root, sl: u32, at: PathId, out:
             }
             var ls: std.ArrayList(u32) = .empty;
             defer ls.deinit(gpa);
-            try expandFor(e, one, .{ .kind = .describe, .a = out.label, .b = at.int(), .c = out.k, .tags = l.tags }, &ls);
+            try expandFor(e, one, .{ .kind = .describe, .a = out.label, .b = at.int(), .c = out.k, .tags = l.tags, .key = out.key }, &ls);
             for (ls.items) |x| try describeLeaf(s, x, at, true, out);
         },
     }
@@ -851,8 +851,8 @@ fn escapeFacts(e: *Evaluation, leaf: u32) Error!void {
     if (from != s.host.escs.items.len) while (i < s.host.told.items.len) : (i += 1) {
         const t = s.host.told.items[i];
         if (!try s.host.reaches(&e.ev, e.escapes.items, from, t.leaf, Distinct.overlap)) continue;
-        const r = if (t.built) Slots.root else try SupplyKey.relAt(s, .from(t.q), t.k);
-        const list = try Put.resList(s, .{ .label = t.label, .k = t.k });
+        const r = if (t.built) Slots.root else try SupplyKey.relAt(s, .from(t.q), t.key);
+        const list = try Put.resList(s, .{ .label = t.label, .k = t.k, .key = t.key });
         try f.charge(.edge, 1);
         const new = if (t.wide or t.built) try Contract.Draft.addWide(list, s.arena, r, .{ .kind = .host }) else try Contract.Draft.addArrival(list, s.arena, r, .{ .kind = .host });
         if (new and t.label == none) if (e.solver) |sv| try sv.resFact(sv.ctx, e.x, r, t.wide or t.built, .{ .kind = .host }, 0);
@@ -865,7 +865,7 @@ fn hosted(s: *Sink, li: u32, q: u32, wide: bool, out: Put.ResList) Error!bool {
     const e = s.e;
     try Put.handed(s, li, out);
     if (!Host.own(e.fr(), li) or e.ev.expandable(e.fr().leafAt(li))) return false;
-    try s.host.tell(e.gpa(), .{ .leaf = li, .q = q, .label = out.label, .k = out.k, .wide = wide, .built = s.building.items.len != 0 or q == none });
+    try s.host.tell(e.gpa(), .{ .leaf = li, .q = q, .label = out.label, .k = out.k, .key = out.key, .wide = wide, .built = s.building.items.len != 0 or q == none });
     _ = try s.host.sync(&e.ev, e.escapes.items);
     return s.host.reaches(&e.ev, e.escapes.items, 0, li, Distinct.overlap);
 }
@@ -1026,12 +1026,12 @@ fn supplyPart(s: *Sink, q: u32, pt: SplitRow.Part, out: Put.ResList, entry: Slot
         _ = try Contract.Draft.addArrival(res, s.arena, key, pt.a);
         return;
     }
-    if (pt.place != .none) return describe(s, pt.v, try f.places.rootPath(gpa, pt.place), .{ .label = out.label, .k = try s.keys.below(gpa, out.k, key) });
+    if (pt.place != .none) return describe(s, pt.v, try f.places.rootPath(gpa, pt.place), .{ .label = out.label, .k = out.k, .key = key });
     var ls: std.ArrayList(u32) = .empty;
     defer ls.deinit(gpa);
     {
         const saved = e.ev.cur_sub;
-        e.ev.cur_sub = if (e.solver != null) .{ .kind = .supply, .a = out.label, .b = out.k, .c = key } else null;
+        e.ev.cur_sub = if (e.solver != null) .{ .kind = .supply, .a = out.label, .b = out.k, .c = key, .key = out.key } else null;
         defer e.ev.cur_sub = saved;
         try FnRun.supplyLeaves(&e.ev, q, pt.a, &ls);
     }
@@ -1079,11 +1079,11 @@ pub fn deliver(e: *Evaluation, sub: Relation.Sub, x: u32, at: u32) Error!void {
     const f = e.fr();
     const y = (try f.withTags(x, sub.tags)) orelse return;
     switch (sub.kind) {
-        .describe => try describeLeaf(&e.sink, y, .from(sub.b), true, .{ .label = sub.a, .k = sub.c }),
-        .describe_below => try describeItem(&e.sink, try readDests(&e.sink, .from(sub.d), .from(sub.b)), y, at, .from(sub.d), .from(sub.b), try Held.atoms(e.fr(), try Put.resList(&e.sink, .{ .label = sub.a, .k = sub.c }), try SupplyKey.relAt(&e.sink, .from(sub.b), sub.c)), .{ .label = sub.a, .k = sub.c }),
+        .describe => try describeLeaf(&e.sink, y, .from(sub.b), true, .{ .label = sub.a, .k = sub.c, .key = sub.key }),
+        .describe_below => try describeItem(&e.sink, try readDests(&e.sink, .from(sub.d), .from(sub.b)), y, at, .from(sub.d), .from(sub.b), try Held.atoms(e.fr(), try Put.resList(&e.sink, .{ .label = sub.a, .k = sub.c, .key = sub.key }), try SupplyKey.relAt(&e.sink, .from(sub.b), sub.key)), .{ .label = sub.a, .k = sub.c, .key = sub.key }),
         .forward_below => unreachable,
         .effect => try paramEffects(&e.sink, y, sub.b != 0, @fromBackingInt(@intCast(sub.a))),
-        .supply => try supplyArrive(&e.sink, y, sub.c, .{ .label = sub.a, .k = sub.b }),
+        .supply => try supplyArrive(&e.sink, y, sub.c, .{ .label = sub.a, .k = sub.b, .key = sub.key }),
         .escape => try Eval.addEscape(e, y, sub.a),
         .escape_fn => unreachable,
         .forward => unreachable,
@@ -1130,7 +1130,7 @@ fn supplyArrive(s: *Sink, li: u32, rel: Slots.Rel, out: Put.ResList) Error!void 
                     .call, .supply => {
                         var ls: std.ArrayList(u32) = .empty;
                         defer ls.deinit(gpa);
-                        try expandFor(e, x, .{ .kind = .supply, .a = out.label, .b = out.k, .c = rel, .tags = l.tags }, &ls);
+                        try expandFor(e, x, .{ .kind = .supply, .a = out.label, .b = out.k, .c = rel, .tags = l.tags, .key = out.key }, &ls);
                         try stack.appendSlice(gpa, ls.items);
                     },
                 }
