@@ -24,12 +24,15 @@ an alias, establishes their obligations at the constructor call.
 | handlers | init | Runs once in the worker root; may suspend; its result establishes root-owned state |
 | handlers | start | Non-suspending; borrows root state while installing root-scoped children |
 | handlers | handle | May suspend in a request scope; borrows root state |
-| handlers | stream | May suspend in a request scope; borrows root state |
 | machine | init | May suspend; establishes the model and root commands |
 | machine | update | Non-suspending; receives model owned; installs only its returned model before commands run |
 | machine | subscriptions | Non-suspending; borrows the model |
 | machine | request | Non-suspending; constructs a message from the call and scoped reply capability |
-| machine | stream | Non-suspending; constructs a message from the stream request and scoped sink capability |
+
+*Owner amendment, 2026-11-07 (#2129).* Both protocol rows omit stream.
+Request/response streaming is deferred to #2186; handlers has exactly init,
+start and handle, while machine has init, update, subscriptions and request.
+No scoped sink capability is currently published.
 
 Serial and concurrent handler constructors use the same handlers row. Their
 admission policy does not change ownership. Dedicated and Shared use the same
