@@ -119,6 +119,7 @@ switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fix
 | `level_wide_off` | O6 | an open arrival is not said at the folds above it | killed | | 3: SanitiserLevelResult | | |
 | `caller_folds_off` | O6 | an open arrival is not said at a caller's folds its callee's graph has not | killed | | 10: SanitiserLevelCaller | | |
 | `below_folds_off` | O6 | a read below a call's slot misses the folds above it a walk below it reaches | killed | | 2: SanitiserLevelCallerBelow | | |
+| `level_join_kept` | O6 | an arrival at a join is said at the join only, not at its level paths | killed | | 5: SanitiserLevelSlots | | |
 | `unescaped_off` | O8 H1 H6 | `Resolve.judge` skips Unescaped | killed | | 9: SanitiserAnswerLeft (ProgramFailed), … | 9: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `escape_unknown_off` | O8 | an escape of unknown keys reaches no target | v1 only | | 0 | 0 | 0 | 3 parity |
 | `escape_params_off` | O8 | an escape of a parameter reaches no parameter's target | killed | | SanitiserHandedWriter (SanitisedRefusalDiffers) | 7: BranchEscapes (OwnershipV2Differs), … | 0 | |
