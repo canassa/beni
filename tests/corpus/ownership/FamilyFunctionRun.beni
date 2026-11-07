@@ -1,0 +1,28 @@
+-- A function read at a family's payload runs on `a`, and the read is a subtree held whole
+-- (`ownership-v2.md` §2.1, *The exit rule*). A run keeps a symbol that may hold a `var`, so what
+-- it is given escapes and the call is refused. Here and not in `run/`, for #2225: `--release` hangs on it.
+import List
+import Node exposing (Program)
+import String
+
+
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+run : List (T (List Int → List Int)), List Int → List (List Int)
+run ts a = List.map ts λt →
+    case t of
+        Wrap (Leaf [ f ]) →
+            f a
+
+        _ →
+            a
+
+
+main : Program
+main =
+    k = [ 1 ]
+    x = run [ Wrap (Leaf [ λv → List.push v 2 ]) ] k
+    Node.print (String.fromInt (List.length x + List.length k))

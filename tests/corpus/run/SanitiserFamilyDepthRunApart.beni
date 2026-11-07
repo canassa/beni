@@ -1,6 +1,5 @@
--- The twin of `SanitiserFamilyDepthRun`, the row half: the list written is the record's own
--- field and nothing else holds it, so the write is accepted. The `run` half has no such twin:
--- a function at a payload that runs escapes what it is given, whatever it is.
+-- The twin of `SanitiserFamilyDepthRun`: the list written is the record's own field and
+-- nothing else holds it, so the write is accepted.
 import List
 import Node exposing (Program)
 import String
