@@ -12,7 +12,7 @@ new function-type syntax. Opaque types below have private platform-owned
 constructors, omitted from this public-signature listing. Their names and type
 parameters are part of the API, not JavaScript shapes. Imported types are
 qualified where clarity requires it. Every generic value crossing an endpoint
-has the compiler's implicit Wire obligation; state, Context, Reply, Sink,
+has the compiler's implicit Wire obligation; state, Context, Reply,
 Scope and callback types do not cross. No public API takes Js.Value.
 
 ## 1. Browser.Worker
@@ -119,6 +119,7 @@ pub type alias Options =
     policy : Maybe Policy
 
 -- A type-only grouping: never construct or send a value of this record type.
+-- streamRequest/chunk are reserved role slots; response streaming is deferred to #2186.
 pub type alias Protocol call reply streamRequest error event chunk =
     call : call
     reply : reply
@@ -339,13 +340,10 @@ pub type alias Machine config model msg call reply streamRequest error event chu
     update : Context event, msg, model → model × Command msg
     subscriptions : model → Subscription msg
     request : call, Reply error reply → msg
-    stream : streamRequest, Sink error chunk → msg
 -- pure; update, request, stream and subscriptions are sync; init may suspend.
 pub machine : Machine config model msg call reply streamRequest error event chunk
     → Program config model (Protocol call reply streamRequest error event chunk)
 -- pure
-pub noStream : Context event, state, ⊥, Sink error ⊥ → Result error ⊤
-pub noStreamRequest : ⊥, Sink error ⊥ → msg
 pub none : Command msg
 pub batch : List (Command msg) → Command msg
 pub noSubscriptions : Subscription msg
@@ -353,13 +351,11 @@ pub noSubscriptions : Subscription msg
 pub perform : ((msg → ⊤) → ⊤) → Command msg
 -- pure; callback is deferred and may suspend in its owning request scope.
 pub performFor : Reply error reply, ((msg → ⊤) → ⊤) → Command msg
-pub performStream : Sink error chunk, ((msg → ⊤) → ⊤) → Command msg
 -- pure; installs a root-scoped producer, cancelled/replaced by stable subscription key.
 pub subscription : String, (Scope, (msg → ⊤) → ⊤) → Subscription msg
 pub subscriptions : List (Subscription msg) → Subscription msg
 -- impure; reserve/prepare terminal result; coordinator sends only after cleanup.
 pub respond : Reply error reply, Result error reply → Result TerminalError ⊤
-pub finish : Sink error chunk, Result error ⊤ → Result TerminalError ⊤
 ```
 
 ## 2. Browser.SharedWorker
@@ -410,8 +406,6 @@ pub connect : Scope, Program config state (Worker.Protocol call reply streamRequ
 pub named : String → Options
 -- suspends
 pub call : Handle (Worker.Protocol call reply streamRequest error event chunk), call → Result (Worker.CallError error) reply
-pub stream : Handle (Worker.Protocol call reply streamRequest error event chunk), streamRequest
-    → Result (Worker.CallError error) (Stream (Worker.CallError error) chunk)
 pub close : Handle (Worker.Protocol call reply streamRequest error event chunk) → Worker.Cleanup
 -- impure
 pub events : Handle (Worker.Protocol call reply streamRequest error event chunk) → Stream Worker.TransportError event
@@ -665,8 +659,6 @@ pub type alias Stats =
 pub open : Scope, Worker.Program config state (Worker.Protocol call reply streamRequest error event chunk), (Int → config), Options
     → Result (OpenError error) (Pool (Worker.Protocol call reply streamRequest error event chunk))
 pub call : Pool (Worker.Protocol call reply streamRequest error event chunk), call → Result (CallError error) reply
-pub stream : Pool (Worker.Protocol call reply streamRequest error event chunk), streamRequest
-    → Result (CallError error) (Stream (CallError error) chunk)
 pub close : Pool (Worker.Protocol call reply streamRequest error event chunk) → Worker.Cleanup
 -- impure
 pub stats : Pool (Worker.Protocol call reply streamRequest error event chunk) → Stats
