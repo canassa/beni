@@ -27,8 +27,6 @@ program so far, which is a measurement and no proof. *equivalent*: the rule chan
 reads. *open*: no finding yet. The classes come from the review of #2190's probes, in
 `~/.cache/beni-agents/review-2190/`, and from mine.
 
-`FoldRead.read`'s adding arm is **unreached**: 0 of 21 122 programs, the corpus and the probes. It stays. It
-is a safety net that catches nothing today, to be measured again under #2104 before anyone removes it.
 
 An `ownership/` kill is a golden verdict compared through the parity path, whatever the `-Dno-v2-parity`
 switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fixture's own: its

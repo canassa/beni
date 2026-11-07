@@ -1,0 +1,93 @@
+-- A read at a family's payload never comes back empty (`ownership-v2.md` §2.1, *The
+-- exit rule*). An empty reading says fresh. `built`: a `⟲` on a literal at a place
+-- with no cycle. `field`: a suffix past a call's arrival, at a step the payload
+-- does not name. `answer`: an open arrival read on through a callback. `left`:
+-- out of the family, then past it. Each list read here is `k`, and is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+wrapped : a → T a
+wrapped x = Wrap (Leaf [ x ])
+
+
+leaf : a → T a
+leaf x = Leaf x
+
+
+field : T { f : List Int } → { f : List Int }
+field t =
+    case t of
+        Leaf w →
+            w
+
+        _ →
+            { f = [] }
+
+
+mbW : Maybe (List Int) → Int
+mbW x =
+    case x of
+        Just l →
+            List.length (List.push l 2)
+
+        Nothing →
+            0
+
+
+hide : a, (a → Int) → Int
+hide x f = f x
+
+
+left : T (List (List Int)) → List (List (List Int))
+left t =
+    case t of
+        Wrap (Leaf l) →
+            l
+
+        _ →
+            []
+
+
+main : Program
+main =
+    k1 = [ 1 ]
+    k2 = [ 1 ]
+    k3 = [ 1 ]
+    k4 = [ 1 ]
+    t1 = wrapped [ k1 ]
+    a1 =
+        case t1 of
+            Wrap (Leaf [ [ y, …_ ], …_ ]) →
+                List.length (List.push y 2)
+
+            _ →
+                0
+    a2 = List.length (List.push (field (leaf { f = k2 })).f 2)
+    t3 = Leaf (Just k3)
+    a3 = hide ((λ_ → t3) 0) λu →
+        case u of
+            Leaf w →
+                mbW w
+
+            _ →
+                0
+    a4 =
+        case left (wrapped [ k4 ]) of
+            [ [ y, …_ ], …_ ] →
+                List.length (List.push y 2)
+
+            _ →
+                0
+    Node.printLines
+        [ String.fromInt (a1 + List.length k1)
+        , String.fromInt (a2 + List.length k2)
+        , String.fromInt (a3 + List.length k3)
+        , String.fromInt (a4 + List.length k4)
+        ]

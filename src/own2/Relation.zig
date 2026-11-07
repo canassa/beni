@@ -28,12 +28,12 @@ const RefRead = @import("RefRead.zig");
 const SlotWords = @import("SlotWords.zig");
 const StepsTo = @import("StepsTo.zig");
 const LevelCycle = @import("LevelCycle.zig");
+const PastPayload = @import("PastPayload.zig");
 const Subtree = @import("Subtree.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
 const KeySets = @import("KeySets.zig");
 const Value = @import("Value.zig");
-const FoldRead = @import("FoldRead.zig");
 const Pairs = @import("Pairs.zig");
 pub const Dests = @import("Dests.zig");
 
@@ -397,7 +397,9 @@ pub const Eval = struct {
                         try stack.append(e.gpa(), .{ .v = ks[i + 1], .at = it.at, .tags = t, .route = it.route });
                     }
                 },
-                .ref => try RefRead.read(e, x, rest, deep, it.tags, it.route, out),
+                .ref => if (e.levelsWhole(x, if (given != .none) given else LevelCycle.rootOf(e.f, v), words, it.at)) {
+                    try e.readAt(it.v, true, it.tags, it.route, out);
+                } else try RefRead.read(e, x, rest, deep, it.tags, it.route, out),
                 .built => {
                     if (rest.len == 0 and deep and e.parts) {
                         if (x.site != none) try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .site, .atom = x.site, .tags = it.tags }), .route = it.route });
@@ -444,6 +446,14 @@ pub const Eval = struct {
         }
     }
 
+    /// Whether a payload's `⟲` stands past reference `x` where no slot of it can
+    /// name the level: a contract's tree has no kid at a `⟲`, and a concrete place no such level (§2.1).
+    fn levelsWhole(e: *Eval, x: Value.Val, root: PlaceId, words: []const u32, at: u32) bool {
+        if (@import("Mutate.zig").on(.payload_level_walked) or !PastPayload.atPayload(e.places(), root, words, at)) return false;
+        const own = e.places().pathPlace(e.f.pos.items[x.pos].slot);
+        return e.f.roots.items[x.root].kind != .param or own != LevelCycle.of(e.places(), root, words[0..at], own);
+    }
+
     /// Project a call's result at slot `t` on by `rest`, steps `t`'s place
     /// cannot follow (an opaque value read back): through each arrival at
     /// `t`, the rest taken from the argument it names. Whether it could
@@ -480,6 +490,8 @@ pub const Eval = struct {
             if (x.a.deep) {
                 try e.project(call.args[x.a.j], rest, deep, tags, route, out);
                 if (out.items.len == before) try e.project(call.args[x.a.j], e.f.slots.relWords(x.a.slot), true, tags, route, out);
+            } else if (out.items.len == before and !@import("Mutate.zig").on(.empty_past_arrival) and PastPayload.reaches(e.places(), LevelCycle.rootOf(e.f, call.args[x.a.j]), w.items)) {
+                try e.project(call.args[x.a.j], e.f.slots.relWords(x.a.slot), true, tags, route, out);
             }
         }
         return true;
@@ -502,8 +514,8 @@ pub const Eval = struct {
     /// from each (the experiment's fourth requirement). A part not built
     /// here gives its levels by its own slots, never its own storage.
     fn projectLevels(e: *Eval, v: u32, place: PlaceId, rest: []const u32, deep: bool, tags: u32, route: u32, out: *std.ArrayList(Proj)) Error!void {
-        if (place == .none or (e.places().kind(place) == .@"var" and !@import("Mutate.zig").on(.payload_level_walked))) {
-            // A family's payload: a literal's own structure is on no cycle of its steps, so all of it.
+        if (place == .none or ((e.places().kind(place) == .@"var" or !e.places().onCycle(place)) and !@import("Mutate.zig").on(.payload_level_walked))) {
+            // A family's payload, or a place on no cycle: a literal's own structure is on no cycle of its steps, so all of it.
             try e.readAt(v, true, tags, route, out);
             return;
         }
@@ -1107,7 +1119,8 @@ pub const Eval = struct {
             .param, .lent => {
                 if (a.j >= cl.args.len) return if (@import("Mutate.zig").on(.arrival_no_arg_empty)) {} else out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
                 try e.routed(e, cl.args[a.j], words.items, a.deep, if (suffix.len == 0 and a.kind == .param) a.path else none, out);
-                if (out.items.len == start and words.items.len != 0 and !SlotWords.excluded(e.places(), words.items)) try FoldRead.read(e, cl.args[a.j], words.items, out);
+                if (out.items.len == start and words.items.len != 0 and !SlotWords.excluded(e.places(), words.items)) try PastPayload.read(e, cl.args[a.j], words.items, out);
+                if (out.items.len == start and suffix.len != 0 and !@import("Mutate.zig").on(.empty_past_arrival) and !SlotWords.excluded(e.places(), words.items) and PastPayload.reaches(e.places(), LevelCycle.rootOf(e.f, cl.args[a.j]), words.items)) try e.routed(e, cl.args[a.j], e.f.slots.relWords(a.slot), true, none, out);
                 if (a.kind == .lent) try e.lend(out, start, null, call);
             },
             .cb => {

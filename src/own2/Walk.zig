@@ -434,7 +434,7 @@ const Walker = struct {
                     const set = try fr.slots.sorted(k.gpa, fr.account, objs.items);
                     return fr.mk(.{ .kind = .ref, .root = x.root, .pos = x.pos, .family = set });
                 }
-                // A step a place cannot name: a fold's `var`, a record row a template
+                // A step a place cannot name: a family's payload, a record row a template
                 // dropped, a schema member. Unknown, not nothing (§2.1); `cross` holds no object.
                 if (@import("Mutate.zig").on(.walker_project_scalar)) if (try fr.child(x.pos, kind, a, b) == null) return fr.scalar();
                 const p = (try fr.child(x.pos, kind, a, b)) orelse return if (fr.places.kind(fr.places.pathPlace(fr.pos.items[x.pos].slot)) == .cross) fr.scalar() else fr.mk(.{ .kind = .top, .site = v });

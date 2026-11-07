@@ -1,0 +1,5 @@
+# A read at a family's payload is never empty: v2 refuses each (§2.1, The exit rule)
+68:30 list_still_used List.push
+72:23 list_may_be_shared List.push
+74:10 list_still_used SanitiserFamilyRead.hide
+84:30 list_still_used List.push

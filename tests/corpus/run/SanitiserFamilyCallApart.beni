@@ -1,0 +1,30 @@
+-- `SanitiserFamilyCall` over a list no other holder reads: a value read whole
+-- is still one nobody else holds (`ownership-v2.md` §2.1, *The exit rule*).
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import String
+
+
+type W a
+    = L a
+    | N (W (Dict Int a))
+
+
+pick : W (List Int) → Int
+pick t =
+    case t of
+        N (L d) →
+            case Dict.get d 1 of
+                Just p →
+                    List.length (List.push p 2)
+
+                Nothing →
+                    0
+
+        _ →
+            0
+
+
+main : Program
+main = Node.print (String.fromInt (pick (N (L (Dict.singleton 1 [ 1 ])))))

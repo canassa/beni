@@ -85,7 +85,7 @@ const layers = [_]Entry{
     .{ .file = "Trees.zig", .layer = 2, .max_lines = 200 },
     // The readers and the union of result trees, below the contracts (#1714).
     // A read's result slots as a column, for `ReadOff` and `Relation` (#1714).
-    .{ .file = "FoldRead.zig", .layer = 3, .max_lines = 50 },
+    .{ .file = "PastPayload.zig", .layer = 3, .max_lines = 90 },
     .{ .file = "StepsTo.zig", .layer = 3, .max_lines = 45 },
     .{ .file = "Origin.zig", .layer = 3, .max_lines = 20 },
     .{ .file = "Dests.zig", .layer = 3, .max_lines = 200 },

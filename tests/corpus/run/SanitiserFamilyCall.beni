@@ -1,0 +1,34 @@
+-- A payload's level on a value that is not at the payload (`ownership-v2.md` §2.1,
+-- *The exit rule*). The payload takes `Dict`'s steps, each back to itself, so
+-- the write below reads `⟲`, and `Dict.singleton`'s tree has no kid there: read
+-- as nothing, `k` was edited in place. The value is read whole.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import String
+
+
+type W a
+    = L a
+    | N (W (Dict Int a))
+
+
+pick : W (List Int) → Int
+pick t =
+    case t of
+        N (L d) →
+            case Dict.get d 1 of
+                Just p →
+                    List.length (List.push p 2)
+
+                Nothing →
+                    0
+
+        _ →
+            0
+
+
+main : Program
+main =
+    k = [ 1 ]
+    Node.print (String.fromInt (pick (N (L (Dict.singleton 1 k))) + List.length k))
