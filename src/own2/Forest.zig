@@ -37,15 +37,15 @@ pub fn atSlot(t: *const Trees.Table, places: *const Place.Table, slots: *const S
             return @intCast(d + 1);
         }
         if (t.open(n).len != 0) try out.append(gpa, .{ .depth = @intCast(d), .open = true, .arrivals = t.open(n) });
+        // A row read here also reads the named kids it holds, its own or another's (§2.1).
+        const st = Place.Step.fromWord(words[d]);
+        if (st.isRow()) for (t.kids(n)) |k| {
+            const ks = Place.Step.fromWord(k[0]);
+            if (!ks.isRow() and places.rowHolds(st, ks)) try allBelow(t, gpa, k[1], d + 1, out);
+        };
         n = t.kidAt(n, words[d]) orelse {
             // A step the node names no kid for, read from its row: the words go on from here.
             if (t.rowKid(places, n, words[d])) |r| for ([_][]const Arrival{ t.here(r), t.open(r) }) |run| try rowRun(slots, gpa, run, d, words.len, out);
-            // A row of another's names also reads the kids they do not name (§2.1).
-            const st = Place.Step.fromWord(words[d]);
-            if (st.isRow()) for (t.kids(n)) |k| {
-                const ks = Place.Step.fromWord(k[0]);
-                if (!ks.isRow() and places.rowHolds(st, ks)) try allBelow(t, gpa, k[1], d + 1, out);
-            };
             return @intCast(d + 1);
         };
     }

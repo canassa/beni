@@ -9,6 +9,7 @@
 const std = @import("std");
 const Ids = @import("Ids.zig");
 const Slots = @import("Slots.zig");
+const SupplyKey = @import("SupplyKey.zig");
 const Contract = @import("Contract.zig");
 const Relation = @import("Relation.zig");
 const Eval = @import("Eval.zig");
@@ -38,7 +39,7 @@ pub const labelIndex = Sink.labelIndex;
 
 pub fn resList(s: *Sink, l: ResList) Error!*Contract.Draft.Res {
     if (l.label == none) return &s.d.res;
-    return &(try s.d.labels.items[l.label].supplyOf(s.arena, l.k)).res;
+    return &(try s.d.labels.items[l.label].supplyOf(s.arena, SupplyKey.supply(l.k))).res;
 }
 
 pub fn effList(s: *Sink, l: EffList) *std.ArrayList(Contract.Effect) {
@@ -57,7 +58,7 @@ pub fn arriveWide(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!
         _ = try Contract.Draft.addWide(&s.building.items[s.building.items.len - 1].res, s.arena, try relIn(s, q), a);
         return;
     }
-    const r = try f.slots.relOf(s.e.gpa(), f.account, f.places, q);
+    const r = try SupplyKey.relAt(s, q, out.k);
     const list = try resList(s, out);
     try f.charge(.edge, 1);
     if (try Contract.Draft.addWide(list, s.arena, r, a)) {
@@ -76,7 +77,7 @@ pub fn arrive(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!void
         _ = try Contract.Draft.addArrival(res, s.arena, r, a);
         return;
     }
-    const r = try f.slots.relOf(s.e.gpa(), f.account, f.places, q);
+    const r = try SupplyKey.relAt(s, q, out.k);
     const list = try resList(s, out);
     if (open) try Contract.Draft.markOpen(list, s.arena, r);
     try f.charge(.edge, 1);
@@ -142,7 +143,7 @@ pub fn emitPart(s: *Sink, q: PathId, n: Contract.Node, out: ResList) Error!void 
         _ = try Contract.Draft.addNode(&s.building.items[s.building.items.len - 1].res, s.arena, try relIn(s, q), n);
         return;
     }
-    const r = try f.slots.relOf(s.e.gpa(), f.account, f.places, q);
+    const r = try SupplyKey.relAt(s, q, out.k);
     if (try Contract.Draft.addNode(try resList(s, out), s.arena, r, n)) {
         if (out.label == none) if (s.e.solver) |sv| try sv.resFact(sv.ctx, s.e.x, r, false, .{ .kind = .top }, n);
     }

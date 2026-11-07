@@ -1,0 +1,3 @@
+# v2 refuses what each callback reaches, read at the level of its entry (§2.1, An arrival's level).
+36:9 list_still_used SanitiserRowConvergesShared.ev
+36:9 list_still_used SanitiserRowConvergesShared.ev

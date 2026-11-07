@@ -789,8 +789,8 @@ fn arrivalLess(slots: *const Slots.Table, a: Arrival, b: Arrival) bool {
     if (a.kind != b.kind) return @backingInt(a.kind) < @backingInt(b.kind);
     if (a.j != b.j) return a.j < b.j;
     if (a.deep != b.deep) return !a.deep;
-    if (a.kind == .param or a.kind == .cb) return slots.relLess(a.slot, b.slot);
-    return a.slot < b.slot;
+    if (a.slot != b.slot) return if (a.kind == .param or a.kind == .cb) slots.relLess(a.slot, b.slot) else a.slot < b.slot;
+    return a.path < b.path; // total over `eql`: `Forest.merge` would add such a pair each round (§2.1)
 }
 
 fn effectLess(slots: *const Slots.Table, a: Effect, b: Effect) bool {

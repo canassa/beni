@@ -29,6 +29,7 @@ const Outward = @import("Outward.zig");
 const SupplyCond = @import("SupplyCond.zig");
 const SupplyAnswers = @import("SupplyAnswers.zig");
 const SplitRow = @import("SplitRow.zig");
+const SupplyKey = @import("SupplyKey.zig");
 const Held = @import("Held.zig");
 const Routed = @import("Routed.zig");
 const CallGraft = @import("CallGraft.zig");
@@ -271,7 +272,7 @@ fn describeBelow(s: *Sink, root: u32, prefix: PathId, tags: u32, q: PathId, out:
     };
     e.ev.cur_sub = saved;
     if ((try s.described.getOrPut(e.gpa(), try Put.describedKey(s, ki | Relation.open_bit, q, out))).found_existing) return;
-    const held = try Held.atoms(f, try Put.resList(s, out), q);
+    const held = try Held.atoms(f, try Put.resList(s, out), try SupplyKey.relAt(s, q, out.k));
     // The result slots of the key's items: the read's column.
     const col = try readDests(s, prefix, q);
     {
@@ -850,7 +851,7 @@ fn escapeFacts(e: *Evaluation, leaf: u32) Error!void {
     if (from != s.host.escs.items.len) while (i < s.host.told.items.len) : (i += 1) {
         const t = s.host.told.items[i];
         if (!try s.host.reaches(&e.ev, e.escapes.items, from, t.leaf, Distinct.overlap)) continue;
-        const r = if (t.built) Slots.root else try f.slots.relOf(e.gpa(), f.account, f.places, .from(t.q));
+        const r = if (t.built) Slots.root else try SupplyKey.relAt(s, .from(t.q), t.k);
         const list = try Put.resList(s, .{ .label = t.label, .k = t.k });
         try f.charge(.edge, 1);
         const new = if (t.wide or t.built) try Contract.Draft.addWide(list, s.arena, r, .{ .kind = .host }) else try Contract.Draft.addArrival(list, s.arena, r, .{ .kind = .host });
@@ -1001,22 +1002,40 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
                 const rel = f.slots.rels.find(es.wordsOf(x)) orelse try f.slots.relOfWords(gpa, f.account, f.places, es.wordsOf(x));
                 if (at_site and !SupplyAnswers.staysOpen(x)) try SupplyAnswers.closesAtSite(e, su, x, call.args.len) else if (x.open) try Contract.Draft.markOpen(&(try d.labels.items[at].supplyOf(arena, su.k)).res, arena, rel);
                 for (x.arrivals) |a| {
-                    if (try SplitRow.write(&e.ev, call, es.wordsOf(x), a, &(try d.labels.items[at].supplyOf(arena, su.k)).res, arena)) continue;
-                    var ls: std.ArrayList(u32) = .empty;
-                    defer ls.deinit(gpa);
-                    {
-                        const saved = e.ev.cur_sub;
-                        e.ev.cur_sub = if (e.solver != null) .{ .kind = .supply, .a = at, .b = su.k, .c = rel } else null;
-                        defer e.ev.cur_sub = saved;
-                        try FnRun.supplyLeaves(&e.ev, p[1], a, &ls);
-                    }
-                    for (ls.items) |l| try supplyArrive(s, l, rel, .{ .label = at, .k = su.k });
+                    var parts: std.ArrayList(SplitRow.Part) = .empty;
+                    try SplitRow.plan(&e.ev, call, es.wordsOf(x), x.open and !at_site, a, e.ev.arena, &parts);
+                    for (parts.items) |pt| try supplyPart(s, p[1], pt, .{ .label = at, .k = su.k }, rel);
                 }
             }
             const sup = try d.labels.items[at].supplyOf(arena, su.k);
             for (e.contracts.effectsOf(su.kept)) |kp| _ = try Contract.Draft.addEffect(&sup.kept, arena, kp);
         }
     }
+}
+
+/// One part of a supply's arrival at its key (`SplitRow`, §2.1, *An arrival's level*).
+fn supplyPart(s: *Sink, q: u32, pt: SplitRow.Part, out: Put.ResList, entry: Slots.Rel) Error!void {
+    const e = s.e;
+    const f = e.fr();
+    const gpa = e.gpa();
+    const key = f.slots.rels.find(pt.key) orelse try f.slots.relOfWords(gpa, f.account, f.places, pt.key);
+    const res = try Put.resList(s, out);
+    if (key != entry) try Contract.Draft.markOpen(res, s.arena, key);
+    if (pt.by_slot) {
+        try f.charge(.edge, 1);
+        _ = try Contract.Draft.addArrival(res, s.arena, key, pt.a);
+        return;
+    }
+    if (pt.place != .none) return describe(s, pt.v, try f.places.rootPath(gpa, pt.place), .{ .label = out.label, .k = try s.keys.below(gpa, out.k, key) });
+    var ls: std.ArrayList(u32) = .empty;
+    defer ls.deinit(gpa);
+    {
+        const saved = e.ev.cur_sub;
+        e.ev.cur_sub = if (e.solver != null) .{ .kind = .supply, .a = out.label, .b = out.k, .c = key } else null;
+        defer e.ev.cur_sub = saved;
+        try FnRun.supplyLeaves(&e.ev, q, pt.a, &ls);
+    }
+    for (ls.items) |l| try supplyArrive(s, l, key, out);
 }
 
 /// A callee's reads of an argument (tree `n`), read where value `v` is used
@@ -1061,7 +1080,7 @@ pub fn deliver(e: *Evaluation, sub: Relation.Sub, x: u32, at: u32) Error!void {
     const y = (try f.withTags(x, sub.tags)) orelse return;
     switch (sub.kind) {
         .describe => try describeLeaf(&e.sink, y, .from(sub.b), true, .{ .label = sub.a, .k = sub.c }),
-        .describe_below => try describeItem(&e.sink, try readDests(&e.sink, .from(sub.d), .from(sub.b)), y, at, .from(sub.d), .from(sub.b), try Held.atoms(e.fr(), try Put.resList(&e.sink, .{ .label = sub.a, .k = sub.c }), .from(sub.b)), .{ .label = sub.a, .k = sub.c }),
+        .describe_below => try describeItem(&e.sink, try readDests(&e.sink, .from(sub.d), .from(sub.b)), y, at, .from(sub.d), .from(sub.b), try Held.atoms(e.fr(), try Put.resList(&e.sink, .{ .label = sub.a, .k = sub.c }), try SupplyKey.relAt(&e.sink, .from(sub.b), sub.c)), .{ .label = sub.a, .k = sub.c }),
         .forward_below => unreachable,
         .effect => try paramEffects(&e.sink, y, sub.b != 0, @fromBackingInt(@intCast(sub.a))),
         .supply => try supplyArrive(&e.sink, y, sub.c, .{ .label = sub.a, .k = sub.b }),
@@ -1102,7 +1121,7 @@ fn supplyArrive(s: *Sink, li: u32, rel: Slots.Rel, out: Put.ResList) Error!void 
                     .param => for (f.slots.elems(l.slots)) |el| {
                         if (Slots.isNot(el)) continue;
                         const sl = Slots.pathOf(el);
-                        _ = try Contract.Draft.addArrival(try Put.resList(s, out), s.arena, rel, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, sl), .deep = Slots.isSub(el) or f.places.kind(f.places.pathPlace(sl)) == .@"var", .path = sl.int() });
+                        _ = try Contract.Draft.addArrival(try Put.resList(s, out), s.arena, rel, .{ .kind = .param, .j = r.a, .slot = try f.slots.relOf(gpa, f.account, f.places, sl), .deep = Slots.isSub(el) or f.places.kind(f.places.pathPlace(sl)) == .@"var" or (SlotWords.endsInRow(f.slots.relWords(rel)) and !SlotWords.endsInRow(f.slots.relWords(try f.slots.relOf(gpa, f.account, f.places, sl)))), .path = sl.int() });
                     },
                     .cb => for (f.slots.items(try Subtree.writeOut(f.slots, gpa, f.account, f.places, l.slots))) |sl| {
                         const below = (try f.slots.relBelow(gpa, f.account, f.places, r.path, .from(sl))) orelse Slots.root;

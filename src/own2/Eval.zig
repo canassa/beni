@@ -15,6 +15,7 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
+const SupplyKey = @import("SupplyKey.zig");
 const Replay = @import("Replay.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
@@ -85,7 +86,7 @@ pub const Evaluation = struct {
         e.fn_escapes.deinit(g);
         e.passes.deinit(g);
         if (e.facts_on) {
-            inline for (.{ &e.sink.label_at, &e.sink.described, &e.sink.effected, &e.sink.building, &e.sink.nodes, &e.sink.acyclic, &e.sink.host, &e.sink.reads }) |l| l.deinit(g);
+            inline for (.{ &e.sink.label_at, &e.sink.described, &e.sink.effected, &e.sink.building, &e.sink.nodes, &e.sink.keys, &e.sink.acyclic, &e.sink.host, &e.sink.reads }) |l| l.deinit(g);
         }
     }
 
@@ -570,6 +571,8 @@ pub const Sink = struct {
     reads: Relation.Dests.Reads(2) = .{},
     /// 0 not known; 1 nothing the frame reads grows; 2 something does.
     frozen: u8 = 0,
+    /// The keys supply parts are described below.
+    keys: SupplyKey.Keys = .{},
     /// The subtrees begun so far.
     serial: u32 = 0,
     /// The shallowest subtree in progress a description met again: nothing below it is kept.
