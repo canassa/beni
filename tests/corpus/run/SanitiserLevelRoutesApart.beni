@@ -1,0 +1,48 @@
+-- A sibling held at one route stays apart from the route a `⟲` reads (`ownership-v2.md` §2.1, #2192):
+-- `g` hands only `q` to the write, so `j` at the other field is no object of it.
+import List
+import Node exposing (Program)
+import String
+
+
+type T
+    = Leaf (List Int)
+    | Wrap Box
+    | P T Int
+
+
+type Box
+    = Bx T T
+
+
+wr : T → Int
+wr t =
+    case t of
+        Leaf xs →
+            List.length (List.push xs 1)
+        Wrap u →
+            wrB u
+        P u _ →
+            wr u
+
+
+wrB : Box → Int
+wrB u =
+    case u of
+        Bx p q →
+            wr p + wr q
+
+
+g : Box → Int
+g m =
+    case m of
+        Bx _ q →
+            wr (P (Wrap (Bx (Leaf []) q)) 0)
+
+
+main : Program
+main =
+    j = [ 2 ]
+    k = [ 1 ]
+    a = g (Bx (Leaf j) (Leaf k))
+    Node.print (String.fromInt (a + List.length j))

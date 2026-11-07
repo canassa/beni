@@ -1,0 +1,2 @@
+# v2 refuses a write a `⟲` reaches round a middle type's own loop (§2.1, #2192)
+46:9 list_still_used SanitiserLevelRoutesLoop.g

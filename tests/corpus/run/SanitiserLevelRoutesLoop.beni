@@ -1,0 +1,47 @@
+-- Every route to a level, a middle type's own loop among them (`ownership-v2.md` §2.1, #2192): `U2`
+-- steps round `U` before `U1` reaches `T`, and no shortest route goes that way.
+import List
+import Node exposing (Program)
+import String
+
+
+type T
+    = Leaf (List Int)
+    | Wrap U
+    | Pair T Int
+
+
+type U
+    = U1 T
+    | U2 U Int
+
+
+wr : T → Int
+wr t =
+    case t of
+        Leaf xs →
+            List.length (List.push xs 1)
+        Wrap u →
+            wrU u
+        Pair u _ →
+            wr u
+
+
+wrU : U → Int
+wrU u =
+    case u of
+        U1 t →
+            wr t
+        U2 v _ →
+            wrU v
+
+
+g : U → Int
+g x = wr (Pair (Wrap x) 0)
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = g (U2 (U1 (Leaf k)) 0)
+    Node.print (String.fromInt (a + List.length k))

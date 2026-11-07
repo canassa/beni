@@ -24,6 +24,7 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Replay = @import("Replay.zig");
+const RefRead = @import("RefRead.zig");
 const SlotWords = @import("SlotWords.zig");
 const StepsTo = @import("StepsTo.zig");
 const LevelCycle = @import("LevelCycle.zig");
@@ -396,33 +397,7 @@ pub const Eval = struct {
                         try stack.append(e.gpa(), .{ .v = ks[i + 1], .at = it.at, .tags = t, .route = it.route });
                     }
                 },
-                .ref => {
-                    var all: std.ArrayList(u32) = .empty;
-                    defer all.deinit(e.gpa());
-                    const tops: []const u32 = if (x.family != Slots.empty) e.f.slots.items(x.family) else &.{e.f.pos.items[x.pos].slot.int()};
-                    // A step an opaque or a type variable's place cannot follow
-                    // (a cast's inner, §2.13.9) is some object inside it: all
-                    // of what it reaches, read approximately.
-                    var inside: std.ArrayList(u32) = .empty;
-                    defer inside.deinit(e.gpa());
-                    for (tops) |t| {
-                        const before = all.items.len;
-                        try Replay.replay(e.gpa(), e.account(), e.places(), .from(t), rest, &all);
-                        if (all.items.len == before and rest.len != 0 and !@import("Mutate.zig").on(.unnamed_step_empty)) {
-                            const k = e.places().kind(e.places().pathPlace(.from(t)));
-                            if (k == .@"opaque" or k == .@"var") {
-                                // A call's result read on past its place: through what arrives there.
-                                if (x.family == Slots.empty and try e.throughCall(x.root, .from(t), rest, deep, it.tags, it.route, out)) continue;
-                                try inside.append(e.gpa(), t);
-                            } else if (try FoldRead.prefix(e, .from(t), rest, &inside) and e.f.roots.items[x.root].kind != .param) try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .top, .tags = it.tags }), .route = it.route });
-                        }
-                    }
-                    var set = try e.f.slots.setOf(e.gpa(), e.account(), e.places(), all.items);
-                    if (deep) set = try Subtree.belowSet(e.f.slots, e.gpa(), e.account(), e.places(), try e.f.slots.sorted(e.gpa(), e.account(), all.items));
-                    for (inside.items) |t| set = try e.f.slots.unionOf(e.gpa(), e.account(), set, try Subtree.below(e.f.slots, e.gpa(), e.account(), e.places(), .from(t)));
-                    if (set == Slots.empty) continue;
-                    try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .ref, .root = x.root, .pos = x.pos, .slots = set, .tags = it.tags }), .route = it.route });
-                },
+                .ref => try RefRead.read(e, x, rest, deep, it.tags, it.route, out),
                 .built => {
                     if (rest.len == 0 and deep and e.parts) {
                         if (x.site != none) try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .site, .atom = x.site, .tags = it.tags }), .route = it.route });
@@ -510,6 +485,18 @@ pub const Eval = struct {
         return true;
     }
 
+    /// The steps a `⟲` takes from reference `x`, at `place`, to its next
+    /// levels at `origin` (a `List T` below a `T`): every route there; one
+    /// empty route where it stands there already or no step leads there.
+    pub fn levelRoutes(e: *Eval, x: Value.Val, place: PlaceId, origin: PlaceId) Error![]const []const u32 {
+        var out: std.ArrayList([]const u32) = .empty;
+        const one = [1]u32{e.f.pos.items[x.pos].slot.int()};
+        const tops: []const u32 = if (x.family != Slots.empty) e.f.slots.items(x.family) else &one;
+        if (place != origin) for (tops) |t| try StepsTo.of(e.gpa(), e.arena, e.account(), e.places(), .from(t), origin, &out);
+        if (out.items.len == 0) try out.append(e.arena, &.{});
+        return out.items;
+    }
+
     /// `⟲` into a built value, at `place` (`LevelCycle`): the values one or more levels below, at the
     /// same place, through the parts that stay on its cycle; then `rest`
     /// from each (the experiment's fourth requirement). A part not built
@@ -549,24 +536,8 @@ pub const Eval = struct {
                 .scalar, .bot => {},
                 .ref => if (it.below) {
                     if (it.place == place) try e.project(it.v, rest, deep, tags, it.route, out);
-                    // A part on the cycle at another place (a `List T` below a
-                    // `T`): its next level is the steps to the cycle's place.
-                    var to: std.ArrayList(u32) = .empty;
-                    defer to.deinit(e.gpa());
-                    if (it.place != place and x.family == Slots.empty) try StepsTo.of(e.gpa(), e.account(), e.places(), e.f.pos.items[x.pos].slot, place, &to);
                     // Its own levels below, by its slots (never its own storage).
-                    var lv: std.ArrayList(u32) = .empty;
-                    defer lv.deinit(e.gpa());
-                    if (to.items.len != 0) {
-                        try lv.appendSlice(e.gpa(), to.items);
-                        try lv.appendSlice(e.gpa(), rest);
-                        try e.project(it.v, lv.items, deep, tags, it.route, out);
-                        lv.clearRetainingCapacity();
-                        try lv.appendSlice(e.gpa(), to.items);
-                    }
-                    try lv.append(e.gpa(), Step.level.word());
-                    try lv.appendSlice(e.gpa(), rest);
-                    try e.project(it.v, lv.items, deep, tags, it.route, out);
+                    try RefRead.levels(e, x, try e.levelRoutes(x, it.place, place), rest, deep, tags, it.route, out);
                 },
                 .alt => {
                     const ks = e.f.kidsOf(x);
