@@ -128,6 +128,8 @@ const layers = [_]Entry{
     // Compatibility for one pair of points, split from `Liveness` (#1685).
     .{ .file = "Ancestry.zig", .layer = 6, .max_lines = 130 },
     .{ .file = "Pairs.zig", .layer = 6, .max_lines = 215 },
+    // A reference read by steps, by every route of a `⟲`, split from `Relation` (#2192).
+    .{ .file = "RefRead.zig", .layer = 6, .max_lines = 90 },
     .{ .file = "Relation.zig", .layer = 7, .max_lines = 1300 },
     .{ .file = "Taken.zig", .layer = 7, .max_lines = 75 },
     .{ .file = "AnswerKeep.zig", .layer = 7, .max_lines = 90 },

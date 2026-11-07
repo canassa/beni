@@ -150,6 +150,10 @@ pub const Name = enum {
     related_prefix_apart,
     /// O6: a `⟲` replayed where it does not fold names no level below.
     level_replay_same,
+    /// O6: a reference's next levels are the first route alone.
+    level_route_shortest,
+    /// O6: a slot two routes of a `⟲` reach is read twice.
+    level_slot_twice,
     /// O8 H1 H6: `Resolve.judge` skips Unescaped.
     unescaped_off,
     /// O8: an escape of unknown keys reaches no target.

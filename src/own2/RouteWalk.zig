@@ -18,10 +18,9 @@
 const std = @import("std");
 const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
-const Slots = @import("Slots.zig");
-const StepsTo = @import("StepsTo.zig");
 const LevelCycle = @import("LevelCycle.zig");
 const Relation = @import("Relation.zig");
+const RefRead = @import("RefRead.zig");
 const Coexist = @import("Coexist.zig");
 
 const Error = Relation.Error;
@@ -206,7 +205,12 @@ fn emitWords(w: *Walk, r: u32, it: Item, words: []const u32) Error!void {
     var tmp: std.ArrayList(Proj) = .empty;
     defer tmp.deinit(e.gpa());
     try e.project(it.v, words, w.reqs[r].deep, it.tags, it.route, &tmp);
-    for (tmp.items) |p| {
+    try deliver(w, r, it, tmp.items);
+}
+
+fn deliver(w: *Walk, r: u32, it: Item, ps: []const Proj) Error!void {
+    const e = w.e;
+    for (ps) |p| {
         if (it.routes != 0 and !try Coexist.setsMeet(&e.f.sets.tags, e.gpa(), e.account(), e.f.leafAt(p.leaf).tags, it.routes, 0, 0)) continue;
         try w.reqs[r].out.append(e.gpa(), .{ .leaf = p.leaf, .route = p.route, .occ = p.occ, .routes = it.routes });
     }
@@ -251,26 +255,14 @@ fn descend(w: *Walk, it: Item) Error!void {
         .scalar, .bot => {},
         .ref => if (it.below) {
             if (place == origin) try w.arrive(on);
-            // A part on the cycle at another place: its next level is the
-            // steps to the cycle's place; its own levels below by its slots.
-            var to: std.ArrayList(u32) = .empty;
-            defer to.deinit(g);
-            if (place != origin and x.family == Slots.empty) try StepsTo.of(e.gpa(), e.account(), e.places(), e.f.pos.items[x.pos].slot, origin, &to);
-            var lv: std.ArrayList(u32) = .empty;
-            defer lv.deinit(g);
+            // A part on the cycle at another place: its next levels are every
+            // route to the cycle's place; its own levels below by its slots.
+            const tos = try e.levelRoutes(x, place, origin);
             for (w.runs.items[it.run]) |r| {
-                const rest = w.reqs[r].words[it.lvl + 1 ..];
-                if (to.items.len != 0) {
-                    lv.clearRetainingCapacity();
-                    try lv.appendSlice(g, to.items);
-                    try lv.appendSlice(g, rest);
-                    try emitWords(w, r, it, lv.items);
-                }
-                lv.clearRetainingCapacity();
-                try lv.appendSlice(g, to.items);
-                try lv.append(g, Step.level.word());
-                try lv.appendSlice(g, rest);
-                try emitWords(w, r, it, lv.items);
+                var tmp: std.ArrayList(Proj) = .empty;
+                defer tmp.deinit(g);
+                try RefRead.levels(e, x, tos, w.reqs[r].words[it.lvl + 1 ..], w.reqs[r].deep, it.tags, it.route, &tmp);
+                try deliver(w, r, it, tmp.items);
             }
         },
         .alt => {

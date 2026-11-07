@@ -1,0 +1,44 @@
+-- A `⟲` into a literal reads every route to its next level (`ownership-v2.md` §2.1, #2192): `Box`
+-- reaches `T` by both of its fields, and the shortest route alone left `k` out of the write.
+import List
+import Node exposing (Program)
+import String
+
+
+type T
+    = Leaf (List Int)
+    | Wrap Box
+    | P T Int
+
+
+type Box
+    = Bx T T
+
+
+wr : T → Int
+wr t =
+    case t of
+        Leaf xs →
+            List.length (List.push xs 1)
+        Wrap u →
+            wrB u
+        P u _ →
+            wr u
+
+
+wrB : Box → Int
+wrB u =
+    case u of
+        Bx p q →
+            wr p + wr q
+
+
+g : Box → Int
+g x = wr (P (Wrap x) 0)
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = g (Bx (Leaf []) (Leaf k))
+    Node.print (String.fromInt (a + List.length k))

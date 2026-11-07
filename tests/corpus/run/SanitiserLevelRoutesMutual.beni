@@ -1,0 +1,57 @@
+-- Every route to a level through a mutual pair of types (`ownership-v2.md` §2.1, #2192).
+import List
+import Node exposing (Program)
+import String
+
+
+type T
+    = Leaf (List Int)
+    | Wrap Mu
+    | P T Int
+
+
+type Mu
+    = Mu T Ov
+
+
+type Ov
+    = O0 Mu
+    | O1 T
+
+
+wr : T → Int
+wr t =
+    case t of
+        Leaf xs →
+            List.length (List.push xs 1)
+        Wrap u →
+            wrM u
+        P u _ →
+            wr u
+
+
+wrM : Mu → Int
+wrM u =
+    case u of
+        Mu p o →
+            wr p + wrO o
+
+
+wrO : Ov → Int
+wrO u =
+    case u of
+        O0 m →
+            wrM m
+        O1 q →
+            wr q
+
+
+g : Mu → Int
+g x = wr (P (Wrap x) 0)
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = g (Mu (Leaf []) (O0 (Mu (Leaf []) (O1 (Leaf k)))))
+    Node.print (String.fromInt (a + List.length k))
