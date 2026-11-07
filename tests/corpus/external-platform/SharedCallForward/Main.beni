@@ -1,0 +1,10 @@
+-- #2178 (#1782): shared-toy uses one generated flip call twice. In release its
+-- replacement is a combine call with its arguments reversed, exactly once.
+import Probe
+
+
+view = <></>
+
+
+main : Probe.Program
+main = Probe.show view
