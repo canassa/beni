@@ -42,7 +42,7 @@ fn slotsAt(e: anytype, x: anytype, rest: []const u32, deep: bool, tags: u32, rou
                 // A call's result read on past its place: through what arrives there.
                 if (x.family == Slots.empty and try e.throughCall(x.root, .from(t), rest, deep, tags, route, out)) continue;
                 try inside.append(e.gpa(), t);
-            } else if (try FoldRead.prefix(e, .from(t), rest, &inside) and e.f.roots.items[x.root].kind != .param) try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .top, .tags = tags }), .route = route });
+            } else if (!try Replay.inside(e.gpa(), e.account(), e.places(), .from(t), rest, &inside) and try FoldRead.prefix(e, .from(t), rest, &inside) and e.f.roots.items[x.root].kind != .param) try out.append(e.gpa(), .{ .leaf = try e.f.leaf(.{ .kind = .top, .tags = tags }), .route = route });
         }
     }
     var set = try e.f.slots.setOf(e.gpa(), e.account(), e.places(), all.items);

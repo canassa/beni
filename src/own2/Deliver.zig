@@ -231,9 +231,9 @@ pub const Solver = struct {
                 while (d < pw.len and sub != 0) : (d += 1) {
                     const on = t.kidAt(sub, pw[d]);
                     const row = if (on == null) t.rowKid(e0.ev.f.places, sub, pw[d]) orelse 0 else 0;
-                    for ([_][]const Contract.Arrival{ t.open(sub), t.here(row), t.open(row) }) |run| if (run.len != 0) {
+                    for ([_][]const Contract.Arrival{ t.open(sub), t.here(row), t.open(row) }, 0..) |run, ri| if (run.len != 0) {
                         const at = sl.rels.find(pw[0..d]) orelse try sl.relOfWords(s.gpa, e0.ev.f.account, e0.ev.f.places, pw[0..d]);
-                        for (try e.ev.arena.dupe(Contract.Arrival, run)) |a| try e.ev.feedBelowDraft(kw[1], at, true, a);
+                        for (try e.ev.arena.dupe(Contract.Arrival, run)) |a| try e.ev.feedBelowDraft(kw[1], if (ri != 0 and Forest.wholeAtRow(sl, a)) kw[2] else at, true, a);
                     };
                     sub = on orelse 0;
                 }
@@ -256,7 +256,7 @@ pub const Solver = struct {
             const words = sl.relWords(kw[2]);
             if (!SlotWords.startsAt(words, rw)) continue;
             hits.clearRetainingCapacity();
-            _ = try Forest.atSlot(t, e.ev.f.places, s.gpa, n, words[rw.len..], &hits);
+            _ = try Forest.atSlot(t, e.ev.f.places, e.ev.f.slots, s.gpa, n, words[rw.len..], &hits);
             var arrs: std.ArrayList(struct { a: Contract.Arrival, n: u32, open: bool }) = .empty;
             defer arrs.deinit(s.gpa);
             for (hits.items) |h| for (h.arrivals) |a| try arrs.append(s.gpa, .{ .a = a, .n = @intCast(rw.len + h.depth), .open = h.open });
@@ -285,7 +285,7 @@ pub const Solver = struct {
                 try e.ev.f.charge(.edge, 1);
                 const words = e.ev.f.slots.relWords(kw[2]);
                 const n = SlotWords.under(e.ev.f.places, rw, words) orelse continue;
-                try e.ev.feedDraft(kw[1], arrival, @intCast(n), true);
+                try e.ev.feedDraft(kw[1], arrival, @intCast(if (SlotWords.endsInRow(rw) and Forest.wholeAtRow(e.ev.f.slots, arrival)) words.len else n), true);
             }
         } else if (s.res_watch.get(.{ x, rel })) |li| {
             var i: usize = 0;
