@@ -69,7 +69,10 @@ const std = @import("std");
 /// (`Placement.Places.prerender_data`), the program it makes
 /// (`Program.data`), and the two calls that read the value into the
 /// lambda's parameter (`programDataSchema`, `programDataBind`).
-pub const version: Version = .{ .major = 1, .minor = 23 };
+/// Version 1.24 adds Trusted Types (`boundary.md` §9.4.7, amended
+/// 2026-11-07): `Build.trusted_types`, the lowering's
+/// `Lowering.trusted_types`, and `Context.reportTrustedTypes`.
+pub const version: Version = .{ .major = 1, .minor = 24 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -97,6 +100,10 @@ pub const Lowering = struct {
     targets: Version,
     /// 1.13: retain producer substitutions and emit the direct consumer plan.
     parameterised_templates: bool = false,
+    /// 1.24: the lowering honours `Build.trusted_types` and writes no
+    /// HTML-parsing sink when it is set (`boundary.md` §9.4.7). A build
+    /// whose project sets it is refused for a lowering that does not.
+    trusted_types: bool = false,
     /// The markup runtime's exports this lowering's emitted code imports,
     /// each with its parameter count (§9.4.5).
     runtime: []const RuntimeExport,
@@ -1128,6 +1135,10 @@ pub const Build = struct {
     /// whose project names no origin, which a `Named.routed` program is
     /// refused for.
     address: []const u8 = "",
+    /// 1.24 (`boundary.md` §9.4.7): the project's `"trustedTypes": true` —
+    /// the page is served under Trusted Types, so the lowering writes no
+    /// HTML-parsing sink.
+    trusted_types: bool = false,
 
     pub const Prerender = enum(u8) { none, tree, client, _ };
 };
@@ -1267,6 +1278,13 @@ pub const Context = struct {
     /// the error, and the build writes nothing.
     pub fn report(cx: *Context, node: Node.Index, message: []const u8) error{ OutOfMemory, Reported } {
         return cx.vtable.report(cx.impl, node, message);
+    }
+
+    /// 1.24: report `trusted_types_sink` at the node — markup that would
+    /// reach a Trusted Types sink in a `Build.trusted_types` build; the
+    /// lowering then returns the error, and the build writes nothing.
+    pub fn reportTrustedTypes(cx: *Context, node: Node.Index, message: []const u8) error{ OutOfMemory, Reported } {
+        return cx.vtable.trusted_types_sink(cx.impl, node, message);
     }
 
     /// 1.6: report `not_implemented` at the node — markup this lowering
@@ -2006,6 +2024,7 @@ pub const VTable = struct {
     start: *const fn (impl: *anyopaque, key: []const u8, value: []const u8) Error!void,
     report: *const fn (impl: *anyopaque, node: Node.Index, message: []const u8) error{ OutOfMemory, Reported },
     not_implemented: *const fn (impl: *anyopaque, node: Node.Index, message: []const u8) error{ OutOfMemory, Reported },
+    trusted_types_sink: *const fn (impl: *anyopaque, node: Node.Index, message: []const u8) error{ OutOfMemory, Reported },
     row_template: *const fn (impl: *anyopaque, into: Block, row_index: Row.Index, item: Name, position: ?Name) Error!Expr,
     template_plan: *const fn (impl: *anyopaque) Error!Expr,
     template_holes: *const fn (impl: *anyopaque, holes: []const Program.HoleRef) Error!Expr,

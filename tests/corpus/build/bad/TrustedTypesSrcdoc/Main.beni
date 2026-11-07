@@ -1,0 +1,17 @@
+-- `trusted_types_sink` (boundary.md §9.4.7, backend.md §15.3, *Templates
+-- under Trusted Types*): a project whose beni.json says
+-- `"trustedTypes": true` and gives a frame its document with `srcdoc`, a
+-- `TrustedHTML` sink. The sandbox that makes `srcdoc` safe in an ordinary
+-- page (`srcdoc_without_sandbox`) does not make the write pass the page's
+-- Content Security Policy, so the build is refused at the element and
+-- writes nothing (the owner's decision, #2208).
+import Browser
+import Html exposing (Html)
+
+
+view : String → Html msg
+view page = <main><iframe sandbox="" srcdoc={page} title="frame" /></main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → "<p>hi</p>", update = λ_ model → model, view = view }

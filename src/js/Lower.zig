@@ -20370,6 +20370,12 @@ const markup_vtable: beni_markup.VTable = struct {
         return error.Reported;
     }
 
+    fn trustedTypesSink(impl: *anyopaque, n: M.Node.Index, message: []const u8) error{ OutOfMemory, Reported } {
+        const l = lowerer(impl);
+        try l.reportAtNode(.trusted_types_sink, n, message);
+        return error.Reported;
+    }
+
     fn programInit(impl: *anyopaque, into: M.Block) E!M.Expr {
         return expr(try lowerer(impl).programInit(into, &.{}));
     }
@@ -20993,6 +20999,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .start = start,
         .report = report,
         .not_implemented = notImplemented,
+        .trusted_types_sink = trustedTypesSink,
         .program_init = programInit,
         .program_start = programStart,
         .program_field = programField,

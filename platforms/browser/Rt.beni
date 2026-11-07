@@ -174,6 +174,131 @@ templateOf html flags =
             Js.call (Js.read node) "cloneNode" [ Js.from True ]
 
 
+-- `(desc, flags)`: `templateOf` for a build whose project says
+-- `"trustedTypes": true` (`backend.md` §15.3, *Templates under Trusted
+-- Types*). A page under Trusted Types refuses a string written to
+-- `innerHTML`, so the template's nodes are made by DOM calls from `desc`,
+-- which the lowering read back from the template's HTML: a string is a
+-- text node, `0` an empty comment, `[name, attributes, …children]` an
+-- element, its attributes `0` or `[name, value, …]`. The fragment they are
+-- made into is what `templateOf`'s parse gives, and the steps after it are
+-- `templateOf`'s.
+pub built : V, Int → (⊤ → V)
+built desc flags =
+    node = Js.ref Js.null
+    λ⊤ →
+        if Js.isNull (Js.read node) then
+            document = Js.global "document"
+            content = Js.call document "createDocumentFragment" []
+            buildAll document content desc 0 Js.null
+            Js.write node content
+
+            if Js.bitAnd flags 2 ≠ 0 then
+                Js.write node (Js.get (Js.read node) "firstChild")
+            if Js.bitAnd flags 4 ≠ 0 then
+                if Js.bitAnd flags 2 ≠ 0 then
+                    f = Js.call document "createDocumentFragment" []
+                    gather (Js.read node) f
+                    Js.write node f
+                else
+                    ⊤
+            else
+                Js.write node (Js.get (Js.read node) "firstChild")
+        if Js.bitAnd flags 1 ≠ 0 then
+            Js.call (Js.global "document") "importNode" [ Js.read node, Js.from True ]
+        else
+            Js.call (Js.read node) "cloneNode" [ Js.from True ]
+
+
+-- Append the nodes `list` describes from index `at` on to `parent`, each
+-- in the namespace `ns` (null: HTML's) unless it opens its own.
+buildAll : V, V, V, Int, V → ⊤
+buildAll document parent list at ns =
+    if at < Js.to (Js.get list "length") then
+        _ = Js.call parent "appendChild" [ buildOne document (Js.at list at) ns ]
+        buildAll document parent list (at + 1) ns
+    else
+        ⊤
+
+
+-- One node of a `built` template: the parser's namespaces — `svg` opens
+-- SVG's and `math` MathML's, and the children of an integration point are
+-- HTML again.
+buildOne : V, V, V → V
+buildOne document d ns =
+    if Js.typeIs d "string" then
+        Js.call document "createTextNode" [ d ]
+    else if Js.typeIs d "number" then
+        Js.call document "createComment" [ Js.from "" ]
+    else
+        name : String
+        name = Js.to (Js.at d 0)
+        own =
+            if name == "svg" then
+                Js.from "http://www.w3.org/2000/svg"
+            else if name == "math" then
+                Js.from "http://www.w3.org/1998/Math/MathML"
+            else
+                ns
+        el =
+            if Js.isNull own then
+                Js.call document "createElement" [ Js.from name ]
+            else
+                Js.call document "createElementNS" [ own, Js.from name ]
+        attributes = Js.at d 1
+        if Js.typeIs attributes "number" then
+            ⊤
+        else
+            buildAttributes el attributes 0 (not (Js.isNull own))
+        inner =
+            if
+                name == "foreignObject"
+                    || name == "desc"
+                    || name == "title"
+                    || name == "mi"
+                    || name == "mo"
+                    || name == "mn"
+                    || name == "ms"
+                    || name == "mtext"
+            then
+                Js.null
+            else
+                own
+        buildAll document el d 2 inner
+        el
+
+
+-- Set the attributes `[name, value, …]` from index `at` on; on a foreign
+-- element, an `xlink:`, `xml:` or `xmlns` name in its namespace, as the
+-- parser sets it.
+buildAttributes : V, V, Int, Bool → ⊤
+buildAttributes el list at outside =
+    if at < Js.to (Js.get list "length") then
+        name : String
+        name = Js.to (Js.at list at)
+        value = Js.at list (at + 1)
+        space =
+            if not outside then
+                ""
+            else if String.startsWith name "xlink:" then
+                "http://www.w3.org/1999/xlink"
+            else if String.startsWith name "xml:" then
+                "http://www.w3.org/XML/1998/namespace"
+            else if name == "xmlns" || String.startsWith name "xmlns:" then
+                "http://www.w3.org/2000/xmlns/"
+            else
+                ""
+        if space == "" then
+            _ = Js.call el "setAttribute" [ Js.from name, value ]
+            ⊤
+        else
+            _ = Js.call el "setAttributeNS" [ Js.from space, Js.from name, value ]
+            ⊤
+        buildAttributes el list (at + 2) outside
+    else
+        ⊤
+
+
 -- Move every child of `from` into `into`, in order.
 gather : V, V → ⊤
 gather from into =

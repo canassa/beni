@@ -1,0 +1,88 @@
+-- load
+<body>
+  <main>
+    <button id="show">"show"</button>
+  </main>
+</body>
+-- click #show
+<body>
+  <main>
+    <button id="bump">"0"</button>
+    <p class="a & b" title="say \"hi\"">
+      "x < y & "
+      "0"
+    </p>
+    <textarea .value="a < b">"a < b"</textarea>
+    <my-widget id="w">
+      "inside "
+      "0"
+    </my-widget>
+    <svg:svg viewBox="0 0 10 10">
+      <svg:rect width="2" height="2" fill="0"></svg:rect>
+    </svg:svg>
+    <div>
+      "0"
+      <b>"between"</b>
+      "0"
+      <!---->
+    </div>
+    <svg:svg>
+      <svg:circle r="1"></svg:circle>
+      <svg:text>"0"</svg:text>
+    </svg:svg>
+    <svg:svg viewBox="0 0 10 10">
+      <svg:use xlink:href="#a"></svg:use>
+      <svg:foreignObject>
+        <div class="in">"0"</div>
+      </svg:foreignObject>
+    </svg:svg>
+    <table>
+      <tbody>
+        <tr>
+          <td>"0"</td>
+        </tr>
+      </tbody>
+    </table>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="bump">"1"</button>
+    <p class="a & b" title="say \"hi\"">
+      "x < y & "
+      "1"
+    </p>
+    <textarea .value="a < b">"a < b"</textarea>
+    <my-widget id="w">
+      "inside "
+      "1"
+    </my-widget>
+    <svg:svg viewBox="0 0 10 10">
+      <svg:rect width="2" height="2" fill="1"></svg:rect>
+    </svg:svg>
+    <div>
+      "1"
+      <b>"between"</b>
+      "1"
+      <!---->
+    </div>
+    <svg:svg>
+      <svg:circle r="1"></svg:circle>
+      <svg:text>"1"</svg:text>
+    </svg:svg>
+    <svg:svg viewBox="0 0 10 10">
+      <svg:use xlink:href="#a"></svg:use>
+      <svg:foreignObject>
+        <div class="in">"1"</div>
+      </svg:foreignObject>
+    </svg:svg>
+    <table>
+      <tbody>
+        <tr>
+          <td>"1"</td>
+        </tr>
+      </tbody>
+    </table>
+  </main>
+</body>

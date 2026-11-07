@@ -1,1 +1,0 @@
-{ "platform": true, "name": "worker-policy-defect", "platforms": ["browser"], "reexports": ["Browser", "Browser.Worker", "Hosted"] }

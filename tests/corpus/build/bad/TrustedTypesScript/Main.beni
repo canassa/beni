@@ -1,0 +1,16 @@
+-- A `<script>` in a project whose beni.json says `"trustedTypes": true`
+-- (the owner's decision, #2208; backend.md §15.3, *Templates under Trusted
+-- Types*). A script's content and `src` are Trusted Types sinks. `html`
+-- declares no `script` element, so the build stops at `unknown_element`
+-- before the `dom` lowering's own refusal, `trusted_types_sink`, is reached;
+-- either way the build writes nothing.
+import Browser
+import Html exposing (Html)
+
+
+view : String → Html msg
+view code = <main><script>{code}</script></main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → "1", update = λ_ model → model, view = view }
