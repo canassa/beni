@@ -768,7 +768,7 @@ waits for idle scope cleanup; shrink does not kill active finalizers. A defect
 is fatal to the owning program, not a reason for transparent worker respawn.
 Transient open failures may be retried by an explicit policy, within bounds.
 
-Streams use scoped request IDs with monotonic chunk sequences and finite
+Deferred to #2186: streams would use scoped request IDs with monotonic chunk sequences and finite
 credits. Ack is sent when the consumer releases/consumes a chunk, not when the
 message event merely arrives. Producers suspend when credits run out; End
 carries a typed success/failure/interrupt exit, with Defect on the control path. A Reply/Chunk preparation or native send
@@ -787,28 +787,13 @@ presented as the same native object operation.
 See [workers-api.md](workers-api.md) for every public signature and
 [workers-example.md](workers-example.md) for complete page/worker lifecycles.
 
-*Amended 2026-11-07 (#2129).* `Worker.cancelStream` on an unsolicited events
-stream closes that event channel, discards unread events and waits for an
-`EventsClosed` control acknowledgment. Later `emit` returns `EventChannelClosed`.
-Calls and worker-root work remain alive; `Worker.close` owns root cleanup. A
-response stream instead interrupts its request-scoped producer and waits for its
-finalizers. Both cancellation paths bypass data credits and retain typed cleanup
-status; neither claims remote cleanup after a lost-peer transition.
-
-Each response stream uses one chunk credit and the configured `queuedBytes`
-bound per chunk. The event channel retains its separate `queuedEvents` and byte
-budget. A received chunk's lease is acknowledged only by release/take, never by
-receipt or `next`. Producer completion follows its finalizers; already-received
-values belong to the receiver and are not reclaimed from a held chunk on remote
-completion. A failure is observed after already-committed chunks have been read;
-cancellation instead discards unread chunks. Queue mutation stays with its
-representation-owning module, independent of private connection-field encoding.
-Hello options are control data with the public Options field spellings in both
-entries; the worker reads their raw fields, without a separately renamed local
-record projection.
-Chunk operations retain their
-ownership-checker-v2 consumed/borrowed contract; unchecked duplicate release or
-use after release defects instead of emitting a second acknowledgment.
+*Owner decision, 2026-11-07 (#2129).* Request/response streaming is deferred to
+[#2186](https://github.com/canassa/beni/issues/2186). The public Definition has
+only init, start and handle; it has no stream callback. No write/cancelStream
+operation or Sink is published. WorkerStream remains the existing bounded
+unsolicited-event reader used by Worker.events; its old copying-data behavior
+is unchanged. The stream protocol above is deferred design, not an implemented
+or published API. The prototype and its Chrome fixtures are saved with #2186.
 
 ## 10. Verification and measurements owed
 
