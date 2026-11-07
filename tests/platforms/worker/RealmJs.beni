@@ -1,5 +1,5 @@
--- Raw `Js` reads for the worker realm allow-list fixtures (#2206, #2207;
--- `workers.md` §4). Each function is one probe; a fixture keeps one.
+-- Raw `Js` reads for the worker realm allow-list fixtures (#2206, #2207,
+-- #2211; `workers.md` §4). Each function is one probe; a fixture keeps one.
 import Js
 
 
@@ -16,6 +16,18 @@ pub foreign impure siblingImportScripts : ⊤ → String
 
 
 pub foreign impure siblingSafe : ⊤ → String
+
+
+pub foreign impure siblingShadowed : ⊤ → String
+
+
+pub foreign impure siblingTimerString : ⊤ → String
+
+
+pub foreign impure siblingTimerParam : ⊤ → String
+
+
+pub foreign impure siblingScopedSafe : ⊤ → String
 
 
 str : Js.Value → String

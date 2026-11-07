@@ -44,7 +44,10 @@ list comes from the WebIDL of the web platform and the ECMAScript globals.
 `worker_realm_violation` names the offending kept declaration or file and
 access. Computed names and passing `Js.global` as a value are unproved.
 `Function` and `eval` are refused in a worker, because the check cannot see
-the code that they run. `importScripts` reports
+the code that they run. In a kept sibling, a name is free when no scope
+around the read binds it. A kept sibling can call `setTimeout` or
+`setInterval` only with a function as the first argument: a function
+expression, an arrow, or a name bound to a function. `importScripts` reports
 `module_worker_import_scripts`: a module worker does not have it. Use a
 static import.
 

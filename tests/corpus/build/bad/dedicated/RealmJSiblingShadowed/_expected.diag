@@ -1,0 +1,1 @@
+[{"code":"worker_realm_violation","severity":"error","span":{"file":"tests/platforms/worker/RealmJs.js","start":{"line":11,"col":61},"end":{"line":11,"col":69}},"title":"WORKER REALM VIOLATION","message":"This file is kept in entry realm `dedicatedWorker`, and it uses JavaScript\naccess `document`, which is not proved available there."}]
