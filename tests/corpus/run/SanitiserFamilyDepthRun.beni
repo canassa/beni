@@ -1,8 +1,6 @@
--- Two readers of a whole arrival at a family's payload (`ownership-v2.md` §2.1, *The exit
--- rule*). `run`: a function read at the payload out of a list of `T F` runs, and the read is a
--- subtree held whole, so it must keep the function that may stand in it. `rowField`: `F`'s
--- only context is a function, so its payload has no step, and a value read through a record's
--- row stays deep there: a constructor at the slot holds its list below itself. Refused.
+-- What a whole read at a family's payload owes a record's row (`ownership-v2.md` §2.1, *The
+-- exit rule*): `F`'s only context is a function, so its payload has no step, and a value read
+-- through the row stays deep there: a constructor at the slot holds its list below itself. Refused.
 import List
 import Node exposing (Program)
 import String
@@ -10,11 +8,6 @@ import String
 
 show : List Int → String
 show l = String.join (List.map l String.fromInt) ","
-
-
-type T a
-    = Leaf a
-    | Wrap (T (List a))
 
 
 type F a
@@ -51,16 +44,6 @@ low v d =
             d
 
 
-run : List (T (List Int → List Int)), List Int → List (List Int)
-run ts a = List.map ts λt →
-    case t of
-        Wrap (Leaf [ f ]) →
-            f a
-
-        _ →
-            a
-
-
 rowField : List Int → List Int
 rowField k =
     v = { p = FL (RL k), q = [ 3 ] }
@@ -71,5 +54,4 @@ rowField k =
 main : Program
 main =
     k = [ 1 ]
-    x = run [ Wrap (Leaf [ λv → List.push v 2 ]) ] k
-    Node.print (String.fromInt (List.length x) ++ show (rowField k) ++ "|" ++ show k)
+    Node.print (show (rowField k) ++ "|" ++ show k)
