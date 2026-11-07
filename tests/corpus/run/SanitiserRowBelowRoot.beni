@@ -1,0 +1,71 @@
+-- A callback below a parameter's root writes or keeps a field the callee's type leaves in the row. The
+-- supply sits at the code's own type, so the write reaches the actual's `.b` (§2.1, *A callback*).
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+viaField : { r | a : L }, { g : { r | a : L } → y } → y
+viaField rec o =
+    g = o.g
+    g rec
+
+
+viaTuple : { r | a : L }, ({ r | a : L } → y) × Int → y
+viaTuple rec o =
+    ( g, _ ) = o
+    g rec
+
+
+viaJust : { r | a : L }, Maybe ({ r | a : L } → L) → L
+viaJust rec o =
+    case o of
+        Just g →
+            g rec
+
+        Nothing →
+            rec.a
+
+
+viaPass : { r | a : L }, { g : { r | a : L } → y } → y
+viaPass rec o = direct rec o.g
+
+
+direct : { r | a : L }, ({ r | a : L } → y) → y
+direct rec f = f rec
+
+
+main : Program
+main =
+    k1 = [ 1 ]
+    y1 = viaField { a = [], b = k1 } { g = λs → List.push s.b 1 }
+    k2 = [ 2 ]
+    y2 = viaTuple { a = [], b = k2 } ( λs → List.push s.b 1, 0 )
+    k3 = [ 3 ]
+    y3 = viaJust { a = [], b = k3 } (Just λs → List.push s.b 1)
+    k4 = [ 4 ]
+    y4 = viaPass { a = [], b = k4 } { g = λs → List.push s.b 1 }
+    k5 = [ 5 ]
+    y5 = viaField { a = [], b = k5 } { g = λs → s.b }
+    n5 = List.push y5 1
+    Node.print
+        (show k1
+            ++ show y1
+            ++ show k2
+            ++ show y2
+            ++ show k3
+            ++ show y3
+            ++ show k4
+            ++ show y4
+            ++ show k5
+            ++ show n5
+        )

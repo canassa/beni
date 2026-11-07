@@ -1,0 +1,33 @@
+-- `SanitiserRowChain`'s accepted twin: `k` is at the field the type names, and the row's word does not reach it.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+app : { r | a : L }, { g : { r | a : L } → { r | a : L }, h : { r | a : L } → y } → y
+app rec o =
+    g = o.g
+    h = o.h
+    h (g rec)
+
+
+run : L, t → L
+run k t0 =
+    lit = { a = k, b = [ 2 ], t = t0 }
+    y = app lit { g = λs → { s | b = s.b }, h = λs → s.b }
+    List.push y 1
+
+
+main : Program
+main =
+    k = [ 1 ]
+    z = run k 0
+    Node.print (show k ++ show z)

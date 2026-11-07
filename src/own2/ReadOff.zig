@@ -28,6 +28,7 @@ const FnRun = @import("FnRun.zig");
 const Outward = @import("Outward.zig");
 const SupplyCond = @import("SupplyCond.zig");
 const SupplyAnswers = @import("SupplyAnswers.zig");
+const SplitRow = @import("SplitRow.zig");
 const Held = @import("Held.zig");
 const Routed = @import("Routed.zig");
 const CallGraft = @import("CallGraft.zig");
@@ -997,6 +998,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
                 const rel = f.slots.rels.find(es.wordsOf(x)) orelse try f.slots.relOfWords(gpa, f.account, f.places, es.wordsOf(x));
                 if (at_site and !SupplyAnswers.staysOpen(x)) try SupplyAnswers.closesAtSite(e, su, x, call.args.len) else if (x.open) try Contract.Draft.markOpen(&(try d.labels.items[at].supplyOf(arena, su.k)).res, arena, rel);
                 for (x.arrivals) |a| {
+                    if (try SplitRow.write(&e.ev, call, es.wordsOf(x), a, &(try d.labels.items[at].supplyOf(arena, su.k)).res, arena)) continue;
                     var ls: std.ArrayList(u32) = .empty;
                     defer ls.deinit(gpa);
                     {

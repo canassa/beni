@@ -1,0 +1,33 @@
+-- `SanitiserRowWildBelowRoot`'s accepted twin: the read at the row stops at the row. `k` is at the field
+-- the origin's type names, so a write of a field the row holds does not reach it (§2.1).
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias L =
+    List Int
+
+
+hold : { r | a : L }, { g : { r | a : L } → y } → y
+hold rec o =
+    g = o.g
+    g rec
+
+
+run : L, t → String
+run k t =
+    y = hold { a = k, b = [ 2 ], t = t } { g = λs → List.push s.b 1 }
+    show y
+
+
+main : Program
+main =
+    k = [ 1 ]
+    n = run k 0
+    Node.print (show k ++ n)

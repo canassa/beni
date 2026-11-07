@@ -580,7 +580,7 @@ pub const Eval = struct {
     /// the key it fills pays for (§4.1); a test that reads a contract
     /// pays an inspection a node visited (`uniformAtoms`).
     pub fn hitsAt(e: *Eval, root: Contract.Node, words: []const u32, out: *std.ArrayList(Contract.Hit)) Error!void {
-        _ = try Forest.atSlot(&e.contracts.trees, e.places(), e.gpa(), root, words, out);
+        _ = try Forest.atSlot(&e.contracts.trees, e.places(), e.f.slots, e.gpa(), root, words, out);
     }
 
     pub fn contractOf(e: *Eval, call: u32) ?Contract.Id {
@@ -666,7 +666,7 @@ pub const Eval = struct {
                 const cov = SlotWords.under(e.places(), rw, words) orelse continue;
                 if (cov < rw.len) {
                     if (std.debug.runtime_safety) std.debug.assert(rs.node == 0); // `Put.emitPart`
-                    try e.feedDraft(ki, rs.a, @intCast(cov), true);
+                    try e.feedDraft(ki, rs.a, @intCast(if (SlotWords.endsInRow(rw) and Forest.wholeAtRow(e.f.slots, rs.a)) words.len else cov), true);
                     continue;
                 }
                 if (rs.node == 0) {
@@ -751,11 +751,11 @@ pub const Eval = struct {
                 const t = &e.contracts.trees;
                 const on = t.kidAt(n, pw[d]);
                 const row = if (on == null) t.rowKid(e.places(), n, pw[d]) orelse 0 else 0;
-                for ([_][]const Contract.Arrival{ t.open(n), t.here(row), t.open(row) }) |run| if (run.len != 0) {
+                for ([_][]const Contract.Arrival{ t.open(n), t.here(row), t.open(row) }, 0..) |run, ri| if (run.len != 0) {
                     const opens = try e.gpa().dupe(Contract.Arrival, run);
                     defer e.gpa().free(opens);
                     const rel = e.f.slots.rels.find(pw[0..d]) orelse try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), pw[0..d]);
-                    for (opens) |a| try e.feedBelow(ki, rel, true, a);
+                    for (opens) |a| try e.feedBelow(ki, if (ri != 0 and Forest.wholeAtRow(e.f.slots, a)) try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), pw) else rel, true, a);
                 };
                 n = on orelse break;
             }
@@ -815,10 +815,10 @@ pub const Eval = struct {
             try paths.appendSlice(e.gpa(), col.at(rel).?);
             if (paths.items.len == 0) try paths.append(e.gpa(), k.slot.int());
             // A row's arrival is read by each caller slot it names, from that slot's own step (§2.1).
-            const n = if (SlotWords.endsInRow(rw)) rw.len - 1 else rw.len;
+            const n = if (SlotWords.endsInRow(rw) and !Forest.wholeAtRow(e.f.slots, a)) rw.len - 1 else rw.len;
             for (paths.items) |at0| try e.feedAt(ki, .from(at0), @intCast(n), open, a);
         } else if (SlotWords.under(e.places(), rw, pw)) |n| {
-            if (open or n < rw.len) try e.feedAt(ki, k.slot, @intCast(n), true, a);
+            if (open or n < rw.len) try e.feedAt(ki, k.slot, @intCast(if (SlotWords.endsInRow(rw) and Forest.wholeAtRow(e.f.slots, a)) pw.len else n), true, a);
         }
     }
 
@@ -957,7 +957,7 @@ pub const Eval = struct {
         if (Forest.at(&e.contracts.trees, root, xw)) |n| if (e.contracts.trees.kids(n).len != 0 or e.contracts.trees.here(n).len != 0) return false;
         var hits: std.ArrayList(Contract.Hit) = .empty;
         defer hits.deinit(e.gpa());
-        try e.charge(.inspection, try Forest.atSlot(&e.contracts.trees, e.places(), e.gpa(), root, xw, &hits));
+        try e.charge(.inspection, try Forest.atSlot(&e.contracts.trees, e.places(), e.f.slots, e.gpa(), root, xw, &hits));
         var any = false;
         for (hits.items) |hit| {
             if (!hit.open) continue;
