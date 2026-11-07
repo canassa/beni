@@ -1,6 +1,6 @@
 # Web Workers in the browser platform
 
-**Normative contract, specified 2026-10-30; dedicated-worker support is implemented and gated during landing.** Tracking:
+**Normative contract, specified 2026-10-30; dedicated-worker support is implemented, and since 2026-11-07 a launch builds with no flag.** Tracking:
 [#1290](https://github.com/canassa/beni/issues/1290). The owner decisions of 2026-10-30 below are the implementation contract.
 The [research and inventory](research/workers-api-research.md) establish the
 baseline. This document owns the compiler/runtime contract, not a claim that
@@ -54,6 +54,14 @@ silently omit a gated type.
 **Landing amendment, 2026-11-06 (Part of #1612):** workers are replayed on master’s
 Task. Ordinary programs with no workers must retain master’s emitted bytes. No
 core/platform storage redesign is part of this landing.
+
+**Launch amendment, 2026-11-07 ([#1689](https://github.com/canassa/beni/issues/1689), approved
+by the owner the same day):** the landing's launch gate is removed. A `build` or `check` that
+reaches a worker launch no longer reports `invalid_entry_kind` ("Worker launches are gated…"),
+and the hidden `--allow-unchecked-workers` option is gone: it is an unknown option, a usage
+error. Nothing the gate deferred is skipped: `check` and `build` both run entry reachability,
+finite launch discovery (`worker_entry_not_static`), the Wire check and the realm checks of §4
+on every launch, with no flag.
 
 ## 1. One platform, different places to run
 
