@@ -429,10 +429,17 @@ read or which records it may construct.
 fields and gives constructors integer tags wherever no JavaScript can see the difference, so
 "where can JavaScript see it" is now part of this contract. **JavaScript sees the representation
 of exactly the types a `foreign` annotation names, and of the type a `Js.from` or `Js.to` is
-used at** — written records, named types and their bodies, transitively. Those keep their source
+used at, and of the manifest Program handed to a JavaScript platform runtime** —
+written records, named types and their bodies, transitively. Those keep their source
 field names and string tags in every build, and a type of one constructor with one field keeps
 its object, where elsewhere a release build represents it by its field (*amended 2026-10-02*;
 `backend.md` §9, *A type of one constructor with one field is its field*).
+
+The Program type named by a platform manifest whose runtime is JavaScript is
+also visible, with its body transitively: the runtime receives `main` directly.
+This boundary applies with or without managed worker entries, and remains when
+specialization refines field names. A runtime written in beni uses the ordinary
+typed calls and casts to establish its boundary.
 
 *Amended 2026-10-14 (inert foreign reachability):* absence of tag construction
 is not permission to forget a differently typed result. A foreign can convert
