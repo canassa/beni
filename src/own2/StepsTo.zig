@@ -11,8 +11,8 @@ const PlaceId = Ids.PlaceId;
 const none: u32 = Ids.none_int;
 
 /// The steps of every route from path `from` to place `target` on its cycle, each
-/// canonical path once and none past its first arrival, into `out` (new
-/// ones only). Off the cycle (a fold's instantiation): the shortest route.
+/// canonical path once and none past its first arrival, into `out`.
+/// Off the cycle (a fold's instantiation): the shortest route.
 pub fn of(gpa: std.mem.Allocator, arena: std.mem.Allocator, account: *Ids.Account, pl: *Place.Table, from: PathId, target: PlaceId, out: *std.ArrayList([]const u32)) Ids.ChargeError!void {
     const Item = struct { p: PathId, back: u32, word: u32 };
     var queue: std.ArrayList(Item) = .empty;
@@ -31,9 +31,7 @@ pub fn of(gpa: std.mem.Allocator, arena: std.mem.Allocator, account: *Ids.Accoun
             var k = qi;
             while (k != 0) : (k = queue.items[k].back) try ws.append(arena, queue.items[k].word);
             std.mem.reverse(u32, ws.items);
-            for (out.items) |x| {
-                if (std.mem.eql(u32, x, ws.items)) break;
-            } else try out.append(arena, ws.items);
+            try out.append(arena, ws.items);
             if (on and !@import("Mutate.zig").on(.level_route_shortest)) continue else return;
         }
         const st = pl.steps(pl.pathPlace(it.p));
