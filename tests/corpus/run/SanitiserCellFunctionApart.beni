@@ -1,0 +1,24 @@
+-- `SanitiserCellFunction`'s run with a function that writes nothing: it is
+-- accepted, and the cell's read still reads what the plain run reads.
+import List
+import Node exposing (Program)
+import Ref
+import String
+
+
+type alias F =
+    List Int → List Int
+
+
+viaCell : F, List Int → List Int
+viaCell f a =
+    r = Ref.make { g = f }
+    u = Ref.get r
+    u.g a
+
+
+main : Program
+main =
+    k = [ 1 ]
+    x = viaCell (λv → v) k
+    Node.print (String.fromInt (List.length x + List.length k))
