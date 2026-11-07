@@ -1,0 +1,131 @@
+-- `SanitiserFamily`'s writes over lists no other holder reads
+-- (`ownership-v2.md` §2.1, *A family*): one graph keeps these. Each goes in
+-- place, and the run prints what the plain run prints.
+import List
+import Node exposing (Program)
+import String
+
+
+type Bx a
+    = Bx a Int
+
+
+type T a
+    = Leaf (List Int) a
+    | Mid (Bx (T a))
+    | Wrap (T (List a))
+    | Pair (T a) Int
+    | Rec { i : T (List a) }
+
+
+wr : T a → Int
+wr t =
+    case t of
+        Leaf xs _ →
+            List.length (List.push xs 1)
+
+        Mid (Bx u _) →
+            wr u
+
+        Wrap u →
+            wr u
+
+        Pair u _ →
+            wr u
+
+        Rec r →
+            wr r.i
+
+
+wrap : T (List a) → T a
+wrap x = Wrap x
+
+
+midway : Bx (T (List Int)) → Int
+midway x = wr (Wrap (Mid x))
+
+
+paired : T (List (List Int)) → Int
+paired x = wr (Pair x 1)
+
+
+helped : T (List Int) → Int
+helped x = wr (wrap x)
+
+
+inRecord : { i : T (List Int) } → Int
+inRecord x = wr (Rec x)
+
+
+type alias S a b =
+    Swap b a
+
+
+type Swap a b
+    = SLeaf (List Int) a b
+    | Swapped (S a b)
+    | SPair (Swap a b) Int
+
+
+wrS : Swap a b → Int
+wrS t =
+    case t of
+        SLeaf xs _ _ →
+            List.length (List.push xs 1)
+
+        Swapped u →
+            wrS u
+
+        SPair u _ →
+            wrS u
+
+
+permuted : Swap Bool Int → Int
+permuted x = wrS (Swapped x)
+
+
+type C a
+    = CLeaf (List Int) a
+    | Fixed (C Int)
+    | CPair (C a) Int
+
+
+wrC : C a → Int
+wrC t =
+    case t of
+        CLeaf xs _ →
+            List.length (List.push xs 1)
+
+        Fixed u →
+            wrC u
+
+        CPair u _ →
+            wrC u
+
+
+constant : C Bool → Int
+constant x = wrC (CPair x 0)
+
+
+constantBelow : C Int → Int
+constantBelow x = wrC (Fixed x)
+
+
+main : Program
+main =
+    a1 = midway (Bx (Leaf [ 1 ] []) 0)
+    a2 = paired (Wrap (Wrap (Wrap (Leaf [ 1 ] [ [ [ [ [ 1 ] ] ] ] ]))))
+    a3 = helped (Pair (Leaf [ 1 ] []) 0)
+    a4 = inRecord { i = Wrap (Rec { i = Leaf [ 1 ] [ [ [ 1 ] ] ] }) }
+    a5 = permuted (Swapped (SPair (SLeaf [ 1 ] 0 True) 0))
+    a6 = constant (Fixed (CLeaf [ 1 ] 0))
+    a7 = constantBelow (CPair (CLeaf [ 1 ] 0) 0)
+    Node.printLines
+        [ String.fromInt a1
+        , String.fromInt a2
+        , String.fromInt a3
+        , String.fromInt a4
+        , String.fromInt a5
+        , String.fromInt a6
+        , String.fromInt a7
+        ]

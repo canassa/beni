@@ -1,0 +1,42 @@
+-- A function read back out of a cell runs (`ownership-v2.md` §2.13.7, #2215). It
+-- is a loan of what the cell holds, and a run read no loan: nothing said that
+-- the caller's function ran, so its writer edited `k` in place.
+import List
+import Node exposing (Program)
+import Ref
+import String
+
+
+type alias F =
+    List Int → List Int
+
+
+viaCell : F, List Int → List Int
+viaCell f a =
+    r = Ref.make { g = f }
+    u = Ref.get r
+    u.g a
+
+
+inMaybe : Maybe F, List Int → List Int
+inMaybe m a =
+    case m of
+        Just f →
+            r = Ref.make f
+            g = Ref.get r
+            g a
+
+        Nothing →
+            a
+
+
+main : Program
+main =
+    k1 = [ 1 ]
+    k2 = [ 1 ]
+    x = viaCell (λv → List.push v 2) k1
+    y = inMaybe (Just λv → List.push v 2) k2
+    Node.printLines
+        [ String.fromInt (List.length x + List.length k1)
+        , String.fromInt (List.length y + List.length k2)
+        ]

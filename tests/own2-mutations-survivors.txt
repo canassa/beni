@@ -6,7 +6,6 @@
 # equivalent  the rule changes no answer anything reads
 # open        no finding yet
 #
-fold_read_off dead #2187: its adding arm is unreached, 0 of 21 122 programs; re-measure under #2104 before removing it
 walker_row_scalar dead #2187: a row step at a tuple or a constructor
 inst_no_contract_empty dead #2187: every call has a contract
 inst_live_no_contract_empty dead #2187: every call has a contract
@@ -37,3 +36,5 @@ word_builderdone open #2188
 word_lentoptional open #2188
 word_prepended open #2188
 word_unused open #2188: precision only
+family_split_heads equivalent #2214: two payloads of one family have one set of steps, each back to itself, so they read alike
+payload_prefix_off redundant #2214: PastPayload.read answers the same read; both off is payload_read_off, killed

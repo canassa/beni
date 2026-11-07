@@ -1,0 +1,3 @@
+# A function read out of a cell runs: v2 refuses each writer (§2.13.7)
+37:9 list_may_be_shared SanitiserCellFunction.viaCell
+38:9 list_may_be_shared SanitiserCellFunction.inMaybe

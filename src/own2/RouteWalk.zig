@@ -342,7 +342,7 @@ pub fn project(e: *Eval, v: u32, reqs: []const Req, route: u32, pass: u32) Error
                 .index => x.form == .tuple,
                 .elem => x.form == .list,
                 .field => x.form == .record,
-                .level => x.place != .none,
+                .level => x.place != .none and ((e.places().kind(.from(w.levelPlace(it, x))) != .@"var" and e.places().onCycle(.from(w.levelPlace(it, x)))) or @import("Mutate.zig").on(.payload_level_walked)),
                 else => false,
             };
             if (!shared) {

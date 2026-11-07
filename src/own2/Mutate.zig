@@ -3,7 +3,7 @@
 //! picks one member of `Name`; `zig build test-own2-mutations` builds a compiler with
 //! each and says which fixtures fail. A site is one line in the rule it breaks, and a
 //! rule with two sites has both:
-//! `if (@import("Mutate.zig").on(.fold_read_off)) return;`. `on` is decided at compile
+//! `if (@import("Mutate.zig").on(.payload_prefix_off)) return false;`. `on` is decided at compile
 //! time, so without the option a site compiles to nothing, and `gates` refuses the option.
 //!
 //! A member's comment says what it breaks, after the obligations (§2.14.6), the rows of
@@ -30,10 +30,24 @@ pub const Name = enum {
     pessimistic_no_escape,
     /// O1 O10: the pessimistic contract's result holds nothing.
     pessimistic_res_empty,
-    /// O10 G2: `FoldRead.read` off: an empty arrival past a fold stays empty.
-    fold_read_off,
-    /// O10 G2: `FoldRead.prefix` off: a project past a fold finds no `var`.
-    fold_prefix_off,
+    /// O10 F: both arms of `PastPayload` off: a read past a payload stays empty.
+    payload_read_off,
+    /// O10: `PastPayload.prefix` off: a read past a payload finds no `var`.
+    payload_prefix_off,
+    /// O10: an empty read past a call's arrival or an arrival's suffix stays empty.
+    empty_past_arrival,
+    /// O3 Lemma T: a family's heads have a payload each, not one.
+    family_split_heads,
+    /// O3 Lemma T: an edge that permutes the parameters counts as own, so such a cycle is no family.
+    family_permuted_own,
+    /// O1 Lemma T: a leaf of a context stays the payload's child, so its step crosses.
+    payload_cross_child,
+    /// O1 Lemma T: the payload has no steps.
+    payload_no_steps,
+    /// O3: a payload's level on a literal is walked, not read whole.
+    payload_level_walked,
+    /// O1 O3: a value that leaves a family for a concrete type arrives by its slot alone.
+    family_exit_off,
     /// O10: `Origin.leaves` off: a `⊤` lies inside nothing.
     origin_leaves_off,
     /// O10: `instAt` with no contract reads nothing, not `⊤`.

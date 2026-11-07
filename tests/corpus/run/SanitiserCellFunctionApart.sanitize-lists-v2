@@ -1,0 +1,1 @@
+A function read out of a cell that writes nothing (§2.13.7): built again under --ownership=v2 and the list stale-read sanitiser.

@@ -8,9 +8,8 @@
 //! is. A parameter's escape says to every caller that the code it hands has
 //! callers nobody checks; a closure's escape makes its parameter writes
 //! demands on `⊤` and a capture write `once` (`Closures`). The other objects
-//! such a value reaches (a closure's captures) are not function objects and
-//! do not escape here. A closure handed to a label escapes at the read-off,
-//! which says it into the supply (`Put.handed`).
+//! such a value reaches (a closure's captures) do not escape here. A closure
+//! handed to a label escapes at the read-off (`Put.handed`).
 //!
 //! Obligations kept here: O1 (an unknown caller's supplies are `⊤`: the
 //! code it runs is said to escape, never dropped).
@@ -77,7 +76,7 @@ const Want = struct {
     sites: []const u32 = &.{},
     /// Every object the value reaches, not its own storage alone.
     deep: bool = false,
-    /// A run: a `var` slot is a fold's, as only a function runs: all it holds goes (§2.1).
+    /// A run: a `var` slot is a payload's, as only a function runs: all it holds goes (§2.1).
     fold: bool = false,
     whole: bool = false, // In a `⊤`'s origin, likewise.
 };
@@ -134,6 +133,7 @@ fn expanded(ev: *Relation.Eval, stack: *std.ArrayList(u32), want: Want, out: *st
         }
         switch (l.kind) {
             .top => if (l.root != Value.none) try Origin.leaves(ev, l, &origins),
+            .loan => try stack.append(gpa, l.atom), // A function out of a cell is the one it holds (§2.13.7).
             .site => if (std.sort.binarySearch(u32, want.sites, l.atom, order) != null) try out.append(gpa, li),
             // A label's answer that runs: the answer has left where nobody says (`answer_left`).
             .ref => if (f.roots.items[l.root].kind == .cb) try out.append(gpa, li) else if (f.roots.items[l.root].kind == .param) {

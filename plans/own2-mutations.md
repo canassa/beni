@@ -7,10 +7,10 @@ candidate, and runs the corpus as the gates run it: unfiltered, with the parity 
 core's parity (the column *the net*). `tests/corpus/run/ChildProcessRun.beni` and `ChildProcessCancelled.beni` are left out of it, the
 fixtures of #2053, since a failed fixture stops its kind before the stale check.
 
-**Result, 165 mutations:** 115 killed (11 of them *blanket*: more than half the selection failed), 10
-crash, 3 v1 only, 6 stale, 31 survive.
+**Result, 172 mutations:** 121 killed (11 of them *blanket*: more than half the selection failed), 10
+crash, 3 v1 only, 6 stale, 32 survive.
 Measured on master `2f7bf74216`; the seven mutants of what `Pairs` changed on `fa2b611b38`; all 40
-candidates, the net included, on `fe90ea2da0`.
+candidates, the net included, on `fe90ea2da0`; the nine mutants of a family (#2214) on that branch.
 
 - *killed*: a fixture or a unit test failed. A cell is a count and the first in name order.
 - *blanket*: killed, by so much that the fixture says little of the rule.
@@ -27,8 +27,6 @@ program so far, which is a measurement and no proof. *equivalent*: the rule chan
 reads. *open*: no finding yet. The classes come from the review of #2190's probes, in
 `~/.cache/beni-agents/review-2190/`, and from mine.
 
-`FoldRead.read`'s adding arm is **unreached**: 0 of 21 122 programs, the corpus and the probes. It stays. It
-is a safety net that catches nothing today, to be measured again under #2104 before anyone removes it.
 
 An `ownership/` kill is a golden verdict compared through the parity path, whatever the `-Dno-v2-parity`
 switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fixture's own: its
@@ -44,8 +42,15 @@ switch says, since those goldens are v1's text. A `run/Sanitiser*` kill is a fix
 | `escape_shallow` | O8 | a callee's escape is read at the slot, not deep | killed | | 5: SanitiserAnswerLeft (SanitisedRefusalDiffers), … | 6: BranchEscapes (OwnershipV2Differs), … | 0 | |
 | `pessimistic_no_escape` | O1 | the pessimistic contract escapes no argument | killed | | SanitiserEscapedResult (ProgramFailed) | page] (OwnershipV2Differs) | 0 | |
 | `pessimistic_res_empty` | O1 O10 | the pessimistic contract's result holds nothing | killed | | 0 | 5: RecordCopy (OwnershipV2Differs), … | 0 | |
-| `fold_read_off` | O10 G2 | `FoldRead.read` off: an empty arrival past a fold stays empty | SURVIVED | dead | 0 | 0 | 0 | 0 |
-| `fold_prefix_off` | O10 G2 | `FoldRead.prefix` off: a project past a fold finds no `var` | killed | | SanitiserFoldedType (SanitisedRefusalDiffers) | 0 | 0 | |
+| `payload_read_off` | O10 F | both arms of `PastPayload` off: a read past a payload stays empty | killed |  | SanitiserFamilyRead (SanitisedRefusalDiffers) | 0 | 0 |  |
+| `payload_prefix_off` | O10 | `PastPayload.prefix` off: a read past a payload finds no `var` | elsewhere |  | 0 | 0 | 0 | 2 own, 1 parity |
+| `empty_past_arrival` | O10 | an empty read past a call's arrival or an arrival's suffix stays empty | killed |  | SanitiserFamilyRead (SanitisedRefusalDiffers) | 0 | 0 |  |
+| `family_split_heads` | O3 Lemma T | a family's heads have a payload each, not one | elsewhere |  | 0 | 0 | 0 | 2 own |
+| `family_permuted_own` | O3 Lemma T | an edge that permutes the parameters counts as own, so such a cycle is no family | killed |  | SanitiserFamily (SanitisedRefusalDiffers) | 0 | 0 |  |
+| `payload_cross_child` | O1 Lemma T | a leaf of a context stays the payload's child, so its step crosses | killed |  | 21: SanitiserFamily (BuildFailed), … | 15: ApproximateAliasLevels (UnexpectedExitCode), … | 0 |  |
+| `payload_no_steps` | O1 Lemma T | the payload has no steps | killed |  | 6: SanitiserFamilyBase (SanitisedRefusalDiffers), … | 7: ApproximateAliasLevels (OwnershipV2Differs), … | 0 |  |
+| `payload_level_walked` | O3 | a payload's level on a literal is walked, not read whole | killed |  | 2: SanitiserFamilyCall (GoldenMismatch), … | PolyRecCps (OwnershipV2Differs) | 0 |  |
+| `family_exit_off` | O1 O3 | a value that leaves a family for a concrete type arrives by its slot alone | killed |  | 2: SanitiserFamilyRead (SanitisedRefusalDiffers), … | 0 | 0 |  |
 | `origin_leaves_off` | O10 | `Origin.leaves` off: a `⊤` lies inside nothing | killed | | 2: SanitiserFoldFunction (SanitisedRefusalDiffers), … | 0 | 0 | |
 | `inst_no_contract_empty` | O10 | `instAt` with no contract reads nothing, not `⊤` | SURVIVED | dead | 0 | 0 | 0 | 0 |
 | `inst_live_no_contract_empty` | O10 | `instAt` in a group with no contract reads nothing | SURVIVED | dead | 0 | 0 | 0 | 0 |
