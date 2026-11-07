@@ -8841,14 +8841,15 @@ const Emitter = struct {
     /// which each module that builds one declares — is declared once, by the
     /// first module in the file's order that keeps it, and every later
     /// module's declaration of it is dropped and its name is the first one's.
-    /// Each is the same object literal of constants (the constructor's one
-    /// representation), the first is evaluated before every later module,
+    /// The kept literal covers every copy (including after field pruning),
+    /// the first is evaluated before every later module,
     /// and values are immutable, so each use reads an equal value, as one
     /// module's uses already share one. The answer maps each dropped name's
     /// key to the first declaration's name.
     fn shareNullaries(e: *Emitter, slots: []ModuleSlot, h: *const Hoist) !std.AutoHashMapUnmanaged(Rename.Globals.Key, JsIr.Name) {
+        const Copy = struct { name: JsIr.Name, module: usize, stmt: JsIr.Node.Index, value: JsIr.Node.Index };
         const interner = &e.session.interner;
-        var first: std.StringHashMapUnmanaged(JsIr.Name) = .empty;
+        var groups: std.StringHashMapUnmanaged(std.ArrayList(Copy)) = .empty;
         var shared: std.AutoHashMapUnmanaged(Rename.Globals.Key, JsIr.Name) = .empty;
         for (h.order) |p| switch (p) {
             .file => {},
@@ -8859,25 +8860,101 @@ const Emitter = struct {
                 for (ir.extraSlice(ir.body, JsIr.Node.Index)) |stmt| {
                     if (ir.tag(stmt) != .const_decl or slot.plan.isDropped(stmt)) continue;
                     const d = ir.data(stmt);
-                    if (!nullaryLiteral(ir, @fromBackingInt(@intCast(d.rhs)))) continue;
+                    const value: JsIr.Node.Index = @fromBackingInt(@intCast(d.rhs));
+                    if (!nullaryLiteral(ir, value)) continue;
                     const name = try e.poolName(slot, @fromBackingInt(@intCast(d.lhs)));
                     if (name.module == .none or !importedNullaryBase(interner.slice(name.base))) continue;
-                    const text = interner.slice(name.base);
-                    const got = try first.getOrPut(e.scratch, text);
-                    if (!got.found_existing) {
-                        got.value_ptr.* = name;
-                        continue;
+                    // Property names must compare in the shared pool too.
+                    for (ir.extraSlice(JsIr.inlineRange(ir.data(value)), JsIr.Node.Index)) |prop| {
+                        _ = try e.poolName(slot, @fromBackingInt(@intCast(ir.data(prop).lhs)));
                     }
-                    // The plan has a bit for every node it ran on (`Opt.run`);
-                    // a module with none keeps its declaration and its name.
-                    const words: []u32 = @constCast(slot.plan.dropped);
-                    if (stmt.int() / 32 >= words.len) continue;
-                    try shared.put(e.scratch, Rename.Globals.key(name), got.value_ptr.*);
-                    words[stmt.int() / 32] |= @as(u32, 1) << @intCast(stmt.int() % 32);
+                    const group = try groups.getOrPut(e.scratch, interner.slice(name.base));
+                    if (!group.found_existing) group.value_ptr.* = .empty;
+                    try group.value_ptr.append(e.scratch, .{ .name = name, .module = i, .stmt = stmt, .value = value });
                 }
             },
         };
+        var it = groups.valueIterator();
+        while (it.next()) |group| {
+            const copies = group.items;
+            if (copies.len < 2) continue;
+            var fullest: usize = 0;
+            var most_fields: usize = 0;
+            for (copies, 0..) |candidate, ci| {
+                const ir = &slots[candidate.module].lowered.?.ir;
+                const count = ir.extraSlice(JsIr.inlineRange(ir.data(candidate.value)), JsIr.Node.Index).len;
+                // A covering copy must be one of the largest. Two largest
+                // copies can cover each other only if their fields agree,
+                // so one deterministic choice and one coverage pass suffice.
+                if (count > most_fields or (count == most_fields and std.mem.order(u8, interner.slice(candidate.name.module.unwrap().?), interner.slice(copies[fullest].name.module.unwrap().?)) == .lt)) {
+                    fullest = ci;
+                    most_fields = count;
+                }
+            }
+            const chosen = copies[fullest];
+            const chosen_ir = &slots[chosen.module].lowered.?.ir;
+            const covered = for (copies) |other| {
+                if (!nullaryCovers(chosen_ir, chosen.value, &slots[other.module].lowered.?.ir, other.value)) break false;
+            } else true;
+            if (!covered) continue;
+            const kept = copies[0];
+            // Keep the earliest declaration's position, so an earlier use
+            // cannot read a later module's uninitialised constant. Its
+            // initializer is the deterministically chosen covering literal.
+            if (chosen.module != kept.module or chosen.value != kept.value) {
+                try e.copyNullaryLiteral(&slots[kept.module], kept.value, &slots[chosen.module], chosen.value);
+            }
+            const kept_ir = &slots[kept.module].lowered.?.ir;
+            for (copies[1..]) |copy| {
+                const slot = &slots[copy.module];
+                if (std.debug.runtime_safety) std.debug.assert(nullaryCovers(kept_ir, kept.value, &slot.lowered.?.ir, copy.value));
+                const words: []u32 = @constCast(slot.plan.dropped);
+                if (copy.stmt.int() / 32 >= words.len) continue;
+                try shared.put(e.scratch, Rename.Globals.key(copy.name), kept.name);
+                words[copy.stmt.int() / 32] |= @as(u32, 1) << @intCast(copy.stmt.int() % 32);
+            }
+        }
         return shared;
+    }
+
+    /// Move a small literal between modules, keeping every index and byte
+    /// offset local to its owner. Allocate each column once for the copy.
+    fn copyNullaryLiteral(e: *Emitter, dst: *ModuleSlot, target: JsIr.Node.Index, src: *ModuleSlot, value: JsIr.Node.Index) !void {
+        const ir = &dst.lowered.?.ir;
+        const source = &src.lowered.?.ir;
+        const props = source.extraSlice(JsIr.inlineRange(source.data(value)), JsIr.Node.Index);
+        const names_at = ir.names.len;
+        const bytes_at = ir.string_bytes.len;
+        const extra_at = ir.extra.len;
+        var bytes_len: usize = 0;
+        for (props) |prop| {
+            const v: JsIr.Node.Index = @fromBackingInt(@intCast(source.data(prop).rhs));
+            if (source.tag(v) == .string or source.tag(v) == .number) bytes_len += source.bytes(v).len;
+        }
+        ir.names = try e.gpa.realloc(@constCast(ir.names), names_at + props.len);
+        ir.string_bytes = try e.gpa.realloc(@constCast(ir.string_bytes), bytes_at + bytes_len);
+        ir.extra = try e.gpa.realloc(@constCast(ir.extra), extra_at + props.len);
+        var nodes = ir.nodes.toMultiArrayList();
+        try nodes.ensureUnusedCapacity(e.gpa, props.len * 2);
+        defer ir.nodes = nodes.slice();
+        var at = bytes_at;
+        for (props, 0..) |prop, i| {
+            const d = source.data(prop);
+            @constCast(ir.names)[names_at + i] = source.name(@fromBackingInt(@intCast(d.lhs)));
+            const v: JsIr.Node.Index = @fromBackingInt(@intCast(d.rhs));
+            var data: JsIr.Node.Data = .{ .lhs = 0, .rhs = 0 };
+            if (source.tag(v) == .string or source.tag(v) == .number) {
+                const bytes = source.bytes(v);
+                @memcpy(@constCast(ir.string_bytes)[at..][0..bytes.len], bytes);
+                data = .{ .lhs = @intCast(at), .rhs = @intCast(bytes.len) };
+                at += bytes.len;
+            }
+            const vi: u32 = @intCast(nodes.len);
+            nodes.appendAssumeCapacity(.{ .tag = source.tag(v), .pos = JsIr.Node.no_pos, .data = data });
+            @constCast(ir.extra)[extra_at + i] = @intCast(nodes.len);
+            nodes.appendAssumeCapacity(.{ .tag = .property, .pos = JsIr.Node.no_pos, .data = .{ .lhs = @intCast(names_at + i), .rhs = vi } });
+        }
+        nodes.items(.data)[target.int()] = .{ .lhs = @intCast(extra_at), .rhs = @intCast(extra_at + props.len) };
     }
 
     /// The table's key for a hand-written top-level binding nothing imports:
@@ -10902,6 +10979,29 @@ fn importedNullaryBase(base: []const u8) bool {
     return segments >= 2;
 }
 
+/// Every field of a dropped copy must exist in the kept literal with
+/// exactly the same value. Conflicting or incomparable copies are not shared.
+fn nullaryCovers(a: *const JsIr, av: JsIr.Node.Index, b: *const JsIr, bv: JsIr.Node.Index) bool {
+    const ap = a.extraSlice(JsIr.inlineRange(a.data(av)), JsIr.Node.Index);
+    const bp = b.extraSlice(JsIr.inlineRange(b.data(bv)), JsIr.Node.Index);
+    for (bp) |y| {
+        const by = b.data(y);
+        const vb: JsIr.Node.Index = @fromBackingInt(@intCast(by.rhs));
+        for (ap) |x| {
+            const ax = a.data(x);
+            if (!a.name(@fromBackingInt(@intCast(ax.lhs))).eql(b.name(@fromBackingInt(@intCast(by.lhs))))) continue;
+            const va: JsIr.Node.Index = @fromBackingInt(@intCast(ax.rhs));
+            if (a.tag(va) != b.tag(vb)) return false;
+            switch (a.tag(va)) {
+                .number, .string => if (!std.mem.eql(u8, a.bytes(va), b.bytes(vb))) return false,
+                else => {},
+            }
+            break;
+        } else return false;
+    }
+    return true;
+}
+
 /// Whether `value` is an object literal of plain properties whose values
 /// are literals: what a padded nullary constructor's constant is.
 fn nullaryLiteral(ir: *const JsIr, value: JsIr.Node.Index) bool {
@@ -11189,4 +11289,37 @@ fn bracketOf(src: []const u8, start: u32) i32 {
         ')', '}', ']' => -1,
         else => 0,
     };
+}
+
+test "a shared nullary literal covers all fields and rejects conflicts" {
+    var b: JsIr.Builder = .init(testing.allocator);
+    defer b.deinit();
+    const make = struct {
+        fn object(builder: *JsIr.Builder, fields: []const u32) !JsIr.Node.Index {
+            var props: std.ArrayList(JsIr.Node.Index) = .empty;
+            defer props.deinit(builder.gpa);
+            for (fields, 0..) |v, i| {
+                const name = try builder.intern(JsIr.Name.local(@fromBackingInt(@intCast(i))));
+                const number = try builder.addString(if (v == 0) "0" else "1");
+                const value = try builder.addParts(.number, JsIr.Node.no_pos, number[0], number[1]);
+                try props.append(builder.gpa, try builder.addParts(.property, JsIr.Node.no_pos, name.int(), value.int()));
+            }
+            const range = try builder.addRange(props.items);
+            return builder.addParts(.object, JsIr.Node.no_pos, @backingInt(range.start), @backingInt(range.end));
+        }
+    }.object;
+    const empty = try make(&b, &.{});
+    const tag = try make(&b, &.{0});
+    const full = try make(&b, &.{ 0, 1 });
+    const equal = try make(&b, &.{ 0, 1 });
+    const conflict = try make(&b, &.{ 1, 1 });
+    var ir = try b.toOwned(.empty);
+    defer ir.deinit(testing.allocator);
+    try testing.expect(nullaryCovers(&ir, full, &ir, empty));
+    try testing.expect(nullaryCovers(&ir, full, &ir, tag));
+    try testing.expect(nullaryCovers(&ir, full, &ir, equal));
+    try testing.expect(!nullaryCovers(&ir, empty, &ir, tag));
+    try testing.expect(!nullaryCovers(&ir, tag, &ir, full));
+    try testing.expect(!nullaryCovers(&ir, full, &ir, conflict));
+    try testing.expect(!nullaryCovers(&ir, conflict, &ir, full));
 }

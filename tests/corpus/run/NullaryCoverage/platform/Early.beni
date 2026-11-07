@@ -1,0 +1,7 @@
+--! Keep Nothing for identity only, so release may prune its fields.
+
+import Js
+
+
+pub same : ⊤ → Bool
+same ⊤ = Js.same Nothing (Just 1)

@@ -1,0 +1,7 @@
+--! This copy escapes to a host reader, which reads all of its fields.
+
+import Js
+
+
+pub description : ⊤ → String
+description ⊤ = Js.to (Js.call (Js.global "JSON") "stringify" [ Js.from Nothing ])
