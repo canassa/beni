@@ -26,7 +26,7 @@ worker root owns initialization resources; request scopes own handlers.
 import Duration exposing (Duration)
 import Schema exposing (Schema, Issue)
 import Task exposing (Scope)
-import Browser.WorkerStream exposing (Stream, Sink)
+import Browser.WorkerStream exposing (Stream)
 
 -- Opaque: Program config state protocol
 -- Opaque: Handle protocol
@@ -105,7 +105,6 @@ pub type CallError error
     | Transport TransportError
 pub type EmitError = EventQueueFull | EventChannelClosed | EventTargetRequired | EventCloneRejected CloneFailure | EventCanvasTransferInvalidState
 pub type TerminalError = TerminalClosed | TerminalPreparationFailed PrepareError
-pub type WriteError = SinkClosed | ConsumerCancelled | ChunkTooLarge | ChunkSendFailed SendError
 
 pub type alias Options =
     name : String
@@ -128,16 +127,15 @@ pub type alias Protocol call reply streamRequest error event chunk =
     event : event
     chunk : chunk
 
-pub type alias Definition config state call reply streamRequest error event chunk =
+pub type alias Definition config state call reply error event =
     init : Context event, config → Result error state
     start : Context event, state → ⊤
     handle : Context event, state, call → Result error reply
-    stream : Context event, state, streamRequest, Sink error chunk → Result error ⊤
 
 -- pure; callbacks are deferred entry roots. Both constructors borrow stable state.
-pub program : Definition config state call reply streamRequest error event chunk
+pub program : Definition config state call reply error event
     → Program config state (Protocol call reply streamRequest error event chunk)
-pub concurrent : Concurrency, Definition config state call reply streamRequest error event chunk
+pub concurrent : Concurrency, Definition config state call reply error event
     → Program config state (Protocol call reply streamRequest error event chunk)
 
 -- pure
@@ -148,12 +146,6 @@ pub open : Scope, Program config state (Protocol call reply streamRequest error 
     → Result (OpenError error) (Handle (Protocol call reply streamRequest error event chunk))
 -- suspends; caller cancellation interrupts the handler and awaits cleanup.
 pub call : Handle (Protocol call reply streamRequest error event chunk), call → Result (CallError error) reply
--- suspends; opens the producer scope, returns once admitted, not after exhaustion.
-pub stream : Handle (Protocol call reply streamRequest error event chunk), streamRequest
-    → Result (CallError error) (Stream (CallError error) chunk)
--- suspends; response-stream producer and consumer operations.
-pub write : Sink error chunk, chunk → Result WriteError ⊤
-pub cancelStream : Stream error a → Cleanup
 -- impure; one consumer per connection, repeated access returns the same stream.
 pub events : Handle (Protocol call reply streamRequest error event chunk) → Stream TransportError event
 -- impure, synchronous codec/commit path; prepared inputs are consumed.
@@ -402,9 +394,9 @@ pub type alias Options =
     extendedLifetime : Bool
 -- pure
 pub options : Options
-pub program : Worker.Definition config state call reply streamRequest error event chunk
+pub program : Worker.Definition config state call reply error event
     → Program config state (Worker.Protocol call reply streamRequest error event chunk)
-pub concurrent : Worker.Concurrency, Worker.Definition config state call reply streamRequest error event chunk
+pub concurrent : Worker.Concurrency, Worker.Definition config state call reply error event
     → Program config state (Worker.Protocol call reply streamRequest error event chunk)
 pub machine : Worker.Machine config model msg call reply streamRequest error event chunk
     → Program config model (Worker.Protocol call reply streamRequest error event chunk)
@@ -690,22 +682,14 @@ runs in the opener fiber and may suspend before starting its worker.
 
 ## 7. Browser.WorkerStream
 
-*Amended 2026-11-07, owner decision (#2129).* `write`, `cancelStream` and
-`WriteError` live in `Browser.Worker`. Worker already imports WorkerStream for
-Stream/Sink; placing a write error containing Worker.SendError and a cancellation
-result of Worker.Cleanup back in WorkerStream would create an import cycle.
-Existing WorkerStream types, constructors and operations, and existing Worker
-names, keep their owners. Aliases cannot preserve constructor re-exports or the
-module used for receiver-method lookup, so no type-moving or language workaround
-is introduced. Use `Worker.write sink value` and `Worker.cancelStream stream`.
-
-Streams carry data until End and have exactly one consumer. Credits count
-bytes as well as chunks. Pull acknowledges the prior chunk only when the
-consumer explicitly releases it, so receipt alone cannot defeat back-pressure.
+Request/response streaming, Sink, write and cancelStream are deferred to
+[#2186](https://github.com/canassa/beni/issues/2186). Definition has no stream
+field. The existing module is retained only for Worker.events and its bounded
+copying-data event reader; release remains a no-op, not an affine lease claim.
 
 ```text
 import Browser.Worker as Worker
--- Opaque: Stream error a; Sink error a; Chunk a
+-- Opaque: Stream error a; Chunk a
 pub type ReadError error = Failed error | StreamClosed | StreamUnresponsive
 pub type Step a = Item (Chunk a) | End
 -- suspends
@@ -715,17 +699,7 @@ pub value : Chunk a → a
 pub release : Chunk a → ⊤
 pub take : Chunk a → a
 -- suspends; body consumes a borrowed value; release occurs even on cancellation.
-pub forEach : Stream error a, (a → ⊤) → Result (ReadError error) ⊤
 ```
-
-A Chunk is a scoped ownership token. `value` borrows; `release` consumes it.
-For transferable values the consumer may instead move the value out once:
-`take` consumes the chunk and acknowledges it, making
-the consumer the new owner. A second release/take is a compile-time ownership
-failure. `forEach` scopes each borrowed value and releases it in a finalizer.
-Write validates size/state before native commit and consumes attempted
-transfers according to workers §5. Cancel carries the existing interrupt
-protocol; it cannot restore moved bytes.
 
 ## 8. Inventory-to-API correspondence
 
