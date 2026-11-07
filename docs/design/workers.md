@@ -604,6 +604,23 @@ Worker construction rejects only the former. Both foreign defaults must be refus
 [Research §10](research/workers-api-research.md#10-owned-trusted-types-policy-adapter)
 owns the algorithm, counterexample and required fixtures.
 
+*Amended 2026-11-07, the owner's decision (#2208).* **An owned policy in the options is used
+first.** `open` given `options.policy = Just p` mints the compiled entry's URL with `p` and hands the
+constructor that `TrustedScriptURL`, whatever default policy the page has: a branded URL never reaches
+a default callback (research §10), so a foreign default is no reason to refuse. The refusal above is
+for `options.policy = Nothing` alone. Before this, the foreign-default check ran first, and a page
+that needed a default policy to render its markup could open no worker at all; a markup build with
+`"trustedTypes": true` (`backend.md` §15.3) needs no default policy, so the CSP
+`require-trusted-types-for 'script'; trusted-types <name>` serves both. **`scriptUrl`, `trust`,
+`ScriptUrl`, `UrlError` and `NotTrustedScriptUrl` are withdrawn.** `open` loads only the URL the
+compiler wrote for the program's entry, and no public function took a `ScriptUrl`, so `trust`'s
+`allow` decided nothing that `open` did: a refused URL could still be opened with the same policy.
+They return with the first operation that loads a URL a program chooses (`workers-api.md` §1,
+*External endpoints*), whose `allow` then gates what it loads. Pinned by
+`tests/corpus/browser/managed/PolicyBesideForeignDefault` (Chrome: an owned policy opens a worker
+beside a foreign default policy, which is never called) and `PolicyMarkupPage` (Chrome, under the
+CSP above: a page whose view is markup renders and opens a worker).
+
 A shared constructor's SecurityError uses its operation-specific name because
 the browser does not reliably distinguish all underlying security causes.
 Diagnostics may suggest CSP/CORS/COEP/MIME checks, but label them as possible

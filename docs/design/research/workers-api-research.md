@@ -412,3 +412,10 @@ intake requires `trustedTypes.isScriptURL`; failure is `NotTrustedScriptUrl`.
 Required Chrome cases include owned success, typed allow refusal, denied policy
 creation, a thrown allow callback TypeError escaping, and foreign defaults that
 return null and empty string both producing `PolicyRefused`.
+
+*Amended 2026-11-07, the owner's decision (#2208).* An explicit owned policy is consulted before
+the default: with `options.policy = Just p`, `open` mints with `p` and never asks whether a default
+exists, since the branded URL skips it at the constructor; the foreign-default refusal applies only
+when the options carry no policy. The typed allow decision (`trust`) and the URL intake it served
+(`scriptUrl`, `ScriptUrl`, `UrlError`, `NotTrustedScriptUrl`) are withdrawn until an operation loads
+a URL a program chooses (`workers.md` §6).

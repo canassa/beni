@@ -2746,6 +2746,22 @@ be written against it; they are 1.0's contract:
   `Html.text` and nothing else of it — is not written: its primitives are the runtime's exports and
   nothing imports the module.
 
+*Amended 2026-11-07 (the owner's decision on #2208; interface 1.24).* **Trusted Types is a build
+option, and a second code a lowering may raise.** `Build.trusted_types` is true when the project's
+`beni.json` says `"trustedTypes": true` (`frontend.md` §10.1). A lowering that honours it declares
+`Lowering.trusted_types = true`, and then writes no HTML-parsing sink into the page; a build whose
+chain's lowering does not declare it is refused before any module is lowered (exit 2, the message
+`frontend.md` §10.1 gives), because a page whose markup reaches a sink would stop on its first
+render, which the key exists to prevent. `dom` declares it (`backend.md` §15.3, *Templates under
+Trusted Types*), and so does `ssr`, which writes strings and no DOM; `inline` does not, since its
+runtime writes rows with `insertAdjacentHTML`. `cx.reportTrustedTypes(node, message)` reports
+**`trusted_types_sink`**, an error at the markup node, for markup that would reach a sink however it
+were lowered — `dom`'s `raw`, `srcdoc` and `<script>` — and is reported as `markup_restructured`
+is: during `build`, before a byte is written. The code is the lowering's because only the lowering
+knows what its runtime writes through a sink; `check` does not read the key, and no check result
+depends on it (§9.6). The key reaches the lowering as an option, never through the cache: no emitted
+byte is cached (§9.6).
+
 ### 9.5 How a lowering is compiled into beni
 
 **No dynamic loading, ever**: a lowering is Zig linked into the binary, and a platform is trusted
