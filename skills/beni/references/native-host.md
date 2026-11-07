@@ -47,7 +47,12 @@ access. Computed names and passing `Js.global` as a value are unproved.
 the code that they run. In a kept sibling, a name is free when no scope
 around the read binds it. A kept sibling can call `setTimeout` or
 `setInterval` only with a function as the first argument: a function
-expression, an arrow, or a name bound to a function. `importScripts` reports
+expression, an arrow, or a name bound to a function. Kept beni code has the
+same rule: `Js.apply (Js.global "setTimeout")` and `Js.call (Js.global
+"self") "setTimeout"` need a first list element that is `Js.method`, or
+`Js.from` of a lambda, of a declared function or of a `let` function. A
+string, a `Js.Value` parameter or a timer kept in a local is refused.
+`importScripts` reports
 `module_worker_import_scripts`: a module worker does not have it. Use a
 static import.
 

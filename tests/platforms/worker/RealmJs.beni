@@ -168,3 +168,55 @@ available _ =
         , selfFrame
         ]
         ","
+
+
+--| `setTimeout` handed a string of code: dynamic code (#2211).
+pub timerString : ⊤ → String
+timerString _ = str (Js.apply (Js.global "setTimeout") [ Js.from "postMessage(1)" ])
+
+
+--| `self.setInterval` handed a string of code.
+pub timerSelf : ⊤ → String
+timerSelf _ =
+    str (Js.call (Js.global "self") "setInterval" [ Js.from "postMessage(1)", Js.from 1000 ])
+
+
+--| A timer handed a parameter, which is not provably a function.
+pub timerParam : ⊤ → String
+timerParam _ = later (Js.from "postMessage(1)")
+
+
+later : Js.Value → String
+later handler = str (Js.apply (Js.global "setTimeout") [ handler, Js.from 0 ])
+
+
+--| A timer bound to a local is not called at once where it is read.
+pub timerAlias : ⊤ → String
+timerAlias _ =
+    timer = Js.global "setTimeout"
+    str (Js.apply timer [ Js.from λ⊤ → ⊤, Js.from 0 ])
+
+
+tick : ⊤ → ⊤
+tick _ = ⊤
+
+
+hand : a → Js.Value
+hand value = Js.from value
+
+
+--| Every accepted timer form: a lambda, a declared function, a `let`
+--| function, a declared function through a `Js.from` wrapper, `Js.method`,
+--| and a lambda handed to `self.setTimeout`.
+pub timerSafe : ⊤ → String
+timerSafe _ =
+    local _ = ⊤
+    String.join
+        [ str (Js.typeOf (Js.apply (Js.global "setTimeout") [ Js.from λ⊤ → ⊤, Js.from 0 ]))
+        , str (Js.typeOf (Js.apply (Js.global "setTimeout") [ Js.from tick, Js.from 0 ]))
+        , str (Js.typeOf (Js.apply (Js.global "setTimeout") [ Js.from local, Js.from 0 ]))
+        , str (Js.typeOf (Js.apply (Js.global "setTimeout") [ hand tick, Js.from 0 ]))
+        , str (Js.typeOf (Js.apply (Js.global "setTimeout") [ Js.method λself → self, Js.from 0 ]))
+        , str (Js.typeOf (Js.call (Js.global "self") "setTimeout" [ Js.from λ⊤ → ⊤, Js.from 0 ]))
+        ]
+        ","

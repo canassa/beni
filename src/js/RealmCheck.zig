@@ -60,12 +60,99 @@ const Verdict = enum {
     /// A module worker has no `importScripts`:
     /// `module_worker_import_scripts` (`workers.md` §6).
     import_scripts,
+    /// `setTimeout` or `setInterval` not called at once with a first
+    /// argument that is provably a function: a string there is code the
+    /// check cannot see (`workers.md` §4, *Sibling scopes and timers*).
+    code_string,
 };
 
 fn classify(name: []const u8, realm: Realm) Verdict {
     if (std.mem.eql(u8, name, "importScripts")) return .import_scripts;
     if (std.mem.eql(u8, name, "Function") or std.mem.eql(u8, name, "eval")) return .dynamic_code;
     return if (onWorkerGlobal(name, realm)) .available else .absent;
+}
+
+/// A timer evaluates a string first argument as code.
+fn isTimer(name: []const u8) bool {
+    return std.mem.eql(u8, name, "setTimeout") or std.mem.eql(u8, name, "setInterval");
+}
+
+/// Whether `list`, a `Js` call's argument list, is a list literal whose
+/// first element is provably a function (`workers.md` §4, *Sibling scopes
+/// and timers*, amended 2026-11-07): `Js.method …`, or `Js.from x` — or a
+/// call of a declaration whose whole body is `Js.from` of its one
+/// parameter, given `x` — where `x` is a lambda, a top-level value declared
+/// with parameters or as a lambda, or a `let` local declared so
+/// (`functions` marks those locals). Anything else — a string, a
+/// parameter, a call that returns a `Value` — is not proved.
+fn firstIsFunction(e: anytype, m: Graph.Index, b: *const Bir, list: Bir.Inst.Index, functions: *const std.DynamicBitSetUnmanaged) bool {
+    if (list.int() >= b.insts.len or b.instTag(list) != .list) return false;
+    const elements = b.extraSlice(Bir.inlineRange(b.instData(list)), Bir.Inst.Index);
+    if (elements.len == 0 or b.instTag(elements[0]) != .call) return false;
+    const call = b.instData(elements[0]);
+    const callee: Bir.Inst.Index = @fromBackingInt(@intCast(call.lhs));
+    const args = b.extraSlice(b.subRange(@fromBackingInt(@intCast(call.rhs))), Bir.Inst.Index);
+    if (JsIntrinsic.of(e.graph(), e.session.resolution.interfaces, b, callee, &e.session.interner)) |which| {
+        if (which == .method) return true;
+        if (which != .from or args.len != 1) return false;
+    } else {
+        const owner, const decl = declOf(e, m, b, callee) orelse return false;
+        if (args.len != 1 or !isFromWrapper(e, owner, decl)) return false;
+    }
+    const value = args[0];
+    return switch (b.instTag(value)) {
+        .lambda => true,
+        .local => b.instData(value).lhs < functions.bit_length and functions.isSet(b.instData(value).lhs),
+        .top, .ext_value => if (declOf(e, m, b, value)) |found| declIsFunction(e.bir(found[0]), found[1]) else false,
+        else => false,
+    };
+}
+
+/// The module and declaration a `top` or `ext_value` reference in `m`'s
+/// body `b` names.
+fn declOf(e: anytype, m: Graph.Index, b: *const Bir, inst: Bir.Inst.Index) ?struct { Graph.Index, u32 } {
+    if (inst.int() >= b.insts.len) return null;
+    const data = b.instData(inst);
+    switch (b.instTag(inst)) {
+        .top => return .{ m, data.lhs },
+        .ext_value => {
+            if (data.lhs >= e.session.resolution.provenance.len) return null;
+            const decl = e.session.resolution.provenance[data.lhs].valueDecl(data.rhs) orelse return null;
+            return .{ @fromBackingInt(@intCast(data.lhs)), decl.int() };
+        },
+        else => return null,
+    }
+}
+
+/// A declaration of one parameter whose whole body is `Js.from` of it, such
+/// as a platform's `host value = Js.from value`: its result is its argument.
+fn isFromWrapper(e: anytype, m: Graph.Index, index: u32) bool {
+    const b = e.bir(m);
+    if (index >= b.decls.len) return false;
+    const d = b.decls[index];
+    if (d.kind != .value or d.params != 1) return false;
+    const body = d.body.unwrap() orelse return false;
+    if (body.int() >= b.insts.len or b.instTag(body) != .call) return false;
+    const call = b.instData(body);
+    if (JsIntrinsic.of(e.graph(), e.session.resolution.interfaces, b, @fromBackingInt(@intCast(call.lhs)), &e.session.interner) != .from) return false;
+    const args = b.extraSlice(b.subRange(@fromBackingInt(@intCast(call.rhs))), Bir.Inst.Index);
+    if (args.len != 1 or b.instTag(args[0]) != .local) return false;
+    const local = b.instData(args[0]).lhs;
+    // Directly in the body, with no lambda between, a parameter local is
+    // the declaration's own, and it has one.
+    return local < b.locals.len and b.locals[local].kind == .param;
+}
+
+/// A top-level value declared with parameters, a `foreign` whose
+/// annotation is a function type (check 4 counts its export's parameters),
+/// or a value whose whole definition is a lambda.
+fn declIsFunction(b: *const Bir, index: u32) bool {
+    if (index >= b.decls.len) return false;
+    const d = b.decls[index];
+    if (d.kind != .value and d.kind != .foreign_value) return false;
+    if (d.params > 0) return true;
+    const body = d.body.unwrap() orelse return false;
+    return body.int() < b.insts.len and b.instTag(body) == .lambda;
 }
 
 /// A kept body's first unproved access. Unknown names and escaping receiver
@@ -200,6 +287,21 @@ fn pageGlobal(e: anytype, m: Graph.Index, index: u32, seen: *std.DynamicBitSetUn
     const interfaces = e.session.resolution.interfaces;
     if (e.options.platform.entry_host != .unknown) try markProbes(e, b, root, probed);
     var todo: std.ArrayList(Bir.Inst.Index) = .empty;
+    // The `let` locals declared with parameters: functions, whatever they do.
+    var functions = try std.DynamicBitSetUnmanaged.initEmpty(e.scratch, b.locals.len);
+    if (e.options.platform.entry_host != .unknown) {
+        try todo.append(e.scratch, root);
+        while (todo.pop()) |inst| {
+            if (inst.int() >= b.insts.len) continue;
+            if (b.instTag(inst) == .let_def) {
+                const def = b.extraData(@fromBackingInt(@intCast(b.instData(inst).lhs)), Bir.LetDef);
+                const value: Bir.Inst.Index = @fromBackingInt(@intCast(b.instData(inst).rhs));
+                const lambda = value.int() < b.insts.len and b.instTag(value) == .lambda;
+                if ((def.params_start != def.params_end or lambda) and def.local < functions.bit_length) functions.set(def.local);
+            }
+            try b.operands(e.scratch, inst, &todo);
+        }
+    }
     try todo.append(e.scratch, root);
     while (todo.pop()) |inst| {
         if (inst.int() >= b.insts.len) continue;
@@ -229,8 +331,19 @@ fn pageGlobal(e: anytype, m: Graph.Index, index: u32, seen: *std.DynamicBitSetUn
                 if (std.meta.stringToEnum(Receiver, name) != null) return try std.fmt.allocPrint(e.scratch, "{s} (escaping receiver)", .{name});
                 verdict.* = classify(name, e.options.platform.entry_host);
                 if (verdict.* != .available) return name;
+                // A timer passes only as the callee of a `Js.apply` proved
+                // below, which marks it in `probed` before reaching it.
+                if (isTimer(name)) {
+                    verdict.* = .code_string;
+                    return name;
+                }
                 continue;
             }
+            // `Js.apply (Js.global "setTimeout") [ f, … ]` with `f` provably
+            // a function: the timer is called at once and runs no string.
+            if (which == .apply and args.len == 2) if (globalName(e, b, args[0])) |name| {
+                if (isTimer(name) and firstIsFunction(e, m, b, args[1], &functions)) probed.set(args[0].int());
+            };
             // Existing direct probes of absent globals remain runtime probes;
             // the four restricted receivers cannot be passed even to a probe.
             if (which == .isUndefined and args.len == 1) if (globalName(e, b, args[0])) |name| {
@@ -246,6 +359,10 @@ fn pageGlobal(e: anytype, m: Graph.Index, index: u32, seen: *std.DynamicBitSetUn
                             .available => .absent,
                             else => |v| v,
                         };
+                        return try std.fmt.allocPrint(e.scratch, "{s}.{s}", .{ @tagName(kind), member });
+                    }
+                    if ((kind == .globalThis or kind == .self) and isTimer(member) and !(which == .call and args.len == 3 and firstIsFunction(e, m, b, args[2], &functions))) {
+                        verdict.* = .code_string;
                         return try std.fmt.allocPrint(e.scratch, "{s}.{s}", .{ @tagName(kind), member });
                     }
                     if (receiver(e, b, inst)) |escaping| return try std.fmt.allocPrint(e.scratch, "{s} (escaping receiver)", .{@tagName(escaping)});
@@ -284,6 +401,7 @@ fn refusePageGlobals(e: anytype, module: Graph.Index, decl: u32) std.mem.Allocat
             switch (verdict) {
                 .available, .absent => try e.report(.worker_realm_violation, e.graph().moduleFile(module), e.bir(module).decls[decl].name_token, "`{s}.{s}` uses JavaScript access `{s}`, which is not proved available in entry realm `{s}`.", .{ owner, name, global, realm }),
                 .dynamic_code => try e.report(.worker_realm_violation, e.graph().moduleFile(module), e.bir(module).decls[decl].name_token, "`{s}.{s}` uses JavaScript access `{s}`, which runs code the realm check cannot see. Dynamic code is refused in entry realm `{s}`.", .{ owner, name, global, realm }),
+                .code_string => try e.report(.worker_realm_violation, e.graph().moduleFile(module), e.bir(module).decls[decl].name_token, "`{s}.{s}` uses `{s}` without a first argument that is provably a function. A string there runs code the realm check cannot see. Dynamic code is refused in entry realm `{s}`.", .{ owner, name, global, realm }),
                 .import_scripts => try e.report(.module_worker_import_scripts, e.graph().moduleFile(module), e.bir(module).decls[decl].name_token, "`{s}.{s}` uses JavaScript access `{s}`. A module worker has no `importScripts`, so entry realm `{s}` would throw `TypeError`. Use an ordinary static import.", .{ owner, name, global, realm }),
             }
             return true;
@@ -362,7 +480,7 @@ fn refuseSiblings(e: anytype) std.mem.Allocator.Error!bool {
             const at = @TypeOf(e.*).inSibling(path, bytes, read.offset, read.len);
             switch (verdict) {
                 .available, .absent => try e.reportInFile(.worker_realm_violation, at, "This file is kept in entry realm `{s}`, and it uses JavaScript access `{s}`, which is not proved available there.", .{ @tagName(realm), text }),
-                .dynamic_code => try e.reportInFile(.worker_realm_violation, at, "This file is kept in entry realm `{s}`, and it uses JavaScript access `{s}`, which runs code the realm check cannot see. Dynamic code is refused there.", .{ @tagName(realm), text }),
+                .dynamic_code, .code_string => try e.reportInFile(.worker_realm_violation, at, "This file is kept in entry realm `{s}`, and it uses JavaScript access `{s}`, which runs code the realm check cannot see. Dynamic code is refused there.", .{ @tagName(realm), text }),
                 .import_scripts => try e.reportInFile(.module_worker_import_scripts, at, "This file is kept in entry realm `{s}`, and it uses JavaScript access `{s}`. A module worker has no `importScripts`, so it would throw `TypeError`. Use an ordinary static import.", .{ @tagName(realm), text }),
             }
             return true;
