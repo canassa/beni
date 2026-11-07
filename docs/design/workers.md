@@ -329,12 +329,15 @@ member lists above are unchanged.
 
 **Dynamic code.** `Function` and `eval` are on every global object, but code
 they run is invisible to the check (`workers-api.md` §5), so a kept use is
-`worker_realm_violation`. In a kept sibling, so is a timer that may be handed
-a string of code (amended 2026-11-07, #2211; *Sibling scopes and timers*
-below). A code string reaching dynamic code by another route — a
-`constructor` member, or `setTimeout` reached from beni through `Js` — is not
-closed by this syntactic check: a computed member of an arbitrary value is
-ordinary data access. #2211 tracks it.
+`worker_realm_violation`. So is a timer that may be handed a string of code,
+in a kept sibling and in kept beni code over `Js` alike (amended 2026-11-07,
+#2211; *Sibling scopes and timers* below). A code string reaching `Function`
+through a `constructor` member — literal, computed, or found by reflection —
+is not closed by this check: a computed member of an arbitrary value is
+ordinary data access, and the precise rule, every kept member name a literal
+other than `constructor`, refuses the wire normaliser's own field reads
+(`Browser/WorkerWire.beni`), which every worker build keeps. That wall is the
+owner's decision; #2211 tracks it.
 
 **`importScripts`.** A module worker has no usable `importScripts`; a kept
 use, bare or as a `globalThis`/`self` member, is
@@ -412,10 +415,31 @@ template, a parameter, `.call`, `.bind`, an alias, no argument — is
 probe. Every hand-written file in `core/` and the platforms reads the same
 free names as before, and its one timer passes an arrow.
 
+Kept beni code reaches a timer through `Js` with the same contract (amended
+2026-11-07, #2211). A kept `Js.global "setTimeout"` or `"setInterval"` is
+accepted only as the callee of `Js.apply` whose argument list literal starts
+with a provable function; a literal `setTimeout`/`setInterval` member of a
+`globalThis` or `self` receiver only as `Js.call` with such a list. A
+provable function is `Js.method …`, or `Js.from x` where `x` is a lambda, a
+top-level value declared with parameters or as a lambda (a `foreign` whose
+annotation is a function type included), or a `let` local declared so. A
+call of a declaration of one parameter whose whole body is `Js.from` of it
+(a platform's `host value = Js.from value`) counts as that `Js.from`. Beni
+values are immutable, so no later assignment can replace that function.
+Anything else — a string, a parameter, a call that returns a `Value`, a timer
+bound to a local, read as a member, or passed as a value — is
+`worker_realm_violation`, as dynamic code. `Js.isUndefined (Js.global
+"setTimeout")` stays a probe. The check reads the call's syntax only; it adds
+no runtime code. Every timer in `core/` and the platforms that a worker can
+keep passes a lambda, a declared function, or `host` of one.
+
 Fixtures: `build/bad/dedicated/RealmJSiblingShadowed`,
 `RealmJSiblingTimerString` and `RealmJSiblingTimerParam` (refused),
 `browser/dedicated/RealmScopedSafe` (a sibling that binds `document`,
-`location` and `self` itself builds and runs).
+`location` and `self` itself builds and runs); for beni over `Js`,
+`build/bad/dedicated/RealmJTimerString`, `RealmJTimerSelf`,
+`RealmJTimerParam` and `RealmJTimerAlias` (refused) and
+`browser/dedicated/RealmTimerSafe` (every accepted form builds and runs).
 
 **Release output.** A release worker writes a host global bare only when it is
 on the realm's list (`backend.md` §9 item 8, amended 2026-11-07); otherwise it
