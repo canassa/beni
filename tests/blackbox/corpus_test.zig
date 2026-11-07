@@ -694,7 +694,6 @@ fn collectFixtures(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]
         const worker_platform = if (fixtures.items.len == start) "" else try Io.Dir.cwd().realPathFileAlloc(testing.io, "tests/platforms/worker", arena);
         for (fixtures.items[start..]) |*fixture| {
             fixture.platform = worker_platform;
-            fixture.unchecked_workers = true;
         }
     }
     if (kind == .browser) {
@@ -704,7 +703,6 @@ fn collectFixtures(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]
         const worker_platform = if (fixtures.items.len == start) "" else try Io.Dir.cwd().realPathFileAlloc(testing.io, "tests/platforms/worker", arena);
         for (fixtures.items[start..]) |*fixture| {
             fixture.platform = worker_platform;
-            fixture.unchecked_workers = true;
         }
     }
     if (kind == .browser or kind == .build_bad) {
@@ -713,7 +711,6 @@ fn collectFixtures(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]
         try collect(arena, managed_dir, false, false, &fixtures, true);
         for (fixtures.items[start..]) |*fixture| {
             fixture.platform = "browser";
-            fixture.unchecked_workers = true;
         }
     }
     if (kind == .emit) {
@@ -724,7 +721,6 @@ fn collectFixtures(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]
             const worker_platform = if (fixtures.items.len == start) "" else try Io.Dir.cwd().realPathFileAlloc(testing.io, "tests/platforms/worker", arena);
             for (fixtures.items[start..]) |*fixture| {
                 fixture.platform = worker_platform;
-                fixture.unchecked_workers = true;
                 fixture.app = true;
                 fixture.release = release;
             }
@@ -1486,7 +1482,6 @@ const Fixture = struct {
     /// `browser-tea` under `browser/tea/` and `emit/release/tea/`, the same
     /// lowering beneath The Elm Architecture.
     platform: ?[]const u8 = null,
-    unchecked_workers: bool = false,
     /// A `browser/tea/` page's second case, unless `no-value-fuzz.txt`
     /// names it (`no_value_fuzz`): its page fuzz alone, with
     /// messages as values (`browser-direct.md` §8.3, amended for S2). The
@@ -1936,7 +1931,6 @@ const Case = struct {
     fn argv(c: Case, args: []const []const u8) ![]const []const u8 {
         var list: std.ArrayList([]const u8) = .empty;
         try list.appendSlice(c.arena, args);
-        if (c.fixture.unchecked_workers and args.len != 0 and (std.mem.eql(u8, args[0], "build") or std.mem.eql(u8, args[0], "check"))) try list.append(c.arena, "--allow-unchecked-workers");
         if (c.fixture.core) try list.append(c.arena, "--core");
         // Enforcement refusals use the same platform as their ownership dump.
         if ((c.kind == .check_bad or c.kind == .check_good) and args.len != 0 and !std.mem.eql(u8, args[0], "fmt")) {

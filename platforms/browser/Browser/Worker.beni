@@ -1,4 +1,4 @@
--- Dedicated workers. Launches remain behind --allow-unchecked-workers.
+-- Dedicated workers.
 import Browser.WorkerStream exposing (Stream)
 import Browser.WorkerWire as Wire
 import Char

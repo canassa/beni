@@ -1,5 +1,0 @@
-import Worker
-
-
-pub run : Worker.Program → ⊤
-run definition = Worker.run definition
