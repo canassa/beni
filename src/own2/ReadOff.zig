@@ -257,10 +257,7 @@ fn describeBelow(s: *Sink, root: u32, prefix: PathId, tags: u32, q: PathId, out:
     const r = f.roots.items[root];
     const call: u32, const which: u32 = switch (r.kind) {
         .call => .{ r.a, none },
-        .supply => blk: {
-            const su = f.supplies.items[r.a];
-            break :blk .{ su.call, (su.label << 16) | su.k };
-        },
+        .supply => .{ f.supplies.items[r.a].call, r.a },
         .param, .cb => unreachable,
     };
     if (try canNode(s, q, out) and try callNode(s, call, which, prefix, tags, q, out)) return;

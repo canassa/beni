@@ -209,6 +209,8 @@ const layers = [_]Entry{
     .{ .file = "MovedReq.zig", .layer = 9, .max_lines = 75 },
     // A call's writes projected by the walk, and a set written out (#1714).
     .{ .file = "Routed.zig", .layer = 9, .max_lines = 90 },
+    // A virtual call's record, from `Eval` (#2166).
+    .{ .file = "Virtual.zig", .layer = 9, .max_lines = 70 },
     // What a callee holds across a run of a known code it is handed (#1955).
     .{ .file = "Across.zig", .layer = 9, .max_lines = 60 },
     // What a cell callback's write-back makes escape, from `Eval` (#1729, #1955).
@@ -747,7 +749,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 135), layers.len);
+    try testing.expectEqual(@as(usize, 136), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

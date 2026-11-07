@@ -1,0 +1,2 @@
+# v2 refuses a write a label's answer reaches, in every round and order of its labels (§2.11.3, #2166)
+26:9 list_still_used List.push

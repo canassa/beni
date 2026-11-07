@@ -1,0 +1,2 @@
+# v2 refuses a capture a code that has escaped writes, in every evaluation (§2.11.3, #2166)
+27:15 list_still_used once

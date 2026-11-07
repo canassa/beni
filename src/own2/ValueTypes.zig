@@ -46,8 +46,6 @@ pub const Call = struct {
     /// The callee's value when the call is of a function value.
     callee_val: u32 = none,
     virtual: bool = false,
-    /// A virtual call: the label (`cbs`) it answers.
-    answers: u32 = none,
 };
 
 /// A label of the frame (§2.11.3): the function slot `(j, slot)` of a
@@ -68,9 +66,9 @@ pub const Cb = struct {
     pending: u32 = Ids.none_int,
 };
 
-/// A supply root (§2.11.3): what call `call`'s callee hands its label
-/// `label` (the index in the callee's contract) as argument `k`.
-pub const Supply = struct { call: u32, label: u32, k: u32, root: u32 };
+/// A supply root (§2.11.3): what call `call`'s callee hands the label
+/// virtual call `virtual` applies as argument `k`.
+pub const Supply = struct { call: u32, virtual: u32, k: u32, root: u32 };
 
 pub const Root = struct {
     kind: RootKind,

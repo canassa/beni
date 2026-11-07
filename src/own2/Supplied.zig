@@ -33,7 +33,7 @@ fn suppliedTo(e: *Eval.Evaluation, ci: u32, out: *std.ArrayList(u32)) Error!void
     const f = e.fr();
     const cb = f.cbs.items[ci];
     // What the function holds, it may answer: its parameter's slot.
-    for (f.roots.items, 0..) |pr, ri| if (pr.kind == .param and pr.a == cb.j and !AnswerKeep.repeats(f, ci)) {
+    for (f.roots.items, 0..) |pr, ri| if (pr.kind == .param and pr.a == cb.j and !AnswerKeep.repeats(&e.ev, ci)) {
         try e.ev.leavesOf(try e.ev.valueAt(try f.refRoot(@intCast(ri)), f.slots.relWords(cb.slot)), 0, out);
     };
     if (cb.inst != none) {

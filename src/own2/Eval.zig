@@ -16,7 +16,6 @@ const Ids = @import("Ids.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Replay = @import("Replay.zig");
-const BelowSize = @import("BelowSize.zig");
 const Contract = @import("Contract.zig");
 const Forest = @import("Forest.zig");
 const Value = @import("Value.zig");
@@ -34,6 +33,7 @@ const Captures = @import("Captures.zig");
 const AnswerRead = @import("AnswerRead.zig");
 const FnRun = @import("FnRun.zig");
 const Called = @import("Called.zig");
+const Virtual = @import("Virtual.zig");
 const W = @import("Walk.zig");
 
 pub const Error = Ids.ChargeError;
@@ -96,7 +96,12 @@ pub const Evaluation = struct {
         return &e.w.f;
     }
     pub fn chain(e: *Evaluation) LabelChain.Chain {
-        return .{ .f = &e.w.f, .virt = &e.w.virt, .contracts = e.contracts, .arena = e.ev.arena };
+        return .{ .f = &e.w.f, .known = &e.ev.known, .applied = &e.ev.applied, .contracts = e.contracts, .arena = e.ev.arena };
+    }
+    /// Frame label `cb` passes on call `q`'s callee's label `li`.
+    fn pass(e: *Evaluation, cb: u32, q: u32, li: u32) Error!void {
+        try e.passes.append(e.gpa(), .{ cb, q, li });
+        _ = try e.ev.passed.getOrPut(e.gpa(), .{cb});
     }
     /// Whether call `q` is the walk's last call or a virtual call under it;
     /// every call is, in any other code (`first` 0).
@@ -120,16 +125,15 @@ pub fn evaluate(w: *Walk, contracts: *Contract.Table, ctx: Context, arena: Alloc
     if (w.code.called != null) e.ev.made = madeOrOwn;
     const f = &w.f;
     const gpa = f.gpa;
+    // Virtual calls and their supplies are made afresh below, from the labels read now (§2.11.3).
+    f.calls.shrinkRetainingCapacity(w.walk_calls);
+    f.supplies.clearRetainingCapacity();
     try e.demands.appendSlice(gpa, w.demands.items[w.last.demands..]);
     try e.escapes.appendSlice(gpa, w.escapes.items[w.last.escapes..]);
     // The contracts the walk's calls read now.
     for (f.calls.items[0..w.walk_calls]) |*c| {
         if (c.code != none) c.contract = (ctx.contractOf(ctx.ctx, c.code)) orelse try ctx.pessimistic(ctx.ctx, @intCast(c.args.len));
         if (c.contract == none) c.contract = try ctx.pessimistic(ctx.ctx, @intCast(c.args.len));
-    }
-    // A virtual call made by an earlier evaluation reads its code's contract now.
-    for (f.calls.items[w.walk_calls..]) |*c| {
-        if (c.code != none) c.contract = (ctx.contractOf(ctx.ctx, c.code)) orelse try ctx.pessimistic(ctx.ctx, @intCast(c.args.len));
     }
     // A construction's targets under the contracts read now.
     for (e.demands.items) |*d| if (d.base_value != none) {
@@ -188,62 +192,10 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
         };
         if (x.kind == .built and x.form == .closure and x.head & fixed_bit == 0) {
             // A known code: a virtual call of it on the label's supplies.
-            const got = try e.w.virt.getOrPut(gpa, .{ q, @intCast(li) });
-            if (!got.found_existing) {
-                const sig = try e.ctx.codeSig(e.ctx.ctx, x.head);
-                // The supplies and the answer at the call site's function
-                // type, never the code's own: a polymorphic code (`a → a`)
-                // has a type variable's place, which no step below it can
-                // name (`.values` of an `R → R` label). The site is the
-                // argument's instruction, else the type the label's origin
-                // call has its callee at (a capture has no instruction at
-                // the call, #1758). Where neither is to hand, a code with
-                // such a place is unknown.
-                var site: std.ArrayList(PlaceId) = .empty;
-                defer site.deinit(gpa);
-                var site_result: ?PlaceId = if (f.slots.relWords(l.slot).len == 0 and l.j < call.arg_insts.len) try e.ctx.siteSig(e.ctx.ctx, call.arg_insts[l.j], &site) else null;
-                if (site_result == null or site.items.len != sig.own) {
-                    site.clearRetainingCapacity();
-                    site_result = try e.ctx.originSig(e.ctx.ctx, l.origin, &site);
-                }
-                const at_site = site_result != null and site.items.len == sig.own;
-                var wild = false;
-                if (!at_site) for (sig.params[0..@min(sig.own, sig.params.len)]) |p| {
-                    wild = wild or try BelowSize.wildBelow(gpa, f.places, p);
-                };
-                if (!at_site) wild = wild or try BelowSize.wildBelow(gpa, f.places, sig.result);
-                var args: std.ArrayList(u32) = .empty;
-                defer args.deinit(gpa);
-                for (0..sig.own) |k| {
-                    const sk = try e.w.supply_of.getOrPut(gpa, .{ q, @intCast(li), @intCast(k) });
-                    if (!sk.found_existing) {
-                        const si: u32 = @intCast(f.supplies.items.len);
-                        const root = try f.addRoot(.supply, si, if (at_site) site.items[k] else if (k < sig.params.len) sig.params[k] else .none);
-                        try f.supplies.append(gpa, .{ .call = q, .label = @intCast(li), .k = @intCast(k), .root = root });
-                        sk.value_ptr.* = si;
-                    }
-                    try args.append(gpa, try f.refRoot(f.supplies.items[sk.value_ptr.*].root));
-                }
-                try args.appendSlice(gpa, f.kidsOf(x));
-                const vi: u32 = @intCast(f.calls.items.len);
-                const root = try f.addRoot(.call, vi, if (at_site) site_result.? else sig.result);
-                const kids = try f.mkKids(args.items);
-                try f.calls.append(gpa, .{ .inst = call.inst, .point = call.point, .args = kids, .arg_insts = &.{}, .root = root, .code = if (wild) none else x.head, .virtual = true, .answers = @intCast(li), .callee_val = fv });
-                got.value_ptr.* = vi;
-                f.calls.items[vi].contract = (if (wild) null else e.ctx.contractOf(e.ctx.ctx, x.head)) orelse try e.ctx.pessimistic(e.ctx.ctx, @intCast(kids.len));
-                // Read as unknown code, the known code still runs: it has
-                // escaped here, so its own parameter writes are demands on
-                // `⊤` and a capture write is `once` (§2.11.4, #1758).
-                if (wild) {
-                    var ls: std.ArrayList(u32) = .empty;
-                    defer ls.deinit(gpa);
-                    try e.ev.leavesOf(fv, 0, &ls);
-                    for (ls.items) |lf| try addEscape(e, lf, call.point);
-                }
-            }
-            try e.ev.known.put(gpa, .{ q, @intCast(li) }, got.value_ptr.*);
+            const vi = try virtualCall(e, q, l, x.head, fv);
+            try e.ev.apply(q, @intCast(li), vi);
             // A label supplied one cell's contents may store what it answers there, passed on or not (#1955).
-            if (try Loans.supply(f, e.contracts, l)) |cs| try cellAnswer(e, q, @intCast(li), h.flags.words and l.origin[2] == 1, cs, got.value_ptr.*);
+            if (try Loans.supply(f, e.contracts, l)) |cs| try cellAnswer(e, q, @intCast(li), h.flags.words and l.origin[2] == 1, cs, vi);
             continue;
         }
         // The frame's own parameter, or a value that is one by every
@@ -266,7 +218,7 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
                 try f.cbs.append(gpa, .{ .j = j, .slot = slot, .origin = origin });
             }
             try e.ev.label_map.put(gpa, .{ q, @intCast(li) }, got.value_ptr.*);
-            if (!e.quiet) try e.passes.append(gpa, .{ got.value_ptr.*, q, @intCast(li) });
+            if (!e.quiet) try e.pass(got.value_ptr.*, q, @intCast(li));
             // What the passed-on code answers is stored in the cell, and it is unknown here (§2.13.7).
             if (h.flags.words) if (try Loans.supply(f, e.contracts, l)) |cs| blk: {
                 try Loans.lend(&e.ev, q, @intCast(li), cs);
@@ -290,6 +242,27 @@ fn labelsOf(e: *Evaluation, q: u32) Error!void {
         for (ls.items) |lf| try addEscape(e, lf, call.point);
         try escapeFns(e, arg, f.slots.relWords(l.slot), if (try Loans.supply(f, e.contracts, l) == null and try AnswerRead.of(e.chain(), call.contract, l.j, false)) .run_read else .run, call.point, q);
     }
+}
+
+/// The virtual call of call `q`'s label `l` on the closure `fv` of code
+/// `code` (§2.11.3): this evaluation's, made from what it reads now.
+fn virtualCall(e: *Evaluation, q: u32, l: Contract.Label, code: u32, fv: u32) Error!u32 {
+    const f = e.fr();
+    const vi = try Virtual.make(f, e.ctx, q, l, code, fv);
+    const c = &f.calls.items[vi];
+    const wild = c.code == none;
+    c.contract = (if (wild) null else e.ctx.contractOf(e.ctx.ctx, code)) orelse try e.ctx.pessimistic(e.ctx.ctx, @intCast(c.args.len));
+    // Read as unknown code, the known code still runs: it has escaped here,
+    // so its own parameter writes are demands on `⊤` and a capture write is
+    // `once` (§2.11.4, #1758).
+    if (wild and !@import("Mutate.zig").on(.unknown_code_no_escape)) {
+        const point = c.point;
+        var ls: std.ArrayList(u32) = .empty;
+        defer ls.deinit(e.gpa());
+        try e.ev.leavesOf(fv, 0, &ls);
+        for (ls.items) |lf| try addEscape(e, lf, point);
+    }
+    return vi;
 }
 
 /// The function objects of value `v` at `words` that unknown code runs at

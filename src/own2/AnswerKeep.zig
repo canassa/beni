@@ -28,10 +28,15 @@ pub fn callOf(f: *const Value.Frame, l: Value.Leaf) u32 {
 
 /// Whether label call `ci`'s function runs more than once in the frame.
 /// `SupplyAnswers.repeated` then asks what it answers, whatever holds it.
-pub fn repeats(f: *const Value.Frame, ci: u32) bool {
+/// `cbs` keeps every label an evaluation met, so only what runs in this one
+/// counts: a direct call, or a label passed on now. An answer of `true` lets
+/// a holder off, so a label an earlier evaluation met must not add to it.
+pub fn repeats(e: anytype, ci: u32) bool {
+    const f = e.f;
     const c = f.cbs.items[ci];
     var n: u32 = 0;
-    for (f.cbs.items) |o| if (o.j == c.j and o.slot == c.slot) {
+    for (f.cbs.items, 0..) |o, oi| if (o.j == c.j and o.slot == c.slot) {
+        if (o.inst == Value.none and e.passed.get(.{@intCast(oi)}) == null and !@import("Mutate.zig").on(.repeats_stale_labels)) continue;
         n += @max(1, o.calls);
     };
     return n > 1;
@@ -75,7 +80,7 @@ pub fn kept(comptime Ov: type, e: anytype, xi: u32, ti: u32, ov: anytype, holds:
     // Unknown code may answer it, a selection of the parameters or not: a
     // selection of a loop's accumulator could not hold at the recursive call.
     const c = e.f.cbs.items[ci];
-    if (x.kind == .ref and e.f.roots.items[x.root].kind == .param and e.f.roots.items[x.root].a == c.j and repeats(e.f, ci)) return .no;
+    if (x.kind == .ref and e.f.roots.items[x.root].kind == .param and e.f.roots.items[x.root].a == c.j and repeats(e, ci)) return .no;
     const o: Ov = try holds(e, t, xi, true);
     return if (o.kind == .no) .no else .{ .kind = .under, .cond = try fresh(e, ci) };
 }

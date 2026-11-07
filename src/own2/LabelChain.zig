@@ -17,23 +17,23 @@ const Value = @import("Value.zig");
 const Allocator = std.mem.Allocator;
 const Error = Value.Error;
 
-/// What the chain reads of an evaluation: its frame, the walk's virtual
-/// calls (`(call, label)` → the virtual call applying it) and the contracts.
+/// What the chain reads of an evaluation: its frame, the virtual calls it
+/// applies (`Relation.Eval.known`, `applied`) and the contracts. A label
+/// here is a position in a contract this evaluation reads, so all of it is
+/// the evaluation's and none outlives it.
 pub const Chain = struct {
     f: *Value.Frame,
-    virt: *const Ids.FixedDict(2),
+    known: *const Ids.FixedDict(2),
+    applied: *const std.ArrayList([2]u32),
     contracts: *Contract.Table,
     arena: Allocator,
 };
 
-/// The walk's call a virtual call applies a label of: `(call, label)`.
+/// The call a virtual call applies a label of: `(call, label)`. Null for a
+/// walk's call, and for a virtual call this evaluation does not apply.
 pub fn virtualOuter(c: Chain, q: u32) ?[2]u32 {
-    const it = c.virt.keys.items;
-    var i: usize = 0;
-    while (i + 1 < it.len) : (i += 2) {
-        if (c.virt.values.items[i / 2] == q) return .{ it[i], it[i + 1] };
-    }
-    return null;
+    if (q >= c.applied.items.len or c.applied.items[q][0] == Ids.none_int) return null;
+    return c.applied.items[q];
 }
 
 /// The label of `(call, label)` pair `o`.

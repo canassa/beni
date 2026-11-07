@@ -1,0 +1,29 @@
+-- A known code read as unknown has escaped, in every evaluation
+-- (`ownership-v2.md` §2.11.3, *A virtual call is an evaluation's*, #2166). `many` runs
+-- the record's function once per element, and the lambda writes its capture
+-- each time, which is `once` and refused when the code has escaped. The
+-- escape was made only by the evaluation that made the virtual call, so the
+-- round that judged the write did not have it, and the sanitised run trapped.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+type alias Box =
+    f : List Int → List Int
+
+
+many : Box, List (List Int) → List (List Int)
+many b l = List.map l b.f
+
+
+main : Program
+main =
+    xs = [ 1 ]
+    b = { f = λ_ → List.push xs 9 }
+    m = many b [ [ 7 ], [ 8 ] ]
+    Node.print (show (List.concat m))

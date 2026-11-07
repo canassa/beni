@@ -37,3 +37,4 @@ word_builderdone open #2188
 word_lentoptional open #2188
 word_prepended open #2188
 word_unused open #2188: precision only
+repeats_stale_labels redundant #2166: `Frame.cbs` entries of earlier evaluations reach `AnswerKeep.repeats` on 240 of `review-2173/g9`'s 1,152 programs, and on none of them does a verdict move
