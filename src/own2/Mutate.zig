@@ -34,6 +34,18 @@ pub const Name = enum {
     fold_read_off,
     /// O10 G2: `FoldRead.prefix` off: a project past a fold finds no `var`.
     fold_prefix_off,
+    /// O3 Lemma T: a family's heads have a payload each, not one.
+    family_split_heads,
+    /// O3 Lemma T: an edge that permutes the parameters counts as own, so such a cycle is no family.
+    family_permuted_own,
+    /// O1 Lemma T: a leaf of a context stays the payload's child, so its step crosses.
+    payload_cross_child,
+    /// O1 Lemma T: the payload has no steps.
+    payload_no_steps,
+    /// O3: a payload's level on a literal is walked, not read whole.
+    payload_level_walked,
+    /// O1 O3: a value that leaves a family for a concrete type arrives by its slot alone.
+    family_exit_off,
     /// O10: `Origin.leaves` off: a `⊤` lies inside nothing.
     origin_leaves_off,
     /// O10: `instAt` with no contract reads nothing, not `⊤`.

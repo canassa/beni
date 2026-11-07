@@ -1,0 +1,32 @@
+import List
+
+
+pub type T a
+    = LT (List Int) (List a)
+    | CT0 (T a)
+    | CT1 (U Int)
+
+
+pub type U a
+    = LU (List Int)
+    | CU0 (T { v : a })
+
+
+pub wrT : T a → Int
+wrT t =
+    case t of
+        LT u _ →
+            List.length (List.push u 1)
+        CT0 u →
+            wrT u
+        CT1 u →
+            wrU u
+
+
+pub wrU : U a → Int
+wrU t =
+    case t of
+        LU u →
+            List.length (List.push u 1)
+        CU0 u →
+            wrT u

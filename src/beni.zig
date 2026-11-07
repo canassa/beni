@@ -204,6 +204,7 @@ pub const own2 = struct {
     pub const Relation = @import("own2/Relation.zig");
     pub const Eval = @import("own2/Eval.zig");
     pub const Resolve = @import("own2/Resolve.zig");
+    pub const Family = @import("own2/Family.zig");
     pub const Groups = @import("own2/Groups.zig");
     pub const Block = @import("own2/Block.zig");
     pub const Message = @import("own2/Message.zig");

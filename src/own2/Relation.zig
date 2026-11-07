@@ -509,7 +509,8 @@ pub const Eval = struct {
     /// from each (the experiment's fourth requirement). A part not built
     /// here gives its levels by its own slots, never its own storage.
     fn projectLevels(e: *Eval, v: u32, place: PlaceId, rest: []const u32, deep: bool, tags: u32, route: u32, out: *std.ArrayList(Proj)) Error!void {
-        if (place == .none) {
+        if (place == .none or (e.places().kind(place) == .@"var" and !@import("Mutate.zig").on(.payload_level_walked))) {
+            // A family's payload: a literal's own structure is on no cycle of its steps, so all of it.
             try e.readAt(v, true, tags, route, out);
             return;
         }

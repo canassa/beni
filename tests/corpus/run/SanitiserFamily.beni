@@ -1,0 +1,142 @@
+-- One place graph for a non-regular type's family (`ownership-v2.md` §2.1, *A
+-- family*). Each generic `wr` here writes a list its concrete caller holds, by a
+-- route where the generic graph and the caller's met at no step, so the call
+-- wrote nothing the caller could read and `k` was edited in place. `T Int`,
+-- `T (List Int)` and `T a` are one place now, so each write is refused at the
+-- caller that holds `k`. `Permuted` and `Constant` have finite closures and
+-- are families too: a generic function reads one period and a caller another.
+import List
+import Node exposing (Program)
+import String
+
+
+type Bx a
+    = Bx a Int
+
+
+type T a
+    = Leaf (List Int) a
+    | Mid (Bx (T a))
+    | Wrap (T (List a))
+    | Pair (T a) Int
+    | Rec { i : T (List a) }
+
+
+wr : T a → Int
+wr t =
+    case t of
+        Leaf xs _ →
+            List.length (List.push xs 1)
+
+        Mid (Bx u _) →
+            wr u
+
+        Wrap u →
+            wr u
+
+        Pair u _ →
+            wr u
+
+        Rec r →
+            wr r.i
+
+
+wrap : T (List a) → T a
+wrap x = Wrap x
+
+
+midway : Bx (T (List Int)) → Int
+midway x = wr (Wrap (Mid x))
+
+
+paired : T (List (List Int)) → Int
+paired x = wr (Pair x 1)
+
+
+helped : T (List Int) → Int
+helped x = wr (wrap x)
+
+
+inRecord : { i : T (List Int) } → Int
+inRecord x = wr (Rec x)
+
+
+type alias S a b =
+    Swap b a
+
+
+type Swap a b
+    = SLeaf (List Int) a b
+    | Swapped (S a b)
+    | SPair (Swap a b) Int
+
+
+wrS : Swap a b → Int
+wrS t =
+    case t of
+        SLeaf xs _ _ →
+            List.length (List.push xs 1)
+
+        Swapped u →
+            wrS u
+
+        SPair u _ →
+            wrS u
+
+
+permuted : Swap Bool Int → Int
+permuted x = wrS (Swapped x)
+
+
+type C a
+    = CLeaf (List Int) a
+    | Fixed (C Int)
+    | CPair (C a) Int
+
+
+wrC : C a → Int
+wrC t =
+    case t of
+        CLeaf xs _ →
+            List.length (List.push xs 1)
+
+        Fixed u →
+            wrC u
+
+        CPair u _ →
+            wrC u
+
+
+constant : C Bool → Int
+constant x = wrC (CPair x 0)
+
+
+constantBelow : C Int → Int
+constantBelow x = wrC (Fixed x)
+
+
+main : Program
+main =
+    k1 = [ 1 ]
+    k2 = [ 1 ]
+    k3 = [ 1 ]
+    k4 = [ 1 ]
+    k5 = [ 1 ]
+    k6 = [ 1 ]
+    k7 = [ 1 ]
+    a1 = midway (Bx (Leaf k1 []) 0)
+    a2 = paired (Wrap (Wrap (Wrap (Leaf k2 [ [ [ [ [ 1 ] ] ] ] ]))))
+    a3 = helped (Pair (Leaf k3 []) 0)
+    a4 = inRecord { i = Wrap (Rec { i = Leaf k4 [ [ [ 1 ] ] ] }) }
+    a5 = permuted (Swapped (SPair (SLeaf k5 0 True) 0))
+    a6 = constant (Fixed (CLeaf k6 0))
+    a7 = constantBelow (CPair (CLeaf k7 0) 0)
+    Node.printLines
+        [ String.fromInt (a1 + List.length k1)
+        , String.fromInt (a2 + List.length k2)
+        , String.fromInt (a3 + List.length k3)
+        , String.fromInt (a4 + List.length k4)
+        , String.fromInt (a5 + List.length k5)
+        , String.fromInt (a6 + List.length k6)
+        , String.fromInt (a7 + List.length k7)
+        ]

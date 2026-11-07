@@ -1,0 +1,8 @@
+# v2 refuses each generic write its concrete caller holds (§2.1, A family)
+127:10 list_still_used SanitiserFamily.midway
+128:10 list_still_used SanitiserFamily.paired
+129:10 list_still_used SanitiserFamily.helped
+130:10 list_still_used SanitiserFamily.inRecord
+131:10 list_still_used SanitiserFamily.permuted
+132:10 list_still_used SanitiserFamily.constant
+133:10 list_still_used SanitiserFamily.constantBelow

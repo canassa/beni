@@ -281,6 +281,8 @@ const layers = [_]Entry{
     .{ .file = "BlockWords.zig", .layer = 12, .max_lines = 70 },
     .{ .file = "Callees.zig", .layer = 12, .max_lines = 290 },
     // Evidence terms as function values (#1708).
+    // Which types share one place graph (§2.1, *A family*).
+    .{ .file = "Family.zig", .layer = 12, .max_lines = 260 },
     .{ .file = "Groups.zig", .layer = 13, .max_lines = 1900 },
     // A refused loan's text, split from `Message` (#1991).
     .{ .file = "LoanNote.zig", .layer = 13, .max_lines = 35 },

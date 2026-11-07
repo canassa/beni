@@ -1,0 +1,110 @@
+-- What an instantiation puts below a family's payload (`ownership-v2.md` §2.1,
+-- *Why every step comes back*). A step from the payload is taken by a context's
+-- word and by the base's value: `#0.0` of `Pair` is its `Int`, and of `B` a list.
+-- So no step of the payload may cross. A child that crossed read as no object,
+-- no demand was made, and the build copied in silence. A step no context
+-- names (`.m`) is `⊤`, read whole at a caller.
+import List
+import Node exposing (Program)
+import String
+
+
+type T a
+    = Leaf a
+    | Wrap (T (Pair a))
+
+
+type Pair a
+    = P Int a
+
+
+type B
+    = B (List Int) Int
+
+
+byWord : T B → Int
+byWord t =
+    case t of
+        Leaf (B xs _) →
+            List.length (List.push xs 1)
+
+        _ →
+            0
+
+
+type U a
+    = ULeaf a
+    | UWrap (U (List Int))
+
+
+byElem : U (List (List Int)) → Int
+byElem t =
+    case t of
+        ULeaf [ xs ] →
+            List.length (List.push xs 1)
+
+        _ →
+            0
+
+
+type V a
+    = VLeaf a
+    | VWrap (V { n : Int, v : a })
+
+
+byField : V { n : List Int, v : Int } → Int
+byField t =
+    case t of
+        VLeaf r →
+            List.length (List.push r.n 1)
+
+        _ →
+            0
+
+
+unnamed : V { m : List Int } → Int
+unnamed t =
+    case t of
+        VLeaf r →
+            List.length (List.push r.m 1)
+
+        _ →
+            0
+
+
+held : V a, a → a
+held t d =
+    case t of
+        VLeaf x →
+            x
+
+        VWrap (VLeaf r) →
+            r.v
+
+        _ →
+            d
+
+
+readOut : V { m : List Int } → List Int
+readOut t = List.push (held t { m = [] }).m 1
+
+
+main : Program
+main =
+    k1 = [ 1 ]
+    k2 = [ 1 ]
+    k3 = [ 1 ]
+    k4 = [ 1 ]
+    k5 = [ 1 ]
+    a1 = byWord (Leaf (B k1 0))
+    a2 = byElem (ULeaf [ k2 ])
+    a3 = byField (VLeaf { n = k3, v = 0 })
+    a4 = unnamed (VLeaf { m = k4 })
+    a5 = readOut (VLeaf { m = k5 })
+    Node.printLines
+        [ String.fromInt (a1 + List.length k1)
+        , String.fromInt (a2 + List.length k2)
+        , String.fromInt (a3 + List.length k3)
+        , String.fromInt (a4 + List.length k4)
+        , String.fromInt (List.length a5 + List.length k5)
+        ]

@@ -1,0 +1,6 @@
+# A base below a family's payload: v2 refuses each write of a held list (§2.1, A family)
+69:26 list_may_be_shared List.push
+99:10 list_still_used SanitiserFamilyBase.byWord
+100:10 list_still_used SanitiserFamilyBase.byElem
+101:10 list_still_used SanitiserFamilyBase.byField
+103:10 list_may_be_shared SanitiserFamilyBase.readOut
