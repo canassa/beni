@@ -1,0 +1,1 @@
+A payload's level read whole past a call, nobody else holding it (§2.1, The exit rule): built again under --ownership=v2 and the list stale-read sanitiser.

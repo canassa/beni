@@ -4,7 +4,7 @@
 // broken on purpose. A green suite says little until a rule's mutant fails it.
 //
 //     zig build test-own2-mutations
-//     zig build test-own2-mutations -- --only=fold_read_off,once_off --jobs=2
+//     zig build test-own2-mutations -- --only=payload_prefix_off,once_off --jobs=2
 //
 // Each mutant is a child `zig build` of the compiler with
 // `-Downership-v2-mutation=<name>`, self-hosted and into a prefix of its own, and

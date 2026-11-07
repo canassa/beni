@@ -509,6 +509,46 @@ test "a private payload becoming a function moves the digest and removes tainted
     });
 }
 
+test "a private template that moves a type into a family reaches every importer's key" {
+    // `ownership-v2.md` §2.1, *A family*: declarations decide the place graph,
+    // private ones too, so a module that imports `Grown` reads another graph.
+    const regular = leaf_source ++
+        \\
+        \\
+        \\pub seed : Int → Grown Int
+        \\seed n = Leaf n
+        \\
+        \\
+        \\type Grown a
+        \\    = Leaf a
+        \\    | Wrap (Inner a)
+        \\
+        \\
+        \\type Inner a
+        \\    = Inner (Grown a)
+        \\
+    ;
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeProject(&w);
+    try w.write("src/Leaf.beni", regular);
+    const before = try pairOf(&w, arena, false);
+    try w.write("src/Leaf.beni", replace(regular, "Inner (Grown a)", "Inner (Grown (List a))"));
+    const after = try pairOf(&w, arena, false);
+    const moved = try movedBetween(arena, before.digests, after.digests);
+    for ([_][]const u8{ "app:Mid", "app:Side", "app:Top" }) |importer| {
+        for (moved) |m| {
+            if (std.mem.eql(u8, m, importer)) break;
+        } else {
+            std.debug.print("{s}'s digest did not move\n", .{importer});
+            return error.ImporterNotReached;
+        }
+    }
+}
+
 test "making a private type pub moves both" {
     try runRow(.{
         .what = "a private type made pub",
