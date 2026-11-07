@@ -51,6 +51,14 @@ const Verdicts = @import("Kept.zig").Verdicts;
 
 const hooks: Eval.Hooks = .{ .demand = demandFacts, .escape = escapeFacts, .deliver = deliver };
 
+/// A closure of the frame said into a label's supply (which names objects,
+/// never a code) is handed to unseen code: it escapes (§2.11.3, #1776).
+fn handed(s: *Sink, li: u32, out: Put.ResList) Error!void {
+    const e, const l = .{ s.e, s.e.fr().leafAt(li) };
+    if (out.label == none or l.kind != .site or !FnRun.frameSite(e.contracts, e.ctx, e.w.closures.items, l.atom)) return;
+    try e.fn_escapes.append(e.gpa(), .{ .leaf = li, .point = none });
+}
+
 /// Run `expand` for consumer `sub`: it gets what the keys hold now (in
 /// `out`) and, while a group is solved, every leaf they gain later.
 fn expandFor(e: *Evaluation, li: u32, sub: Relation.Sub, out: *std.ArrayList(u32)) Error!void {
@@ -858,7 +866,7 @@ fn escapeFacts(e: *Evaluation, leaf: u32) Error!void {
 /// its key's), said at `q` (`none`: not kept), noted for a later escape (§2.10).
 fn hosted(s: *Sink, li: u32, q: u32, wide: bool, out: Put.ResList) Error!bool {
     const e = s.e;
-    try Put.handed(s, li, out);
+    try handed(s, li, out);
     if (!Host.own(e.fr(), li) or e.ev.expandable(e.fr().leafAt(li))) return false;
     try s.host.tell(e.gpa(), .{ .leaf = li, .q = q, .label = out.label, .k = out.k, .wide = wide, .built = s.building.items.len != 0 or q == none });
     _ = try s.host.sync(&e.ev, e.escapes.items);

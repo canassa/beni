@@ -21,12 +21,11 @@ pub const Said = struct { at: PathId, a: Trees.Arrival };
 /// by the levels below each.
 pub fn of(f: anytype, g: std.mem.Allocator, arena: std.mem.Allocator, q: PathId, a: Trees.Arrival, out: *std.ArrayList(Said)) Ids.ChargeError!void {
     const pl = f.places;
-    if (!pl.cyclic(pl.pathPlace(q)) or @import("Mutate.zig").on(.level_wide_off)) return;
-    const r = try pl.foldsUp(g, f.gc(), q);
-    var k: u32 = 0;
-    while (k < r.len) : (k += 1) {
-        const t = pl.foldPath(r.start + k);
-        if (coveredBy(pl, r, t)) continue;
+    if (!hasMiddle(pl, pl.pathPlace(q)) or @import("Mutate.zig").on(.level_wide_off)) return;
+    var ts: std.ArrayList(PathId) = .empty;
+    try targets(f, g, arena, q, &ts);
+    for (ts.items) |t| {
+        if (coveredBy(pl, ts.items, t)) continue;
         if (a.kind != .param and a.kind != .lent) {
             try out.append(arena, .{ .at = t, .a = a });
             continue;
@@ -47,12 +46,34 @@ pub fn of(f: anytype, g: std.mem.Allocator, arena: std.mem.Allocator, q: PathId,
     }
 }
 
-/// Whether another target is above `t`: its arrivals cover `t` by the rest of the words.
-fn coveredBy(pl: *const Place.Table, r: Ids.Range, t: PathId) bool {
-    var k: u32 = 0;
-    while (k < r.len) : (k += 1) {
-        const o = pl.foldPath(r.start + k);
-        if (o != t and pl.isPrefix(o, t)) return true;
+/// Whether `p`'s cycle holds another place: on a cycle of one place, a first
+/// return's levels fold below it, so an open arrival has no fold outside its words.
+fn hasMiddle(pl: *const Place.Table, p: Ids.PlaceId) bool {
+    for (pl.steps(p).children) |c| if (c != p and pl.sameCycle(c, p)) return true;
+    return false;
+}
+
+/// The levels above `q` on its cycle: each `⟲` and first return on the cycle
+/// suffix of its path, a return by its level paths. As long as the suffix.
+fn targets(f: anytype, g: std.mem.Allocator, arena: std.mem.Allocator, q: PathId, out: *std.ArrayList(PathId)) Ids.ChargeError!void {
+    const pl = f.places;
+    const place = pl.pathPlace(q);
+    var at = pl.pathParent(q);
+    while (at != .none and pl.pathParent(at) != .none and pl.sameCycle(pl.pathPlace(at), place)) : (at = pl.pathParent(at)) {
+        try f.charge(.path, 1);
+        if (pl.pathStep(at).kind == .level) {
+            try out.append(arena, at);
+        } else if (pl.isReturn(at)) {
+            if (try pl.levelPaths(g, f.gc(), at)) |r| {
+                var k: u32 = 0;
+                while (k < r.len) : (k += 1) try out.append(arena, pl.foldPath(r.start + k));
+            } else if (try pl.extend(g, f.gc(), at, Place.Step.level)) |t| try out.append(arena, t);
+        }
     }
+}
+
+/// Whether another target is above `t`: its arrivals cover `t` by the rest of the words.
+fn coveredBy(pl: *const Place.Table, ts: []const PathId, t: PathId) bool {
+    for (ts) |o| if (o != t and pl.isPrefix(o, t)) return true;
     return false;
 }
