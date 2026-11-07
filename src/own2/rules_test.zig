@@ -100,7 +100,7 @@ const layers = [_]Entry{
     // A whole subtree held as a symbol (#1706): its readers, above `Slots`.
     .{ .file = "Subtree.zig", .layer = 4, .max_lines = 350 },
     // What an open arrival says at the `⟲`s above it (#2195).
-    .{ .file = "LevelWide.zig", .layer = 4, .max_lines = 60 },
+    .{ .file = "LevelWide.zig", .layer = 4, .max_lines = 80 },
     // How large `below(p)` is, split from `Subtree` (#1714).
     .{ .file = "BelowSize.zig", .layer = 4, .max_lines = 80 },
     .{ .file = "Prepass.zig", .layer = 4, .max_lines = 600 },

@@ -10,7 +10,7 @@
 //! demands on `⊤` and a capture write `once` (`Closures`). The other objects
 //! such a value reaches (a closure's captures) are not function objects and
 //! do not escape here. A closure handed to a label escapes at the read-off,
-//! which says it into the supply (`Put.handed`).
+//! which says it into the supply (`ReadOff.handed`).
 //!
 //! Obligations kept here: O1 (an unknown caller's supplies are `⊤`: the
 //! code it runs is said to escape, never dropped).
