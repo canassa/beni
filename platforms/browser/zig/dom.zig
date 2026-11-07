@@ -46,7 +46,10 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "dom",
-    .targets = .{ .major = 1, .minor = 5 },
+    .targets = .{ .major = 1, .minor = 24 },
+    // A project under Trusted Types gets built templates and its sinks
+    // refused (`backend.md` §15.3, *Templates under Trusted Types*).
+    .trusted_types = true,
     .runtime = &.{
         .{ .name = "start", .arity = 1 },
         .{ .name = "delegate", .arity = 1 },
@@ -54,6 +57,9 @@ pub const lowering: m.Lowering = .{
         // with any (`backend.md` §15.3, amended 2026-10-15).
         .{ .name = "template", .arity = 1 },
         .{ .name = "templateOf", .arity = 2 },
+        // `(desc, flags)`: a template built by DOM calls, under Trusted
+        // Types (`backend.md` §15.3, amended 2026-11-07).
+        .{ .name = "built", .arity = 2 },
         .{ .name = "slot", .arity = 3 },
         .{ .name = "childHtml", .arity = 2 },
         .{ .name = "childMaybe", .arity = 2 },
@@ -494,6 +500,13 @@ pub const Gen = struct {
         else
             try g.print("The `dom` lowering cannot write this markup inside `<{s}>` as a template the page's parser would read back: {s}.", .{ where, why });
         return g.cx.report(n, message);
+    }
+
+    /// `trusted_types_sink` (`boundary.md` §9.4.7): markup a page under
+    /// Trusted Types refuses however it is written.
+    fn trustedSink(g: *Gen, n: m.Node.Index, what: []const u8) m.Error {
+        const message = try g.print("This project says `\"trustedTypes\": true` in its beni.json, and {s}. The page's Content Security Policy would refuse it, and the page would stop. Take it out, or take the key out if the page is not served under Trusted Types.", .{what});
+        return g.cx.reportTrustedTypes(n, message);
     }
 
     // ---- Blocks ---------------------------------------------------------
@@ -1044,9 +1057,140 @@ pub const Gen = struct {
         return g.cx.hoist(n.kind, try js.object(props.items));
     }
 
+    /// The nodes the HTML parser makes of `html`, a template this lowering
+    /// wrote, as `Rt.built` takes them (`backend.md` §15.3, *Templates
+    /// under Trusted Types*): a string is a text node, `0` an empty comment
+    /// (`<!>`), and `[name, attributes, …children]` an element, its
+    /// attributes `0` or `[name, value, …]` in written order. The text is
+    /// the lowering's own, so it is read by the rules it was written by: a
+    /// start tag's attributes as `bakeAttribute` writes them, the references
+    /// `escapeText` and `bakeAttribute` write, an end tag left out closed by
+    /// an ancestor's or by the end (`shouldClose`), and a raw text element's
+    /// content up to its end tag, references decoded only in escapable raw
+    /// text — and, as everywhere here, the parser rebuilds the tree written
+    /// (`parser.misnested`, `parser.misplaced`).
+    fn describe(g: *Gen, html: []const u8) m.Error!m.Expr {
+        const Frame = struct {
+            name: []const u8,
+            attrs: m.Expr,
+            kids: std.ArrayList(m.Expr) = .empty,
+            /// The scope of the element's children.
+            inner: parser.Scope,
+        };
+        var stack: std.ArrayList(Frame) = .empty;
+        var top: std.ArrayList(m.Expr) = .empty;
+        var text: std.ArrayList(u8) = .empty;
+        var i: usize = 0;
+        while (i < html.len) {
+            if (html[i] != '<') {
+                const end = std.mem.indexOfScalarPos(u8, html, i, '<') orelse html.len;
+                try decodeInto(g.a(), &text, html[i..end]);
+                i = end;
+                continue;
+            }
+            try g.flushText(&text, if (stack.items.len == 0) &top else &stack.items[stack.items.len - 1].kids);
+            const kids = if (stack.items.len == 0) &top else &stack.items[stack.items.len - 1].kids;
+            if (std.mem.startsWith(u8, html[i..], "<!")) {
+                // `<!>`, a marker: an empty comment.
+                const close = std.mem.indexOfScalarPos(u8, html, i, '>') orelse html.len - 1;
+                try kids.append(g.a(), try g.num(0));
+                i = close + 1;
+                continue;
+            }
+            if (std.mem.startsWith(u8, html[i..], "</")) {
+                const close = std.mem.indexOfScalarPos(u8, html, i, '>') orelse html.len - 1;
+                const name = html[i + 2 .. close];
+                i = close + 1;
+                // The element of that name and every element above it whose
+                // end tag was left out.
+                while (stack.items.len != 0) {
+                    const done = std.mem.eql(u8, stack.items[stack.items.len - 1].name, name);
+                    try g.closeFrame(Frame, &stack, &top);
+                    if (done) break;
+                }
+                continue;
+            }
+            // A start tag.
+            var j = i + 1;
+            while (j < html.len and html[j] != ' ' and html[j] != '>') j += 1;
+            const name = html[i + 1 .. j];
+            var attrs: std.ArrayList(m.Expr) = .empty;
+            while (j < html.len and html[j] != '>') {
+                if (html[j] == ' ') {
+                    j += 1;
+                    continue;
+                }
+                const start = j;
+                while (j < html.len and html[j] != '=' and html[j] != ' ' and html[j] != '>') j += 1;
+                try attrs.append(g.a(), try g.str(html[start..j]));
+                var value: std.ArrayList(u8) = .empty;
+                if (j < html.len and html[j] == '=') {
+                    j += 1;
+                    if (j < html.len and html[j] == '"') {
+                        const close = std.mem.indexOfScalarPos(u8, html, j + 1, '"') orelse html.len;
+                        try decodeInto(g.a(), &value, html[j + 1 .. close]);
+                        j = @min(close + 1, html.len);
+                    } else {
+                        const v = j;
+                        while (j < html.len and html[j] != ' ' and html[j] != '>') j += 1;
+                        try decodeInto(g.a(), &value, html[v..j]);
+                    }
+                }
+                try attrs.append(g.a(), try g.str(value.items));
+            }
+            i = @min(j + 1, html.len);
+            const attrs_expr = if (attrs.items.len == 0) try g.num(0) else try g.jsb().array(attrs.items);
+            const scope: parser.Scope = if (stack.items.len == 0) .{} else stack.items[stack.items.len - 1].inner;
+            if (parser.isVoid(name)) {
+                try kids.append(g.a(), try g.jsb().array(&.{ try g.str(name), attrs_expr }));
+                continue;
+            }
+            try stack.append(g.a(), .{ .name = name, .attrs = attrs_expr, .inner = scope.enter(name) });
+            const content = parser.contentIn(scope, name);
+            if (content != .normal) {
+                // Raw text: everything up to the element's end tag, which
+                // the loop then reads.
+                const end_tag = try g.print("</{s}", .{name});
+                const end = std.mem.indexOfPos(u8, html, i, end_tag) orelse html.len;
+                if (content == .escapable_raw_text)
+                    try decodeInto(g.a(), &text, html[i..end])
+                else
+                    try text.appendSlice(g.a(), html[i..end]);
+                try g.flushText(&text, &stack.items[stack.items.len - 1].kids);
+                i = end;
+            }
+        }
+        try g.flushText(&text, if (stack.items.len == 0) &top else &stack.items[stack.items.len - 1].kids);
+        while (stack.items.len != 0) try g.closeFrame(Frame, &stack, &top);
+        return g.jsb().array(top.items);
+    }
+
+    /// The text read since the last tag, as a text node of `kids`.
+    fn flushText(g: *Gen, text: *std.ArrayList(u8), kids: *std.ArrayList(m.Expr)) m.Error!void {
+        if (text.items.len == 0) return;
+        try kids.append(g.a(), try g.str(try g.a().dupe(u8, text.items)));
+        text.clearRetainingCapacity();
+    }
+
+    /// The innermost open element, closed: its array, a child of the
+    /// element below it or of the template's top level.
+    fn closeFrame(g: *Gen, comptime Frame: type, stack: *std.ArrayList(Frame), top: *std.ArrayList(m.Expr)) m.Error!void {
+        const f = stack.pop().?;
+        var items: std.ArrayList(m.Expr) = .empty;
+        try items.append(g.a(), try g.str(f.name));
+        try items.append(g.a(), f.attrs);
+        try items.appendSlice(g.a(), f.kids.items);
+        const element_expr = try g.jsb().array(items.items);
+        try (if (stack.items.len == 0) top else &stack.items[stack.items.len - 1].kids).append(g.a(), element_expr);
+    }
+
     /// The template's cloner, hoisted once.
     fn template(g: *Gen, b: *const Body, hint: []const u8) !m.Name {
         if (g.cx.hoisted(hint)) |t| return t;
+        // Under Trusted Types the template is built, not parsed (`backend.md`
+        // §15.3, *Templates under Trusted Types*): the same flags, its nodes
+        // as data.
+        if (g.cx.build.trusted_types) return g.cx.hoist(hint, try g.rt("built", &.{ try g.describe(b.html.items), try g.num(b.flags) }));
         // A template with no flag has a cloner of its own, so that a page
         // whose templates have none writes no flag's branch.
         if (b.flags == 0) return g.cx.hoist(hint, try g.rt("template", &.{try g.str(b.html.items)}));
@@ -1563,6 +1707,17 @@ pub const Gen = struct {
         // An SVG element at the top level is parsed inside the `<svg>` the
         // template wraps it in (`plan`), so it is written in that scope.
         const here = scope.of(facts.namespace == .svg);
+        if (g.cx.build.trusted_types) {
+            if (std.mem.eql(u8, name, "script")) return g.trustedSink(n, "a `<script>` element runs its content or its `src`, both Trusted Types sinks");
+            for (g.tree.itemsOf(e.items)) |it| {
+                if (it.kind == .event) continue;
+                const written = g.tree.string(it.name);
+                if (it.kind == .attribute and it.attribute != .none and g.tree.attributeFacts(it.attribute).raw)
+                    return g.trustedSink(n, try g.print("the raw attribute `{s}` writes its text into the page as markup, through `innerHTML`, a Trusted Types sink", .{written}));
+                if (std.ascii.eqlIgnoreCase(written, "srcdoc"))
+                    return g.trustedSink(n, "`srcdoc` hands the frame its document as markup text, a Trusted Types sink");
+            }
+        }
         if (parser.misnested(here, name)) |why| return g.restructured(n, here.parent orelse "", why);
         if (parser.misplaced(here, name, facts.namespace == .svg)) |why| return g.restructured(n, here.parent orelse "", why);
         if (parent == null) {
@@ -2770,6 +2925,28 @@ fn escapeText(a: Allocator, out: *std.ArrayList(u8), text: []const u8) !void {
         '\r' => try out.appendSlice(a, "&#13;"),
         else => try out.append(a, c),
     };
+}
+
+/// `bytes` with the character references `escapeText` and
+/// `bakeAttribute` write decoded, appended to `out`; any other `&` is the
+/// character, since those two escape every `&` they write.
+fn decodeInto(a: Allocator, out: *std.ArrayList(u8), bytes: []const u8) !void {
+    var i: usize = 0;
+    while (i < bytes.len) {
+        if (bytes[i] == '&') {
+            const refs = [_]struct { []const u8, u8 }{ .{ "&amp;", '&' }, .{ "&lt;", '<' }, .{ "&quot;", '"' }, .{ "&#13;", '\r' } };
+            const found = for (refs) |r| {
+                if (std.mem.startsWith(u8, bytes[i..], r[0])) break r;
+            } else null;
+            if (found) |r| {
+                try out.append(a, r[1]);
+                i += r[0].len;
+                continue;
+            }
+        }
+        try out.append(a, bytes[i]);
+        i += 1;
+    }
 }
 
 /// A constant attribute in the template, as dom-expressions writes one:

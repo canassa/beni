@@ -37,6 +37,9 @@ pub const lowering: m.Lowering = .{
     },
     .module = module,
     .root = root,
+    // It writes strings, never into a DOM, so a project under Trusted
+    // Types builds with it unchanged (`boundary.md` §9.4.7).
+    .trusted_types = true,
 };
 
 /// Nothing is shared between a module's roots: each hoists its own kind.

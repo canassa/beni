@@ -63,6 +63,9 @@
 //! - `entryHost` — the top entry realm (`workers.md` §4), inherited first-found.
 //!   `entryKinds` give worker entries their own realm. The old `host: page`
 //!   promise is diagnosed as obsolete before output.
+//! - `trustedTypes` — an app's: the page is served under Trusted Types, so
+//!   the markup lowering writes no HTML-parsing sink (`frontend.md` §10.1,
+//!   `backend.md` §15.3). A platform package's is ignored.
 //! - `build` — an app's defaults for `build` and `serve` (`frontend.md`
 //!   §10.1): `platform`, `paths` and `out`, each used when the command line
 //!   does not say. A platform package's is ignored.
@@ -103,6 +106,8 @@ host: ?Host = null,
 entryHost: ?EntryHost = null,
 build: Build = .{},
 exports: Exports = .none,
+/// `"trustedTypes"` (`frontend.md` §10.1): an app's, absent is false.
+trustedTypes: bool = false,
 
 /// `"exports"` (`boundary.md` §5.2, §9.12 (c); `frontend.md` §10.1): on a
 /// platform manifest a string, the mode — `"program"` is the one the
@@ -208,6 +213,7 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         entryHost: ?EntryHost = null,
         build: ?Build = null,
         exports: ?std.json.Value = null,
+        trustedTypes: ?bool = null,
     };
     const parsed = std.json.parseFromSliceLeaky(Schema, arena, bytes, .{
         .ignore_unknown_fields = true,
@@ -248,6 +254,7 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         .entryHost = parsed.entryHost,
         .build = parsed.build orelse .{},
         .exports = exports,
+        .trustedTypes = parsed.trustedTypes orelse false,
     };
 }
 

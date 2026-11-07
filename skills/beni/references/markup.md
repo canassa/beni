@@ -195,6 +195,24 @@ done />` is `TodoItem.view { todo = t, done = True }`. `<Card.header title="x" /
 - Every markup form has a plain-call form with the same type; markup is the one the formatter
   keeps.
 
+## Trusted Types
+
+Set `"trustedTypes": true` in `beni.json` when the page's Content Security Policy has
+`require-trusted-types-for 'script'`. On `browser` and `browser-tea`:
+
+- The build makes each template with DOM calls, not with `innerHTML`. The page needs no Trusted
+  Types policy for its markup, so `trusted-types 'none'` is enough. A build without the key is not
+  changed.
+- These are refused with the error `trusted_types_sink`, because the policy refuses them: a raw
+  attribute (`innerHTML`), `srcdoc`, and `<script>`. Take them out of the program.
+- `browser-inline` does not support the key: `build` stops with exit 2.
+- A worker needs a policy of its own; see `worker-messages.md`, *Trusted Types*.
+
+```text
+{ "trustedTypes": true }
+Content-Security-Policy: require-trusted-types-for 'script'; trusted-types beni-workers
+```
+
 ## Why a render is cheap
 
 A render clones a template once and patches only the holes whose values changed, by identity. A
@@ -221,4 +239,4 @@ effect and that only an event reads is evaluated when its binding is refreshed, 
 not evaluate it again. A `pub` helper in a `--library` build is a markup value: the build gives
 the markup-value diagnostic, and it never drops the export silently.
 
-Sources: `docs/design/language.md` §11; `docs/design/boundary.md` §9.8.20; `docs/design/browser-inline.md` §5, §8.2, §8.3, §8.4; `docs/design/backend.md` §15.3, §15.11; `platforms/html/Html.beni`.
+Sources: `docs/design/language.md` §11; `docs/design/boundary.md` §9.4.7, §9.8.20; `docs/design/frontend.md` §10.1; `docs/design/browser-inline.md` §5, §8.2, §8.3, §8.4; `docs/design/backend.md` §15.3, §15.11; `platforms/html/Html.beni`.

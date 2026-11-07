@@ -1,0 +1,17 @@
+-- `trusted_types_sink` (boundary.md §9.4.7, backend.md §15.3, *Templates
+-- under Trusted Types*): a project whose beni.json says
+-- `"trustedTypes": true` and writes the `raw` attribute `innerHTML`, which
+-- puts markup text into the page through `innerHTML`, a sink the page's
+-- Content Security Policy refuses. The build is refused at the element and
+-- writes nothing; the attribute is not accepted with a `TrustedHTML` value
+-- either (the owner's decision, #2208).
+import Browser
+import Html exposing (Html)
+
+
+view : String → Html msg
+view text = <main><div innerHTML={text} /></main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → "<b>bold</b>", update = λ_ model → model, view = view }

@@ -392,6 +392,7 @@ module Random
 module Rt
   value attr : V, V, V → ⊤  -- impure
   value attrNS : V, V, V, V → ⊤  -- impure
+  value built : V, Int → ⊤ → V  -- impure
   value childHtml : V, V → ⊤  -- impure
   value childList : V, V → ⊤  -- impure
   value childMaybe : V, V → ⊤  -- impure

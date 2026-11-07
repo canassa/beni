@@ -535,6 +535,9 @@ pub const Options = struct {
     /// left out.
     origin: ?[]const u8 = null,
     address: []const u8 = "",
+    /// The project's `"trustedTypes": true` (`frontend.md` §10.1), handed
+    /// to the lowering as `Build.trusted_types` (`boundary.md` §9.4.7).
+    trusted_types: bool = false,
     /// A prerendering build's: whether the program `main` prerenders is a
     /// `Named.routed` constructor's, which needs `origin`
     /// (`prerender_needs_origin`).
@@ -6765,7 +6768,7 @@ const Emitter = struct {
                     .lowering = lowering.?,
                     .vocabulary = vocabulary.?,
                     .runtime = if (markup_output) |o| try relativeSpecifier(e.scratch, paths[i], o) else "",
-                    .build = .{ .release = e.options.release, .library = e.options.library, .fuzz = e.options.fuzz, .prerender = e.options.prerender.mode(), .address = e.options.address },
+                    .build = .{ .release = e.options.release, .library = e.options.library, .fuzz = e.options.fuzz, .prerender = e.options.prerender.mode(), .address = e.options.address, .trusted_types = e.options.trusted_types },
                     .module = e.runtime_module,
                     .supplied = e.supplied,
                 };

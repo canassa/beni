@@ -12273,15 +12273,19 @@ guarantee nothing. A build whose project says `"trustedTypes": true` (`frontend.
 
 **Cost: a build without the key writes exactly what it wrote before** — the lowering's choice is
 made per template at compile time, `built` is never imported, and §9's reachability leaves it out;
-the `emit/` goldens do not move. A build with the key ships `built` (233 bytes of brotli as a
-hand-minified probe; Chrome, `~/worktree-evidence/fix-2208/probe` on the measuring host) and a
-descriptor a little larger than the HTML it replaces (a js-framework-benchmark row: 108 bytes of
-brotli against 92). The first build of a template is no slower than its parse: 4.9 µs against
-12–16 µs for the row, about 43 µs each for a 50-node card with an SVG; a clone costs the same
-(18.7 µs), since it is the same `cloneNode`. Pinned by `emit/dom/TrustedTypesTemplates` (the
-shapes, and no `innerHTML`), `browser/dom/TrustedTypes*` (pages built with the key, whose
-transcripts are their HTML twins', and in Chrome under the CSP) and
-`build/bad/trusted-types/` (each refusal).
+no `emit/` golden moved. A build with the key ships `built` (233 bytes of brotli for the same
+builder written by hand, measured with the probe of #2208) and a descriptor a little larger than
+the HTML it replaces (a js-framework-benchmark row: 108 bytes of brotli against 92). In Chrome the
+first build of a template is no slower than its parse: 4.9 µs against 12–16 µs for the row, about
+43 µs each for a 50-node card with an SVG; a clone costs the same (18.7 µs), since it is the same
+`cloneNode`. Every `browser/dom/` and `browser/tea/` page built with the key forced on gave its
+golden transcript, but for the three refusals and `SvgDrawing`, which gave its
+`.chrome-expected`: happy-dom's parser makes SVG elements inside a `<foreignObject>`, and the
+builder, as Chrome's parser, HTML ones. Pinned by `emit/dom/TrustedTypesTemplates` (the shapes,
+and no `innerHTML`), `browser/dom/TrustedTypesShapes` (a page that puts itself under
+`require-trusted-types-for 'script'; trusted-types 'none'` and then renders every shape; in Chrome
+an ordinary build of it throws `TypeError` at the click), `browser/managed/PolicyMarkupPage`, and
+`build/bad/TrustedTypesRaw`, `TrustedTypesSrcdoc` and `TrustedTypesScript`.
 
 **Controlled inputs** (*amended 2026-10-08*: the owner's decision on research 58 Â§5(c), approved
 for `plans/compile-away.md` slice R2; research 60 Â§3.3 built it by hand). **The promise is
