@@ -1,0 +1,12 @@
+-- ownership (core): an imported callee that keeps a whole record escapes its
+-- nested records too, from the summary it reads off the interface and on a
+-- cache hit (#2179, `ownership-checker.md` §31.8).
+import Js
+import Pack
+
+
+pub edit : { form : { name : String } } → Js.Ref { form : { name : String } } × { name : String }
+edit model =
+    ref = Pack.store model
+    form = model.form
+    ( ref, { form | name = "new" } )

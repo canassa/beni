@@ -1,0 +1,18 @@
+module DeepEscapeWrapper
+  35:12 update form: rejected escaped: it was given to JavaScript, or kept by a callee (approx) [copy]
+  42:5 update form: rejected escaped: it was given to JavaScript, or kept by a callee (approx) [copy]
+  49:12 update form: rejected escaped: it was given to JavaScript, or kept by a callee (approx) [copy]
+  56:5 update form: rejected escaped: it was given to JavaScript, or kept by a callee (approx) [copy]
+  63:13 update form: accepted param
+  summary keepRef: π1 RE; res fresh1{lost}r{lost}
+  summary keepGlobal: π1 RE
+  summary readName: π1.form.name R
+  summary viaRef: π1 RE, π1.form RW{name}; res .0 fresh1{lost}r{lost}, .1 π1.form◦
+  summary viaSet: π1 RE, π1.form RW{name}; res π1.form◦
+  summary inlineRef: π1 RE, π1.form RW{name}; res .0 fresh1{lost}r{lost}, .1 π1.form◦
+  summary inlineSet: π1 RE, π1.form RW{name}; res π1.form◦
+  summary onlyRead: π1.form RW{name}, π1.form.name R; res .1 π1.form◦
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 5: accepted 1, pending 0, rejected 4 (copy 4, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 5: accepted 1, pending 0, rejected 4 (copy 4, restructure 0); hoisted 0, eager reads 0

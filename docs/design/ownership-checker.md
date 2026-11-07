@@ -7246,6 +7246,25 @@ and their later additions. No cause is new: a record demand is rejected for the 
 - **The model's exclusivity invariant** (§28's dated amendment) covers record cells as it covers list cells. An
   arm that stores one record at two model paths refutes it.
 
+**Deep escape at type-erasing stores (2026-11-04, owner decision; #1853, ported to master by #2179).**
+A value stored where its type is erased escapes every record and list it can reach, including the
+environments of closures it contains. The holder may read any of those parts later, and the checker
+cannot recover that read from its type. This is the existing `escaped` contract, not a new word or a
+new storage design. A deep escape must survive summary read-off, imported summaries, callbacks and
+entry instantiation even when the value's type contains records but no lists. In particular, it must
+not be narrowed to `bit_k` (the record object alone) merely because the type contains no list. Only
+an explicitly object-only cell (`c ∖ All`) has that shallow meaning. Visible typed captures and their
+known field paths retain §31.6's precision.
+
+The type-erasing stores are the `Js.Value` storage operations `Js.set`, `Js.setAt`, `Js.call`,
+`Js.apply` and `Js.construct` (including host calls that retain arguments); `Js.ref` and `Js.write`
+(whose reads return unknown provenance); and retained foreign callbacks and unworded foreign
+parameters. `Js.throw` also hands its value to an unseen holder. Typed host bindings with `escaped`
+parameters follow the same deep rule. `Js.from` and `Js.to` are alias-preserving casts, not stores;
+`Js.array` and `Js.object` retain aliases in their result, so storing that result must escape its
+reachable contents. Lost in-place writes from that conservative boundary are accepted by this
+decision.
+
 *As built (2026-10-19, slice R2c of #315), §31.7 and this section.* A summary carries a record's facts in
 bits no list's fact reads: `bit_f`, the write, with its field set (`W{f, g}`; `W{}` read back from a block
 that cannot say which); `bit_q`, a read of a record's field, printed `R`; and `bit_k`, the escape of a
