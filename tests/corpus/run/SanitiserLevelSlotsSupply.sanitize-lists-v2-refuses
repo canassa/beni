@@ -1,0 +1,14 @@
+# v2 refuses a write through a callback's supply whose slots land on a join (§2.1, #2197)
+75:9 list_may_be_shared SanitiserLevelSlotsSupply.run
+75:9 list_may_be_shared SanitiserLevelSlotsSupply.run
+75:9 list_may_be_shared SanitiserLevelSlotsSupply.run
+75:9 list_may_be_shared SanitiserLevelSlotsSupply.run
+75:9 list_may_be_shared SanitiserLevelSlotsSupply.run
+75:9 list_may_be_shared SanitiserLevelSlotsSupply.run
+75:9 list_may_be_shared SanitiserLevelSlotsSupply.run
+75:9 list_may_be_shared SanitiserLevelSlotsSupply.run
+75:9 list_may_be_shared SanitiserLevelSlotsSupply.run
+75:9 list_may_be_shared SanitiserLevelSlotsSupply.run
+75:9 list_may_be_shared SanitiserLevelSlotsSupply.run
+75:9 list_may_be_shared SanitiserLevelSlotsSupply.run
+75:9 list_may_be_shared SanitiserLevelSlotsSupply.run
