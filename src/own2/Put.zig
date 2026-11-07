@@ -28,8 +28,6 @@ pub const ResList = struct { label: u32 = none, k: u32 = 0, key: Slots.Rel = Sup
 /// Where a parameter effect goes.
 pub const EffList = enum(u8) { reads, writes, escapes };
 
-pub const labelIndex = Sink.labelIndex;
-
 pub fn resList(s: *Sink, l: ResList) Error!*Contract.Draft.Res {
     if (l.label == none) return &s.d.res;
     return &(try s.d.labels.items[l.label].supplyOf(s.arena, l.k)).res;
@@ -45,15 +43,19 @@ pub fn effList(s: *Sink, l: EffList) *std.ArrayList(Contract.Effect) {
 
 /// An arrival at `q` and, by structure, at every slot below it.
 pub fn arriveWide(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!void {
-    const f = s.e.fr();
     if (s.building.items.len != 0) {
-        try f.charge(.edge, 1);
+        try s.e.fr().charge(.edge, 1);
         _ = try Contract.Draft.addWide(&s.building.items[s.building.items.len - 1].res, s.arena, try relIn(s, q), a);
         return;
     }
+    return wideLevels(s, q, a, out);
+}
+
+/// An arrival at `q` by structure and at the levels above it, in list `out` whatever subtree is described.
+pub fn wideLevels(s: *Sink, q: PathId, a: Contract.Arrival, out: ResList) Error!void {
     if (!try wideAt(s, q, a, out)) return;
     var said: std.ArrayList(LevelWide.Said) = .empty;
-    try LevelWide.of(f, s.e.gpa(), s.arena, q, a, &said);
+    try LevelWide.of(s.e.fr(), s.e.gpa(), s.arena, q, a, &said);
     for (said.items) |x| _ = try wideAt(s, x.at, x.a, out);
 }
 

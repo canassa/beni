@@ -49,7 +49,7 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts, recursive: bool) 
     d.req = if (@import("Mutate.zig").on(.contract_no_req)) Contract.Cond.yes else try Graft.fold(&e.ev, v.req);
     for (f.cbs.items[w.last.cbs..], w.last.cbs..) |cb, ci| {
         if (cb.inst == none) continue;
-        const at = try Put.labelIndex(s, @intCast(ci));
+        const at = try s.labelIndex(@intCast(ci));
         for (cb.args, 0..) |_, k| {
             const sup = try d.labels.items[at].supplyOf(arena, @intCast(k));
             if (ci * v.width + k < v.supply_cond.len) sup.cond = try Cond.conj(arena, f.account, sup.cond, v.supply_cond[ci * v.width + k]);
@@ -60,7 +60,7 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts, recursive: bool) 
         };
     }
     for (e.passes.items, 0..) |p, pi| {
-        const at = try Put.labelIndex(s, p[0]);
+        const at = try s.labelIndex(p[0]);
         const call = f.calls.items[p[1]];
         const lab = e.contracts.labelsOf(e.contracts.head(call.contract).labels)[p[2]];
         for (e.contracts.suppliesOf(lab.supplies)) |su| {
@@ -72,8 +72,8 @@ pub fn condsOff(e: *Evaluation, arena: Allocator, v: Verdicts, recursive: bool) 
             for (v.pass_kept) |kp| if (kp[0] == pi and kp[1] == su.k) try keptAt(s, kp[2], kp[3], &sup.kept);
         }
     }
-    try SupplyCond.publish(e, s, arena, Put.labelIndex);
-    try Traversal.publish(e, s, arena, Put.labelIndex);
+    try SupplyCond.publish(e, s, arena, Eval.Sink.labelIndex);
+    try Traversal.publish(e, s, arena, Eval.Sink.labelIndex);
     try SupplyAnswers.repeated(e, s.d, arena);
     var flat: std.ArrayList(Contract.Effect) = .empty;
     defer flat.deinit(e.gpa());
