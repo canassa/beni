@@ -854,11 +854,15 @@ fn escapeFacts(e: *Evaluation, leaf: u32) Error!void {
     if (from != s.host.escs.items.len) while (i < s.host.told.items.len) : (i += 1) {
         const t = s.host.told.items[i];
         if (!try s.host.reaches(&e.ev, e.escapes.items, from, t.leaf, Distinct.overlap)) continue;
+        if (t.wide and !t.built) {
+            try Put.wideLevels(s, .from(t.q), .{ .kind = .host }, .{ .label = t.label, .k = t.k });
+            continue;
+        }
         const r = if (t.built) Slots.root else try f.slots.relOf(e.gpa(), f.account, f.places, .from(t.q));
         const list = try Put.resList(s, .{ .label = t.label, .k = t.k });
         try f.charge(.edge, 1);
-        const new = if (t.wide or t.built) try Contract.Draft.addWide(list, s.arena, r, .{ .kind = .host }) else try Contract.Draft.addArrival(list, s.arena, r, .{ .kind = .host });
-        if (new and t.label == none) if (e.solver) |sv| try sv.resFact(sv.ctx, e.x, r, t.wide or t.built, .{ .kind = .host }, 0);
+        const new = if (t.built) try Contract.Draft.addWide(list, s.arena, r, .{ .kind = .host }) else try Contract.Draft.addArrival(list, s.arena, r, .{ .kind = .host });
+        if (new and t.label == none) if (e.solver) |sv| try sv.resFact(sv.ctx, e.x, r, t.built, .{ .kind = .host }, 0);
     };
 }
 
@@ -949,7 +953,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
     // their callees' supplies.
     for (f.cbs.items[w.last.cbs..], w.last.cbs..) |cb, ci| {
         if (cb.inst != none) {
-            const at = try Put.labelIndex(s, @intCast(ci));
+            const at = try s.labelIndex(@intCast(ci));
             const dl = &d.labels.items[at];
             dl.calls = if (cb.calls > 1 or dl.calls == .many) .many else if (dl.calls == .none) .once else .many;
             for (cb.args, 0..) |a, k| {
@@ -961,7 +965,7 @@ pub fn factsOff(e: *Evaluation, arena: Allocator, d: *Contract.Draft) Error!void
         }
     }
     for (e.passes.items) |p| {
-        const at = try Put.labelIndex(s, p[0]);
+        const at = try s.labelIndex(p[0]);
         const call = f.calls.items[p[1]];
         const lab = e.contracts.labelsOf(e.contracts.head(call.contract).labels)[p[2]];
         const dl = &d.labels.items[at];
