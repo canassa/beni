@@ -21,10 +21,10 @@ This also applies to a variable inside a List or a tagged type.
 ## Worker script policies
 
 Trusted Types policies are owned: validate a name with `Worker.policyName`,
-create its policy with `Worker.policy`, resolve a URL with `Worker.scriptUrl`,
-and allow it with `Worker.trust policy url allow`. The synchronous `allow`
-callback runs normally; a thrown exception is a defect. Pass a policy through
-`Worker.options.policy`. A foreign default Trusted Types policy returns
+create its policy with `Worker.policy`, and pass it through
+`Worker.options.policy`. `open` makes the worker's script URL with that
+policy, and a default policy on the page is not used. With no policy in the
+options, a default Trusted Types policy that beni did not make returns
 `PolicyRefused` without calling it, even if it would return an empty string.
 
 Sources: `docs/design/workers.md` §3, §5, §6, §9; `docs/design/workers-api.md` §1, §7; `docs/design/workers-entry-implementation.md`; `docs/design/boundary.md` §5.

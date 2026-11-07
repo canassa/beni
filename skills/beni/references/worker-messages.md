@@ -193,9 +193,12 @@ When the page's Content Security Policy requires Trusted Types, give `open` a po
 - `Worker.policy name` makes a policy: `Err TrustedTypesUnavailable` when the browser has no
   Trusted Types, `Err TrustedPolicyDenied` when the page's CSP does not allow the name.
 - Put it in the options: `{ Worker.options | policy = Just policy }`. `open` then makes the
-  worker's script URL with this policy.
-- A refused script URL is `ScriptPolicy (PolicyRefused reason)` from `open`. With no policy in the
-  options, this is the result when the page has a default policy that beni did not make.
+  worker's script URL with this policy. A default policy on the page is not used.
+- With no policy in the options, a default policy that beni did not make gives
+  `ScriptPolicy (PolicyRefused reason)` from `open`.
+- A page with markup also needs `"trustedTypes": true` in `beni.json` (`markup.md`, *Trusted
+  Types*). Then the CSP needs to name only the worker's policy:
+  `require-trusted-types-for 'script'; trusted-types beni-workers`.
 
 ```beni platform=browser
 import Browser.Worker as Worker exposing (Options)
@@ -217,5 +220,5 @@ trustedOptions _ =
                     Ok { Worker.options | policy = Just policy }
 ```
 
-Sources: `docs/design/workers.md` §4, §5; `docs/design/workers-api.md` §1, §7;
+Sources: `docs/design/workers.md` §4, §5, §6; `docs/design/workers-api.md` §1, §7;
 `platforms/browser/Browser/Worker.beni`, `platforms/browser/Browser/WorkerStream.beni`.

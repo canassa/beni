@@ -26,13 +26,6 @@ pub foreign type Policy
 pub foreign type PolicyName
 
 
-pub foreign type ScriptUrl
-
-
-pub type UrlError
-    = InvalidUrl
-
-
 pub type Credentials
     = Omit
     | SameOrigin
@@ -61,7 +54,6 @@ pub type ConfigError
 pub type PolicyError
     = TrustedTypesUnavailable
     | TrustedPolicyDenied
-    | NotTrustedScriptUrl
     | PolicyRefused String
     | InvalidPolicyName
 
@@ -294,79 +286,42 @@ policy name =
                 Ok (guest wrapped)
 
 
-pub scriptUrl : String → Result UrlError ScriptUrl
-scriptUrl text =
-    base =
-        if Js.entryWindow ⊤ then
-            Js.get (Js.global "document") "baseURI"
-        else
-            Js.get (Js.global "location") "href"
-    Js.catchIf
-        (λ⊤ →
-            parsed = Js.construct (Js.global "URL") [ host text, base ]
-            Ok (guest (Js.get parsed "href"))
-        )
-        (λerror → Js.instanceOf error (Js.global "TypeError"))
-        λ_ → Err InvalidUrl
-
-
-pub trust : Policy, ScriptUrl, sync (String → Bool) → Result PolicyError ScriptUrl
-trust chosen url allow =
-    text : String
-    text = guest (Js.apply (Js.global "String") [ host url ])
-    if allow text then
-        mintScriptUrl (host chosen) (host text)
-    else
-        Err (PolicyRefused "the script URL was refused")
-
-
-mintScriptUrl : Js.Value, Js.Value → Result PolicyError ScriptUrl
+-- Mint the compiled entry's URL with an owned policy: its callback accepts
+-- only the URL being minted, for the length of the call.
+mintScriptUrl : Js.Value, Js.Value → Js.Value
 mintScriptUrl chosen text =
     allowed = Js.get chosen "allowed"
     _ = Js.call allowed "add" [ text ]
-    Js.finally
-        (λ⊤ →
-            trusted = Js.call (Js.get chosen "native") "createScriptURL" [ text ]
-            factory = Js.global "trustedTypes"
-            if Js.isNullish factory then
-                Err TrustedTypesUnavailable
-            else if Js.to (Js.call factory "isScriptURL" [ trusted ]) then
-                Ok (guest trusted)
-            else
-                Err NotTrustedScriptUrl
-        )
-        λ⊤ →
-            _ = Js.call allowed "delete" [ text ]
-            ⊤
+    Js.finally (λ⊤ → Js.call (Js.get chosen "native") "createScriptURL" [ text ]) λ⊤ →
+        _ = Js.call allowed "delete" [ text ]
+        ⊤
 
 
+-- The script URL `open` hands the constructor (`workers.md` §6, amended
+-- 2026-11-07): an owned policy in the options mints it, whatever default
+-- policy the page has, since a branded URL never reaches the default.
+-- With none, a default policy beni does not own is refused before it is
+-- called, and one it owns mints it.
 resolveScriptUrl : Maybe Policy, Js.Value → Result PolicyError Js.Value
 resolveScriptUrl requested text =
-    factory = Js.global "trustedTypes"
-    default = if Js.isNullish factory then Js.null else Js.get factory "defaultPolicy"
-    registry = Js.read ownedPolicies
-    owned =
-        if Js.isNullish default || Js.isNull registry then
-            Js.null
-        else
-            Js.call registry "get" [ default ]
-    if not (Js.isNullish default) && Js.isNullish owned then
-        Err (PolicyRefused "the default policy is not owned by beni")
-    else
-        chosen =
-            case requested of
-                Just supplied →
-                    host supplied
-                Nothing →
-                    owned
-        if Js.isNullish chosen then
-            Ok text
-        else
-            case mintScriptUrl chosen text of
-                Ok trusted →
-                    Ok (host trusted)
-                Err error →
-                    Err error
+    case requested of
+        Just supplied →
+            Ok (mintScriptUrl (host supplied) text)
+        Nothing →
+            factory = Js.global "trustedTypes"
+            default = if Js.isNullish factory then Js.null else Js.get factory "defaultPolicy"
+            registry = Js.read ownedPolicies
+            owned =
+                if Js.isNullish default || Js.isNull registry then
+                    Js.null
+                else
+                    Js.call registry "get" [ default ]
+            if not (Js.isNullish default) && Js.isNullish owned then
+                Err (PolicyRefused "the default policy is not owned by beni")
+            else if Js.isNullish owned then
+                Ok text
+            else
+                Ok (mintScriptUrl owned text)
 
 
 construct : V, Options → Result (OpenReason error) V

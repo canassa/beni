@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"idle"</output>
+  </main>
+</body>
+-- click-wait button output "owned policy beside a foreign default passed"
+<body>
+  <main>
+    <button>"launch"</button>
+    <output>"owned policy beside a foreign default passed"</output>
+  </main>
+</body>

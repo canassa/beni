@@ -1,0 +1,94 @@
+-- A page whose view is markup, under Trusted Types, opens a worker (#2208;
+-- backend.md §15.3, *Templates under Trusted Types*; workers.md §6,
+-- amended 2026-11-07). The project's beni.json says `"trustedTypes": true`.
+-- The click puts the page under the Content Security Policy
+-- `require-trusted-types-for 'script'; trusted-types beni-workers` (a
+-- `<meta>` Chrome applies when it is inserted) and then renders markup the
+-- page has not shown yet: a list, a table row and a drawing, whose
+-- templates are first made under the policy. They are built by DOM calls,
+-- so no `innerHTML` is refused; an ordinary build stopped the page here
+-- with a TypeError. The page needs no default policy, so `open` with the
+-- owned policy `beni-workers` makes a worker that answers, its script URL
+-- a `TrustedScriptURL`.
+import Browser
+import Browser.Worker as Worker
+import Hosted
+import Html exposing (Html)
+import Probe
+import Task
+
+
+worker : Worker.Program String String (Worker.Protocol String String ⊥ String ⊥ ⊥)
+worker =
+    Worker.program
+        { init = λ_ config → Ok config
+        , start = λ_ _ → ⊤
+        , handle = λ_ state request → Ok (state ++ request)
+        }
+
+
+exercise : ⊤ → String
+exercise ⊤ = Task.scope λowner →
+    case Worker.policyName "beni-workers" of
+        Err _ →
+            "name failed"
+        Ok name →
+            case Worker.policy name of
+                Err _ →
+                    "policy failed"
+                Ok chosen →
+                    defaults = Worker.options
+                    case Worker.open owner worker "config" { defaults | policy = Just chosen } of
+                        Err _ →
+                            "open failed"
+                        Ok handle →
+                            answer =
+                                case Worker.call handle "ping" of
+                                    Ok text →
+                                        text
+                                    Err _ →
+                                        "call failed"
+                            _ = Worker.close handle
+                            answer ++ ";" ++ Probe.observation ⊤
+
+
+type Msg
+    = Launch
+    | Finished String
+
+
+type alias Model =
+    shown : Bool
+    result : String
+
+
+view : Model → Html Msg
+view model =
+    if model.shown then
+        <main>
+            <ul><li class="row">one &amp; two</li><li>{model.result}</li></ul>
+            <table><tbody><tr><td>cell</td></tr></tbody></table>
+            <svg viewBox="0 0 10 10"><circle r="1" /></svg>
+            <output>{model.result}</output>
+        </main>
+    else
+        <main><button onClick={Launch}>launch</button><output>{model.result}</output></main>
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → { shown = False, result = "idle" }
+        , update =
+            λowner msg model →
+                case msg of
+                    Launch →
+                        Probe.csp "require-trusted-types-for 'script'; trusted-types beni-workers"
+                        outlet = Hosted.outlet owner
+                        Task.start (λ⊤ → Hosted.emit outlet (Finished (exercise ⊤))) λ_ → ⊤
+                        { shown = True, result = "running" }
+                    Finished text →
+                        { model | result = text }
+        , settle = λ_ model → model
+        , view = view
+        }
