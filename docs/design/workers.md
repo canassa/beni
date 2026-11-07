@@ -321,10 +321,12 @@ member lists above are unchanged.
 
 **Dynamic code.** `Function` and `eval` are on every global object, but code
 they run is invisible to the check (`workers-api.md` §5), so a kept use is
-`worker_realm_violation`. A code string reaching dynamic code by another
-route — a `constructor` member, `setTimeout` with a string — is not closed by
-this syntactic check: a computed member of an arbitrary value is ordinary
-data access. #2211 tracks it.
+`worker_realm_violation`. In a kept sibling, so is a timer that may be handed
+a string of code (amended 2026-11-07, #2211; *Sibling scopes and timers*
+below). A code string reaching dynamic code by another route — a
+`constructor` member, or `setTimeout` reached from beni through `Js` — is not
+closed by this syntactic check: a computed member of an arbitrary value is
+ordinary data access. #2211 tracks it.
 
 **`importScripts`.** A module worker has no usable `importScripts`; a kept
 use, bare or as a `globalThis`/`self` member, is
@@ -351,13 +353,61 @@ members follow their lists; `typeof N` and a comparison of `N` or
 accepted (beni code still may not write through a receiver); `Function`, `eval` and
 `importScripts` are refused as above; a surviving `import` is refused,
 because the imported module is not checked; a file the tokenizer or
-elimination cannot read exactly is refused. Bindings are check 3's
-(`boundary.md` §4): a name the file binds anywhere is its own everywhere, with
-no scopes, so a host name bound in one function and read free in another is
-not seen. A generated native binding's sibling is not read: its realm set is
+elimination cannot read exactly is refused. A name is free when no scope
+around the read binds it (*Sibling scopes and timers* below, amended
+2026-11-07): a host name bound in one function and read free in another is
+seen. A generated native binding's sibling is not read: its realm set is
 its binding metadata, proved by the native pass. The alternative — each
 sibling export declaring its realm — needs syntax and is the owner's decision;
 #2211 records it.
+
+**Sibling scopes and timers** (amended 2026-11-07, #2211). The sibling
+reading has scopes; check 3 (`boundary.md` §4) keeps its scope-free reading,
+unchanged. Over the tokens `Minify` already structures, a light lexical pass
+binds:
+
+- function and arrow parameters, with or without brackets, destructuring
+  patterns and defaults included, and `arguments` in a function that is
+  not an arrow, all in the function's scope;
+- `var` in its function's body, or the module;
+- `let`, `const`, `class` and function declarations in their block, or the
+  module; a `for` head's declarations in the head and its body;
+- a `catch` parameter in its block;
+- a named function expression's name, and a class expression's, inside it;
+- `import` names in the module.
+
+A concise arrow body ends at the first `,`, `;`, template middle, unmatched
+`:`, or line terminator automatic semicolon insertion may act on, at its own
+level; a `for` body without braces at the first `;` or such line terminator.
+A method's parameters are bound, and its name and a class member's name are
+keys, only directly inside an object literal the pass can prove (a `{` after
+`=`, `(`, `,`, `[`, `?`, `...`, `return`, or a `:` inside a proved object
+literal) or a class body. A module-scope binding counts only when its
+declaration survives elimination.
+
+The pass errs one way: where it cannot tell which scope a binding belongs
+to — a `function` or `class` that may be an expression, a method in an object
+literal it cannot prove, a body cut short at a line terminator — it binds
+nothing, and a read of that name is reported as free. A false refusal falls
+on platform code, which can be written plainly; a false acceptance would
+break the guarantee.
+
+A timer — `setTimeout` or `setInterval`, bare or a literal member of
+`globalThis` or `self` — evaluates a string first argument as code, so in a
+kept sibling it is accepted only when it is called at once and its first
+argument is provably a function: a function expression ending the argument,
+an arrow, or a name the scopes bind to a function declaration, a named
+function expression, or a declarator whose whole initialiser is a function
+or an arrow, which nothing in the file assigns. Anything else — a string, a
+template, a parameter, `.call`, `.bind`, an alias, no argument — is
+`worker_realm_violation`, as dynamic code; `typeof setTimeout` stays a
+probe. Every hand-written file in `core/` and the platforms reads the same
+free names as before, and its one timer passes an arrow.
+
+Fixtures: `build/bad/dedicated/RealmJSiblingShadowed`,
+`RealmJSiblingTimerString` and `RealmJSiblingTimerParam` (refused),
+`browser/dedicated/RealmScopedSafe` (a sibling that binds `document`,
+`location` and `self` itself builds and runs).
 
 **Release output.** A release worker writes a host global bare only when it is
 on the realm's list (`backend.md` §9 item 8, amended 2026-11-07); otherwise it
