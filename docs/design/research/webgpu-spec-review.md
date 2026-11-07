@@ -11,6 +11,10 @@ before adopting the API, and make the two additional failure predicates
 explicit. Two further contracts need decisions but are not proven specification
 contradictions. All six findings have separate tracking issues.
 
+**Resolved 2026-11-08** ([#2238](https://github.com/canassa/beni/issues/2238)): the adopted
+[webgpu.md](../webgpu.md) closes all six findings: #1266 and #1269 in §7.1, #1267 in §8.2,
+#1268 in §3.1, #1270 in §6.4 and #1271 in §8.3. This report is kept as written.
+
 ## 1. P1 — Expose the Mapping produced by mappedAtCreation
 
 Tracking: [#1266](https://github.com/canassa/beni/issues/1266).
