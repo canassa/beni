@@ -1756,6 +1756,11 @@ Two consequences worth stating, because they are what the emitted shape looks li
 
 ### Emitted JavaScript nests only as deep as the source
 
+*Compiler traversal, #1673:* saturated arithmetic subtrees are lowered with an explicit
+work stack. A written operator chain must not consume one native compiler stack frame
+per term. Each operand keeps its written evaluation order, statement hoists, representation
+key and expression-height accounting; the walk does not reassociate arithmetic.
+
 *Added 2026-09-25.* Every JavaScript engine parses â and V8 and JavaScriptCore
 compile â a nested expression or block by recursion, and gives up with `RangeError` or
 `InternalError` past a depth that depends on the construct and the engine. Before this section a

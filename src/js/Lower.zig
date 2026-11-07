@@ -6432,7 +6432,6 @@ pub const Lowerer = struct {
     fn orderedExprs(l: *Lowerer, out: *StmtList, insts: []const Inst.Index, reordered: bool) ![]Node.Index {
         const values = try l.scratch.alloc(Node.Index, insts.len);
         const held = try l.scratch.alloc([]const Node.Index, insts.len);
-        var movable: usize = 0;
         // Each element into a list of its own: whether it hoists is not
         // known until it is lowered, and what it hoists may not be written
         // out before the elements in front of it are pinned.
@@ -6440,8 +6439,18 @@ pub const Lowerer = struct {
             var stmts: StmtList = .empty;
             values[i] = try l.expr(&stmts, inst);
             held[i] = stmts.items;
-            if (!l.isAtom(values[i])) movable += 1;
         }
+        try l.orderValues(out, insts, reordered, values, held);
+        return values;
+    }
+
+    /// Merge operands already lowered into separate statement lists. The
+    /// iterative arithmetic walk shares exactly the ordinary call's order.
+    fn orderValues(l: *Lowerer, out: *StmtList, insts: []const Inst.Index, reordered: bool, values: []Node.Index, held: []const []const Node.Index) !void {
+        var movable: usize = 0;
+        for (values) |value| if (!l.isAtom(value)) {
+            movable += 1;
+        };
         var last_hoist: usize = 0;
         for (held, 0..) |stmts, i| {
             if (stmts.len != 0 and !l.onlyClosures(stmts)) last_hoist = i;
@@ -6464,7 +6473,6 @@ pub const Lowerer = struct {
             if (l.mayHaveEffect(inst)) try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
             values[i] = try l.ident(n, p);
         }
-        return values;
     }
 
     /// Whether every statement is `const $t = (…) => …`: a closure bound
@@ -6637,6 +6645,12 @@ pub const Lowerer = struct {
         l.expr_height = 0;
         const before = l.b.nodes.len;
         const value = try l.exprValue(out, inst);
+        return l.finishExpr(out, inst, value, before, outer);
+    }
+
+    /// Finish one expression, whether entered recursively or by arithmetic's
+    /// explicit work stack. Spills and allocation keys keep the same boundary.
+    fn finishExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index, value: Node.Index, before: usize, outer: u32) !Node.Index {
         try l.keyNode(inst, value, before);
         var height = l.expr_height +| l.exprWeight(inst);
         if (l.isAtom(value)) {
@@ -7095,15 +7109,22 @@ pub const Lowerer = struct {
         return l.call(define, &.{ old, try l.stringNode(field_text, p), descriptor }, p);
     }
 
-    fn exprValue(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!Node.Index {
-        const d = l.bir.instData(inst);
+    /// Placements and replacements run before an expression's children,
+    /// including children entered by the iterative arithmetic walk.
+    fn exprOverride(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!?Node.Index {
         const p = l.pos(inst);
         l.region = inst;
         try l.placeHoists(out, inst, 0);
-        if (l.deadArm(inst)) return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        if (l.deadArm(inst)) return try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         if (l.arm_override) |ov| if (try l.overriddenArm(out, ov, inst)) |node_| return node_;
         if (l.msg_track) |mt| if (try l.trackedExpr(out, mt, inst)) |node_| return node_;
-        if (try l.routeSiteValue(out, inst)) |node_| return node_;
+        return l.routeSiteValue(out, inst);
+    }
+
+    fn exprValue(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!Node.Index {
+        const d = l.bir.instData(inst);
+        const p = l.pos(inst);
+        if (try l.exprOverride(out, inst)) |node_| return node_;
         switch (l.bir.instTag(inst)) {
             .int, .float => return l.numberNode(l.bir.bytes(inst), p),
             .char => {
@@ -10775,7 +10796,7 @@ pub const Lowerer = struct {
         // Arithmetic, `not` and `Int32`'s bit operations are the JavaScript
         // operators they compute (§4, *Arithmetic is an operator*).
         if (l.operatorOf(callee_inst)) |which| {
-            if (which.arity() == arg_insts.len and roots.len == 0) return l.operatorCall(out, which, arg_insts, p);
+            if (which.arity() == arg_insts.len and roots.len == 0) return l.operatorExpr(out, inst, which, arg_insts, p);
         }
 
         // A constructor is an object literal and never a call (§4); the
@@ -11652,11 +11673,148 @@ pub const Lowerer = struct {
         return scheme != .none and iface.schemes[@backingInt(scheme)].total;
     }
 
+    /// Numeric and boolean primitives whose operands all run in order.
+    /// Short circuits and list operations keep their own lowering paths.
+    fn arithmetic(which: Operator.Which) bool {
+        return switch (which) {
+            .add,
+            .sub,
+            .mul,
+            .fdiv,
+            .pow,
+            .lt,
+            .gt,
+            .le,
+            .ge,
+            .not,
+            .negate,
+            .int32_fromInt,
+            .int32_toInt,
+            .int32_toUnsignedInt,
+            .int32_add,
+            .int32_sub,
+            .int32_and,
+            .int32_or,
+            .int32_xor,
+            .int32_shiftLeft,
+            .int32_shiftRight,
+            .int32_shiftRightZero,
+            => true,
+            else => false,
+        };
+    }
+
+    fn arithmeticAt(l: *Lowerer, inst: Inst.Index) ?Operator.Which {
+        const which = Operator.atCall(l.in.graph, l.in.interfaces, l.bir, l.in.module, inst, l.in.dispatch, l.interner) orelse return null;
+        return if (arithmetic(which) and l.rootsOf(inst).len == 0) which else null;
+    }
+
+    /// One expression entry and its suspended operand walk. The array is
+    /// collected before evaluation, so evidence_out can point into a held
+    /// statement list without a later append moving it.
+    const ArithmeticFrame = struct {
+        inst: Inst.Index,
+        which: Operator.Which,
+        args: []const Inst.Index,
+        parent: ?usize = null,
+        slot: u1 = 0,
+        children: [2]?usize = .{ null, null },
+        held: [2]StmtList = .{ .empty, .empty },
+        values: [2]Node.Index = undefined,
+        entered: bool = false,
+        next: u2 = 0,
+        before: usize = 0,
+        outer: u32 = 0,
+        replacement: ?Node.Index = null,
+    };
+
+    /// Walk arithmetic subtrees without a native frame per operator (#1673).
+    /// Each parent still sees the same operand statement lists, in the
+    /// same order, and finishes at the same spill/key boundary as expr.
+    fn operatorExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index, which: Operator.Which, args: []const Inst.Index, p: u32) Allocator.Error!Node.Index {
+        if (!arithmetic(which)) return l.operatorCall(out, which, args, p);
+        var nested = false;
+        for (args) |arg| if (l.arithmeticAt(arg) != null) {
+            nested = true;
+            break;
+        };
+        if (!nested) return l.operatorCall(out, which, args, p);
+
+        var frames: std.ArrayList(ArithmeticFrame) = .empty;
+        try frames.append(l.scratch, .{ .inst = inst, .which = which, .args = args, .entered = true });
+        var scan: usize = 0;
+        while (scan < frames.items.len) : (scan += 1) {
+            const operands = frames.items[scan].args;
+            for (operands, 0..) |arg, slot| {
+                const child = l.arithmeticAt(arg) orelse continue;
+                frames.items[scan].children[slot] = frames.items.len;
+                const d = l.bir.instData(arg);
+                try frames.append(l.scratch, .{
+                    .inst = arg,
+                    .which = child,
+                    .args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index),
+                    .parent = scan,
+                    .slot = @intCast(slot),
+                });
+            }
+        }
+
+        const saved = l.evidence_out;
+        defer l.evidence_out = saved;
+        var current: usize = 0;
+        while (true) {
+            const f = &frames.items[current];
+            const stmts = if (f.parent) |parent| &frames.items[parent].held[f.slot] else out;
+            l.evidence_out = stmts;
+            if (!f.entered) {
+                f.entered = true;
+                f.outer = l.expr_height;
+                l.expr_height = 0;
+                f.before = l.b.nodes.len;
+                f.replacement = try l.exprOverride(stmts, f.inst);
+                if (f.replacement == null) {
+                    const callee: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(f.inst).lhs));
+                    if (try l.refuseEvidence(f.inst, l.rootsOf(f.inst), l.in.dispatch.referenceCount(l.bir, l.in.interfaces, l.decl_index, callee))) {
+                        f.replacement = try l.add(.undefined_lit, l.pos(f.inst), Node.Data.unused, Node.Data.unused);
+                    } else {
+                        // The same build facts every callExpr records. These
+                        // exact core primitives cannot be program/schema calls.
+                        l.askSelf(.markup, l.mk != null, 0, 0);
+                        l.askSelf(.schema_shapes, l.in.schema_shapes, 0, 0);
+                    }
+                }
+            }
+            if (f.replacement == null and f.next < f.args.len) {
+                const slot = f.next;
+                f.next += 1;
+                if (f.children[slot]) |child| {
+                    current = child;
+                } else {
+                    f.values[slot] = try l.expr(&f.held[slot], f.args[slot]);
+                }
+                continue;
+            }
+            var value = f.replacement orelse blk: {
+                const held = [2][]const Node.Index{ f.held[0].items, f.held[1].items };
+                try l.orderValues(stmts, f.args, false, f.values[0..f.args.len], held[0..f.args.len]);
+                break :blk try l.operatorValues(stmts, f.which, f.values[0..f.args.len], l.pos(f.inst));
+            };
+            const parent = f.parent orelse return value;
+            value = try l.finishExpr(stmts, f.inst, value, f.before, f.outer);
+            frames.items[parent].values[f.slot] = value;
+            current = parent;
+        }
+    }
+
     /// A saturated call of an `Operator` as the JavaScript it computes. The
     /// operands are evaluated once each, in written order (`orderedExprs`),
     /// which is the order the call evaluated them in.
     fn operatorCall(l: *Lowerer, out: *StmtList, which: Operator.Which, args: []const Inst.Index, p: u32) !Node.Index {
         const v = try l.orderedExprs(out, args, false);
+        return l.operatorValues(out, which, v, p);
+    }
+
+    fn operatorValues(l: *Lowerer, out: *StmtList, which: Operator.Which, v: []const Node.Index, p: u32) Allocator.Error!Node.Index {
         const zero = struct {
             fn node(lw: *Lowerer, at: u32) !Node.Index {
                 return lw.numberNode("0", at);
