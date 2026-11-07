@@ -1,0 +1,64 @@
+-- A `⟲` at a call's result on dense types (`ownership-v2.md` §2.1, #2195): a read of every slot of the
+-- result writes the slots of the arrival at its own slot once, not once more for each fold it is said at
+-- (`Relation.feedAt`), so the caller fits its allowance, and `k`, still live, is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+type Y
+    = YE
+    | Y1 Z
+    | Y2 T
+
+
+type Z
+    = ZE
+    | Z1 Y
+
+
+type T
+    = TE
+    | Leaf (List Int)
+    | T1 T
+    | T2 M0
+
+
+type M0
+    = N0 M1 M1
+
+
+type M1
+    = N1 Back Back
+
+
+type Back
+    = BY Y
+    | BT T
+
+
+hg : Y → Y
+hg t =
+    case t of
+        Y1 (Z1 (Y2 (T1 (T2 m)))) →
+            Y1 (Z1 (Y2 (T1 (T2 m))))
+        _ →
+            YE
+
+
+rd : Y → Int
+rd t =
+    case t of
+        Y1 (Z1 (Y2 (T1 (T2 (N0 (N1 (BT (Leaf xs)) _) _))))) →
+            List.length (List.push xs 1)
+        _ →
+            0
+
+
+main : Program
+main =
+    k = [ 1 ]
+    z2 = BT TE
+    z1 = N1 z2 z2
+    a = rd (hg (Y1 (Z1 (Y2 (T1 (T2 (N0 (N1 (BT (Leaf k)) z2) z1)))))))
+    Node.print (String.fromInt (a + List.length k))

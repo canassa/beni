@@ -1,0 +1,1 @@
+v2 refuses a write below a fold of a call's result on dense types, in the allowance (§2.1, #2195): built again under --ownership=v2 and the sanitiser.

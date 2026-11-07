@@ -245,7 +245,7 @@ fn descend(w: *Walk, it: Item) Error!void {
                     .closure, .opaque_ => continue,
                 };
                 const kp = pl.child(place, kst) orelse continue;
-                if (kp != origin and !pl.sameCycle(kp, origin)) continue;
+                if (!pl.sameComponent(kp, origin)) continue;
                 var kid = withKid(it, k, try kidRoute(e, it.route, @intCast(n)));
                 kid.place = kp.int();
                 kid.below = true;

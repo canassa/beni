@@ -188,7 +188,7 @@ fn levelHead(places: *const Place.Table, p: Ids.PathId) u32 {
     var at = p;
     while (at != .none) : (at = places.pathParent(at)) {
         const q = places.pathPlace(at);
-        if (places.kind(q) == .ctor and (q == here or places.sameCycle(q, here))) return places.head(q);
+        if (places.kind(q) == .ctor and places.sameComponent(q, here)) return places.head(q);
     }
     return places.head(here);
 }

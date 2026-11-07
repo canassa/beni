@@ -552,7 +552,7 @@ pub const Eval = struct {
                             .closure, .opaque_ => continue,
                         };
                         const kp = pl.child(it.place, kst) orelse continue;
-                        if (kp != place and !pl.sameCycle(kp, place)) continue;
+                        if (!pl.sameComponent(kp, place)) continue;
                         try stack.append(e.gpa(), .{ .v = k, .place = kp, .route = try e.routeStep(it.route, @intCast(n)), .below = true });
                     }
                 },
@@ -775,7 +775,7 @@ pub const Eval = struct {
                     const opens = try e.gpa().dupe(Contract.Arrival, run);
                     defer e.gpa().free(opens);
                     const rel = e.f.slots.rels.find(pw[0..d]) orelse try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), pw[0..d]);
-                    for (opens) |a| try e.feedBelow(ki, if (ri != 0 and Forest.wholeAtRow(e.f.slots, a)) try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), pw) else rel, true, a);
+                    for (opens) |a| try e.feedBelow(ki, if (ri != 0 and Forest.wholeAtRow(e.f.slots, a)) try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), pw) else rel, true, a, false);
                 };
                 n = on orelse break;
             }
@@ -802,7 +802,7 @@ pub const Eval = struct {
             const rel = e.f.slots.rels.find(es.wordsOf(x)) orelse try e.f.slots.relOfWords(e.gpa(), e.account(), e.places(), es.wordsOf(x));
             arrs.clearRetainingCapacity();
             try arrs.appendSlice(e.gpa(), x.arrivals);
-            for (arrs.items) |a| if (draft) try e.feedBelowDraft(ki, rel, x.open, a) else try e.feedBelow(ki, rel, x.open, a);
+            for (arrs.items) |a| if (draft) try e.feedBelowDraft(ki, rel, x.open, a) else try e.feedBelow(ki, rel, x.open, a, es.wordsOf(x).len > prefix.len);
         }
     }
 
@@ -821,7 +821,8 @@ pub const Eval = struct {
     /// The callee's arrival `a` at its result slot `rel` (`open`: and below)
     /// for below-key `ki`: read at that slot when it is at or below the
     /// key's prefix, at the prefix, open, when the slot is open above it.
-    pub fn feedBelow(e: *Eval, ki: u32, rel: Slots.Rel, open: bool, a: Contract.Arrival) Error!void {
+    /// `inside`: the entry is strictly below the read's prefix.
+    pub fn feedBelow(e: *Eval, ki: u32, rel: Slots.Rel, open: bool, a: Contract.Arrival, inside: bool) Error!void {
         const k = e.keys.items[ki];
         const r = e.f.roots.items[e.rootOfKey(ki)];
         const pw = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), k.slot));
@@ -836,9 +837,9 @@ pub const Eval = struct {
             if (paths.items.len == 0) try paths.append(e.gpa(), k.slot.int());
             // A row's arrival is read by each caller slot it names, from that slot's own step (§2.1).
             const n = if (SlotWords.endsInRow(rw) and !Forest.wholeAtRow(e.f.slots, a)) rw.len - 1 else rw.len;
-            for (paths.items) |at0| try e.feedAt(ki, .from(at0), @intCast(n), open, a);
+            for (paths.items) |at0| try e.feedAt(ki, .from(at0), @intCast(n), open, a, inside);
         } else if (SlotWords.under(e.places(), rw, pw)) |n| {
-            if (open or n < rw.len) try e.feedAt(ki, k.slot, @intCast(if (SlotWords.endsInRow(rw) and Forest.wholeAtRow(e.f.slots, a)) pw.len else n), true, a);
+            if (open or n < rw.len) try e.feedAt(ki, k.slot, @intCast(if (SlotWords.endsInRow(rw) and Forest.wholeAtRow(e.f.slots, a)) pw.len else n), true, a, inside);
         }
     }
 
@@ -850,7 +851,12 @@ pub const Eval = struct {
     /// once, and at each slot below through that slot's own key (`instAt`),
     /// which every reader of the slot shares. A plain entry's atom is itself
     /// at `base`; any other plain arrival is read through `base`'s key.
-    fn feedAt(e: *Eval, ki: u32, base: PathId, n: u32, open: bool, a0: Contract.Arrival) Error!void {
+    /// A parameter's arrival at its own slot reads each slot below by that
+    /// slot's own words, one a cycle folds above `base` too. So `inside` a
+    /// read, a level's copy (`LevelWide`) writes nothing out: below the read's
+    /// prefix too, the arrival it was said for, or one above that (`Normal`),
+    /// writes out every slot its objects reach.
+    fn feedAt(e: *Eval, ki: u32, base: PathId, n: u32, open: bool, a0: Contract.Arrival, inside: bool) Error!void {
         var a = a0;
         if ((a.kind == .param or a.kind == .cb or a.kind == .lent) and SlotWords.endsInRow(e.f.slots.relWords(a.slot))) a.deep = false;
         const k = e.keys.items[ki];
@@ -859,7 +865,8 @@ pub const Eval = struct {
         if (open) {
             var acc: std.ArrayList(u32) = .empty;
             defer acc.deinit(e.gpa());
-            const bw = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), base));
+            const br = try e.f.slots.relOf(e.gpa(), e.account(), e.places(), base);
+            const bw = e.f.slots.relWords(br);
             const at_payload = Subtree.wholeAt(e.places(), a, base);
             if (at_payload) |w| a = w;
             const suffix0 = try e.gpa().dupe(u32, if (at_payload != null) &.{} else bw[@min(n, bw.len)..]);
@@ -920,13 +927,18 @@ pub const Eval = struct {
                 }
                 var at: std.ArrayList(u32) = .empty;
                 defer at.deinit(e.gpa());
-                for (e.f.slots.items(try Subtree.belowAll(e.f.slots, e.gpa(), e.account(), e.places(), base))) |sl| if (sl != base.int()) {
-                    const sw = e.f.slots.relWords(try e.f.slots.relOf(e.gpa(), e.account(), e.places(), .from(sl)));
+                const own = a.path != none and a.slot == br;
+                if (!inside or a.path != Contract.Arrival.level_copy) for (e.f.slots.items(try Subtree.belowAll(e.f.slots, e.gpa(), e.account(), e.places(), base))) |sl| if (sl != base.int()) {
+                    const sr = try e.f.slots.relOf(e.gpa(), e.account(), e.places(), .from(sl));
+                    const sw = e.f.slots.relWords(sr);
                     var sa = a;
                     const pk = e.places().kind(e.places().pathPlace(.from(sl)));
                     sa.deep = a.deep or pk == .@"var" or pk == .@"opaque";
+                    // Folded above `base`: the slot's own words, not a suffix of them.
+                    const up = own and !SlotWords.startsAt(sw, bw);
+                    if (up) sa = .{ .kind = .param, .j = a.j, .slot = sr, .deep = sa.deep };
                     at.clearRetainingCapacity();
-                    try e.arrivalAt(k.call, none, sa, .from(sl), false, sw[@min(n, sw.len)..], &at);
+                    try e.arrivalAt(k.call, none, sa, .from(sl), false, if (up) &.{} else sw[@min(n, sw.len)..], &at);
                     for (at.items) |x| try e.addBelow(ki, x, sl);
                 };
                 for (acc.items) |x| try e.addBelow(ki, x, base.int());
@@ -1014,7 +1026,7 @@ pub const Eval = struct {
             if (call.contract == none) return;
             a.j = e.live.?.labelIn(e.live.?.ctx, call.code, a.j, call.contract) orelse return;
         }
-        try e.feedBelow(ki, rel, open, a);
+        try e.feedBelow(ki, rel, open, a, false);
     }
 
     /// The root a key's call or supply results in.
@@ -1147,7 +1159,7 @@ pub const Eval = struct {
             .shared => try out.append(e.gpa(), try e.f.leaf(.{ .kind = .shared, .atom = a.j, .extra = a.slot })),
             .param, .lent => {
                 if (a.j >= cl.args.len) return if (@import("Mutate.zig").on(.arrival_no_arg_empty)) {} else out.append(e.gpa(), try e.f.leaf(.{ .kind = .top }));
-                try e.routed(e, cl.args[a.j], words.items, a.deep, if (suffix.len == 0 and a.kind == .param) a.path else none, out);
+                try e.routed(e, cl.args[a.j], words.items, a.deep, if (suffix.len == 0 and a.kind == .param and a.path != Contract.Arrival.level_copy) a.path else none, out);
                 if (out.items.len == start and words.items.len != 0 and !SlotWords.excluded(e.places(), words.items)) try PastPayload.read(e, cl.args[a.j], words.items, out);
                 if (out.items.len == start and suffix.len != 0 and !@import("Mutate.zig").on(.empty_past_arrival) and !SlotWords.excluded(e.places(), words.items) and PastPayload.reaches(e.places(), LevelCycle.rootOf(e.f, cl.args[a.j]), words.items)) try e.routed(e, cl.args[a.j], e.f.slots.relWords(a.slot), true, none, out);
                 if (a.kind == .lent) try e.lend(out, start, null, call);

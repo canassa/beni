@@ -157,7 +157,7 @@ pub const Place = struct {
     /// A declared class for a `closure` place (#587's slot); `.none` today.
     class: ClassId,
     /// The strongly connected component of the place graph this place is
-    /// in (`settleCycles`): what `sameCycle` reads for §2.2's `⟲` matching.
+    /// in (`settleCycles`): what `sameComponent` reads for §2.2's `⟲` matching.
     scc: u32,
     /// `objectsBelow` (§2.3.1) and `PlaceBelow.familyBelow`, set with `scc`.
     below: Below = .{},
@@ -629,18 +629,15 @@ pub const Table = struct {
         }
     }
 
-    /// Whether a step from `p` to `q` is on a cycle of `p`: `q` can reach
-    /// `p` again (§2.2's `⟲` matching). O(1): a column compare, plus a
-    /// child scan for the self-loop.
-    pub fn sameCycle(t: *const Table, p: PlaceId, q: PlaceId) bool {
-        if (p != q) return t.places.col.scc[p.int()] == t.places.col.scc[q.int()];
-        const s = t.steps(p);
-        for (s.children) |c| if (c == p) return true;
-        return false;
+    /// Whether `p` and `q` are one strongly connected component of the place
+    /// graph (§2.2's `⟲` matching): for a step from `p` to `q`, whether the
+    /// step is on a cycle. Reflexive: a place is in its own component, on a
+    /// cycle or not, which is `cyclic`'s question. O(1): a column compare.
+    pub fn sameComponent(t: *const Table, p: PlaceId, q: PlaceId) bool {
+        return t.places.col.scc[p.int()] == t.places.col.scc[q.int()];
     }
 
-    /// The strongly connected component of `p`: two places of one
-    /// component are on one cycle (`sameCycle`) when they are distinct.
+    /// The strongly connected component of `p` (`sameComponent`).
     pub fn sccOf(t: *const Table, p: PlaceId) u32 {
         return t.places.col.scc[p.int()];
     }
@@ -771,7 +768,7 @@ pub const Table = struct {
                 const r = try t.levelsOf(gpa, charge, path);
                 if (r.len == 1) out = t.fold_paths.items[r.start];
             }
-        } else if (t.sameCycle(here, target)) {
+        } else if (t.sameComponent(here, target)) {
             var at = path;
             while (at != .none) : (at = t.pathParent(at)) {
                 try charge.reserve(gpa, .path, 1);
@@ -788,13 +785,19 @@ pub const Table = struct {
                         break;
                     }
                     deepest = at;
-                } else if (!t.sameCycle(there, target)) break;
+                } else if (!t.sameComponent(there, target)) break;
             }
         }
         const result = out orelse try t.node(gpa, charge.account, path, step, target);
         // A first return: a plain step back onto a place of the path.
         if (out == null and deepest != .none) t.paths.col.info[result.int()].ret = true;
         return result;
+    }
+
+    /// The `⟲` that `extend` folds a step back onto return `d`'s place onto, from
+    /// below `d` with a second of it above: `d⟲` itself, never `d`'s level paths.
+    pub fn foldOnto(t: *Table, gpa: Allocator, account: *Account, d: PathId) Error!PathId {
+        return t.node(gpa, account, d, Step.level, t.pathPlace(d));
     }
 
     /// The canonical paths a `⟲` at `path` stands for when they are several
@@ -861,7 +864,7 @@ pub const Table = struct {
         if (try t.path_index.getOrInsert(gpa, .{ parent.int(), step.word() }, PathKeys{ .t = t }, t.paths.len())) |hit| return .from(hit);
         const id: PathId = .from(@intCast(t.paths.len()));
         const summary = t.paths.col.info[parent.int()].summary or step.kind == .elem or step.kind == .level;
-        const anchor = step.kind == .level or t.sameCycle(t.pathPlace(parent), place);
+        const anchor = step.kind == .level or t.sameComponent(t.pathPlace(parent), place);
         const up: PathId = if (anchor) .from(@intCast(t.paths.len())) else t.paths.col.anchor_up[parent.int()];
         const pj = t.paths.col.jump[parent.int()];
         const jump = if (depth - 1 - t.pathDepth(pj) == t.pathDepth(pj) - t.pathDepth(t.paths.col.jump[pj.int()])) t.paths.col.jump[pj.int()] else parent;
@@ -873,7 +876,7 @@ pub const Table = struct {
     /// Whether `p` is on a cycle of the place graph: a step back to itself,
     /// or a strongly connected component of two places or more.
     pub fn cyclic(t: *const Table, p: PlaceId) bool {
-        for (t.steps(p).children) |c| if (t.sameCycle(p, c)) return true;
+        for (t.steps(p).children) |c| if (t.sameComponent(p, c)) return true;
         return false;
     }
 
@@ -959,7 +962,7 @@ pub const Table = struct {
             while (j < n) : (j += 1) {
                 const st = t.steps(t.pathPlace(x));
                 try charge.reserve(gpa, .inspection, 1);
-                if (st.children[j] != target and !t.sameCycle(target, st.children[j])) continue;
+                if (!t.sameComponent(target, st.children[j])) continue;
                 const np = (try t.extend(gpa, charge, x, st.steps[j])) orelse continue;
                 if (t.pathPlace(np) == target and !(try found.getOrPut(gpa, .{np.int()})).found_existing) try acc.append(gpa, np);
                 // A sealed first return at `target` is taken whole: below it
@@ -1084,7 +1087,7 @@ pub const Table = struct {
                 const st = t.steps(here);
                 const s = st.steps[j];
                 try charge.reserve(gpa, .inspection, 1);
-                if (!t.sameCycle(here, st.children[j])) continue;
+                if (!t.sameComponent(here, st.children[j])) continue;
                 const y = (try t.extend(gpa, charge, x, s)) orelse continue;
                 const plain = t.pathParent(y) == x and t.pathStep(y).word() == s.word();
                 if (!f.expanded) {
@@ -1142,7 +1145,7 @@ pub const Table = struct {
             try charge.reserve(gpa, .path, 1);
             if (t.isReturn(at)) return false;
             const there = t.pathPlace(at);
-            if (there != p and !t.sameCycle(there, p)) break;
+            if (!t.sameComponent(there, p)) break;
         }
         return true;
     }

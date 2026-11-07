@@ -21,7 +21,7 @@ pub fn of(gpa: std.mem.Allocator, arena: std.mem.Allocator, account: *Ids.Accoun
     defer seen.deinit(gpa);
     try queue.append(gpa, .{ .p = from, .back = none, .word = 0 });
     _ = try seen.getOrPut(gpa, .{from.int()});
-    const on = pl.sameCycle(pl.pathPlace(from), target);
+    const on = pl.sameComponent(pl.pathPlace(from), target);
     var qi: u32 = 0;
     while (qi < queue.items.len) : (qi += 1) {
         const it = queue.items[qi];
@@ -36,7 +36,7 @@ pub fn of(gpa: std.mem.Allocator, arena: std.mem.Allocator, account: *Ids.Accoun
         }
         const st = pl.steps(pl.pathPlace(it.p));
         for (st.steps, st.children) |s, c| {
-            if (s.kind == .level or (on and c != target and !pl.sameCycle(c, target))) continue;
+            if (s.kind == .level or (on and !pl.sameComponent(c, target))) continue;
             const nx = (try pl.extend(gpa, .growth(account), it.p, s)) orelse continue;
             if ((try seen.getOrPut(gpa, .{nx.int()})).found_existing) continue;
             try queue.append(gpa, .{ .p = nx, .back = qi, .word = s.word() });

@@ -1,0 +1,55 @@
+-- The twin of `SanitiserLevelResultOwnPlace`: `k` is dead after the call, so the edit in place is accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+type T
+    = Leaf (List Int)
+    | Wa A
+    | P T Int
+
+
+type A
+    = A1 T
+    | A2 B
+
+
+type B
+    = Bb A
+
+
+wr : T → Int
+wr t =
+    case t of
+        Leaf xs →
+            List.length (List.push xs 1)
+        Wa u →
+            wrA u
+        P u _ →
+            wr u
+
+
+wrA : A → Int
+wrA u =
+    case u of
+        A1 t →
+            wr t
+        A2 (Bb v) →
+            wrA v
+
+
+hg : T → T
+hg t0 =
+    case t0 of
+        P (Wa (A2 (Bb m))) _ →
+            P (Wa (A2 (Bb m))) 0
+        _ →
+            Leaf []
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = wr (hg (P (Wa (A2 (Bb (A1 (Leaf k))))) 0))
+    Node.print (String.fromInt (a))
