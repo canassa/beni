@@ -800,7 +800,10 @@ bound per chunk. The event channel retains its separate `queuedEvents` and byte
 budget. A received chunk's lease is acknowledged only by release/take, never by
 receipt or `next`. Producer completion follows its finalizers; already-received
 values belong to the receiver and are not reclaimed from a held chunk on remote
-completion. Cancellation discards unread chunks. Chunk operations retain their
+completion. A failure is observed after already-committed chunks have been read;
+cancellation instead discards unread chunks. Queue mutation stays with its
+representation-owning module, independent of private connection-field encoding.
+Chunk operations retain their
 ownership-checker-v2 consumed/borrowed contract; unchecked duplicate release or
 use after release defects instead of emitting a second acknowledgment.
 
