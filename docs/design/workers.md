@@ -803,6 +803,9 @@ values belong to the receiver and are not reclaimed from a held chunk on remote
 completion. A failure is observed after already-committed chunks have been read;
 cancellation instead discards unread chunks. Queue mutation stays with its
 representation-owning module, independent of private connection-field encoding.
+Hello options are control data with the public Options field spellings in both
+entries; the worker reads their raw fields, without a separately renamed local
+record projection.
 Chunk operations retain their
 ownership-checker-v2 consumed/borrowed contract; unchecked duplicate release or
 use after release defects instead of emitting a second acknowledgment.
