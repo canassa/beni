@@ -1,0 +1,4 @@
+pub foreign impure arm : String → ⊤
+
+
+pub foreign impure observation : ⊤ → String

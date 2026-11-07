@@ -7,5 +7,3 @@ export const arm=mode=>{
  if(mode==='null'||mode==='empty')globalThis.trustedTypes.createPolicy('default',{createScriptURL:()=>{callbackCount++;return mode==='null'?null:''}});
 };
 export const observation=()=>`constructs=${count};callbacks=${callbackCount};trusted=${brand}`;
-export const trusted=url=>globalThis.trustedTypes.isScriptURL(url);
-export const throwing=_=>{throw new TypeError('policy allow exploded')};

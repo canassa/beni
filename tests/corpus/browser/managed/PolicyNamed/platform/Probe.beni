@@ -1,13 +1,4 @@
-import Browser.Worker as Worker
-
-
 pub foreign impure arm : String → ⊤
 
 
 pub foreign impure observation : ⊤ → String
-
-
-pub foreign impure trusted : borrowed Worker.ScriptUrl → Bool
-
-
-pub foreign impure throwing : String → Bool

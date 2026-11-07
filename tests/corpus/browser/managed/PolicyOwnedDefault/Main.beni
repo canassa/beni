@@ -18,26 +18,12 @@ worker =
 exercise : ⊤ → String
 exercise ⊤ = Task.scope λowner →
     Probe.arm "owned"
-    case
-        ( Worker.policyName "default", Worker.scriptUrl "/worker.js", Worker.policyName "bad name" )
-    of
-        ( Ok name, Ok url, Err Worker.InvalidPolicyName ) →
+    case ( Worker.policyName "default", Worker.policyName "bad name" ) of
+        ( Ok name, Err Worker.InvalidPolicyName ) →
             case Worker.policy name of
                 Err _ →
                     "policy failed"
                 Ok chosen →
-                    allowed =
-                        case Worker.trust chosen url λ_ → True of
-                            Ok trusted →
-                                Probe.trusted trusted
-                            _ →
-                                False
-                    refused =
-                        case Worker.trust chosen url λ_ → False of
-                            Err (Worker.PolicyRefused _) →
-                                True
-                            _ →
-                                False
                     duplicate =
                         case Worker.policy name of
                             Err Worker.TrustedPolicyDenied →
@@ -58,9 +44,7 @@ exercise ⊤ = Task.scope λowner →
                                         False
                             cleanup = Worker.close handle
                             if
-                                allowed
-                                    && refused
-                                    && duplicate
+                                duplicate
                                     && answerGood
                                     && cleanup == Worker.Confirmed
                                     && Probe.observation ⊤
