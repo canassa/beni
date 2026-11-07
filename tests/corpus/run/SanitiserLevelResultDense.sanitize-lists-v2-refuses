@@ -1,0 +1,2 @@
+# v2 refuses a write below a fold of a call's result on dense types (§2.1, #2195)
+63:9 list_still_used SanitiserLevelResultDense.rd

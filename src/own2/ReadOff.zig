@@ -38,6 +38,7 @@ const AtomGraft = @import("AtomGraft.zig");
 const Put = @import("Put.zig");
 const Needs = @import("Needs.zig");
 const PastPayload = @import("PastPayload.zig");
+const LevelTargets = @import("LevelTargets.zig");
 const Made = @import("Made.zig");
 const Host = @import("Host.zig");
 const Cells = @import("Cells.zig");
@@ -729,8 +730,11 @@ fn describeWide(s: *Sink, li: u32, q: PathId, out: Put.ResList) Error!void {
                         // never by steps the slot cannot take.
                         const pk = f.places.kind(f.places.pathPlace(Slots.pathOf(sl)));
                         const wild = pk == .@"var" or pk == .@"opaque";
-                        const a: Contract.Arrival = .{ .kind = .param, .j = r.a, .slot = rels[i], .deep = wild, .path = Slots.pathOf(sl).int() };
-                        if (wild and f.places.pathPlace(Slots.pathOf(sl)) != f.places.pathPlace(.from(dest))) {
+                        // Open away from its own slot, a cycle with a middle would fold it
+                        // out of its words (`LevelWide`): all of it at each slot, too.
+                        const away = Slots.pathOf(sl).int() != dest and LevelTargets.hasMiddle(f.places, f.places.pathPlace(.from(dest)));
+                        const a: Contract.Arrival = .{ .kind = .param, .j = r.a, .slot = rels[i], .deep = wild or away, .path = Slots.pathOf(sl).int() };
+                        if ((wild and f.places.pathPlace(Slots.pathOf(sl)) != f.places.pathPlace(.from(dest))) or away) {
                             for (f.slots.items(try Subtree.belowAll(f.slots, gpa, f.account, f.places, .from(dest)))) |qs| try Put.arrive(s, .from(qs), a, out);
                         } else if (whole or Slots.isSub(sl)) try Put.arriveWide(s, .from(dest), a, out) else try Put.arrive(s, .from(dest), a, out);
                     },

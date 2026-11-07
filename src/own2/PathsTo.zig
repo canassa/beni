@@ -28,7 +28,7 @@ fn folds(pl: *const Place.Table, account: *Ids.Account, c: PathId, target: Place
         if (there == target) {
             if (met or (pl.pathParent(at) != .none and pl.pathStep(at).kind == .level)) return true;
             met = true;
-        } else if (!pl.sameCycle(there, target)) return false;
+        } else if (!pl.sameComponent(there, target)) return false;
     }
     return false;
 }
@@ -53,7 +53,7 @@ pub fn of(gpa: std.mem.Allocator, account: *Ids.Account, pl: *Place.Table, from:
         while (qi < queue.items.len) : (qi += 1) {
             const st = pl.steps(pl.pathPlace(queue.items[qi]));
             for (st.steps, st.children) |s, ch| {
-                if (s.kind == .level or (ch != target and !pl.sameCycle(ch, target))) continue;
+                if (s.kind == .level or !pl.sameComponent(ch, target)) continue;
                 const nx = (try pl.extend(gpa, .growth(account), queue.items[qi], s)) orelse continue;
                 if (ch == target) {
                     if (!(try seen.getOrPut(gpa, .{ 0, nx.int() })).found_existing) try out.append(gpa, nx.int());

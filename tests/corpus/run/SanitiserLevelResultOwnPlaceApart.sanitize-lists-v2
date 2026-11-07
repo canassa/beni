@@ -1,0 +1,1 @@
+v2 keeps a dead list below a fold above the result slot's own place in place (§2.1, #2195): built again under --ownership=v2 and the sanitiser.

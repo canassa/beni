@@ -1,0 +1,52 @@
+-- The twin of `SanitiserLevelResultLower`: `k` is dead after the call, so the edit in place is accepted.
+import List
+import Node exposing (Program)
+import String
+
+
+type A0
+    = L0 (List Int)
+    | A03 A3
+    | A01 A1
+    | E0
+
+
+type A3
+    = A32 A2
+    | A30 A0
+
+
+type A2
+    = L2 (List Int)
+    | A20 A0
+    | A23 A3
+
+
+type A1
+    = A11 A1
+    | A12 A2
+
+
+wr : A0 → Int
+wr t =
+    case t of
+        A03 (A32 (A20 (A01 (A11 (A11 (A12 (A23 (A32 (L2 xs))))))))) →
+            List.length (List.push xs 1)
+        _ →
+            0
+
+
+hg : A0 → A0
+hg t0 =
+    case t0 of
+        A03 (A32 (A20 (A01 (A11 (A11 (A12 (A23 m))))))) →
+            A03 (A32 (A20 (A01 (A11 (A11 (A12 (A23 m)))))))
+        _ →
+            E0
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a = wr (hg (A03 (A32 (A20 (A01 (A11 (A11 (A12 (A23 (A32 (L2 k)))))))))))
+    Node.print (String.fromInt (a))

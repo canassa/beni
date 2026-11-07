@@ -11,13 +11,15 @@
 const std = @import("std");
 const Slots = @import("Slots.zig");
 const SlotWords = @import("SlotWords.zig");
+const Trees = @import("Trees.zig");
 
 /// Whether entry `x`'s arrival `π_j·(s·r)` at slot `p·r` is an open,
 /// non-deep `π_j·s` at `p` among `all` (entries with `slot`, `open`, `a`).
+/// Never a level's copy: a read of every slot skips it (`Relation.feedAt`).
 pub fn saidAbove(slots: *const Slots.Table, all: anytype, x: anytype) bool {
     if (x.a.kind != .param or x.a.deep) return false;
     const wq, const ws = .{ slots.relWords(x.slot), slots.relWords(x.a.slot) };
-    for (all) |o| if (o.open and o.a.kind == .param and !o.a.deep and o.a.j == x.a.j) {
+    for (all) |o| if (o.open and o.a.kind == .param and !o.a.deep and o.a.j == x.a.j and o.a.path != Trees.Arrival.level_copy) {
         const wp, const wo = .{ slots.relWords(o.slot), slots.relWords(o.a.slot) };
         if (wp.len >= wq.len or !SlotWords.startsAt(wq, wp) or ws.len != wo.len + wq.len - wp.len) continue;
         if (SlotWords.startsAt(ws, wo) and SlotWords.same(ws[wo.len..], wq[wp.len..])) return true;

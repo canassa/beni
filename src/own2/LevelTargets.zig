@@ -1,6 +1,5 @@
-//! L4: where an open arrival is said above its slot, split from `LevelWide`
-//! (`docs/design/ownership-v2.md` §2.1, *A level read on a built value*): the
-//! levels above a result slot on its cycle.
+//! L3: the `⟲`s a walk below a result slot folds onto above it, split from
+//! `LevelWide` (`docs/design/ownership-v2.md` §2.1, *A level read on a built value*).
 //!
 //! Obligations kept here: O6 (`⟲` covers every level of a result: no level above is missed).
 
@@ -10,33 +9,41 @@ const Place = @import("Place.zig");
 
 const PathId = Ids.PathId;
 
-/// Whether `p`'s cycle holds another place: on a cycle of one place, a first
-/// return's levels fold below it, so an open arrival has no fold outside its words.
+/// Whether `p`'s cycle holds another place: on one place alone, every fold is below a slot.
 pub fn hasMiddle(pl: *const Place.Table, p: Ids.PlaceId) bool {
-    for (pl.steps(p).children) |c| if (c != p and pl.sameCycle(c, p)) return true;
+    for (pl.steps(p).children) |c| if (c != p and pl.sameComponent(c, p)) return true;
     return false;
 }
 
-/// The levels above `q` on its cycle: each `⟲` and first return on the cycle
-/// suffix of its path, a return by its level paths. As long as the suffix.
+/// The `⟲`s above `q` a walk below it folds onto, and those above each. A step onto
+/// `P` from below `x`, no `P` between, folds (`Place.extend`) onto the first `P` up
+/// from `x` if it is a `⟲`, else onto its `⟲` if a second `P` is above: one fold a
+/// place, so each slot a walk below `q` reaches is below `q` or below one of these.
 pub fn of(f: anytype, g: std.mem.Allocator, arena: std.mem.Allocator, q: PathId, out: *std.ArrayList(PathId)) Ids.ChargeError!void {
     const pl = f.places;
-    const place = pl.pathPlace(q);
-    var at = pl.pathParent(q);
-    while (at != .none and pl.pathParent(at) != .none and pl.sameCycle(pl.pathPlace(at), place)) : (at = pl.pathParent(at)) {
-        try f.charge(.path, 1);
-        if (pl.pathStep(at).kind == .level) {
-            try out.append(arena, at);
-        } else if (pl.isReturn(at)) {
-            if (try pl.levelPaths(g, f.gc(), at)) |r| {
-                var k: u32 = 0;
-                while (k < r.len) : (k += 1) try out.append(arena, pl.foldPath(r.start + k));
-            } else if (try pl.extend(g, f.gc(), at, Place.Step.level)) |t| try out.append(arena, t);
+    // `.{0, t}` a fold met; `.{i + 1, P}` `P`'s first path up from the `i`th, none once used.
+    var met: Ids.FixedDict(2) = .{};
+    defer met.deinit(g);
+    const start = out.items.len;
+    var i = start;
+    while (true) : (i += 1) {
+        const x = if (i == start) q else out.items[i - 1];
+        var at = x;
+        while (at != .none and pl.sameComponent(pl.pathPlace(at), pl.pathPlace(q))) : (at = pl.pathParent(at)) {
+            try f.charge(.path, 1);
+            const got = try met.getOrPut(g, .{ @intCast(i - start + 1), pl.pathPlace(at).int() });
+            const d: PathId = if (got.found_existing) .from(got.value_ptr.*) else at;
+            got.value_ptr.* = if (got.found_existing) Ids.none_int else at.int();
+            if (d.int() == Ids.none_int or d == x) continue;
+            const level = pl.pathParent(d) != .none and pl.pathStep(d).kind == .level;
+            const t = if (!got.found_existing) (if (level) d else continue) else if (level) continue else try pl.foldOnto(g, f.account, d);
+            if (!(try met.getOrPut(g, .{ 0, t.int() })).found_existing) try out.append(arena, t);
         }
+        if (i == out.items.len) return;
     }
 }
 
-/// Whether another target is above `t`: its arrivals cover `t` by the rest of the words.
+/// Whether another target is above `t`: a reader below `t` meets it first, and goes on by the words.
 pub fn coveredBy(pl: *const Place.Table, ts: []const PathId, t: PathId) bool {
     for (ts) |o| if (o != t and pl.isPrefix(o, t)) return true;
     return false;

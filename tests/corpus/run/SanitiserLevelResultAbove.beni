@@ -1,0 +1,73 @@
+-- A fold above a call's result slot on the slot's own path is said as the result's own arrival there
+-- (`ownership-v2.md` §2.1, #2195), and that one says the slot's: a read of every slot of the result writes
+-- it out, here through a frame between (`go`), and `k`, still live, is refused.
+import List
+import Maybe
+import Node exposing (Program)
+import String
+
+
+type Two a b
+    = Two a b
+
+
+type T0
+    = E0
+    | L0 (List Int)
+    | C0x0 T1
+    | C0x1 T0
+
+
+type T1
+    = E1
+    | C1x0 T0
+
+
+w1 : T0 → Int
+w1 x =
+    case x of
+        C0x1 (C0x1 (C0x0 (C1x0 (C0x1 (C0x1 (C0x1 (C0x1 (L0 xs)))))))) →
+            List.length (List.push xs 1)
+        _ →
+            0
+
+
+w0 : T1 → Int
+w0 x =
+    case x of
+        C1x0 (C0x0 (C1x0 (C0x1 (C0x1 (v))))) →
+            w1 v
+        _ →
+            0
+
+
+hg : T1 → T1
+hg t0 =
+    case t0 of
+        C1x0 (C0x0 (C1x0 (C0x1 (C0x1 (C0x1 (C0x1 (C0x0 (C1x0 (C0x1 (C0x1 (m))))))))))) →
+            C1x0 (C0x0 (C1x0 (C0x1 (C0x1 (C0x1 (C0x1 (C0x0 (C1x0 (C0x1 (C0x1 (m)))))))))))
+        _ →
+            E1
+
+
+go : T1 → T1
+go f = hg f
+
+
+rn : T1 → Int
+rn f = w0 (go f)
+
+
+main : Program
+main =
+    k = [ 1 ]
+    a =
+        rn
+            (C1x0
+                (C0x0
+                    (C1x0
+                        (C0x1 (C0x1 (C0x1 (C0x1 (C0x0 (C1x0 (C0x1 (C0x1 (C0x1 (C0x1 (L0 k)))))))))))
+                    )
+                )
+            )
+    Node.print (String.fromInt (a + List.length k))

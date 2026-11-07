@@ -37,8 +37,11 @@ pub const Arrival = struct {
     slot: u32 = 0,
     /// `param`: the module's path `slot` names from the parameter's root, when
     /// the read-off knew it (never in a block): a caller handing that
-    /// parameter whole reads the path, not the steps (§2.11.2, #1714).
+    /// parameter whole reads the path, not the steps (§2.11.2, #1714). Or
+    /// `level_copy`: said at a fold above an open arrival below it (`LevelWide`).
     path: u32 = Ids.none_int,
+
+    pub const level_copy: u32 = Ids.none_int - 1;
 
     pub fn eql(a: Arrival, b: Arrival) bool {
         return a.kind == b.kind and a.deep == b.deep and a.j == b.j and a.slot == b.slot and a.path == b.path;
